@@ -19,7 +19,7 @@ int32 unary_plus_for_init() {
 verifying "unary_plus_for_init.c";
 
 int32 unary_plus_for_init() {
-    ensures result == 6 by auto;
+    ensures result == 6 by auto();
 }
 ```
 

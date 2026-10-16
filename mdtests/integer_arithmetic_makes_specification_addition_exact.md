@@ -11,17 +11,17 @@ would wrap. Without the directive the same claim is C arithmetic
 arithmetic "integer";
 
 theorem signed_successor_is_greater(x: int32) {
-    ensures x + 1 > x by auto;
+    ensures x + 1 > x by auto();
 }
 
 theorem unsigned_successor_is_greater(x: uint32) {
-    ensures x + 1 > x by auto;
+    ensures x + 1 > x by auto();
 }
 
 theorem sums_of_bounded_values_are_exact(a: int32, b: int32) {
     requires 0 <= a;
     requires 0 <= b;
-    ensures a + b >= a by auto;
+    ensures a + b >= a by auto();
 }
 ```
 

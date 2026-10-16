@@ -17,7 +17,7 @@ int32 write_dst_read_src_from_write(int32* dst, int32* src) {
     consumes dst[0..1];
     consumes src[0..1];
 
-    ensures src[0] == old(src[0]) by auto;
+    ensures src[0] == old(src[0]) by auto();
 }
 ```
 

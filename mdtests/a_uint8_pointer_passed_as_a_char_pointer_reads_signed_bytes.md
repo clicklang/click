@@ -41,11 +41,11 @@ verifying "a_uint8_pointer_passed_as_a_char_pointer_reads_signed_bytes.c";
 
 int first_char(char *p) {
     views p[0..1];
-    ensures result == p[0] by auto;
+    ensures result == p[0] by auto();
 }
-int pass_pointer() { ensures result == -56 by auto; }
-int pass_array() { ensures result == -56 by auto; }
-int pass_to_inline() { ensures result == -56 by auto; }
+int pass_pointer() { ensures result == -56 by auto(); }
+int pass_array() { ensures result == -56 by auto(); }
+int pass_to_inline() { ensures result == -56 by auto(); }
 ```
 
 ```expect

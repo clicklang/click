@@ -26,27 +26,27 @@ verifying "wide_narrowing.c";
 unsigned char byte_from_short(short value) {
     requires value >= 0;
     requires value <= 255;
-    ensures result == value by auto;
+    ensures result == value by auto();
 }
 unsigned char byte_from_ushort(unsigned short value) {
     requires value <= 255;
-    ensures result == value by auto;
+    ensures result == value by auto();
 }
 signed char sbyte_from_uint(unsigned int value) {
     requires value <= 127u32;
-    ensures result == value by auto;
+    ensures result == value by auto();
 }
 unsigned char byte_from_uint(unsigned int value) {
     requires value <= 255u32;
-    ensures result == value by auto;
+    ensures result == value by auto();
 }
 short short_from_uint(unsigned int value) {
     requires value <= 32767u32;
-    ensures result == value by auto;
+    ensures result == value by auto();
 }
 unsigned short ushort_from_uint(unsigned int value) {
     requires value <= 65535u32;
-    ensures result == value by auto;
+    ensures result == value by auto();
 }
 signed char sbyte_from_long(long value) {
     requires value >= -128;

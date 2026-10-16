@@ -568,8 +568,8 @@ unavailable, preserving their separate planned Euclidean policy.
 ```click
 theorem guarded(a: Integer, b: Integer) {
     requires b != 0;
-    ensures truncating_quotient(a, b) == truncating_quotient(a, b) by simp;
-    ensures truncating_remainder(a, b) == truncating_remainder(a, b) by simp;
+    ensures truncating_quotient(a, b) == truncating_quotient(a, b) by simp();
+    ensures truncating_remainder(a, b) == truncating_remainder(a, b) by simp();
 }
 ```
 
@@ -632,7 +632,7 @@ identity automatically.
 <!-- verified-example: mdtests/integer_theorem_observed_arguments.md -->
 ```click
 theorem integer_reflexive(z: Integer) {
-    ensures z == z by simp;
+    ensures z == z by simp();
 }
 
 theorem observe64(x: int64) {

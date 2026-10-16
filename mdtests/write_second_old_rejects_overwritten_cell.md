@@ -15,7 +15,7 @@ verifying "write_second_bad_old.c";
 
 int32 write_second_bad_old(int32* p) {
     consumes p[1..2];
-    ensures keeps_second: p[1] == old(p[1]) by auto;
+    ensures keeps_second: p[1] == old(p[1]) by auto();
 }
 ```
 

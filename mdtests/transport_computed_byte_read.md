@@ -27,7 +27,7 @@ int32 iterator_read(const uint8* bytes, uint64 bytes_len, int32 remaining) {
             defined(remaining - 1);
             0 <= remaining - 1;
             remaining - 1 < (int32)(uint32)bytes_len;
-        }
+        };
     }
     execute(); simp();
 }

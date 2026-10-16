@@ -18,27 +18,27 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
  have adler == 1u64 by { simp(); }
  have sum2 == 0u64 by { simp(); }
  apply(zlib_byte_u64(buf[0]));
- have adler + (uint64)buf[0] < 65521u64 by { rewrite(adler == 1u64); arithmetic() using { (uint64)buf[0] <= 255u64; } }
+ have adler + (uint64)buf[0] < 65521u64 by { rewrite(adler == 1u64); arithmetic() using { (uint64)buf[0] <= 255u64; }; }
  execute_until(assignment(adler, 1)); step();
  have adler == 1u64 + (uint64)(uint32)buf[0] by { simp(); }
- have adler <= 256u64 by { arithmetic() using { (uint64)(uint32)buf[0] <= 255u64; adler == 1u64 + (uint64)(uint32)buf[0]; } }
- have adler < 65521u64 by { arithmetic() using { adler <= 256u64; } }
+ have adler <= 256u64 by { arithmetic() using { (uint64)(uint32)buf[0] <= 255u64; adler == 1u64 + (uint64)(uint32)buf[0]; }; }
+ have adler < 65521u64 by { arithmetic() using { adler <= 256u64; }; }
  apply(uint64_less_than_implies_not_greater_equal(adler, 65521u64));
  execute_until(assignment(sum2, 1)); step();
  have sum2 == adler by { simp(); }
  have sum2 <= 256u64 by { rewrite(sum2 == adler); assumption(); }
- have sum2 < 65521u64 by { arithmetic() using { sum2 <= 256u64; } }
+ have sum2 < 65521u64 by { arithmetic() using { sum2 <= 256u64; }; }
  apply(uint64_less_than_implies_not_greater_equal(sum2, 65521u64));
- have adler <= 65535u64 by { arithmetic() using { adler <= 256u64; } }
- have sum2 <= 65535u64 by { arithmetic() using { sum2 <= 256u64; } }
+ have adler <= 65535u64 by { arithmetic() using { adler <= 256u64; }; }
+ have sum2 <= 65535u64 by { arithmetic() using { sum2 <= 256u64; }; }
  apply(uint64_pack_uint16_to_integer(adler, sum2));
- have to_integer(1u64) + to_integer((uint64)(uint32)buf[0]) <= 18446744073709551615 by { arithmetic() using { to_integer((uint64)(uint32)buf[0]) == to_integer((int32)buf[0]); to_integer((int32)buf[0]) <= 255; } }
+ have to_integer(1u64) + to_integer((uint64)(uint32)buf[0]) <= 18446744073709551615 by { arithmetic() using { to_integer((uint64)(uint32)buf[0]) == to_integer((int32)buf[0]); to_integer((int32)buf[0]) <= 255; }; }
  apply(uint64_add_to_integer(1u64, (uint64)(uint32)buf[0]));
  have to_integer(adler) == 1 + to_integer((int32)buf[0]) by { rewrite(adler == 1u64 + (uint64)(uint32)buf[0]); rewrite(to_integer(1u64 + (uint64)(uint32)buf[0]) == to_integer(1u64) + to_integer((uint64)(uint32)buf[0])); rewrite(to_integer((uint64)(uint32)buf[0]) == to_integer((int32)buf[0])); simp(); }
  apply(adler_spec_one(buf));
- have 0 <= 1 + to_integer((int32)buf[0]) by { arithmetic() using { 0 <= to_integer((int32)buf[0]); } }
- have 1 + to_integer((int32)buf[0]) < 65521 by { arithmetic() using { to_integer((int32)buf[0]) <= 255; } }
- have 1 + to_integer((int32)buf[0]) <= 65520 by { arithmetic() using { to_integer((int32)buf[0]) <= 255; } }
+ have 0 <= 1 + to_integer((int32)buf[0]) by { arithmetic() using { 0 <= to_integer((int32)buf[0]); }; }
+ have 1 + to_integer((int32)buf[0]) < 65521 by { arithmetic() using { to_integer((int32)buf[0]) <= 255; }; }
+ have 1 + to_integer((int32)buf[0]) <= 65520 by { arithmetic() using { to_integer((int32)buf[0]) <= 255; }; }
  have 1 + to_integer((int32)buf[0]) == 0 * 65521 + (1 + to_integer((int32)buf[0])) by { arithmetic() using {}; }
  apply(adler_residue_unique(1 + to_integer((int32)buf[0]), 0, 1 + to_integer((int32)buf[0])));
 
@@ -363,7 +363,7 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
     to_integer(adler) == 1 + adler_byte_sum(old(buf), zlib_prefix_count(old(len), len));
     to_integer(zlib_prefix_count(old(len), len)) == to_integer(zlib_prefix_count(old(len), at(before_decrement, len))) + 1;
    };
-   close_invariants by { simp(); }
+   close_invariants() by { simp(); }
    }
   }
  }
@@ -528,8 +528,8 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
      have to_integer(sum2) == to_integer(at(loop(2).entry, sum2)) + to_integer(zlib_batch_count(n)) * to_integer(at(loop(2).entry, adler)) + adler_weighted_sum(at(loop(2).entry, buf), zlib_batch_count(n), zlib_batch_count(n)) by {
       rewrite(zlib_batch_count(n) == 0); rewrite(adler_weighted_sum(at(loop(2).entry, buf), 0, 0) == 0); normalize();
      }
-     have to_integer(adler) <= 65520 + 255 * to_integer(zlib_batch_count(n)) by { rewrite(zlib_batch_count(n) == 0); arithmetic() using { to_integer(adler) <= 65520; } }
-     have to_integer(sum2) <= 65520 + 1481280 * to_integer(zlib_batch_count(n)) by { rewrite(zlib_batch_count(n) == 0); arithmetic() using { to_integer(sum2) <= 65520; } }
+     have to_integer(adler) <= 65520 + 255 * to_integer(zlib_batch_count(n)) by { rewrite(zlib_batch_count(n) == 0); arithmetic() using { to_integer(adler) <= 65520; }; }
+     have to_integer(sum2) <= 65520 + 1481280 * to_integer(zlib_batch_count(n)) by { rewrite(zlib_batch_count(n) == 0); arithmetic() using { to_integer(sum2) <= 65520; }; }
      simp();
     }
     preserve by {
@@ -1280,7 +1280,7 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
         16u64 * (uint64)n + len <= 9223372036854775807u64;
        };
       }
-      close_invariants by assumption();
+      close_invariants() by assumption();
      }
     }
    }
@@ -1374,7 +1374,7 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
    };
    apply(uint64_to_integer_bounds(len));
    have to_integer(len) < at(batch_entry, to_integer(len)) by arithmetic() using { to_integer(len) == at(batch_entry, to_integer(len)) - 5552; };
-   close_invariants by assumption();
+   close_invariants() by assumption();
   }
 
  }
@@ -2090,7 +2090,7 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
     zlib_prefix_count(old(len), len) == zlib_prefix_count(old(len), at(before_block, len)) + 16;
     old(buf) + (old(len) - len) == old(buf) + zlib_prefix_count(old(len), len);
    };
-   close_invariants by assumption();
+   close_invariants() by assumption();
   }
  }
  have len <= 15u64 by arithmetic() using { not (len >= 16u64); len <= at(loop(3).entry, len); at(loop(3).entry, len) <= 5551u64; };
@@ -2269,7 +2269,7 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
      }
      apply(uint64_to_integer_bounds(len));
      have to_integer(len) < at(before_decrement, to_integer(len)) by arithmetic() using { to_integer(len) == at(before_decrement, to_integer(len)) - 1; };
-     close_invariants by assumption();
+     close_invariants() by assumption();
     }
    }
   }

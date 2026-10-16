@@ -101,10 +101,10 @@ void child_release(struct child* obj) {
     } else {
         unfold(child_ref(obj));
         have 1 < obj->refs by {
-            arithmetic() using { 1 <= obj->refs; obj->refs != 1; }
+            arithmetic() using { 1 <= obj->refs; obj->refs != 1; };
         }
         have obj->refs - 1 >= 1 by {
-            apply(int32_above_one_predecessor_is_at_least_one(obj->refs)) using { 1 < obj->refs; }
+            apply(int32_above_one_predecessor_is_at_least_one(obj->refs)) using { 1 < obj->refs; };
         }
         step();
         step();
@@ -145,7 +145,7 @@ void parent_detach(struct parent* p) {
         },
         ParentLink::Linked(kid) => {
             unfold(link);
-            have old(p->kid) == kid by simp;
+            have old(p->kid) == kid by simp();
             if p->kid->refs > 1 {
                 execute();
                 simp();
@@ -166,7 +166,7 @@ int32 caller(struct child* kid) {
 } by {
     step();
     step();
-    branch then {
+    branch {
         step(child_release(kid), {});
         step();
         simp();

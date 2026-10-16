@@ -50,16 +50,16 @@ verifying "for_increment_step.c";
 verifying "symbolic_statement_update.c";
 
 int32 statement_updates() {
-    ensures result == 15 by auto;
+    ensures result == 15 by auto();
 }
 
 int32 for_increment_step() {
-    ensures result == 3 by auto;
+    ensures result == 3 by auto();
 }
 
 int32 symbolic_statement_update(int32 x) {
     requires x < 2147483647;
-    ensures result == x + 1 by auto;
+    ensures result == x + 1 by auto();
 }
 ```
 

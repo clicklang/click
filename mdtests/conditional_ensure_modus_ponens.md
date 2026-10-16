@@ -33,7 +33,7 @@ int32 set_five(int32* cell) {
     owns cell[0..1];
     ensures result == 0 or result == 1;
     ensures result == 1 implies cell[0] == 5;
-} by auto;
+} by auto();
 
 int32 use_five(int32* cell) {
     owns cell[0..1];
@@ -45,7 +45,7 @@ int32 use_five(int32* cell) {
             simp() using {
                 c(flag) == 1;
                 c(flag) == 1 implies cell[0] == 5;
-            }
+            };
         }
         execute();
         assumption();

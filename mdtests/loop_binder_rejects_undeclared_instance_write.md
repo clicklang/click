@@ -43,7 +43,7 @@ void bump_other(struct cell* p, struct cell* q, int32 n) {
         invariant i >= 0;
         invariant i <= n;
 
-        initialize by simp;
+        initialize by simp();
         preserve by {
             step();
             step();

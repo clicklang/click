@@ -142,7 +142,7 @@ another node's address. `tree_at` states `fact p == identity`, and the proof
 turns the C test into the model's in the branch where it held with
 
 ```click
-have address(node) == address(target) by auto;
+have address(node) == address(target) by auto();
 ```
 
 `auto` rewrites `node` to `root` and closes on the branch condition.

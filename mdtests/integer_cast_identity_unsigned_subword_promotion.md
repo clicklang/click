@@ -32,7 +32,7 @@ void store_lane(uint16 *out, uint32 value) {
         premise 1: to_integer(*out) <= 65535 => to_integer(*out) <= 65535;
         integer_cast_identity bounds [0, 1] => to_integer((int32)*out) == to_integer(*out); conclusion 0;
     } }
-    simp() using { to_integer((int32)*out) == to_integer(*out); }
+    simp() using { to_integer((int32)*out) == to_integer(*out); };
 }
 ```
 

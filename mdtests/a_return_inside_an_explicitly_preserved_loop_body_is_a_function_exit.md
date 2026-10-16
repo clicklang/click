@@ -32,7 +32,7 @@ int32 f(int32 n) {
         decreases n - i;
         invariant i >= 0;
         invariant i <= n;
-        initialize by simp;
+        initialize by simp();
         preserve by {
             if i == 2 {
                 step();

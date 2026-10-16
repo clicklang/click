@@ -23,7 +23,7 @@ verifying "read_same_twice.c";
 int32 read_same_twice(int32 p[]) {
     views p[0..1];
 
-    ensures result == 1 by auto;
+    ensures result == 1 by auto();
 }
 ```
 

@@ -11,7 +11,7 @@ refused.
 theorem squeeze(a: uint64, b: uint64) {
     requires a <= b;
     ensures a == b by {
-        arithmetic() using { a <= b; }
+        arithmetic() using { a <= b; };
     }
 }
 ```

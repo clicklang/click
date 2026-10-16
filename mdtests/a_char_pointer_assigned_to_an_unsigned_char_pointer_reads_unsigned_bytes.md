@@ -43,12 +43,12 @@ int same(char *p, unsigned char *q) { return p == q; }
 ```click
 verifying "a_char_pointer_assigned_to_an_unsigned_char_pointer_reads_unsigned_bytes.c";
 
-int read_unsigned() { ensures result == 200 by auto; }
-int read_signed() { ensures result == -56 by auto; }
-int read_inline_result() { ensures result == 200 by auto; }
+int read_unsigned() { ensures result == 200 by auto(); }
+int read_signed() { ensures result == -56 by auto(); }
+int read_inline_result() { ensures result == 200 by auto(); }
 int same(char *p, unsigned char *q) {
     requires (uint8*)p == q;
-    ensures result == 1 by auto;
+    ensures result == 1 by auto();
 }
 ```
 

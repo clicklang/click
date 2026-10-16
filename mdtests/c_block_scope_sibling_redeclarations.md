@@ -13,7 +13,7 @@ verifying "c_block_scope_sibling_redeclarations.c";
 
 int32 siblings(int32 c) {
     requires c >= 0;
-    ensures result == 2 by auto;
+    ensures result == 2 by auto();
 }
 ```
 

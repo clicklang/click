@@ -2453,7 +2453,7 @@ impl<'a> Proof<'a> {
         // A Special fact such as `aligned(p + i, 8)` is not generally a
         // simp-derivation: the kernel's pointer rule consumes a matching
         // alignment/relation fact directly. Use the selected pairs when
-        // `simp using` supplied them; otherwise recover only typed Special
+        // `simp() using` supplied them; otherwise recover only typed Special
         // candidates from the recorded Surface map for generic `simp()`.
         if let Some(surface_goal) = self.surface_goal()
             && let Some(goal) = self.goal()
@@ -4255,6 +4255,34 @@ impl<'a> Proof<'a> {
                     let surface = self.available_surface_fact(surface_facts, anchor, &form);
                     surface.map(|surface| (form, surface))
                 })
+                .or_else(|| {
+                    // A conjunct of one source fact's lowering — a contract
+                    // clause beside its well-formedness conditions, a
+                    // comparison beside the range facts its conversion
+                    // adds — is spelled by that whole source fact. The
+                    // containing kernel is spelled and re-lowered exactly as
+                    // any premise is; citing it supplies this conjunct.
+                    surface_facts
+                        .kernels_containing_conjunct(premise)
+                        .chain(
+                            self.local_surface_facts()
+                                .kernels_containing_conjunct(premise),
+                        )
+                        .find_map(|whole| {
+                            if crate::instrumentation::deadline_exceeded() {
+                                return None;
+                            }
+                            self.available_surface_fact(surface_facts, anchor, whole)
+                                .or_else(|| {
+                                    self.available_surface_fact(
+                                        self.local_surface_facts(),
+                                        anchor,
+                                        whole,
+                                    )
+                                })
+                                .map(|surface| (premise.clone(), surface))
+                        })
+                })
         };
         let mut premise_pairs = premises
             .iter()
@@ -4283,17 +4311,38 @@ impl<'a> Proof<'a> {
                 premise_pairs = anchored_pairs;
             }
         }
-        if !crate::instrumentation::deadline_exceeded()
-            && matches!(self.goal(), Some(Proposition::CMemoryLoadable { .. }))
-            && premise_pairs.len() < premises.len()
-        {
+        if !crate::instrumentation::deadline_exceeded() && premise_pairs.len() < premises.len() {
+            // Name what has no spelling: a derivation found but not written
+            // back is refused for that reason, not for the memory history a
+            // supplemental explanation may show.
+            const NAMED_UNSPELLED: usize = 4;
+            let unspelled = premises
+                .iter()
+                .filter(|premise| !premise_pairs.iter().any(|(spelled, _)| spelled == *premise))
+                .collect::<Vec<_>>();
+            let mut named = unspelled
+                .iter()
+                .take(NAMED_UNSPELLED)
+                .map(|premise| {
+                    crate::surface::proof_diagnostics::render::render_proposition(premise)
+                })
+                .collect::<Vec<_>>();
+            if unspelled.len() > NAMED_UNSPELLED {
+                named.push(format!("… {} more", unspelled.len() - NAMED_UNSPELLED));
+            }
+            let strategy = if matches!(self.goal(), Some(Proposition::CMemoryLoadable { .. })) {
+                "simp view premise spelling"
+            } else {
+                "simp premise spelling"
+            };
             attempt::record_search_note(
-                "simp view premise spelling",
+                strategy,
                 format!(
-                    "{} of {} selected derivation premises have checked source spellings; {} were omitted",
+                    "{} of {} selected derivation premises have checked source spellings; {} were omitted: {}",
                     premise_pairs.len(),
                     premises.len(),
-                    premises.len() - premise_pairs.len()
+                    premises.len() - premise_pairs.len(),
+                    named.join("; ")
                 ),
             );
         }

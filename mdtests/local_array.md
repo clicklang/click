@@ -17,7 +17,7 @@ int32 local_array_roundtrip() {
 verifying "local_array.c";
 
 int32 local_array_roundtrip() {
-    ensures returns_second: result == 7 by auto;
+    ensures returns_second: result == 7 by auto();
 }
 ```
 

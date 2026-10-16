@@ -12,7 +12,7 @@ theorem equality_transitive_with_exact_premises(x: int32, y: int32, z: int32) {
         simp() using {
             x == y;
             y == z;
-        }
+        };
     }
 }
 ```

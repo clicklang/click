@@ -13,7 +13,7 @@ int32 c_variadic_rejected(int32 first, ...) {
 verifying "c_variadic_rejected.c";
 
 int32 c_variadic_rejected(int32 first) {
-    ensures result == first by auto;
+    ensures result == first by auto();
 }
 ```
 

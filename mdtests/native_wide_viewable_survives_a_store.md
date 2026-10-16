@@ -14,7 +14,7 @@ uint32 put(const uint8* bytes, uint64 length, uint32* cell) {
 } by {
  step();
  have viewable(bytes[0u64..length]) by {
-  transport(at(function.entry, viewable(bytes[0u64..length])), viewable(bytes[0u64..length])) using { at(function.entry, viewable(bytes[0u64..length])); }
+  transport(at(function.entry, viewable(bytes[0u64..length])), viewable(bytes[0u64..length])) using { at(function.entry, viewable(bytes[0u64..length])); };
  }
  execute(); simp();
 }

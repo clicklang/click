@@ -92,11 +92,11 @@ int32 probe_contract(struct job *j) {
                 if k < i {
                     instantiate(at(statement(3).entry, forall (k: int32) {
                         j->lo <= k and k < i implies j->p[k] == j->v
-                    }), k) using { j->lo <= k; k < i; }
+                    }), k) using { j->lo <= k; k < i; };
                     simp();
                 } else {
                     have k == i by {
-                        apply(int32_less_equal_and_not_less_than_implies_equal(k, i)) using { k <= i; not (k < i); }
+                        apply(int32_less_equal_and_not_less_than_implies_equal(k, i)) using { k <= i; not (k < i); };
                     }
                     rewrite(k == i);
                     simp();
@@ -107,13 +107,13 @@ int32 probe_contract(struct job *j) {
                 simp() using {
                     0 <= j->lo;
                     j->lo <= at(statement(3).entry, i);
-                }
+                };
             }
             have 0 <= j->hi by {
                 simp() using {
                     0 <= j->lo;
                     j->lo <= j->hi;
-                }
+                };
             }
             have 0 <= 0 - at(statement(3).entry, i) + j->hi - 1 by {
                 arithmetic() using {
@@ -121,7 +121,7 @@ int32 probe_contract(struct job *j) {
                     0 <= j->hi;
                     at(statement(3).entry, i) < at(statement(3).entry, j->hi);
                     j->lo <= j->hi;
-                }
+                };
             }
             have 0 - at(statement(3).entry, i) + j->hi - 1
                 < 0 - at(statement(3).entry, i) + j->hi by {
@@ -130,7 +130,7 @@ int32 probe_contract(struct job *j) {
                     0 <= j->hi;
                     at(statement(3).entry, i) < at(statement(3).entry, j->hi);
                     j->lo <= j->hi;
-                }
+                };
             }
             have forall (k: int32) { j->lo <= k and k < i implies j->p[k] == j->v } by {
                 intro();
@@ -140,11 +140,11 @@ int32 probe_contract(struct job *j) {
                         k < i;
                         i == at(statement(4).entry, i) + 1;
                         at(statement(4).entry, i) < j->hi;
-                    }
+                    };
                 }
                 instantiate(at(statement(4).entry, forall (k: int32) {
                     j->lo <= k and k <= i implies j->p[k] == j->v
-                }), k) using { j->lo <= k; k <= at(statement(4).entry, i); }
+                }), k) using { j->lo <= k; k <= at(statement(4).entry, i); };
                 assumption();
             }
             simp();

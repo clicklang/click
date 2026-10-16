@@ -11,8 +11,8 @@ void consume(int32* p) {
     consumes token(p);
     ensures 1 <= count(token(p));
 } by {
-    have 0 < count(token(p)) by { arithmetic() using { 1 <= count(token(p)); } }
-    apply(int32_positive_predecessor_is_nonnegative(count(token(p)))) using { 0 < count(token(p)); }
+    have 0 < count(token(p)) by { arithmetic() using { 1 <= count(token(p)); }; }
+    apply(int32_positive_predecessor_is_nonnegative(count(token(p)))) using { 0 < count(token(p)); };
     unfold(token(p)); execute(); simp();
 }
 ```

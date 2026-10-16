@@ -130,7 +130,7 @@ int32 owned_string_init(
             separate(memory(*owner), memory(data[0..capacity]));
             owner->data == data;
             owner->cap == capacity;
-        }
+        };
     }
     fold(owned_string(owner));
     have result == 0 by {
@@ -223,7 +223,7 @@ int32 owned_string_push(struct owned_string* owner, int32 value) {
     step();
     step();
     step();
-    have owner->len == at(statement(4).entry, (index + 1)) by auto;
+    have owner->len == at(statement(4).entry, (index + 1)) by auto();
     step();
     have 0 <= old(owner->len) + 1 by {
         arithmetic() using {
@@ -288,10 +288,10 @@ int32 owned_string_pop(struct owned_string* owner) {
         arithmetic() using { 1 <= owner->len; }
     }
     have (owner->len - 1) < owner->len by {
-        have 0 < owner->len by auto;
+        have 0 < owner->len by auto();
         apply(int32_positive_predecessor_strictly_decreases(owner->len)) using {
             0 < owner->len;
-        }
+        };
         assumption();
     }
     step();
@@ -306,7 +306,7 @@ int32 owned_string_pop(struct owned_string* owner) {
         normalize();
     }
     fold(owned_string(owner));
-    have owner->data[owner->len] == 0 by auto;
+    have owner->data[owner->len] == 0 by auto();
     assumption();
     assumption();
     assumption();
@@ -342,7 +342,7 @@ int32 owned_string_clear(struct owned_string* owner) {
     step();
     step();
     step();
-    have terminated_at(owner->data, owner->len) by auto;
+    have terminated_at(owner->data, owner->len) by auto();
     have 0 <= owner->len;
     have separate(
         memory(*owner),
@@ -386,7 +386,7 @@ int32 owned_string_pipeline(
         rewrite(owner->len == 0);
         apply(int32_increment_less_equal_implies_less_than(1, at(statement(2).entry, capacity))) using {
             at(statement(2).entry, 2) <= at(statement(2).entry, capacity);
-        }
+        };
         assumption();
     }
     step();
@@ -426,7 +426,7 @@ int32 owned_string_pipeline(
     apply(decremented_one_is_zero(at(statement(5).entry, owner->len), owner->len)) using {
         at(statement(5).entry, owner->len) == 1;
         owner->len == (at(statement(5).entry, owner->len) - 1);
-    }
+    };
     have owner->len == 0 by {
         assumption();
     }

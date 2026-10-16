@@ -28,7 +28,7 @@ int32 answer() {
 verifying "unused_extern_declarations.c";
 
 int32 answer() {
-    ensures result == 42 by auto;
+    ensures result == 42 by auto();
 }
 ```
 

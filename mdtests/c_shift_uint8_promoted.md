@@ -17,7 +17,7 @@ function byte_shl1(x: uint8) -> int32 {
 }
 
 int32 shift_uint8_promoted(uint8 x) {
-    ensures promoted_shift: result == byte_shl1(x) by auto;
+    ensures promoted_shift: result == byte_shl1(x) by auto();
 }
 ```
 

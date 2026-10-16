@@ -23,7 +23,7 @@ theorem successor_nonnegative(i: int32, n: int32) {
     requires 0 <= i;
     requires i < n;
     ensures 0 <= i + 1 by {
-        arithmetic() using { 0 <= i; i < n; }
+        arithmetic() using { 0 <= i; i < n; };
     }
 }
 
@@ -54,7 +54,7 @@ int32 next_index(int32 i, int32 n) {
     requires i < n;
     ensures result == 0;
 } by {
-    have 0 <= i + 1 by { arithmetic() using { 0 <= i; i < n; } }
+    have 0 <= i + 1 by { arithmetic() using { 0 <= i; i < n; }; }
     step();
     simp();
 }

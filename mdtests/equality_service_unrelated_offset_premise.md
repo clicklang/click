@@ -16,7 +16,7 @@ void selected_store(int32* buf, int32* other, int32 a, int32 b, int32 j) {
     owns buf[0..1000];
     requires 500 <= j and j < 1000;
     requires other + a == other + b;
-    ensures buf[j] == 5 by auto;
+    ensures buf[j] == 5 by auto();
 }
 ```
 

@@ -43,7 +43,7 @@ int32 loop_entry_guard_before_written_implication_rejects(int32 p[3]) {
                 normalize();
             }
         }
-        preserve by simp;
+        preserve by simp();
     }
     step();
     simp();

@@ -123,7 +123,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                 invariant state.phase == SizedInsertMirroredDoublePhase::Before(g, p);
                 invariant old(state.phase) == SizedInsertMirroredDoublePhase::Before(g, p);
                 invariant state.model == sized_mirrored_double_before(g, p, node);
-                initialize by simp;
+                initialize by simp();
                 preserve by {
                     let { tree: loop_tree } = unfold(state);
                     unfold(sized_mirrored_double_before(g, p, node));

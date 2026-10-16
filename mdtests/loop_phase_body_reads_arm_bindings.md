@@ -106,7 +106,7 @@ int spin(struct node* p, int n) {
                 initialize by {
                     have i >= 0 by normalize();
                     have i <= n by {
-                        apply(int32_greater_equal_implies_reversed_less_equal(n, 0)) using { n >= 0; }
+                        apply(int32_greater_equal_implies_reversed_less_equal(n, 0)) using { n >= 0; };
                     }
                     have t.model == Tree::Node(id, value, left_model) by {
                         have head_value(Tree::Node(id, value, left_model)) == value by {
@@ -122,8 +122,8 @@ int spin(struct node* p, int n) {
                         unfold(head_value(Tree::Node(id, value, left_model)));
                         normalize();
                     }
-                    have 0 <= n - i - 1 by { arithmetic() using { i < n; i >= 0; n >= 0; } }
-                    have n - i - 1 < n - i by { arithmetic() using { i < n; i >= 0; n >= 0; } }
+                    have 0 <= n - i - 1 by { arithmetic() using { i < n; i >= 0; n >= 0; }; }
+                    have n - i - 1 < n - i by { arithmetic() using { i < n; i >= 0; n >= 0; }; }
                     step();
                     close_invariants();
                 }
@@ -151,7 +151,7 @@ int spin_ranked(struct node* p, int n) {
                 invariant i >= 0;
                 invariant i <= n;
 
-                initialize by simp;
+                initialize by simp();
                 preserve by {
                     have head_value(Tree::Node(id, value, left_model)) == value by {
                         unfold(head_value(Tree::Node(id, value, left_model)));

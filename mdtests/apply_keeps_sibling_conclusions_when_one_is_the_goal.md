@@ -63,11 +63,11 @@ theorem goal_is_the_middle_conclusion(x: int32) {
     ensures x <= 10 by {
         apply(three_bounds(x)) using {
             small(x);
-        }
+        };
         apply(needs_both_siblings(x)) using {
             x >= 0;
             x != 11;
-        }
+        };
         assumption();
     }
 }

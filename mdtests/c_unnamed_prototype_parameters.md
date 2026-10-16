@@ -29,11 +29,11 @@ extern int32 outside(int32 code, int32* out) {
 }
 
 int32 pick(int32 value, const int32* unused) {
-    ensures result == value by auto;
+    ensures result == value by auto();
 }
 
 int32 run(int32 value) {
-    ensures result == value by auto;
+    ensures result == value by auto();
 }
 ```
 

@@ -27,7 +27,7 @@ verifying "increment.c";
 
 int32 increment(int32 x) {
     requires x < 2147483647;
-    ensures increments: result == x + 1 by auto;
+    ensures increments: result == x + 1 by auto();
 }
 ```
 
@@ -243,7 +243,7 @@ Each function block in a sidecar describes one C function:
 ```click
 int32 increment(int32 x) {
     requires x < 2147483647;
-    ensures increments: result == x + 1 by auto;
+    ensures increments: result == x + 1 by auto();
 }
 ```
 

@@ -75,7 +75,7 @@ void release_run(int32* data, int32* occupied, int32 capacity, int32 start, int3
         invariant start <= i;
         decreases i - start;
 
-        initialize by simp;
+        initialize by simp();
         preserve by {
             let { next: n } = unfold(w);
             have n == i;
@@ -90,7 +90,7 @@ void release_run(int32* data, int32* occupied, int32 capacity, int32 start, int3
                 arithmetic() using {
                     start < at(opened, i);
                     0 <= start;
-                }
+                };
             }
             have 0 <= i;
             step();
@@ -101,7 +101,7 @@ void release_run(int32* data, int32* occupied, int32 capacity, int32 start, int3
                 intro();
                 intro();
                 if i < k {
-                    apply(int32_increment_upper_bound(i, k)) using { i < k; }
+                    apply(int32_increment_upper_bound(i, k)) using { i < k; };
                     have n <= k by {
                         rewrite(n == at(opened, i));
                         assumption();
@@ -112,16 +112,16 @@ void release_run(int32* data, int32* occupied, int32 capacity, int32 start, int3
                         }, k) using {
                             n <= k;
                             k < end;
-                        }
+                        };
                         assumption();
                     }
-                    apply(int32_less_equal_less_than_transitive(0, i, k)) using { 0 <= i; i < k; }
-                    apply(int32_less_than_implies_less_equal(0, k)) using { 0 < k; }
+                    apply(int32_less_equal_less_than_transitive(0, i, k)) using { 0 <= i; i < k; };
+                    apply(int32_less_than_implies_less_equal(0, k)) using { 0 < k; };
                     apply(int32_less_than_less_equal_transitive(k, end, capacity)) using {
                         k < end;
                         end <= capacity;
-                    }
-                    apply(int32_less_than_transitive(i, k, capacity)) using { i < k; k < capacity; }
+                    };
+                    apply(int32_less_than_transitive(i, k, capacity)) using { i < k; k < capacity; };
                     transport(
                         at(opened, occupied[k]) == 0,
                         occupied[k] == 0
@@ -132,14 +132,14 @@ void release_run(int32* data, int32* occupied, int32 capacity, int32 start, int3
                         i < capacity;
                         0 <= k;
                         k < capacity;
-                    }
+                    };
                     assumption();
                 } else {
                     have i == k by {
                         apply(int32_less_equal_and_not_less_than_implies_equal(i, k)) using {
                             i <= k;
                             not (i < k);
-                        }
+                        };
                     }
                     have k == i;
                     rewrite(k == i);
@@ -151,7 +151,7 @@ void release_run(int32* data, int32* occupied, int32 capacity, int32 start, int3
                 apply(int32_nonnegative_predecessor_upper_bound(at(opened, i), end)) using {
                     0 <= at(opened, i);
                     at(opened, i) <= end;
-                }
+                };
                 assumption();
             }
             let w = fold(arena_window(data, occupied, capacity, start, end), { next: i });
@@ -159,23 +159,23 @@ void release_run(int32* data, int32* occupied, int32 capacity, int32 start, int3
                 arithmetic() using {
                     start < at(statement(3).entry, i);
                     0 <= start;
-                }
+                };
             }
             have 0 - start + at(statement(3).entry, i) - 1
                 < 0 - start + at(statement(3).entry, i) by {
                 arithmetic() using {
                     start < at(statement(3).entry, i);
                     0 <= start;
-                }
+                };
             }
             close_invariants();
         }
     }
-    apply(int32_less_equal_implies_reversed_greater_equal(start, i)) using { start <= i; }
+    apply(int32_less_equal_implies_reversed_greater_equal(start, i)) using { start <= i; };
     apply(int32_greater_equal_and_not_greater_than_implies_equal(i, start)) using {
         i >= start;
         not (i > start);
-    }
+    };
     have w.next == start by {
         rewrite(w.next == i);
         rewrite(i == start);

@@ -50,7 +50,7 @@ struct Node* walk(struct Node* p, int32* marker) {
         owns t: list(p);
         decreases t;
         invariant p != 0;
-        initialize by simp;
+        initialize by simp();
         preserve by {
             let c = fold(path(p), { model: Path::Top });
             match t.model {

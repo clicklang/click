@@ -87,7 +87,7 @@ theorem walk_frame(a: int32[], b: int32[], c: int32[], d: int32[], n: int32, fro
                 simp() using {
                     a[from] == c[from];
                     walk(a, b, a[from], rest) == walk(c, d, a[from], rest);
-                }
+                };
             }
             Path::Right(rest) => {
                 have 0 <= b[from] and b[from] < n by {
@@ -104,7 +104,7 @@ theorem walk_frame(a: int32[], b: int32[], c: int32[], d: int32[], n: int32, fro
                 simp() using {
                     b[from] == d[from];
                     walk(a, b, b[from], rest) == walk(c, d, b[from], rest);
-                }
+                };
             }
         }
     }

@@ -12,7 +12,7 @@ theorem advance(p: const uint8*, bytes: const uint8*, n: uint64, remaining: int3
         arithmetic() using {
             p == bytes + ((int32)(uint32)n - remaining);
             ((int32)(uint32)n - remaining) < 2147483647;
-        }
+        };
     }
 }
 ```

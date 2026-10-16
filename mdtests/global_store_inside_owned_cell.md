@@ -9,7 +9,7 @@ void set_second() { words[1] = 7; }
 verifying "owned_global.c";
 void set_second() {
     owns words[1..2];
-    ensures words[1] == 7 by auto;
+    ensures words[1] == 7 by auto();
 }
 ```
 

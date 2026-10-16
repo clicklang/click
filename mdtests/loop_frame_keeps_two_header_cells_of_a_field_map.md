@@ -48,7 +48,7 @@ void mark_tail(struct arena* arena, int32 end) {
         invariant arena->occupied[0] == old(arena->occupied[0]);
         invariant arena->occupied[1] == old(arena->occupied[1]);
         decreases end - i;
-        initialize by simp;
+        initialize by simp();
         preserve by {
             step();
             step();

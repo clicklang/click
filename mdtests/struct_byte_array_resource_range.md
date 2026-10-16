@@ -21,14 +21,14 @@ verifying "bytes.c";
 uint8 set_global(uint8 value) {
     views global.data[1..2];
     owns global.data[2..3];
-    ensures global.data[2] == value by auto;
-    ensures result == old(global.data[1]) by auto;
+    ensures global.data[2] == value by auto();
+    ensures result == old(global.data[1]) by auto();
 }
 uint8 set_pointer(struct bytes* p, uint8 value) {
     views p->data[1..2];
     owns p->data[2..3];
-    ensures p->data[2] == value by auto;
-    ensures result == old(p->data[1]) by auto;
+    ensures p->data[2] == value by auto();
+    ensures result == old(p->data[1]) by auto();
 }
 ```
 

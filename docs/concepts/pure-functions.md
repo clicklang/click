@@ -225,7 +225,7 @@ theorem countdown_is_zero(n: int32) {
         induct(n) as ih;
         if n <= 0 {
             unfold(countdown(n));
-            normalize() using { n <= 0; }
+            normalize() using { n <= 0; };
         } else {
             apply(ih(n - 1));
             unfold(countdown(n));

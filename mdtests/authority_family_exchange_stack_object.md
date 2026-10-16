@@ -47,10 +47,10 @@ int32 lifecycle() { ensures result == 3; } by {
     fold(capacity(&pool));
     fold(item(&pool, &second));
     step();
-    have count(capacity(&pool)) == 1 by simp;
-    have count(item(&pool, _)) == 2 by simp;
-    have count(item(&pool, &first)) == 1 by simp;
-    have count(item(&pool, &second)) == 1 by simp;
+    have count(capacity(&pool)) == 1 by simp();
+    have count(item(&pool, _)) == 2 by simp();
+    have count(item(&pool, &first)) == 1 by simp();
+    have count(item(&pool, &second)) == 1 by simp();
     open(item(&pool, &first)) { open(item(&pool, &second)) { step(); step(); } }
     unfold(capacity(&pool));
     unfold(item(&pool, &first));

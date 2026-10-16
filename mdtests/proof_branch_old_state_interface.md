@@ -18,7 +18,7 @@ verifying "advance_old_state_interface.c";
 int32 advance_old_state_interface(int32 x, int32 choose_first) {
     ensures result == old(x) by {
         step();
-        branch then {
+        branch {
             step();
         } else {
             step();

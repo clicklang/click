@@ -39,7 +39,7 @@ theorem reduced_lane_ceiling(lane: uint32) {
     requires lane <= 65520u32;
     ensures to_integer(lane * 4u32) <= 262080 by {
         have lane <= 4294967295u32 / 4u32 by {
-            arithmetic() using { lane <= 65520u32; }
+            arithmetic() using { lane <= 65520u32; };
         }
         have 4u32 == 0u32 or lane <= 4294967295u32 / 4u32 by {
             assumption();
@@ -49,7 +49,7 @@ theorem reduced_lane_ceiling(lane: uint32) {
         arithmetic() using {
             to_integer(lane * 4u32) == to_integer(lane) * 4;
             to_integer(lane) <= 65520;
-        }
+        };
     }
 }
 ```

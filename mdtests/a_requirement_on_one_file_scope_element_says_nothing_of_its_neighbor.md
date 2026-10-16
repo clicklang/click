@@ -20,7 +20,7 @@ verifying "a_requirement_on_one_file_scope_element_says_nothing_of_its_neighbor.
 
 uint8 get_neighbor() {
     requires bytes[6] == 4;
-    ensures result == 4 by auto;
+    ensures result == 4 by auto();
 }
 ```
 

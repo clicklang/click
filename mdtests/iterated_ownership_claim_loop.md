@@ -80,7 +80,7 @@ void claim_run(int32* data, int32* occupied, int32 capacity, int32 start, int32 
         invariant w.next == i;
         decreases end - i;
 
-        initialize by simp;
+        initialize by simp();
         preserve by {
             let { next: n } = unfold(w);
             have n == i;
@@ -95,14 +95,14 @@ void claim_run(int32* data, int32* occupied, int32 capacity, int32 start, int32 
                 extract(i + 1 <= k);
                 apply(int32_increment_strictly_increases(i, end)) using {
                     i < end;
-                }
+                };
                 apply(int32_increment_less_equal_implies_less_than(i, k)) using {
                     i < i + 1;
                     i + 1 <= k;
-                }
+                };
                 apply(int32_less_than_implies_less_equal(i, k)) using {
                     i < k;
-                }
+                };
                 have n <= k by {
                     rewrite(n == i);
                     assumption();
@@ -112,7 +112,7 @@ void claim_run(int32* data, int32* occupied, int32 capacity, int32 start, int32 
                 }, k) using {
                     n <= k;
                     k < end;
-                }
+                };
                 assumption();
             }
             have occupied[i] == 0 by {
@@ -121,7 +121,7 @@ void claim_run(int32* data, int32* occupied, int32 capacity, int32 start, int32 
                 }, i) using {
                     n <= i;
                     i < end;
-                }
+                };
                 assumption();
             }
             take(data[i..i + 1]);
@@ -143,17 +143,17 @@ void claim_run(int32* data, int32* occupied, int32 capacity, int32 start, int32 
                     }, k) using {
                         at(opened, i) + 1 <= k;
                         k < end;
-                    }
+                    };
                     assumption();
                 }
                 have at(opened, i) < end;
                 apply(int32_increment_strictly_increases(at(opened, i), end)) using {
                     at(opened, i) < end;
-                }
+                };
                 apply(int32_increment_less_equal_implies_less_than(at(opened, i), k)) using {
                     at(opened, i) < at(opened, i) + 1;
                     at(opened, i) + 1 <= k;
-                }
+                };
                 have 0 <= at(opened, i) by assumption();
                 have at(opened, i) < capacity by assumption();
                 have 0 <= k;
@@ -169,7 +169,7 @@ void claim_run(int32* data, int32* occupied, int32 capacity, int32 start, int32 
                     0 <= k;
                     k < capacity;
                     separate(memory(occupied[0..capacity]), memory(data[0..capacity]));
-                }
+                };
                 assumption();
             }
             step();
@@ -181,14 +181,14 @@ void claim_run(int32* data, int32* occupied, int32 capacity, int32 start, int32 
                     at(statement(3).entry, i) < end;
                     0 <= at(statement(3).entry, i);
                     end <= capacity;
-                }
+                };
             }
             have end - at(statement(3).entry, i) - 1 < end - at(statement(3).entry, i) by {
                 arithmetic() using {
                     at(statement(3).entry, i) < end;
                     0 <= at(statement(3).entry, i);
                     end <= capacity;
-                }
+                };
             }
             close_invariants();
         }

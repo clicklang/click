@@ -10,7 +10,7 @@ int32 identity(int32 value) {
 verifying "algebraic_maybe_rejects_undeclared_type.c";
 
 int32 identity(int32 value) {
-    ensures Phantom<int32>::Wrap(result) == Phantom<int32>::Wrap(value) by auto;
+    ensures Phantom<int32>::Wrap(result) == Phantom<int32>::Wrap(value) by auto();
 }
 ```
 

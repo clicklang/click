@@ -19,7 +19,7 @@ int32 next(int32 x, int32 y) {
     requires 0 <= x;
     ensures result == 0;
 } by {
-    have y <= x by { arithmetic() using { y == x + 1; 0 <= x; } }
+    have y <= x by { arithmetic() using { y == x + 1; 0 <= x; }; }
     step();
     simp();
 }

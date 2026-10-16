@@ -21,9 +21,9 @@ int32 write_second(struct pair* p) {
 verifying "write_second.c";
 
 int32 write_second(struct pair* p) {
-    owns *p by auto;
+    owns *p by auto();
 
-    ensures result == 2 by auto;
+    ensures result == 2 by auto();
 }
 ```
 

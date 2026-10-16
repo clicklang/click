@@ -39,24 +39,24 @@ verifying "increment_field.c";
 verifying "decrement_field.c";
 
 int32 update_index(int32 values[]) {
-    owns values[0..1] by auto;
+    owns values[0..1] by auto();
     requires values[0] < 2147483647;
-    ensures result == old(values[0]) + 1 by auto;
-    ensures values[0] == old(values[0]) + 1 by auto;
+    ensures result == old(values[0]) + 1 by auto();
+    ensures values[0] == old(values[0]) + 1 by auto();
 }
 
 int32 increment_field(struct counter* counter) {
-    owns counter->count by auto;
+    owns counter->count by auto();
     requires counter->count < 2147483647;
-    ensures result == old(counter->count) + 1 by auto;
-    ensures counter->count == old(counter->count) + 1 by auto;
+    ensures result == old(counter->count) + 1 by auto();
+    ensures counter->count == old(counter->count) + 1 by auto();
 }
 
 int32 decrement_field(struct counter* counter) {
-    owns counter->count by auto;
+    owns counter->count by auto();
     requires counter->count > -2147483648;
-    ensures result == old(counter->count) - 1 by auto;
-    ensures counter->count == old(counter->count) - 1 by auto;
+    ensures result == old(counter->count) - 1 by auto();
+    ensures counter->count == old(counter->count) - 1 by auto();
 }
 ```
 

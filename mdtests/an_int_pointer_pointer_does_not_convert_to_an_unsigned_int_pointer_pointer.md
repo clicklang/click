@@ -16,7 +16,7 @@ int f(void) {
 ```click
 verifying "an_int_pointer_pointer_does_not_convert_to_an_unsigned_int_pointer_pointer.c";
 
-int32 f() { ensures result == 1 by auto; }
+int32 f() { ensures result == 1 by auto(); }
 ```
 
 ```expect

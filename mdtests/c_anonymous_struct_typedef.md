@@ -20,9 +20,9 @@ int pointer_alias(void) { return sizeof(record_pointer); }
 
 ```click
 verifying "anonymous.c";
-int width() { ensures result == 8 by auto; }
-int use_local() { ensures result == 21 by auto; }
-int pointer_alias() { ensures result == 8 by auto; }
+int width() { ensures result == 8 by auto(); }
+int use_local() { ensures result == 21 by auto(); }
+int pointer_alias() { ensures result == 8 by auto(); }
 ```
 
 ```expect

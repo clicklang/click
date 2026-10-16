@@ -53,7 +53,7 @@ void child_release(struct child* obj) {
     unfold(child_ref(obj));
     have 1 < obj->refs;
     have obj->refs - 1 >= 1 by {
-        apply(int32_above_one_predecessor_is_at_least_one(obj->refs)) using { 1 < obj->refs; }
+        apply(int32_above_one_predecessor_is_at_least_one(obj->refs)) using { 1 < obj->refs; };
     }
     step();
     fold(child_control(obj));
@@ -69,7 +69,7 @@ void holder_drop(struct holder* h) {
 } by {
     have 2 <= count(child_ref(h->kid));
     have count(child_ref(h->kid)) > 1 by {
-        simp() using { 2 <= count(child_ref(h->kid)); }
+        simp() using { 2 <= count(child_ref(h->kid)); };
     }
     execute();
     simp();

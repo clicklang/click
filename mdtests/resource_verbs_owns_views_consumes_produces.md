@@ -45,7 +45,7 @@ extern int32 open(int32 fd) {
 }
 
 int32 reopen(int32 fd) {
-    owns open_fd(fd) by auto;
+    owns open_fd(fd) by auto();
 }
 ```
 

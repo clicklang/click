@@ -13,7 +13,7 @@ uint32 uint32_division_by_zero() {
 verifying "uint32_division_by_zero.c";
 
 uint32 uint32_division_by_zero() {
-    ensures no_result: result == 0u32 by auto;
+    ensures no_result: result == 0u32 by auto();
 }
 ```
 

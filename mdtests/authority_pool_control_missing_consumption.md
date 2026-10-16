@@ -34,14 +34,14 @@ void checkout(struct pool* pool, struct payload* p) {
     ensures pool->capacity == old(pool->capacity);
 } by {
     open(control(pool)) {
-        have 1 <= count(slot(pool)) by simp;
+        have 1 <= count(slot(pool)) by simp();
         apply(int32_move_one_from_right_to_left_preserves_sum(
             pool->capacity, pool->checked_out, count(slot(pool))
         )) using {
             0 <= pool->checked_out;
             1 <= count(slot(pool));
             pool->capacity == pool->checked_out + count(slot(pool));
-        }
+        };
         step();
         fold(item(pool, p));
     }

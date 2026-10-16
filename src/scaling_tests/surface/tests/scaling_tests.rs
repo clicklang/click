@@ -435,7 +435,7 @@ fn shared_imported_proof_bodies_stay_unselected_across_entry_scaling() {
                     [
                         ClickModuleSource::new(
                             "shared.click",
-                            "theorem shared_false(x: int32) { ensures x == x + 1 by simp; }",
+                            "theorem shared_false(x: int32) { ensures x == x + 1 by simp(); }",
                             [],
                         ),
                         ClickModuleSource::new(
@@ -617,7 +617,7 @@ fn specification_conditional_lowering_ignores_unrelated_ambient_facts() {
              int32 conditional_callee(int32 flag, int32 left, int32 right) {{\n    \
                  requires (if flag != 0 {{ left }} else {{ right }}) == 7;\n    \
                  ensures result == 0;\n\
-             }} by auto;\n\
+             }} by auto();\n\
              \n\
              int32 conditional_caller(int32 flag, int32 left, int32 right) {{\n    \
                  requires (if flag != 0 {{ left }} else {{ right }}) == 7;\n    \
@@ -1391,7 +1391,7 @@ fn symbolic_index_into_a_file_scope_array_scales_near_linearly_with_its_length()
             let c_source =
                 format!("int32 table[{size}];\nint32 get(int32 i) {{ return table[i]; }}\n");
             let click_source = format!(
-                "verifying \"table.c\";\nint32 get(int32 i) {{\n    requires 0 <= i;\n    requires i < {size};\n    requires table[i] == 7;\n    ensures result == 7 by auto;\n}}\n"
+                "verifying \"table.c\";\nint32 get(int32 i) {{\n    requires 0 <= i;\n    requires i < {size};\n    requires table[i] == 7;\n    ensures result == 7 by auto();\n}}\n"
             );
             let (verified, sample) = scaling_sample(size, || {
                 verify_c0_sources(&click_source, &[("table.c", c_source.as_str())])
@@ -2012,13 +2012,13 @@ fn ranked_loop_with_unrelated_inequalities(fact_count: usize) -> (String, String
          \x20   loop {\n\
          \x20       decreases n;\n\
          \x20       invariant n >= 0;\n\
-         \x20       initialize by simp;\n\
+         \x20       initialize by simp();\n\
          \x20       preserve by {\n\
          \x20           have 0 <= n - 1 by {\n\
          \x20               apply(int32_positive_predecessor_is_nonnegative(n)) using { n > 0; }\n\
          \x20           }\n\
          \x20           step();\n\
-         \x20           close_invariants by {\n\
+         \x20           close_invariants() by {\n\
          \x20               both { arithmetic() using { 0 <= n; } }\n\
          \x20               and {\n\
          \x20                   both { arithmetic() using { 0 <= n; } }\n\
@@ -2122,7 +2122,7 @@ fn model_ranked_loops(loop_count: usize) -> (String, String) {
              \x20       owns c: chain(n);\n\
              \x20       decreases chain_len(c.model);\n\
              \x20       invariant n >= 0;\n\
-             \x20       initialize by simp;\n\
+             \x20       initialize by simp();\n\
              \x20       preserve by {{\n\
              \x20           match c.model {{\n\
              \x20               Chain::Nil => {{ contradiction(c.model == Chain::Nil); }},\n\
@@ -2261,7 +2261,7 @@ fn smart_ranked_loop_with_unrelated_inequalities(fact_count: usize) -> (String, 
          \x20   loop {\n\
          \x20       decreases n;\n\
          \x20       invariant n >= 0;\n\
-         \x20       initialize by simp;\n\
+         \x20       initialize by simp();\n\
          \x20       preserve by {\n\
          \x20           have 0 <= n - 1 by {\n\
          \x20               apply(int32_positive_predecessor_is_nonnegative(n)) using { n > 0; }\n\
@@ -2328,7 +2328,7 @@ fn guarded_member_bundle(conjuncts: usize) -> (String, String) {
          \x20       decreases n - i;\n\
          \x20       invariant 0 <= i and i <= n;\n\
          \x20       invariant {members};\n\
-         \x20       initialize by simp;\n\
+         \x20       initialize by simp();\n\
          \x20       preserve by {{\n\
          \x20           mark iteration;\n\
          \x20           have 0 <= at(iteration, i) by {{ simp(); }}\n\
@@ -3791,12 +3791,12 @@ fn framed_field_cells_loop(cells: usize) -> (String, String) {
          \x20       invariant start <= i;\n\
          {invariants}\
          \x20       decreases end - i;\n\
-         \x20       initialize by simp;\n\
+         \x20       initialize by simp();\n\
          \x20       preserve by {{\n\
          \x20           have 0 <= i by {{ simp(); }}\n\
          \x20           step();\n\
          \x20           step();\n\
-         \x20           close_invariants by {{ {closure} }}\n\
+         \x20           close_invariants() by {{ {closure} }}\n\
          \x20       }}\n\
          \x20   }}\n\
          \x20   execute();\n\
@@ -3879,7 +3879,7 @@ fn many_clause_loop(clauses: usize) -> (String, String) {
          \x20       invariant 0 <= i;\n\
          {invariants}\
          \x20       decreases n - i;\n\
-         \x20       initialize by simp;\n\
+         \x20       initialize by simp();\n\
          \x20       preserve by {{\n\
          \x20           step();\n\
          \x20           close_invariants();\n\
@@ -4051,7 +4051,7 @@ fn branching_grouped_claim_project(claim_count: usize) -> (String, String) {
         click_source.push_str("    ensures result == a;\n");
     }
     click_source.push_str(
-        "} by {\n    step();\n    branch then {\n            execute();\n            simp();\n        } else {}\n    step();\n    have x == a by {\n        simp();\n    }\n    execute();\n    simp();\n}\n",
+        "} by {\n    step();\n    branch {\n            execute();\n            simp();\n        } else {}\n    step();\n    have x == a by {\n        simp();\n    }\n    execute();\n    simp();\n}\n",
     );
     (c_source, click_source)
 }
@@ -5029,7 +5029,7 @@ fn many_viewed_arrays(size: usize, owned: bool) -> (String, String) {
     if owned {
         click_source.push_str("    owns out[0..1];\n");
     }
-    click_source.push_str("    ensures result == n by auto;\n}\n");
+    click_source.push_str("    ensures result == n by auto();\n}\n");
     (c_source, click_source)
 }
 
@@ -5147,8 +5147,8 @@ fn an_unfolded_constant_composite_range_costs_the_same_whatever_its_length() {
 }
 
 /// A symbolic read must not make refolding a compact owned range enumerate
-/// its slots. Check both a valid current-value claim and the invalid old-value
-/// claim: the latter also used to repeat the enumeration during failed search.
+/// its slots. Check the current value, the old value at a distinct index,
+/// and refusal of the old value when the index may alias the store.
 #[test]
 #[ignore = "nightly: 1.1s in the parallel gate"]
 fn symbolic_read_refold_and_refusal_do_not_enumerate_range_elements() {
@@ -5162,21 +5162,26 @@ fn symbolic_read_refold_and_refusal_do_not_enumerate_range_elements() {
         &[("read.c", c_source)],
     )
     .expect("warm-up verifies");
-    for old_value in [false, true] {
+    for (old_value, distinct_index) in [(false, false), (true, true), (true, false)] {
         let samples = [64, 4096, 1_048_576].map(|length| {
             let value = if old_value { "old(a[k])" } else { "a[k]" };
+            let distinct = if distinct_index {
+                "requires k != 3;"
+            } else {
+                ""
+            };
             let source = format!(
                 "verifying \"read.c\";\n\
                  resource block(p: int32*) {{ owns p[0..{length}]; }}\n\
                  int32 read_after_store(int32 *a, int32 k) {{\n\
-                   owns block(a); requires 0 <= k; requires k < {length};\n\
+                   owns block(a); requires 0 <= k; requires k < {length}; {distinct}\n\
                    ensures result == {value};\n\
                  }} by {{ unfold(block(a)); execute(); fold(block(a)); simp(); }}"
             );
             let (result, sample) = scaling_sample(length, || {
                 verify_c0_sources(&source, &[("read.c", c_source)])
             });
-            if old_value {
+            if old_value && !distinct_index {
                 let error = result.expect_err("the symbolic index may be the changed element");
                 assert!(
                     error
@@ -5186,7 +5191,7 @@ fn symbolic_read_refold_and_refusal_do_not_enumerate_range_elements() {
                     error.message()
                 );
             } else {
-                result.expect("refolding preserves the just-read value");
+                result.expect("refolding preserves the selected current or unchanged old value");
             }
             let fold_work = sample
                 .named_work
@@ -5199,7 +5204,10 @@ fn symbolic_read_refold_and_refusal_do_not_enumerate_range_elements() {
         let least = samples.iter().map(|(_, work, _)| *work).min().unwrap();
         let most = samples.iter().map(|(_, work, _)| *work).max().unwrap();
         assert!(least > 0);
-        assert!(most < 30_000, "old={old_value}: {samples:?}");
+        assert!(
+            most < 30_000,
+            "old={old_value}, distinct={distinct_index}: {samples:?}"
+        );
         assert!(samples[0].2 > 0, "fold must be measured: {samples:?}");
         for pair in samples.windows(2) {
             assert_eq!(pair[0].2, pair[1].2, "fold enumerated slots: {samples:?}");
@@ -5714,7 +5722,7 @@ void fill(int32* p, int32 n) {{
         decreases n - i;
         invariant i >= 0;
 
-        initialize by simp;
+        initialize by simp();
         preserve by {{
 {}        }}
     }}
@@ -6193,7 +6201,7 @@ fn loop_body_reasoning_ifs_project(count: usize) -> (String, String) {
         "int32 spin(int32 n, int32 x) {\n    int32 i;\n    i = 0;\n    while (i < n) {\n        i = i + 1;\n    }\n    return 0;\n}\n",
     );
     let mut click_source = String::from(
-        "verifying \"ifs.c\";\n\nint32 spin(int32 n, int32 x) {\n    requires n >= 0;\n    ensures result == 0;\n} by {\n    step();\n    step();\n    loop {\n        decreases n - i;\n        invariant 0 <= i and i <= n;\n\n        initialize by simp;\n        preserve by {\n            step();\n",
+        "verifying \"ifs.c\";\n\nint32 spin(int32 n, int32 x) {\n    requires n >= 0;\n    ensures result == 0;\n} by {\n    step();\n    step();\n    loop {\n        decreases n - i;\n        invariant 0 <= i and i <= n;\n\n        initialize by simp();\n        preserve by {\n            step();\n",
     );
     for index in 0..count {
         click_source.push_str(&format!(
@@ -8531,7 +8539,7 @@ fn proof_if_split_ignores_earlier_unrelated_facts() {
             "verifying \"split.c\";\n\n\
              int32 count_once(int32 flag) {{\n    ensures result == 1;\n}} by {{\n    \
              step();\n    step();\n    loop {{\n        decreases 1 - i;\n        invariant i >= 0;\n        \
-             invariant i <= 1;\n        initialize by simp;\n        preserve by {{\n            \
+             invariant i <= 1;\n        initialize by simp();\n        preserve by {{\n            \
              step();\n{haves}{close}        }}\n    }}\n    step();\n    simp();\n}}\n"
         );
         let c_source = "int32 count_once(int32 flag) {\n    int32 i;\n    i = 0;\n    \

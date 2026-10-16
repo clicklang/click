@@ -40,15 +40,15 @@ verifying "runner.c";
 int32 alpha() {
     owns values[0..2];
     requires values[0] > -1000 and values[0] < 1000 and values[1] > -1000 and values[1] < 1000;
-    ensures result == old(values[0]) + old(values[1]) + 1 by auto;
-    ensures result == values[0] + values[1] by auto;
+    ensures result == old(values[0]) + old(values[1]) + 1 by auto();
+    ensures result == values[0] + values[1] by auto();
 }
 
 int32 beta() {
     owns values[0..2];
     requires values[0] > -1000 and values[0] < 1000 and values[1] > -1000 and values[1] < 1000;
-    ensures result == old(values[0]) + old(values[1]) + 1 by auto;
-    ensures result == values[0] + values[1] by auto;
+    ensures result == old(values[0]) + old(values[1]) + 1 by auto();
+    ensures result == values[0] + values[1] by auto();
 }
 
 int32 run() {

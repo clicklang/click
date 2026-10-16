@@ -30,12 +30,12 @@ verifying "table.c";
 verifying "reader.c";
 
 int32 run() {
-    ensures table_value: result == 4 by auto;
+    ensures table_value: result == 4 by auto();
 }
 
 int32 read_table(const int32 *values) {
     views values[0..3];
-    ensures table_value: result == values[1] by auto;
+    ensures table_value: result == values[1] by auto();
 }
 ```
 

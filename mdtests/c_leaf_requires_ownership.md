@@ -11,7 +11,7 @@ __attribute__((leaf)) int set(int *p) {
 verifying "leaf.c";
 int set(int *p) {
     views p[0..1];
-    ensures result == 7 by auto;
+    ensures result == 7 by auto();
 }
 ```
 

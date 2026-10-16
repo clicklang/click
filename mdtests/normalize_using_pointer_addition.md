@@ -12,7 +12,7 @@ void keep(int32* a, int32* b) {
     ensures a + 1 == b + 1;
 } by {
     execute();
-    normalize() using { }
+    normalize() using { };
 }
 ```
 

@@ -44,7 +44,7 @@ int32 set_then_read_end(int32* data, int32 index, int32 len, int32 cap) {
         apply(int32_less_than_transitive(index, len, cap)) using {
             index < len;
             len < cap;
-        }
+        };
         assumption();
     }
     step();

@@ -42,28 +42,28 @@ int32 get_word(int32 i) {
     requires 0 <= i;
     requires i < 1000;
     requires words[i] == 7;
-    ensures result == 7 by auto;
+    ensures result == 7 by auto();
 }
 
 int32 get_next_word(int32 i) {
     requires 0 <= i;
     requires i < 999;
     requires words[i + 1] == 7;
-    ensures result == 7 by auto;
+    ensures result == 7 by auto();
 }
 
 uint8 get_byte(int32 i) {
     requires 0 <= i;
     requires i < 4096;
     requires bytes[i] == 7;
-    ensures result == 7 by auto;
+    ensures result == 7 by auto();
 }
 
 int64 get_wide(int32 i) {
     requires 0 <= i;
     requires i < 2048;
     requires wide[i] == 7;
-    ensures result == 7 by auto;
+    ensures result == 7 by auto();
 }
 ```
 

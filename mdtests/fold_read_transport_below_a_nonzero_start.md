@@ -35,7 +35,7 @@ void mark_below(int32 *v, int32 lo, int32 hi, int32 j, int32 n) {
             zeros(at(entry, v), lo, hi) == zeros(v, lo, hi)
         ) using {
             zeros(at(entry, v), lo, hi) == zeros(at(entry, v), lo, hi);
-        }
+        };
         assumption();
     }
     execute();

@@ -55,17 +55,17 @@ int32 drain_to_zero(int32 value) {
     loop {
         decreases value;
         invariant value >= 0;
-        initialize by simp;
+        initialize by simp();
         preserve by {
             have 0 <= value - 1 by {
-                apply(int32_positive_predecessor_is_nonnegative(value)) using { value > 0; }
+                apply(int32_positive_predecessor_is_nonnegative(value)) using { value > 0; };
             }
             step();
-            close_invariants by {
-                both { arithmetic() using { 0 <= value; } }
+            close_invariants() by {
+                both { arithmetic() using { 0 <= value; }; }
                 and {
-                    both { arithmetic() using { 0 <= value; } }
-                    and { arithmetic() using { 0 <= value; } }
+                    both { arithmetic() using { 0 <= value; }; }
+                    and { arithmetic() using { 0 <= value; }; }
                 }
             }
         }

@@ -68,10 +68,10 @@ int32 service_step(struct service* owner) {
         owns owner->cell[0..1];
     } then {
         step();
-        have owner->cell == old(owner->cell) by auto;
+        have owner->cell == old(owner->cell) by auto();
     } else {
         step();
-        have owner->cell == old(owner->cell) by auto;
+        have owner->cell == old(owner->cell) by auto();
     }
     step();
     fold(service(owner));
@@ -87,7 +87,7 @@ int32 service_run(struct service* owner) diverges {
     loop diverges {
         invariant 0 <= owner->phase;
         invariant owner->phase <= 1;
-        initialize by simp;
+        initialize by simp();
         preserve by {
             step();
             close_invariants();

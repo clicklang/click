@@ -42,20 +42,20 @@ function ashr2(x: int32) -> int32 {
 }
 
 int32 shift_left_const() {
-    ensures constant_shift: result == shl_const() by auto;
-    ensures concrete_shift: result == 12 by auto;
+    ensures constant_shift: result == shl_const() by auto();
+    ensures concrete_shift: result == 12 by auto();
 }
 
 int32 shift_precedence() {
-    ensures addition_before_shift: result == 8 by auto;
+    ensures addition_before_shift: result == 8 by auto();
 }
 
 int32 shift_right_negative() {
-    ensures arithmetic_right_shift: result == ~3 by auto;
+    ensures arithmetic_right_shift: result == ~3 by auto();
 }
 
 int32 shift_right_symbolic(int32 x) {
-    ensures symbolic_right_shift: result == ashr2(x) by auto;
+    ensures symbolic_right_shift: result == ashr2(x) by auto();
 }
 ```
 

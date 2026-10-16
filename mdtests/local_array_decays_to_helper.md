@@ -25,11 +25,11 @@ verifying "local_array_decays_to_helper.c";
 
 int32 read_first(int32* p) {
     views p[0..1];
-    ensures returns_first: result == p[0] by auto;
+    ensures returns_first: result == p[0] by auto();
 }
 
 int32 local_array_decays_to_helper() {
-    ensures returns_first: result == 11 by auto;
+    ensures returns_first: result == 11 by auto();
 }
 ```
 

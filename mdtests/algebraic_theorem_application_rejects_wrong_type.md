@@ -12,7 +12,7 @@ spec enum Either<L, R> {
 }
 
 theorem maybe_reflexive(m: Maybe<int32>) {
-    ensures m == m by simp;
+    ensures m == m by simp();
 }
 
 theorem rejected(value: int32) {

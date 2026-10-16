@@ -23,7 +23,7 @@ verifying "branch_float_cast_prerequisite.c";
 int32 positive(double d) {
     ensures result >= 0;
 } by {
-    branch then { step(); simp(); } else {}
+    branch { step(); simp(); } else {}
     step();
     simp();
 }

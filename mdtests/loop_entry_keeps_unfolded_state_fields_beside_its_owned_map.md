@@ -47,7 +47,7 @@ void mark_all(struct arena* arena) {
         decreases (arena->capacity - i);
         owns arena->occupied[0..arena->capacity];
         invariant 0 <= i and i <= arena->capacity;
-        initialize by simp;
+        initialize by simp();
         preserve by {
             step();
             step();

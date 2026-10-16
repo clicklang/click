@@ -1,4 +1,4 @@
-# `have P by auto` proves a linear bound with the solver
+# `have P by auto()` proves a linear bound with the solver
 
 On a stated fact, `auto` runs no C. It refutes the fact's integer negation
 from the facts connected to it, and applies the result as one checked
@@ -11,7 +11,7 @@ theorem solver_chains_bounds(i: Integer, n: Integer, total: Integer) {
     requires n <= 1000;
     requires total <= 255 * i;
     ensures total <= 255000 by {
-        have total <= 255000 by auto;
+        have total <= 255000 by auto();
         assumption();
     }
 }

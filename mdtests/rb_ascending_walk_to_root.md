@@ -269,7 +269,7 @@ struct rb_node* rb_root_of(struct rb_node* node, struct rb_node* parent,
         invariant c.model == ctx_reroot(c.model, parent);
         invariant plug(c.model, t.model) == plug(old(c.model), old(t.model));
 
-        initialize by simp;
+        initialize by simp();
         preserve by {
             match c.model {
                 Context::Top => { contradiction(c.model == Context::Top); },

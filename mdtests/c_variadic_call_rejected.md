@@ -21,7 +21,7 @@ extern int32 report(int32 code) {
 }
 
 int32 run(int32 value) {
-    ensures result == value by auto;
+    ensures result == value by auto();
 }
 ```
 

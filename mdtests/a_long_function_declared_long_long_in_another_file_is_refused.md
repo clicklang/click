@@ -18,11 +18,11 @@ verifying "data.c";
 verifying "main.c";
 
 long width() {
-    ensures result == 8 by auto;
+    ensures result == 8 by auto();
 }
 
 int32 run(int32 value) {
-    ensures result == value by auto;
+    ensures result == value by auto();
 }
 ```
 

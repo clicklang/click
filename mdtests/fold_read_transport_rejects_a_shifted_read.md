@@ -32,7 +32,7 @@ void set_end(int32 *v, int32 i, int32 n) {
             ahead(at(entry, v), 0, i) == ahead(v, 0, i)
         ) using {
             ahead(at(entry, v), 0, i) == ahead(at(entry, v), 0, i);
-        }
+        };
         assumption();
     }
     execute();

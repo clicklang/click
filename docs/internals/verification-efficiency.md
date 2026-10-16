@@ -52,6 +52,13 @@ line ambiguity, and target containment. Matching delimiters skip nested bodies,
 and direct tactic ranges are cached by body rather than rebuilt per child.
 Regressions cover siblings, long lines, deep nesting, and unrelated source text.
 
+Loop-frame reconstruction checks each retained fact as it is composed, then
+normalizes the completed resource context once. Re-normalizing the growing
+frame after each insertion revisits all earlier scalar and view endpoints.
+The kernel regression rebuilds frames of 4, 8, 16, 32 and 64 views, checks near
+linear work growth, and retains the rule hiding undeclared views behind an
+explicit loop view interface.
+
 ## Construction, not re-validation
 
 Efficiency outranks the size of the trusted base. A proof-object operation
@@ -72,6 +79,18 @@ Existing produce-then-check code is a defect, tracked in
 `issues/scaling.md` cause 4. The review question for any
 change is: does this re-validate something the same session produced? If so,
 restructure it so the producing operation is the only one.
+
+An explicit outcome closer searches once. Its failure explanation may lower
+the goal and describe its checked context, but does not rerun `simp` or
+`auto`. Live-context fact transport uses the context-bound target rule
+directly; standalone theorem export retains its separate explicit-premise
+contract. A reflexive scalar source contributes no logical assumption, so
+temporary transport contexts omit its incidental load names. This preserves
+the shared identity of otherwise identical frame queries without dropping
+facts from the recorded proof or its failure report.
+Failed condition-target questions use the existing closure-scoped failure
+memo, keyed by their target and selected context. Successful checks still run
+and collect provenance; failures that meet a cycle cut or limit are not cached.
 
 Explicit return closers lower the folded claim goal once. They also try its
 unfolded form only when the proof has unfolded a predicate; an empty unfold
@@ -348,6 +367,24 @@ charged to visible semantic output rather than hidden ambient state:
   store axis asserts the whole verification as well, since a store's
   refusal to keep a cell it may alias reads only filed order facts (see
   [Indexed contradiction and premise search](#indexed-contradiction-and-premise-search)).
+  Binders of every C integer width take the same route: a `uint64` binder is
+  renamed and guarded exactly as an `int32` one, so the cost is unchanged.
+- Typed range membership of an unsigned 64-bit index `k` in a range with
+  constant 32-bit bounds (`PointerInRangeEvidence::UnsignedIndexed` in
+  `src/kernel/resource_tracker/cell_source.rs`) cancels the range's base
+  structurally from the read, builds at most four spellings of `k < end`,
+  and looks each up exactly; checking repeats the same lookups. It reads no
+  other fact and runs only inside a demand-driven frame question, never when
+  a store executes. `unsigned_index_membership_ignores_unrelated_facts_and_stores`
+  pins one unit to find and one to check beside 4, 8, 16 and 32 unrelated
+  order facts, separations and recorded stores.
+- A premise that is one conjunct of a recorded source fact's lowering (a
+  contract `separate(..)` beside its well-formedness conditions) is spelled
+  by that whole fact through the surface proposition map's conjunct index.
+  Recording files each conjunct once while walking the kernel tree it
+  already charges; the lookup is keyed by the conjunct and reads only the
+  facts filed under it, and runs only when the premise has no spelling of
+  its own.
 - Field stores beside separately owned parameter objects use a derived cell
   partition (`CellStore::parameter_partition_index`). Input setup checks each
   whole cached access against an owned member and groups it by the parameter's
@@ -1296,6 +1333,14 @@ a program whose final arithmetic value would match its input but whose
 intermediate addition overflows.
 
 ### Bounded reduction of selected simp premises
+
+A native prefix view first selects its indexed source view and the exact
+unsigned-order path proving that the requested count fits. It tries the view
+query with only those premises before considering the connected component.
+Snapshot transport and retirement use the same kernel query; unsupported
+prefix shapes fall back to ordinary selection. Unrelated bounds on the source
+length therefore do not consume the source-spelling budget. Scaling coverage
+includes 32, 64, 128 and 256 redundant bounds and a required two-edge order path.
 
 A compatibility atomic simplification can retain an entire connected component
 although its kernel decision needs only a few facts. Before presenting source

@@ -12,7 +12,7 @@ int f(void) { return one() + g; }
 ```click
 verifying "volatile_operand.c";
 
-int one() { ensures result == 1 by auto; }
+int one() { ensures result == 1 by auto(); }
 int f() { ensures result >= 0 or result < 0; } by { execute(); simp(); }
 ```
 

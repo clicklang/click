@@ -25,11 +25,11 @@ verifying "private.c";
 verifying "external.c";
 
 int32 read() {
-    ensures result == 0 by auto;
+    ensures result == 0 by auto();
 }
 
 int32 external_value() {
-    ensures result == 7 by auto;
+    ensures result == 7 by auto();
 }
 ```
 

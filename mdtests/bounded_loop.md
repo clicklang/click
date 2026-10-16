@@ -25,7 +25,7 @@ int32 count_to_three() {
 verifying "bounded_loop.c";
 
 int32 count_to_three() {
-    ensures returns_three: result == 3 by auto;
+    ensures returns_three: result == 3 by auto();
 }
 ```
 

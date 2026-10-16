@@ -278,7 +278,10 @@ fn check_fixed_state_fact_transport_using_facts_inner(
         // (`proposition_holds_without_facts`), and a transport also accepts
         // one that holds that way under binders and guards: the reflexive
         // source a quantified frame transports from.
-        if !available.listed_premise_available(&premise, &[], false)
+        // A quantified premise is accepted up to its binder's name, as
+        // `apply using` accepts it: a call's postcondition is held with the
+        // binder its lowering chose, and the written premise names its own.
+        if !available.listed_premise_available(&premise, &[], true)
             && !holds_without_facts_under_binders(&premise)
         {
             return Err(ClickError::new(format!(
@@ -450,12 +453,21 @@ fn check_fixed_state_fact_transport_using_facts_inner(
         crate::kernel::reasoning::path_facts::count_uncharged_context_entries(
             transition_facts.len() + 1,
         );
-        let transport_assumptions = transition_facts
-            .iter()
-            .fold(selected_assumptions, |assumptions, fact| {
-                assumptions.assume_proposition_uncharged(fact.proposition().clone())
-            })
-            .assume_proposition_uncharged(source.clone());
+        let source_is_true = crate::kernel::proposition_holds_without_facts(&source);
+        let transport_assumptions =
+            transition_facts
+                .iter()
+                .fold(selected_assumptions, |assumptions, fact| {
+                    assumptions.assume_proposition_uncharged(fact.proposition().clone())
+                });
+        // A tautology is already justified without an assumption. Keeping
+        // its incidental load names in the query context makes otherwise
+        // identical failed frame questions have different context identities.
+        let transport_assumptions = if source_is_true {
+            transport_assumptions
+        } else {
+            transport_assumptions.assume_proposition_uncharged(source.clone())
+        };
         // Load-variable bridges decide search-free before the reachability
         // walk: a target equating two internal names for one unchanged cell
         // needs only the bounded origins proof, and the walk's general
@@ -463,7 +475,9 @@ fn check_fixed_state_fact_transport_using_facts_inner(
         // targets.
         let chain_facts: Vec<Proposition> = {
             let mut chain_facts = explicit_premises.clone();
-            chain_facts.push(source.clone());
+            if !source_is_true {
+                chain_facts.push(source.clone());
+            }
             // The frontier's certified effect facts (call postconditions and
             // effect summaries) may relate a load at one snapshot to the same
             // cell at another: load names are not preserved across call-havoc
@@ -595,16 +609,22 @@ fn check_fixed_state_fact_transport_using_facts_inner(
                             available.assumptions().clone(),
                             PureFactContext::assume_proposition,
                         );
-                    let leaf =
-                        |from: &Proposition, to: &Proposition, assumptions: &PureFactContext| {
-                            certified_fact_transport_reaches_through(
-                                from,
-                                to,
-                                fixed_state.state.memory(),
-                                &assumptions.clone().assume_proposition(from.clone()),
-                                &transition_facts,
-                            )
+                    let leaf = |from: &Proposition,
+                                to: &Proposition,
+                                assumptions: &PureFactContext| {
+                        let assumptions = if crate::kernel::proposition_holds_without_facts(from) {
+                            assumptions.clone()
+                        } else {
+                            assumptions.clone().assume_proposition(from.clone())
                         };
+                        certified_fact_transport_reaches_through(
+                            from,
+                            to,
+                            fixed_state.state.memory(),
+                            &assumptions,
+                            &transition_facts,
+                        )
+                    };
                     crate::kernel::frame_quantified_transport(
                         &source,
                         &target,
@@ -1236,22 +1256,31 @@ pub(in crate::surface::proof) fn certified_fact_transport_reaches(
     ) {
         return assumptions.derive_atomic_proposition(target).is_some();
     }
+    // A reflexive source adds no information. Match the target directly in
+    // this context rather than comparing both copies of the source's load
+    // with both target operands, then transporting the same tautology.
+    if matches!(
+        (source, target),
+        (
+            Proposition::ConditionIs(ConditionTerm::Bitvector32Equal(left, right), true),
+            Proposition::ConditionIs(ConditionTerm::Bitvector32Equal(..), true)
+        ) if left == right
+    ) {
+        return crate::kernel::api::c_condition_fact_target_reaches_in_context(
+            source,
+            target,
+            assumptions,
+        );
+    }
     // Two forms of the same condition fact — for example an element load
     // whose symbolic index the listed order facts pin to a constant — match
     // by the same bounded rule the atomic prover uses on context facts.
     if crate::kernel::c_condition_facts_match_for_transport(source, target, assumptions) {
         return true;
     }
-    if let Some(theorem) =
-        crate::kernel::prove_c_condition_fact_target_transport(source, target, assumptions)
-        && crate::kernel::c_condition_fact_transport_target_in_context(
-            &theorem,
-            source,
-            assumptions,
-        ) == Some(target)
-    {
-        return true;
-    }
+    // This operation retains its live context. The context-bound rule
+    // decides it directly; exporting a standalone theorem first repeats
+    // the decision and constructs premises that this operation never exports.
     if crate::kernel::api::c_condition_fact_target_reaches_in_context(source, target, assumptions) {
         return true;
     }

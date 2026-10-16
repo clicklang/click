@@ -9,7 +9,7 @@ theorem machine_goal(i: uint64, n: uint64) {
     requires i < n;
     requires n <= 1000u64;
     ensures i < 1000u64 by {
-        have i < 1000u64 by auto;
+        have i < 1000u64 by auto();
         assumption();
     }
 }

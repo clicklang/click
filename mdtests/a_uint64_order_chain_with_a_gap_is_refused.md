@@ -9,7 +9,7 @@ theorem broken_chain(i: uint64, n: uint64, m: uint64, length: uint64) {
     requires i < n;
     requires m <= n;
     requires m <= length;
-    ensures i < length by { arithmetic() using { i < n; m <= n; m <= length; } }
+    ensures i < length by { arithmetic() using { i < n; m <= n; m <= length; }; }
 }
 ```
 

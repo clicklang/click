@@ -44,7 +44,7 @@ verifying "arena_free.c";
 verifying "arena_use_after_free.c";
 
 int32 arena_read(struct region* region) {
-    owns arena_region(region) by auto;
+    owns arena_region(region) by auto();
 
 }
 
@@ -55,7 +55,7 @@ void arena_free(struct region* region) {
 int32 arena_use_after_free(struct region* region) {
     consumes arena_region(region);
 
-    ensures result == 0 by auto;
+    ensures result == 0 by auto();
 }
 ```
 

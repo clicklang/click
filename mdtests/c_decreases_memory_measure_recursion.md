@@ -35,7 +35,7 @@ int32 drain(int32 box[4]) {
     ensures result == 0;
 } by {
     step();
-    branch then {
+    branch {
         step();
         have 0 <= head(box) by { unfold(head(box)); simp(); }
         have head(box) < old(head(box)) by {

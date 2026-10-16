@@ -10,7 +10,7 @@ import click::integer;
 theorem positive_divisor_guards(d: int32) {
     requires d > 0;
     ensures to_integer(d) != 0 by {
-        have 1 <= d by { arithmetic() using { d > 0; } }
+        have 1 <= d by { arithmetic() using { d > 0; }; }
         apply(int32_less_equal_to_integer(1, d));
         arithmetic_certificate rules {
             premise 0: 1 <= to_integer(d) => 1 <= to_integer(d);
@@ -19,7 +19,7 @@ theorem positive_divisor_guards(d: int32) {
         }
     }
     ensures to_integer(d) != -1 by {
-        have 1 <= d by { arithmetic() using { d > 0; } }
+        have 1 <= d by { arithmetic() using { d > 0; }; }
         apply(int32_less_equal_to_integer(1, d));
         arithmetic_certificate rules {
             premise 0: 1 <= to_integer(d) => 1 <= to_integer(d);

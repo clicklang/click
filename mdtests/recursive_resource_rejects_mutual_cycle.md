@@ -25,7 +25,7 @@ resource right(p: int32*) {
 verifying "recursive_resource_rejects_mutual_cycle.c";
 
 int32 recursive_resource_rejects_mutual_cycle(int32* p) {
-    ensures result == 0 by auto;
+    ensures result == 0 by auto();
 }
 ```
 

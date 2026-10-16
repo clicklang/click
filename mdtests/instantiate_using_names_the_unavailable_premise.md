@@ -24,7 +24,7 @@ int32 pick(int32 a[], int32 n, int32 k) {
         instantiate(forall (j: int32) { 0 <= j and j < n implies a[j] >= 0 }, k) using {
             0 <= k;
             k < 7;
-        }
+        };
         assumption();
     }
     execute();

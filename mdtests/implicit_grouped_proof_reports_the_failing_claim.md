@@ -1,6 +1,6 @@
 # The implicit grouped proof reports its failing claim
 
-The two omitted proofs share one implicit `} by auto;`, so a false claim
+The two omitted proofs share one implicit `} by auto();`, so a false claim
 fails inside that grouped proof, which still names the claim it could not
 close.
 

@@ -340,24 +340,43 @@ step 2 is deferred.
    `separate(memory(dst[0u64..32u64]), memory(src[0u64..s.len + 1u64]))`,
    opens the string to lend `memcpy` its prefix, and keeps
    `dst[result] == '\0'`. The obtain-and-transport proof became
-   `step`s, an `open` and `execute()`. The copied bytes are not yet stated.
-   With M3 the contract's `owns` and `views` already keep `dst` and the
-   string apart, so the `separate` is implied; it stays, unchanged. Of the
-   three verifier gaps found between the proof and a `bytes::equal`
-   postcondition (investigated with M3, 2026-10-16), two are fixed: a bare
-   `transport` in a `have` body selects its premises at the frontier the
+   `step`s, an `open` and `execute()`. With M3 the contract's `owns` and
+   `views` already keep `dst` and the string apart, so the `separate` is
+   implied; it stays, unchanged. The copied bytes are stated too (2026-10-16):
+   `ensures bytes::equal(dst, 0u64, src, 0u64, result)`, proved by marking
+   the point after `memcpy`, stepping over `dst[n] = '\0'`, and transporting
+   the unfolded postcondition to a `have` over `n`. Three gaps between that
+   proof and the verifier were found with M3; the first two were fixed then:
+   a bare `transport` in a `have` selects its premises at the frontier the
    `have` was opened on (`mdtests/bare_transport_inside_have.md`), and a
    `char *` argument to `bytes::equal`'s `uint8[]` parameters unfolds to the
    same `uint8` reads as `memcpy`'s postcondition
-   (`mdtests/char_argument_to_byte_predicate_unfolds_as_bytes.md`). The
-   third remains: the copied-bytes equality is not framed across the store
-   to `dst[n]`. Unfolded at exit it reads the state after `memcpy`; the bare
-   `transport` certifies the frame but its planner cannot name surface
-   premises for it; and `transport ... using` refuses the call's fact as a
-   cited premise, because `at(copied, dst[k])` is not the per-read projection
-   the call's unfolded fact reads. The same happens with `unsigned char`
-   buffers. It still needs a ruling on how the frame should derive `k != n`
-   from the guard.
+   (`mdtests/char_argument_to_byte_predicate_unfolds_as_bytes.md`). The third
+   was first recorded as the frame across `dst[n]` needing `k != n` from the
+   guard. That reading came from a supplemental memory-history walk, which
+   runs without the proof context's facts; the checks that run with the
+   guard `k < n` assumed already crossed the store. The actual causes were:
+   - `transport using` required the call's quantified postcondition
+     verbatim, and the written source names its own binder; it now accepts a
+     binder-renamed quantified premise, as `apply using` does;
+   - the checked quantified frame took only `int32` binders; it takes every
+     C integer binder, here `uint64`;
+   - the outcome goal of a contract with resource claims unfolded a `char *`
+     argument textually, reading `(int8)` bytes; it now takes the byte view
+     as `unfold` and `have` goals do;
+   - for the smart closer, a premise that is one conjunct of a source fact's
+     lowering (the `separate` clause beside its well-formedness conditions)
+     had no spelling; it is now spelled by that whole source fact;
+   - over `unsigned char` buffers with 32-bit-bounded ranges, the read
+     `src[k]` had no typed range membership for a `uint64` index; one exact
+     order fact `k < c` now places it.
+
+   `mdtests/memcpy_then_terminator_keeps_copied_bytes.md` and
+   `memcpy_then_terminator_keeps_copied_unsigned_bytes.md` keep the
+   pattern; `a_store_inside_the_copy_does_not_keep_copied_bytes.md` refuses
+   a store at `dst[n - 1]`. A smart `simp()` proves the claim stated over the
+   count but not over `result`, which only function exit can name
+   (`copied_bytes_through_result_need_an_explicit_transport.md`).
 5. Done: in `src/surface/tests/expansion_tests.rs`, the `read_terminator`
    fixture views `cstr_at(haystack, _)` among the reordered clauses and
    still asserts that no hidden planning transitions occur. It is not an

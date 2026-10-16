@@ -27,15 +27,15 @@ verifying "c_callback_bare_designator_signature_mismatch.c";
 
 int32 negate(int32 value) {
     requires 0 <= value;
-    ensures result == 0 - value by auto;
+    ensures result == 0 - value by auto();
 }
 
 int32 apply(int32 (*callback)(int32, int32), int32 left, int32 right) {
-    ensures true by auto;
+    ensures true by auto();
 }
 
 int32 caller() {
-    ensures true by auto;
+    ensures true by auto();
 }
 ```
 

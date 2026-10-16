@@ -14,7 +14,7 @@ int32 unsequenced_calls(int32 value) {
 verifying "unsequenced_calls.c";
 
 int32 unsequenced_calls(int32 value) {
-    ensures result == 0 by auto;
+    ensures result == 0 by auto();
 }
 ```
 

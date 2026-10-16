@@ -29,7 +29,7 @@ int32 run(void* p) {
 } by {
     step();
     step();
-    branch then { unfold(ticket(p)); step(); simp(); } else {}
+    branch { unfold(ticket(p)); step(); simp(); } else {}
     have count(ticket(_)) == 1;
     step();
     step();

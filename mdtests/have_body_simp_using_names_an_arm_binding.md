@@ -92,10 +92,10 @@ unsigned long peek(struct node* p) {
         Tree::Node(id, color, left_model) => {
             let { left: l } = unfold(t);
             have color_bit(color) == (p->word & 1) by {
-                simp() using { (p->word & 1) == color_bit(color); }
+                simp() using { (p->word & 1) == color_bit(color); };
             }
             have (p->word & 1) == color_bit(color) by {
-                normalize() using { (p->word & 1) == color_bit(color); }
+                normalize() using { (p->word & 1) == color_bit(color); };
             }
             step();
             let t = fold(tree_at(p), { model: Tree::Node(id, color, left_model) },
@@ -122,24 +122,24 @@ unsigned long spin(struct node* p, int n) {
                 invariant i >= 0;
                 invariant i <= n;
                 invariant t.model == Tree::Node(id, color, left_model);
-                initialize by simp;
+                initialize by simp();
                 preserve by {
                     have color_bit(color) == color_bit(color) by {
-                        simp() using { t.model == Tree::Node(id, color, left_model); }
+                        simp() using { t.model == Tree::Node(id, color, left_model); };
                     }
                     step();
-                    close_invariants by {
+                    close_invariants() by {
                         both {
                             apply(int32_increment_greater_equal_lower_bound(at(statement(3).entry, i), at(statement(3).entry, 0), at(statement(3).entry, n))) using {
                                 at(statement(3).entry, i) >= at(statement(3).entry, 0);
                                 at(statement(3).entry, i) < at(statement(3).entry, n);
-                            }
+                            };
                         } and {
                             both {
                                 intro();
                                 apply(int32_increment_upper_bound(at(statement(3).entry, i), at(statement(3).entry, n))) using {
                                     at(statement(3).entry, i) < at(statement(3).entry, n);
-                                }
+                                };
                             } and {
                                 both {
                                     intro();

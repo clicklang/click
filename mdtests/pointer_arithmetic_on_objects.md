@@ -48,19 +48,19 @@ verifying "pointer_arithmetic_on_objects.c";
 
 int32 offset_into_a_view(int32* values) {
     views values[0..2];
-    ensures result == values[1] by auto;
+    ensures result == values[1] by auto();
 }
 
 int32 null_compares_equal() {
-    ensures result == 1 by auto;
+    ensures result == 1 by auto();
 }
 
 int32 null_displaced_by_zero() {
-    ensures result == 1 by auto;
+    ensures result == 1 by auto();
 }
 
 int32 offset_into_an_allocation() {
-    ensures result == 2 or result == 0 by auto;
+    ensures result == 2 or result == 0 by auto();
 }
 ```
 

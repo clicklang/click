@@ -16,7 +16,7 @@ verifying "an_order_chain_without_a_constant_leaves_increment_overflow_open.c";
 int32 next_index(int32 i, int32 j) {
     requires 0 <= i;
     requires i <= j;
-    ensures result == i + 1 by auto;
+    ensures result == i + 1 by auto();
 }
 ```
 

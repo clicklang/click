@@ -105,7 +105,7 @@ int32 loop_branch_body(int32 n) {
         invariant t >= 0;
         invariant t <= 100;
 
-        initialize by simp;
+        initialize by simp();
         preserve by {
             branch ensuring {
                 fact t >= 0;
@@ -129,13 +129,13 @@ void chain_countdown(int32 n) {
         decreases c;
         invariant n >= 0;
 
-        initialize by simp;
+        initialize by simp();
         preserve by {
             match c.model {
                 Chain::Nil => { contradiction(c.model == Chain::Nil); },
                 Chain::Link(rest_model) => {
                     let { rest: r } = unfold(c);
-                    branch then { step(); } else { step(); }
+                    branch { step(); } else { step(); }
                     close_invariants();
                 },
             }
@@ -157,7 +157,7 @@ void chain_countdown_decided(int32 n) {
         decreases c;
         invariant n >= 0;
 
-        initialize by simp;
+        initialize by simp();
         preserve by {
             match c.model {
                 Chain::Nil => { contradiction(c.model == Chain::Nil); },
@@ -167,14 +167,14 @@ void chain_countdown_decided(int32 n) {
                         Chain::Nil => {
                             unfold(r);
                             step();
-                            branch then { step(); } else { step(); }
+                            branch { step(); } else { step(); }
                             let c = fold(chain(n), { model: Chain::Nil });
                             close_invariants();
                         },
                         Chain::Link(rest2_model) => {
                             let { rest: r2 } = unfold(r);
                             step();
-                            branch then { step(); } else { step(); }
+                            branch { step(); } else { step(); }
                             close_invariants();
                         },
                     }

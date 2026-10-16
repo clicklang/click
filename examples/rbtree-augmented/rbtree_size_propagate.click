@@ -37,7 +37,7 @@ void sized_propagate(struct rb_node* rb, struct rb_node* stop) {
         invariant links.word == old(links.word);
         invariant rb == old(rb) or rb == stop;
         invariant metadata.value == 1 or rb == old(rb);
-        initialize by simp;
+        initialize by simp();
         preserve by {
             have rb == old(rb) by {
                 cases {
@@ -51,7 +51,7 @@ void sized_propagate(struct rb_node* rb, struct rb_node* stop) {
             have rb != stop by { simp(); }
             have propagate_remaining(rb, stop) == 1 by {
                 unfold(propagate_remaining(rb, stop));
-                normalize() using { rb != stop; }
+                normalize() using { rb != stop; };
             }
             unfold(links);
             step();
@@ -83,7 +83,7 @@ void sized_propagate(struct rb_node* rb, struct rb_node* stop) {
                 have rb == stop by { assumption(); }
                 have propagate_remaining(rb, stop) == 0 by {
                     unfold(propagate_remaining(rb, stop));
-                    normalize() using { rb == stop; }
+                    normalize() using { rb == stop; };
                 }
                 have metadata.value == 1 by { assumption(); }
                 have metadata.value == 1 or rb == old(rb) by { assumption(); }

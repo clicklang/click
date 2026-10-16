@@ -42,7 +42,7 @@ int32 stop_at(int32 n) {
         decreases i;
         invariant i >= 0;
 
-        initialize by simp;
+        initialize by simp();
         preserve by {
             if i == 3 {
                 step();
@@ -57,13 +57,13 @@ int32 stop_at(int32 n) {
                     step();
                     step();
                     step();
-                    close_invariants by {
+                    close_invariants() by {
                         both { simp(); }
                         and {
                             arithmetic() using {
                                 at(statement(3).entry, i) >= 0;
                                 at(statement(6).entry, i) != 0;
-                            }
+                            };
                         }
                     }
                 }

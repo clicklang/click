@@ -2036,7 +2036,7 @@ const FILL3_CLICK: &str = r#"
         int32 fill3(int32* p) {
             requires viewable(p[0..3]);
             consumes p[0..3];
-            ensures returns_second: result == 2 by auto;
+            ensures returns_second: result == 2 by auto();
         }
     "#;
 
@@ -2345,11 +2345,13 @@ mod expansion_tests;
 mod fold_body_tests;
 mod loop_tests;
 mod project_tests;
+mod rust_literals;
 #[path = "../scaling_tests/surface/tests/scaling_tests.rs"]
 mod scaling_tests;
 #[path = "../scaling_tests/surface/tests/step_shape_scaling_tests.rs"]
 mod step_shape_scaling_tests;
 mod surface_syntax;
+mod tactic_call_syntax;
 mod tactic_tests;
 
 #[test]

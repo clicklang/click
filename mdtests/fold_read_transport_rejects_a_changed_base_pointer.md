@@ -33,7 +33,7 @@ void mark_other(int32 *a, int32 *b, int32 *c, int32 n) {
             zeros(at(entry, a), 0, n) == zeros(b, 0, n)
         ) using {
             zeros(at(entry, a), 0, n) == zeros(at(entry, a), 0, n);
-        }
+        };
         assumption();
     }
     execute();

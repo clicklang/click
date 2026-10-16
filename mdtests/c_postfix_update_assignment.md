@@ -17,7 +17,7 @@ int32 statement_update_rejects_expression() {
 verifying "statement_update_rejects_expression.c";
 
 int32 statement_update_rejects_expression() {
-    ensures result == 0 by auto;
+    ensures result == 0 by auto();
 }
 ```
 

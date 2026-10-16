@@ -142,7 +142,7 @@ int32 arena_init(struct arena* arena, int32 capacity) {
     step();
     step();
     step();
-    branch then {
+    branch {
         step();
         fold(arena_initialized_storage(
             arena->data,
@@ -159,25 +159,7 @@ int32 arena_init(struct arena* arena, int32 capacity) {
         fold(arena_init_result(arena, result));
         simp();
     } else {}
-    branch then {
-        step();
-        fold(arena_initialized_storage(
-            arena->data,
-            arena->occupied,
-            arena->capacity,
-            result
-        ));
-        fold(arena_initialized_access(
-            arena->data,
-            arena->occupied,
-            arena->capacity,
-            result
-        ));
-        fold(arena_init_result(arena, result));
-        simp();
-    } else {}
-    step();
-    branch then {
+    branch {
         step();
         fold(arena_initialized_storage(
             arena->data,
@@ -195,7 +177,25 @@ int32 arena_init(struct arena* arena, int32 capacity) {
         simp();
     } else {}
     step();
-    branch then {
+    branch {
+        step();
+        fold(arena_initialized_storage(
+            arena->data,
+            arena->occupied,
+            arena->capacity,
+            result
+        ));
+        fold(arena_initialized_access(
+            arena->data,
+            arena->occupied,
+            arena->capacity,
+            result
+        ));
+        fold(arena_init_result(arena, result));
+        simp();
+    } else {}
+    step();
+    branch {
         step();
         step();
         fold(arena_initialized_storage(
@@ -216,12 +216,12 @@ int32 arena_init(struct arena* arena, int32 capacity) {
     have 1 <= capacity by {
         arithmetic() using {
             not (capacity <= 0);
-        }
+        };
     }
     have capacity <= 536870911 by {
         arithmetic() using {
             not (capacity > 536870911);
-        }
+        };
     }
     step();
     loop as initialize_occupied {
@@ -232,7 +232,7 @@ int32 arena_init(struct arena* arena, int32 capacity) {
         };
         owns occupied[0..capacity];
 
-        initialize by simp;
+        initialize by simp();
         preserve by {
             mark iteration;
             step();
@@ -243,7 +243,7 @@ int32 arena_init(struct arena* arena, int32 capacity) {
                     at(iteration, i) < capacity;
                     1 <= capacity;
                     capacity <= 536870911;
-                }
+                };
             }
             have capacity - at(iteration, i) - 1 < capacity - at(iteration, i) by {
                 arithmetic() using {
@@ -251,7 +251,7 @@ int32 arena_init(struct arena* arena, int32 capacity) {
                     at(iteration, i) < capacity;
                     1 <= capacity;
                     capacity <= 536870911;
-                }
+                };
             }
             simp();
         }
@@ -260,7 +260,7 @@ int32 arena_init(struct arena* arena, int32 capacity) {
         apply(int32_less_equal_and_not_less_than_implies_equal(i, capacity)) using {
             i <= capacity;
             not (i < capacity);
-        }
+        };
         assumption();
     }
     have forall (k: int32) {
@@ -274,7 +274,7 @@ int32 arena_init(struct arena* arena, int32 capacity) {
             0 <= k;
             k < capacity;
             i == capacity;
-        }
+        };
         assumption();
     }
     step();
@@ -293,7 +293,7 @@ int32 arena_init(struct arena* arena, int32 capacity) {
         }, k) using {
             0 <= k;
             k < capacity;
-        }
+        };
         assumption();
     }
     step();
@@ -314,7 +314,7 @@ int32 arena_init(struct arena* arena, int32 capacity) {
         }, k) using {
             0 <= k;
             k < arena->capacity;
-        }
+        };
         assumption();
     }
     fold(arena_initialized_storage(

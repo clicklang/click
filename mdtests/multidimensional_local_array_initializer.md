@@ -14,7 +14,7 @@ int32 multidimensional_local_array_initializer() {
 verifying "multidimensional_local_array_initializer.c";
 
 int32 multidimensional_local_array_initializer() {
-    ensures result == 6 by auto;
+    ensures result == 6 by auto();
 }
 ```
 

@@ -34,48 +34,48 @@ int read_byte(signed char *p) { return p[1]; }
 ```click
 verifying "int8_conversion.c";
 
-int promote(signed char value) { ensures result == value + 1 by auto; }
+int promote(signed char value) { ensures result == value + 1 by auto(); }
 int negative_ops(int8_t value) {
     ensures result == value * 2 - 1 by {
         execute();
         simp();
     }
 }
-int complement(signed char value) { ensures result == ~value by auto; }
-int compare(signed char value) { requires value == -1; ensures result == 1 by auto; }
+int complement(signed char value) { ensures result == ~value by auto(); }
+int compare(signed char value) { requires value == -1; ensures result == 1 by auto(); }
 signed char narrow(int value) {
     requires value >= -128;
     requires value <= 127;
-    ensures result == value by auto;
+    ensures result == value by auto();
 }
-int8_t identity(int8_t value) { ensures result == value by auto; }
-short widen(signed char value) { ensures result == value by auto; }
+int8_t identity(int8_t value) { ensures result == value by auto(); }
+short widen(signed char value) { ensures result == value by auto(); }
 signed char from_short(short value) {
     requires value >= -128;
     requires value <= 127;
-    ensures result == value by auto;
+    ensures result == value by auto();
 }
 signed char from_unsigned(unsigned char value) {
     requires value <= 127;
-    ensures result == value by auto;
+    ensures result == value by auto();
 }
 unsigned char to_unsigned(signed char value) {
     requires value >= 0;
-    ensures result == value by auto;
+    ensures result == value by auto();
 }
-long widen_long(signed char value) { ensures result == value by auto; }
-signed char minimum() { ensures result == -128 by auto; }
-signed char maximum() { ensures result == 127 by auto; }
-int widths() { ensures result == 2 by auto; }
-int local_array() { ensures result == -1 by auto; }
+long widen_long(signed char value) { ensures result == value by auto(); }
+signed char minimum() { ensures result == -128 by auto(); }
+signed char maximum() { ensures result == 127 by auto(); }
+int widths() { ensures result == 2 by auto(); }
+int local_array() { ensures result == -1 by auto(); }
 int fields(struct bytes *p) {
     owns p->first;
     owns p->second;
-    ensures result == p->first + p->second by auto;
+    ensures result == p->first + p->second by auto();
 }
 int read_byte(signed char *p) {
     views p[0..2];
-    ensures result == p[1] by auto;
+    ensures result == p[1] by auto();
 }
 ```
 

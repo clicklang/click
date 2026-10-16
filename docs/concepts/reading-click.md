@@ -46,8 +46,8 @@ Read each `ensures` clause as a separate promised fact:
 
 <!-- verified-example: mdtests/max_symbolic.md -->
 ```click
-ensures result >= a by auto;
-ensures result >= b by auto;
+ensures result >= a by auto();
+ensures result >= b by auto();
 ```
 
 The guarantee says what Click is proving. The `by` clause says how.

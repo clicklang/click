@@ -27,7 +27,7 @@ verifying "symbolic_quantity_recursive_composite.c";
 void hold_many(struct node* node, int32 amount) {
     requires 0 <= amount;
     owns amount of list(node);
-} by auto;
+} by auto();
 ```
 
 ```expect

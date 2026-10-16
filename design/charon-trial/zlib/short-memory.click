@@ -317,7 +317,7 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
     to_integer(adler) == 1 + adler_byte_sum(old(buf), zlib_prefix_count(old(len), len));
     to_integer(zlib_prefix_count(old(len), len)) == to_integer(zlib_prefix_count(old(len), at(before_decrement, len))) + 1;
    };
-   close_invariants by { simp(); }
+   close_invariants() by { simp(); }
    }
   }
  }

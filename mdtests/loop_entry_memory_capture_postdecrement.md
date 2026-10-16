@@ -53,7 +53,7 @@ uint64 post(const uint8* p, uint64 n) {
    have 0 <= to_integer(n) by arithmetic() using { to_integer(n) == at(before_decrement, to_integer(n)) - 1; to_integer(1u64) <= at(before_decrement, to_integer(n)); };
    have to_integer(n) < at(before_decrement, to_integer(n)) by arithmetic() using { to_integer(n) == at(before_decrement, to_integer(n)) - 1; };
    execute_until(back_edge());
-   close_invariants by { simp(); }
+   close_invariants() by { simp(); }
    }
   }
  }

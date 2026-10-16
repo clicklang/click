@@ -16,8 +16,8 @@ int32 indexed(struct packet input, int32 i) {
     if i == 0 {
         execute(); rewrite(i == 0); simp();
     } else {
-        have 0 < i by { arithmetic() using { 0 <= i; i != 0; } }
-        have i == 1 by { arithmetic() using { 0 < i; i < 2; } }
+        have 0 < i by { arithmetic() using { 0 <= i; i != 0; }; }
+        have i == 1 by { arithmetic() using { 0 < i; i < 2; }; }
         execute(); rewrite(i == 1); simp();
     }
 }

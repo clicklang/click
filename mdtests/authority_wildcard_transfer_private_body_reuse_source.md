@@ -40,7 +40,7 @@ void move(int32* source, int32* destination, int32* p) {
 }
 int32 lifecycle() { ensures result == 0 or result == 6; } by {
     step(); step(); step(); step(); step(); step();
-    branch then { execute(); simp(); } else {}
+    branch { execute(); simp(); } else {}
     step(); step(); step();
     fold(authority(slot(&source, _)));
     fold(authority(slot(&destination, _)));
@@ -49,8 +49,8 @@ int32 lifecycle() { ensures result == 0 or result == 6; } by {
     fold(slot(&destination, p + 2));
     step();
     unfold(slot(&source, p));
-    have count(slot(&source, _)) == 1 by simp;
-    have count(slot(&destination, _)) == 2 by simp;
+    have count(slot(&source, _)) == 1 by simp();
+    have count(slot(&destination, _)) == 2 by simp();
     open(slot(&destination, p)) {
         open(slot(&source, p + 1)) {
             open(slot(&destination, p + 2)) { step(); step(); }

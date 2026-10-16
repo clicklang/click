@@ -31,10 +31,23 @@ presentation-only `(unsigned)` text into generated source. Expression, place
 and snapshot formatters are shared with diagnostics; those formatters preserve
 source syntax rather than inheriting refusal mode.
 
+Predicate diagnostics retain each array argument's memory snapshot. An array
+read at entry prints as `old(src)`, a recorded state as `at(copied, src)`, and
+the current state as `src`. Only the predicate's implicit logical resource
+state is omitted; two array arguments with different snapshots remain distinct.
+
 Canonical library names in a generated fragment are rewritten only at parser
 token spans. A matching string or comment is left untouched. Name queries read
 indexes rather than scanning the original source; a source rewrite constructs
 its file bindings once before spelling the fragment.
+
+A written code region resolves through `CodeRegionRef::resolve`, both in
+annotation lowering and in proof execution. A loop label binds once per
+execution path, through the structural clause of the `loop as label` that
+declared it; a second `loop as label` at another loop is refused. Recorded
+snapshots are still stored under each spelling of their program point,
+`loop(N)` and each label of that loop, and read back by spelling, so expansion
+can cite the label the proof wrote.
 
 This is the first consolidation boundary for
 [`one-name-resolver-and-printer.md`](https://github.com/clicklang/click/blob/master/issues/one-name-resolver-and-printer.md),

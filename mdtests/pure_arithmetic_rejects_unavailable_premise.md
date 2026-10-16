@@ -5,7 +5,7 @@ theorem omitted_bound(n: int32) {
     ensures 0 <= n - 2 by {
         arithmetic() using {
             1 < n;
-        }
+        };
     }
 }
 ```

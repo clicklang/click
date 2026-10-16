@@ -24,7 +24,7 @@ theorem below_by_arithmetic(x: uint32, n: uint32) {
         arithmetic() using {
             x < n;
             n <= 4u32;
-        }
+        };
     }
 }
 
@@ -35,7 +35,7 @@ theorem at_most_by_arithmetic(x: uint32, n: uint32) {
         arithmetic() using {
             x <= n;
             n <= 4u32;
-        }
+        };
     }
 }
 ```

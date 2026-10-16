@@ -503,7 +503,7 @@ fn rbtree_auto_recolor_expansion_rechecks() {
             (depth == 0).then_some(open + offset + character.len_utf8())
         })
         .expect("the written proof block ends");
-    source.replace_range(start..end, "by auto;");
+    source.replace_range(start..end, "by auto();");
     let c_sources = read_verifying_sources(&path, &source).unwrap();
     let project = read_click_project_at_root(&path, &source, &root.join("examples")).unwrap();
     let line = source[..start]
@@ -786,7 +786,7 @@ fn auto_on_an_arena_cell_read_answers_instead_of_deadlocking() {
             .expect("the written proof closes")
         + "\n                }".len();
     let edited = format!(
-        "{}have first->arena->occupied[k] == at(f1, first->arena->occupied[k]) by auto;{}",
+        "{}have first->arena->occupied[k] == at(f1, first->arena->occupied[k]) by auto();{}",
         &source[..start],
         &source[block_end..]
     );
@@ -907,7 +907,7 @@ fn rbtree_erase_refuses_a_skipped_root_replacement() {
     general_erase_refuses_mutation(
         "\t\t__rb_change_child(node, child, parent, root);\n",
         "\t\tchild = child;\n",
-        "requires a call to `__rb_change_child` at the current frontier",
+        "requires a call to `__rb_change_child#inline:rb_erase.c` at the current frontier; next operation: child = child",
     );
 }
 
@@ -940,7 +940,7 @@ fn rbtree_erase_black_successor_requires_the_fixup_parent() {
     general_erase_refuses_mutation(
         "\t\t\trebalance = rb_is_black(successor) ? parent : NULL;\n",
         "\t\t\trebalance = NULL;\n",
-        "could not establish `rebalance == mp`",
+        "equality: 0 == mp",
     );
 }
 
@@ -1072,7 +1072,7 @@ fn rbtree_erase_black_successor_requires_its_old_parent_as_fixup_parent() {
     general_erase_refuses_mutation(
         "\t\t\trebalance = rb_is_black(successor) ? parent : NULL;\n",
         "\t\t\trebalance = rb_is_black(successor) ? tmp : NULL;\n",
-        "could not establish `rebalance == mp`",
+        "equality: rebalance == mp",
     );
 }
 
@@ -1083,7 +1083,7 @@ fn rbtree_erase_successor_requires_root_replacement() {
     general_erase_refuses_mutation(
         "\t\t__rb_change_child(node, successor, tmp, root);\n",
         "\t\ttmp = tmp;\n",
-        "requires a call to `__rb_change_child` at the current frontier",
+        "requires a call to `__rb_change_child#inline:rb_erase.c` at the current frontier; next operation: tmp = tmp",
     );
 }
 
@@ -1127,7 +1127,7 @@ fn rbtree_erase_deep_successor_refuses_a_skipped_right_parent_update() {
     general_erase_refuses_mutation(
         "\t\t\trb_set_parent(child, successor);\n",
         "\t\t\trb_set_parent(child, node);\n",
-        "could not establish `child->__rb_parent_color ==",
+        "`have` failed for `child->__rb_parent_color == (((uint64)mid) + (child->__rb_parent_color & 1))`",
     );
 }
 
@@ -1138,7 +1138,7 @@ fn rbtree_erase_deep_black_leaf_requires_the_splice_parent() {
     general_erase_refuses_mutation(
         "\t\t\trebalance = rb_is_black(successor) ? parent : NULL;\n",
         "\t\t\trebalance = successor;\n",
-        "could not establish `rebalance == mp`",
+        "equality: rebalance == mp",
     );
 }
 
@@ -1149,7 +1149,7 @@ fn rbtree_erase_deep_black_leaf_requires_right_parent_update() {
     general_erase_refuses_mutation(
         "\t\t\trb_set_parent(child, successor);\n",
         "\t\t\tchild = child;\n",
-        "could not establish `child->__rb_parent_color ==",
+        "`have` failed for `child->__rb_parent_color == (((uint64)mid) + (child->__rb_parent_color & 1))`",
     );
 }
 
@@ -2196,7 +2196,7 @@ fn rbtree_erase_wrapper_requires_nonnull_color_repair() {
         1,
     );
     assert!(
-        error.contains("requires a call to `____rb_erase_color` at the current frontier"),
+        error.contains("requires a call to `____rb_erase_color#inline:rb_erase.c` at the current frontier; next operation: skip"),
         "unexpected refusal: {error}"
     );
 }

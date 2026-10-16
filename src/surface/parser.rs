@@ -1,6 +1,7 @@
 mod cpp_class_objects;
 mod cpp_model;
 mod cpp_syntax;
+mod rust_literals;
 use super::names;
 mod rust_syntax;
 mod rust_trait_objects;
@@ -417,7 +418,7 @@ fn standard_library_pure_function_names() -> &'static BTreeSet<String> {
 /// Whether `name` is the leading word of a built-in tactic or proof form, which
 /// a user-defined tactic may not shadow.
 fn is_builtin_tactic_spelling(name: &str) -> bool {
-    matches!(name, "let" | "by" | "sorry")
+    matches!(name, "let" | "by" | "sorry" | "auto")
         || crate::surface::PUBLIC_TACTIC_FORMS.iter().any(|form| {
             form.id != "user-tactic"
                 && form
@@ -428,8 +429,8 @@ fn is_builtin_tactic_spelling(name: &str) -> bool {
         })
 }
 
-/// `have P by simp;` as the one-step script `have P by { simp(); }`. Out of
-/// line: its caller's frame is on the recursive proof-parsing path.
+/// Turn the default `have P;` simplification into the same one-step script
+/// as an explicit `have P by simp();`. Out of line to keep recursive frames small.
 #[inline(never)]
 fn have_proof_as_written_in_full(proof: SourceProof) -> SourceProof {
     if proof == SourceProof::Tactic(SmartTactic::Simp) {
@@ -447,6 +448,9 @@ fn is_tactic_name(name: &str) -> bool {
 pub(super) enum Token {
     Ident(String),
     Number(u32),
+    // Keep literal metadata shared so adding Rust forms does not enlarge
+    // every token in C and C++ sidecars too.
+    RustInteger(std::sync::Arc<rust_literals::IntegerLiteral>),
     BigNumber(String),
     UnsuffixedInt64(i64),
     UnsuffixedUInt64(u64),
@@ -509,6 +513,7 @@ impl Token {
         match self {
             Self::Ident(name) => format!("identifier `{name}`"),
             Self::Number(value) => format!("number `{value}`"),
+            Self::RustInteger(literal) => literal.describe(),
             Self::BigNumber(value) => format!("number `{value}`"),
             Self::UnsuffixedInt64(value) => format!("number `{value}`"),
             Self::UnsuffixedUInt64(value) => format!("number `{value}`"),
@@ -532,6 +537,7 @@ impl Token {
         match self {
             Self::Ident(_)
             | Self::Number(_)
+            | Self::RustInteger(_)
             | Self::BigNumber(_)
             | Self::UnsuffixedInt64(_)
             | Self::UnsuffixedUInt64(_)
@@ -587,6 +593,7 @@ fn charged_token_equal(left: &[Token], right: &[Token]) -> bool {
     for (left, right) in left.iter().zip(right) {
         let payload = |token: &Token| match token {
             Token::Ident(value) | Token::BigNumber(value) | Token::String(value) => value.len(),
+            Token::RustInteger(literal) => literal.digits.len(),
             _ => 0,
         };
         let work = payload(left)
@@ -1182,6 +1189,18 @@ impl Parser {
                 }
                 _ => None,
             }));
+        let mut tokens = tokens;
+        if language == SourceLanguage::Rust {
+            rust_literals::normalize_tokens(&mut tokens);
+        } else if let Some(index) = tokens
+            .iter()
+            .position(|token| matches!(token, Token::RustInteger(_)))
+        {
+            return Err(ClickError::new(format!(
+                "{}: Rust integer literal syntax requires a Rust sidecar",
+                positions[index]
+            )));
+        }
         // A Rust sidecar's trait object state is rewritten into contracts
         // over abstract resources before anything is parsed.
         let (tokens, positions, rust_object_traits) = if language == SourceLanguage::Rust {
@@ -7459,12 +7478,21 @@ impl Parser {
         }
     }
 
+    fn starts_standalone_smart_proof(&self) -> bool {
+        match self.peek_ident() {
+            Some("auto") => true,
+            // Route the old bare spelling through the missing-parentheses diagnostic.
+            Some("simp") => self.peek_next() != Some(&Token::LParen),
+            _ => false,
+        }
+    }
+
     fn parse_by_clause_body(&mut self) -> Result<SourceProof, ClickError> {
         if self.peek() == Some(&Token::LBrace) {
             self.position += 1;
             let proof = match self.peek() {
                 Some(Token::Ident(name))
-                    if is_tactic_name(name) && self.peek_next() == Some(&Token::Semicolon) =>
+                    if is_tactic_name(name) && self.starts_standalone_smart_proof() =>
                 {
                     let tactic = self.parse_tactic()?;
                     self.expect(Token::RBrace)?;
@@ -7486,11 +7514,8 @@ impl Parser {
             return Ok(proof);
         }
 
-        // `by auto;` and `by simp;` are whole proofs with their own spelling;
-        // any other single tactic is the one-step script `by { T(...); }`.
-        if matches!(self.peek(), Some(Token::Ident(name)) if is_tactic_name(name))
-            && self.peek_next() == Some(&Token::Semicolon)
-        {
+        // `auto()` uses whole-proof automation. Other single calls are one-step scripts.
+        if self.starts_standalone_smart_proof() {
             return Ok(SourceProof::Tactic(self.parse_tactic()?));
         }
         match self.peek() {
@@ -7502,6 +7527,18 @@ impl Parser {
             ))),
             Some(token) => Err(self.error(format!("expected a proof after `by`, got {token}"))),
             None => Err(self.error("expected a proof after `by`, got end of input")),
+        }
+    }
+
+    fn parse_loop_phase_proof(&mut self) -> Result<SourceProof, ClickError> {
+        let proof = self.parse_by_clause()?;
+        // A lone phase `simp()` owns the generated execution and closure steps,
+        // with either brace spelling. Keep it out of per-step source capture.
+        if matches!(&proof, SourceProof::Script(tactics) if matches!(tactics.as_slice(), [ProofTactic::Simp]))
+        {
+            Ok(SourceProof::Tactic(SmartTactic::Simp))
+        } else {
+            Ok(proof)
         }
     }
 
@@ -7661,12 +7698,6 @@ impl Parser {
             "both" => self.parse_both_proof_tactic(),
             "if" => self.parse_if_proof_tactic(),
             "induct" if !self.tactic_names.contains(&name) => self.parse_induct_proof_tactic(),
-            "close_invariants" if self.peek_ident() == Some("by") => {
-                self.position += 1;
-                let body = self.parse_close_invariants_body()?;
-                self.skip_redundant_semicolon();
-                Ok(ProofTactic::CloseInvariantsBy(body))
-            }
             _ => self.parse_other_proof_tactic(name),
         }
     }
@@ -8115,7 +8146,7 @@ impl Parser {
         Ok(current.expect("the both tactic chain has a root"))
     }
 
-    /// `have P;`, `have P by simp;` or `have P by { ... }`, after the word
+    /// `have P;`, `have P by simp();` or `have P by { ... }`, after the word
     /// `have`. Out of line: the tactic dispatcher that calls it is on the
     /// recursive proof-parsing path and keeps none of this in its frame.
     #[inline(never)]
@@ -8195,11 +8226,11 @@ impl Parser {
                 proof: have_proof_as_written_in_full(SourceProof::Tactic(SmartTactic::Simp)),
             }));
         }
-        // `have P by auto;` proves the fact where it is stated: with no C
+        // `have P by auto();` proves the fact where it is stated: with no C
         // to run toward the fact, `auto` is the solver.
         let proof = self.parse_by_clause()?;
         self.skip_redundant_semicolon();
-        // `have P;`, `have P by simp;` and `have P by { simp(); }` are
+        // `have P;`, `have P by simp();` and `have P by { simp(); }` are
         // one proof step. They are one syntax tree too, so every
         // consumer proves and reports them the same way.
         Ok(ProofTactic::Have(ProofHave {
@@ -8229,10 +8260,9 @@ impl Parser {
             // closing fold leaves open, as after `fold(r) by`.
             let close_proof = if self.peek_ident() == Some("by") {
                 self.position += 1;
-                if self.peek_ident() == Some("auto") && self.peek_next() == Some(&Token::Semicolon)
-                {
+                if self.peek_ident() == Some("auto") && self.peek_next() == Some(&Token::LParen) {
                     return Err(self.error(
-                        "`open(...) { ... } by auto` is `open(...) { ... }`: its closing fold's open body facts already go to `auto`",
+                        "`open(...) { ... } by auto()` is `open(...) { ... }`: its closing fold's open body facts already go to `auto`",
                     ));
                 }
                 Some(self.parse_step_proof_body()?)
@@ -8337,8 +8367,7 @@ impl Parser {
             })));
         }
         if name == "branch" {
-            let ensuring = self.parse_optional_join_interface()?;
-            self.expect_ident_spelling("then")?;
+            let ensuring = self.parse_binary_join_interface()?;
             let then_tactics = self.parse_possibly_empty_tactic_block()?;
             self.expect_ident_spelling("else")?;
             let else_tactics = self.parse_possibly_empty_tactic_block()?;
@@ -8485,7 +8514,7 @@ impl Parser {
                     if initialize_proof.is_some() {
                         return Err(self.error("duplicate `initialize` proof"));
                     }
-                    initialize_proof = Some(self.parse_by_clause()?);
+                    initialize_proof = Some(self.parse_loop_phase_proof()?);
                     continue;
                 }
                 if self.peek_ident() == Some("preserve") {
@@ -8493,7 +8522,7 @@ impl Parser {
                     if preserve_proof.is_some() {
                         return Err(self.error("duplicate `preserve` proof"));
                     }
-                    preserve_proof = Some(self.parse_by_clause()?);
+                    preserve_proof = Some(self.parse_loop_phase_proof()?);
                     continue;
                 }
                 items.extend(self.parse_region_proof_items()?);
@@ -8671,6 +8700,12 @@ impl Parser {
             }
             "close_invariants" => {
                 self.expect_empty_tactic_args(&name)?;
+                if self.peek_ident() == Some("by") {
+                    self.position += 1;
+                    let body = self.parse_close_invariants_body()?;
+                    self.skip_redundant_semicolon();
+                    return Ok(ProofTactic::CloseInvariantsBy(body));
+                }
                 ProofTactic::CloseInvariants
             }
             "execute" => {
@@ -8966,10 +9001,7 @@ impl Parser {
                 }
             }
             "simp" => {
-                // `simp;` is `simp();`, as it is after `by`.
-                if self.peek() == Some(&Token::LParen) {
-                    self.expect_empty_tactic_args(&name)?;
-                }
+                self.expect_empty_tactic_args(&name)?;
                 if self.peek_ident() == Some("using") {
                     let premises = self.parse_exact_premises()?;
                     self.skip_redundant_semicolon();
@@ -8998,13 +9030,26 @@ impl Parser {
             "induct" => return self.parse_induct_proof_tactic(),
             _ if is_tactic_name(&name) => {
                 return Err(self.error(format!(
-                    "`{name}` is only available as a standalone smart tactic; use `by {name};`"
+                    "`{name}` is only available as a standalone smart tactic; use `by {name}();`"
                 )));
             }
             _ => return Err(self.error(format!("unknown tactic `{name}`"))),
         };
         self.expect(Token::Semicolon)?;
         Ok(tactic)
+    }
+
+    /// Binary proof splits use `then` exactly when an interface precedes the arms.
+    fn parse_binary_join_interface(&mut self) -> Result<Option<Vec<ProofAssertion>>, ClickError> {
+        let ensuring = self.parse_optional_join_interface()?;
+        if ensuring.is_some() {
+            self.expect_ident_spelling("then")?;
+        } else if self.peek_ident() == Some("then") {
+            return Err(
+                self.error("`then` requires an `ensuring` interface; start the arm with `{`")
+            );
+        }
+        Ok(ensuring)
     }
 
     /// An optional `ensuring { fact ...; owns ...; views ...; }` block: what
@@ -9119,10 +9164,7 @@ impl Parser {
         let result = (|| {
             loop {
                 let condition = self.parse_proposition()?;
-                let ensuring = self.parse_optional_join_interface()?;
-                if ensuring.is_some() {
-                    self.expect_ident_spelling("then")?;
-                }
+                let ensuring = self.parse_binary_join_interface()?;
                 let then_tactics = self.parse_possibly_empty_tactic_block()?;
                 self.expect_ident_spelling("else")?;
                 self.expect(Token::LBrace)?;
@@ -9187,9 +9229,9 @@ impl Parser {
         };
         if self.peek_ident() == Some("by") {
             self.position += 1;
-            if self.peek_ident() == Some("auto") && self.peek_next() == Some(&Token::Semicolon) {
+            if self.peek_ident() == Some("auto") && self.peek_next() == Some(&Token::LParen) {
                 return Err(self.error(format!(
-                    "`{call} by auto` is `{call}`: its open obligations already go to `auto`",
+                    "`{call} by auto()` is `{call}`: its open obligations already go to `auto`",
                 )));
             }
             let body = self.parse_step_proof_body()?;
@@ -9251,8 +9293,8 @@ impl Parser {
         Ok(step)
     }
 
-    /// The body after a step's `by`: a block, `simp;`, or one tactic call, as
-    /// after `close_invariants by`.
+    /// The body after a step's `by`: a block or one tactic call, as
+    /// after `close_invariants() by`.
     fn parse_step_proof_body(&mut self) -> Result<Vec<ProofTactic>, ClickError> {
         if self.peek() == Some(&Token::LBrace) {
             let body = self.parse_possibly_empty_tactic_block()?;
@@ -9260,10 +9302,6 @@ impl Parser {
                 return Err(self.error("a step's `by` block must contain at least one tactic"));
             }
             return Ok(body);
-        }
-        if self.peek_ident() == Some("simp") && self.peek_next() == Some(&Token::Semicolon) {
-            self.position += 2;
-            return Ok(vec![ProofTactic::Simp]);
         }
         match self.peek() {
             Some(Token::Ident(_)) => Ok(vec![self.parse_proof_tactic()?]),
@@ -9274,32 +9312,27 @@ impl Parser {
         }
     }
 
-    // `close_invariants by T(...);` is the one-step body
-    // `close_invariants by { T(...); }`, as after `have` and `ensures`.
+    // `close_invariants() by T(...);` is the one-step body
+    // `close_invariants() by { T(...); }`, as after `have` and `ensures`.
     #[inline(never)]
     fn parse_close_invariants_body(&mut self) -> Result<Vec<ProofTactic>, ClickError> {
         if self.peek() == Some(&Token::LBrace) {
             return self.parse_possibly_empty_tactic_block();
         }
-        // `by simp;` is the step `simp();`, as it is after `have`.
-        if self.peek_ident() == Some("simp") && self.peek_next() == Some(&Token::Semicolon) {
-            self.position += 2;
-            return Ok(vec![ProofTactic::Simp]);
-        }
         // `auto` has no script spelling, and the bare closer is already the
-        // smart one; say so rather than suggest the `by auto;` just written.
+        // smart one; say so rather than suggest the `by auto();` just written.
         if self.peek_ident() == Some("auto") {
             return Err(self.error(
-                "`close_invariants by auto` is not a form: write `close_invariants();`, whose closer is already smart, or end the `preserve` script and let the back edge close implicitly",
+                "`close_invariants() by auto()` is not a form: write `close_invariants();`, whose closer is already smart, or end the `preserve` script and let the back edge close implicitly",
             ));
         }
         match self.peek() {
             Some(Token::Ident(_)) => Ok(vec![self.parse_proof_tactic()?]),
             Some(token) => Err(self.error(format!(
-                "expected a proof after `close_invariants by`, got {token}: write one tactic call or a block `{{ ... }}`"
+                "expected a proof after `close_invariants() by`, got {token}: write one tactic call or a block `{{ ... }}`"
             ))),
             None => Err(self.error(
-                "expected a proof after `close_invariants by`, got end of input",
+                "expected a proof after `close_invariants() by`, got end of input",
             )),
         }
     }
@@ -9454,6 +9487,11 @@ impl Parser {
     }
 
     fn expect_empty_tactic_args(&mut self, name: &str) -> Result<(), ClickError> {
+        if (is_tactic_name(name) || name == "close_invariants")
+            && self.peek() != Some(&Token::LParen)
+        {
+            return Err(self.error(format!("`{name}` requires parentheses; write `{name}()`")));
+        }
         self.expect(Token::LParen)?;
         if self.peek() != Some(&Token::RParen) {
             return Err(self.error(format!("`{name}` expects no arguments")));
@@ -10355,6 +10393,11 @@ impl Parser {
             }
             None => return Err(self.error("expected tactic, got end of input")),
         };
+        let name = match tactic {
+            SmartTactic::Auto => "auto",
+            SmartTactic::Simp => "simp",
+        };
+        self.expect_empty_tactic_args(name)?;
         self.expect(Token::Semicolon)?;
         Ok(tactic)
     }
@@ -12011,6 +12054,12 @@ impl Parser {
         }
         if self.peek() == Some(&Token::Minus) {
             self.check_unary_nesting_limit(depth)?;
+            if let Some((literal, end)) = self.negated_rust_literal() {
+                self.position = end;
+                return literal
+                    .contract_expression(true)
+                    .map_err(|message| self.error(message));
+            }
             if self.peek_next() == Some(&Token::Int64MinimumMagnitude) {
                 self.position += 2;
                 return Ok(ContractExpression::CFragment(CExpression::Value(
@@ -12986,6 +13035,7 @@ impl Parser {
             // A surrounding conversion or Integer-valued expression may supply
             // that context even when the enclosing theorem has only C params.
             Some(Token::Number(value)) => Ok(ContractExpression::IntegerLiteral(value.to_string())),
+            Some(Token::RustInteger(literal)) => literal.contract_expression(false).map_err(|message| self.error(message)),
             Some(Token::BigNumber(value)) => Ok(ContractExpression::IntegerLiteral(value)),
             Some(Token::UnsuffixedInt64(value)) => {
                 Ok(ContractExpression::IntegerLiteral(value.to_string()))
@@ -13548,6 +13598,12 @@ impl Parser {
     fn parse_ensure_unary_at_depth(&mut self, depth: usize) -> Result<C0Expression, ClickError> {
         if self.peek() == Some(&Token::Minus) {
             self.check_unary_nesting_limit(depth)?;
+            if let Some((literal, end)) = self.negated_rust_literal() {
+                self.position = end;
+                return literal
+                    .c_expression(true)
+                    .map_err(|message| self.error(message));
+            }
             if self.peek_next() == Some(&Token::Int64MinimumMagnitude) {
                 self.position += 2;
                 return Ok(C0Expression::Int64Literal(i64::MIN));
@@ -13643,6 +13699,7 @@ impl Parser {
                 let name = self.take_rust_slice_len(&name).unwrap_or(name);
                 Ok(C0Expression::Variable(name))
             }
+            Some(Token::RustInteger(literal)) => literal.c_expression(false).map_err(|message| self.error(message)),
             Some(Token::Number(value)) => Ok(C0Expression::Int32Literal(value)),
             Some(Token::UInt8Number(value)) => Ok(C0Expression::UInt8Literal(value)),
             Some(Token::UInt32Number(value)) => Ok(C0Expression::UInt32Literal(value)),
@@ -13748,6 +13805,15 @@ impl Parser {
     fn expect_number(&mut self, expected: &str) -> Result<u32, ClickError> {
         let at = self.error_context();
         match self.next() {
+            Some(Token::RustInteger(literal)) => {
+                literal
+                    .c_expression(false)
+                    .map_err(|message| self.error_at(at.clone(), message))?;
+                literal
+                    .digits
+                    .parse::<u32>()
+                    .map_err(|_| self.error_at(at, format!("expected {expected} to fit in uint32")))
+            }
             Some(Token::Number(value)) => Ok(value),
             Some(token) => {
                 Err(self.error_at(at, format!("expected {expected}, got {}", token.describe())))
@@ -13771,6 +13837,15 @@ impl Parser {
         };
         let at = self.error_context();
         let value = match self.next() {
+            Some(Token::RustInteger(literal)) => {
+                let value = literal
+                    .signed_i64(negative)
+                    .map_err(|message| self.error_at(at, message))?;
+                if parenthesized {
+                    self.expect(Token::RParen)?;
+                }
+                return Ok(value);
+            }
             Some(Token::Number(value)) => i64::from(value),
             Some(Token::UnsuffixedInt64(value) | Token::Int64Number(value)) => value,
             Some(Token::UnsuffixedUInt64(value) | Token::UInt64Number(value)) => {

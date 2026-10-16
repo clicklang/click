@@ -1,7 +1,7 @@
 # Omitted proof clauses use the default prover
 
 This checks the compact Click style where a guarantee ends with `;` instead of
-an explicit `by auto;`. The omitted proof clause uses the default prover.
+an explicit `by auto();`. The omitted proof clause uses the default prover.
 
 ```c filename=default_prover.c
 int32 default_prover(int32* p) {

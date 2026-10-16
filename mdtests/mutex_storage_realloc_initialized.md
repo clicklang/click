@@ -24,7 +24,7 @@ target "x86_64-unknown-linux-gnu";
 runtime "modeled-pthread";
 verifying "mutex_storage_realloc_initialized.c";
 int32 run() {
-    ensures result == 0 by auto;
+    ensures result == 0 by auto();
 }
 ```
 

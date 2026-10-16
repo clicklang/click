@@ -9,7 +9,7 @@ library's.
 import click::machine_integer;
 
 theorem uint32_less_than_transitive(a: uint32) {
-    ensures a == a by simp;
+    ensures a == a by simp();
 }
 
 theorem own_by_bare_name(a: uint32) {
@@ -25,7 +25,7 @@ theorem library_by_path(a: uint32, b: uint32, c: uint32) {
 theorem library_through_a_tactic(a: uint32, b: uint32, c: uint32) {
     requires a < b;
     requires b < c;
-    ensures a < c by simp;
+    ensures a < c by simp();
 }
 ```
 

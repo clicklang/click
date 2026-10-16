@@ -16,7 +16,7 @@ clause.
 theorem resource_requirement_is_not_pure(p: int32*) {
     consumes p[0..1];
 
-    ensures 0 == 0 by auto;
+    ensures 0 == 0 by auto();
 }
 ```
 

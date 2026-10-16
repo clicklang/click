@@ -32,7 +32,7 @@ theorem signed_links(a: int64, b: int64, c: int64, d: int64) {
 theorem written_from_the_other_side(a: uint64, b: uint64, c: uint64) {
     requires a < b;
     requires c >= b;
-    ensures a < c by { apply(uint64_less_than_less_equal_transitive(a, b, c)) using { a < b; c >= b; } }
+    ensures a < c by { apply(uint64_less_than_less_equal_transitive(a, b, c)) using { a < b; c >= b; }; }
 }
 ```
 

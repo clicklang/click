@@ -27,13 +27,13 @@ verifying "leaf.c";
 verifying "caller.c";
 int set(int *p) {
     owns p[0..1];
-    ensures p[0] == 7 by auto;
-    ensures result == 7 by auto;
+    ensures p[0] == 7 by auto();
+    ensures result == 7 by auto();
 }
 int run(int *p) {
     owns p[0..1];
-    ensures p[0] == 7 by auto;
-    ensures result == 7 by auto;
+    ensures p[0] == 7 by auto();
+    ensures result == 7 by auto();
 }
 ```
 

@@ -18,7 +18,7 @@ int32 bad_recursive(int32 n) {
 verifying "bad_recursive.c";
 
 int32 bad_recursive(int32 n) {
-    ensures result == result by auto;
+    ensures result == result by auto();
 }
 ```
 

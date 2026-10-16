@@ -15,7 +15,7 @@ verifying "file.c";
 int32 function_name(int32 p[], int32 n) {
     requires n >= 0;
     requires viewable(p[0..n]);
-    ensures label: result == n by auto;
+    ensures label: result == n by auto();
 }
 ```
 

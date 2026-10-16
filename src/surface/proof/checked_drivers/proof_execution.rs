@@ -142,7 +142,7 @@ fn linear_execution_proof_step(tactic: &ProofTactic) -> Option<ProofStep> {
 /// `close_invariants()` is smart: it plans the back-edge bundle body. It has
 /// no certificate step of its own, so the drivers that support it route it
 /// through `apply_close_invariants_body`, which retains the checked body as a
-/// `close_invariants by` step. It stays outside `linear_execution_proof_step`
+/// `close_invariants() by` step. It stays outside `linear_execution_proof_step`
 /// so no driver can record a bare closure request as certificate provenance.
 fn closes_loop_invariants(tactic: &ProofTactic) -> bool {
     matches!(
@@ -5078,7 +5078,7 @@ fn simp_before_exit_reason(proof: &Proof<'_>) -> String {
         })
         .unwrap_or_else(|| "execution has not reached the function exit".to_string());
     format!(
-        "`simp` closes the outcome claims at function exit and does not execute: {ahead}. Step to the exit first with `step()` (the end of the body is one step) or `execute()`, or prove the claim `by auto;`."
+        "`simp` closes the outcome claims at function exit and does not execute: {ahead}. Step to the exit first with `step()` (the end of the body is one step) or `execute()`, or prove the claim `by auto();`."
     )
 }
 

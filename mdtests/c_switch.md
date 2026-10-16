@@ -158,31 +158,31 @@ verifying "switch_constant_labels.c";
 verifying "nested_switch_ownership.c";
 
 int32 switch_break(int32 kind) {
-    ensures result == 10 or result == 20 or result == 30 by auto;
+    ensures result == 10 or result == 20 or result == 30 by auto();
 }
 
 int32 switch_fallthrough(int32 kind) {
-    ensures result == 3 or result == 2 or result == 9 by auto;
+    ensures result == 3 or result == 2 or result == 9 by auto();
 }
 
 int32 switch_loop_control() {
-    ensures result == 3 by auto;
+    ensures result == 3 by auto();
 }
 
 int32 switch_constant_labels(int32 kind) {
-    ensures result == 12 or result == 2 or result == 40 or result == 50 by auto;
+    ensures result == 12 or result == 2 or result == 40 or result == 50 by auto();
 }
 
 int32 nested_switch_break(int32 outer, int32 inner) {
-    ensures result == 15 or result == 16 or result == 20 by auto;
+    ensures result == 15 or result == 16 or result == 20 by auto();
 }
 
 int32 nested_switch_fallthrough(int32 outer, int32 inner) {
-    ensures result == 10 or result == 11 or result == 12 or result == 16 by auto;
+    ensures result == 10 or result == 11 or result == 12 or result == 16 by auto();
 }
 
 int32 nested_switch_continue() {
-    ensures result == 2 by auto;
+    ensures result == 2 by auto();
 }
 ```
 

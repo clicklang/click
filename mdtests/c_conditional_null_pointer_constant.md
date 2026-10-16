@@ -25,12 +25,12 @@ verifying "c_conditional_null_pointer_constant.c";
 
 struct node* keep(struct node* node, int32 pick) {
     requires pick == 0;
-    ensures result == 0 by auto;
+    ensures result == 0 by auto();
 }
 
 struct node* drop(struct node* node, int32 pick) {
     requires pick == 0;
-    ensures result == node by auto;
+    ensures result == node by auto();
 }
 ```
 

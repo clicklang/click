@@ -21,7 +21,7 @@ verifying "c_decreases_rejects_address_escaped_parameter.c";
 
 int32 escaped_parameter(int32 n) {
     decreases n;
-    ensures result == 0 by auto;
+    ensures result == 0 by auto();
 }
 ```
 

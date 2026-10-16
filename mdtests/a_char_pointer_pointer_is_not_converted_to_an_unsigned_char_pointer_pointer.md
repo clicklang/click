@@ -16,7 +16,7 @@ unsigned char **retype(char **p) {
 verifying "a_char_pointer_pointer_is_not_converted_to_an_unsigned_char_pointer_pointer.c";
 
 unsigned char **retype(char **p) {
-    ensures result == p by auto;
+    ensures result == p by auto();
 }
 ```
 

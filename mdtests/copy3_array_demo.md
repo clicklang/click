@@ -67,23 +67,23 @@ int32 copy3(int32 dst[3], int32 src[3]) {
                     have k != (i - 1) by {
                         apply(int32_less_than_implies_not_equal(k, (i - 1))) using {
                             k < (i - 1);
-                        }
+                        };
                     }
                     instantiate(forall (k: int32) { at(statement(3).entry, 0) <= at(statement(3).entry, k) and at(statement(3).entry, k) < at(statement(3).entry, i) implies at(statement(3).entry, dst[k]) == old(src[k]) }, k);
                     transport(at(statement(3).entry, dst[k]) == old(src[k]), dst[k] == old(src[k])) using {
                         at(statement(3).entry, dst[k]) == old(src[k]);
-                    }
+                    };
                 } else {
                     have k == (i - 1) by {
                         have k <= (i - 1) by {
                             apply(int32_less_than_increment_implies_less_equal(k, (i - 1))) using {
                                 k < i;
-                            }
+                            };
                         }
                         apply(int32_less_equal_and_not_less_than_implies_equal(k, (i - 1))) using {
                             k <= (i - 1);
                             not k < (i - 1);
-                        }
+                        };
                     }
                     instantiate(forall (k: int32) { at(statement(3).entry, 0) <= at(statement(3).entry, k) and at(statement(3).entry, k) < at(statement(3).entry, 3) implies at(statement(3).entry, src[k]) == old(src[k]) }, k) using {
                         0 <= k;
@@ -93,14 +93,14 @@ int32 copy3(int32 dst[3], int32 src[3]) {
                         at(statement(3).entry, i) <= at(statement(3).entry, 3);
                         at(statement(3).entry, i) >= at(statement(3).entry, 0);
                         k == (i - 1);
-                    }
+                    };
                     transport(at(statement(3).entry, src[k]) == old(src[k]), dst[k] == old(src[k])) using {
                         at(statement(3).entry, src[k]) == old(src[k]);
                         k == (i - 1);
-                    }
+                    };
                 }
             }
-            close_invariants by {
+            close_invariants() by {
                 both {
                     both {
                         arithmetic_certificate signed_int32 {
@@ -183,7 +183,7 @@ int32 copy3(int32 dst[3], int32 src[3]) {
             not at(loop(0).exit, i) < at(loop(0).exit, 3);
             at(loop(0).exit, i) <= at(loop(0).exit, 3);
             at(loop(0).exit, i) >= at(loop(0).exit, 0);
-        }
+        };
         assumption();
     }
     have dst[1] == old(src[1]) by {
@@ -191,7 +191,7 @@ int32 copy3(int32 dst[3], int32 src[3]) {
             not at(loop(0).exit, i) < at(loop(0).exit, 3);
             at(loop(0).exit, i) <= at(loop(0).exit, 3);
             at(loop(0).exit, i) >= at(loop(0).exit, 0);
-        }
+        };
         assumption();
     }
     have dst[2] == old(src[2]) by {
@@ -199,7 +199,7 @@ int32 copy3(int32 dst[3], int32 src[3]) {
             not at(loop(0).exit, i) < at(loop(0).exit, 3);
             at(loop(0).exit, i) <= at(loop(0).exit, 3);
             at(loop(0).exit, i) >= at(loop(0).exit, 0);
-        }
+        };
         assumption();
     }
     step();

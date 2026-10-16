@@ -54,7 +54,7 @@ verifying "file.c";
 int32 function_name(int32 p[], int32 n) {
     requires n >= 0;
     requires viewable(p[0..n]);
-    ensures label: result == n by auto;
+    ensures label: result == n by auto();
 }
 ```
 
@@ -529,7 +529,7 @@ the pivot is therefore an ordinary proof of one disjunct, closed with
 prints, not a search the kernel
 performs. `close_invariants()` plans those members with the same bounded
 search it uses for the invariants; where it misses, spell them in a
-`close_invariants by { ... }` body, whose `both { ... } and { ... }` structure
+`close_invariants() by { ... }` body, whose `both { ... } and { ... }` structure
 follows the member order above. An explicit closer body written before a
 `decreases` clause existed fails promptly, and the diagnostic names the
 ranking obligations the bundle now carries.
@@ -544,7 +544,7 @@ this path took to reach the back edge, each in whichever of those two
 spellings holds where the member is proved. An inequality that is in scope but
 is none of those is not a candidate, so a member that needs one fails at that
 member instead of being closed by a search over ambient facts; cite it by hand
-in a `close_invariants by { ... }` body, or declare it as an invariant.
+in a `close_invariants() by { ... }` body, or declare it as an invariant.
 <!-- verified-example: mdtests/c_decreases_lexicographic_loop.md -->
 ```click
 loop {
@@ -704,7 +704,7 @@ contract int32 Spinner(int32 x) diverges {
 
 int32 run(int32 (*step)(int32), int32 x) diverges {
     requires Spinner(step);
-    ensures result == 1 by auto;
+    ensures result == 1 by auto();
 }
 ```
 
@@ -741,13 +741,13 @@ grouped proof that would prove no claim is refused. Structural region clauses,
 including loop proofs, retain their own proof blocks.
 
 When two or more claims omit their proofs and no grouped proof is written,
-they share an implicit `} by auto;`, so the default form also executes the
+they share an implicit `} by auto();`, so the default form also executes the
 function once. `click expand` at the contract's closing `}` writes that
 grouped proof out. A single claim without a proof keeps its own default
 `auto`, which is the same proof.
 
 For contracts that need only ordinary execution, loop checks, and
-simplification, the grouped proof can be written `} by auto;`. This is a fixed
+simplification, the grouped proof can be written `} by auto();`. This is a fixed
 expansion of those steps. It does not search through composite-resource folds
 or theorem applications; use an explicit grouped block for those operations.
 
@@ -932,7 +932,7 @@ to a C function:
 theorem preserves_assumption(x: int32) {
     requires x >= 0;
 
-    ensures x >= 0 by auto;
+    ensures x >= 0 by auto();
 }
 ```
 
@@ -961,7 +961,7 @@ theorem cell_of_a_viewed_range(v: int32[], lo: int32, hi: int32, k: int32) {
     views v[lo..hi];
     requires lo <= k;
     requires k < hi;
-    ensures to_integer(v[k]) == to_integer(v[k]) by simp;
+    ensures to_integer(v[k]) == to_integer(v[k]) by simp();
 }
 ```
 
@@ -993,7 +993,7 @@ theorem countdown_is_zero(n: int32) {
         induct(n) as ih;
         if n <= 0 {
             unfold(countdown(n));
-            normalize() using { n <= 0; }
+            normalize() using { n <= 0; };
         } else {
             apply(ih(n - 1));
             unfold(countdown(n));
@@ -1074,7 +1074,7 @@ its condition as a logical case split:
 
 <!-- verified-example: mdtests/proof_branch_old_state_interface.md -->
 ```click
-branch then {
+branch {
     step();
 } else {
     step();
@@ -1148,7 +1148,9 @@ annotations, and `at(statement(N).entry|exit, ...)` snapshots.
 
 A frontier-local loop tactic may give the loop it encounters a stable name
 with `loop as label { ... }`.  The label names that encountered loop's entry
-and exit snapshots; it never searches for or jumps to a source region.  Use
+and exit snapshots; it never searches for or jumps to a source region. A
+label names one loop on an execution path: a second `loop as label` at a
+different loop is refused. Use
 `at(label.entry, expression_or_proposition)` and
 `at(label.exit, expression_or_proposition)` after the tactic has established
 those points. Intermediate propositions are proved with `have` in the ordinary
@@ -1475,11 +1477,11 @@ verifier's resource context rather than copied as pure facts.
 <!-- verified-example: mdtests/resource_context_write.md -->
 ```click
 int32 write_next(int32 p[], int32 x) {
-    owns p[0..1] by auto;
+    owns p[0..1] by auto();
     requires x < 2147483647;
 
-    ensures returns_written: result == p[0] by auto;
-    ensures writes_next: p[0] == x + 1 by auto;
+    ensures returns_written: result == p[0] by auto();
+    ensures writes_next: p[0] == x + 1 by auto();
 }
 ```
 
@@ -2935,8 +2937,8 @@ It is mainly used in postconditions and invariants:
 
 <!-- verified-example: mdtests/proposition_connectives_quantifiers_and_old.md -->
 ```click
-ensures p[0] == old(p[0]) by auto;
-ensures forall (k: int32) { 0 <= k and k < n implies p[k] == old(p[k]) } by auto;
+ensures p[0] == old(p[0]) by auto();
+ensures forall (k: int32) { 0 <= k and k < n implies p[k] == old(p[k]) } by auto();
 ```
 
 Inside `old(...)`, `result` is unavailable.
@@ -3140,7 +3142,7 @@ that bare name as a selector later:
 ```click
 mark before_write;
 step();
-have p[0] == at(before_write, p[0]) + 1 by simp;
+have p[0] == at(before_write, p[0]) + 1 by simp();
 ```
 
 `mark` is a simple tactic and does not move execution. Its name is scoped to
@@ -3299,7 +3301,7 @@ int32 bounded_increment(int32 x) {
     let expected = x + 1;
 
     requires x < max;
-    ensures result_value: result == expected by auto;
+    ensures result_value: result == expected by auto();
 }
 ```
 

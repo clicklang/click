@@ -38,18 +38,18 @@ function classified(x: int32) -> int32 {
 int classify(int x) {
     ensures result == classified(x);
 } by {
-    branch then {
+    branch {
         step();
         have result == classified(x) by {
             unfold(classified(x));
-            normalize() using { x == 0; }
+            normalize() using { x == 0; };
         }
         simp();
     } else {}
     step();
     have result == classified(x) by {
         unfold(classified(x));
-        normalize() using { not(x == 0); }
+        normalize() using { not(x == 0); };
     }
     simp();
 }
@@ -59,16 +59,16 @@ int has_class(int x) {
     ensures classified(x) == 0 implies result == 0;
 } by {
     let { result: r } = step(classify(x), { });
-    branch then {
+    branch {
         step();
         have classified(x) != 0 by {
-            simp() using { r != 0; r == classified(x); }
+            simp() using { r != 0; r == classified(x); };
         }
         simp();
     } else {}
     step();
     have classified(x) == 0 by {
-        simp() using { r == 0; r == classified(x); }
+        simp() using { r == 0; r == classified(x); };
     }
     simp();
 }

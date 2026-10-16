@@ -429,6 +429,8 @@ struct ClosureDistinctnessFailure {
 /// remembers.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub(crate) enum ClosureFactCheck {
+    /// Whether a bare condition target holds in the selected live context.
+    ConditionTarget,
     /// Whether a load-variable chain through the listed facts bridges the
     /// target.
     LoadVariableBridge,
@@ -2659,7 +2661,7 @@ fn element_indices_of(
 
 /// Cancel a structurally identical additive base from two same-block offsets
 /// and return what remains on each side.
-fn common_base_index_offsets(
+pub(in crate::kernel) fn common_base_index_offsets(
     left: &Pointer,
     right: &Pointer,
 ) -> Option<(PointerOffsetTerm, PointerOffsetTerm)> {

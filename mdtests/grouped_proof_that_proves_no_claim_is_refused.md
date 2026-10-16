@@ -15,9 +15,9 @@ verifying "grouped_proof_that_proves_no_claim_is_refused.c";
 
 int32 inc(int32 x) {
     requires x >= 0 and x <= 100;
-    ensures result >= 1 by auto;
-    ensures result <= 101 by auto;
-} by auto;
+    ensures result >= 1 by auto();
+    ensures result <= 101 by auto();
+} by auto();
 ```
 
 ```expect

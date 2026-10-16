@@ -17,7 +17,7 @@ int32 inspect(struct Box *box) {
 verifying "long_double_member_rejected.c";
 
 int32 inspect(struct Box *box) {
-    ensures result == 0 by auto;
+    ensures result == 0 by auto();
 }
 ```
 

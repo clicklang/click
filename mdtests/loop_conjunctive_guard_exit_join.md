@@ -48,7 +48,7 @@ int32 uses_exit_disjunction(int32 a, int32* p) {
         invariant a >= 0;
         invariant a <= 10;
 
-        initialize by simp;
+        initialize by simp();
         preserve by {
             have a > 0 by {
                 if a > 0 {
@@ -58,18 +58,18 @@ int32 uses_exit_disjunction(int32 a, int32* p) {
                         apply(int32_greater_equal_and_not_greater_than_implies_equal(a, 0)) using {
                             a >= 0;
                             not (a > 0);
-                        }
+                        };
                     }
                     contradiction(a == 0);
                 }
             }
             step();
-            close_invariants by {
+            close_invariants() by {
                 simp();
             }
         }
     }
-    branch then {
+    branch {
         have p[0] == 0 by {
             cases {
                 a == 0 => {

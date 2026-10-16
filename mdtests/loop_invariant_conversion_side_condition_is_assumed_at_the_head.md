@@ -40,9 +40,9 @@ int32 walk(int32 n) {
         preserve by {
             step();
             have i <= n;
-            have i < 2147483647 by { arithmetic() using { i <= n; n < 2147483647; } }
+            have i < 2147483647 by { arithmetic() using { i <= n; n < 2147483647; }; }
             have defined(i + 1) by {
-                apply(int32_increment_below_max_is_defined(i)) using { i < 2147483647; }
+                apply(int32_increment_below_max_is_defined(i)) using { i < 2147483647; };
             }
             close_invariants();
         }

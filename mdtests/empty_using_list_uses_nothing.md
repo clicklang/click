@@ -8,7 +8,7 @@ precondition below in the context, while `simp() using { }` may not use it.
 theorem empty_using_uses_nothing(x: int32) {
     requires 0 <= x;
     ensures 0 <= x by {
-        simp() using { }
+        simp() using { };
     }
 }
 ```

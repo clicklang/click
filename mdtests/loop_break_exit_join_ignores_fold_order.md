@@ -60,7 +60,7 @@ int32 inspect(struct node* p, struct node* q, int32 flag) {
         owns b: shaded(q);
         invariant a.shade == old(a.shade);
 
-        initialize by simp;
+        initialize by simp();
         preserve by {
             if flag == 0 {
                 unfold(a);

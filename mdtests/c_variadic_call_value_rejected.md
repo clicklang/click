@@ -13,7 +13,7 @@ int32 run(int32 value) {
 verifying "c_variadic_call_value_rejected.c";
 
 int32 run(int32 value) {
-    ensures true by auto;
+    ensures true by auto();
 }
 ```
 

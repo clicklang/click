@@ -42,10 +42,10 @@ int32 drain(int32 box[4]) {
             have 0 <= box[0] - 1 by {
                 apply(int32_positive_predecessor_is_nonnegative(box[0])) using {
                     box[0] > 0;
-                }
+                };
             }
             step();
-            close_invariants by { unfold(head(box)); simp(); }
+            close_invariants() by { unfold(head(box)); simp(); }
         }
     }
     step();

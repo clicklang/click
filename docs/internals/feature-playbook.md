@@ -64,7 +64,7 @@ Checklist:
 
 Search for all matches on:
 
-```sh
+```console
 rg -n "ClickProposition|ContractExpression" src/surface.rs
 ```
 

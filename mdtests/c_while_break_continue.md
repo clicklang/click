@@ -37,11 +37,11 @@ verifying "stop_at_three.c";
 verifying "sum_odd_positions.c";
 
 int32 stop_at_three() {
-    ensures result == 2 by auto;
+    ensures result == 2 by auto();
 }
 
 int32 sum_odd_positions() {
-    ensures result == 8 by auto;
+    ensures result == 8 by auto();
 }
 ```
 

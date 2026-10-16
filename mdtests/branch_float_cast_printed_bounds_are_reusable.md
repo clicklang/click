@@ -18,7 +18,7 @@ int32 positive(double d) {
     requires d < 2147483648i64;
     ensures result >= 0;
 } by {
-    branch then { step(); simp(); } else {}
+    branch { step(); simp(); } else {}
     step();
     simp();
 }

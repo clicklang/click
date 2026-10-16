@@ -25,7 +25,7 @@ int32 bounds(int32 left, int32 right) {
             0 <= right;
             right <= 1;
             left <= -2147483648 - right;
-        }
+        };
     }
     execute(); simp();
 }

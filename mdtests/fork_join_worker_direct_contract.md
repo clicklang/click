@@ -83,13 +83,13 @@ void *fill_range(void *argument) {
                 simp() using {
                     0 <= job->begin;
                     job->begin <= at(iteration, index);
-                }
+                };
             }
             have 0 <= job->end by {
                 simp() using {
                     0 <= job->begin;
                     job->begin <= job->end;
-                }
+                };
             }
             have 0 <= 0 - at(iteration, index) + job->end - 1 by {
                 arithmetic() using {
@@ -97,7 +97,7 @@ void *fill_range(void *argument) {
                     0 <= job->end;
                     at(iteration, index) < at(iteration, job->end);
                     job->begin <= job->end;
-                }
+                };
             }
             have 0 - at(iteration, index) + job->end - 1
                 < 0 - at(iteration, index) + job->end by {
@@ -106,7 +106,7 @@ void *fill_range(void *argument) {
                     0 <= job->end;
                     at(iteration, index) < at(iteration, job->end);
                     job->begin <= job->end;
-                }
+                };
             }
             simp();
         }

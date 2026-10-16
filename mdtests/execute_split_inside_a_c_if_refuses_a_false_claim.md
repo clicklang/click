@@ -20,8 +20,8 @@ int32 inside(int32 x) {
 verifying "execute_split_inside_a_c_if_refuses_a_false_claim.c";
 
 int32 helper(int32 x) throws int32 {
-    ensures result == x by auto;
-    exceptional ensures exception == 7 by auto;
+    ensures result == x by auto();
+    exceptional ensures exception == 7 by auto();
 }
 
 int32 inside(int32 x) throws int32 {

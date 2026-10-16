@@ -29,7 +29,7 @@ verifying "use_bundle.c";
 verifying "fold_then_call.c";
 
 int32 use_bundle(int32 x) {
-    owns bundle(x) by auto;
+    owns bundle(x) by auto();
 
 }
 

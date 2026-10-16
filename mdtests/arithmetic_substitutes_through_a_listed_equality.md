@@ -21,9 +21,9 @@ int32 same(int32 x, int32 y) {
     requires x < 10;
     ensures result == 0;
 } by {
-    have 0 <= y by { arithmetic() using { y == x; 0 <= x; } }
-    have y >= 0 by { arithmetic() using { x == y; 0 <= x; } }
-    have y < 10 by { arithmetic() using { x < 10; y == x; } }
+    have 0 <= y by { arithmetic() using { y == x; 0 <= x; }; }
+    have y >= 0 by { arithmetic() using { x == y; 0 <= x; }; }
+    have y < 10 by { arithmetic() using { x < 10; y == x; }; }
     step();
     simp();
 }

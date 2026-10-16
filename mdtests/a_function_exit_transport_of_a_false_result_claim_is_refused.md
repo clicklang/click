@@ -18,7 +18,7 @@ int32 is_less(uint32 a, uint32 b) {
     execute();
     have result == 1 by {
         transport(at(function.exit, result == 1), result == 1) using {
-        }
+        };
     }
     assumption();
 }

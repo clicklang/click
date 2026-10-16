@@ -25,7 +25,7 @@ verifying "step_by_in_a_branch_arm.c";
 int32 compare_by(uint8 bytes[], int32 c) {
     views bytes[0..2];
     ensures 1 == 1 by {
-        branch then {
+        branch {
             step() by { simp(); }
             step();
             simp();
@@ -38,9 +38,9 @@ int32 compare_by(uint8 bytes[], int32 c) {
 int32 compare_requires(uint8 bytes[], int32 c) {
     views bytes[0..2];
     ensures 1 == 1 by {
-        branch then {
+        branch {
             step() {
-                requires forall (k: uint64) { k < 2 implies defined(bytes[k]) and defined(bytes[k]) } by simp;
+                requires forall (k: uint64) { k < 2 implies defined(bytes[k]) and defined(bytes[k]) } by simp();
             }
             step();
             simp();

@@ -32,7 +32,7 @@ int32 lower(int32 p) {
     have i >= p by {
         arithmetic() using {
             i == p;
-        }
+        };
     }
     step();
     simp();
@@ -49,7 +49,7 @@ int32 upper(int32 p) {
     have i <= p by {
         arithmetic() using {
             i == p;
-        }
+        };
     }
     step();
     simp();

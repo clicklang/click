@@ -52,7 +52,7 @@ void walk(struct Node* p, int32* marker) {
         decreases t;
         invariant p != 0;
         invariant p == q;
-        initialize by simp;
+        initialize by simp();
         preserve by {
             match t.model {
                 Chain::Empty => { unfold(t); contradiction(p == 0); },

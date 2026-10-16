@@ -35,22 +35,22 @@ verifying "mutex_parity_rejects_false_invariant.c";
 theorem bounded_one(r: int32) {
     requires 1 <= r;
     requires r <= 1;
-    ensures r == 1 by { arithmetic() using { 1 <= r; r <= 1; } }
+    ensures r == 1 by { arithmetic() using { 1 <= r; r <= 1; }; }
 }
 
 theorem nonzero_nonnegative(r: int32) {
     requires 0 <= r;
     requires r != 0;
-    ensures 1 <= r by { arithmetic() using { 0 <= r; r != 0; } }
+    ensures 1 <= r by { arithmetic() using { 0 <= r; r != 0; }; }
 }
 theorem even_successor(i: int32) {
     requires 0 <= i;
     requires i < 2147483647;
     requires i % 2 == 0;
     ensures (i + 1) % 2 == 1 by {
-        have 0 <= i % 2 by { arithmetic() using { i % 2 == 0; } }
-        have i % 2 <= 0 by { arithmetic() using { i % 2 == 0; } }
-        arithmetic() using { 0 <= i; i < 2147483647; 0 <= i % 2; i % 2 <= 0; }
+        have 0 <= i % 2 by { arithmetic() using { i % 2 == 0; }; }
+        have i % 2 <= 0 by { arithmetic() using { i % 2 == 0; }; }
+        arithmetic() using { 0 <= i; i < 2147483647; 0 <= i % 2; i % 2 <= 0; };
     }
 }
 theorem odd_successor(i: int32) {
@@ -58,11 +58,11 @@ theorem odd_successor(i: int32) {
     requires i < 2147483647;
     requires i % 2 != 0;
     ensures (i + 1) % 2 == 0 by {
-        have 0 <= i % 2 by { arithmetic() using { 0 <= i; } }
-        have i % 2 < 2 by { arithmetic() using { 0 <= i; } }
+        have 0 <= i % 2 by { arithmetic() using { 0 <= i; }; }
+        have i % 2 < 2 by { arithmetic() using { 0 <= i; }; }
         have 1 <= i % 2 by apply(nonzero_nonnegative(i % 2));
-        have i % 2 <= 1 by { arithmetic() using { 0 <= i; i % 2 < 2; } }
-        arithmetic() using { 0 <= i; i < 2147483647; 1 <= i % 2; i % 2 <= 1; }
+        have i % 2 <= 1 by { arithmetic() using { 0 <= i; i % 2 < 2; }; }
+        arithmetic() using { 0 <= i; i < 2147483647; 1 <= i % 2; i % 2 <= 1; };
     }
 }
 
@@ -92,7 +92,7 @@ int32 alternate_mutex(struct parity_mutex *object, int32 n) {
         execute();
         simp();
     } else {
-        have n >= 0 by simp;
+        have n >= 0 by simp();
         let guard = fold(loop_guard(object), { parity: 0 });
         loop {
             owns guard: loop_guard(object);
@@ -100,12 +100,12 @@ int32 alternate_mutex(struct parity_mutex *object, int32 n) {
             decreases n - i;
             invariant 0 <= i and i <= n;
             invariant guard.parity == (i + 1) % 2;
-            initialize by simp;
+            initialize by simp();
             preserve by {
-                have i < 2147483647 by { arithmetic() using { i < n; } }
+                have i < 2147483647 by { arithmetic() using { i < n; }; }
                 if i % 2 == 0 {
                     have (i + 1) % 2 == 1 by apply(even_successor(i));
-                    have guard.parity == 0 by simp;
+                    have guard.parity == 0 by simp();
                     unfold(guard);
                     step();
                     step();
@@ -114,11 +114,11 @@ int32 alternate_mutex(struct parity_mutex *object, int32 n) {
                     close_invariants();
                 } else {
                     have (i + 1) % 2 == 0 by apply(odd_successor(i));
-                    have 0 <= i % 2 by { arithmetic() using { 0 <= i; } }
+                    have 0 <= i % 2 by { arithmetic() using { 0 <= i; }; }
                     have 1 <= i % 2 by apply(nonzero_nonnegative(i % 2));
-                    have i % 2 <= 1 by { arithmetic() using { 0 <= i; } }
+                    have i % 2 <= 1 by { arithmetic() using { 0 <= i; }; }
                     have i % 2 == 1 by apply(bounded_one(i % 2));
-                    have guard.parity == 1 by simp;
+                    have guard.parity == 1 by simp();
                     unfold(guard);
                     step();
                     step();
@@ -129,16 +129,16 @@ int32 alternate_mutex(struct parity_mutex *object, int32 n) {
             }
         }
         if i % 2 == 0 {
-            have guard.parity == 0 by simp;
+            have guard.parity == 0 by simp();
             unfold(guard);
             execute();
             simp();
         } else {
-            have 0 <= i % 2 by { arithmetic() using { 0 <= i; } }
+            have 0 <= i % 2 by { arithmetic() using { 0 <= i; }; }
             have 1 <= i % 2 by apply(nonzero_nonnegative(i % 2));
-            have i % 2 <= 1 by { arithmetic() using { 0 <= i; } }
+            have i % 2 <= 1 by { arithmetic() using { 0 <= i; }; }
             have i % 2 == 1 by apply(bounded_one(i % 2));
-            have guard.parity == 1 by simp;
+            have guard.parity == 1 by simp();
             unfold(guard);
             execute();
             simp();

@@ -29,7 +29,7 @@ theorem head_nonnegative(a: int32[], n: int32) {
         instantiate(forall (k: int32) { 0 <= k and k < n implies a[k] >= 0 }, 0) using {
             0 <= 0;
             0 < n;
-        }
+        };
         assumption();
     }
 }

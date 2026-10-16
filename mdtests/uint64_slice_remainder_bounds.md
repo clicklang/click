@@ -16,8 +16,8 @@ uint64 remainder(uint64 length, uint64 mid) {
     requires mid <= length;
     ensures result == length - mid;
 } by {
-    have 0u64 < length - mid by { normalize() using { mid < length; } }
-    have length - mid <= length by { normalize() using { mid <= length; } }
+    have 0u64 < length - mid by { normalize() using { mid < length; }; }
+    have length - mid <= length by { normalize() using { mid <= length; }; }
     execute(); simp();
 }
 ```

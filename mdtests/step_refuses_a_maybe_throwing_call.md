@@ -18,8 +18,8 @@ int32 caller(int32 x) {
 verifying "step_refuses_a_maybe_throwing_call.c";
 
 int32 helper(int32 x) throws int32 {
-    ensures result == x by auto;
-    exceptional ensures exception == 7 by auto;
+    ensures result == x by auto();
+    exceptional ensures exception == 7 by auto();
 }
 
 int32 caller(int32 x) throws int32 {

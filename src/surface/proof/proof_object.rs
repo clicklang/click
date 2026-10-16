@@ -3049,7 +3049,7 @@ fn proof_step_source_name(step: &ProofStep) -> &'static str {
         ProofStep::ConstructResource(_) => "construct",
         ProofStep::ObserveResource(_) => "observe",
         ProofStep::Iterated(tactic) => tactic.name(),
-        ProofStep::CloseInvariantsBy(_) => "close_invariants by",
+        ProofStep::CloseInvariantsBy(_) => "close_invariants() by",
         ProofStep::Mark(_) => "mark",
     }
 }

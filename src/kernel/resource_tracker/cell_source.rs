@@ -222,6 +222,70 @@ pub(in crate::kernel) enum PointerInRangeEvidence {
         lower: RangeBoundEvidence,
         upper: RangeBoundEvidence,
     },
+    /// An unsigned 64-bit element index of a 32-bit-bounded range: the read
+    /// is the range's own base plus `index` whole elements, the range starts
+    /// at a constant no greater than zero (an unsigned index is never
+    /// below it), and `upper` — an exact fact of the context — keeps the
+    /// index below the range's constant end ([`unsigned_index_in_range`]).
+    UnsignedIndexed {
+        index: Bitvector32Term,
+        upper: ConditionTerm,
+    },
+}
+
+/// The unsigned 64-bit element index of `pointer` in a 32-bit-bounded
+/// `range`, and the exact order facts any one of which keeps it below the
+/// range's end: `index < end`, its mirror, and `index <= end - 1`.
+///
+/// The pointer must add one unsigned 64-bit scaled index, at the range's
+/// element width, to exactly the range's base (structural identity, so one
+/// object's elements at one origin); numeric address equality never
+/// qualifies. The range must start at a constant at most zero and end at a
+/// non-negative constant. The answer is built from the terms in hand; a
+/// caller asks the context for each candidate by exact lookup.
+pub(in crate::kernel) fn unsigned_index_in_range(
+    pointer: &Pointer,
+    range: &CMemoryRange,
+) -> Option<(Bitvector32Term, Vec<ConditionTerm>)> {
+    crate::instrumentation::record_deterministic_work(1);
+    let (start, end) = range.int32_bounds()?;
+    let start = i64::from(start.as_const()? as i32);
+    let end = i64::from(end.as_const()? as i32);
+    if start > 0 || end <= 0 {
+        return None;
+    }
+    let (index_offset, base_rest) =
+        crate::kernel::reasoning::common_base_index_offsets(pointer, range.base())?;
+    if base_rest != PointerOffsetTerm::Constant(0) {
+        return None;
+    }
+    let PointerOffsetTerm::Int64Scaled {
+        value,
+        byte_width,
+        unsigned: true,
+    } = index_offset
+    else {
+        return None;
+    };
+    if byte_width != i64::from(range.element_width()) {
+        return None;
+    }
+    let index = *value;
+    let end_term = Bitvector32Term::UInt64Constant(end as u64);
+    let last = Bitvector32Term::UInt64Constant((end - 1) as u64);
+    let guards = vec![
+        ConditionTerm::Bitvector64UnsignedLessThan(
+            Box::new(index.clone()),
+            Box::new(end_term.clone()),
+        ),
+        ConditionTerm::Bitvector64UnsignedGreaterThan(Box::new(end_term), Box::new(index.clone())),
+        ConditionTerm::Bitvector64UnsignedLessEqual(
+            Box::new(index.clone()),
+            Box::new(last.clone()),
+        ),
+        ConditionTerm::Bitvector64UnsignedGreaterEqual(Box::new(last), Box::new(index.clone())),
+    ];
+    Some((index, guards))
 }
 
 /// A complete access stays in one range when its first and last addressed
@@ -1108,6 +1172,12 @@ impl PointerInRangeEvidence {
         if range.wide_bounds().is_some() {
             return None;
         }
+        if let Some((index, guards)) = unsigned_index_in_range(pointer, range) {
+            return guards
+                .into_iter()
+                .find(|guard| assumptions.exact_condition_value(guard) == Some(true))
+                .map(|upper| Self::UnsignedIndexed { index, upper });
+        }
         let index =
             pointer.element_index_from_base_with_width(range.base(), range.element_width())?;
         let lower_condition =
@@ -1129,7 +1199,10 @@ impl PointerInRangeEvidence {
         if let Self::GraphAlias { alias, membership } = self {
             return !pointer.blocks_proven_distinct(alias)
                 && assumptions.pointers_known_equal(pointer, alias)
-                && matches!(membership.as_ref(), Self::Shallow | Self::Indexed { .. })
+                && matches!(
+                    membership.as_ref(),
+                    Self::Shallow | Self::Indexed { .. } | Self::UnsignedIndexed { .. }
+                )
                 && membership.checks(alias, range, assumptions);
         }
         if let Self::ShiftedExactAlias {
@@ -1144,7 +1217,10 @@ impl PointerInRangeEvidence {
                     base.clone(),
                     alias.clone(),
                 )) == Some(true)
-                && matches!(membership.as_ref(), Self::Shallow | Self::Indexed { .. })
+                && matches!(
+                    membership.as_ref(),
+                    Self::Shallow | Self::Indexed { .. } | Self::UnsignedIndexed { .. }
+                )
                 && membership.checks(&alias.offset_by_bytes(*bytes), range, assumptions);
         }
         if let Self::ExactAlias {
@@ -1155,8 +1231,16 @@ impl PointerInRangeEvidence {
         {
             return *condition == ConditionTerm::pointer_equal(pointer.clone(), alias.clone())
                 && assumptions.exact_condition_value(condition) == Some(true)
-                && matches!(membership.as_ref(), Self::Shallow | Self::Indexed { .. })
+                && matches!(
+                    membership.as_ref(),
+                    Self::Shallow | Self::Indexed { .. } | Self::UnsignedIndexed { .. }
+                )
                 && membership.checks(alias, range, assumptions);
+        }
+        if let Self::UnsignedIndexed { index, upper } = self {
+            return unsigned_index_in_range(pointer, range)
+                .is_some_and(|(found, guards)| found == *index && guards.contains(upper))
+                && assumptions.exact_condition_value(upper) == Some(true);
         }
         let Self::Indexed {
             index: retained_index,
@@ -1696,6 +1780,138 @@ mod separated_range_frame_tests {
     mod scaling_tests {
         include!(
             "../../scaling_tests/kernel/resource_tracker/cell_source/separated_range_frame_tests.rs"
+        );
+    }
+}
+
+#[cfg(test)]
+mod unsigned_index_membership_tests {
+    use super::*;
+    use crate::kernel::{PureFactContext, Variable};
+
+    /// `base[k]` for an unsigned 64-bit `k`, one byte per element.
+    fn byte_at(base: &Pointer, index: Variable) -> Pointer {
+        Pointer {
+            block: base.block.clone(),
+            offset: PointerOffsetTerm::Int64Scaled {
+                value: Box::new(Bitvector32Term::Variable(index)),
+                byte_width: 1,
+                unsigned: true,
+            },
+        }
+    }
+
+    fn below(index: Variable, end: u64) -> ConditionTerm {
+        ConditionTerm::Bitvector64UnsignedLessThan(
+            Box::new(Bitvector32Term::Variable(index)),
+            Box::new(Bitvector32Term::UInt64Constant(end)),
+        )
+    }
+
+    fn bytes(base: &Pointer, end: u32) -> CMemoryRange {
+        CMemoryRange::new_with_element_width(base.clone(), 0u32.into(), end.into(), 1)
+    }
+
+    #[test]
+    fn a_guarded_unsigned_index_is_inside_the_range() {
+        let base = Pointer::symbolic(Variable(984_400));
+        let k = Variable(984_401);
+        let read = byte_at(&base, k);
+        let range = bytes(&base, 4);
+        let context = PureFactContext::new().assume_condition(below(k, 4), true);
+        let membership = PointerInRangeEvidence::for_pointer(&read, &range, &context)
+            .expect("k < 4 places base[k] in base[0..4]");
+        assert!(matches!(
+            membership,
+            PointerInRangeEvidence::UnsignedIndexed { .. }
+        ));
+        assert!(membership.checks(&read, &range, &context));
+        // The evidence is the exact fact: without it, checking refuses.
+        assert!(!membership.checks(&read, &range, &PureFactContext::new()));
+        // `k <= 3` is the same bound written inclusively.
+        let inclusive = PureFactContext::new().assume_condition(
+            ConditionTerm::Bitvector64UnsignedLessEqual(
+                Box::new(Bitvector32Term::Variable(k)),
+                Box::new(Bitvector32Term::UInt64Constant(3)),
+            ),
+            true,
+        );
+        assert!(PointerInRangeEvidence::for_pointer(&read, &range, &inclusive).is_some());
+    }
+
+    #[test]
+    fn an_index_bounded_past_the_end_is_refused() {
+        let base = Pointer::symbolic(Variable(984_410));
+        let k = Variable(984_411);
+        let read = byte_at(&base, k);
+        let range = bytes(&base, 4);
+        // `k < 5` allows `k == 4`, one past the range.
+        let context = PureFactContext::new().assume_condition(below(k, 5), true);
+        assert!(PointerInRangeEvidence::for_pointer(&read, &range, &context).is_none());
+        let retained = PointerInRangeEvidence::UnsignedIndexed {
+            index: Bitvector32Term::Variable(k),
+            upper: below(k, 5),
+        };
+        assert!(!retained.checks(&read, &range, &context));
+    }
+
+    #[test]
+    fn an_index_on_another_base_is_refused() {
+        let base = Pointer::symbolic(Variable(984_420));
+        let other = Pointer::symbolic(Variable(984_421));
+        let k = Variable(984_422);
+        let range = bytes(&base, 4);
+        let context = PureFactContext::new().assume_condition(below(k, 4), true);
+        // `other[k]` is not `base[k]` however `k` is bounded.
+        let elsewhere = byte_at(&other, k);
+        assert!(PointerInRangeEvidence::for_pointer(&elsewhere, &range, &context).is_none());
+        let membership = PointerInRangeEvidence::for_pointer(&byte_at(&base, k), &range, &context)
+            .expect("base[k] is inside");
+        assert!(!membership.checks(&elsewhere, &range, &context));
+        // One block at another origin is another base too: `base + 8 + k`.
+        let shifted_base = base.offset_by_bytes(8);
+        let shifted = Pointer {
+            block: base.block.clone(),
+            offset: PointerOffsetTerm::Add(
+                Box::new(shifted_base.offset.clone()),
+                Box::new(byte_at(&base, k).offset),
+            ),
+        };
+        assert!(PointerInRangeEvidence::for_pointer(&shifted, &range, &context).is_none());
+    }
+
+    #[test]
+    fn a_signed_or_wider_element_index_is_refused() {
+        let base = Pointer::symbolic(Variable(984_430));
+        let k = Variable(984_431);
+        let range = bytes(&base, 4);
+        let context = PureFactContext::new().assume_condition(below(k, 4), true);
+        let signed = Pointer {
+            block: base.block.clone(),
+            offset: PointerOffsetTerm::Int64Scaled {
+                value: Box::new(Bitvector32Term::Variable(k)),
+                byte_width: 1,
+                unsigned: false,
+            },
+        };
+        assert!(unsigned_index_in_range(&signed, &range).is_none());
+        // Four-byte elements of a one-byte range: the scale is not the
+        // range's element width.
+        let wide = Pointer {
+            block: base.block.clone(),
+            offset: PointerOffsetTerm::Int64Scaled {
+                value: Box::new(Bitvector32Term::Variable(k)),
+                byte_width: 4,
+                unsigned: true,
+            },
+        };
+        assert!(unsigned_index_in_range(&wide, &range).is_none());
+        assert!(PointerInRangeEvidence::for_pointer(&wide, &range, &context).is_none());
+    }
+
+    mod scaling_tests {
+        include!(
+            "../../scaling_tests/kernel/resource_tracker/cell_source/unsigned_index_membership_tests.rs"
         );
     }
 }

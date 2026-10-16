@@ -16,7 +16,7 @@ int32 duplicate_write(int32* p) {
     consumes p[0..1];
     consumes p[0..1];
 
-    ensures result == old(p[0]) by auto;
+    ensures result == old(p[0]) by auto();
 }
 ```
 

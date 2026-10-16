@@ -33,7 +33,7 @@ int32 bounded_by(int32 p[], int32 lo, int32 hi, int32 x) {
     requires 0 <= lo and lo <= hi;
     requires viewable(p[lo..hi]);
     requires (lo..hi).all(|k| { p[k] <= x });
-    ensures (lo..hi).all(|k| { p[k] <= x }) by auto;
+    ensures (lo..hi).all(|k| { p[k] <= x }) by auto();
 }
 
 int32 has_in_first_three(int32 p[], int32 x) {
@@ -61,7 +61,7 @@ int32 zeros_with_needle(int32 p[], int32 lo, int32 hi, int32 needle) {
     requires viewable(p[lo..hi]);
     requires (lo..hi).all(|k| { p[k] == 0 });
     requires (lo..hi).any(|k| { p[k] == needle });
-    ensures range_sum(p, lo, hi) == range_sum(p, lo, hi) by auto;
+    ensures range_sum(p, lo, hi) == range_sum(p, lo, hi) by auto();
 }
 ```
 

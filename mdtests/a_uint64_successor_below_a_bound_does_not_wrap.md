@@ -16,7 +16,7 @@ do not keep in range.
 theorem successor(i: uint64, length: uint64) {
     requires i < length;
     ensures i + 1u64 <= length by {
-        arithmetic() using { i < length; }
+        arithmetic() using { i < length; };
     }
 }
 ```

@@ -43,12 +43,12 @@ verifying "target.c";
 int32 run() {
     owns forward::alias[0..1];
     requires forward::alias[0] == 7;
-    ensures result == 7 by auto;
+    ensures result == 7 by auto();
 }
 
 int32 read_target() {
     requires target == 7;
-    ensures result == 7 by auto;
+    ensures result == 7 by auto();
 }
 ```
 

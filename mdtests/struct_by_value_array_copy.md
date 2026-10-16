@@ -50,7 +50,7 @@ struct packet finish(struct packet value) {
     ensures result.values[1] == 6;
     ensures result.bytes[0] == 9;
 } by {
-    auto;
+    auto();
 }
 
 int32 run_struct_by_value_array() {

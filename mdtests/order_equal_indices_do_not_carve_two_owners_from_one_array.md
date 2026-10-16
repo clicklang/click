@@ -25,7 +25,7 @@ verifying "order_equal_indices_do_not_carve_two_owners_from_one_array.c";
 int32 wr(int32* p, int32* q) {
     owns p[0..1];
     owns q[0..1];
-    ensures result == 1 by auto;
+    ensures result == 1 by auto();
 }
 
 int32 caller(int32* x, int32 i, int32 j) {
@@ -36,7 +36,7 @@ int32 caller(int32* x, int32 i, int32 j) {
     requires i <= j;
     requires j <= i;
     owns x[0..4];
-    ensures result == 1 by auto;
+    ensures result == 1 by auto();
 }
 ```
 
