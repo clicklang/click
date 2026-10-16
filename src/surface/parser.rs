@@ -11546,6 +11546,7 @@ impl Parser {
                         function_pointer_signature: None,
                         array_shape: None,
                         source: None,
+                        access_class: None,
                     }
                 }
             } else {
@@ -11557,6 +11558,7 @@ impl Parser {
                     function_pointer_signature: field.function_pointer_signature.clone(),
                     array_shape: field.array_shape,
                     source: None,
+                    access_class: None,
                 }
             }));
         }

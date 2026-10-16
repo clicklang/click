@@ -1194,7 +1194,7 @@ impl CPointerValue {
     }
 
     pub(crate) fn object_class(&self) -> Option<crate::kernel::effective_type::CAccessClass> {
-        self.qualifiers.as_ref()?.object_class
+        self.qualifiers.as_ref()?.object_class.clone()
     }
 
     /// Records the class of the object the pointer designates. A pointer
@@ -3173,6 +3173,9 @@ pub enum CStatement {
         name: String,
         layout: CAggregateLayout,
         kind: CAggregateDeclarationKind,
+        /// The object's class for the strict-aliasing check, a struct's
+        /// (`design/effective-types.md`).
+        declared_class: Option<crate::kernel::effective_type::CAccessClass>,
     },
     /// Copy an address-backed aggregate, preserving typed views for any
     /// overlapping union members in its layout.
