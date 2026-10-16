@@ -2170,21 +2170,151 @@ fn contract_view_of_entry(
     entry_state
 }
 
-/// Certifies every exact contract claim in one pass over a kernel-produced,
-/// complete execution frontier.
-///
-/// Path validity, resource expansion, and verification conditions are checked
-/// once per path and then shared by the individual claim checks.
-/// Lowers proposition ensure `contract_index` of `function` at the
-/// post-state `outcome` reaches from `caller_state` with `arguments`: the
-/// one lowering a claim proof closes and claim certification matches, so a
-/// completion matches by construction. Each path pairs the ensure's
-/// proposition with the facts its loads introduced. An ensure stated as a
-/// registered predicate is closed as that predicate identity, the form the
-/// proof states and unfolds on the goal, unless `unfolded_predicates` names
-/// the predicate, in which case it is closed as the body the contract
-/// stores. `None` when the outcome does not return or the states cannot be
-/// reconstructed.
+/// Entry and exit views prepared for lowering return claims at one fixed
+/// frontier. The producer owns the states and facts; callers discard the
+/// context when the outcome, ambient facts, or resource representation changes.
+/// Predicate unfold choices affect individual goals, not these prepared views.
+pub(crate) struct CFunctionEnsureGoalContext<'a> {
+    function: &'a CFunction,
+    entry_state: CState,
+    post_state: CState,
+    assumptions: PureFactContext,
+}
+
+impl<'a> CFunctionEnsureGoalContext<'a> {
+    pub(crate) fn new(
+        function: &'a CFunction,
+        caller_state: &CState,
+        arguments: &[CExpression],
+        outcome: &CFunctionOutcome,
+        assumptions: &PureFactContext,
+    ) -> Option<Self> {
+        let CFunctionOutcome::Return {
+            value,
+            state: return_state,
+        } = outcome
+        else {
+            return None;
+        };
+        let mut entry_state = contract_view_of_entry(
+            c_function_entry_state(caller_state, function, arguments)?,
+            function,
+            arguments,
+        );
+        let expanded_entry_resources =
+            crate::kernel::functions::expand_all_composite_resource_facts_at_state(
+                entry_state.resources(),
+                function.composite_resource_definitions(),
+                &entry_state,
+                assumptions,
+            )?;
+        entry_state = entry_state.with_resource_context(expanded_entry_resources);
+        let exit_memory = crate::kernel::functions::function_exit_memory(
+            caller_state,
+            return_state,
+            value,
+            function,
+        );
+        let claim_return_state = return_state.clone().with_memory(exit_memory.clone());
+        let post_resources =
+            crate::kernel::functions::expand_all_composite_resource_facts_at_state(
+                claim_return_state.resources(),
+                function.composite_resource_definitions(),
+                &claim_return_state,
+                assumptions,
+            )?;
+        let mut post_state = entry_state.clone().with_memory(exit_memory);
+        post_state = post_state.with_resource_context(post_resources);
+        post_state.observed_population_families = return_state.observed_population_families.clone();
+        // Preserve checked body consumption evidence when reconstructing the exit.
+        post_state.population_effects = return_state.population_effects.clone();
+        if function.return_type() != CType::Void {
+            post_state.locals.set_typed(
+                C_CONTRACT_RESULT_NAME.to_string(),
+                value.clone(),
+                function.return_type(),
+            );
+        }
+        Some(Self {
+            function,
+            entry_state,
+            post_state,
+            assumptions: assumptions.clone(),
+        })
+    }
+
+    pub(crate) fn goals(
+        &self,
+        contract_index: usize,
+        unfolded_predicates: &[String],
+    ) -> Option<Vec<CClaimGoal>> {
+        let function = self.function;
+        let entry_state = &self.entry_state;
+        let post_state = &self.post_state;
+        let assumptions = &self.assumptions;
+        let ensure = function.contract_ensures().get(contract_index)?;
+        let ensure = function
+            .predicate_unfoldings()
+            .iter()
+            .find(|unfolding| unfolding.body() == ensure)
+            .filter(|unfolding| match unfolding.predicate() {
+                SpecProposition::Predicate { name, .. } => !unfolded_predicates.contains(name),
+                _ => false,
+            })
+            .map_or(ensure, CPredicateUnfolding::predicate);
+        let lowering_assumptions = assumptions
+            .clone()
+            .allow_symbolic_contract_loads()
+            .defer_non_exact_loadability_obligations();
+        let mut budget = ExecutionBudget::beside_live_state();
+        let paths = lower_spec_proposition_at_state_with_loop_entry(
+            post_state,
+            ensure,
+            Some(entry_state),
+            &lowering_assumptions,
+            &mut budget,
+        )
+        .ok()?;
+        // An ensure that reads memory the outcome shows freed is not stated at
+        // this outcome: no goal, so the claim's own lowering reports the load.
+        if paths.iter().any(|path| {
+            path.obligations.iter().any(|obligation| {
+                super::c_loadability_obligation_impossible_with_assumptions(
+                    obligation.proposition(),
+                    assumptions,
+                )
+            })
+        }) {
+            return None;
+        }
+        let selected = exactly_selected_spec_proposition_path(&paths, assumptions);
+        let paths = match selected {
+            Some(path) if paths.len() > 1 => std::slice::from_ref(path),
+            _ => paths.as_slice(),
+        };
+        Some(
+            paths
+                .iter()
+                .map(|path| CClaimGoal {
+                    target: CFunctionContractClaimTarget::EnsureProposition(contract_index),
+                    proposition: path.proposition.clone(),
+                    facts: path
+                        .facts
+                        .iter()
+                        .map(|fact| fact.proposition().clone())
+                        .collect(),
+                })
+                .collect(),
+        )
+    }
+}
+
+/// Lower one return ensure, including the facts its loads introduce. Callers
+/// lowering several claims at an unchanged frontier prepare one
+/// `CFunctionEnsureGoalContext` instead of reconstructing the views per claim.
+/// With a registered predicate, retain its identity unless the proof has
+/// explicitly unfolded it. `None` means a non-returning outcome or a view/goal
+/// that cannot be reconstructed.
 pub fn c_function_ensure_goals(
     function: &CFunction,
     contract_index: usize,
@@ -2194,101 +2324,8 @@ pub fn c_function_ensure_goals(
     assumptions: &PureFactContext,
     unfolded_predicates: &[String],
 ) -> Option<Vec<CClaimGoal>> {
-    let ensure = function.contract_ensures().get(contract_index)?;
-    let ensure = function
-        .predicate_unfoldings()
-        .iter()
-        .find(|unfolding| unfolding.body() == ensure)
-        .filter(|unfolding| match unfolding.predicate() {
-            SpecProposition::Predicate { name, .. } => !unfolded_predicates.contains(name),
-            _ => false,
-        })
-        .map_or(ensure, CPredicateUnfolding::predicate);
-    let CFunctionOutcome::Return {
-        value,
-        state: return_state,
-    } = outcome
-    else {
-        return None;
-    };
-    let mut entry_state = contract_view_of_entry(
-        c_function_entry_state(caller_state, function, arguments)?,
-        function,
-        arguments,
-    );
-    let expanded_entry_resources =
-        crate::kernel::functions::expand_all_composite_resource_facts_at_state(
-            entry_state.resources(),
-            function.composite_resource_definitions(),
-            &entry_state,
-            assumptions,
-        )?;
-    entry_state = entry_state.with_resource_context(expanded_entry_resources);
-    let exit_memory =
-        crate::kernel::functions::function_exit_memory(caller_state, return_state, value, function);
-    let claim_return_state = return_state.clone().with_memory(exit_memory.clone());
-    let post_resources = crate::kernel::functions::expand_all_composite_resource_facts_at_state(
-        claim_return_state.resources(),
-        function.composite_resource_definitions(),
-        &claim_return_state,
-        assumptions,
-    )?;
-    let mut post_state = entry_state.clone().with_memory(exit_memory);
-    post_state = post_state.with_resource_context(post_resources);
-    post_state.observed_population_families = return_state.observed_population_families.clone();
-    // Preserve checked body consumption evidence when reconstructing the exit.
-    post_state.population_effects = return_state.population_effects.clone();
-    if function.return_type() != CType::Void {
-        post_state.locals.set_typed(
-            C_CONTRACT_RESULT_NAME.to_string(),
-            value.clone(),
-            function.return_type(),
-        );
-    }
-    let lowering_assumptions = assumptions
-        .clone()
-        .allow_symbolic_contract_loads()
-        .defer_non_exact_loadability_obligations();
-    let mut budget = ExecutionBudget::beside_live_state();
-    let paths = lower_spec_proposition_at_state_with_loop_entry(
-        &post_state,
-        ensure,
-        Some(&entry_state),
-        &lowering_assumptions,
-        &mut budget,
-    )
-    .ok()?;
-    // An ensure that reads memory the outcome shows freed is not stated at
-    // this outcome: no goal, so the claim's own lowering reports the load.
-    if paths.iter().any(|path| {
-        path.obligations.iter().any(|obligation| {
-            super::c_loadability_obligation_impossible_with_assumptions(
-                obligation.proposition(),
-                assumptions,
-            )
-        })
-    }) {
-        return None;
-    }
-    let selected = exactly_selected_spec_proposition_path(&paths, assumptions);
-    let paths = match selected {
-        Some(path) if paths.len() > 1 => std::slice::from_ref(path),
-        _ => paths.as_slice(),
-    };
-    Some(
-        paths
-            .iter()
-            .map(|path| CClaimGoal {
-                target: CFunctionContractClaimTarget::EnsureProposition(contract_index),
-                proposition: path.proposition.clone(),
-                facts: path
-                    .facts
-                    .iter()
-                    .map(|fact| fact.proposition().clone())
-                    .collect(),
-            })
-            .collect(),
-    )
+    CFunctionEnsureGoalContext::new(function, caller_state, arguments, outcome, assumptions)?
+        .goals(contract_index, unfolded_predicates)
 }
 
 /// Lowers one exceptional postcondition at a checked throwing outcome. The
