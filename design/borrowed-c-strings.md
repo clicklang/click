@@ -5,8 +5,10 @@ the contract's choice of `views`, `owns`, or `consumes`/`produces`, and
 call-site assembly from owned bytes are implemented. The binder form (c) and
 the resource-term call map are implemented on per-call contract value
 parameters (see [Kernel mechanism for (c)](#kernel-mechanism-for-c)), a
-kernel concept the original proposal assumed already existed. Assembly from
-viewed bytes is deferred (see [(d)](#d-call-site-assembly-of-a-viewed-composite)).
+kernel concept the original proposal assumed already existed. The library's
+`strlen` and the `label-build-flags` example use the binder (migration steps
+3 to 5). Assembly from viewed bytes is deferred (see
+[(d)](#d-call-site-assembly-of-a-viewed-composite)), and M3 is next.
 
 `click::cstr` declares the C string:
 
@@ -45,8 +47,8 @@ The goal is `strlen` and `label_copy` contracts that hold the string under
 `views`, so the trusted `memcpy`/`memcmp` can read under `views` (M3) without
 narrowing a claim. Two pieces were missing: a contract cannot name a length
 its C signature does not carry (c), and a caller that holds only the bytes
-cannot pass a `cstr_at` it never folded (d). (d) is implemented for owned
-bytes; (c) is not.
+cannot pass a `cstr_at` it never folded (d). Both are implemented, (d) for
+owned bytes.
 
 ## (c) The length is an instance binder's argument
 
@@ -191,6 +193,11 @@ What landed:
   two with different values, is refused; equal values are not searched for.
 - `s` itself is a name for the clause, not an instance identity, so
   `{ s: str }` and `s.len` are the whole interface.
+- A C library function's value binders, such as `strlen`'s `s`, are named
+  in a program's call map too. The library is parsed apart from the
+  sidecar, so the sidecar's parser asks the loaded library for the binders
+  of a callee whose contract the library supplies
+  (`library_c_function_value_binders`) when the sidecar declares none.
 
 Mdtests: `cstr_at_binder_*`, `cstr_at_owning_binder_keeps_its_length.md`,
 and `cstr_at_call_map_*`.
@@ -287,7 +294,8 @@ structure; assembly for `owns` or `consumes` requirements.
 
 PR A landed the owning body, the `views`/`owns`/`consumes`-`produces`
 choice, the terminator mdtests, and assembly from owned bytes. Its second
-increment landed step 1. The viewed-bytes half of step 2 is deferred.
+increment landed step 1. PR B landed steps 3 to 6. The viewed-bytes half of
+step 2 is deferred.
 
 1. Done: (c), `views` and fieldless binders, `_`, `s.param`, the
    resource-term map entry, with ambiguity, missing-instance and unheld-term
@@ -296,40 +304,51 @@ increment landed step 1. The viewed-bytes half of step 2 is deferred.
 2. Implement (d) from viewed bytes, with positive, missing-view, failed-fact
    and non-qualifying-body mdtests, and a scaling regression that grows
    string length and unrelated held resources.
-3. Change the `strlen` library contract to
-   `views s: cstr_at(bytes, _); ensures result == s.len;`. It now needs read
-   authority, not only `viewable`. This deliberately strengthens the
-   precondition, as M3 does for `memcpy`/`memcmp`. 29 mdtest files mention
-   `strlen`, and 26 of them use `cstr::readable`:
-   - Declaration and binding tests (redeclarations, kernel-target refusals,
-     `<string.h>` binding, about 8) keep their shape. Their callers change
-     only where they verify a call.
-   - The `cstr_dynamic_*` (8) and plain-, signed-char caller-requirement
-     tests (about 8) state `views s: cstr_at(src, _)`, or
-     `views src[0..n + 1u64]` with the facts, so that the call assembles.
-     The tests whose subject was `cstr::readable` transport (epochs, offset
-     copies, writes) keep a variant that holds the predicate and refuses
-     the call. That shows `viewable` alone no longer suffices.
-   - `stdlib_every_symbol.md` and
-     `strlen_of_an_empty_string_and_memcmp_use_the_catalog_contracts.md`
-     use `views cstr_at(text, 0u64)`.
-4. In `examples/label-build-flags`, `label_measure` and `label_copy` take
-   `views s: cstr_at(src, _)`. They state
-   `ensures s.len < 32u64 implies result == s.len;` and
-   `ensures 32u64 <= s.len implies result == 31u64;`, and `label_copy` adds
-   `requires separate(memory(dst[0u64..32u64]), memory(src[0u64..s.len + 1u64]));`
-   and `ensures bytes::equal(dst, 0u64, src, 0u64, result);`. The
-   obtain-and-transport proof becomes `execute()` plus arithmetic.
-5. In `src/surface/tests/expansion_tests.rs`, the `read_terminator` fixture
-   tests the source identity of a reordered `cstr::readable` requirement.
-   It becomes an assembly fixture: `views haystack[0..known_len + 1u64]`,
-   the facts, and `{ s: cstr_at(haystack, known_len) }` in the expanded
-   proof. It still asserts that no hidden planning transitions occur.
-6. In `src/surface/proof/surface_synthesis/tests.rs`, the strlen-shaped tests
-   synthesize the guarded quantified `loadable` carrier that `cstr::readable`
-   produced. If `memcmp`'s guarded `defined` range still produces that
-   carrier after M3, they are renamed to C-string shapes. Otherwise they are
-   retired with the shape.
+3. Done: the `strlen` library contract is
+   `views s: cstr_at(bytes, _); ensures result == s.len;`, switched in one
+   step. It needs a held string, not only `viewable`, which deliberately
+   strengthens the precondition. The 29 mdtests that mention `strlen`
+   migrated as follows:
+   - Declaration and binding tests keep their shape; the ones that verify a
+     call view `cstr_at(s, _)` and ensure `result == str.len`.
+   - Callers whose subject was the call (`<string.h>`, redeclaration,
+     return and copy forms, identity casts, plain and signed `char`
+     forwarding, reordered clauses, the empty-string catalog test) view
+     `cstr_at(p, _)` or `cstr_at(p, n)`. Offset, missing-requirement and cast
+     refusals now report the missing string. The write refusal owns the
+     string and unfolds it to write, so the call finds no instance.
+   - `cstr_readable_witness_stated_before_call.md` owns its three bytes and
+     states the string's facts with `have` before
+     `step(strlen(bytes), { s: cstr_at(bytes, 2u64) })`, which assembles the
+     string.
+   - The transport tests keep their `cstr::readable` witnesses and
+     transports: the positive ones add the viewed string the call uses, the
+     refusals that fail before the call are unchanged, and
+     `cstr_dynamic_indexed_read_requires_permission.md` and
+     `cstr_dynamic_invalidated_transport.md` hold only the predicate and
+     show that the call refuses it.
+   - `stdlib_every_symbol.md` needed no change.
+4. Done: in `examples/label-build-flags`, `label_measure` and `label_copy`
+   take `views s: cstr_at(src, _)` and state exactly the kept length,
+   `s.len < 32u64 implies result == s.len` and
+   `32u64 <= s.len implies result == 31u64`, which `label_fit` now states
+   too. `label_copy` requires
+   `separate(memory(dst[0u64..32u64]), memory(src[0u64..s.len + 1u64]))`,
+   opens the string to lend `memcpy` its prefix, and keeps
+   `dst[result] == '\0'`. The obtain-and-transport proof became
+   `step`s, an `open` and `execute()`. The copied bytes are not yet stated:
+   `memcpy`'s `bytes::equal` postcondition is not carried across the
+   terminator store that follows it, and an explicit `transport` of it is
+   refused.
+5. Done: in `src/surface/tests/expansion_tests.rs`, the `read_terminator`
+   fixture views `cstr_at(haystack, _)` among the reordered clauses and
+   still asserts that no hidden planning transitions occur. It is not an
+   assembly fixture, since assembly from viewed bytes is deferred.
+6. The strlen-shaped tests in `src/surface/proof/surface_synthesis/tests.rs`
+   synthesize the guarded quantified `loadable` carrier of
+   `cstr::readable`, which no longer depends on `strlen`. Revisit them with
+   M3: rename them to C-string shapes if `memcmp`'s guarded `defined` range
+   still produces that carrier, otherwise retire them.
 7. Then M3: `memcpy`/`memcmp` read under `views`.
 
 ## Open questions for the maintainer
@@ -341,5 +360,4 @@ value parameters of a C function's contract, as sketched in
 [Kernel mechanism for (c)](#kernel-mechanism-for-c). Assembly from viewed
 bytes is deferred until a real proof needs it.
 
-- Should `strlen` keep its `cstr::readable`-based guarantees beside the new
-  ones during the migration, or switch in one step?
+Decided on 2026-10-15: `strlen` switches in one step.

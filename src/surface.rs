@@ -1,8 +1,8 @@
-//! Surface Click proof-language syntax, checking, and proof orchestration.
+//! Surface Click specification syntax, checking, and proof orchestration.
 //!
-//! Surface Click is the single proof language. Its current program-language
-//! binding targets C0; additional program languages belong under
-//! `crate::languages` rather than beside this module.
+//! Surface Click is the shared specification language for C, C++, and Rust.
+//! Target-language frontends belong under `crate::languages`; proof checking
+//! uses the shared kernel.
 
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
@@ -2699,7 +2699,7 @@ pub enum ContractExpression {
     /// Persistent sequence concatenation. This is specification syntax only;
     /// it does not denote C pointer arithmetic or allocate C memory.
     SequenceConcat(Box<ContractExpression>, Box<ContractExpression>),
-    /// A C0 expression fragment appearing inside Surface Click.
+    /// A C expression fragment appearing inside Surface Click.
     CFragment(CExpression),
     /// A C unary operation whose operand retains explicit binding syntax.
     /// Scalar casts and typed loads may also wrap a pure or historical expression. `operand` is authoritative;
@@ -6861,6 +6861,34 @@ fn contract_expression_reads_memory(
         | ContractExpression::Binding(_)
         | ContractExpression::CBinding(_)
         | ContractExpression::CFragment(CExpression::Variable(_) | CExpression::Value(_)) => false,
+        // `address(p)` of a name is that pointer value's integer
+        // representation: it reads nothing its operand does not.
+        ContractExpression::CUnary {
+            operand,
+            lowered:
+                CExpression::Cast {
+                    expression,
+                    target_type: CType::UInt64,
+                    ..
+                },
+        } if matches!(
+            expression.as_ref(),
+            CExpression::Variable(_) | CExpression::Value(_)
+        ) =>
+        {
+            contract_expression_reads_memory(operand, callees)
+        }
+        ContractExpression::CFragment(CExpression::Cast {
+            expression,
+            target_type: CType::UInt64,
+            ..
+        }) if matches!(
+            expression.as_ref(),
+            CExpression::Variable(_) | CExpression::Value(_)
+        ) =>
+        {
+            false
+        }
         // A memory read, a snapshot selector, a resource observation, or any
         // C fragment richer than a name is conservatively memory-dependent.
         ContractExpression::QualifiedC { .. }

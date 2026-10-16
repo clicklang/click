@@ -191,7 +191,7 @@ far. Each claim covers the named functions only.
 
 | Evidence | C | C++ | Rust |
 | --- | --- | --- | --- |
-| Upstream source verified unchanged | Partial: json-c `json_c_version.c`, pinned zlib entry points, Linux `rb_parent`; Linux `lib/rbtree.c` is not yet verified; `examples/jsonc-existing-source/` | Partial: Bitcoin Core v31.1 `MoneyRange`, `FeeFrac` methods, `GetSizeOfCompactSize`, `SpanPopBack`; `integrations/bitcoin-core-money-range/` | Partial: adler2 2.0.1 constructors, constants, and bounds; the checksum result is not yet proved; `tests/rust_import/crate_inputs.rs::charon_adler2_unchanged_constructor_returns_initialized_state` |
+| Upstream source verified unchanged | Partial: json-c `json_c_version.c`, pinned zlib entry points, Linux `rb_parent`; Linux `lib/rbtree.c` is not yet verified; `examples/jsonc-existing-source/` | Partial: Bitcoin Core v31.1 `MoneyRange`, `FeeFrac` methods, `GetSizeOfCompactSize`, `SpanPopBack`; `integrations/bitcoin-core-money-range/` | Partial: adler2 2.0.1 constructors, constants, bounds, and exact four-byte checksums from the constructor state; `tests/rust_import/crate_inputs.rs::charon_adler2_unchanged_constructor_returns_initialized_state`, `tests/rust_import/adler2_helpers.rs::charon_adler2_four_byte_compute_proves_original_body_and_rejects_false_outputs` |
 
 ## What no proof covers
 

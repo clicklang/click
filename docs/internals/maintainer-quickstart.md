@@ -4,19 +4,23 @@ This page is for agents that need to make progress immediately.
 
 ## Run the project
 
-From the repository root:
+From the repository root, run the same full gate as CI:
 
-```sh
-cargo check
-cargo test
+```console
+scripts/check.sh
 ```
 
-The full test suite includes Rust unit tests and markdown integration tests. The
-markdown tests are the best examples of end-to-end Click behavior:
+The gate checks formatting, documentation, unit tests, and proof fixtures. It
+leaves nightly-only work to the nightly workflow. Use `cargo check` for a
+targeted compile check and the fixture harness for focused proof work:
 
-```sh
+```console
 cargo test --test mdtests
 ```
+
+These focused commands do not replace the full gate. Prose-only changes can run
+`scripts/check.sh --docs-only`; see [Testing Click](testing.md) for setup,
+fixture selection, and named nightly tests.
 
 ## Mdtest format
 
@@ -58,8 +62,10 @@ Termination is part of the verdict, so a fixture whose summarized loop carries
 no `decreases` clause is refused; see
 [Testing Click](testing.md#termination-is-part-of-an-mdtests-verdict).
 
-The harness is `tests/mdtests.rs`. It runs every markdown file in `mdtests/`,
-so keep examples deterministic and reasonably small.
+The harness is `tests/mdtests.rs`. It discovers fixtures under `mdtests/`;
+ordinary runs skip the nightly list. Select a fixture by setting
+`MDTEST_FILTER` to a filename fragment. Keep examples deterministic and
+reasonably small.
 
 ## Minimal proof example
 
@@ -91,8 +97,9 @@ the postcondition follows on every execution path.
 3. Add the new behavior or failing case.
 4. Run `cargo test --test mdtests`.
 5. Implement parser/lowering/prover changes.
-6. Run `cargo test`.
-7. Update the relevant `docs/*.md` file.
+6. Update the relevant documentation.
+7. Run `scripts/check.sh`, or `scripts/check.sh --docs-only` for prose-only
+   changes.
 
 ## Where to look in source
 

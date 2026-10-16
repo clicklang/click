@@ -628,6 +628,9 @@ struct Parser {
     recursion_peers_by_function: BTreeMap<String, Vec<String>>,
     /// Click library modules the program's C declarations bring.
     implied_library_modules: BTreeSet<&'static str>,
+    /// Whether this parser reads a Click library module, which never looks
+    /// up the library's own declarations while the library is loading.
+    library_module: bool,
     /// The theorems the file declares, which a citation by bare name names
     /// before any library theorem of that name. Empty in a library module.
     local_theorems: BTreeSet<String>,
@@ -1220,6 +1223,7 @@ impl Parser {
             c_object_names_by_function: BTreeMap::new(),
             recursion_peers_by_function: BTreeMap::new(),
             implied_library_modules: path_library_modules,
+            library_module,
             local_theorems,
             current_c_parameter_types: BTreeMap::new(),
             current_parameter_struct_casts: BTreeMap::new(),
@@ -5246,6 +5250,9 @@ impl Parser {
         .get(&callee)
         .cloned()
         .unwrap_or_default();
+        if has_map && !named_contract && declared.is_empty() {
+            declared = self.library_callee_value_binders(&callee)?;
+        }
         if has_map {
             self.expect(Token::LBrace)?;
         }
@@ -5695,6 +5702,38 @@ impl Parser {
             );
     }
 
+    /// The value binders of the C library function `callee`, such as
+    /// `strlen`'s `s`, for a call map in a program's sidecar. The library's
+    /// declarations are parsed apart from the sidecar, so its binders are
+    /// not in the sidecar's registry. A library module itself never asks:
+    /// the library is not loaded while it is being parsed.
+    fn library_callee_value_binders(
+        &self,
+        callee: &str,
+    ) -> Result<BTreeMap<String, CalleeResourceBinder>, ClickError> {
+        if self.library_module
+            || crate::languages::c::syntax::library_contract_module_named(callee).is_none()
+        {
+            return Ok(BTreeMap::new());
+        }
+        crate::instrumentation::record_deterministic_work(1);
+        Ok(super::validation::library_c_function_value_binders(callee)?
+            .into_iter()
+            .map(|(name, family)| (name, Self::value_callee_binder(family)))
+            .collect())
+    }
+
+    /// A call map's entry for a value binder of family `family`.
+    fn value_callee_binder(family: String) -> CalleeResourceBinder {
+        CalleeResourceBinder {
+            identity: Variable(0),
+            family: Some(family),
+            resource: None,
+            parameter_names: Vec::new(),
+            kind: CalleeResourceBinderKind::Value,
+        }
+    }
+
     /// Records an instance binder in the selected function/interface registry.
     /// Call maps name those declarations, including produced identities.
     /// Whether a value binder follows: `name: R(...)` where the clause is a
@@ -5792,16 +5831,7 @@ impl Parser {
         self.callee_resource_binders
             .entry(function.to_string())
             .or_default()
-            .insert(
-                name,
-                CalleeResourceBinder {
-                    identity: Variable(0),
-                    family: Some(resource.clone()),
-                    resource: None,
-                    parameter_names: Vec::new(),
-                    kind: CalleeResourceBinderKind::Value,
-                },
-            );
+            .insert(name, Self::value_callee_binder(resource.clone()));
         Ok(ResourceClause::Declared {
             type_schema: None,
             resource_type_arguments: Vec::new(),

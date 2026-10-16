@@ -29,7 +29,7 @@ resource IndexedCell(p: int32*, index: int32) {
     fact p[0] == value;
 }
 function remaining(rb: int32*, stop: int32*) -> int32 {
-    if rb == stop { 0 } else { 1 }
+    if address(rb) == address(stop) { 0 } else { 1 }
 }
 void advance(int32* rb, int32* stop) {
     owns cell: Cell(rb);
@@ -43,12 +43,12 @@ void advance(int32* rb, int32* stop) {
         preserve by {
             have remaining(rb, stop) == 1 by {
                 unfold(remaining(rb, stop));
-                normalize() using { rb != stop; }
+                normalize() using { address(rb) != address(stop); }
             }
             step();
             have remaining(rb, stop) == 0 by {
                 unfold(remaining(rb, stop));
-                normalize() using { rb == stop; }
+                normalize() using { address(rb) == address(stop); }
             }
             close_invariants();
         }

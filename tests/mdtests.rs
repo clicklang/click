@@ -113,6 +113,7 @@ const NIGHTLY: &[&str] = &[
     "cpp_two_guard_unwind.md",                                                 // 1.8s
     "cstr_at_binder_length_is_proved_for_every_length.md",                     // 0.8s
     "cstr_at_binder_length_sizes_a_later_segment.md",                          // 0.7s
+    "cstr_at_borrows_a_char_string_from_the_library.md",                       // 1.0s
     "cstr_at_call_map_names_the_string_a_call_assembles.md",                   // 0.8s
     "cstr_at_owning_binder_keeps_its_length.md",                               // 1.1s
     "cstr_dynamic_indexed_read.md",                                            // 0.6s

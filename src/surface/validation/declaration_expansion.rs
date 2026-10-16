@@ -215,6 +215,27 @@ fn library_modules() -> Result<&'static [LibraryModule], ClickError> {
     Ok(LIBRARY_MODULES.get_or_init(|| modules))
 }
 
+/// The value binders of the Click library's declaration of the C function
+/// `name`, as `(binder, resource family)` pairs: `strlen`'s
+/// `views s: cstr_at(bytes, _)` is `("s", "cstr_at")`. A call map in a
+/// program's sidecar names them.
+pub(in crate::surface) fn library_c_function_value_binders(
+    name: &str,
+) -> Result<Vec<(String, String)>, ClickError> {
+    Ok(library_modules()?
+        .iter()
+        .flat_map(|module| module.file.function_blocks())
+        .find(|block| block.is_external() && block.signature().name() == name)
+        .map(|block| {
+            block
+                .value_binders()
+                .iter()
+                .map(|binder| (binder.name.clone(), binder.resource.clone()))
+                .collect()
+        })
+        .unwrap_or_default())
+}
+
 /// The library modules visible to `file`: the implicit modules and the
 /// file's own library imports, each with its library imports.
 fn library_mask(file: &ClickFile) -> Result<u64, ClickError> {
