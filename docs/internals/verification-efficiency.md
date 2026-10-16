@@ -81,6 +81,9 @@ contract. A reflexive scalar source contributes no logical assumption, so
 temporary transport contexts omit its incidental load names. This preserves
 the shared identity of otherwise identical frame queries without dropping
 facts from the recorded proof or its failure report.
+Failed condition-target questions use the existing closure-scoped failure
+memo, keyed by their target and selected context. Successful checks still run
+and collect provenance; failures that meet a cycle cut or limit are not cached.
 
 Explicit return closers lower the folded claim goal once. They also try its
 unfolded form only when the proof has unfolded a predicate; an empty unfold
