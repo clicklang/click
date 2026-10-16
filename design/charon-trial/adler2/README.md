@@ -20,7 +20,8 @@ states counts over `int32` and reads each `usize` count through
 `((count as u32) as i32)`. The kernel no longer needs it: a 64-bit count bounds a range
 and indexes memory directly (`design/typed-indices.md`). Extending the
 specification and count/index lemmas to full-width indices would lift this
-proof limit.
+proof limit
+([bug](../../../bugs/adler32-spec-states-lengths-only-up-to-int32-max.md)).
 
 The function contracts use Rust syntax (`docs/reference/rust.md`,
 "Signatures in Rust syntax"): `fn` signatures, `impl` blocks, paths such as
