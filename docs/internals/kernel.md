@@ -98,6 +98,11 @@ Kernel files:
   `facts.rs` owns that persistent store, its indexes, and its output-sensitive
   ancestry/delta operations.
 - `functions.rs`: C function execution, argument binding, and call results.
+  Its children hold self-contained parts: `authority_contracts.rs` (calls
+  whose contracts touch populations, mutexes and authority resources),
+  `contract_refinement.rs` (whether an interface refines a named contract),
+  `globals_and_aggregates.rs` (entry storage and aggregate values) and
+  `resource_clause_worklist.rs` (the indexes that order resource clauses).
 - `tests.rs`: kernel unit tests.
 
 ## Trusted shape
