@@ -942,7 +942,10 @@ contract claims are closed.
 /// premise of a closure that failed on it, so listing it only pushes the
 /// relevant ones past the item limit. The walk is over a variable-to-fact
 /// index, so it reads each fact's variables once.
-fn pure_facts_relevant_to(goal: &Proposition, facts: &[Proposition]) -> Vec<Proposition> {
+pub(super) fn pure_facts_relevant_to(
+    goal: &Proposition,
+    facts: &[Proposition],
+) -> Vec<Proposition> {
     use std::collections::{BTreeMap, BTreeSet};
     let variables_of = |proposition: &Proposition| {
         let mut variables = BTreeSet::new();
@@ -2443,6 +2446,33 @@ pub(super) fn describe_missing_range_end_note(
         .map_or(String::new(), |(parameter, _)| {
             format!(" (byte offsets from `{}`)", parameter.name())
         });
+    // A read-only range is not an ownership supplier even when its byte
+    // footprint covers the store. Explain that concrete mode mismatch without
+    // searching for a new proof or treating it as successful authorization.
+    let access_note = if resource.is_own()
+        && let Some(view) = resource_facts.iter().find(|fact| {
+            let Some(held) = fact.memory_view_range() else {
+                return false;
+            };
+            if held == required {
+                return true;
+            }
+            comparable(held).is_some_and(|(hs, he, rs, re)| {
+                match (hs.as_const(), he.as_const(), rs.as_const(), re.as_const()) {
+                    (Some(hs), Some(he), Some(rs), Some(re)) => {
+                        (hs as i32) <= rs as i32 && (re as i32) <= he as i32
+                    }
+                    _ => false,
+                }
+            })
+        }) {
+        format!(
+            "\n  access check: {reserved_prefix}write ownership required; available `{}` covers the requested range but permits reading only",
+            render_resource_fact_diagnostic(view, parameter_binding)
+        )
+    } else {
+        String::new()
+    };
     let candidates = resource_facts
         .iter()
         .filter_map(|fact| {
@@ -2469,7 +2499,7 @@ pub(super) fn describe_missing_range_end_note(
         .min_by_key(|(_, sides)| sides.len())
         .cloned()
     else {
-        return match &reservation {
+        let range_note = match &reservation {
             Some(miss) => format!(
                 "\n  note: {reserved_prefix}no remaining owner covers `{}`; remaining: {}",
                 describe_memory_range(required, parameter_binding),
@@ -2480,6 +2510,7 @@ pub(super) fn describe_missing_range_end_note(
             ),
             None => String::new(),
         };
+        return access_note + &range_note;
     };
     let decided = |lower: &Bitvector32Term, upper: &Bitvector32Term| {
         Some(lower.as_const()? as i32 <= upper.as_const()? as i32)
@@ -2493,7 +2524,7 @@ pub(super) fn describe_missing_range_end_note(
             .find(|(lower, upper)| decided(lower, upper) == Some(false))
             .expect("found a refuted side above");
         return format!(
-            "\n  note: {reserved_prefix}held `{}` does not cover `{}`: `{} <= {}` is false{coordinate_note}",
+            "{access_note}\n  note: {reserved_prefix}held `{}` does not cover `{}`: `{} <= {}` is false{coordinate_note}",
             render_resource_fact_diagnostic(held_fact, parameter_binding),
             describe_memory_range(required, parameter_binding),
             describe_bitvector_with_context(lower, parameter_binding),
@@ -2512,10 +2543,10 @@ pub(super) fn describe_missing_range_end_note(
         })
         .collect::<Vec<_>>();
     if conditions.is_empty() {
-        return String::new();
+        return access_note;
     }
     format!(
-        "\n  note: {reserved_prefix}held `{}` covers `{}` only when {}{coordinate_note}",
+        "{access_note}\n  note: {reserved_prefix}held `{}` covers `{}` only when {}{coordinate_note}",
         render_resource_fact_diagnostic(held_fact, parameter_binding),
         describe_memory_range(required, parameter_binding),
         conditions.join(" and "),
@@ -3103,7 +3134,7 @@ pub(super) fn describe_resource_version_mismatch(
         explanation.resource,
         resource_tracker::OwnedResource::ModelField { .. }
     ) {
-        message.push_str(" This diagnostic checks recorded memory history without using the proof context's equality and ownership facts.");
+        message.push_str("\n  supplemental history explanation: This diagnostic checks recorded memory history without using the proof context's equality and ownership facts.");
     }
     Some(message)
 }

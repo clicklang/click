@@ -10735,7 +10735,7 @@ mod support_removal_tests {
             .store(short_pointer.clone(), int16(0))
             .store(
                 wide_pointer.clone(),
-                CValue::Float64(Bitvector32Term::Constant(0)),
+                CValue::Float64(Bitvector32Term::UInt64Constant(0)),
             );
         let short_load = Bitvector32Term::MemoryLoad(
             crate::kernel::intern_c_memory_ref(&memory),

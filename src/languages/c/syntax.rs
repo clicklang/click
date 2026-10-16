@@ -5647,6 +5647,57 @@ pub(crate) struct C0TranslationUnit {
     pub global_aggregate_arrays: DeclarationMap<C0GlobalAggregateArray>,
     /// External objects named in value or address positions by this unit.
     pub referenced_external_objects: BTreeSet<String>,
+    /// The typedef names a function head may write for their types.
+    pub head_typedefs: BTreeMap<String, C0HeadTypedef>,
+}
+
+/// The type a typedef name stands for where a function head writes it:
+/// `typedef unsigned int u32;` or `typedef struct node node_t;`.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) enum C0HeadTypedef {
+    Scalar {
+        c_type: C0Type,
+        constant: bool,
+    },
+    Struct {
+        name: String,
+        constant: bool,
+    },
+    /// An alias of a pointer, array, function pointer, union, or a volatile,
+    /// aligned or extended-precision type, which a head writes as its type,
+    /// or one that two verified sources give different types.
+    Other,
+}
+
+impl C0HeadTypedef {
+    fn of(parsed: &ParsedType) -> Self {
+        Self::restated(parsed).unwrap_or(Self::Other)
+    }
+
+    fn restated(parsed: &ParsedType) -> Option<Self> {
+        if parsed.long_double
+            || parsed.aligned_typedef
+            || parsed.opaque_builtin
+            || parsed.function_pointer_signature.is_some()
+            || parsed.union_name.is_some()
+            || parsed.volatile_levels != 0
+            || parsed.is_volatile
+            || parsed.c_type.is_pointer()
+            || parsed.c_type.pointee_type().is_some()
+        {
+            return None;
+        }
+        Some(match &parsed.struct_name {
+            Some(name) => Self::Struct {
+                name: name.clone(),
+                constant: parsed.is_constant,
+            },
+            None => Self::Scalar {
+                c_type: parsed.c_type,
+                constant: parsed.is_constant,
+            },
+        })
+    }
 }
 
 /// [`parse_translation_unit_for_target`] under the default target.
@@ -9469,6 +9520,11 @@ impl Parser {
             global_aggregates: self.global_aggregates,
             global_aggregate_arrays: self.global_aggregate_arrays,
             referenced_external_objects: self.referenced_external_objects,
+            head_typedefs: self
+                .typedefs
+                .iter()
+                .map(|(name, parsed)| (name.clone(), C0HeadTypedef::of(parsed)))
+                .collect(),
         })
     }
 

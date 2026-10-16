@@ -124,8 +124,9 @@ that writes `int32` for such a source already writes the source's spelling.
   `step(Read)` or `step(Read, { cell: first })`. The parameter-list form and
   the `step(Name())` and `step(Name(instance))` applications are refused with
   their replacements. A head must have exactly the C types of its
-  declaration, `long` apart from `long long`. Typedef names other than the
-  standard ones (`json_bool`, `pid_t`) are not yet accepted in heads.
+  declaration, `long` apart from `long long`. A head may write the source's
+  scalar and struct typedef names (`json_bool`, `pid_t`, `node_t`), not yet
+  its pointer, function-pointer or array aliases.
 - **C++.** Verified functions are written as C++ declares them:
   `Restore::Restore(int* slot)`, `Restore::~Restore()`,
   `void FeeFrac::operator+=(const FeeFrac& other)`, `bool FeeFrac::IsEmpty() const`,
@@ -165,7 +166,9 @@ that writes `int32` for such a source already writes the source's spelling.
 1. **Unify C.** Done: handle clauses in `contract` bodies are its proof
    parameters, `step(Name, { handle: value })` binds them, the retired forms
    are refused and migrated, and a head must have exactly its declaration's
-   C types. Remaining: accept a source's own typedef names in heads.
+   C types. Done: a head writes a verified source's scalar and struct
+   typedef names, `u32`, `json_bool`, `node_t`. Remaining: pointer,
+   function-pointer and array aliases in heads.
 2. **Native C++ heads.** Done for verified functions: qualified members with
    implicit `this`, constructors, destructors, `operator` names, `const` and
    `static` members, and `bool` function template arguments, with the corpus

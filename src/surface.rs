@@ -512,6 +512,10 @@ pub struct ClickFile {
     /// Explicit trusted thread-runtime profile. Absent means ordinary C
     /// verification grants no create/join semantics.
     thread_runtime: crate::languages::c::thread_runtime::CThreadRuntime,
+    /// Whether this file opts into Integer-default specification
+    /// arithmetic with `arithmetic "integer";`, the migration switch for
+    /// design-review P2. Removed once every file uses the new default.
+    integer_arithmetic: bool,
     algebraic_type_definitions: Vec<AlgebraicTypeDefinition>,
     predicate_definitions: Vec<PredicateDefinition>,
     click_function_definitions: Vec<ClickFunctionDefinition>,
@@ -6136,6 +6140,11 @@ impl ClickFile {
         self.c_target
     }
 
+    /// Whether this file's specification arithmetic is over `Integer`.
+    pub fn integer_arithmetic(&self) -> bool {
+        self.integer_arithmetic
+    }
+
     /// The C implementation target this file's sources are preprocessed and
     /// verified under, defaulting to the supported kernel target.
     pub fn selected_c_target(&self) -> crate::languages::c::target::CTarget {
@@ -7868,6 +7877,38 @@ impl ClickError {
                         proof_diagnostics::render::render_proposition_labeled(goal, &mut labels)
                     ));
                 }
+                if diagnostic.checks.is_some() {
+                    let recent = state.premises(8).into_iter().cloned().collect::<Vec<_>>();
+                    let premises = state.kernel_goal().map_or_else(
+                        || recent.clone(),
+                        |goal| diagnostics::pure_facts_relevant_to(goal, &recent),
+                    );
+                    if !premises.is_empty() {
+                        let mut available = format!(
+                            "available premises at the failed check (showing up to 8 relevant facts from {} recorded premises):",
+                            state.premise_count(),
+                        );
+                        for premise in premises.iter().take(8) {
+                            available.push_str("\n  ");
+                            available.push_str(
+                                &proof_diagnostics::render::render_proposition_labeled(
+                                    premise,
+                                    &mut labels,
+                                ),
+                            );
+                        }
+                        context.push(available);
+                    }
+                }
+                if let Some(checks) = &diagnostic.checks
+                    && (!checks.reads.is_empty() || !checks.walks.is_empty())
+                {
+                    context.push(proof_diagnostics::render_check_observations(
+                        checks,
+                        &mut labels,
+                        false,
+                    ));
+                }
                 let legend = labels.trace_legend();
                 if !legend.is_empty() {
                     context.push(legend);
@@ -7955,7 +7996,7 @@ impl ClickError {
             (true, None) => None,
             (true, Some(trace)) => Some(trace),
             (false, None) => Some(context),
-            (false, Some(trace)) => Some(format!("{context}\n\n{trace}")),
+            (false, Some(trace)) => Some(format!("{trace}\n\n{context}")),
         }
     }
 
@@ -8162,6 +8203,22 @@ impl ClickError {
             (condition, self.unresolved_requirement.as_mut())
         {
             std::sync::Arc::make_mut(requirement).assertion_condition = Some(condition.clone());
+        }
+        self
+    }
+
+    pub(crate) fn with_check_observations(
+        mut self,
+        checks: proof_diagnostics::CheckObservations,
+    ) -> Self {
+        // The innermost failed check owns its observations. An enclosing
+        // scope's capture may be empty because the nested collector already
+        // consumed them; preserve that more precise record.
+        if let Some(diagnostic) = &mut self.diagnostic
+            && diagnostic.checks.is_none()
+        {
+            std::sync::Arc::make_mut(diagnostic).checks = Some(std::sync::Arc::new(checks));
+            self.rendered = std::sync::OnceLock::new();
         }
         self
     }

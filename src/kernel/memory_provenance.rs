@@ -57,6 +57,7 @@ pub(crate) struct TransportCellWalkDiagnostic {
 struct TransportCellWalkDiagnostics {
     seen: std::collections::HashSet<TransportCellWalkDiagnostic>,
     walks: Vec<TransportCellWalkDiagnostic>,
+    limit: Option<usize>,
 }
 
 thread_local! {
@@ -73,6 +74,14 @@ pub(crate) fn with_transport_cell_walk_diagnostics<T>(run: impl FnOnce() -> T) -
     let _restore =
         Restore(TRANSPORT_CELL_WALKS.with(|slot| slot.replace(Some(Default::default()))));
     run()
+}
+
+/// Written smart checks retain a bounded sample without changing query behavior.
+pub(crate) fn with_bounded_cell_walk_diagnostics<T>(run: impl FnOnce() -> T) -> T {
+    with_transport_cell_walk_diagnostics(|| {
+        TRANSPORT_CELL_WALKS.with(|slot| slot.borrow_mut().as_mut().unwrap().limit = Some(16));
+        run()
+    })
 }
 
 pub(crate) fn take_transport_cell_walk_diagnostics() -> Vec<TransportCellWalkDiagnostic> {
@@ -97,6 +106,12 @@ pub(in crate::kernel) fn record_transport_cell_walk(
         let Some(capture) = slot.as_mut() else {
             return;
         };
+        if capture
+            .limit
+            .is_some_and(|limit| capture.walks.len() >= limit)
+        {
+            return;
+        }
         let crossed = match cell {
             MemoryDagCell::Stored { path, .. } | MemoryDagCell::Unwritten { path, .. } => {
                 path.len()
@@ -4491,6 +4506,9 @@ fn wide_read_observations_have_value(
         };
         READ_RESOLUTION_DIAGNOSTICS.with(|slot| {
             if let Some(diagnostics) = slot.borrow_mut().as_mut() {
+                if diagnostics.len() >= 16 {
+                    return;
+                }
                 let (stopped_at, reason) = match &resolution {
                     None => (None, "recursive read query already active"),
                     Some((cell, stop)) => {
