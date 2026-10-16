@@ -1579,6 +1579,19 @@ pub(super) fn proof_case_fact_conflicts(
     Ok(conflicts)
 }
 
+/// Whether a post-execution leaf refines one claim's goal and so runs on that
+/// claim's existence proof rather than on the path's outcome proof.
+fn opens_outcome_existence_proof(tactic: &ProofTactic) -> bool {
+    matches!(
+        tactic,
+        ProofTactic::Choose(_)
+            | ProofTactic::LetSatisfy(_)
+            | ProofTactic::Witness(_)
+            | ProofTactic::Intro
+            | ProofTactic::IntroAs(_)
+    )
+}
+
 pub(super) fn finish_ordered_proof<'a>(
     mut expansion_capture: Option<&mut ExpansionCapture>,
     proof: Proof<'a>,
@@ -2424,6 +2437,50 @@ pub(super) fn finish_ordered_proof<'a>(
                             PostExecutionTactic::FoldProved(_) => {
                                 unreachable!("a proved fold wraps its `StepProved` tactic")
                             }
+                            PostExecutionTactic::Leaf(tactic)
+                                if opens_outcome_existence_proof(tactic) =>
+                            {
+                                // These leaves refine one claim's own goal, so
+                                // they run on that claim's existence proof,
+                                // opened by the first of them.
+                                let (claim_index, surface_goal, proof) =
+                                    match existence_proof.take() {
+                                        Some(active) => active,
+                                        None => begin_outcome_existence_proof(
+                                            outcome_proof.as_ref().ok_or_else(|| {
+                                                ClickError::new(format!(
+                                                    "`{proof_label}` path {path_index}, tactic {tactic_index}: the typed outcome goal for `{}` is unavailable",
+                                                    tactic_name(tactic)
+                                                ))
+                                            })?,
+                                            function,
+                                            pre_state,
+                                            arguments,
+                                            &outcome,
+                                            claims,
+                                            &closures,
+                                            &rewrite_claim_equalities,
+                                            &unfolded_predicates,
+                                        )?,
+                                    };
+                                let step = SourceContext::PostExecution
+                                    .leaf_step(tactic)
+                                    .expect("a post-execution leaf converts to its checked step");
+                                let proof = proof
+                                    .refresh_outcome_from(required_outcome(&outcome_proof)?)?
+                                    .apply_step(step)?;
+                                existence_proof = Some((claim_index, surface_goal, proof));
+                                introduced_claim_scope |=
+                                    matches!(tactic, ProofTactic::Intro | ProofTactic::IntroAs(_));
+                                record_post_execution_surface_tactic(
+                                    &mut path_surface_post_tactics,
+                                    &mut path_deferred_capture_tactics,
+                                    path_capture,
+                                    post_execution_index,
+                                    *tactic_index,
+                                    tactic.clone(),
+                                );
+                            }
                             PostExecutionTactic::Leaf(tactic) => {
                                 // A predicate unfold and a theorem application
                                 // read the returned value.
@@ -2826,145 +2883,6 @@ pub(super) fn finish_ordered_proof<'a>(
                                         tactic.clone(),
                                     );
                                 }
-                            }
-                            PostExecutionTactic::Choose(choice) => {
-                                let (claim_index, surface_goal, proof) =
-                                    match existence_proof.take() {
-                                        Some(active) => active,
-                                        None => begin_outcome_existence_proof(
-                                            outcome_proof.as_ref().ok_or_else(|| {
-                                                ClickError::new(format!(
-                                                    "`{proof_label}` path {path_index}, tactic {tactic_index}: the typed outcome goal for `choose` is unavailable"
-                                                ))
-                                            })?,
-                                            function,
-                                            pre_state,
-                                            arguments,
-                                            &outcome,
-                                            claims,
-                                            &closures,
-                                            &rewrite_claim_equalities,
-                                            &unfolded_predicates,
-                                        )?,
-                                    };
-                                let proof = proof
-                                    .refresh_outcome_from(required_outcome(&outcome_proof)?)?
-                                    .apply_step(ProofStep::Choose(choice.clone()))?;
-                                existence_proof = Some((claim_index, surface_goal, proof));
-                                record_post_execution_surface_tactic(
-                                    &mut path_surface_post_tactics,
-                                    &mut path_deferred_capture_tactics,
-                                    path_capture,
-                                    post_execution_index,
-                                    *tactic_index,
-                                    ProofTactic::Choose(choice.clone()),
-                                );
-                            }
-                            PostExecutionTactic::LetSatisfy(binding) => {
-                                let (claim_index, surface_goal, proof) =
-                                    match existence_proof.take() {
-                                        Some(active) => active,
-                                        None => begin_outcome_existence_proof(
-                                            outcome_proof.as_ref().ok_or_else(|| {
-                                                ClickError::new(format!(
-                                                    "`{proof_label}` path {path_index}, tactic {tactic_index}: the typed outcome goal for `let satisfy` is unavailable"
-                                                ))
-                                            })?,
-                                            function,
-                                            pre_state,
-                                            arguments,
-                                            &outcome,
-                                            claims,
-                                            &closures,
-                                            &rewrite_claim_equalities,
-                                            &unfolded_predicates,
-                                        )?,
-                                    };
-                                let proof = proof
-                                    .refresh_outcome_from(required_outcome(&outcome_proof)?)?
-                                    .apply_step(ProofStep::LetSatisfy(binding.clone()))?;
-                                existence_proof = Some((claim_index, surface_goal, proof));
-                                record_post_execution_surface_tactic(
-                                    &mut path_surface_post_tactics,
-                                    &mut path_deferred_capture_tactics,
-                                    path_capture,
-                                    post_execution_index,
-                                    *tactic_index,
-                                    ProofTactic::LetSatisfy(binding.clone()),
-                                );
-                            }
-                            PostExecutionTactic::Witness(witness) => {
-                                let (claim_index, surface_goal, proof) =
-                                    match existence_proof.take() {
-                                        Some(active) => active,
-                                        None => begin_outcome_existence_proof(
-                                            outcome_proof.as_ref().ok_or_else(|| {
-                                                ClickError::new(format!(
-                                                    "`{proof_label}` path {path_index}, tactic {tactic_index}: the typed outcome goal for `witness` is unavailable"
-                                                ))
-                                            })?,
-                                            function,
-                                            pre_state,
-                                            arguments,
-                                            &outcome,
-                                            claims,
-                                            &closures,
-                                            &rewrite_claim_equalities,
-                                            &unfolded_predicates,
-                                        )?,
-                                    };
-                                let proof = proof
-                                    .refresh_outcome_from(required_outcome(&outcome_proof)?)?
-                                    .apply_step(ProofStep::Witness(witness.clone()))?;
-                                existence_proof = Some((claim_index, surface_goal, proof));
-                                record_post_execution_surface_tactic(
-                                    &mut path_surface_post_tactics,
-                                    &mut path_deferred_capture_tactics,
-                                    path_capture,
-                                    post_execution_index,
-                                    *tactic_index,
-                                    ProofTactic::Witness(witness.clone()),
-                                );
-                            }
-                            PostExecutionTactic::Intro(rename) => {
-                                let (claim_index, surface_goal, proof) =
-                                    match existence_proof.take() {
-                                        Some(active) => active,
-                                        None => begin_outcome_existence_proof(
-                                            outcome_proof.as_ref().ok_or_else(|| {
-                                                ClickError::new(format!(
-                                                    "`{proof_label}` path {path_index}, tactic {tactic_index}: the typed outcome goal for `intro` is unavailable"
-                                                ))
-                                            })?,
-                                            function,
-                                            pre_state,
-                                            arguments,
-                                            &outcome,
-                                            claims,
-                                            &closures,
-                                            &rewrite_claim_equalities,
-                                            &unfolded_predicates,
-                                        )?,
-                                    };
-                                let proof = proof
-                                    .refresh_outcome_from(required_outcome(&outcome_proof)?)?
-                                    .apply_step(match rename {
-                                        Some(name) => ProofStep::IntroAs(name.clone()),
-                                        None => ProofStep::Intro,
-                                    })?;
-                                existence_proof = Some((claim_index, surface_goal, proof));
-                                introduced_claim_scope = true;
-                                record_post_execution_surface_tactic(
-                                    &mut path_surface_post_tactics,
-                                    &mut path_deferred_capture_tactics,
-                                    path_capture,
-                                    post_execution_index,
-                                    *tactic_index,
-                                    match rename {
-                                        Some(name) => ProofTactic::IntroAs(name.clone()),
-                                        None => ProofTactic::Intro,
-                                    },
-                                );
                             }
                             PostExecutionTactic::Assumption => {
                                 // Earlier deferred tactics opened this
