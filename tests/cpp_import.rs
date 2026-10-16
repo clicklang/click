@@ -2402,7 +2402,9 @@ fn graph_place_indices_preserve_reference_calls_with_growing_unrelated_places() 
             .map(|index| format!("int local{index} = {index};"))
             .collect::<Vec<_>>()
             .join("\n");
-        let calls = "read(value);\n".repeat(size);
+        // Keep two reference-call/result mappings as the unrelated parameter
+        // and local place tables grow through all three original sizes.
+        let calls = "read(value);\n".repeat(2);
         let cpp = format!(
             "int read(int& value) noexcept {{ return value; }}\nint many({parameters}, int& value) noexcept {{ {locals} {calls} return value; }}"
         );

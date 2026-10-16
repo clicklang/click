@@ -131,10 +131,11 @@ fields: `r3.end == r3.start + 4` follows from the allocation's postcondition
 once `defined(r3.start + 4)` is proved on the field, and the cell written and
 read back is named through `r3.start`.
 
-Where `simp` was slow or did not close, the proof is written with explicit
-steps. Of its 370 `simp` calls, 104 are `simp() using` with their premises
-listed, and it states 449 `have`s, 48 `instantiate`s, 17 `rewrite`s,
-5 `apply`s and 2 `transport`s. `click expand --claim arena_pipeline.contract`
+Where `simp` was slow or did not close, the proof uses explicit steps and
+`simp() using` with listed premises. Already-instantiated facts close with
+`assumption`; equality chains normalize with their two stated equations.
+`arena_write` transports the unchanged occupancy read across the separated
+data store explicitly. `click expand --claim arena_pipeline.contract`
 replaces the remaining smart steps with checked simple ones.
 
 ## Reuse after a free out of order
