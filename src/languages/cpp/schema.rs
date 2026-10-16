@@ -1824,18 +1824,14 @@ impl CppRecord {
 
     /// A polymorphic class constructed in place: its own fields after the
     /// vtable pointer, and at most one polymorphic base with no fields,
-    /// bases, or destructor, whose construction only sets the vtable pointer.
+    /// bases, or destructor, whose construction and destruction only set
+    /// the vtable pointer. Its own destructor, if any, runs its body.
     fn require_polymorphic_construction_layout(
         &self,
         records: &BTreeMap<String, &CppRecord>,
     ) -> Result<(), String> {
         if !self.polymorphic {
             return self.require_constructor_local_layout();
-        }
-        if self.destructor.is_some() {
-            return Err(
-                "automatic polymorphic C++ objects with destructors remain unsupported".into(),
-            );
         }
         if let Some(base) = &self.base {
             self.require_empty_polymorphic_base(base, records)?;
@@ -1950,12 +1946,13 @@ impl CppRecord {
             };
             let child = validate_record_reference(records, declaration_id, name)?;
             // A polymorphic class extends its polymorphic base: the whole base,
-            // vtable pointer first, then its own fields.
+            // vtable pointer first, then its own fields. Its own destructor
+            // may run code; the base's destruction runs none.
             if self.polymorphic || child.polymorphic {
                 if !self.polymorphic
                     || !child.polymorphic
                     || base.span.file != self.span.file
-                    || self.destructor.is_some()
+                    || child.destructor.is_some()
                     || base.offset_bytes != 0
                     || base.size_bytes != child.size_bytes
                     || self.size_bytes < child.size_bytes
@@ -4455,7 +4452,7 @@ fn validate_nested_scope(
                 return Err("the nested-scope slice requires destructible record objects".into());
             };
             let record = validate_record_reference(records, declaration_id, name)?;
-            record.require_constructor_local_layout()?;
+            record.require_polymorphic_construction_layout(records)?;
             if record.destructor.is_none()
                 || !matches!(initializer, CppInitializer::Constructor { .. })
             {

@@ -5618,7 +5618,7 @@ fn constructor_local_rejects_throwing_partial_and_reordered_forms() {
 }
 
 #[test]
-fn terminal_destructor_rejects_throwing_virtual_empty_and_nonterminal_cleanup() {
+fn terminal_destructor_rejects_throwing_empty_and_nonterminal_cleanup() {
     let project = Project::terminal_destructor();
     for (source, expected) in [
         (
@@ -5626,18 +5626,11 @@ fn terminal_destructor_rejects_throwing_virtual_empty_and_nonterminal_cleanup() 
                 "~RestoreState() noexcept",
                 "~RestoreState() noexcept(false)",
             ),
-            "public, non-virtual, non-deleted, and explicitly noexcept",
+            "public, non-virtual outside a polymorphic class, non-deleted, and explicitly noexcept",
         ),
         (
             TERMINAL_DESTRUCTOR_SOURCE.replace("~RestoreState() noexcept", "~RestoreState()"),
-            "public, non-virtual, non-deleted, and explicitly noexcept",
-        ),
-        (
-            TERMINAL_DESTRUCTOR_SOURCE.replace(
-                "~RestoreState() noexcept",
-                "virtual ~RestoreState() noexcept",
-            ),
-            "virtual with an empty body",
+            "public, non-virtual outside a polymorphic class, non-deleted, and explicitly noexcept",
         ),
         (
             TERMINAL_DESTRUCTOR_SOURCE.replace(
@@ -7778,7 +7771,9 @@ fn deleted_destructors_do_not_enter_the_defaulted_trivial_profile() {
     );
     let error = refresh_import(&project.config()).unwrap_err();
     assert!(
-        error.contains("destructor must be public, non-virtual, non-deleted"),
+        error.contains(
+            "destructor must be public, non-virtual outside a polymorphic class, non-deleted"
+        ),
         "{error}"
     );
     assert!(!project.artifact().exists());
@@ -18416,13 +18411,14 @@ fn virtual_dispatch_refuses_construction_recursion_and_other_class_shapes() {
             ][..],
             "polymorphic base with no fields or constructors of its own",
         ),
-        // A virtual destructor that runs code.
+        // A base destructor that runs code, which the derived class's
+        // destruction would have to execute.
         (
             &[(
                 "= 0; };",
                 "= 0;\n    virtual ~Shape() noexcept { int unused = 0; (void)unused; }\n};",
             )][..],
-            "virtual with an empty body",
+            "its base's destructor is trivial, defaulted, or empty",
         ),
         // A call back through the interface from an override.
         (
