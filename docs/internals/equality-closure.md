@@ -84,6 +84,26 @@ condition graph before filing selected proposition edges; it never rebuilds
 inherited scalar edges only to discard them. Clearing a model-free proposition
 fragment retains its existing scalar graph.
 
+## Pointer-valued pure-call congruence
+
+Pointer-returning pure calls use the same curried typed application nodes as
+other pure calls, with a distinct pointer-result head. Registering a call's
+block connects the application to its zero-offset address. Existing pointer
+value witnesses carry newly equal results into the affine pointer classes,
+just as they do for pointer reads. Displaced addresses and read applications
+therefore consume the same result equality.
+
+A call is registered once per block. A shared iterative dependency queue drains
+nested pointer calls and scalar reads; a draining guard prevents nested argument
+registration from recursively entering the queue. The ordinary parent-use index
+propagates late argument aliases without scanning ambient facts. Signatures
+retain function identity, argument order and types, and array-reference read
+snapshots. Calls grant no ownership or separation, and equal results do not
+imply equal arguments. The `pointer_call_tests` unit and scaling modules exercise
+late model aliases, nested calls, snapshots, withdrawal, and selected work at
+multiple input sizes. The surface regression is
+`mdtests/pure_pointer_call_congruence.md`.
+
 ## Ordinary integer expression congruence
 
 Mathematical `Integer` equalities enter the shared classes. Congruence follows
