@@ -493,6 +493,10 @@ thread_local! {
 pub(in crate::kernel) struct SpecificationReadScope(());
 
 impl SpecificationReadScope {
+    pub(in crate::kernel) fn is_active() -> bool {
+        SPECIFICATION_READS.with(|depth| depth.get() > 0)
+    }
+
     pub(in crate::kernel) fn enter() -> Self {
         SPECIFICATION_READS.with(|depth| depth.set(depth.get() + 1));
         Self(())

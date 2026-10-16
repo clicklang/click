@@ -678,20 +678,27 @@ impl TermClasses {
         }
         if let PointerOffsetTerm::Add(base, displacement) = &offset
             && displacement.as_const().is_none()
-            && !self.registered_address_shifts.contains(&(address, raw_offset))
+            && !self
+                .registered_address_shifts
+                .contains(&(address, raw_offset))
             && let Some(block_id) = self.load_blocks.get(&block).copied()
         {
             // Only a retained typed-read base needs this extra application:
             // ordinary affine coordinates already share offset congruence.
             // Query the selected prefix without creating unrelated addresses.
             let base_offset = self.intern(base);
-            if let Some(base) = self.registered_addresses.get(&(block_id, base_offset)).copied()
+            if let Some(base) = self
+                .registered_addresses
+                .get(&(block_id, base_offset))
+                .copied()
                 && self.read_witnesses.contains_key(&self.root(base))
             {
                 let displacement = self.intern(displacement);
                 let shifted = self.intern_node(Node::AddressOffset(base, displacement));
                 self.close_with_affine_definition(vec![(address, shifted)], true);
-                self.registered_address_shifts = self.registered_address_shifts.with_value((address, raw_offset));
+                self.registered_address_shifts = self
+                    .registered_address_shifts
+                    .with_value((address, raw_offset));
             }
         }
         (address, new)

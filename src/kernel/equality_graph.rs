@@ -649,6 +649,45 @@ impl EqualityGraph {
             NEXT_LOGICAL_READ_GENERATION.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     }
 
+    /// A logical observation can retain the canonical name of an existing
+    /// exact typed read. Do not publish names computed only by program reads,
+    /// or names resolved through a different cell or a narrower scalar prefix.
+    pub(in crate::kernel) fn retain_canonical_pointer_read_definition(&self, value: &Pointer) {
+        let Some((block, bits @ crate::kernel::Bitvector32Term::MemoryLoad(..), width)) =
+            value.as_loaded()
+        else {
+            return;
+        };
+        let application = self
+            .logical_reads
+            .lock()
+            .expect("logical pointer reads")
+            .definitions
+            .get(value)
+            .map(|(application, _)| application.clone());
+        let Some(application) = application else {
+            return;
+        };
+        let Some((variable, _)) = crate::kernel::load_variable_for_term(bits) else {
+            return;
+        };
+        let Some((memory, address)) = crate::kernel::registered_load_for_variable(&variable) else {
+            return;
+        };
+        if crate::kernel::registered_load_bytes_for_variable(&variable)
+            != Some(crate::kernel::C_POINTER_BYTE_WIDTH)
+            || application != Pointer::loaded_value(&memory, &address)
+        {
+            return;
+        }
+        let canonical = Pointer::loaded(
+            block.clone(),
+            crate::kernel::Bitvector32Term::Variable(variable),
+            width,
+        );
+        self.register_pointer_read_definition(&canonical, &memory, &address);
+    }
+
     /// Whether this graph reads the thread's current logical-read table: a
     /// session restore or clear installs a fresh table, which a graph built
     /// before it does not see.

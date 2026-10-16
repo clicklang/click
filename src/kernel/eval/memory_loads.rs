@@ -109,6 +109,11 @@ pub(in crate::kernel) fn evaluate_c_memory_load_paths(
         for path in &mut paths {
             if let CExpressionOutcome::Value(CValue::Pointer(value)) = &mut path.outcome {
                 *value = assumptions.pointer_value_at_entry(value);
+                if SpecificationReadScope::is_active() {
+                    assumptions
+                        .equality_graph
+                        .retain_canonical_pointer_read_definition(value.pointer());
+                }
             }
         }
     }
@@ -241,6 +246,11 @@ pub(in crate::kernel) fn evaluate_logical_memory_load_paths(
             }
             if let CExpressionOutcome::Value(value) = &mut path.outcome {
                 *value = complete_loaded_word(value.clone(), memory, &pointer);
+                if let CValue::Pointer(value) = value {
+                    assumptions
+                        .equality_graph
+                        .retain_canonical_pointer_read_definition(value.pointer());
+                }
             }
             path.facts
                 .retain(|fact| !is_load_variable_defining_fact(fact.proposition()));
@@ -320,10 +330,17 @@ pub(in crate::kernel) fn evaluate_logical_memory_load_paths(
     facts.retain(|fact| !is_load_variable_defining_fact(fact.proposition()));
     value
         .into_iter()
-        .map(|value| CExpressionPath {
-            outcome: CExpressionOutcome::Value(complete_loaded_word(value, memory, &pointer)),
-            facts: facts.clone(),
-            obligations: obligations.clone(),
+        .map(|value| {
+            if let CValue::Pointer(pointer) = &value {
+                assumptions
+                    .equality_graph
+                    .retain_canonical_pointer_read_definition(pointer.pointer());
+            }
+            CExpressionPath {
+                outcome: CExpressionOutcome::Value(complete_loaded_word(value, memory, &pointer)),
+                facts: facts.clone(),
+                obligations: obligations.clone(),
+            }
         })
         .collect()
 }
@@ -1467,7 +1484,8 @@ fn canonicalized_pointer_value_from_int_cell(
         return Some(CValue::Pointer(stored.with_type(value_type)));
     }
     if let Some(load) = defining_load {
-        if matches!(purpose, LoadPurpose::Logical | LoadPurpose::Validity)
+        if (matches!(purpose, LoadPurpose::Logical | LoadPurpose::Validity)
+            || purpose == LoadPurpose::Program && SpecificationReadScope::is_active())
             && let Bitvector32Term::MemoryLoad(memory, address, _) = &load
         {
             assumptions.register_pointer_read(&loaded, memory, address);
@@ -1794,7 +1812,9 @@ fn canonicalized_symbolic_load_value_with_identity(
     } else {
         Pointer::loaded(block.clone(), Bitvector32Term::Variable(fresh), byte_width)
     };
-    if matches!(purpose, LoadPurpose::Logical | LoadPurpose::Validity) {
+    if matches!(purpose, LoadPurpose::Logical | LoadPurpose::Validity)
+        || purpose == LoadPurpose::Program && SpecificationReadScope::is_active()
+    {
         record_pointer_read_observation(&pointer, memory, &address);
         // The logical evaluator constructs a term, not a C access. Retain
         // its exact typed definition in the trusted graph's term metadata;
@@ -5550,6 +5570,151 @@ mod tests {
         }
         assert!(context.pointers_known_equal(changed_read.pointer(), &replacement));
         assert!(!context.pointers_known_equal(read.pointer(), changed_read.pointer()));
+    }
+
+    #[test]
+    fn canonical_pointer_names_do_not_redefine_a_scalar_prefix_source() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let base = CMemory::new();
+        let source = Pointer::symbolic(Variable(940_095));
+        let destination = Pointer::symbolic(Variable(940_096));
+        let CValue::Pointer(original) = base.symbolic_pointer_load(&source, 4, CType::Int32Pointer)
+        else {
+            unreachable!()
+        };
+        let (block, bits, width) = original.pointer().as_loaded().unwrap();
+        let (variable, _) = load_variable_for_term(bits).unwrap();
+        let canonical = Pointer::loaded(block.clone(), Bitvector32Term::Variable(variable), width);
+        let cached = base.store(
+            destination.clone(),
+            CValue::Int32(Bitvector32Term::Variable(variable)),
+        );
+        let CValue::Pointer(prefix) =
+            cached.symbolic_pointer_load(&destination, 4, CType::Int32Pointer)
+        else {
+            unreachable!()
+        };
+        let (_, prefix_bits, _) = prefix.pointer().as_loaded().unwrap();
+        assert_eq!(
+            canonical_term(prefix_bits),
+            Bitvector32Term::Variable(variable)
+        );
+        let graph = crate::kernel::equality_graph::EqualityGraph::default();
+        graph.retain_canonical_pointer_read_definition(prefix.pointer());
+        assert!(
+            crate::kernel::equality_graph::logical_pointer_read_for_offset(&canonical.offset)
+                .is_none()
+        );
+        graph.retain_canonical_pointer_read_definition(original.pointer());
+        assert!(
+            crate::kernel::equality_graph::logical_pointer_read_for_offset(&canonical.offset)
+                .is_some()
+        );
+    }
+
+    #[test]
+    fn specification_c_pointer_reads_retain_their_logical_names() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let memory = CMemory::new();
+        let a = Pointer::symbolic(Variable(940_097));
+        let b = Pointer::symbolic(Variable(940_098));
+        let context = PureFactContext::new()
+            .assume_condition(ConditionTerm::pointer_equal(a.clone(), b.clone()), true);
+        let read = |address: &Pointer| {
+            let paths = evaluate_c_memory_load_paths(
+                &memory,
+                address.clone(),
+                CType::Int64Pointer,
+                ExecutionFacts::new(),
+                Vec::new(),
+                &context,
+                true,
+                false,
+                None,
+                None,
+            );
+            let CExpressionOutcome::Value(CValue::Pointer(pointer)) = &paths[0].outcome else {
+                panic!("typed read");
+            };
+            pointer.pointer().clone()
+        };
+        let x = read(&a);
+        let y = read(&b);
+        assert!(!context.pointers_known_equal(&x, &y));
+        {
+            let _specification = SpecificationReadScope::enter();
+            assert_eq!(read(&a), x);
+            assert_eq!(read(&b), y);
+        }
+        assert!(context.pointers_known_equal(&x, &y));
+    }
+
+    #[test]
+    fn logical_cached_raw_pointer_reads_retain_their_canonical_names() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let base = CMemory::new();
+        let origin = intern_c_memory_ref(&base);
+        let a = Pointer::loaded(
+            PointerBlock::ExternalArgument,
+            Bitvector32Term::Variable(Variable(940_091)),
+            4,
+        );
+        let b = Pointer::loaded(
+            PointerBlock::ExternalArgument,
+            Bitvector32Term::Variable(Variable(940_092)),
+            4,
+        );
+        let field_a = a.clone().offset_by_bytes(8);
+        let field_b = b.clone().offset_by_bytes(8);
+        let first = base.symbolic_pointer_load(&field_a, 4, CType::Int32Pointer);
+        let second = base.symbolic_pointer_load(&field_b, 4, CType::Int32Pointer);
+        let slot_a = Pointer {
+            block: "local:raw-a".into(),
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        let slot_b = Pointer {
+            block: "local:raw-b".into(),
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        let memory = base
+            .store(slot_a.clone(), first)
+            .store(slot_b.clone(), second);
+        let context = PureFactContext::new().assume_condition(
+            ConditionTerm::pointer_value_equal(
+                CPointerValue::new(a, CType::Int32Pointer),
+                CPointerValue::new(b, CType::Int32Pointer),
+            ),
+            true,
+        );
+        let canonical = |field: &Pointer| {
+            Pointer::loaded(
+                PointerBlock::ExternalArgument,
+                canonical_term(&Bitvector32Term::MemoryLoad(
+                    origin.clone(),
+                    Box::new(field.clone()),
+                    LoadKind::Bits32,
+                )),
+                4,
+            )
+        };
+        let direct = canonical(&field_a);
+        let indirect = canonical(&field_b);
+        assert!(!context.equality_graph.are_equal(&direct, &indirect));
+        for slot in [&slot_a, &slot_b] {
+            let paths = evaluate_logical_memory_load_paths(
+                &memory,
+                slot.clone(),
+                CType::Int32Pointer,
+                ExecutionFacts::new(),
+                Vec::new(),
+                &context,
+            );
+            assert!(matches!(
+                &paths[0].outcome,
+                CExpressionOutcome::Value(CValue::Pointer(_))
+            ));
+        }
+        assert!(context.equality_graph.are_equal(&direct, &indirect));
     }
 
     #[test]

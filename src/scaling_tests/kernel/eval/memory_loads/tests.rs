@@ -1257,3 +1257,43 @@ fn complete_pointer_domains_across_cached_observations_scale_with_new_cells() {
         assert!(pair[1].2 <= pair[0].2 * 6 + 512, "{samples:?}");
     }
 }
+
+#[test]
+fn cached_raw_pointer_names_ignore_unrelated_read_definitions() {
+    let costs = [16u64, 64, 256, 1024].map(|size| {
+        let _session = crate::kernel::VerificationSession::enter();
+        let base = CMemory::new();
+        let origin = intern_c_memory_ref(&base);
+        for i in 0..size {
+            base.symbolic_pointer_load(&Pointer::symbolic(Variable(990_000 + i)), 4, CType::Int32Pointer);
+        }
+        let a = Pointer::loaded(PointerBlock::ExternalArgument, Bitvector32Term::Variable(Variable(940_091)), 4);
+        let b = Pointer::loaded(PointerBlock::ExternalArgument, Bitvector32Term::Variable(Variable(940_092)), 4);
+        let field_a = a.clone().offset_by_bytes(8);
+        let field_b = b.clone().offset_by_bytes(8);
+        let first = base.symbolic_pointer_load(&field_a, 4, CType::Int32Pointer);
+        let second = base.symbolic_pointer_load(&field_b, 4, CType::Int32Pointer);
+        let slot_a = Pointer { block: "local:raw-a".into(), offset: PointerOffsetTerm::Constant(0) };
+        let slot_b = Pointer { block: "local:raw-b".into(), offset: PointerOffsetTerm::Constant(0) };
+        let memory = base.store(slot_a.clone(), first).store(slot_b.clone(), second);
+        let context = PureFactContext::new().assume_condition(ConditionTerm::pointer_value_equal(
+            CPointerValue::new(a, CType::Int32Pointer), CPointerValue::new(b, CType::Int32Pointer)), true);
+        let canonical = |field: &Pointer| Pointer::loaded(PointerBlock::ExternalArgument,
+            canonical_term(&Bitvector32Term::MemoryLoad(origin.clone(), Box::new(field.clone()), LoadKind::Bits32)),4);
+        let direct = canonical(&field_a);
+        let indirect = canonical(&field_b);
+        let ((equal, work), map_work) = crate::persistent::measure_persistent_work(|| {
+            crate::instrumentation::measure_deterministic_work(|| {
+                for slot in [&slot_a, &slot_b] {
+                    evaluate_logical_memory_load_paths(&memory, slot.clone(), CType::Int32Pointer,
+                        ExecutionFacts::new(), Vec::new(), &context);
+                }
+                context.equality_graph.are_equal(&direct, &indirect)
+            })
+        });
+        assert!(equal);
+        assert!(map_work < 2048 * (size.ilog2() as usize + 1), "size={size}, map work={map_work}");
+        work
+    });
+    assert!(costs[0] > 0 && costs.iter().all(|work| *work <= costs[0] + 128), "{costs:?}");
+}
