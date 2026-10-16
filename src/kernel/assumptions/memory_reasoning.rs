@@ -2873,6 +2873,26 @@ impl PureFactContext {
         self.pointers_known_equal(left, right)
     }
 
+    /// Physical byte geometry from numeric address classes. A spelling from
+    /// a different pointer origin is useful here without transferring that
+    /// origin, ownership, or permission to either operand.
+    pub(in crate::kernel) fn numeric_access_byte_overlap(
+        &self,
+        left: &Pointer,
+        left_bytes: u32,
+        right: &Pointer,
+        right_bytes: u32,
+    ) -> Option<crate::kernel::reasoning::AccessByteOverlap> {
+        if self.wide_pointer_alias_endpoints_by_object.is_empty() {
+            return None;
+        }
+        let (left, right) = self.equality_graph.numeric_address_spellings(left, right);
+        if left.block != right.block {
+            return None;
+        }
+        crate::kernel::reasoning::exact_access_byte_overlap(&left, left_bytes, &right, right_bytes)
+    }
+
     /// Whether a recorded separation between these ranges contradicts pointer
     /// equalities now known in this context. Separation is path evidence, so
     /// an entry-time fact is usable only while the ranges it names still miss

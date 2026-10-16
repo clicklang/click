@@ -1582,6 +1582,28 @@ impl EqualityGraph {
         state.terms.are_uint64_equal(&left, &right)
     }
 
+    /// Selected explicit spellings of two numeric addresses. The maintained
+    /// class metadata costs one lookup per operand, never a class enumeration.
+    /// These spellings authorize byte comparisons, not pointer conversions.
+    pub(in crate::kernel) fn numeric_address_spellings(
+        &self,
+        left: &Pointer,
+        right: &Pointer,
+    ) -> (Pointer, Pointer) {
+        let a = Bitvector32Term::pointer_address(left.clone());
+        let b = Bitvector32Term::pointer_address(right.clone());
+        let mut state = self.state.lock().expect("equality graph");
+        self.register_machine_operands(&mut state, &a, &b);
+        // Register both before selecting: the second registration can close
+        // congruence involving the first.
+        state.terms.numeric_address(left);
+        state.terms.numeric_address(right);
+        (
+            state.terms.numeric_address_spelling(left),
+            state.terms.numeric_address_spelling(right),
+        )
+    }
+
     pub(in crate::kernel) fn add_uint64_equality(
         &mut self,
         left: &Bitvector32Term,
