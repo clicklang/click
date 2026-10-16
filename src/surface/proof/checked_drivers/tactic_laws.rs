@@ -235,7 +235,7 @@ pub(in crate::surface::proof) fn execute_frontier_local_loop(
     }
     let loop_exit_condition = match &current_loop {
         CStatement::While { condition, .. } => Some(ClickProposition::Not(Box::new(
-            surface_c_condition(condition),
+            surface_c_condition(condition, &execution.core.state),
         ))),
         _ => None,
     };

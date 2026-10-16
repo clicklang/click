@@ -1807,18 +1807,28 @@ pub(super) fn finish_ordered_proof<'a>(
         let mut surface_grouped_closers_by_path = Vec::with_capacity(execution.paths().len());
         let mut surface_post_tactics_by_path = Vec::with_capacity(execution.paths().len());
         let mut surface_post_choices_by_path = Vec::with_capacity(execution.paths().len());
-        // A summarized loop's terminal return and continuing exit need not
-        // have separate leaves in the execution surface. For two outcomes,
-        // a contract disjunct can name a post-execution case, provided the
-        // focused checker decides it independently on both paths below.
-        let loop_outcome_selector = (execution.paths().len() == 2
+        // Distinct terminal outcomes can share one written execution leaf:
+        // a summarized loop, or a scalar result decided at return. Keep a
+        // post-execution selector only when both outcomes decide it below.
+        let shared_terminal_leaf = execution.paths().len() == 2
+            && !matches!(
+                through_single_arm_matches(&retained_surface.steps).last(),
+                Some(
+                    ProofStep::If { .. }
+                        | ProofStep::Match { .. }
+                        | ProofStep::CallOutcomes { .. }
+                        | ProofStep::Open { .. }
+                )
+            );
+        let terminal_outcome_selector = (execution.paths().len() == 2
             && (0..2).all(|index| proof_execution.loop_return_proof(index).is_none())
-            && (0..2).any(|index| {
-                proof_execution
-                    .core
-                    .pending_loop_return_loop_index(index)
-                    .is_some()
-            }))
+            && (shared_terminal_leaf
+                || (0..2).any(|index| {
+                    proof_execution
+                        .core
+                        .pending_loop_return_loop_index(index)
+                        .is_some()
+                })))
         .then(|| {
             claims
                 .iter()
@@ -1828,9 +1838,23 @@ pub(super) fn finish_ordered_proof<'a>(
                     }
                     _ => None,
                 })
+                .or_else(|| {
+                    shared_terminal_leaf
+                        .then(|| {
+                            claims
+                                .iter()
+                                .find_map(|claim| match claim.clause().ensure() {
+                                    Ensure::Proposition(ClickProposition::Implies(left, _)) => {
+                                        Some(left.as_ref().clone())
+                                    }
+                                    _ => None,
+                                })
+                        })
+                        .flatten()
+                })
         })
         .flatten();
-        let mut loop_outcome_choices = Vec::new();
+        let mut terminal_outcome_choices = Vec::new();
         let mut loop_return_closures = Vec::new();
         let mut surface_post_path_indices = Vec::with_capacity(execution.paths().len());
         let mut deferred_capture_tactics_by_path = Vec::with_capacity(execution.paths().len());
@@ -2115,8 +2139,8 @@ pub(super) fn finish_ordered_proof<'a>(
                         &proof_label,
                         "post-execution claim tactics",
                     );
-                    let loop_outcome_choice =
-                        loop_outcome_selector.as_ref().and_then(|condition| {
+                    let terminal_outcome_choice =
+                        terminal_outcome_selector.as_ref().and_then(|condition| {
                             outcome_proof
                                 .as_ref()?
                                 .checked_outcome_if_value(condition, None)
@@ -5106,8 +5130,8 @@ pub(super) fn finish_ordered_proof<'a>(
                         }
                         surface_grouped_closers_by_path.push(path_grouped_surface_closers);
                         surface_post_choices_by_path.push(surface_post_choices);
-                        if loop_outcome_selector.is_some() {
-                            loop_outcome_choices.push(loop_outcome_choice);
+                        if terminal_outcome_selector.is_some() {
+                            terminal_outcome_choices.push(terminal_outcome_choice);
                         }
                         surface_post_path_indices.push(path_index);
                         surface_post_tactics_by_path.push(path_surface_post_tactics);
@@ -5150,7 +5174,7 @@ pub(super) fn finish_ordered_proof<'a>(
         )?;
         // This is surface routing, never additional proof authority. If
         // either outcome cannot decide the guard, retain the existing refusal.
-        let distinct_loop_suffixes = loop_outcome_choices.len() == 2
+        let distinct_terminal_suffixes = terminal_outcome_choices.len() == 2
             && (surface_post_tactics_by_path
                 .windows(2)
                 .any(|pair| pair[0] != pair[1])
@@ -5160,13 +5184,13 @@ pub(super) fn finish_ordered_proof<'a>(
                 || surface_closers_by_claim
                     .iter()
                     .any(|paths| paths.windows(2).any(|pair| pair[0] != pair[1])));
-        if loop_outcome_choices.len() == 2
-            && distinct_loop_suffixes
+        if terminal_outcome_choices.len() == 2
+            && distinct_terminal_suffixes
             && surface_post_choices_by_path.iter().all(Vec::is_empty)
             && let (Some(first), Some(second), Some(condition)) = (
-                loop_outcome_choices[0],
-                loop_outcome_choices[1],
-                loop_outcome_selector,
+                terminal_outcome_choices[0],
+                terminal_outcome_choices[1],
+                terminal_outcome_selector,
             )
             && first != second
         {
