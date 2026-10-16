@@ -45,55 +45,6 @@ function sized_context_three_expected(phase: SizedInsertContextThreePhase, node:
 }
 
 
-theorem sized_context_parent_word_black(ctx: SizedContext, parent: struct rb_node*, word: uint64) {
-    requires parent == sized_context_parent(ctx, 0);
-    requires word == address(parent) + 1;
-    ensures sized_context_parent_word(ctx, word) == 1 by {
-        match ctx {
-            SizedContext::Top => {
-                have parent == 0 by {
-                    rewrite(parent == sized_context_parent(ctx, 0));
-                    rewrite(ctx == SizedContext::Top);
-                    unfold(sized_context_parent(SizedContext::Top, 0)); normalize();
-                }
-                have word == address(0) + 1 by {
-                    rewrite(word == address(parent) + 1);
-                    rewrite(parent == 0); normalize();
-                }
-                rewrite(ctx == SizedContext::Top);
-                unfold(sized_context_parent_word(SizedContext::Top, word));
-                normalize() using { word == address(0) + 1; }
-            },
-            SizedContext::Left(a, ancestor, color, count, sibling, up) => {
-                have parent == a by {
-                    rewrite(parent == sized_context_parent(ctx, 0));
-                    rewrite(ctx == SizedContext::Left(a, ancestor, color, count, sibling, up));
-                    unfold(sized_context_parent(SizedContext::Left(a, ancestor, color, count, sibling, up), 0)); normalize();
-                }
-                have word == address(a) + 1 by {
-                    rewrite(a == parent); assumption();
-                }
-                rewrite(ctx == SizedContext::Left(a, ancestor, color, count, sibling, up));
-                unfold(sized_context_parent_word(SizedContext::Left(a, ancestor, color, count, sibling, up), word));
-                normalize() using { word == address(a) + 1; }
-            },
-            SizedContext::Right(a, ancestor, color, count, sibling, up) => {
-                have parent == a by {
-                    rewrite(parent == sized_context_parent(ctx, 0));
-                    rewrite(ctx == SizedContext::Right(a, ancestor, color, count, sibling, up));
-                    unfold(sized_context_parent(SizedContext::Right(a, ancestor, color, count, sibling, up), 0)); normalize();
-                }
-                have word == address(a) + 1 by {
-                    rewrite(a == parent); assumption();
-                }
-                rewrite(ctx == SizedContext::Right(a, ancestor, color, count, sibling, up));
-                unfold(sized_context_parent_word(SizedContext::Right(a, ancestor, color, count, sibling, up), word));
-                normalize() using { word == address(a) + 1; }
-            },
-        }
-    }
-}
-
 resource sized_insert_context_three_at(node: struct rb_node*, root: struct rb_root*) {
     field phase: SizedInsertContextThreePhase;
     field model: SizedTree;

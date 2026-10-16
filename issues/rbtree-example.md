@@ -1688,3 +1688,9 @@ augmented insertion wrappers verify. The result refolds the repaired subtree
 through its preserved ancestor context and owns the whole root tree, with its
 model identified by `sized_plug`. Its eighteen-site expansion audit passes; the
 other non-root rotation shapes remain.
+
+
+The mirrored sized right-right context rotation also verifies through both
+wrappers and restores the whole root model. Its eighteen-site audit passes.
+Both context cases use the shared black-parent-word lemma; non-root double
+rotations remain.

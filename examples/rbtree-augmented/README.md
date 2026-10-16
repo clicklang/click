@@ -327,3 +327,11 @@ three-node subtree through the preserved ancestor context. The postcondition
 identifies its model with `sized_plug` and retains the subtree's exact rotated
 shape. Its retained-session expansion is a nightly regression for call-frame
 address matching. The other non-root rotation shapes remain.
+
+
+`rbtree_size_insert_mirrored_context_rotation.click` proves the right-right case
+with the same whole-root ownership result and unchanged ancestor caches. Both
+augmented insertion wrappers check the mirrored writable callback. The two
+context cases share the packed black-parent-word lemma in the parent-update
+helper, and each has a retained expansion regression. Non-root double rotations
+remain.
