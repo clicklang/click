@@ -425,6 +425,12 @@ load is still rejected as use-after-free.
 
 ## Write footprints and frames
 
+Caller-owned ranges retained across a checked call use the shared address-class
+owner selector. A transitive equality between native model pointers can select
+a retained field even when the pointer spellings have different symbolic
+blocks. Coverage still checks the complete byte extent; borrowed views do not
+become owned frames, and withdrawing an alias removes its lookup support.
+
 A function's write footprint is the memory its contract owns:
 
 <!-- verified-example: mdtests/contract_owns_write_footprint.md -->

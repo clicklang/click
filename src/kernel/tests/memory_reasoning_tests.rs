@@ -7242,3 +7242,49 @@ fn stated_separation_decides_pointer_forms_with_scoped_nonempty_evidence() {
         }
     }
 }
+
+#[test]
+fn kept_call_frame_uses_transitive_model_pointer_classes() {
+    let pointer = |id| Pointer {
+        block: PointerBlock::Symbolic(Variable(id)),
+        offset: PointerOffsetTerm::Constant(0),
+    };
+    let first = pointer(950_001);
+    let middle = pointer(950_002);
+    let owner = pointer(950_003);
+    let assumptions = PureFactContext::new()
+        .assume_condition(
+            ConditionTerm::pointer_equal(first.clone(), middle.clone()),
+            true,
+        )
+        .assume_condition(
+            ConditionTerm::pointer_equal(middle.clone(), owner.clone()),
+            true,
+        );
+    assert!(assumptions.pointers_known_equal(&first, &owner));
+    let ranges = ResourceContext::new_with_equalities(&assumptions).unchecked_with_fact(
+        CResourceFact::own_memory(CMemoryRange::new(owner.clone(), 2u32.into(), 4u32.into())),
+    );
+    let access = first.offset_by_bytes(8);
+    assert!(
+        ranges
+            .memory_write_range(&access, 8, &assumptions)
+            .is_some()
+    );
+    let kept = crate::kernel::primitives::CallKeptRanges::new(ranges, Vec::new(), None);
+    assert!(kept.holds_access(&access, 8, &assumptions));
+    assert!(!kept.holds_access(&access, 16, &assumptions));
+    for offset in [4, 12] {
+        assert!(!kept.holds_access(&first.offset_by_bytes(offset), 8, &assumptions));
+    }
+    let withdrawn = assumptions.without_exact_fact(&Proposition::ConditionIs(
+        ConditionTerm::pointer_equal(middle, owner.clone()),
+        true,
+    ));
+    assert!(!kept.holds_access(&access, 8, &withdrawn));
+    let views = ResourceContext::new_with_equalities(&assumptions).unchecked_with_fact(
+        CResourceFact::view_memory(CMemoryRange::new(owner, 2u32.into(), 4u32.into())),
+    );
+    let borrowed = crate::kernel::primitives::CallKeptRanges::new(views, Vec::new(), None);
+    assert!(!borrowed.holds_access(&access, 8, &assumptions));
+}
