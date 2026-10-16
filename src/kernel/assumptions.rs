@@ -5349,7 +5349,7 @@ impl PureFactContext {
     }
 
     /// What difference logic over this context's condition facts decides
-    /// about `condition` (`issues/difference-logic.md`), with `extra` facts
+    /// about `condition` (`docs/internals/verification-efficiency.md`), with `extra` facts
     /// assumed on top: a path's facts not yet in the context.
     pub(crate) fn difference_decision(
         &self,
