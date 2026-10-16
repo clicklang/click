@@ -9,10 +9,11 @@ use super::*;
 fn wide_loop_invariant_bundle_expansion_work_scales_with_members() {
     let mut samples = Vec::new();
     for size in [32, 64, 128] {
-        eprintln!("wide loop bundle size {size}: verify");
         let (source, proof) = wide_loop_invariant_fixture(size);
         let sources = [("bundle.c", source.as_str())];
-        verify_c0_sources(&proof, &sources).unwrap();
+        // Expansion constructs a checked proof of the original claim. Retain
+        // the independent cold check of its output below without first running
+        // the same original claim a second time.
         let (expanded, work) = crate::instrumentation::measure_deterministic_work(|| {
             eprintln!("wide loop bundle size {size}: expand");
             crate::surface::expand_c0_claim_source_by_label(&proof, &sources, "run.contract")
