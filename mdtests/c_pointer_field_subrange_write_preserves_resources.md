@@ -169,7 +169,16 @@ void arena_write(struct region* region, int32 index, int32 value) {
         intro();
         extract(0 <= k);
         extract(k < at(w, region->arena->capacity));
-        simp();
+        transport(
+            at(w, region->arena->occupied[k]) == at(w, region->arena->occupied[k]),
+            at(w, region->arena->occupied[k]) == region->arena->occupied[k]
+        ) using {
+            0 <= k;
+            k < at(w, region->arena->capacity);
+            separate(memory(region->arena->occupied[0..region->arena->capacity]),
+                memory(region->arena->data[0..region->arena->capacity]));
+        };
+        assumption();
     }
     let r = fold(arena_region(region), { start: s, end: e });
     let st = fold(arena_state(region->arena), { live: n, capacity: c });
