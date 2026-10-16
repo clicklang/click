@@ -1,8 +1,22 @@
 # Zlib full-stream expansion loses a pointer invariant proof
 
 Soundness: not soundness. The original full-stream contract and its helper
-bodies verify against the locked, unchanged C source, but rechecking its
-expanded certificate fails. No false acceptance is known.
+bodies verified against the locked, unchanged C source, but rechecking its
+expanded certificate failed. No false acceptance is known.
+
+The failure did not reproduce on upstream `471284951`: the named full-stream
+test passes, including all helper bodies, the complete
+expanded certificate, and all six mutation controls. A separately captured
+certificate also passes a cold CLI check. Its corresponding pointer step uses
+explicit rewrites and `assumption()`, rather than the failing
+`normalize() using` step reported below. These observations do not identify a
+fix or establish that every generated certificate rechecks; retain this report
+until the failing selection is understood. Capture the actual failed expansion on
+the next reproduction, rather than inspecting a newly generated certificate.
+
+The incremental C zlib test also passes on this revision, including its
+expanded certificate, every helper body, and all five mutation controls:
+`pinned_zlib_incremental_c_matches_checked_shared_specification_offline`.
 
 The October 16 nightly initially stopped earlier on an unavailable historical
 nonnegativity premise. After proving unsigned `sum2` nonnegativity directly
