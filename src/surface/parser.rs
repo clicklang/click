@@ -179,6 +179,9 @@ pub(in crate::surface) struct ProgramLayouts {
     /// The layout name of each C++ record a head spells otherwise, by that
     /// spelling: `Stored<long long>` is `Stored__long_long`.
     pub(in crate::surface) record_spellings: BTreeMap<String, String>,
+    /// The typedef names of the verified C sources a function head may
+    /// write, with their types.
+    pub(in crate::surface) c_typedefs: BTreeMap<String, syntax::C0HeadTypedef>,
 }
 
 /// Whether the library declaration `name` of module `identity` is known by
@@ -715,6 +718,8 @@ struct Parser {
     cpp_object_methods: cpp_class_objects::ObjectMethods,
     /// See [`ProgramLayouts::record_spellings`].
     record_spellings: BTreeMap<String, String>,
+    /// See [`ProgramLayouts::c_typedefs`].
+    c_typedefs: BTreeMap<String, syntax::C0HeadTypedef>,
     match_nesting: usize,
     proposition_nesting: usize,
     proof_nesting: usize,
@@ -1096,6 +1101,7 @@ impl Parser {
         parser.closure_captures = layouts.closure_captures;
         parser.plain_char = layouts.plain_char;
         parser.int64_t_rank = layouts.int64_t_rank.unwrap_or(LongRank::Long);
+        parser.c_typedefs = layouts.c_typedefs;
         if layouts.language == Some(SourceLanguage::Cpp) {
             // A sidecar verifying a C++ header is C++ by its import, which
             // its `verifying` path does not say: its class object state is
@@ -1177,6 +1183,7 @@ impl Parser {
             rust_object_traits,
             cpp_object_methods,
             record_spellings: BTreeMap::new(),
+            c_typedefs: BTreeMap::new(),
             source_aliases: BTreeMap::new(),
             qualified_functions: BTreeMap::new(),
             qualified_objects: None,
@@ -4450,8 +4457,20 @@ impl Parser {
         }
     }
 
+    /// A typedef name of the verified source is written only in a function
+    /// head, which restates the declaration.
+    fn check_head_typedef(&self, spelling: &str) -> Result<(), ClickError> {
+        if self.exact_long_rank {
+            return Ok(());
+        }
+        Err(self.error(format!(
+            "`{spelling}` is a typedef name of the verified source, which a function head \
+             may write; a specification writes Click's type, such as `int32`"
+        )))
+    }
+
     fn parse_type(&mut self) -> Result<ParsedType, ClickError> {
-        let is_constant = if self.peek_ident() == Some("const") {
+        let mut is_constant = if self.peek_ident() == Some("const") {
             self.position += 1;
             true
         } else {
@@ -4470,8 +4489,21 @@ impl Parser {
         };
         let cpp_record = qualified_record.is_some()
             || (self.verifies_cpp() && self.struct_layouts.contains_key(&spelling));
-        if spelling == "struct" || cpp_record {
-            let struct_name = if cpp_record {
+        // A function head may write a typedef name of the verified C source
+        // for the type it stands for, where the name is not a standard
+        // spelling; a specification writes Click's type.
+        let typedef_struct = match self.c_typedefs.get(&spelling) {
+            Some(syntax::C0HeadTypedef::Struct { name, constant }) => {
+                self.check_head_typedef(&spelling)?;
+                is_constant |= constant;
+                Some(name.clone())
+            }
+            _ => None,
+        };
+        if spelling == "struct" || cpp_record || typedef_struct.is_some() {
+            let struct_name = if let Some(name) = typedef_struct {
+                name
+            } else if cpp_record {
                 spelling
             } else {
                 self.expect_ident("struct name")?
@@ -4586,6 +4618,18 @@ impl Parser {
                 "double" => C0Type::Float64,
                 "volatile" => {
                     return Err(self.error("the `volatile` qualifier is not supported by Click"));
+                }
+                _ if let Some(typedef) = self.c_typedefs.get(&spelling) => {
+                    self.check_head_typedef(&spelling)?;
+                    let syntax::C0HeadTypedef::Scalar { c_type, constant } = *typedef else {
+                        return Err(self.error(format!(
+                            "the typedef `{spelling}` stands for a pointer, array, function \
+                             pointer, union, or volatile or aligned type, or for different \
+                             types in two verified sources; a head writes its C type"
+                        )));
+                    };
+                    is_constant |= constant;
+                    c_type
                 }
                 _ => {
                     return Err(self.error(format!(

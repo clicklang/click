@@ -803,6 +803,17 @@ pub(super) fn c_layouts(
                 )));
             }
         }
+        // A name two verified sources alias to different types is not one a
+        // head can write.
+        for (name, typedef) in &unit.head_typedefs {
+            let entry = tables
+                .c_typedefs
+                .entry(name.clone())
+                .or_insert_with(|| typedef.clone());
+            if entry != typedef {
+                *entry = syntax::C0HeadTypedef::Other;
+            }
+        }
         for (name, layout) in &unit.unions {
             if let Some(previous) = tables.union_layouts.insert(name.clone(), layout.clone())
                 && previous != *layout
