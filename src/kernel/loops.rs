@@ -1762,78 +1762,8 @@ fn execute_c_indirect_call_paths(
     Ok(paths)
 }
 
-pub(super) fn execute_c_statement_paths_with_prefix(
-    state: &CState,
-    statement: &CStatement,
-    assumptions: &PureFactContext,
-    execution_context: CExecutionContext<'_>,
-    prefix_facts: &(impl ExecutionFactSource + ?Sized),
-    prefix_obligations: &[ProofObligation],
-    prefix_loan_evidence: &CheckedLoanCallEvidenceSequence,
-    budget: &mut ExecutionBudget,
-) -> ExecutionResult<Vec<CStatementExecutionPath>> {
-    let effective_assumptions =
-        assumptions_with_path_context(assumptions, prefix_facts, prefix_obligations);
-    let paths = execute_c_statement_paths(
-        state,
-        statement,
-        &effective_assumptions,
-        execution_context,
-        budget,
-    )?
-    .into_iter()
-    .filter_map(|path| {
-        let (facts, obligations) = merge_execution_pure_facts_and_obligations(
-            prefix_facts,
-            prefix_obligations,
-            &path.facts,
-            &path.obligations,
-            assumptions,
-        )?;
-        Some(CStatementExecutionPath {
-            loop_invariant_correspondence: Default::default(),
-            outcome: path.outcome,
-            facts,
-            obligations,
-            loan_evidence: concat_checked_loan_evidence(prefix_loan_evidence, &path.loan_evidence),
-        })
-    })
-    .collect::<Vec<_>>();
-    budget.check_path_width(paths.len())?;
-    Ok(paths)
-}
-
-fn execute_statement_suffix_with_loan_evidence(
-    state: &CState,
-    statement: &CStatement,
-    assumptions: &PureFactContext,
-    execution_context: CExecutionContext<'_>,
-    prefix_facts: &(impl ExecutionFactSource + ?Sized),
-    prefix_obligations: &[ProofObligation],
-    prefix_loan_evidence: &CheckedLoanCallEvidenceSequence,
-    budget: &mut ExecutionBudget,
-    variables: &mut KernelVariableGenerator,
-) -> ExecutionResult<Vec<CStatementExecutionPath>> {
-    let suffix_paths = execute_c_statement_verification_paths_with_prefix(
-        state,
-        statement,
-        assumptions,
-        execution_context,
-        prefix_facts,
-        prefix_obligations,
-        budget,
-        variables,
-    )?;
-    Ok(suffix_paths
-        .into_iter()
-        .map(|mut path| {
-            path.loan_evidence =
-                concat_checked_loan_evidence(prefix_loan_evidence, &path.loan_evidence);
-            path
-        })
-        .collect())
-}
-
+/// `CStatementVerifies` for `statement`: the one statement driver under the
+/// verification judgment.
 pub(super) fn execute_c_statement_verification_paths(
     state: &CState,
     statement: &CStatement,
@@ -1842,14 +1772,45 @@ pub(super) fn execute_c_statement_verification_paths(
     budget: &mut ExecutionBudget,
     variables: &mut KernelVariableGenerator,
 ) -> ExecutionResult<Vec<CStatementExecutionPath>> {
-    budget.install_c_byte_order(execution_context.environment.byte_order());
-    // `Seq` only groups source statements; it is not another statement step.
-    if !matches!(statement, CStatement::Seq(_, _)) {
-        budget.consume_statement_step()?;
-    }
-    if execution_context.semantics.loops == CLoopSemantics::ApplyVerifiedRules
-        && matches!(statement, CStatement::While { .. })
-    {
+    super::eval::execute_statement_paths(
+        state,
+        statement,
+        assumptions,
+        execution_context,
+        budget,
+        &mut super::eval::StatementJudgment::Verifies(variables),
+    )
+}
+
+/// The verification judgment's step of a loop, when it has one: the paths
+/// of the environment's verified rule for it, or, with checks, its exit
+/// paths from those checks. `None` leaves the loop to be unrolled, as the
+/// execution judgment does.
+///
+/// Under [`CLoopSemantics::ApplyVerifiedRules`] a loop with checks and no
+/// applicable rule has no paths: its authority is the rule.
+pub(in crate::kernel) fn abstract_loop_paths(
+    state: &CState,
+    statement: &CStatement,
+    assumptions: &PureFactContext,
+    execution_context: CExecutionContext<'_>,
+    budget: &mut ExecutionBudget,
+    variables: &mut KernelVariableGenerator,
+) -> ExecutionResult<Option<Vec<CStatementExecutionPath>>> {
+    let annotated = matches!(
+        statement,
+        CStatement::While {
+            invariant_checks,
+            effect_checks,
+            ranking_measures,
+            structural_measure,
+            ..
+        } if !invariant_checks.is_empty()
+            || !effect_checks.is_empty()
+            || !ranking_measures.is_empty()
+            || structural_measure.is_some()
+    );
+    if execution_context.semantics.loops == CLoopSemantics::ApplyVerifiedRules {
         // A checked rule may have no invariant, effect, or measure checks.
         // Its authority is the rule itself, not a nonempty annotation bundle.
         if let Some(rule) = execution_context.environment.applicable_verified_loop_rule(
@@ -1871,281 +1832,34 @@ pub(super) fn execute_c_statement_verification_paths(
                 })
                 .collect::<Vec<_>>();
             budget.check_path_width(paths.len())?;
-            return Ok(paths);
+            return Ok(Some(paths));
         }
-        if matches!(
-            statement,
-            CStatement::While {
-                invariant_checks,
-                effect_checks,
-                ranking_measures,
-                structural_measure,
-                ..
-            } if !invariant_checks.is_empty()
-                || !effect_checks.is_empty()
-                || !ranking_measures.is_empty()
-                || structural_measure.is_some()
-        ) {
-            return Ok(Vec::new());
+        if annotated {
+            return Ok(Some(Vec::new()));
         }
     }
-    let paths = match statement {
-        CStatement::Seq(first, second) => {
-            let mut paths = Vec::new();
-            for first_path in execute_c_statement_verification_paths(
-                state,
-                first,
-                assumptions,
-                execution_context,
-                budget,
-                variables,
-            )? {
-                let CStatementExecutionPath {
-                    loop_invariant_correspondence: _,
-                    outcome,
-                    facts,
-                    obligations,
-                    loan_evidence,
-                } = first_path;
-                match outcome {
-                    CStatementOutcome::Normal(state) => {
-                        if loan_evidence.is_empty() {
-                            paths.extend(execute_c_statement_verification_paths_with_prefix(
-                                &state,
-                                second,
-                                assumptions,
-                                execution_context,
-                                &facts,
-                                &obligations,
-                                budget,
-                                variables,
-                            )?);
-                        } else {
-                            paths.extend(execute_statement_suffix_with_loan_evidence(
-                                &state,
-                                second,
-                                assumptions,
-                                execution_context,
-                                &facts,
-                                &obligations,
-                                &loan_evidence,
-                                budget,
-                                variables,
-                            )?);
-                        }
-                    }
-                    outcome @ (CStatementOutcome::Break(_)
-                    | CStatementOutcome::Continue(_)
-                    | CStatementOutcome::Jump { .. }
-                    | CStatementOutcome::Return { .. }
-                    | CStatementOutcome::Throw { .. }
-                    | CStatementOutcome::VerificationDiverges
-                    | CStatementOutcome::UndefinedBehavior(_)
-                    | CStatementOutcome::RuntimeError(_)) => paths.push(CStatementExecutionPath {
-                        loop_invariant_correspondence: Default::default(),
-                        outcome,
-                        facts,
-                        obligations,
-                        loan_evidence,
-                    }),
-                }
-            }
-            paths
-        }
-        CStatement::If {
-            condition,
-            then_branch,
-            else_branch,
-        } => {
-            let mut paths = Vec::new();
-            for condition_path in evaluate_c_condition_paths(state, condition, assumptions, budget)?
-            {
-                let CExpressionPath {
-                    outcome,
-                    facts,
-                    obligations,
-                } = condition_path;
-                match outcome {
-                    CExpressionOutcome::Value(value) => {
-                        for truthiness_path in
-                            c_truthiness_paths(value, facts, obligations, assumptions)
-                        {
-                            let branch = if truthiness_path.is_true {
-                                then_branch
-                            } else {
-                                else_branch
-                            };
-                            let branch_assumptions = assumptions_with_path_context(
-                                assumptions,
-                                &truthiness_path.facts,
-                                &truthiness_path.obligations,
-                            );
-                            let branch_state =
-                                resolve_pending_heap_allocations(state, &branch_assumptions);
-                            let branch_state = super::publication::resolve_observed_publications(
-                                &branch_state,
-                                &branch_assumptions,
-                            );
-                            // The arm is a scope: what it declares stops
-                            // existing however control leaves it.
-                            let declared = scope_declared_names(branch);
-                            paths.extend(paths_after_scope_exit(
-                                execute_c_statement_verification_paths_with_prefix(
-                                    &branch_state,
-                                    branch,
-                                    assumptions,
-                                    execution_context,
-                                    &truthiness_path.facts,
-                                    &truthiness_path.obligations,
-                                    budget,
-                                    variables,
-                                )?,
-                                &declared,
-                            ));
-                        }
-                    }
-                    CExpressionOutcome::UndefinedBehavior(undefined_behavior) => {
-                        paths.push(CStatementExecutionPath::new(
-                            CStatementOutcome::UndefinedBehavior(undefined_behavior),
-                            facts,
-                            obligations,
-                        ))
-                    }
-                    CExpressionOutcome::RuntimeError(error) => {
-                        paths.push(CStatementExecutionPath::new(
-                            CStatementOutcome::RuntimeError(error),
-                            facts,
-                            obligations,
-                        ))
-                    }
-                }
-            }
-            paths
-        }
-        CStatement::While {
-            invariant_checks,
-            effect_checks,
-            ranking_measures,
-            structural_measure,
-            ..
-        } if !invariant_checks.is_empty()
-            || !effect_checks.is_empty()
-            || !ranking_measures.is_empty()
-            || structural_measure.is_some() =>
-        {
-            execute_c_while_exit_paths(
-                state,
-                CWhileLoop::of(statement).expect("matched a while statement"),
-                assumptions,
-                execution_context.environment,
-                Some(execution_context.environment),
-                &[],
-                &[],
-                &[],
-                execution_context.semantics,
-                false,
-                budget,
-                variables,
-            )?
-        }
-        _ => {
-            // Loop verification and verified-call execution share one symbolic
-            // identity stream: `variables` allocates from `budget`, so nothing
-            // has to be synchronized across this boundary.
-            let operation = match statement {
-                CStatement::EndScalarReference(_) => "verification statement: borrow end",
-                CStatement::ScalarReferenceScope(_) => "verification statement: borrow scope",
-                CStatement::Skip => "verification statement: skip",
-                CStatement::Break => "verification statement: break",
-                CStatement::Continue => "verification statement: continue",
-                CStatement::Goto { .. } => "verification statement: goto",
-                CStatement::ForStep { .. } => "verification statement: continue with for step",
-                CStatement::EndAutomaticLifetimes { .. } => {
-                    "verification statement: automatic lifetime end"
-                }
-                CStatement::Declare { .. } => "verification statement: declare",
-                CStatement::DeclareAggregate { .. } => "verification statement: declare aggregate",
-                CStatement::CopyAggregate { .. } => "verification statement: aggregate copy",
-                CStatement::InitializeScalarArray { .. } => {
-                    "verification statement: scalar array initialization"
-                }
-                CStatement::Assign { .. } => "verification statement: assign",
-                CStatement::CallAssign { .. } => "verification statement: call assign",
-                CStatement::Call { .. } => "verification statement: call",
-                CStatement::HeapAllocate { .. } => "verification statement: heap allocate",
-                CStatement::HeapFree { .. } => "verification statement: heap free",
-                CStatement::Assert { .. } => "verification statement: assert",
-                CStatement::Return(_) => "verification statement: return",
-                CStatement::Throw(_) => "verification statement: throw",
-                CStatement::TryCatchInt32 { .. } => "verification statement: int32 handler",
-                CStatement::Store { .. } => "verification statement: store",
-                CStatement::TypedStore { .. } => "verification statement: typed store",
-                CStatement::Update { .. } => "verification statement: update",
-                CStatement::While { .. } => "verification statement: while",
-                CStatement::Switch { .. } => "verification statement: switch",
-                CStatement::Seq(_, _) | CStatement::If { .. } => unreachable!(),
-            };
-            let paths = crate::instrumentation::measure_operation(
-                "kernel",
-                "independent kernel execution",
-                operation,
-                || {
-                    execute_c_statement_paths(
-                        state,
-                        statement,
-                        assumptions,
-                        execution_context,
-                        budget,
-                    )
-                },
-            );
-            paths?
-        }
-    };
-    budget.check_path_width(paths.len())?;
-    Ok(paths)
-}
-
-pub(super) fn execute_c_statement_verification_paths_with_prefix(
-    state: &CState,
-    statement: &CStatement,
-    assumptions: &PureFactContext,
-    execution_context: CExecutionContext<'_>,
-    prefix_facts: &(impl ExecutionFactSource + ?Sized),
-    prefix_obligations: &[ProofObligation],
-    budget: &mut ExecutionBudget,
-    variables: &mut KernelVariableGenerator,
-) -> ExecutionResult<Vec<CStatementExecutionPath>> {
-    let effective_assumptions =
-        assumptions_with_path_context(assumptions, prefix_facts, prefix_obligations);
-    let paths = execute_c_statement_verification_paths(
+    if !annotated {
+        return Ok(None);
+    }
+    // Loop verification and verified-call execution share one symbolic
+    // identity stream: `variables` allocates from `budget`, so nothing has
+    // to be synchronized across this boundary.
+    let paths = execute_c_while_exit_paths(
         state,
-        statement,
-        &effective_assumptions,
-        execution_context,
+        CWhileLoop::of(statement).expect("matched a while statement"),
+        assumptions,
+        execution_context.environment,
+        Some(execution_context.environment),
+        &[],
+        &[],
+        &[],
+        execution_context.semantics,
+        false,
         budget,
         variables,
-    )?
-    .into_iter()
-    .filter_map(|path| {
-        let (facts, obligations) = merge_execution_pure_facts_and_obligations(
-            prefix_facts,
-            prefix_obligations,
-            &path.facts,
-            &path.obligations,
-            assumptions,
-        )?;
-        Some(CStatementExecutionPath {
-            loop_invariant_correspondence: Default::default(),
-            outcome: path.outcome,
-            facts,
-            obligations,
-            loan_evidence: path.loan_evidence,
-        })
-    })
-    .collect::<Vec<_>>();
+    )?;
     budget.check_path_width(paths.len())?;
-    Ok(paths)
+    Ok(Some(paths))
 }
 
 /// Checks the state components that a loop back edge cannot silently reset.
@@ -2401,6 +2115,15 @@ fn c_loop_state_components_match_at_back_edge_inner(
                 != Some(c_value_subobject_extent(value))
     }) {
         changed.push("pointer subobject extents");
+    }
+    // Likewise the class of the object a pointer local designates
+    // (`design/effective-types.md`).
+    if top_state.locals().object_values().any(|(name, value)| {
+        c_value_object_class(value).is_some()
+            && next_state.locals().get(name).map(c_value_object_class)
+                != Some(c_value_object_class(value))
+    }) {
+        changed.push("pointer object classes");
     }
     if top_state.loan_participant != next_state.loan_participant {
         changed.push("stable-view loan participant");
@@ -3032,7 +2755,13 @@ fn abstract_loop_exit_states(
         }
     }
     discard_loop_exit_partial_value_bindings(&head.top, body, &mut rebound);
-    retain_proven_loop_exit_cells(&mut rebound, exit_facts, assumptions, binders.is_empty())?;
+    retain_proven_loop_exit_cells(
+        &mut rebound,
+        exit_facts,
+        &contexts,
+        assumptions,
+        binders.is_empty(),
+    )?;
     let mut successor = rebound[0].clone();
     let mut restatements = vec![LoopExitRestatement::default(); rebound.len()];
     let uninitialized = abstract_loop_exit_initialization(&mut successor, &rebound);
@@ -3115,9 +2844,14 @@ fn loop_exit_argument_contexts(
 /// Fill only changed concrete cache entries whose exact typed value every
 /// exit already proves. A load equation is evidence for a cache entry, never
 /// for a C store, initialization, or additional memory authority.
+///
+/// `built` holds the exit contexts the join already indexed for its binders
+/// (empty when the loop has none); an exit's context is built here only when
+/// it is missing, so no exit's facts are assumed twice.
 fn retain_proven_loop_exit_cells(
     states: &mut [CState],
     facts: &[&ExecutionFacts],
+    built: &[PureFactContext],
     assumptions: &PureFactContext,
     no_binders: bool,
 ) -> Result<(), String> {
@@ -3161,9 +2895,12 @@ fn retain_proven_loop_exit_cells(
                 agrees = false;
                 continue;
             };
-            let context = contexts[index].get_or_insert_with(|| {
-                assumptions_with_path_context(assumptions, facts[index], &[])
-            });
+            let context = match built.get(index) {
+                Some(context) => context,
+                None => contexts[index].get_or_insert_with(|| {
+                    assumptions_with_path_context(assumptions, facts[index], &[])
+                }),
+            };
             let equality = indexed_loop_exit_load_equality(context, &load, &value);
             if equality != Some(true) {
                 agrees = false;
@@ -3888,6 +3625,13 @@ fn abstract_loop_exit_locals(
         {
             extents if extents[1..].iter().all(|extent| *extent == extents[0]) => {
                 with_retained_extent(fresh, held.first())
+            }
+            _ => fresh,
+        };
+        // So do exits that agree on the class of the object it designates.
+        let fresh = match held.iter().map(c_value_object_class).collect::<Vec<_>>() {
+            classes if classes[1..].iter().all(|class| *class == classes[0]) => {
+                with_retained_object_class(fresh, held.first())
             }
             _ => fresh,
         };
@@ -5390,15 +5134,16 @@ pub(super) fn collect_loop_preservation_summary(
             // The body is a scope: the objects the summarized iteration
             // declares stop existing at the back edge and at every exit.
             for body_path in paths_after_scope_exit(
-                execute_c_statement_verification_paths_with_prefix(
+                super::eval::execute_statement_paths_with_prefix(
                     top_state,
                     body,
                     assumptions,
                     execution_context,
                     &condition_facts,
                     &condition_obligations,
+                    &empty_checked_loan_evidence_sequence(),
                     budget,
-                    variables,
+                    &mut super::eval::StatementJudgment::Verifies(variables),
                 )?,
                 &body_declared,
             ) {
@@ -8634,6 +8379,7 @@ pub(super) fn havoc_loop_modified_locals(
         // abstract iteration; the back edge checks that the body returns
         // it to the same one (`c_loop_state_components_match_at_back_edge`).
         let value = with_retained_extent(value, state.locals.get(&name));
+        let value = with_retained_object_class(value, state.locals.get(&name));
         sync_stack_local(&mut state, &name, &value);
         state.locals.set_typed(name, value, c_type);
     }
@@ -9146,6 +8892,19 @@ fn c_value_subobject_extent(value: &CValue) -> Option<&SubobjectExtent> {
         CValue::Pointer(pointer) => pointer.extent(),
         _ => None,
     }
+}
+
+fn c_value_object_class(value: &CValue) -> Option<crate::kernel::effective_type::CAccessClass> {
+    match value {
+        CValue::Pointer(pointer) => pointer.object_class(),
+        _ => None,
+    }
+}
+
+/// `fresh` with the class of the object the pointer value it abstracts
+/// designates.
+fn with_retained_object_class(fresh: CValue, previous: Option<&CValue>) -> CValue {
+    fresh.with_pointer_object_class(previous.and_then(c_value_object_class))
 }
 
 /// `fresh` with the subobject extent of the pointer value it abstracts.

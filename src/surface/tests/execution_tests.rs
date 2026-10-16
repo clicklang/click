@@ -1326,7 +1326,14 @@ fn verifies_fill3_c0_source_with_sidecar_specification() {
                     c_function(
                         CType::Int32,
                         "fill3",
-                        vec![crate::kernel::c_parameter("p", CType::Int32Pointer)],
+                        vec![
+                            crate::kernel::c_parameter("p", CType::Int32Pointer)
+                                .with_pointee_class(Some(
+                                    crate::kernel::effective_type::CAccessClass::Scalar(
+                                        crate::kernel::effective_type::CScalarClass::Int,
+                                    ),
+                                )),
+                        ],
                         c_seq(
                             prefix.as_ref().clone(),
                             c_seq(

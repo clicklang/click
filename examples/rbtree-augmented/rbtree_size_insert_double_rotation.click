@@ -295,7 +295,12 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                         model: SizedTree::Node(g, node, Color::Red, 3, SizedTree::Empty, SizedTree::Empty)
                     }, { metadata: g_size, left: g_left, right: g_right });
                     have node->rb_left == p by { simp(); }
-                    have parent->rb_right == gparent by { simp(); }
+                    transport(at(statement(37).exit, parent->rb_right == gparent), parent->rb_right == gparent) using {
+                        at(statement(37).exit, parent->rb_right == gparent);
+                        separate(memory(parent->rb_right), memory(root->rb_node));
+                        separate(memory(parent->rb_right), memory(parent->__rb_parent_color));
+                        separate(memory(parent->rb_right), memory(gparent->__rb_parent_color));
+                    };
                     have node->rb_right == g by {
                         rewrite(node == parent);
                         rewrite(g == gparent);

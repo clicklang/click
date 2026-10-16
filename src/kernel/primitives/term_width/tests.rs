@@ -107,3 +107,71 @@ fn a_comparison_takes_operands_of_the_width_it_names() {
         })
     );
 }
+
+#[test]
+fn a_condition_reports_each_variable_at_the_width_it_is_used() {
+    let n = Variable(11);
+    let i = Variable(12);
+    let below = ConditionTerm::Bitvector64UnsignedLessThan(
+        boxed(Bitvector32Term::Variable(i)),
+        boxed(Bitvector32Term::Variable(n)),
+    );
+    assert_eq!(
+        condition_variable_widths(&below),
+        Ok(vec![(n, CarrierWidth::Bits64), (i, CarrierWidth::Bits64)])
+    );
+    // One variable at two widths within one condition.
+    let mixed = ConditionTerm::Bitvector32Equal(
+        boxed(Bitvector32Term::Variable(n)),
+        boxed(Bitvector32Term::UInt32From64(boxed(
+            Bitvector32Term::UInt64Add(
+                boxed(Bitvector32Term::Variable(n)),
+                boxed(Bitvector32Term::UInt64Constant(1)),
+            ),
+        ))),
+    );
+    assert_eq!(
+        condition_variable_widths(&mixed),
+        Err(variable_conflict(
+            CarrierWidth::Bits32,
+            CarrierWidth::Bits64
+        ))
+    );
+}
+
+#[test]
+#[cfg_attr(
+    debug_assertions,
+    should_panic(expected = "a variable used at another width")
+)]
+fn one_fact_context_keeps_a_variable_at_one_width() {
+    let n = Bitvector32Term::Variable(Variable(13));
+    let facts = PureFactContext::new().assume_condition(
+        ConditionTerm::Bitvector64UnsignedLessThan(
+            boxed(n.clone()),
+            boxed(Bitvector32Term::UInt64Constant(10)),
+        ),
+        true,
+    );
+    // The same variable in a 32-bit comparison of the same context.
+    let _ = facts.assume_condition(
+        ConditionTerm::Bitvector32SignedLessThan(boxed(n), boxed(Bitvector32Term::Constant(5))),
+        true,
+    );
+}
+
+#[test]
+fn separate_fact_contexts_may_use_one_variable_number_at_different_widths() {
+    let n = Bitvector32Term::Variable(Variable(14));
+    let _wide = PureFactContext::new().assume_condition(
+        ConditionTerm::Bitvector64UnsignedLessThan(
+            boxed(n.clone()),
+            boxed(Bitvector32Term::UInt64Constant(10)),
+        ),
+        true,
+    );
+    let _narrow = PureFactContext::new().assume_condition(
+        ConditionTerm::Bitvector32SignedLessThan(boxed(n), boxed(Bitvector32Term::Constant(5))),
+        true,
+    );
+}

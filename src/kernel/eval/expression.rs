@@ -1,4 +1,5 @@
 use super::*;
+use crate::kernel::effective_type::CAccessClass;
 
 fn integer_to_float_bits(
     negative: bool,
@@ -2053,7 +2054,8 @@ pub(in crate::kernel) fn evaluate_c_lvalue_paths(
                             )
                             .with_constant(pointer.pointee_constant())
                             .with_local_reference(pointer.local_reference().copied())
-                            .with_extent_of(&pointer),
+                            .with_extent_of(&pointer)
+                            .with_access_class(CAccessClass::of_kernel_type(value_type)),
                         ),
                         facts: pointer_path.facts,
                         obligations: pointer_path.obligations,
@@ -2082,8 +2084,10 @@ pub(in crate::kernel) fn evaluate_c_lvalue_paths(
             value_type,
             volatile,
             pointee_constant,
+            access_class,
             ..
         } => {
+            let access_class = access_class.or_else(|| CAccessClass::of_kernel_type(*value_type));
             let mut paths = Vec::new();
             for pointer_path in
                 evaluate_c_expression_paths(state, pointer_expression, assumptions, budget)?
@@ -2099,7 +2103,8 @@ pub(in crate::kernel) fn evaluate_c_lvalue_paths(
                             .with_constant(pointer.pointee_constant())
                             .with_local_reference(pointer.local_reference().copied())
                             .with_pointee_constant(*pointee_constant)
-                            .with_extent_of(&pointer),
+                            .with_extent_of(&pointer)
+                            .with_access_class(access_class),
                         ),
                         facts: pointer_path.facts,
                         obligations: pointer_path.obligations,
@@ -2143,7 +2148,8 @@ pub(in crate::kernel) fn evaluate_c_lvalue_paths(
                             )
                             .with_constant(pointer.pointee_constant())
                             .with_local_reference(pointer.local_reference().copied())
-                            .with_extent_of(&pointer),
+                            .with_extent_of(&pointer)
+                            .with_access_class(CAccessClass::of_kernel_type(value_type)),
                         ),
                         facts: pointer_path.facts,
                         obligations: pointer_path.obligations,
@@ -2437,7 +2443,9 @@ fn read_c_lvalue_paths_without_ranges(
                     &facts,
                     &obligations,
                     assumptions,
-                ) {
+                )
+                .or_else(|| effective_type_refusal(&state.memory, pointer, &lvalue))
+                {
                     return Ok(vec![CExpressionPath {
                         outcome: CExpressionOutcome::UndefinedBehavior(refusal),
                         facts,
@@ -2490,6 +2498,18 @@ fn read_c_lvalue_paths_without_ranges(
                     source,
                     budget.c_byte_order(),
                 );
+                // A pointer read from memory designates an object of the
+                // class its lvalue's type points to, unless it carries the
+                // class of the declaration that formed it.
+                if let Some(pointee) = lvalue.access_class().and_then(CAccessClass::pointee) {
+                    for path in &mut paths {
+                        if let CExpressionOutcome::Value(value) = &mut path.outcome
+                            && matches!(value, CValue::Pointer(_))
+                        {
+                            *value = value.clone().with_pointer_object_class(Some(pointee));
+                        }
+                    }
+                }
                 if let Some(source) = source.and_then(|source| source.reference_access.as_ref())
                     && source.kind == crate::kernel::ReferenceAccessKind::Read
                 {

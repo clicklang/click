@@ -126,5 +126,6 @@ pub(super) use statements::memory_write_permission_outcome;
 pub(crate) use statements::resolve_pending_heap_allocations;
 pub(super) use statements::sync_stack_local;
 pub(super) use statements::{
-    execute_c_statement_paths, paths_after_scope_exit, scope_declared_names,
+    StatementJudgment, execute_c_statement_paths, execute_statement_paths,
+    execute_statement_paths_with_prefix, paths_after_scope_exit, scope_declared_names,
 };

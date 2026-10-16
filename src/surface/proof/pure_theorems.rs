@@ -1994,15 +1994,33 @@ fn verify_contract_refinement_theorem(
     let Some(contract_definition) = spec_definitions.predicates.contract_definition(name) else {
         return Ok(None);
     };
-    if !contract_definition.value_parameters().is_empty() {
-        return Err(ClickError::new(format!(
-            "`{claim_label}`: a refinement theorem cannot yet conclude `{name}`, which has value \
-             parameters; Click checks `{name}(&f, {{ ... }})` automatically where a call needs it"
-        )));
-    }
-    let [argument] = arguments.as_slice() else {
+    // The function value, then the values of the contract's value
+    // parameters.
+    let Some(argument) = arguments.first() else {
         return Ok(None);
     };
+    let lower = |proposition: &ClickProposition| {
+        lower_pure_theorem_proposition_with_integer_values(
+            theorem.name(),
+            proposition,
+            ContractEnvironment::new(&context.values, &context.array_refs),
+            &context.integer_values,
+            &context.memory,
+            spec_definitions,
+        )
+        .map_err(|message| {
+            ClickError::new(format!(
+                "`{claim_label}` failed: could not lower conclusion: {message}"
+            ))
+        })
+    };
+    let goal = lower(surface_goal)?;
+    let target_values = contract_fact_values(&goal).ok_or_else(|| {
+        ClickError::new(format!(
+            "`{claim_label}`: `{name}` expects a function pointer and its {} value parameter(s)",
+            contract_definition.value_parameters().len()
+        ))
+    })?;
     let concrete_target = contract_expression_function_address(argument);
     let symbolic_binding = match argument {
         ContractExpression::Binding(name)
@@ -2046,7 +2064,7 @@ fn verify_contract_refinement_theorem(
                 "`{claim_label}`: abstract contract refinement requires a source-contract proposition"
             )));
         };
-        let [source_argument] = source_arguments.as_slice() else {
+        let Some(source_argument) = source_arguments.first() else {
             return Err(ClickError::new(format!(
                 "`{claim_label}`: source contract `{source_name}` expects the symbolic callback argument"
             )));
@@ -2064,7 +2082,19 @@ fn verify_contract_refinement_theorem(
                     "`{claim_label}`: `{source_name}` is not a named function contract"
                 ))
             })?;
-        Some((source_name.as_str(), source_definition))
+        let source_values = contract_fact_values(&lower(
+            requirement
+                .proposition()
+                .expect("the source requirement is a proposition"),
+        )?)
+        .ok_or_else(|| {
+            ClickError::new(format!(
+                "`{claim_label}`: `{source_name}` expects a function pointer and its {} value \
+                 parameter(s)",
+                source_definition.value_parameters().len()
+            ))
+        })?;
+        Some((source_name.as_str(), source_definition, source_values))
     };
     let SourceProof::Script(tactics) = ensure_clause.proof() else {
         let subject = concrete_target
@@ -2075,7 +2105,7 @@ fn verify_contract_refinement_theorem(
             "`{claim_label}`: proving `{name}({subject})` requires an explicit contract-refinement proof"
         )));
     };
-    let proof_tactics = if let Some((source_name, _)) = source_contract {
+    let proof_tactics = if let Some((source_name, _, _)) = &source_contract {
         let Some((first_two, remainder)) = tactics.split_at_checked(2) else {
             return Err(ClickError::new(format!(
                 "`{claim_label}`: abstract refinement must begin by unfolding `{source_name}` and `{name}`"
@@ -2088,7 +2118,7 @@ fn verify_contract_refinement_theorem(
                 _ => None,
             })
             .collect::<Option<BTreeSet<_>>>();
-        let expected = BTreeSet::from([source_name, name.as_str()]);
+        let expected = BTreeSet::from([*source_name, name.as_str()]);
         if unfolded.as_ref() != Some(&expected) {
             return Err(ClickError::new(format!(
                 "`{claim_label}`: abstract refinement must begin by unfolding `{source_name}` and `{name}`"
@@ -2114,9 +2144,9 @@ fn verify_contract_refinement_theorem(
             "`{claim_label}`: contract-refinement theorems require the C function environment"
         ))
     })?;
-    let refinement = match (concrete_target, source_contract) {
+    let refinement = match (concrete_target, &source_contract) {
         (Some(target), None) => {
-            c_function_contract_refinement_context(function_environment, name, spec_definitions.predicates.function_execution_name(target)).ok_or_else(
+            c_function_contract_refinement_context(function_environment, name, spec_definitions.predicates.function_execution_name(target), &target_values).ok_or_else(
                 || {
                     ClickError::new(format!(
                         "`{claim_label}`: `{target}` is not a verified or external function compatible with contract `{name}`"
@@ -2124,14 +2154,21 @@ fn verify_contract_refinement_theorem(
                 },
             )?
         }
-        (None, Some((source_name, _))) => {
+        (None, Some((source_name, _, source_values))) => {
             let binding = symbolic_binding.expect("abstract refinement has a callback binding");
             let pointer = context.values.get(binding).ok_or_else(|| {
                 ClickError::new(format!(
                     "`{claim_label}`: symbolic callback `{binding}` has no theorem value"
                 ))
             })?;
-            c_contract_refinement_context(function_environment, name, source_name, pointer)
+            c_contract_refinement_context(
+                function_environment,
+                name,
+                &target_values,
+                source_name,
+                source_values,
+                pointer,
+            )
                 .ok_or_else(|| {
                     ClickError::new(format!(
                         "`{claim_label}`: contract `{source_name}` is not signature-compatible with `{name}`"
@@ -2141,10 +2178,15 @@ fn verify_contract_refinement_theorem(
         _ => unreachable!("refinement subject classification is exhaustive"),
     };
     let argument_values = c_function_contract_refinement_arguments(&refinement);
-    let contract_parameters = contract_definition
+    // The contract's value parameters trail its call parameters; the
+    // refinement binds them to the conclusion's values.
+    let all_parameters = contract_definition
         .function_block()
         .signature()
         .parameters();
+    let contract_parameters = &all_parameters[..all_parameters
+        .len()
+        .saturating_sub(contract_definition.value_parameters().len())];
     if contract_parameters.len() != argument_values.len() {
         return Err(ClickError::new(format!(
             "`{claim_label}`: contract parameter count does not match its lowered function"
@@ -2232,19 +2274,6 @@ fn verify_contract_refinement_theorem(
         None => return Err(refinement_failure().with_search_failures(search.finish())),
     };
     let checked = proof.completed_proposition()?;
-    let goal = lower_pure_theorem_proposition_with_integer_values(
-        theorem.name(),
-        surface_goal,
-        ContractEnvironment::new(&context.values, &context.array_refs),
-        &context.integer_values,
-        &context.memory,
-        spec_definitions,
-    )
-    .map_err(|message| {
-        ClickError::new(format!(
-            "`{claim_label}` failed: could not lower conclusion: {message}"
-        ))
-    })?;
     let kernel_authority = prove_c_function_contract_refinement(
         &refinement,
         goal.clone(),
@@ -2277,6 +2306,23 @@ fn verify_contract_refinement_theorem(
         kernel_authority: Some(kernel_authority),
         checked_completion: None,
     }))
+}
+
+/// The values a lowered contract fact fixes its contract's value parameters
+/// to, after its function pointer. `None` for any other proposition, or a
+/// value that is not a C value.
+fn contract_fact_values(fact: &Proposition) -> Option<Vec<CValue>> {
+    let Proposition::Predicate { arguments, .. } = fact else {
+        return None;
+    };
+    arguments
+        .get(2..)?
+        .iter()
+        .map(|argument| match argument {
+            Term::CValue(value) => Some(value.clone()),
+            _ => None,
+        })
+        .collect()
 }
 
 /// Lets direct smart pure proofs search by applying checked proof steps.

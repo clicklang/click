@@ -220,6 +220,7 @@ fn numeric_float_equality_does_not_materialize_positive_zero_bits() {
     retain_proven_loop_exit_cells(
         &mut states,
         &[&ExecutionFacts::new(), &facts.clone().into()],
+        &[],
         &PureFactContext::new(),
         true,
     )

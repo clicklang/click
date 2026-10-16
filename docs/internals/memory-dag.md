@@ -105,6 +105,25 @@ kinds:
 Entry states have no parent edge. Failed allocation returns to the existing
 pre-allocation identity instead of recording a backward edge.
 
+## Shared byte separation for stores
+
+Cache preservation and read-over-store use
+`indexed_store_byte_separation_evidence` for the same complete accesses.
+Numeric-address classes retain one explicit pointer spelling per class, with
+constant-displaced spellings preferred. Class merges update that witness in
+local work; a query selects two witnesses without enumerating their classes.
+Comparing their byte windows can establish separation or actual overlap.
+Numeric equality supplies no pointer origin, ownership, or read permission.
+
+If geometry is unknown, the checker queries stated separation by the two
+nonempty anchors and checks that each range covers the entire corresponding
+access. It does not scan the shared external-argument block's separation facts.
+Owned compositions use the same full-access membership check, selected by the
+two base addresses without an interior block scan. Known equal addresses or
+partially overlapping windows take precedence over
+separation authority. Evidence stays local to the fact context; withdrawing a
+premise or taking another branch cannot retain that authority.
+
 ## What a snapshot's identity is
 
 A snapshot includes its known cells, the snapshot it was forgotten from, and

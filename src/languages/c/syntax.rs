@@ -3094,7 +3094,9 @@ pub enum C0Expression {
     BitwiseOr(Box<C0Expression>, Box<C0Expression>),
     BitwiseXor(Box<C0Expression>, Box<C0Expression>),
     BitwiseNot(Box<C0Expression>),
-    Load(Box<C0Expression>),
+    /// `*pointer`, with the lvalue's type when the kernel type of the loaded
+    /// value cannot give its access class (`design/effective-types.md`).
+    Load(Box<C0Expression>, Option<C0Type>),
     /// One observable sequential read of the source lvalue. `struct_name`
     /// carries nominal pointer provenance through the lowering boundary.
     SequentialRead {
@@ -3150,7 +3152,9 @@ pub enum C0Expression {
         pointer: Box<C0Expression>,
         union_name: String,
     },
-    Index(Box<C0Expression>, Box<C0Expression>),
+    /// `base[index]`, with the element type when the kernel type of the
+    /// loaded value cannot give its access class (`design/effective-types.md`).
+    Index(Box<C0Expression>, Box<C0Expression>, Option<C0Type>),
     /// An array index whose declared subobject bound must be established
     /// before the enclosing flattened offset is used.
     CheckedArrayIndex {
@@ -3190,7 +3194,7 @@ pub(crate) use binary_c0_operation;
 macro_rules! binary_c0_expression {
     ($left:pat, $right:pat) => {
         $crate::languages::c::syntax::binary_c0_operation!($left, $right)
-            | $crate::languages::c::syntax::C0Expression::Index($left, $right)
+            | $crate::languages::c::syntax::C0Expression::Index($left, $right, _)
     };
 }
 pub(crate) use binary_c0_expression;
@@ -3750,7 +3754,7 @@ impl C0Function {
                 address.c_type = *field_type;
                 Some(address)
             }
-            C0Expression::Index(base, index) => {
+            C0Expression::Index(base, index, _) => {
                 let mut address = self.static_address_expression(base)?;
                 let element_type = address.c_type.pointee_type()?;
                 let index = static_integer_value(index)?;
@@ -4774,15 +4778,125 @@ impl C0Parameter {
             .array_element_width
             .map(|_| crate::kernel::CType::UInt8Pointer)
             .unwrap_or_else(|| self.c_type.to_kernel_type());
+        let pointee_class = (self.struct_name.is_none() && self.array_element_width.is_none())
+            .then(|| self.c_type.pointee_type()?.access_class())
+            .flatten();
         crate::kernel::c_parameter(self.name.clone(), c_type)
             .with_volatile(self.is_volatile())
             .with_pointee_volatile(self.pointee_is_volatile())
             .with_constant(self.is_constant())
             .with_pointee_constant(self.pointee_is_constant())
+            .with_pointee_class(pointee_class)
     }
 }
 
 impl C0Type {
+    /// The length of an array type; `None` for any other type.
+    pub fn array_length(self) -> Option<u32> {
+        match self {
+            Self::CharArray(_, length)
+            | Self::Int32Array(length)
+            | Self::UInt8Array(length)
+            | Self::Int8Array(length)
+            | Self::Int16Array(length)
+            | Self::UInt16Array(length)
+            | Self::UInt32Array(length)
+            | Self::Int64Array(_, length)
+            | Self::Int128Array(length)
+            | Self::UInt64Array(_, length)
+            | Self::UInt128Array(length)
+            | Self::Float32Array(length)
+            | Self::Float64Array(length)
+            | Self::PointerArray(_, _, length) => Some(length),
+            _ => None,
+        }
+    }
+
+    /// The access class of an object or lvalue of this type, or of an
+    /// array's elements (`design/effective-types.md`). `int *` and `int **`
+    /// give none, because a struct pointer shares their spelling here and its
+    /// struct is recorded beside the type; function pointers and pointer
+    /// arrays give none either.
+    pub fn access_class(self) -> Option<crate::kernel::effective_type::CAccessClass> {
+        use crate::kernel::effective_type::{CAccessClass, CPointeeBase, CScalarClass};
+        use crate::languages::c::target::LongRank;
+        let rank = |rank: LongRank| match rank {
+            LongRank::Long => CScalarClass::Long,
+            LongRank::LongLong => CScalarClass::LongLong,
+        };
+        let integer = |class, signed| CPointeeBase::Integer { class, signed };
+        let pointer = |base, depth| Some(CAccessClass::Pointer { base, depth });
+        let scalar = |class| Some(CAccessClass::Scalar(class));
+        match self {
+            Self::Char(_) | Self::CharArray(..) | Self::Int8 | Self::UInt8 => {
+                scalar(CScalarClass::Char)
+            }
+            Self::Int8Array(_) | Self::UInt8Array(_) => scalar(CScalarClass::Char),
+            Self::Bool => scalar(CScalarClass::Bool),
+            Self::Int16 | Self::UInt16 | Self::Int16Array(_) | Self::UInt16Array(_) => {
+                scalar(CScalarClass::Short)
+            }
+            Self::Int32 | Self::UInt32 | Self::Int32Array(_) | Self::UInt32Array(_) => {
+                scalar(CScalarClass::Int)
+            }
+            Self::Int64(long) | Self::UInt64(long) => scalar(rank(long)),
+            Self::Int64Array(long, _) | Self::UInt64Array(long, _) => scalar(rank(long)),
+            Self::Int128 | Self::UInt128 | Self::Int128Array(_) | Self::UInt128Array(_) => {
+                scalar(CScalarClass::Int128)
+            }
+            Self::Float32 | Self::Float32Array(_) => scalar(CScalarClass::Float),
+            Self::Float64 | Self::Float64Array(_) => scalar(CScalarClass::Double),
+            Self::VoidPointer => pointer(CPointeeBase::Void, 1),
+            Self::VoidPointerPointer => pointer(CPointeeBase::Void, 2),
+            Self::CharPointer(_) => pointer(CPointeeBase::PlainChar, 1),
+            Self::CharPointerPointer(_) => pointer(CPointeeBase::PlainChar, 2),
+            Self::Int8Pointer => pointer(CPointeeBase::SignedChar, 1),
+            Self::UInt8Pointer => pointer(CPointeeBase::UnsignedChar, 1),
+            Self::Int8PointerPointer => pointer(CPointeeBase::SignedChar, 2),
+            Self::UInt8PointerPointer => pointer(CPointeeBase::UnsignedChar, 2),
+            Self::Int16Pointer => pointer(integer(CScalarClass::Short, true), 1),
+            Self::UInt16Pointer => pointer(integer(CScalarClass::Short, false), 1),
+            Self::Int16PointerPointer => pointer(integer(CScalarClass::Short, true), 2),
+            Self::UInt16PointerPointer => pointer(integer(CScalarClass::Short, false), 2),
+            Self::UInt32Pointer => pointer(integer(CScalarClass::Int, false), 1),
+            Self::UInt32PointerPointer => pointer(integer(CScalarClass::Int, false), 2),
+            Self::Int64Pointer(long) => pointer(integer(rank(long), true), 1),
+            Self::UInt64Pointer(long) => pointer(integer(rank(long), false), 1),
+            Self::Int64PointerPointer(long) => pointer(integer(rank(long), true), 2),
+            Self::UInt64PointerPointer(long) => pointer(integer(rank(long), false), 2),
+            Self::Int128Pointer => pointer(integer(CScalarClass::Int128, true), 1),
+            Self::UInt128Pointer => pointer(integer(CScalarClass::Int128, false), 1),
+            Self::Int128PointerPointer => pointer(integer(CScalarClass::Int128, true), 2),
+            Self::UInt128PointerPointer => pointer(integer(CScalarClass::Int128, false), 2),
+            Self::Float32Pointer => pointer(CPointeeBase::Float, 1),
+            Self::Float64Pointer => pointer(CPointeeBase::Double, 1),
+            Self::Float32PointerPointer => pointer(CPointeeBase::Float, 2),
+            Self::Float64PointerPointer => pointer(CPointeeBase::Double, 2),
+            Self::Void
+            | Self::Int32Pointer
+            | Self::Int32PointerPointer
+            | Self::FunctionPointer(_)
+            | Self::PointerArray(..) => None,
+        }
+    }
+
+    /// The class a declared object of this type records, when the kernel
+    /// type cannot give it: a `long` or `long long`, a pointer whose pointee
+    /// the kernel type erases, or a scalar array, whose kernel block is
+    /// otherwise untyped.
+    pub fn declared_class(self) -> Option<crate::kernel::effective_type::CAccessClass> {
+        // `int8` and `uint8` arrays record nothing: the frontend also
+        // declares a local array of structs as one, and its members are not
+        // bytes.
+        if matches!(self, Self::Int8Array(_) | Self::UInt8Array(_)) {
+            return None;
+        }
+        let class = self.access_class()?;
+        let derived =
+            crate::kernel::effective_type::CAccessClass::of_kernel_type(self.to_kernel_type());
+        (self.array_length().is_some() || derived != Some(class)).then_some(class)
+    }
+
     pub fn is_pointer(self) -> bool {
         matches!(
             self,
@@ -5163,10 +5277,13 @@ impl C0Statement {
                     zero_fill.as_ref().map(C0ZeroFill::to_kernel),
                 );
                 if let crate::kernel::CStatement::Declare {
-                    initializer: value, ..
+                    initializer: value,
+                    declared_class,
+                    ..
                 } = &mut statement
                 {
                     *value = initializer.as_ref().map(C0Expression::to_kernel_expression);
+                    *declared_class = c_type.declared_class();
                 }
                 statement
             }
@@ -5517,7 +5634,12 @@ impl C0Expression {
             Self::BitwiseNot(expression) => {
                 crate::kernel::c_bitwise_not(expression.lower_expression())
             }
-            Self::Load(pointer) => crate::kernel::c_load(pointer.lower_expression()),
+            Self::Load(pointer, None) => crate::kernel::c_load(pointer.lower_expression()),
+            Self::Load(pointer, Some(loaded_type)) => crate::kernel::c_classed_load(
+                pointer.lower_expression(),
+                loaded_type.to_kernel_type(),
+                loaded_type.access_class(),
+            ),
             Self::SequentialRead {
                 target,
                 c_type,
@@ -5563,9 +5685,17 @@ impl C0Expression {
             } => {
                 crate::kernel::c_typed_load(pointer.lower_expression(), field_type.to_kernel_type())
             }
-            Self::Index(base, index) => {
+            Self::Index(base, index, None) => {
                 crate::kernel::c_index(base.lower_expression(), index.lower_expression())
             }
+            // The kernel evaluates `base[index]` as the lvalue at
+            // `base + index`; a typed load of that address is the same access
+            // with the class the kernel type cannot give.
+            Self::Index(base, index, Some(element_type)) => crate::kernel::c_classed_load(
+                crate::kernel::c_add(base.lower_expression(), index.lower_expression()),
+                element_type.to_kernel_type(),
+                element_type.access_class(),
+            ),
             Self::CheckedArrayIndex { index, .. } => index.lower_expression(),
         }
     }
@@ -5670,9 +5800,21 @@ pub(crate) enum C0HeadTypedef {
         constant: bool,
         pointee_constant: bool,
     },
-    /// An alias of an array, function pointer, union, or a volatile, aligned
-    /// or extended-precision type, which a head writes as its type, or one
-    /// that two verified sources give different types.
+    /// A function pointer, `typedef int (*unary)(int);`, with its signature.
+    FunctionPointer {
+        c_type: C0Type,
+        signature: C0FunctionPointerSignature,
+    },
+    /// A scalar array, `typedef int triple[3];`: its element type, possibly
+    /// `const`, and length.
+    Array {
+        element: C0Type,
+        length: u32,
+        constant: bool,
+    },
+    /// An alias of a union, or a volatile, aligned or extended-precision
+    /// type, which a head writes as its type, or one that two verified
+    /// sources give different types.
     Other,
 }
 
@@ -5682,6 +5824,33 @@ impl C0HeadTypedef {
     }
 
     fn restated(parsed: &ParsedType) -> Option<Self> {
+        if let (C0Type::FunctionPointer(_), Some(signature)) =
+            (parsed.c_type, &parsed.function_pointer_signature)
+            && !parsed.is_volatile
+            && parsed.volatile_levels == 0
+            && !parsed.is_constant
+        {
+            return Some(Self::FunctionPointer {
+                c_type: parsed.c_type,
+                signature: signature.clone(),
+            });
+        }
+        if let Some(length) = parsed.c_type.array_length()
+            && let Some(element) = parsed.c_type.pointee_type()
+            && !parsed.is_volatile
+            && parsed.volatile_levels == 0
+            && !parsed.long_double
+            && !parsed.aligned_typedef
+            && !parsed.opaque_builtin
+            && parsed.struct_name.is_none()
+            && parsed.union_name.is_none()
+        {
+            return Some(Self::Array {
+                element,
+                length,
+                constant: parsed.is_constant,
+            });
+        }
         if parsed.long_double
             || parsed.aligned_typedef
             || parsed.opaque_builtin
@@ -6933,7 +7102,7 @@ fn evaluate_static_integer_expression(
         | C0Expression::Subobject { .. }
         | C0Expression::Float32Literal(_)
         | C0Expression::Float64Literal(_)
-        | C0Expression::Load(_)
+        | C0Expression::Load(_, _)
         | C0Expression::SequentialRead { .. }
         | C0Expression::SequentialWrite { .. }
         | C0Expression::AggregateAddress { .. }
@@ -6941,7 +7110,7 @@ fn evaluate_static_integer_expression(
         | C0Expression::UnionAddress { .. }
         | C0Expression::UnionField { .. }
         | C0Expression::StatementExpression { .. }
-        | C0Expression::Index(_, _) => Err(StaticIntegerEvaluationError::NotConstant),
+        | C0Expression::Index(_, _, _) => Err(StaticIntegerEvaluationError::NotConstant),
     }
 }
 
@@ -7501,7 +7670,7 @@ fn contains_aggregate_value(expression: &C0Expression) -> bool {
         }
         | C0Expression::Not(expression)
         | C0Expression::BitwiseNot(expression)
-        | C0Expression::Load(expression)
+        | C0Expression::Load(expression, _)
         | C0Expression::CheckedArrayIndex {
             index: expression, ..
         } => contains_aggregate_value(expression),
@@ -8674,8 +8843,8 @@ impl Parser {
     fn expression_is_constant_lvalue(&self, expression: &C0Expression) -> bool {
         match expression {
             C0Expression::Variable(name) => self.variable_is_constant(name),
-            C0Expression::Load(pointer) => self.expression_pointee_is_constant(pointer),
-            C0Expression::Index(base, _) => self.expression_pointee_is_constant(base),
+            C0Expression::Load(pointer, _) => self.expression_pointee_is_constant(pointer),
+            C0Expression::Index(base, _, _) => self.expression_pointee_is_constant(base),
             C0Expression::Field { pointer, .. } | C0Expression::UnionField { pointer, .. } => {
                 self.expression_is_constant_lvalue(pointer)
                     || self.expression_pointee_is_constant(pointer)
@@ -8880,7 +9049,7 @@ impl Parser {
                 let (_, constant) = self.static_address_expression(pointer)?;
                 Some((*field_type, constant))
             }
-            C0Expression::Index(base, index) => {
+            C0Expression::Index(base, index, _) => {
                 let (base_type, constant) = self.static_address_expression(base)?;
                 static_integer_value(index)?;
                 Some((base_type.pointee_type()?, constant))
@@ -10436,11 +10605,23 @@ impl Parser {
             } else {
                 None
             };
-            let array_parameter = self.peek() == Some(&Token::LBracket);
-            let c_type = struct_value_layout
-                .as_ref()
-                .map(struct_value_type)
-                .unwrap_or(self.parse_parameter_array_suffix(parsed_type.c_type)?);
+            // A parameter of array type, written `int values[3]` or through
+            // a typedef, `triple values`, is adjusted to a pointer to its
+            // element (C11 6.7.6.3p7).
+            let typedef_array = parsed_type.c_type.array_length().is_some();
+            let array_parameter = self.peek() == Some(&Token::LBracket) || typedef_array;
+            let c_type = if typedef_array {
+                let element = parsed_type
+                    .c_type
+                    .pointee_type()
+                    .expect("an array type has an element type");
+                self.array_parameter_pointer(element)?
+            } else {
+                struct_value_layout
+                    .as_ref()
+                    .map(struct_value_type)
+                    .unwrap_or(self.parse_parameter_array_suffix(parsed_type.c_type)?)
+            };
             if parsed_type.union_name.is_some() && array_parameter {
                 return Err(self.error_here("arrays of union parameters are not supported yet"));
             }
@@ -10947,7 +11128,7 @@ impl Parser {
                 field_struct_name: Some(_),
                 ..
             } => true,
-            C0Expression::Load(pointer) | C0Expression::AggregateAddress { pointer, .. } => {
+            C0Expression::Load(pointer, _) | C0Expression::AggregateAddress { pointer, .. } => {
                 // Member lowering inserts byte offsets before the aggregate
                 // wrapper. These offsets preserve the declared member type.
                 let mut pointer = pointer.as_ref();
@@ -11267,7 +11448,18 @@ impl Parser {
         if self.peek() != Some(&Token::LBracket) {
             return Ok(c_type);
         }
-        let pointer_type = match c_type {
+        let pointer_type = self.array_parameter_pointer(c_type)?;
+        self.position += 1;
+        if matches!(self.peek(), Some(Token::Number(_))) {
+            self.position += 1;
+        }
+        self.expect(Token::RBracket)?;
+        Ok(pointer_type)
+    }
+
+    /// The pointer type an array parameter of `element`s is adjusted to.
+    fn array_parameter_pointer(&self, element: C0Type) -> Result<C0Type, C0SyntaxError> {
+        Ok(match element {
             C0Type::Int8 => C0Type::Int8Pointer,
             C0Type::Int16 => C0Type::Int16Pointer,
             C0Type::UInt16 => C0Type::UInt16Pointer,
@@ -11297,14 +11489,7 @@ impl Parser {
                     self.error_here("only scalar and pointer array parameters are supported")
                 );
             }
-        };
-
-        self.position += 1;
-        if matches!(self.peek(), Some(Token::Number(_))) {
-            self.position += 1;
-        }
-        self.expect(Token::RBracket)?;
-        Ok(pointer_type)
+        })
     }
 
     fn parse_local_array_shape(
@@ -12871,7 +13056,7 @@ impl Parser {
                 pointer,
                 struct_name,
             } => (*pointer, struct_name),
-            C0Expression::Load(pointer) => {
+            C0Expression::Load(pointer, _) => {
                 let source_struct = self.struct_pointer_name(&pointer).ok_or_else(|| {
                     self.error_here("aggregate loads require a pointer to a declared struct")
                 })?;
@@ -13357,7 +13542,7 @@ impl Parser {
                 )?;
             }
             return match target {
-                C0Expression::Load(pointer) => {
+                C0Expression::Load(pointer, _) => {
                     if let Some(struct_name) = self.struct_pointer_pointer_name(&pointer) {
                         self.validate_struct_pointer_value(&struct_name, &value)?;
                     }
@@ -13419,7 +13604,7 @@ impl Parser {
                 C0Expression::UnionField { .. } => {
                     Err(self.error_here("writing tagged union members is not supported"))
                 }
-                C0Expression::Index(base, index) => Ok(C0Statement::Store {
+                C0Expression::Index(base, index, _) => Ok(C0Statement::Store {
                     pointer: C0Expression::Add(base, index),
                     value,
                     value_type: None,
@@ -13795,7 +13980,7 @@ impl Parser {
                 ..
             } => Some(struct_name.clone()),
             C0Expression::Field { .. } => None,
-            C0Expression::Load(pointer) => self.struct_pointer_name(pointer),
+            C0Expression::Load(pointer, _) => self.struct_pointer_name(pointer),
             C0Expression::Conditional {
                 then_branch,
                 else_branch,
@@ -13847,7 +14032,7 @@ impl Parser {
             | C0Expression::BitwiseNot(_)
             | C0Expression::SequentialRead { .. }
             | C0Expression::SequentialWrite { .. }
-            | C0Expression::Index(_, _)
+            | C0Expression::Index(_, _, _)
             | C0Expression::CheckedArrayIndex { .. } => None,
         }
     }
@@ -13900,7 +14085,7 @@ impl Parser {
             }
             | C0Expression::Not(expression)
             | C0Expression::BitwiseNot(expression)
-            | C0Expression::Load(expression) => self.expression_contains_aggregate(expression),
+            | C0Expression::Load(expression, _) => self.expression_contains_aggregate(expression),
             C0Expression::Conditional {
                 condition,
                 then_branch,
@@ -14182,7 +14367,7 @@ impl Parser {
                 }
                 | C0Expression::Not(expression)
                 | C0Expression::BitwiseNot(expression)
-                | C0Expression::Load(expression) => expressions.push(expression),
+                | C0Expression::Load(expression, _) => expressions.push(expression),
                 C0Expression::SequentialRead { target, .. } => expressions.push(target),
                 C0Expression::SequentialWrite { .. } => return true,
                 C0Expression::AggregateAddress { pointer, .. }
@@ -14244,7 +14429,7 @@ impl Parser {
                 }
                 | C0Expression::Not(expression)
                 | C0Expression::BitwiseNot(expression)
-                | C0Expression::Load(expression) => expressions.push(expression),
+                | C0Expression::Load(expression, _) => expressions.push(expression),
                 C0Expression::SequentialRead { target, .. } => expressions.push(target),
                 C0Expression::SequentialWrite { .. } => return true,
                 C0Expression::AggregateAddress { pointer, .. }
@@ -14346,14 +14531,14 @@ impl Parser {
             C0Expression::AddressOf(target) => {
                 self.lvalue_address_reads_potentially_changed_value(target)
             }
-            C0Expression::Load(_)
+            C0Expression::Load(_, _)
             | C0Expression::SequentialRead { .. }
             | C0Expression::SequentialWrite { .. }
             | C0Expression::Field { .. }
             | C0Expression::UnionField { .. }
             | C0Expression::AggregateAddress { .. }
             | C0Expression::UnionAddress { .. }
-            | C0Expression::Index(_, _) => true,
+            | C0Expression::Index(_, _, _) => true,
             C0Expression::Cast { expression, .. }
             | C0Expression::FloatNegate(expression)
             | C0Expression::FloatClassification { expression, .. }
@@ -14391,8 +14576,10 @@ impl Parser {
     fn lvalue_address_reads_potentially_changed_value(&self, expression: &C0Expression) -> bool {
         match expression {
             C0Expression::Variable(_) => false,
-            C0Expression::Load(pointer) => self.expression_reads_potentially_changed_value(pointer),
-            C0Expression::Index(base, index) => {
+            C0Expression::Load(pointer, _) => {
+                self.expression_reads_potentially_changed_value(pointer)
+            }
+            C0Expression::Index(base, index, _) => {
                 self.expression_reads_potentially_changed_value(base)
                     || self.expression_reads_potentially_changed_value(index)
             }
@@ -15658,10 +15845,10 @@ impl Parser {
                 let (prefix, expression) = self.lower_expression_calls(*expression)?;
                 Ok((prefix, C0Expression::BitwiseNot(Box::new(expression))))
             }
-            C0Expression::Load(pointer) => {
+            C0Expression::Load(pointer, loaded_type) => {
                 self.reject_unsequenced_updated_memory_read(&pointer)?;
                 let (prefix, pointer) = self.lower_expression_calls(*pointer)?;
-                Ok((prefix, C0Expression::Load(Box::new(pointer))))
+                Ok((prefix, C0Expression::Load(Box::new(pointer), loaded_type)))
             }
             C0Expression::SequentialRead {
                 target,
@@ -15852,10 +16039,14 @@ impl Parser {
                 });
                 Ok((prefix, index))
             }
-            C0Expression::Index(left, right) => {
+            C0Expression::Index(left, right, element_type) => {
                 self.reject_unsequenced_updated_memory_read(&left)?;
                 self.reject_unsequenced_updated_memory_read(&right)?;
-                self.lower_binary_calls(*left, *right, C0Expression::Index)
+                let (prefix, left, right) = self.lower_expression_pair(*left, *right)?;
+                Ok((
+                    prefix,
+                    C0Expression::Index(Box::new(left), Box::new(right), element_type),
+                ))
             }
             expression => Ok((Vec::new(), expression)),
         }
@@ -16880,10 +17071,10 @@ impl Parser {
         if !matches!(
             target,
             C0Expression::Variable(_)
-                | C0Expression::Load(_)
+                | C0Expression::Load(_, _)
                 | C0Expression::Field { .. }
                 | C0Expression::UnionField { .. }
-                | C0Expression::Index(_, _)
+                | C0Expression::Index(_, _, _)
         ) {
             return Err(self.error_at_position(
                 position,
@@ -17238,7 +17429,7 @@ impl Parser {
                             )));
                         }
                         let offset = flatten_array_indices(indexes, &shape, false);
-                        expression = C0Expression::Index(Box::new(expression), Box::new(offset));
+                        expression = self.index_expression(expression, offset);
                         continue;
                     }
                     let incomplete_array = match &expression {
@@ -17258,8 +17449,7 @@ impl Parser {
                             ));
                         }
                         let struct_array = self.variable_structs.contains_key(&name);
-                        expression =
-                            C0Expression::Index(Box::new(expression), Box::new(first_index));
+                        expression = self.index_expression(expression, first_index);
                         if struct_array && self.peek() != Some(&Token::Dot) {
                             return Err(self.error_here(
                                 "array of struct values are only supported through field access",
@@ -17312,7 +17502,7 @@ impl Parser {
                         } else {
                             offset
                         };
-                        expression = C0Expression::Index(Box::new(expression), Box::new(offset));
+                        expression = self.index_expression(expression, offset);
                         if struct_array && self.peek() != Some(&Token::Dot) {
                             return Err(self.error_here(
                                 "array of struct values are only supported through field access",
@@ -17339,16 +17529,14 @@ impl Parser {
                                 explicit_qualification: false,
                             };
                             let offset = struct_byte_stride(first_index, element_width);
-                            expression =
-                                C0Expression::Index(Box::new(byte_pointer), Box::new(offset));
+                            expression = self.index_expression(byte_pointer, offset);
                             if self.peek() != Some(&Token::Dot) {
                                 return Err(self.error_here(
                                     "array of struct values are only supported through field access",
                                 ));
                             }
                         } else {
-                            expression =
-                                C0Expression::Index(Box::new(expression), Box::new(first_index));
+                            expression = self.index_expression(expression, first_index);
                         }
                     }
                 }
@@ -17485,12 +17673,13 @@ impl Parser {
             | C0Expression::UnionField { field_type, .. } => {
                 matches!(field_type, C0Type::Float32 | C0Type::Float64)
             }
-            C0Expression::Load(pointer) => self.expression_pointee_is_float(pointer),
+            C0Expression::Load(pointer, _) => self.expression_pointee_is_float(pointer),
             C0Expression::SequentialRead { c_type, .. }
             | C0Expression::SequentialWrite { c_type, .. } => {
                 matches!(c_type, C0Type::Float32 | C0Type::Float64)
             }
-            C0Expression::Index(base, _) | C0Expression::CheckedArrayIndex { index: base, .. } => {
+            C0Expression::Index(base, _, _)
+            | C0Expression::CheckedArrayIndex { index: base, .. } => {
                 self.expression_pointee_is_float(base)
             }
             C0Expression::Conditional {
@@ -17548,7 +17737,7 @@ impl Parser {
                 Some(*c_type)
             }
             C0Expression::StatementExpression { c_type, .. } => Some(*c_type),
-            C0Expression::Index(base, _) => {
+            C0Expression::Index(base, _, _) => {
                 return self.expression_pointee_is_float(base);
             }
             _ => None,
@@ -17596,7 +17785,7 @@ impl Parser {
                 field_struct_name: Some(struct_name),
                 ..
             } => Some(struct_name.clone()),
-            C0Expression::Index(base, _) => match base.as_ref() {
+            C0Expression::Index(base, _, _) => match base.as_ref() {
                 C0Expression::Field {
                     field_type: C0Type::PointerArray(_, _, _),
                     field_struct_name: Some(struct_name),
@@ -17612,7 +17801,7 @@ impl Parser {
                 }
                 _ => None,
             },
-            C0Expression::Load(pointer) => self.struct_pointer_pointer_name(pointer),
+            C0Expression::Load(pointer, _) => self.struct_pointer_pointer_name(pointer),
             C0Expression::SequentialRead { struct_name, .. }
             | C0Expression::SequentialWrite { struct_name, .. } => struct_name.clone(),
             C0Expression::AddressOf(target) => match target.as_ref() {
@@ -17747,7 +17936,7 @@ impl Parser {
                     field_struct_name: Some(struct_name),
                     ..
                 } => Some(struct_name.clone()),
-                C0Expression::Load(_) => self.struct_pointer_name(target),
+                C0Expression::Load(_, _) => self.struct_pointer_name(target),
                 _ => None,
             },
             C0Expression::SequentialRead { struct_name, .. }
@@ -17841,7 +18030,7 @@ impl Parser {
             | C0Expression::UnionField { field_type, .. } => Some(*field_type),
             C0Expression::SequentialRead { c_type, .. }
             | C0Expression::SequentialWrite { c_type, .. } => Some(*c_type),
-            C0Expression::Load(pointer) | C0Expression::Index(pointer, _) => {
+            C0Expression::Load(pointer, _) | C0Expression::Index(pointer, _, _) => {
                 self.source_expression_type(pointer)?.pointee_type()
             }
             C0Expression::CheckedArrayIndex { index, .. } => self.source_expression_type(index),
@@ -18205,8 +18394,27 @@ impl Parser {
                 struct_name,
             }
         } else {
-            C0Expression::Load(Box::new(pointer))
+            let loaded_type = self.classed_pointee_type(&pointer);
+            C0Expression::Load(Box::new(pointer), loaded_type)
         }
+    }
+
+    /// `base[index]`, carrying the element type when its access class needs
+    /// it.
+    fn index_expression(&self, base: C0Expression, index: C0Expression) -> C0Expression {
+        let element_type = self.classed_pointee_type(&base);
+        C0Expression::Index(Box::new(base), Box::new(index), element_type)
+    }
+
+    /// The type `*pointer` loads, when the kernel type of the loaded value
+    /// cannot give its access class: a `long` or `long long`, or a pointer
+    /// whose pointee the kernel type erases.
+    fn classed_pointee_type(&self, pointer: &C0Expression) -> Option<C0Type> {
+        let pointee = self.source_expression_type(pointer)?.pointee_type()?;
+        let class = pointee.access_class()?;
+        (crate::kernel::effective_type::CAccessClass::of_kernel_type(pointee.to_kernel_type())
+            != Some(class))
+        .then_some(pointee)
     }
 
     fn resolve_field_access(
@@ -18239,7 +18447,7 @@ impl Parser {
                 }
                 (field_struct_name.clone(), None)
             }
-            C0Expression::Load(_) | C0Expression::Index(_, _) => {
+            C0Expression::Load(_, _) | C0Expression::Index(_, _, _) => {
                 (self.struct_pointer_name(base), None)
             }
             C0Expression::SequentialRead {
@@ -18350,7 +18558,7 @@ impl Parser {
         C0SyntaxError,
     > {
         let (element_pointer, struct_name) = match base {
-            C0Expression::Index(array, index) => {
+            C0Expression::Index(array, index, _) => {
                 let struct_name = match array.as_ref() {
                     C0Expression::Variable(name)
                         if self.variable_array_shapes.contains_key(name)
@@ -19841,7 +20049,7 @@ fn first_embedded_call_position(expression: &C0Expression) -> Option<SourcePosit
         }
         | C0Expression::Not(expression)
         | C0Expression::BitwiseNot(expression)
-        | C0Expression::Load(expression) => first_embedded_call_position(expression),
+        | C0Expression::Load(expression, _) => first_embedded_call_position(expression),
         C0Expression::SequentialRead { target, .. } => first_embedded_call_position(target),
         C0Expression::SequentialWrite { target, value, .. } => {
             first_embedded_call_position(target).or_else(|| first_embedded_call_position(value))
@@ -19884,7 +20092,7 @@ fn assignment_chain_targets(expression: &C0Expression) -> Option<Vec<String>> {
     // cell. This permits unrelated scalar accumulators in `sum += *p++`.
     match expression {
         C0Expression::ScalarUpdate { name, .. } => return Some(vec![name.clone()]),
-        C0Expression::Load(pointer)
+        C0Expression::Load(pointer, _)
         | C0Expression::Cast {
             expression: pointer,
             ..
@@ -19934,7 +20142,7 @@ fn first_assignment_position(expression: &C0Expression) -> Option<SourcePosition
         | C0Expression::Subobject { pointer: value, .. }
         | C0Expression::Not(value)
         | C0Expression::BitwiseNot(value)
-        | C0Expression::Load(value)
+        | C0Expression::Load(value, _)
         | C0Expression::SequentialRead { target: value, .. }
         | C0Expression::AggregateAddress { pointer: value, .. }
         | C0Expression::Field { pointer: value, .. }
@@ -19995,14 +20203,14 @@ fn expression_reads_runtime_value(expression: &C0Expression) -> bool {
         | C0Expression::IndirectCall { .. }
         | C0Expression::StatementExpression { .. }
         | C0Expression::AddressOf(_)
-        | C0Expression::Load(_)
+        | C0Expression::Load(_, _)
         | C0Expression::SequentialRead { .. }
         | C0Expression::SequentialWrite { .. }
         | C0Expression::AggregateAddress { .. }
         | C0Expression::Field { .. }
         | C0Expression::UnionField { .. }
         | C0Expression::UnionAddress { .. }
-        | C0Expression::Index(_, _) => true,
+        | C0Expression::Index(_, _, _) => true,
         C0Expression::Assignment { value, .. }
         | C0Expression::Cast {
             expression: value, ..

@@ -313,6 +313,9 @@ pub(super) struct TermClasses {
     // no read has needed yet: `read_address` defines it on first use, so an
     // address that is never read (a resource's) adds no numeric nodes.
     numeric_shifts: PersistentMap<u64, (u64, i64)>,
+    // One explicit pointer spelling per numeric-address class. This is byte
+    // geometry only: numeric equality must never merge pointer provenance.
+    numeric_addresses: PersistentMap<u64, Pointer>,
     // The address node of each registered (block, raw offset) spelling. Its
     // affine definition is permanent, so a repeated registration (every
     // pointer equality query registers both sides) returns it after interning
@@ -661,6 +664,38 @@ impl TermClasses {
             self.close_with_affine_definition(vec![(numeric, sum)], true);
         }
         numeric
+    }
+
+    pub(super) fn numeric_address(&mut self, pointer: &Pointer) -> u64 {
+        let address = self
+            .address(pointer.block.clone(), pointer.offset.clone())
+            .0;
+        let numeric = self.read_address(address);
+        self.retain_numeric_address(self.root(numeric), pointer.clone());
+        numeric
+    }
+
+    fn retain_numeric_address(&mut self, root: u64, pointer: Pointer) {
+        let displaced = |p: &Pointer| match &p.offset {
+            PointerOffsetTerm::Add(_, offset) => offset.as_const().is_some_and(|bytes| bytes != 0),
+            PointerOffsetTerm::Constant(bytes) => *bytes != 0,
+            _ => false,
+        };
+        if self
+            .numeric_addresses
+            .get(&root)
+            .is_none_or(|prior| (displaced(&pointer), &pointer) > (displaced(prior), prior))
+        {
+            self.numeric_addresses.insert(root, pointer);
+        }
+    }
+
+    pub(super) fn numeric_address_spelling(&mut self, pointer: &Pointer) -> Pointer {
+        let numeric = self.numeric_address(pointer);
+        self.numeric_addresses
+            .get(&self.root(numeric))
+            .expect("registered address")
+            .clone()
     }
 
     fn retain_read_witness(&mut self, root: u64, block: PointerBlock) {
@@ -1596,6 +1631,10 @@ impl TermClasses {
                 self.addresses_by_offset.insert(kept, kept_addresses);
             }
             self.merge_storage_addresses(moved, kept);
+            if let Some(pointer) = self.numeric_addresses.get(&moved).cloned() {
+                self.numeric_addresses.remove(&moved);
+                self.retain_numeric_address(kept, pointer);
+            }
             self.merge_pointer_facts(moved, kept);
             if let Some(constructor) = self.algebraic_constructors.get(&moved).cloned() {
                 crate::instrumentation::record_deterministic_work(1);

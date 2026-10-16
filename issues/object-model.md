@@ -766,3 +766,44 @@ not repair it. The upstream compatibility fixture preserves the descriptor,
 subrange, occupancy resource and local pointer alias; it does not activate the
 archive or grant native place evidence from C layout. Investigate complete-read
 designation resolution next, retaining bounds, origin and lifetime controls.
+
+
+The next recovery checkpoint preserves exact original symbolic C input-pointer
+reads without treating them as native object declarations. Its 34 pointer-domain
+controls and 160 selected read/store/native controls pass. The original arena
+write now executes; explicit descriptor and separation transport also checks
+its two final resource folds. The occupancy postcondition remains open, and
+the last full audit remains **51/52**.
+
+That investigation exposed an independent simple-checker defect: quantified
+equality matching tried every target scalar as an array index, exhausting the
+750,000-unit work allowance. This increment selects equality candidates from
+matching bound occurrences, while retaining scalar candidates for intermediate
+order bounds. Matching cells remain eligible and mismatched read kinds do not.
+A three-size candidate-count control checks that unrelated target scalars do
+not trigger speculative memory equality queries. Recovery's 91 selected
+quantifier/transport controls pass; the reduced occupancy transport now gives
+a bounded missing-frame refusal. This delivery does not activate the archived
+object model or complete the arena proof.
+
+Current-master validation for this equality-matching increment passes all 834
+selected tests, including the complete scaling suite, quantifier/transport
+controls and the matching-cell/read-kind controls. Formatting, documentation
+lint and diff checks pass; advisory Vale lint is unavailable. The full local
+gate and nightly suite were not run.
+
+
+The next shared proof-retention extraction preserves completed post-return
+transports as execution evidence and gives post-return `have` scopes their
+original assumptions, keeping facts derived by premise selection in the checked
+successor. Return-fact certification remains strict.
+The original arena-write C is retained in a complete Markdown fixture.
+
+On upstream baseline `60c97316a`, 1,048 selected unit tests pass, including the
+whole scaling suite, outcome, return-proposition, scope, have and transport
+controls. The focused Markdown run passes. On recovery `0a5a47e82`, the complete
+isolated arena-write proof passes fresh, expansion, rewritten and retained
+checking; 368 selected controls and both affected Markdown fixtures pass. Its
+normal example audit remains 50/52, with arena destroy and binary-tree still
+under repair. These recovery results do not claim foundation activation or a
+full green gate.

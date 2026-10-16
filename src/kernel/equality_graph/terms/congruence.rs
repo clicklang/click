@@ -174,10 +174,8 @@ impl TermClasses {
                             let address = self.address(pointer.block, pointer.offset).0;
                             Node::UInt64Read(memory.read_identity(), self.read_address(address))
                         } else if let T::PointerAddress(pointer) = term {
-                            Node::UInt64Address(
-                                self.address(pointer.block.clone(), pointer.offset.clone())
-                                    .0,
-                            )
+                            values.push(self.numeric_address(pointer));
+                            continue;
                         } else {
                             Node::UInt64(MachineAtom::uint64(term.clone()))
                         }

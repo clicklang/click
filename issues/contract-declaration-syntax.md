@@ -33,7 +33,7 @@ The head is written the way the target language writes the declaration. In C
 it uses C declaration syntax, in C++ C++ declaration syntax (qualified member
 names, implicit `this`, references, `const` methods), and in Rust Rust item
 syntax (`fn`, `impl` blocks, module paths). Rust sidecars already work this
-way. C sidecars mostly do; C++ sidecars do not yet.
+way, and so do C and C++ sidecars.
 
 ```click
 // C
@@ -125,15 +125,16 @@ that writes `int32` for such a source already writes the source's spelling.
   the `step(Name())` and `step(Name(instance))` applications are refused with
   their replacements. A head must have exactly the C types of its
   declaration, `long` apart from `long long`. A head may write the source's
-  scalar, struct and pointer typedef names (`json_bool`, `pid_t`, `node_t`,
-  `node_ptr`), not yet its function-pointer or array aliases.
+  scalar, struct, pointer, function-pointer and array typedef names
+  (`json_bool`, `pid_t`, `node_t`, `node_ptr`, `unary f`, `triple values`).
 - **C++.** Verified functions are written as C++ declares them:
   `Restore::Restore(int* slot)`, `Restore::~Restore()`,
   `void FeeFrac::operator+=(const FeeFrac& other)`, `bool FeeFrac::IsEmpty() const`,
   `static int64 FeeFrac::Div(...)`, `choose<true>(...)`, with `this` implicit
   and records named without `struct`. A member of a class template instance
-  (`Stored<long long>`) keeps the mangled name and explicit receiver, since a
-  head does not yet spell class template arguments. An `extern` head for a
+  is written with the instance, `Stored<long long>::Read`, and a head's types
+  write records by their C++ paths, `std::span<int>&`; diagnostics, claim
+  labels and proof steps name functions the same way. An `extern` head for a
   system-header function is its C++ declaration too,
   `extern int ministd::Box::get() const`. A `contract` head is a free function
   type in C++ types, `contract int PositiveRead(const State& state)`. A
@@ -166,9 +167,9 @@ that writes `int32` for such a source already writes the source's spelling.
 1. **Unify C.** Done: handle clauses in `contract` bodies are its proof
    parameters, `step(Name, { handle: value })` binds them, the retired forms
    are refused and migrated, and a head must have exactly its declaration's
-   C types. Done: a head writes a verified source's scalar, struct and
-   pointer typedef names, `u32`, `json_bool`, `node_t`, `node_ptr`.
-   Remaining: function-pointer and array aliases in heads.
+   C types. Done: a head writes a verified source's scalar, struct,
+   pointer, function-pointer and array typedef names, `u32`, `json_bool`,
+   `node_t`, `node_ptr`, `unary f`, `triple values`.
 2. **Native C++ heads.** Done for verified functions: qualified members with
    implicit `this`, constructors, destructors, `operator` names, `const` and
    `static` members, and `bool` function template arguments, with the corpus
@@ -200,7 +201,8 @@ that writes `int32` for such a source already writes the source's spelling.
    attached as `Adds(f, { amount: k })`. Parameterized contracts are done
    for C and Rust function pointers, through automatic formation at
    `&f`, and for capturing closures by contract-to-contract refinement;
-   refinement and execution theorems for them remain,
+   refinement theorems conclude them with the values fixed, and execution
+   theorems for them remain,
    through the C++ exporter and Charon, with the same refinement check as C
    (`Comparator(&f)`).
 4. **Base-class and trait method interfaces.** A contract on a C++ virtual

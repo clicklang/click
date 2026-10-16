@@ -1653,6 +1653,7 @@ mod tests {
                     value_type: CType::UInt32Array(3),
                     volatile: false,
                     pointee_constant: false,
+                    access_class: None,
                     source: Default::default(),
                 },
                 offset_bytes: 4,
