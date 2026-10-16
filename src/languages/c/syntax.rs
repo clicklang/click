@@ -5652,20 +5652,27 @@ pub(crate) struct C0TranslationUnit {
 }
 
 /// The type a typedef name stands for where a function head writes it:
-/// `typedef unsigned int u32;` or `typedef struct node node_t;`.
+/// `typedef unsigned int u32;`, `typedef const char *name_t;`,
+/// `typedef struct node node_t;` or `typedef struct node *node_ptr;`.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum C0HeadTypedef {
+    /// A scalar type, or a pointer to one.
     Scalar {
         c_type: C0Type,
         constant: bool,
+        pointee_constant: bool,
     },
+    /// A struct type, `Int32`, or a pointer to one, `Int32Pointer` or
+    /// `Int32PointerPointer`.
     Struct {
         name: String,
+        c_type: C0Type,
         constant: bool,
+        pointee_constant: bool,
     },
-    /// An alias of a pointer, array, function pointer, union, or a volatile,
-    /// aligned or extended-precision type, which a head writes as its type,
-    /// or one that two verified sources give different types.
+    /// An alias of an array, function pointer, union, or a volatile, aligned
+    /// or extended-precision type, which a head writes as its type, or one
+    /// that two verified sources give different types.
     Other,
 }
 
@@ -5682,19 +5689,23 @@ impl C0HeadTypedef {
             || parsed.union_name.is_some()
             || parsed.volatile_levels != 0
             || parsed.is_volatile
-            || parsed.c_type.is_pointer()
-            || parsed.c_type.pointee_type().is_some()
+            || matches!(parsed.c_type, C0Type::FunctionPointer(_))
+            // An array has an element type but is not a pointer.
+            || (!parsed.c_type.is_pointer() && parsed.c_type.pointee_type().is_some())
         {
             return None;
         }
         Some(match &parsed.struct_name {
             Some(name) => Self::Struct {
                 name: name.clone(),
+                c_type: parsed.c_type,
                 constant: parsed.is_constant,
+                pointee_constant: parsed.pointee_constant,
             },
             None => Self::Scalar {
                 c_type: parsed.c_type,
                 constant: parsed.is_constant,
+                pointee_constant: parsed.pointee_constant,
             },
         })
     }

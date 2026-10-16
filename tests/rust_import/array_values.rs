@@ -16,7 +16,10 @@ fn charon_array_copy_after_checked_call_preserves_an_independent_snapshot() {
     for (before, after) in [
         ("ensures result == 5u32;", "ensures result == 1u32;"),
         ("ensures result == 5u32;", "ensures result == 9u32;"),
-        ("owns words[0..4];", "owns words[0..3];"),
+        // `replace_first` writes `words[0]`, so owning `words[1..4]` is
+        // insufficient. (Owning `words[0..3]` is enough: the caller's copy
+        // reads its own rejoined `words[0..4]` after the call.)
+        ("owns words[0..4];", "owns words[1..4];"),
         ("owns words[0..4];", "views words[0..4];"),
     ] {
         let invalid = COPY_AFTER_CALL.replace(before, after);

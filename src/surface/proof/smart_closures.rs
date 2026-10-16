@@ -8232,6 +8232,22 @@ impl<'a> Proof<'a> {
                         .note_trace_join_continuation_arm((index + 1 < tactics.len()).then_some(0));
                     return Ok(finish(proof, unfinished));
                 }
+                ProofTactic::Transport { source, target } => {
+                    // The bare form selects its frame evidence at the
+                    // execution frontier this `have` was opened on, exactly
+                    // as between top-level steps: the source-local candidates
+                    // first, then the premise planner, whose refusal is the
+                    // answer. A pure theorem has no frontier to select from.
+                    if !matches!(proof.context.as_ref(), ProofContext::Execution(_)) {
+                        return Err(proof.step_error(
+                            "bare `transport` selects its premises at a C execution frontier, and this proof has none; write `transport(P, Q) using { ... }` with the premises it needs",
+                        ));
+                    }
+                    proof = match proof.try_execution_fact_transport(source, target)? {
+                        Some(transported) => transported,
+                        None => proof.apply_planned_fact_transport(source, target, index)?,
+                    };
+                }
                 tactic => {
                     if matches!(tactic, ProofTactic::Sorry) {
                         // Admitted only as a complete body (a `have` body
