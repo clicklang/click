@@ -12564,7 +12564,7 @@ const RESOURCE_EXAMPLE_PIPELINE_CASES: &[(&str, &str, &str, &str)] = &[
         "input-cursor",
         "input_cursor.click",
         "input_cursor_shared_pipeline",
-        "have right->data[right->pos] == data[0] by {\n        rewrite(",
+        "have right->data[right->pos] == data[0] by {\n        normalize() using {",
     ),
     (
         "owned-segmented-buffer",
