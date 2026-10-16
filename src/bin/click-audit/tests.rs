@@ -819,25 +819,32 @@ fn prepared_audit_reuses_validated_inputs_across_sites() {
         std::env::temp_dir().join(format!("click-audit-prepared-{}", std::process::id()));
     fs::create_dir(&directory).unwrap();
     let path = directory.join("unit.click");
-    let config = directory.join("unit.click.import.json");
+    let project_file = directory.join(click::project::FILE_NAME);
     fs::write(
         directory.join("unit.c"),
         "int identity(int x) { return x; }\n",
     )
     .unwrap();
     fs::write(&path, "verifying \"unit.c\";\nint32 identity(int32 x) { ensures result == x; } by { execute(); simp(); }\n").unwrap();
-    fs::write(&config, serde_json::to_vec(&serde_json::json!({
-        "schema": 1, "target": "x86_64-linux-userspace", "compiler": "/usr/bin/gcc", "working_directory": ".",
-        "environment": {"allow": {"PATH": "/usr/bin:/bin", "LC_ALL": "C"}},
-        "sources": [{"logical_source": "unit.c", "path": "unit.c", "args": [], "artifact": "unit.i"}]
-    })).unwrap()).unwrap();
-    click::languages::c::compiler_import::create_lock(&config).unwrap();
+    fs::write(
+        &project_file,
+        serde_json::to_vec(&serde_json::json!({"units": {"unit": {
+            "language": "c", "compiler": "/usr/bin/gcc",
+            "env": {"PATH": "/usr/bin:/bin", "LC_ALL": "C"},
+            "sources": {"unit.c": {}}
+        }}}))
+        .unwrap(),
+    )
+    .unwrap();
+    click::project::Project::load(&project_file)
+        .and_then(|project| project.lock())
+        .unwrap();
     let sites = inventory_sites(std::slice::from_ref(&path)).unwrap();
     assert!(sites.len() >= 2);
     let mut worker = AuditSessionWorker::start(&path, AuditLimits::default().session).unwrap();
     // An active audit has already selected an immutable input. Any attempt to
     // reread the importer per tactic would now fail. A new audit must fail.
-    fs::remove_file(directory.join("unit.i")).unwrap();
+    fs::remove_file(directory.join(".click/unit/unit.c.i")).unwrap();
     for site in &sites {
         audit_site(
             site,
@@ -964,7 +971,7 @@ int32 compare_smart(uint8 bytes[]) {
     let click_source = r#"verifying "compare.c";
 
 int32 compare_self(uint8 bytes[]) {
-    requires viewable(bytes[0..2]);
+    views bytes[0..2];
     ensures 1 == 1 by {
         step();
         step();
@@ -974,7 +981,7 @@ int32 compare_self(uint8 bytes[]) {
 }
 
 int32 compare_smart(uint8 bytes[]) {
-    requires viewable(bytes[0..2]);
+    views bytes[0..2];
     ensures 1 == 1 by {
         step();
         step();
@@ -1880,7 +1887,7 @@ fn partial_claim_audit_keeps_auto_but_whole_claim_requires_its_certificate() {
     let c_source = "int32 compare(uint8 bytes[]) { return memcmp(bytes, bytes, 2); }";
     let click_source = r#"verifying "compare.c";
 int32 compare(uint8 bytes[]) {
-    requires viewable(bytes[0..2]);
+    views bytes[0..2];
     ensures 1 == 1 by {
         step();
         step();

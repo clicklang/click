@@ -13,8 +13,7 @@ use click::kernel::{
 };
 use click::languages::cpp::{
     CppBinaryOperator, CppCallArgument, CppCleanup, CppExceptionBehavior, CppExpression,
-    CppFunctionKind, CppInitializer, CppProjection, CppStatement, CppType, load_import,
-    lower_import, refresh_import,
+    CppFunctionKind, CppInitializer, CppProjection, CppStatement, CppType, lower_import,
 };
 use click::surface::{
     C0VerificationSession, VerifiedClaim, expand_project_claim_source_by_label,
@@ -127,8 +126,9 @@ int32 probe() { ensures result == 11; } by { execute(); simp(); }
             }
             let bytes = serde_json::to_vec_pretty(&artifact).unwrap();
             let mut lock: serde_json::Value = serde_json::from_slice(&original_lock).unwrap();
-            lock["artifact_sha256"] = format!("{:x}", Sha256::digest(&bytes)).into();
-            lock["artifact_bytes"] = bytes.len().into();
+            lock_entry_mut(&mut lock)["artifact_sha256"] =
+                format!("{:x}", Sha256::digest(&bytes)).into();
+            lock_entry_mut(&mut lock)["artifact_bytes"] = bytes.len().into();
             fs::write(project.artifact(), bytes).unwrap();
             fs::write(project.lock(), serde_json::to_vec_pretty(&lock).unwrap()).unwrap();
             let error = load_import(&project.config()).unwrap_err();
@@ -252,8 +252,9 @@ int32 probe(struct View& input) {
         let bytes = serde_json::to_vec_pretty(&forged).unwrap();
         use sha2::{Digest, Sha256};
         let mut forged_lock = lock.clone();
-        forged_lock["artifact_sha256"] = format!("{:x}", Sha256::digest(&bytes)).into();
-        forged_lock["artifact_bytes"] = bytes.len().into();
+        lock_entry_mut(&mut forged_lock)["artifact_sha256"] =
+            format!("{:x}", Sha256::digest(&bytes)).into();
+        lock_entry_mut(&mut forged_lock)["artifact_bytes"] = bytes.len().into();
         fs::write(project.artifact(), bytes).unwrap();
         fs::write(
             project.lock(),
@@ -345,8 +346,9 @@ struct View copy(const struct View& input) {
         }
         let bytes = serde_json::to_vec_pretty(&forged).unwrap();
         let mut forged_lock = lock.clone();
-        forged_lock["artifact_sha256"] = format!("{:x}", Sha256::digest(&bytes)).into();
-        forged_lock["artifact_bytes"] = bytes.len().into();
+        lock_entry_mut(&mut forged_lock)["artifact_sha256"] =
+            format!("{:x}", Sha256::digest(&bytes)).into();
+        lock_entry_mut(&mut forged_lock)["artifact_bytes"] = bytes.len().into();
         fs::write(project.artifact(), bytes).unwrap();
         fs::write(
             project.lock(),
@@ -439,7 +441,7 @@ int32 probe(int32 input) {
 "#;
     check_arithmetic_sidecar(&project, &import, proof);
     let parsed = read_click_project(&project.directory.join("arithmetic.click"), proof).unwrap();
-    for label in ["Node_constructor.contract", "probe.contract"] {
+    for label in ["Node::Node.contract", "probe.contract"] {
         let expanded =
             expand_project_claim_source_by_label(&parsed, &ProgramInputs::program(&import), label)
                 .unwrap();
@@ -486,8 +488,8 @@ const int32& probe(const struct Node& input) {
     let bytes = serde_json::to_vec_pretty(&artifact).unwrap();
     let mut lock: serde_json::Value =
         serde_json::from_slice(&fs::read(project.lock()).unwrap()).unwrap();
-    lock["artifact_sha256"] = format!("{:x}", Sha256::digest(&bytes)).into();
-    lock["artifact_bytes"] = bytes.len().into();
+    lock_entry_mut(&mut lock)["artifact_sha256"] = format!("{:x}", Sha256::digest(&bytes)).into();
+    lock_entry_mut(&mut lock)["artifact_bytes"] = bytes.len().into();
     fs::write(project.artifact(), bytes).unwrap();
     fs::write(project.lock(), serde_json::to_vec_pretty(&lock).unwrap()).unwrap();
     let error = load_import(&project.config()).unwrap_err();
@@ -578,8 +580,9 @@ int32 probe(struct View& target, const struct View& source) {
         }
         let bytes = serde_json::to_vec_pretty(&forged).unwrap();
         let mut forged_lock = lock.clone();
-        forged_lock["artifact_sha256"] = format!("{:x}", Sha256::digest(&bytes)).into();
-        forged_lock["artifact_bytes"] = bytes.len().into();
+        lock_entry_mut(&mut forged_lock)["artifact_sha256"] =
+            format!("{:x}", Sha256::digest(&bytes)).into();
+        lock_entry_mut(&mut forged_lock)["artifact_bytes"] = bytes.len().into();
         fs::write(project.artifact(), bytes).unwrap();
         fs::write(
             project.lock(),
@@ -695,6 +698,12 @@ const CONSTEXPR_MAX_MONEY_CSTDINT: &str =
 const ONE_GUARD_UNWIND_MDTEST: &str = include_str!("../mdtests/cpp_one_guard_unwind.md");
 const GUARD_BEFORE_SECOND_MDTEST: &str =
     include_str!("../mdtests/cpp_guard_unwind_before_second.md");
+
+#[path = "support/cpp_description.rs"]
+mod cpp_description;
+use cpp_description::{
+    load_import, lock_description, lock_entry, lock_entry_mut, refresh_import, unit_digest,
+};
 
 struct Project {
     directory: PathBuf,
@@ -913,16 +922,25 @@ impl Project {
     }
 
     fn config(&self) -> PathBuf {
-        self.directory.join("demo.click.import.json")
+        self.directory.join("demo.import-description.json")
+    }
+
+    /// Locks the fixture's project with the built exporter, which survives
+    /// the removal of the fixture's private copy.
+    fn adopt(&self) {
+        lock_description(
+            &self.config(),
+            std::env::var_os("CLICK_CPP_EXPORTER").map(PathBuf::from),
+        )
+        .expect("lock the fixture's project");
     }
 
     fn artifact(&self) -> PathBuf {
-        self.directory
-            .join(format!("{}.click-cpp.json", self.source_name))
+        cpp_description::artifact(&self.config())
     }
 
     fn lock(&self) -> PathBuf {
-        self.directory.join("demo.click.import.json.lock")
+        self.directory.join(click::project::LOCK_NAME)
     }
 
     fn source(&self) -> PathBuf {
@@ -959,6 +977,14 @@ impl Project {
         .into_iter()
         .map(str::to_string)
         .collect()
+    }
+
+    /// The command Click synthesizes for the unit: the fixture's command,
+    /// writing the object beside the translation unit.
+    fn synthesized_arguments(&self) -> Vec<String> {
+        let mut arguments = self.compilation_arguments();
+        *arguments.last_mut().unwrap() = format!("{}.o", self.source_name);
+        arguments
     }
 
     fn exception_enabled_compilation_arguments(&self) -> Vec<String> {
@@ -1004,18 +1030,6 @@ impl Project {
                 })
             })
             .collect::<Vec<_>>();
-        let mut bytes = serde_json::to_vec_pretty(&database).unwrap();
-        bytes.push(b'\n');
-        fs::write(self.compilation_database(), bytes).unwrap();
-    }
-
-    fn write_compilation_database_command_string(&self, command: &str) {
-        let database = serde_json::json!([{
-            "directory": self.directory,
-            "file": self.source_name,
-            "command": command,
-            "output": "fixture.o"
-        }]);
         let mut bytes = serde_json::to_vec_pretty(&database).unwrap();
         bytes.push(b'\n');
         fs::write(self.compilation_database(), bytes).unwrap();
@@ -1215,8 +1229,9 @@ uint64 probe(const struct Count& count) {
         }
         let bytes = serde_json::to_vec_pretty(&forged).unwrap();
         let mut forged_lock = lock.clone();
-        forged_lock["artifact_sha256"] = format!("{:x}", Sha256::digest(&bytes)).into();
-        forged_lock["artifact_bytes"] = bytes.len().into();
+        lock_entry_mut(&mut forged_lock)["artifact_sha256"] =
+            format!("{:x}", Sha256::digest(&bytes)).into();
+        lock_entry_mut(&mut forged_lock)["artifact_bytes"] = bytes.len().into();
         fs::write(project.artifact(), bytes).unwrap();
         fs::write(
             project.lock(),
@@ -1555,8 +1570,9 @@ fn boolean_primitive_artifacts_refuse_forged_types_contexts_and_locations() {
             }
             let bytes = serde_json::to_vec_pretty(&forged).unwrap();
             let mut forged_lock = lock.clone();
-            forged_lock["artifact_sha256"] = format!("{:x}", Sha256::digest(&bytes)).into();
-            forged_lock["artifact_bytes"] = bytes.len().into();
+            lock_entry_mut(&mut forged_lock)["artifact_sha256"] =
+                format!("{:x}", Sha256::digest(&bytes)).into();
+            lock_entry_mut(&mut forged_lock)["artifact_bytes"] = bytes.len().into();
             fs::write(project.artifact(), bytes).unwrap();
             fs::write(
                 project.lock(),
@@ -1656,27 +1672,14 @@ fn logical_negation_checks_full_width_truth_and_observer_results_offline() {
 #[test]
 fn clang_export_is_deterministic_typed_and_loads_without_clang() {
     let project = Project::new();
-    let output = Command::new(env!("CARGO_BIN_EXE_click"))
-        .args([
-            "import",
-            "lock",
-            project.directory.join("demo.click").to_str().unwrap(),
-        ])
-        .output()
-        .expect("run the ordinary import command");
-    assert!(
-        output.status.success(),
-        "click import failed: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
+    refresh_import(&project.config()).expect("export the semantic artifact");
     let first_artifact = fs::read(project.artifact()).unwrap();
     let first_lock = fs::read(project.lock()).unwrap();
     refresh_import(&project.config()).expect("repeat the same semantic export");
     assert_eq!(fs::read(project.artifact()).unwrap(), first_artifact);
     assert_eq!(fs::read(project.lock()).unwrap(), first_lock);
 
-    fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
-    let prepared = load_import(&project.config()).expect("locked loading must not execute Clang");
+    let prepared = load_import(&project.config()).expect("load the locked artifact");
     assert_eq!(prepared.export().schema, 60);
     assert!(prepared.export().reachable_functions.is_empty());
     assert_eq!(prepared.logical_source(), "increment.cpp");
@@ -1691,7 +1694,7 @@ fn clang_export_is_deterministic_typed_and_loads_without_clang() {
     );
     assert_eq!(
         prepared.export().profile.compilation_command,
-        project.compilation_arguments()
+        project.synthesized_arguments()
     );
     let function = &prepared.export().functions[0];
     assert_eq!(function.name, "increment");
@@ -1727,6 +1730,41 @@ fn clang_export_is_deterministic_typed_and_loads_without_clang() {
             ..
         }
     ));
+    // The ordinary command locks the same unit as a project, repeatably, and
+    // loading it needs no exporter.
+    project.adopt();
+    let lock = || {
+        let output = Command::new(env!("CARGO_BIN_EXE_click"))
+            .env("CLICK_CPP_EXPORTER", &project.exporter)
+            .args(["import", "lock", project.directory.to_str().unwrap()])
+            .output()
+            .expect("run the ordinary import command");
+        assert!(
+            output.status.success(),
+            "click import failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        (
+            fs::read(
+                project
+                    .directory
+                    .join(".click/demo/increment.cpp.click-cpp.json"),
+            )
+            .unwrap(),
+            fs::read(project.directory.join(click::project::LOCK_NAME)).unwrap(),
+        )
+    };
+    let first = lock();
+    assert_eq!(lock(), first);
+    fs::remove_file(&project.exporter).expect("make the frontend unavailable after locking");
+    let sidecar = project.directory.join("demo.click");
+    fs::write(&sidecar, SIDECAR).unwrap();
+    let CInput::PreparedProgram(import) =
+        read_c_inputs(&sidecar, SIDECAR).expect("locked loading must not execute Clang")
+    else {
+        panic!("language=c++ must select the C++ prepared-input path")
+    };
+    assert_eq!(import.identity().len(), 64);
 }
 
 #[test]
@@ -1769,9 +1807,11 @@ fn out_of_tree_compilation_locks_dependency_root_and_rtti_profile() {
     assert!(prepared.export().profile.exceptions);
     assert!(prepared.export().profile.rtti);
     assert_eq!(prepared.export().dependencies, ["cstdint"]);
+    // Click compiles in the unit root; the out-of-tree command's include
+    // directory still reaches the project header.
     assert_eq!(
         prepared.export().profile.compilation_directory,
-        build.to_string_lossy()
+        project.directory.to_string_lossy()
     );
 
     fs::write(
@@ -1810,10 +1850,10 @@ fn every_opened_header_is_locked_even_outside_the_reachable_graph() {
     );
 
     fs::write(&header, "#define PRELUDE 2\n").unwrap();
+    let error = load_import(&project.config()).unwrap_err();
     assert!(
-        load_import(&project.config())
-            .unwrap_err()
-            .contains("preprocessor input inventory differs")
+        error.contains("prelude.h") && error.contains("differs from its import lock"),
+        "{error}"
     );
 }
 
@@ -1852,67 +1892,38 @@ fn opened_header_symlink_target_is_locked() {
 }
 
 #[test]
-#[ignore = "nightly: 0.6s in the parallel gate"]
-fn compilation_database_command_is_selected_locked_and_validated() {
+fn unit_arguments_are_locked_and_change_the_identity() {
     let project = Project::new();
-    refresh_import(&project.config()).expect("export through the selected compilation command");
-    let first = load_import(&project.config()).expect("load the locked compilation command");
+    refresh_import(&project.config()).expect("export through the unit's command");
+    let first = load_import(&project.config()).expect("load the locked unit");
     let first_identity = first.identity().to_string();
     let lock: serde_json::Value =
         serde_json::from_slice(&fs::read(project.lock()).unwrap()).unwrap();
     assert_eq!(
-        lock["compilation_database_sha256"].as_str().unwrap().len(),
+        lock_entry(&lock)["compilation_database_sha256"]
+            .as_str()
+            .unwrap()
+            .len(),
         64
     );
     assert_eq!(
-        lock["profile"]["compilation_command"],
-        serde_json::json!(project.compilation_arguments())
+        lock_entry(&lock)["profile"]["compilation_command"],
+        serde_json::json!(project.synthesized_arguments())
     );
 
+    // A changed argument changes the unit's description and its identity.
     let mut changed = project.compilation_arguments();
     changed.insert(changed.len() - 4, "-DCLICK_COMMAND_VARIANT=1".into());
     project.write_compilation_database_commands(&[changed.clone()]);
     let error = load_import(&project.config()).unwrap_err();
-    assert!(error.contains("compilation database differs"), "{error}");
-    refresh_import(&project.config()).expect("refresh after an explicit command change");
+    assert!(error.contains("does not match its description"), "{error}");
+    refresh_import(&project.config()).expect("refresh after an explicit argument change");
     let refreshed = load_import(&project.config()).unwrap();
     assert_ne!(refreshed.identity(), first_identity);
+    *changed.last_mut().unwrap() = format!("{}.o", project.source_name);
     assert_eq!(refreshed.export().profile.compilation_command, changed);
 
-    let command_string = Project::new();
-    let arguments = command_string.compilation_arguments();
-    command_string.write_compilation_database_command_string(&arguments.join(" "));
-    refresh_import(&command_string.config()).expect("parse a CMake-style command string entry");
-    assert_eq!(
-        load_import(&command_string.config())
-            .unwrap()
-            .export()
-            .profile
-            .compilation_command,
-        arguments
-    );
-
-    let missing = Project::new();
-    missing.write_compilation_database_commands(&[]);
-    let error = refresh_import(&missing.config()).unwrap_err();
-    assert!(error.contains("has no command"), "{error}");
-    assert!(!missing.artifact().exists());
-
-    let ambiguous = Project::new();
-    let command = ambiguous.compilation_arguments();
-    ambiguous.write_compilation_database_commands(&[command.clone(), command]);
-    let error = refresh_import(&ambiguous.config()).unwrap_err();
-    assert!(error.contains("exactly one is required"), "{error}");
-    assert!(!ambiguous.artifact().exists());
-
-    let wrong_driver = Project::new();
-    let mut command = wrong_driver.compilation_arguments();
-    command[0] = "g++".into();
-    wrong_driver.write_compilation_database_commands(&[command]);
-    let error = refresh_import(&wrong_driver.config()).unwrap_err();
-    assert!(error.contains("pinned Clang driver"), "{error}");
-    assert!(!wrong_driver.artifact().exists());
-
+    // Arguments whose inputs the lock cannot inventory are refused.
     for untracked in ["@flags.rsp", "-include-pch", "-ivfsoverlay"] {
         let project = Project::new();
         let mut command = project.compilation_arguments();
@@ -1925,46 +1936,6 @@ fn compilation_database_command_is_selected_locked_and_validated() {
         );
         assert!(!project.artifact().exists());
     }
-
-    let wrong_standard = Project::new();
-    let command = wrong_standard
-        .compilation_arguments()
-        .into_iter()
-        .map(|argument| {
-            if argument == "-std=c++20" {
-                "-std=gnu++20".into()
-            } else {
-                argument
-            }
-        })
-        .collect::<Vec<_>>();
-    wrong_standard.write_compilation_database_commands(&[command]);
-    let error = refresh_import(&wrong_standard.config()).unwrap_err();
-    assert!(
-        error.contains("profile must match the configured"),
-        "{error}"
-    );
-    assert!(!wrong_standard.artifact().exists());
-
-    let wrong_target = Project::new();
-    let command = wrong_target
-        .compilation_arguments()
-        .into_iter()
-        .map(|argument| {
-            if argument == "--target=x86_64-unknown-linux-gnu" {
-                "--target=aarch64-unknown-linux-gnu".into()
-            } else {
-                argument
-            }
-        })
-        .collect::<Vec<_>>();
-    wrong_target.write_compilation_database_commands(&[command]);
-    let error = refresh_import(&wrong_target.config()).unwrap_err();
-    assert!(
-        error.contains("profile must match the configured"),
-        "{error}"
-    );
-    assert!(!wrong_target.artifact().exists());
 }
 
 #[test]
@@ -1974,7 +1945,13 @@ fn included_header_definition_is_selected_locked_and_validated() {
     refresh_import(&project.config()).expect("export the selected header definition");
     let lock: serde_json::Value =
         serde_json::from_slice(&fs::read(project.lock()).unwrap()).unwrap();
-    assert_eq!(lock["logical_source_sha256"].as_str().unwrap().len(), 64);
+    assert_eq!(
+        lock_entry(&lock)["logical_source_sha256"]
+            .as_str()
+            .unwrap()
+            .len(),
+        64
+    );
 
     let prepared = load_import(&project.config()).expect("load the locked header definition");
     assert_eq!(prepared.logical_source(), "selected.h");
@@ -1988,6 +1965,7 @@ fn included_header_definition_is_selected_locked_and_validated() {
         .replace("increment.cpp", "selected.h")
         .replace("increment", "header_increment");
     fs::write(&sidecar, &sidecar_source).unwrap();
+    project.adopt();
     fs::remove_file(&project.exporter).expect("make the exporter unavailable after refresh");
     let inputs = read_c_inputs(&sidecar, &sidecar_source).expect("load the header import offline");
     let CInput::PreparedProgram(import) = inputs else {
@@ -2053,6 +2031,7 @@ fn exception_enabled_profile_verifies_a_checked_normal_only_header_graph() {
         .replace("increment.cpp", "selected.h")
         .replace("increment", "header_increment");
     fs::write(&sidecar, &sidecar_source).unwrap();
+    project.adopt();
     fs::remove_file(&project.exporter).expect("make the exporter unavailable after refresh");
     let inputs = read_c_inputs(&sidecar, &sidecar_source)
         .expect("load the exception-enabled header import offline");
@@ -2679,7 +2658,7 @@ fn scalar_int32_profile_emits_function_scope_cleanup_edges_for_escaping_throws()
     for (_, handler) in &edges {
         assert!(
             matches!(handler, CStatement::Seq(cleanup, rethrow)
-                if contains_call(cleanup, "Restore_destructor")
+                if contains_call(cleanup, "Restore::~Restore")
                     && matches!(rethrow.as_ref(), CStatement::Throw(_))),
             "each escaping edge must run the live destructor before rethrowing"
         );
@@ -3447,6 +3426,7 @@ fn locked_cpp_function_verifies_through_the_shared_sidecar_path_offline() {
     let sidecar = project.directory.join("demo.click");
     fs::write(&sidecar, SIDECAR).unwrap();
     refresh_import(&project.config()).expect("refresh the C++ import explicitly");
+    project.adopt();
     fs::remove_file(&project.exporter).expect("make the exporter unavailable after refresh");
 
     let click_source = fs::read_to_string(&sidecar).unwrap();
@@ -3516,6 +3496,7 @@ fn locked_cpp_branch_and_early_return_verify_through_the_shared_sidecar_path() {
     );
     assert!(contains_if(lowered.kernel_function().body()));
 
+    project.adopt();
     let click_source = fs::read_to_string(&sidecar).unwrap();
     let inputs = read_c_inputs(&sidecar, &click_source).unwrap();
     let CInput::PreparedProgram(import) = inputs else {
@@ -3618,6 +3599,7 @@ fn const_reference_preserves_qualification_and_may_alias_a_mutable_reference() {
     assert_eq!(parameters[1].c_type(), CType::Int32Pointer);
     assert!(parameters[1].pointee_is_constant());
 
+    project.adopt();
     let click_source = fs::read_to_string(&sidecar).unwrap();
     let inputs = read_c_inputs(&sidecar, &click_source).unwrap();
     let CInput::PreparedProgram(import) = inputs else {
@@ -3703,6 +3685,7 @@ fn contains_call(statement: &CStatement, expected: &str) -> bool {
     match statement {
         CStatement::Call { function_name, .. } | CStatement::CallAssign { function_name, .. } => {
             function_name == expected
+                || click::surface::source_display_name(function_name).as_deref() == Some(expected)
         }
         CStatement::Seq(first, second) => {
             contains_call(first, expected) || contains_call(second, expected)
@@ -3716,10 +3699,14 @@ fn contains_call(statement: &CStatement, expected: &str) -> bool {
     }
 }
 
-fn call_order(statement: &CStatement) -> Vec<&str> {
-    fn visit<'a>(statement: &'a CStatement, calls: &mut Vec<&'a str>) {
+/// The functions `statement` calls, in order, as C++ names them.
+fn call_order(statement: &CStatement) -> Vec<String> {
+    fn visit(statement: &CStatement, calls: &mut Vec<String>) {
         match statement {
-            CStatement::Call { function_name, .. } => calls.push(function_name),
+            CStatement::Call { function_name, .. } => calls.push(
+                click::surface::source_display_name(function_name)
+                    .unwrap_or_else(|| function_name.clone()),
+            ),
             CStatement::Seq(first, second) => {
                 visit(first, calls);
                 visit(second, calls);
@@ -3746,7 +3733,10 @@ fn destructor_object_order<'a>(statement: &'a CStatement, destructor: &str) -> V
             CStatement::Call {
                 function_name,
                 arguments,
-            } if function_name == destructor => {
+            } if function_name == destructor
+                || click::surface::source_display_name(function_name).as_deref()
+                    == Some(destructor) =>
+            {
                 if let [CExpression::Cast { expression, .. }] = arguments.as_slice()
                     && let CExpression::Variable(name) = expression.as_ref()
                 {
@@ -4522,7 +4512,7 @@ fn explicit_constructor_local_verifies_as_a_modular_call() {
     ));
     assert!(contains_call(
         lowered.kernel_function().body(),
-        "RestoreState_constructor"
+        "RestoreState::RestoreState"
     ));
     assert_eq!(lowered.reachable_kernel_functions().len(), 1);
     assert_eq!(
@@ -4670,7 +4660,7 @@ fn terminal_return_captures_value_before_checked_destructor_cleanup() {
     let lowered = lower_import(&import).expect("lower return capture and destructor cleanup");
     assert_eq!(
         call_order(lowered.kernel_function().body()),
-        ["RestoreState_constructor", "RestoreState_destructor"]
+        ["RestoreState::RestoreState", "RestoreState::~RestoreState"]
     );
     assert!(matches!(
         lowered.kernel_function().body(),
@@ -4787,11 +4777,7 @@ fn every_return_after_construction_runs_the_checked_destructor() {
     let lowered = lower_import(&import).expect("lower cleanup on both return edges");
     assert_eq!(
         call_order(lowered.kernel_function().body()),
-        [
-            "Restore_constructor",
-            "Restore_destructor",
-            "Restore_destructor"
-        ]
+        ["Restore::Restore", "Restore::~Restore", "Restore::~Restore"]
     );
 
     let click_source = fs::read_to_string(&sidecar).unwrap();
@@ -4978,7 +4964,7 @@ fn two_constructed_objects_are_destroyed_in_reverse_order_on_every_return() {
 
     let lowered = lower_import(&import).expect("lower both reversed cleanup lists");
     assert_eq!(
-        destructor_object_order(lowered.kernel_function().body(), "Restore_destructor"),
+        destructor_object_order(lowered.kernel_function().body(), "Restore::~Restore"),
         ["second", "first", "second", "first"]
     );
 
@@ -5021,7 +5007,7 @@ fn two_constructed_objects_are_destroyed_in_reverse_order_on_every_return() {
                 .unwrap()
                 .kernel_function()
                 .body(),
-            "Restore_destructor"
+            "Restore::~Restore"
         ),
         ["third", "second", "first", "third", "second", "first"]
     );
@@ -5090,7 +5076,7 @@ fn nested_scope_destroys_its_object_on_return_and_fallthrough() {
 
     let lowered = lower_import(&import).expect("lower the lexical cleanup boundary directly");
     assert_eq!(
-        destructor_object_order(lowered.kernel_function().body(), "Restore_destructor"),
+        destructor_object_order(lowered.kernel_function().body(), "Restore::~Restore"),
         ["guard", "guard"]
     );
 
@@ -5213,12 +5199,12 @@ fn sibling_scopes_reuse_a_local_name_with_independent_cleanup() {
     assert_eq!(
         call_order(lowered.kernel_function().body()),
         [
-            "Restore_constructor",
-            "Restore_destructor",
-            "Restore_destructor",
-            "Restore_constructor",
-            "Restore_destructor",
-            "Restore_destructor",
+            "Restore::Restore",
+            "Restore::~Restore",
+            "Restore::~Restore",
+            "Restore::Restore",
+            "Restore::~Restore",
+            "Restore::~Restore",
         ]
     );
 
@@ -5371,7 +5357,7 @@ fn overlapping_scope_destroys_inner_before_outer_on_every_exit() {
 
     let lowered = lower_import(&import).expect("lower the overlapping lifetimes directly");
     assert_eq!(
-        destructor_object_order(lowered.kernel_function().body(), "Restore_destructor"),
+        destructor_object_order(lowered.kernel_function().body(), "Restore::~Restore"),
         ["inner", "outer", "inner", "outer"]
     );
 
@@ -5497,11 +5483,7 @@ fn conditional_construction_cleans_up_only_the_constructed_arm() {
     let lowered = lower_import(&import).expect("lower the conditional lifetime directly");
     assert_eq!(
         call_order(lowered.kernel_function().body()),
-        [
-            "Restore_constructor",
-            "Restore_destructor",
-            "Restore_destructor",
-        ]
+        ["Restore::Restore", "Restore::~Restore", "Restore::~Restore",]
     );
 
     let click_source = fs::read_to_string(&sidecar).unwrap();
@@ -5653,7 +5635,7 @@ fn terminal_destructor_rejects_throwing_virtual_empty_and_nonterminal_cleanup() 
                 "~RestoreState() noexcept",
                 "virtual ~RestoreState() noexcept",
             ),
-            "standard-layout",
+            "public, non-virtual, non-deleted, and explicitly noexcept",
         ),
         (
             TERMINAL_DESTRUCTOR_SOURCE.replace(
@@ -6202,7 +6184,7 @@ fn locked_cpp_import_rejects_stale_source_config_and_artifact() {
     fs::write(project.source(), SOURCE).unwrap();
     project.write_config("other");
     let error = load_import(&project.config()).unwrap_err();
-    assert!(error.contains("config"), "{error}");
+    assert!(error.contains("does not match its description"), "{error}");
 
     project.write_config("increment");
     let mut artifact = fs::read(project.artifact()).unwrap();
@@ -6352,8 +6334,9 @@ fn cpp_fixed_byte_enum_call_conversions_cannot_erase_nominal_identity() {
         }
         let bytes = serde_json::to_vec_pretty(&forged).unwrap();
         let mut forged_lock = lock.clone();
-        forged_lock["artifact_sha256"] = format!("{:x}", Sha256::digest(&bytes)).into();
-        forged_lock["artifact_bytes"] = bytes.len().into();
+        lock_entry_mut(&mut forged_lock)["artifact_sha256"] =
+            format!("{:x}", Sha256::digest(&bytes)).into();
+        lock_entry_mut(&mut forged_lock)["artifact_bytes"] = bytes.len().into();
         fs::write(project.artifact(), bytes).unwrap();
         fs::write(
             project.lock(),
@@ -6394,8 +6377,9 @@ fn cpp_fixed_byte_enum_artifacts_reject_identity_backing_and_source_forgery() {
         }
         let bytes = serde_json::to_vec_pretty(&forged).unwrap();
         let mut forged_lock = lock.clone();
-        forged_lock["artifact_sha256"] = format!("{:x}", Sha256::digest(&bytes)).into();
-        forged_lock["artifact_bytes"] = bytes.len().into();
+        lock_entry_mut(&mut forged_lock)["artifact_sha256"] =
+            format!("{:x}", Sha256::digest(&bytes)).into();
+        lock_entry_mut(&mut forged_lock)["artifact_bytes"] = bytes.len().into();
         fs::write(project.artifact(), bytes).unwrap();
         fs::write(
             project.lock(),
@@ -6592,8 +6576,9 @@ fn cpp_uninitialized_initializer_rejects_record_and_reference_artifact_forgery()
         let bytes = serde_json::to_vec_pretty(&artifact).unwrap();
         let mut lock: serde_json::Value =
             serde_json::from_slice(&fs::read(project.lock()).unwrap()).unwrap();
-        lock["artifact_sha256"] = format!("{:x}", Sha256::digest(&bytes)).into();
-        lock["artifact_bytes"] = bytes.len().into();
+        lock_entry_mut(&mut lock)["artifact_sha256"] =
+            format!("{:x}", Sha256::digest(&bytes)).into();
+        lock_entry_mut(&mut lock)["artifact_bytes"] = bytes.len().into();
         fs::write(project.artifact(), bytes).unwrap();
         fs::write(project.lock(), serde_json::to_vec_pretty(&lock).unwrap()).unwrap();
         let error = load_import(&project.config()).unwrap_err();
@@ -6675,21 +6660,36 @@ fn cpp_direct_calls_reject_missing_throwing_and_recursive_definitions() {
 }
 
 #[test]
-fn cpp_config_rejects_profiles_outside_the_pinned_slice() {
-    let project = Project::new();
-    let bytes = fs::read_to_string(project.config()).unwrap();
-    fs::write(project.config(), bytes.replace("c++20", "gnu++20")).unwrap();
-    let error = refresh_import(&project.config()).unwrap_err();
-    assert!(error.contains("Clang c++20"), "{error}");
-
-    let mismatch = Project::new();
-    mismatch.write_config_with_profile("increment", "increment.cpp", true);
-    let error = refresh_import(&mismatch.config()).unwrap_err();
-    assert!(
-        error.contains("profile must match the configured"),
-        "{error}"
-    );
-    assert!(!mismatch.artifact().exists());
+fn cpp_unit_arguments_cannot_leave_the_pinned_slice() {
+    // Arguments that override the pinned standard, target or exception mode
+    // make the observed Clang profile disagree with the unit.
+    for (argument, exceptions) in [
+        ("-std=gnu++20", false),
+        ("--target=aarch64-unknown-linux-gnu", false),
+        ("-fno-exceptions", true),
+    ] {
+        let project = Project::new();
+        let unit = serde_json::json!({
+            "language": "c++",
+            "exceptions": exceptions,
+            "args": ["-funsigned-char", "-ffreestanding", "-nostdinc", "-nostdinc++", argument],
+            "sources": {"increment.cpp": {"functions": ["increment"]}},
+        });
+        let project_file = project.directory.join(click::project::FILE_NAME);
+        fs::write(
+            &project_file,
+            serde_json::to_vec(&serde_json::json!({"units": {"demo": unit}})).unwrap(),
+        )
+        .unwrap();
+        let error = click::project::Project::load(&project_file)
+            .and_then(|unit| unit.lock_with_cpp_exporter(Some(&project.exporter)))
+            .unwrap_err();
+        assert!(
+            error.contains("profile must match the configured") || error.contains("Clang c++20"),
+            "{argument}: {error}"
+        );
+        assert!(!project.directory.join(click::project::LOCK_NAME).exists());
+    }
 }
 
 #[test]
@@ -6807,6 +6807,20 @@ fn value_methods_reject_false_claims_missing_authority_and_overflow() {
 const SIGNED_ARITHMETIC_SOURCE: &str =
     include_str!("fixtures/cpp-verification/signed-arithmetic/arithmetic.cpp");
 
+/// The C++ spelling of the imported function `declaration_id`, as a sidecar
+/// head writes it: `Fee::Evaluate<true>`.
+fn cpp_spelling(import: &click::languages::cpp::PreparedCppImport, declaration_id: &str) -> String {
+    import
+        .export()
+        .functions
+        .iter()
+        .chain(&import.export().reachable_functions)
+        .find(|function| function.declaration_id == declaration_id)
+        .expect("an imported function")
+        .path
+        .join("::")
+}
+
 fn check_arithmetic_sidecar(
     project: &Project,
     import: &click::languages::cpp::PreparedCppImport,
@@ -6820,7 +6834,10 @@ fn check_return_call_sidecar(
     import: &click::languages::cpp::PreparedCppImport,
     source: &str,
 ) {
-    let prefix = format!("{}.", import.export().functions[0].name);
+    let prefix = format!(
+        "{}.",
+        click::languages::cpp::names::path_name(&import.export().functions[0].path)
+    );
     check_sidecar_tactic(project, import, source, Some(&prefix));
 }
 
@@ -7537,8 +7554,8 @@ fn concrete_scalar_type_template_instances_preserve_width_and_signedness() {
         "identity__unsigned_long"
     );
     let sidecar = r#"verifying "instances.cpp";
-int32 identity__int(int32 value) { ensures result == value; } by { execute(); simp(); }
-uint64 identity__unsigned_long(uint64 value) { ensures result == value; } by { execute(); simp(); }
+int32 identity<int>(int32 value) { ensures result == value; } by { execute(); simp(); }
+uint64 identity<unsigned long>(uint64 value) { ensures result == value; } by { execute(); simp(); }
 uint64 widths(int32 a, uint64 b) {
  requires a == 1; requires b == 18446744073709551615u64;
  ensures result == 0u64;
@@ -7608,8 +7625,8 @@ fn template_type_identity_does_not_merge_equal_width_cpp_types() {
     assert_eq!(helpers[1].name, "identity__unsigned_long_long");
     assert_ne!(helpers[0].declaration_id, helpers[1].declaration_id);
     let source = r#"verifying "instances.cpp";
-uint64 identity__unsigned_long(uint64 value) { ensures result == value; } by { execute(); simp(); }
-uint64 identity__unsigned_long_long(uint64 value) { ensures result == value; } by { execute(); simp(); }
+uint64 identity<unsigned long>(uint64 value) { ensures result == value; } by { execute(); simp(); }
+uint64 identity<unsigned long long>(uint64 value) { ensures result == value; } by { execute(); simp(); }
 uint64 exact_types(uint64 a, uint64 b) { ensures result == a + b; } by { execute(); simp(); }
 "#;
     check_arithmetic_sidecar(&project, &import, source);
@@ -7683,6 +7700,9 @@ fn integral_template_values_preserve_exact_type_sign_and_full_width() {
     for (helper, name) in helpers.iter().zip(names) {
         assert_eq!(helper.name, name);
         assert!(identities.insert(&helper.declaration_id));
+        // Clang prints each value with its type's suffix, `identity<1U>`; the
+        // sidecar names the instance as the importer does.
+        let name = click::languages::cpp::names::path_name(&helper.path);
         sidecar.push_str(&format!(
             "int32 {name}(int32 value) {{ ensures result == value; }} by {{ execute(); simp(); }}\n"
         ));
@@ -7803,10 +7823,10 @@ fn instantiated_fee_fast_paths_preserve_both_rounding_expressions() {
         (8589934591, 2147483647, 2147483647),
     ] {
         for (selected, instance, expected) in [
-            ("fee_down", "fee_fast_path__bool_true", fee * at_size / size),
+            ("fee_down", "fee_fast_path<true>", fee * at_size / size),
             (
                 "fee_up",
-                "fee_fast_path__bool_false",
+                "fee_fast_path<false>",
                 (fee * at_size).div_ceil(size),
             ),
         ] {
@@ -7855,12 +7875,20 @@ int both(const Box<SizeTag, true>& left, const Box<WeightTag, true>& right) noex
 fn class_template_instances_preserve_nominal_identity_and_verify_offline() {
     let mut alias_identity = None;
     let mut identities = std::collections::BTreeSet::new();
-    for (selected, record) in [
-        ("call", "Box__int__bool_false"),
-        ("wide", "Box__long_long__bool_false"),
-        ("long_type", "Box__long__bool_false"),
-        ("tagged", "Box__tag_SizeTag__bool_true"),
-        ("other_tag", "Box__tag_WeightTag__bool_true"),
+    for (selected, record, spelling) in [
+        ("call", "Box__int__bool_false", "Box<int>"),
+        ("wide", "Box__long_long__bool_false", "Box<long long>"),
+        ("long_type", "Box__long__bool_false", "Box<long>"),
+        (
+            "tagged",
+            "Box__tag_SizeTag__bool_true",
+            "Box<SizeTag, true>",
+        ),
+        (
+            "other_tag",
+            "Box__tag_WeightTag__bool_true",
+            "Box<WeightTag, true>",
+        ),
     ] {
         let project = Project::with_fixture("instances.cpp", selected, CLASS_INSTANCE_SOURCE);
         refresh_import(&project.config()).unwrap();
@@ -7878,8 +7906,11 @@ fn class_template_instances_preserve_nominal_identity_and_verify_offline() {
             import.export().reachable_functions[0].name,
             format!("{record}_Read")
         );
+        // The member and the record type are written as C++ names them, by
+        // the instance Clang prints, a defaulted argument left out.
+        assert_eq!(instance.path, [spelling]);
         let sidecar = format!(
-            "verifying \"instances.cpp\"; int32 {record}_Read(const struct {record}* this) {{ views this->value; ensures result == this->value; }} by {{ execute(); simp(); }} int32 {selected}(const struct {record}& box) {{ views box.value; ensures result == box.value; }} by {{ execute(); simp(); }}"
+            "verifying \"instances.cpp\"; int32 {spelling}::Read() const {{ views this->value; ensures result == this->value; }} by {{ execute(); simp(); }} int32 {selected}(const {spelling}& box) {{ views box.value; ensures result == box.value; }} by {{ execute(); simp(); }}"
         );
         fs::remove_file(&project.exporter).unwrap();
         check_return_call_sidecar(&project, &load_import(&project.config()).unwrap(), &sidecar);
@@ -7920,21 +7951,21 @@ fn class_template_instances_use_resolved_storage_types_and_constructor_names() {
         assert_eq!(import.export().records[0].fields[0].size_bytes, 8);
         let sidecar = r#"
         verifying "stored.cpp";
-        void Stored__long_long_constructor(struct Stored__long_long* this, int64 next) {
+        Stored<long long>::Stored(int64 next) {
             owns this->value; ensures this->value == next;
         } by { execute(); simp(); }
-        int64 Stored__long_long_Read(const struct Stored__long_long* this) {
+        int64 Stored<long long>::Read() const {
             views this->value; ensures result == this->value;
         } by { execute(); simp(); }
-        void Stored__long_long_destructor(struct Stored__long_long* this) {
+        Stored<long long>::~Stored() {
             owns this->value; ensures this->value == 0i64;
         } by { execute(); simp(); }
         int64 create(int64 next) {
             ensures result == next;
         } by { execute(); simp(); }
     "#;
-        // A class template instance keeps its mangled member names and
-        // explicit receiver; an ordinary class is written as C++ writes it.
+        // A class template instance's members are written as C++ writes
+        // them, as an ordinary class's are.
         let ordinary_sidecar = r#"
         verifying "stored.cpp";
         Stored::Stored(int64 next) {
@@ -7980,10 +8011,10 @@ fn class_template_instances_reject_cross_instance_bindings_even_with_equal_layou
     assert_eq!(records[0].size_bytes, records[1].size_bytes);
     let sidecar = r#"
         verifying "instances.cpp";
-        int32 Box__tag_SizeTag__bool_true_Read(const struct Box__tag_SizeTag__bool_true* this) {
+        int32 Box<SizeTag, true>::Read() const {
             views this->value; ensures result == this->value;
         } by { execute(); simp(); }
-        int32 both(const struct Box__tag_SizeTag__bool_true& left,
+        int32 both(const Box<SizeTag, true>& left,
                    const struct Box__tag_WeightTag__bool_true& right) {
             views left.value; views right.value;
             ensures result == left.value;
@@ -8001,8 +8032,8 @@ fn class_template_instances_reject_cross_instance_bindings_even_with_equal_layou
     let bytes = serde_json::to_vec(&artifact).unwrap();
     let mut lock: serde_json::Value =
         serde_json::from_slice(&fs::read(project.lock()).unwrap()).unwrap();
-    lock["artifact_sha256"] = format!("{:x}", Sha256::digest(&bytes)).into();
-    lock["artifact_bytes"] = bytes.len().into();
+    lock_entry_mut(&mut lock)["artifact_sha256"] = format!("{:x}", Sha256::digest(&bytes)).into();
+    lock_entry_mut(&mut lock)["artifact_bytes"] = bytes.len().into();
     fs::write(project.artifact(), bytes).unwrap();
     fs::write(project.lock(), serde_json::to_vec(&lock).unwrap()).unwrap();
     let error = load_import(&project.config()).unwrap_err();
@@ -8023,7 +8054,7 @@ fn class_template_instances_complete_unused_parameter_types_without_source_edits
         &import,
         r#"
         verifying "unused.cpp";
-        int32 call(const struct Box__int& box) { ensures result == 7; }
+        int32 call(const Box<int>& box) { ensures result == 7; }
         by { execute(); simp(); }
     "#,
     );
@@ -8180,8 +8211,9 @@ fn single_base_layouts_reject_forged_edges_layouts_and_flattened_fields() {
         }
         let bytes = serde_json::to_vec(&hostile).unwrap();
         let mut lock = original_lock.clone();
-        lock["artifact_sha256"] = format!("{:x}", Sha256::digest(&bytes)).into();
-        lock["artifact_bytes"] = bytes.len().into();
+        lock_entry_mut(&mut lock)["artifact_sha256"] =
+            format!("{:x}", Sha256::digest(&bytes)).into();
+        lock_entry_mut(&mut lock)["artifact_bytes"] = bytes.len().into();
         fs::write(project.artifact(), bytes).unwrap();
         fs::write(project.lock(), serde_json::to_vec(&lock).unwrap()).unwrap();
         assert!(
@@ -8392,8 +8424,9 @@ fn inherited_calls_reject_forged_nominal_paths_and_const_roots() {
             }
             let bytes = serde_json::to_vec(&hostile).unwrap();
             let mut lock = original_lock.clone();
-            lock["artifact_sha256"] = format!("{:x}", Sha256::digest(&bytes)).into();
-            lock["artifact_bytes"] = bytes.len().into();
+            lock_entry_mut(&mut lock)["artifact_sha256"] =
+                format!("{:x}", Sha256::digest(&bytes)).into();
+            lock_entry_mut(&mut lock)["artifact_bytes"] = bytes.len().into();
             fs::write(project.artifact(), bytes).unwrap();
             fs::write(project.lock(), serde_json::to_vec(&lock).unwrap()).unwrap();
             let error = load_import(&project.config()).unwrap_err();
@@ -8539,10 +8572,10 @@ fn cpp20_fee_fast_paths_preserve_the_signed_return_conversion() {
         (8589934591, 2147483647, 2147483647),
     ] {
         for (selected, instance, expected) in [
-            ("fee_down", "fee__bool_true", (fee * at_size / size) as i64),
+            ("fee_down", "fee<true>", (fee * at_size / size) as i64),
             (
                 "fee_up",
-                "fee__bool_false",
+                "fee<false>",
                 (fee * at_size).div_ceil(size) as i64,
             ),
         ] {
@@ -8667,12 +8700,12 @@ fn direct_return_calls_preserve_fee_method_template_wrappers() {
     for (selected, instance, expected) in [
         (
             "FeeFrac::EvaluateFeeDown",
-            "FeeFrac_EvaluateFee__bool_true",
+            "FeeFrac::EvaluateFee<true>",
             4i64,
         ),
         (
             "FeeFrac::EvaluateFeeUp",
-            "FeeFrac_EvaluateFee__bool_false",
+            "FeeFrac::EvaluateFee<false>",
             5i64,
         ),
     ] {
@@ -8683,7 +8716,7 @@ fn direct_return_calls_preserve_fee_method_template_wrappers() {
             "views this->fee; views this->size; requires this->fee == 7i64; requires this->size == 3; requires at_size == 2; ensures result == {expected}i64; ensures this->fee == old(this->fee); ensures this->size == old(this->size);"
         );
         let source = format!(
-            "verifying \"relay.cpp\"; int64 {instance}(const struct FeeFrac* this, int32 at_size) {{ {contract} }} by {{ execute(); simp(); }} int64 {selected}(int32 at_size) const {{ {contract} }} by {{ execute(); simp(); }}"
+            "verifying \"relay.cpp\"; int64 {instance}(int32 at_size) const {{ {contract} }} by {{ execute(); simp(); }} int64 {selected}(int32 at_size) const {{ {contract} }} by {{ execute(); simp(); }}"
         );
         check_return_call_sidecar(&project, &import, &source);
         let hostile = source.replace(
@@ -8853,7 +8886,7 @@ fn direct_return_calls_keep_guarded_try_returns_unsupported_and_emit_uncaught_cl
                 cleanup_unwind: true,
                 ..
             } => {
-                matches!(handler.as_ref(), CStatement::Seq(cleanup, rethrow) if contains_call(cleanup, "Restore_destructor") && matches!(rethrow.as_ref(), CStatement::Throw(_)))
+                matches!(handler.as_ref(), CStatement::Seq(cleanup, rethrow) if contains_call(cleanup, "Restore::~Restore") && matches!(rethrow.as_ref(), CStatement::Throw(_)))
             }
             CStatement::Seq(first, second) => {
                 has_unwind_cleanup(first) || has_unwind_cleanup(second)
@@ -9320,7 +9353,7 @@ fn nested_stable_siblings_preserve_concrete_boolean_template_rounding_wrappers()
         else {
             panic!("retain template return call");
         };
-        let instance = &callee.name;
+        let instance = &cpp_spelling(&import, &callee.declaration_id);
         let product = fee * 3;
         let source = format!(
             r#"verifying "arguments.cpp";
@@ -9360,7 +9393,7 @@ fn static_helpers_preserve_scalar_types_class_identity_and_no_receiver() {
         assert_eq!(import.export().functions[0].parameters.len(), 1);
         assert!(import.export().records.is_empty());
         let source = format!(
-            "verifying \"static.cpp\"; {value_type} Scalar_{member}({value_type} value) {{ ensures result == value; }} by {{ execute(); simp(); }}"
+            "verifying \"static.cpp\"; static {value_type} Scalar::{member}({value_type} value) {{ ensures result == value; }} by {{ execute(); simp(); }}"
         );
         check_return_call_sidecar(&project, &import, &source);
         let hostile = source.replace("result == value", "result != value");
@@ -9379,12 +9412,12 @@ fn static_helpers_support_modular_nested_and_initializer_calls() {
         let import = load_import(&project.config()).unwrap();
         let source = format!(
             r#"verifying "static.cpp";
-int32 Scalar_echo(int32 value) {{ ensures result == value; }} by {{ execute(); simp(); }}
+static int32 Scalar::echo(int32 value) {{ ensures result == value; }} by {{ execute(); simp(); }}
 static int32 Other::echo(int32 value) {{ ensures result == value; }} by {{ execute(); simp(); }}
 int32 {selected}(int32 value) {{ ensures result == value; }} by {{ execute(); simp(); }}
 "#
         );
-        // The local caller reaches only Scalar_echo.
+        // The local caller reaches only Scalar::echo.
         let source = if selected == "static_local" {
             source.replace("static int32 Other::echo(int32 value) { ensures result == value; } by { execute(); simp(); }\n", "")
         } else {
@@ -9412,12 +9445,12 @@ fn static_helpers_preserve_nested_fee_rounding_template_shape() {
             panic!("static template call");
         };
         let product = fee * 3;
-        let instance = &callee.name;
+        let instance = &cpp_spelling(&import, &callee.declaration_id);
         let source = format!(
             r#"verifying "static.cpp";
-int64 FeeMath_Mul(int64 fee, int32 at_size) {{ requires fee == {fee}i64; requires at_size == 3; ensures result == {product}i64; }} by {{ execute(); simp(); }}
-int64 FeeMath_Div(int64 n, int32 d, bool round_down) {{ requires n == {product}i64; requires d == 5; requires round_down == {down}; ensures result == {expected}i64; }} by {{ execute(); simp(); }}
-int64 {instance}(int64 fee, int32 at_size, int32 divisor) {{ requires fee == {fee}i64; requires at_size == 3; requires divisor == 5; ensures result == {expected}i64; }} by {{ execute(); simp(); }}
+static int64 FeeMath::Mul(int64 fee, int32 at_size) {{ requires fee == {fee}i64; requires at_size == 3; ensures result == {product}i64; }} by {{ execute(); simp(); }}
+static int64 FeeMath::Div(int64 n, int32 d, bool round_down) {{ requires n == {product}i64; requires d == 5; requires round_down == {down}; ensures result == {expected}i64; }} by {{ execute(); simp(); }}
+static int64 {instance}(int64 fee, int32 at_size, int32 divisor) {{ requires fee == {fee}i64; requires at_size == 3; requires divisor == 5; ensures result == {expected}i64; }} by {{ execute(); simp(); }}
 int64 {selected}(int64 fee, int32 at_size, int32 divisor) {{ requires fee == {fee}i64; requires at_size == 3; requires divisor == 5; ensures result == {expected}i64; }} by {{ execute(); simp(); }}
 "#
         );
@@ -9493,7 +9526,7 @@ fn static_helpers_called_from_value_methods_preserve_field_authority() {
     refresh_import(&project.config()).unwrap();
     let import = load_import(&project.config()).unwrap();
     let source = r#"verifying "static.cpp";
-int64 FeeMath_Mul(int64 fee, int32 at_size) { requires fee == 7i64; requires at_size == 3; ensures result == 21i64; } by { execute(); simp(); }
+static int64 FeeMath::Mul(int64 fee, int32 at_size) { requires fee == 7i64; requires at_size == 3; ensures result == 21i64; } by { execute(); simp(); }
 int64 FeeValue::Evaluate(int32 at_size) const {
  owns this->fee;
  requires this->fee == 7i64;
@@ -9514,11 +9547,11 @@ fn static_helpers_cannot_skip_arithmetic_definedness_with_trivial_postconditions
     for (selected, contract) in [
         (
             "FeeMath::Mul",
-            "int64 FeeMath_Mul(int64 fee, int32 at_size) { ensures result == result; } by { execute(); simp(); }",
+            "static int64 FeeMath::Mul(int64 fee, int32 at_size) { ensures result == result; } by { execute(); simp(); }",
         ),
         (
             "FeeMath::Div",
-            "int64 FeeMath_Div(int64 n, int32 d, bool round_down) { ensures result == result; } by { execute(); simp(); }",
+            "static int64 FeeMath::Div(int64 n, int32 d, bool round_down) { ensures result == result; } by { execute(); simp(); }",
         ),
     ] {
         let project = Project::with_fixture("static.cpp", selected, STATIC_HELPERS_SOURCE);
@@ -9574,19 +9607,18 @@ fn normalized_scalar_calls_agree_across_returns_initializers_and_discarded_resul
 #[test]
 #[ignore = "nightly: 2s in the parallel gate"]
 fn normalized_initializer_calls_preserve_scalar_types_and_static_helpers() {
-    for (selected, helper, value_type) in [
-        ("initialized64", "echo64", "int64"),
-        ("initialized_u32", "echo_u32", "uint32"),
-        ("initialized_u64", "echo_u64", "uint64"),
-        ("Helper::initialized", "Helper_echo", "int32"),
+    for (selected, helper, value_type, storage) in [
+        ("initialized64", "echo64", "int64", ""),
+        ("initialized_u32", "echo_u32", "uint32", ""),
+        ("initialized_u64", "echo_u64", "uint64", ""),
+        ("Helper::initialized", "Helper::echo", "int32", "static "),
     ] {
         let project =
             Project::with_fixture("evaluation.cpp", selected, NORMALIZED_EVALUATION_SOURCE);
         refresh_import(&project.config()).unwrap();
         let import = load_import(&project.config()).unwrap();
-        let caller = &import.export().functions[0].name;
         let source = format!(
-            "verifying \"evaluation.cpp\"; {value_type} {helper}({value_type} value) {{ ensures result == value; }} by {{ execute(); simp(); }} {value_type} {caller}({value_type} value) {{ ensures result == value; }} by {{ execute(); simp(); }}"
+            "verifying \"evaluation.cpp\"; {storage}{value_type} {helper}({value_type} value) {{ ensures result == value; }} by {{ execute(); simp(); }} {storage}{value_type} {selected}({value_type} value) {{ ensures result == value; }} by {{ execute(); simp(); }}"
         );
         check_return_call_sidecar(&project, &import, &source);
     }
@@ -9881,11 +9913,14 @@ fn qualified_namespace_selection_has_an_ordinary_readable_contract_name() {
     refresh_import(&project.config()).unwrap();
     let import = load_import(&project.config()).unwrap();
     let lowered = lower_import(&import).unwrap();
-    assert_eq!(lowered.kernel_function().name(), "A_Nested_echo");
+    assert_eq!(
+        click::surface::source_display_name(lowered.kernel_function().name()).as_deref(),
+        Some("A::Nested::echo")
+    );
     check_return_call_sidecar(
         &project,
         &import,
-        "verifying \"namespace.cpp\"; int32 A_Nested_echo(int32 x) { ensures result == x; } by { execute(); simp(); }",
+        "verifying \"namespace.cpp\"; int32 A::Nested::echo(int32 x) { ensures result == x; } by { execute(); simp(); }",
     );
 }
 
@@ -9914,7 +9949,7 @@ fn selected_function_collision_uses_the_same_identity_binding_as_its_helper() {
 }
 
 #[test]
-fn anonymous_namespace_helper_has_a_valid_identity_based_contract_name() {
+fn anonymous_namespace_helper_is_named_by_its_path() {
     let project = Project::with_fixture(
         "anonymous.cpp",
         "relay",
@@ -9926,7 +9961,10 @@ fn anonymous_namespace_helper_has_a_valid_identity_based_contract_name() {
     let name = lowered
         .contract_name(&import.export().reachable_functions[0].declaration_id)
         .unwrap();
-    assert!(name.starts_with("__click_cpp_decl_"));
+    assert_eq!(
+        click::surface::source_display_name(name).as_deref(),
+        Some("(anonymous namespace)::same")
+    );
     let sidecar = format!(
         "verifying \"anonymous.cpp\"; int32 {name}(int32 x) {{ ensures result == x; }} by {{ execute(); simp(); }} int32 relay(int32 x) {{ ensures result == x; }} by {{ execute(); simp(); }}"
     );
@@ -10191,7 +10229,7 @@ fn check_growing_lifetime_inventory(mode: &str) {
             work <= 32 * size + 128,
             "{mode}, {size}: {work} lowering work"
         );
-        let order = destructor_object_order(lowered.kernel_function().body(), "Guard_destructor");
+        let order = destructor_object_order(lowered.kernel_function().body(), "Guard::~Guard");
         let expected = if mode == "siblings" {
             vec!["guard".to_string(); size + 1]
         } else {
@@ -10525,13 +10563,13 @@ fn check_field_sibling_rounding(direction: &str) {
         else {
             panic!("retain method template call");
         };
-        let instance = &callee.name;
+        let instance = &cpp_spelling(&import, &callee.declaration_id);
         let product = fee * 3;
         let proof = format!(
             r#"verifying "fields.cpp";
-int64 Fee_Mul(int64 fee, int32 at_size) {{ requires fee == {fee}i64; requires at_size == 3; ensures result == {product}i64; }} by {{ execute(); simp(); }}
-int64 Fee_Div(int64 n, int32 d, bool round_down) {{ requires n == {product}i64; requires d == {divisor}; requires round_down == {down}; ensures result == {expected}i64; }} by {{ execute(); simp(); }}
-int64 {instance}(const struct Fee* this, int32 at_size) {{ owns this->fee; owns this->size; requires this->fee == {fee}i64; requires this->size == {divisor}; requires at_size == 3; ensures result == {expected}i64; }} by {{ execute(); simp(); }}
+static int64 Fee::Mul(int64 fee, int32 at_size) {{ requires fee == {fee}i64; requires at_size == 3; ensures result == {product}i64; }} by {{ execute(); simp(); }}
+static int64 Fee::Div(int64 n, int32 d, bool round_down) {{ requires n == {product}i64; requires d == {divisor}; requires round_down == {down}; ensures result == {expected}i64; }} by {{ execute(); simp(); }}
+int64 {instance}(int32 at_size) const {{ owns this->fee; owns this->size; requires this->fee == {fee}i64; requires this->size == {divisor}; requires at_size == 3; ensures result == {expected}i64; }} by {{ execute(); simp(); }}
 int64 Fee::{selected}(int32 at_size) const {{ owns this->fee; owns this->size; requires this->fee == {fee}i64; requires this->size == {divisor}; requires at_size == 3; ensures result == {expected}i64; }} by {{ execute(); simp(); }}
 "#
         );
@@ -12005,15 +12043,15 @@ fn assumed_library_assertions_bind_offline_artifacts_to_config_authority() {
                 let mut config: serde_json::Value =
                     serde_json::from_slice(&fs::read(project.config()).unwrap()).unwrap();
                 config["library_assertions"] = serde_json::json!([]);
-                let bytes = serde_json::to_vec(&config).unwrap();
-                lock["config_sha256"] = format!("{:x}", Sha256::digest(&bytes)).into();
-                fs::write(project.config(), bytes).unwrap();
+                fs::write(project.config(), serde_json::to_vec(&config).unwrap()).unwrap();
+                lock_entry_mut(&mut lock)["config_sha256"] = unit_digest(&project.config()).into();
             }
             _ => unreachable!(),
         }
         let bytes = serde_json::to_vec(&artifact).unwrap();
-        lock["artifact_sha256"] = format!("{:x}", Sha256::digest(&bytes)).into();
-        lock["artifact_bytes"] = bytes.len().into();
+        lock_entry_mut(&mut lock)["artifact_sha256"] =
+            format!("{:x}", Sha256::digest(&bytes)).into();
+        lock_entry_mut(&mut lock)["artifact_bytes"] = bytes.len().into();
         fs::write(project.artifact(), bytes).unwrap();
         fs::write(project.lock(), serde_json::to_vec(&lock).unwrap()).unwrap();
         let error = load_import(&project.config()).unwrap_err();
@@ -12291,8 +12329,9 @@ fn consteval_library_metadata_offline_checker_rejects_forged_provenance_and_kind
         let bytes = serde_json::to_vec(&artifact).unwrap();
         let mut lock: serde_json::Value =
             serde_json::from_slice(&fs::read(project.lock()).unwrap()).unwrap();
-        lock["artifact_sha256"] = format!("{:x}", Sha256::digest(&bytes)).into();
-        lock["artifact_bytes"] = bytes.len().into();
+        lock_entry_mut(&mut lock)["artifact_sha256"] =
+            format!("{:x}", Sha256::digest(&bytes)).into();
+        lock_entry_mut(&mut lock)["artifact_bytes"] = bytes.len().into();
         fs::write(project.artifact(), bytes).unwrap();
         fs::write(project.lock(), serde_json::to_vec(&lock).unwrap()).unwrap();
         let error = load_import(&project.config()).unwrap_err();
@@ -12532,8 +12571,9 @@ fn literal_library_metadata_offline_checker_rejects_forged_constructor_and_liter
         let bytes = serde_json::to_vec(&artifact).unwrap();
         let mut lock: serde_json::Value =
             serde_json::from_slice(&fs::read(project.lock()).unwrap()).unwrap();
-        lock["artifact_sha256"] = format!("{:x}", Sha256::digest(&bytes)).into();
-        lock["artifact_bytes"] = bytes.len().into();
+        lock_entry_mut(&mut lock)["artifact_sha256"] =
+            format!("{:x}", Sha256::digest(&bytes)).into();
+        lock_entry_mut(&mut lock)["artifact_bytes"] = bytes.len().into();
         fs::write(project.artifact(), bytes).unwrap();
         fs::write(project.lock(), serde_json::to_vec(&lock).unwrap()).unwrap();
         let error = load_import(&project.config()).unwrap_err();
@@ -13319,8 +13359,9 @@ fn header_record_artifacts_reject_forged_declaration_and_executable_sources() {
             _ => unreachable!(),
         }
         let bytes = serde_json::to_vec(&artifact).unwrap();
-        lock["artifact_sha256"] = format!("{:x}", Sha256::digest(&bytes)).into();
-        lock["artifact_bytes"] = bytes.len().into();
+        lock_entry_mut(&mut lock)["artifact_sha256"] =
+            format!("{:x}", Sha256::digest(&bytes)).into();
+        lock_entry_mut(&mut lock)["artifact_bytes"] = bytes.len().into();
         fs::write(project.artifact(), bytes).unwrap();
         fs::write(project.lock(), serde_json::to_vec(&lock).unwrap()).unwrap();
         let error = load_import(&project.config()).unwrap_err();
@@ -13495,8 +13536,9 @@ fn nested_record_artifacts_reject_wrong_identity_extent_constness_and_cycles() {
         }
         let bytes = serde_json::to_vec(&artifact).unwrap();
         let mut lock = original_lock.clone();
-        lock["artifact_sha256"] = format!("{:x}", Sha256::digest(&bytes)).into();
-        lock["artifact_bytes"] = bytes.len().into();
+        lock_entry_mut(&mut lock)["artifact_sha256"] =
+            format!("{:x}", Sha256::digest(&bytes)).into();
+        lock_entry_mut(&mut lock)["artifact_bytes"] = bytes.len().into();
         fs::write(project.artifact(), bytes).unwrap();
         fs::write(project.lock(), serde_json::to_vec(&lock).unwrap()).unwrap();
         let error = load_import(&project.config()).unwrap_err();
@@ -13776,8 +13818,9 @@ fn nested_source_field_artifacts_reject_forged_paths_readonly_roots_and_unimplem
         }
         let bytes = serde_json::to_vec(&artifact).unwrap();
         let mut lock = original_lock.clone();
-        lock["artifact_sha256"] = format!("{:x}", Sha256::digest(&bytes)).into();
-        lock["artifact_bytes"] = bytes.len().into();
+        lock_entry_mut(&mut lock)["artifact_sha256"] =
+            format!("{:x}", Sha256::digest(&bytes)).into();
+        lock_entry_mut(&mut lock)["artifact_bytes"] = bytes.len().into();
         fs::write(project.artifact(), bytes).unwrap();
         fs::write(project.lock(), serde_json::to_vec(&lock).unwrap()).unwrap();
         let error = load_import(&project.config()).unwrap_err();
@@ -13952,8 +13995,9 @@ fn projected_call_artifacts_check_target_identity_and_root_constness() {
             }
             let bytes = serde_json::to_vec(&artifact).unwrap();
             let mut lock = original_lock.clone();
-            lock["artifact_sha256"] = format!("{:x}", Sha256::digest(&bytes)).into();
-            lock["artifact_bytes"] = bytes.len().into();
+            lock_entry_mut(&mut lock)["artifact_sha256"] =
+                format!("{:x}", Sha256::digest(&bytes)).into();
+            lock_entry_mut(&mut lock)["artifact_bytes"] = bytes.len().into();
             fs::write(project.artifact(), bytes).unwrap();
             fs::write(project.lock(), serde_json::to_vec(&lock).unwrap()).unwrap();
             let error = load_import(&project.config()).unwrap_err();
@@ -14172,8 +14216,9 @@ fn condition_calls_validate_target_result_arguments_and_metadata() {
         }
         let bytes = serde_json::to_vec_pretty(&forged).unwrap();
         let mut forged_lock = lock.clone();
-        forged_lock["artifact_sha256"] = format!("{:x}", Sha256::digest(&bytes)).into();
-        forged_lock["artifact_bytes"] = bytes.len().into();
+        lock_entry_mut(&mut forged_lock)["artifact_sha256"] =
+            format!("{:x}", Sha256::digest(&bytes)).into();
+        lock_entry_mut(&mut forged_lock)["artifact_bytes"] = bytes.len().into();
         fs::write(project.artifact(), bytes).unwrap();
         fs::write(
             project.lock(),
@@ -14270,7 +14315,7 @@ int choose(int* slot, bool fail) { Guard guard(slot); if (predicate(fail)) { *sl
                 ..
             } => {
                 contains_call(try_body, "predicate")
-                    && matches!(handler.as_ref(), CStatement::Seq(cleanup, rethrow) if contains_call(cleanup, "Guard_destructor") && matches!(rethrow.as_ref(), CStatement::Throw(_)))
+                    && matches!(handler.as_ref(), CStatement::Seq(cleanup, rethrow) if contains_call(cleanup, "Guard::~Guard") && matches!(rethrow.as_ref(), CStatement::Throw(_)))
             }
             _ => false,
         }
@@ -14362,8 +14407,8 @@ int choose(bool fail) { predicate(fail); try { if (fail) { Guard guard(0); } } c
         "value_type": {"kind":"boolean","bits":8,"is_const":false}, "span":span
     }});
     let bytes = serde_json::to_vec(&artifact).unwrap();
-    lock["artifact_sha256"] = format!("{:x}", Sha256::digest(&bytes)).into();
-    lock["artifact_bytes"] = bytes.len().into();
+    lock_entry_mut(&mut lock)["artifact_sha256"] = format!("{:x}", Sha256::digest(&bytes)).into();
+    lock_entry_mut(&mut lock)["artifact_bytes"] = bytes.len().into();
     fs::write(project.artifact(), bytes).unwrap();
     fs::write(project.lock(), serde_json::to_vec(&lock).unwrap()).unwrap();
     let error = load_import(&project.config()).unwrap_err();
@@ -14548,8 +14593,9 @@ fn locked_header_graph_rejects_forged_body_call_and_alias_origins() {
         }
         let bytes = serde_json::to_vec(&forged).unwrap();
         let mut forged_lock = lock.clone();
-        forged_lock["artifact_sha256"] = format!("{:x}", Sha256::digest(&bytes)).into();
-        forged_lock["artifact_bytes"] = bytes.len().into();
+        lock_entry_mut(&mut forged_lock)["artifact_sha256"] =
+            format!("{:x}", Sha256::digest(&bytes)).into();
+        lock_entry_mut(&mut forged_lock)["artifact_bytes"] = bytes.len().into();
         fs::write(project.artifact(), bytes).unwrap();
         fs::write(project.lock(), serde_json::to_vec(&forged_lock).unwrap()).unwrap();
         let error = load_import(&project.config()).unwrap_err();
@@ -14717,7 +14763,7 @@ fn locked_header_graph_verifies_concrete_template_instances_only() {
     int32 {}(int32 value) {{ ensures result == value; }} by {{ execute(); simp(); }}
     int32 choose(int32 value) {{ ensures result == value; }} by {{ execute(); simp(); }}
     "#,
-            callee.name
+            cpp_spelling(&import, &callee.declaration_id)
         ),
     );
 }
@@ -14921,8 +14967,9 @@ fn converted_call_initializers_reject_forged_conversion_types_kinds_and_origins(
         }
         let bytes = serde_json::to_vec(&forged).unwrap();
         let mut forged_lock = lock.clone();
-        forged_lock["artifact_sha256"] = format!("{:x}", Sha256::digest(&bytes)).into();
-        forged_lock["artifact_bytes"] = bytes.len().into();
+        lock_entry_mut(&mut forged_lock)["artifact_sha256"] =
+            format!("{:x}", Sha256::digest(&bytes)).into();
+        lock_entry_mut(&mut forged_lock)["artifact_bytes"] = bytes.len().into();
         fs::write(project.artifact(), bytes).unwrap();
         fs::write(project.lock(), serde_json::to_vec(&forged_lock).unwrap()).unwrap();
         let error = load_import(&project.config()).unwrap_err();
@@ -14966,7 +15013,7 @@ fn converted_call_initializers_emit_active_guard_cleanup_before_rethrow() {
             } => {
                 contains_call(try_body, "helper")
                     && matches!(handler.as_ref(), CStatement::Seq(cleanup, rethrow)
-                    if contains_call(cleanup, "Guard_destructor") && matches!(rethrow.as_ref(), CStatement::Throw(_)))
+                    if contains_call(cleanup, "Guard::~Guard") && matches!(rethrow.as_ref(), CStatement::Throw(_)))
             }
             _ => false,
         }
@@ -15337,8 +15384,9 @@ using Amount = long; inline Amount echo(Amount value) noexcept { return value; }
         }
         let bytes = serde_json::to_vec(&forged).unwrap();
         let mut forged_lock = lock.clone();
-        forged_lock["artifact_sha256"] = format!("{:x}", Sha256::digest(&bytes)).into();
-        forged_lock["artifact_bytes"] = bytes.len().into();
+        lock_entry_mut(&mut forged_lock)["artifact_sha256"] =
+            format!("{:x}", Sha256::digest(&bytes)).into();
+        lock_entry_mut(&mut forged_lock)["artifact_bytes"] = bytes.len().into();
         fs::write(project.artifact(), bytes).unwrap();
         fs::write(project.lock(), serde_json::to_vec(&forged_lock).unwrap()).unwrap();
         let error = load_import(&project.config()).unwrap_err();
@@ -15414,7 +15462,7 @@ fn converted_return_calls_emit_active_object_cleanup_on_exception() {
             } => {
                 contains_call(try_body, "helper")
                     && matches!(handler.as_ref(), CStatement::Seq(cleanup, rethrow)
-                    if contains_call(cleanup, "Guard_destructor") && matches!(rethrow.as_ref(), CStatement::Throw(_)))
+                    if contains_call(cleanup, "Guard::~Guard") && matches!(rethrow.as_ref(), CStatement::Throw(_)))
             }
             _ => false,
         }
@@ -15783,8 +15831,9 @@ int32* run(int32* data) { ensures result == data; } by { execute(); simp(); }
         }
         let bytes = serde_json::to_vec_pretty(&forged).unwrap();
         let mut forged_lock = lock.clone();
-        forged_lock["artifact_sha256"] = format!("{:x}", Sha256::digest(&bytes)).into();
-        forged_lock["artifact_bytes"] = bytes.len().into();
+        lock_entry_mut(&mut forged_lock)["artifact_sha256"] =
+            format!("{:x}", Sha256::digest(&bytes)).into();
+        lock_entry_mut(&mut forged_lock)["artifact_bytes"] = bytes.len().into();
         fs::write(project.artifact(), bytes).unwrap();
         fs::write(
             project.lock(),
@@ -15871,8 +15920,9 @@ int32& run(int32& value) { ensures &result == &value; } by { execute(); simp(); 
         }
         let bytes = serde_json::to_vec_pretty(&forged).unwrap();
         let mut forged_lock = lock.clone();
-        forged_lock["artifact_sha256"] = format!("{:x}", Sha256::digest(&bytes)).into();
-        forged_lock["artifact_bytes"] = bytes.len().into();
+        lock_entry_mut(&mut forged_lock)["artifact_sha256"] =
+            format!("{:x}", Sha256::digest(&bytes)).into();
+        lock_entry_mut(&mut forged_lock)["artifact_bytes"] = bytes.len().into();
         fs::write(project.artifact(), bytes).unwrap();
         fs::write(
             project.lock(),
@@ -16677,8 +16727,8 @@ uint64 probe(int32* backing, uint64 count) {
     check_arithmetic_sidecar(&project, &import, proof);
     let parsed = read_click_project(&project.directory.join("arithmetic.click"), proof).unwrap();
     for label in [
-        "Extent_constructor.contract",
-        "View_constructor.contract",
+        "Extent::Extent.contract",
+        "View::View.contract",
         "probe.contract",
     ] {
         let expanded =
@@ -16718,8 +16768,9 @@ uint64 probe(int32* backing, uint64 count) {
         }
         let bytes = serde_json::to_vec(&artifact).unwrap();
         let mut lock = original_lock.clone();
-        lock["artifact_sha256"] = format!("{:x}", Sha256::digest(&bytes)).into();
-        lock["artifact_bytes"] = bytes.len().into();
+        lock_entry_mut(&mut lock)["artifact_sha256"] =
+            format!("{:x}", Sha256::digest(&bytes)).into();
+        lock_entry_mut(&mut lock)["artifact_bytes"] = bytes.len().into();
         fs::write(project.artifact(), bytes).unwrap();
         fs::write(project.lock(), serde_json::to_vec(&lock).unwrap()).unwrap();
         assert!(
@@ -16847,7 +16898,7 @@ uint64 probe(int32* backing, uint64 count) {
     let expanded = expand_project_claim_source_by_label(
         &parsed,
         &ProgramInputs::program(&import),
-        "Descriptor_constructor.contract",
+        "Descriptor::Descriptor.contract",
     )
     .unwrap();
     verify_program_prepared_project(&parsed.with_entry_source(expanded), &import).unwrap();
@@ -16994,8 +17045,9 @@ fn construction_return_refuses_address_and_memory_sensitive_constructors_offline
         }
         let bytes = serde_json::to_vec_pretty(&forged).unwrap();
         let mut forged_lock = lock.clone();
-        forged_lock["artifact_sha256"] = format!("{:x}", Sha256::digest(&bytes)).into();
-        forged_lock["artifact_bytes"] = bytes.len().into();
+        lock_entry_mut(&mut forged_lock)["artifact_sha256"] =
+            format!("{:x}", Sha256::digest(&bytes)).into();
+        lock_entry_mut(&mut forged_lock)["artifact_bytes"] = bytes.len().into();
         fs::write(valid.artifact(), bytes).unwrap();
         fs::write(
             valid.lock(),
@@ -17370,8 +17422,9 @@ fn locked_unsigned_header_constants_verify_and_reject_forged_values_offline() {
         }
         let bytes = serde_json::to_vec_pretty(&forged).unwrap();
         let mut forged_lock = lock.clone();
-        forged_lock["artifact_sha256"] = format!("{:x}", Sha256::digest(&bytes)).into();
-        forged_lock["artifact_bytes"] = bytes.len().into();
+        lock_entry_mut(&mut forged_lock)["artifact_sha256"] =
+            format!("{:x}", Sha256::digest(&bytes)).into();
+        lock_entry_mut(&mut forged_lock)["artifact_bytes"] = bytes.len().into();
         fs::write(project.artifact(), bytes).unwrap();
         fs::write(
             project.lock(),
@@ -17534,8 +17587,9 @@ fn cpp_native_pointer_artifacts_reject_pointee_substitution_offline() {
         }
         let bytes = serde_json::to_vec(&artifact).unwrap();
         let mut lock = original_lock.clone();
-        lock["artifact_sha256"] = format!("{:x}", Sha256::digest(&bytes)).into();
-        lock["artifact_bytes"] = bytes.len().into();
+        lock_entry_mut(&mut lock)["artifact_sha256"] =
+            format!("{:x}", Sha256::digest(&bytes)).into();
+        lock_entry_mut(&mut lock)["artifact_bytes"] = bytes.len().into();
         fs::write(project.artifact(), bytes).unwrap();
         fs::write(project.lock(), serde_json::to_vec(&lock).unwrap()).unwrap();
         assert!(load_import(&project.config()).is_err(), "{change}");
@@ -17631,7 +17685,11 @@ fn axiomatic_system_header_calls_export_interfaces_only() {
     fs::write(&sidecar, unassumed).unwrap();
     let parsed = read_click_project(&sidecar, unassumed).unwrap();
     let error = verify_program_prepared_project(&parsed, &import).unwrap_err();
-    assert!(error.message().contains(&axiom.name), "{}", error.message());
+    assert!(
+        click::surface::display_source_names(error.message()).contains("ministd::identity"),
+        "{}",
+        error.message()
+    );
 
     // The same function in a project header is program code: its body is
     // exported and verified.
@@ -18048,8 +18106,9 @@ fn forged_cpp_function_pointer_artifacts_are_refused() {
         let mut lock: serde_json::Value =
             serde_json::from_slice(&fs::read(project.lock()).unwrap()).unwrap();
         let bytes = serde_json::to_vec(&artifact).unwrap();
-        lock["artifact_sha256"] = format!("{:x}", Sha256::digest(&bytes)).into();
-        lock["artifact_bytes"] = bytes.len().into();
+        lock_entry_mut(&mut lock)["artifact_sha256"] =
+            format!("{:x}", Sha256::digest(&bytes)).into();
+        lock_entry_mut(&mut lock)["artifact_bytes"] = bytes.len().into();
         fs::write(project.artifact(), bytes).unwrap();
         fs::write(project.lock(), serde_json::to_vec(&lock).unwrap()).unwrap();
         let error = load_import(&project.config()).unwrap_err();
@@ -18109,7 +18168,7 @@ fn cpp_lambdas_passed_for_a_function_pointer_meet_its_named_contract() {
         verify_program_prepared_project(&parsed, &import).map(|_| parsed)
     };
     let parsed = verify(LAMBDA_SIDECAR).unwrap_or_else(|error| panic!("{}", error.message()));
-    for label in ["caller__lambda_0.contract", "caller.contract"] {
+    for label in ["caller::(lambda#0).contract", "caller.contract"] {
         let expanded =
             expand_project_claim_source_by_label(&parsed, &ProgramInputs::program(&import), label)
                 .unwrap_or_else(|error| panic!("{label}: {}", error.message()));
@@ -18120,17 +18179,17 @@ fn cpp_lambdas_passed_for_a_function_pointer_meet_its_named_contract() {
         (
             "    ensures result == y + y;\n",
             "    ensures result >= y;\n",
-            "function `caller__lambda_0` does not satisfy named contract `Doubling`",
+            "function `caller::(lambda#0)` does not satisfy named contract `Doubling`",
         ),
         (
             "    ensures result == y + y;\n",
             "    ensures result == y + y + 1;\n",
-            "caller__lambda_0.ensures_1",
+            "caller::(lambda#0).ensures_1",
         ),
         (
             "int caller::(lambda#0)(int y)",
             "int caller::(lambda#1)(int y)",
-            "`caller__lambda_1` is not defined by any `verifying` source",
+            "`caller::(lambda#1)` is not defined by any `verifying` source",
         ),
     ] {
         let hostile = LAMBDA_SIDECAR.replacen(before, after, 1);
@@ -18138,7 +18197,8 @@ fn cpp_lambdas_passed_for_a_function_pointer_meet_its_named_contract() {
         let Err(error) = verify(&hostile) else {
             panic!("accepted:\n{hostile}");
         };
-        assert!(error.message().contains(expected), "{}", error.message());
+        let message = click::surface::display_source_names(error.message()).into_owned();
+        assert!(message.contains(expected), "{message}");
     }
 }
 
@@ -18286,4 +18346,161 @@ fn cpp_project_unit_exports_several_functions_from_an_external_tree() {
         "{error}"
     );
     let _ = fs::remove_dir_all(&base);
+}
+
+const VIRTUAL_SOURCE: &str = "struct Shape { virtual int area(int scale) const noexcept = 0; };
+struct Square : Shape {
+    int side;
+    int area(int scale) const noexcept override { return scale + 1; }
+};
+int total(const Shape& shape, int scale) noexcept { return shape.area(scale); }
+";
+
+// Virtual dispatch is admitted where every override a call may reach is
+// imported and checked, and no object is built: a polymorphic class with one
+// polymorphic base, reached by reference, and a call graph whose dispatch
+// edges, from a virtual method to each override, close no cycle.
+#[test]
+#[ignore = "nightly: 0.6s in the parallel gate"]
+fn virtual_dispatch_refuses_construction_recursion_and_other_class_shapes() {
+    for (edits, expected) in [
+        (
+            &[(
+                "{ return shape.area(scale); }",
+                "{ Square square; square.side = 1; return square.area(scale); }",
+            )][..],
+            "constructing a polymorphic C++ object remains unsupported",
+        ),
+        // A call back through the interface from an override.
+        (
+            &[
+                (
+                    "= 0; };",
+                    "= 0;\n    int twice(int scale) const noexcept { return area(scale); }\n};",
+                ),
+                ("return scale + 1; }", "return twice(scale); }"),
+            ][..],
+            "recursive C++ calls are outside the supported slice",
+        ),
+        (
+            &[(
+                "return shape.area(scale); }",
+                "return shape.Shape::area(scale); }",
+            )][..],
+            "unsupported C++ method dispatch",
+        ),
+        (
+            &[(
+                "struct Square : Shape {",
+                "struct Other { virtual int other() const noexcept { return 1; } };\nstruct Square : Shape, Other {",
+            )][..],
+            "at most one public non-virtual base",
+        ),
+        (
+            &[(
+                "= 0; };",
+                "= 0; };\nint Shape::area(int scale) const noexcept { return scale; }",
+            )][..],
+            "pure virtual C++ method with a definition",
+        ),
+    ] {
+        let mut source = VIRTUAL_SOURCE.to_string();
+        for (from, to) in edits {
+            assert!(source.contains(from), "{from}");
+            source = source.replacen(from, to, 1);
+        }
+        let project = Project::with_fixture("shapes.cpp", "total", &source);
+        let error = refresh_import(&project.config())
+            .and_then(|_| load_import(&project.config()).map(|_| ()))
+            .unwrap_err();
+        assert!(error.contains(expected), "{error}");
+    }
+    // An override the sidecar does not state is never verified, so the
+    // interface may not stand for it.
+    let project = Project::with_fixture("shapes.cpp", "total", VIRTUAL_SOURCE);
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let error = C0VerificationSession::new_program_prepared(
+        r#"verifying "shapes.cpp";
+extern int Shape::area(int scale) const {
+    requires 0 <= scale and scale <= 1000;
+    ensures scale < result;
+}
+int total(const Shape& shape, int scale) {
+    requires 0 <= scale and scale <= 1000;
+    ensures scale < result;
+} by { execute(); simp(); }
+"#,
+        &import,
+    )
+    .err()
+    .expect("an unstated override must be refused");
+    let rendered = click::surface::display_source_names(&format!("{error:?}")).into_owned();
+    assert!(
+        rendered.contains(
+            "`Square::area` overrides the virtual method `Shape::area` but has no contract"
+        ),
+        "{rendered}"
+    );
+}
+
+// An override of a method of a class whose object carries state is stated on
+// its own class's memory, so its class defines that state; and a defining
+// class's method, stated on that class's memory, is not overridden.
+#[test]
+fn class_object_state_refuses_undefined_and_nested_overrides() {
+    let source = "struct Shape { virtual int area(int scale) const noexcept = 0; };
+struct Square : Shape {
+    int side;
+    int area(int scale) const noexcept override { return side + scale; }
+};
+struct Tile : Square {
+    int area(int scale) const noexcept override { return scale + side; }
+};
+int total(const Shape& shape, int scale) noexcept { return shape.area(scale); }
+";
+    let sidecar = r#"verifying "shapes.cpp";
+class Shape {
+    function size(this) -> int32;
+}
+extern int Shape::area(int scale) const {
+    requires 0 <= scale and scale <= 100;
+    requires 0 <= size(this) and size(this) <= 100;
+    ensures result == size(this) + scale;
+}
+class Square : Shape {
+    function size(this) -> int32 { this->side }
+}
+int Square::area(int scale) const {
+} by { execute(); simp(); }
+int Tile::area(int scale) const {
+} by { execute(); simp(); }
+int total(const Shape& shape, int scale) {
+    requires 0 <= scale and scale <= 100;
+    requires 0 <= size(shape) and size(shape) <= 100;
+    ensures result == size(shape) + scale;
+} by { execute(); simp(); }
+"#;
+    let project = Project::with_fixture("shapes.cpp", "total", source);
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    for (from, to, expected) in [
+        (
+            "",
+            "",
+            "`Tile::area` overrides `Square::area`, which is stated on its class's memory",
+        ),
+        (
+            "class Square : Shape {\n    function size(this) -> int32 { this->side }\n}\n",
+            "",
+            "`Square::area` overrides `Shape::area`, whose class's object carries state",
+        ),
+    ] {
+        let sidecar = sidecar.replacen(from, to, 1);
+        let error = C0VerificationSession::new_program_prepared(&sidecar, &import)
+            .err()
+            .expect("the override must be refused");
+        let rendered = click::surface::display_source_names(&format!("{error:?}")).into_owned();
+        assert!(rendered.contains(expected), "{rendered}");
+    }
 }

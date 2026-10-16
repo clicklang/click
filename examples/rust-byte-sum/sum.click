@@ -1,3 +1,4 @@
+import click::integer;
 import click::machine_integer;
 
 verifying "sum.rs";
@@ -19,9 +20,7 @@ fn sum(bytes: &[u8]) -> i32 {
     }
     loop {
         decreases bytes.len() - i;
-        views bytes[0..bytes.len()];
         invariant i <= bytes.len();
-        invariant bytes.len() <= 1000u64;
         invariant 0 <= to_integer(total) and to_integer(total) <= 255 * to_integer(i);
         invariant to_integer(total) == prefix(bytes, i);
         preserve by {
@@ -44,14 +43,40 @@ fn sum(bytes: &[u8]) -> i32 {
                 }
                 simp();
             }
-            have to_integer(total + bytes[i] as i32) == prefix(bytes, i + 1u64) by auto;
+            have to_integer(total + (bytes[i] as i32)) == to_integer(total) + to_integer((bytes[i] as i32)) by {
+                apply(int32_add_to_integer(total, (bytes[i] as i32))) using { defined(total + (bytes[i] as i32)); }
+            }
+            have to_integer(total + (bytes[i] as i32)) == prefix(bytes, i + 1u64) by {
+                arithmetic() using {
+                    to_integer(total + (bytes[i] as i32)) == to_integer(total) + to_integer((bytes[i] as i32));
+                    to_integer(total) == prefix(bytes, i);
+                    prefix(bytes, i + 1u64) == prefix(bytes, i) + to_integer((bytes[i] as i32));
+                }
+            }
             have 0 <= to_integer(total + bytes[i] as i32) by auto;
-            have to_integer(total + bytes[i] as i32) <= 255 * to_integer(i + 1u64) by auto;
+            have i <= 1000u64 by { arithmetic() using { i <= bytes.len(); bytes.len() <= 1000u64; } }
+            have to_integer(i) <= 1000 by {
+                apply(uint64_less_equal_to_integer(i, 1000u64)) using { i <= 1000u64; }
+            }
+            have to_integer(i) + 1 <= 18446744073709551615 by {
+                arithmetic() using { to_integer(i) <= 1000; }
+            }
+            have to_integer(i + 1u64) == to_integer(i) + 1 by {
+                apply(uint64_add_to_integer(i, 1u64)) using { to_integer(i) + 1 <= 18446744073709551615; }
+            }
+            have to_integer((bytes[i] as i32)) <= 255 by {
+                apply(int32_less_equal_to_integer((bytes[i] as i32), 255)) using { 255 >= (bytes[i] as i32); }
+            }
+            have to_integer(total + (bytes[i] as i32)) <= 255 * to_integer(i + 1u64) by {
+                arithmetic() using {
+                    to_integer(total) <= 255 * to_integer(i);
+                    to_integer((bytes[i] as i32)) <= 255;
+                    to_integer(total + (bytes[i] as i32)) == to_integer(total) + to_integer((bytes[i] as i32));
+                    to_integer(i + 1u64) == to_integer(i) + 1;
+                }
+            }
             execute_until(assignment(i, 1));
             step();
-            have i <= bytes.len();
-            step(); step(); step();
-            close_invariants();
         }
     }
     have i == bytes.len() by {

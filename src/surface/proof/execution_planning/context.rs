@@ -1022,7 +1022,7 @@ fn registered_static_load_matches_snapshot(
     matches!(
         pointer.block,
         crate::kernel::PointerBlock::Concrete(ref block)
-            if block.starts_with("static:") || block.starts_with("global:")
+            if PointerBlock::is_static_name(block) || PointerBlock::is_global_name(block)
     )
 }
 

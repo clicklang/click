@@ -121,7 +121,7 @@ uint64 label_fit(uint64 length) {
 ```
 
 `unsigned long` is `uint64` under Click's default target,
-`x86_64-linux-userspace`; see
+`x86_64-unknown-linux-gnu` in `userspace` mode; see
 [Supported types](../reference/language/c.md#supported-types). The proof
 `execute(); simp();` runs the C symbolically along every path and then closes
 each postcondition from what execution established.
@@ -159,7 +159,7 @@ from the compile command: `-I`, `-iquote`, `-isystem`, `-D`, `-U`, and
     "label": {
       "language": "c",
       "compiler": "/usr/bin/gcc",
-      "environment": {"PATH": "/usr/bin:/bin", "LC_ALL": "C"},
+      "env": {"PATH": "/usr/bin:/bin", "LC_ALL": "C"},
       "args": ["-std=c11", "-O2", "-Iinclude", "-DLABEL_CAPACITY=32"],
       "sources": {
         "label_fit.c": {}
@@ -184,7 +184,7 @@ preprocessor flags:
     "label": {
       "language": "c",
       "compiler": "/usr/bin/gcc",
-      "environment": {"PATH": "/usr/bin:/bin", "LC_ALL": "C"},
+      "env": {"PATH": "/usr/bin:/bin", "LC_ALL": "C"},
       "args": ["-Iinclude", "-DLABEL_CAPACITY=32"],
       "sources": {
         "label_fit.c": {}
@@ -220,9 +220,10 @@ Some details of the configuration:
   default the project directory; a unit may instead read an external tree,
   such as a git submodule, in place.
 - The target is the project's: without a `"target"` the project uses
-  `x86_64-linux-userspace`. Linux kernel code uses `x86_64-linux-kernel`,
-  selected by `"target": "x86_64-linux-kernel"` in `click.project.json`,
-  which also selects the modeled pthread runtime; see
+  `x86_64-unknown-linux-gnu`, and without a `"mode"` it uses
+  `userspace`. Linux kernel code uses `kernel` mode, selected by
+  `"mode": "kernel"` in `click.project.json`, the same file whose
+  `"runtime"` selects the modeled pthread runtime; see
   [Selecting a target](../reference/language/c.md#selecting-a-target).
 - Click does not read a `Makefile` or a C `compile_commands.json`. Copy the
   flags by hand from `make -n` output or from the entry's `arguments` or
@@ -348,7 +349,7 @@ add it to the unit as a second source; the unit's `args` apply to both:
     "label": {
       "language": "c",
       "compiler": "/usr/bin/gcc",
-      "environment": {"PATH": "/usr/bin:/bin", "LC_ALL": "C"},
+      "env": {"PATH": "/usr/bin:/bin", "LC_ALL": "C"},
       "args": ["-Iinclude", "-DLABEL_CAPACITY=32"],
       "sources": {
         "label_fit.c": {},
@@ -375,8 +376,9 @@ uint64 label_fit(uint64 length) {
 }
 
 uint64 label_measure(const char* src) {
-    requires click::cstr::readable(src);
+    views s: click::cstr::cstr_at(src, _);
     ensures result < 32;
+    ensures result <= s.len;
 } by {
     execute();
     simp();
@@ -409,16 +411,18 @@ with `#include <stdio.h>`, the lock would fail with:
 
 ```text
 click: unit `label`: preprocess label_copy.c: compiler exited with exit status: 1: In file included from label_copy.c:1:
-<click>/stdio.h:2:2: error: #error "<stdio.h> is not one of Click's modeled system headers for x86_64-linux-userspace; see docs/reference/language/c.md#system-headers"
-    2 | #error "<stdio.h> is not one of Click's modeled system headers for x86_64-linux-userspace; see docs/reference/language/c.md#system-headers"
+<click>/stdio.h:2:2: error: #error "<stdio.h> is not one of Click's modeled system headers for x86_64-unknown-linux-gnu (userspace); see docs/reference/language/c.md#system-headers"
+    2 | #error "<stdio.h> is not one of Click's modeled system headers for x86_64-unknown-linux-gnu (userspace); see docs/reference/language/c.md#system-headers"
       |  ^~~~~
 ```
 
 The contracts are in the [standard library](../reference/library/index.md).
-`strlen` requires `cstr::readable(src)`: a readable, NUL-terminated string. The
-caller must state that requirement. `external assumptions` lists every
-contract the result depends on but did not check: here, Click's `strlen`
-contract.
+`strlen` views a C string, `views s: cstr_at(bytes, _)`, and returns its
+length `s.len`. The caller must hold the string: `label_measure` views
+`cstr_at(src, _)` itself and names its length `s.len`, which the C signature
+does not carry, so its postcondition can compare the result with it.
+`external assumptions` lists every contract the result depends on but did
+not check: here, Click's `strlen` contract.
 
 ### Calls into other project functions
 
@@ -441,7 +445,7 @@ lists it among the external assumptions. See
 Try the remaining function, `label_copy`:
 
 ```click filename=label.click
-import click::integer;
+import click::cstr;
 import click::machine_integer;
 
 verifying "label_fit.c";
@@ -450,105 +454,63 @@ verifying "label_copy.c";
 uint64 label_fit(uint64 length) {
     ensures result < 32;
     ensures result <= length;
+    ensures length < 32u64 implies result == length;
+    ensures 32u64 <= length implies result == 31u64;
 } by {
-    execute();
-    have result <= length by auto;
-    simp();
-}
-
-theorem label_source_prefix_viewable(bytes: uint8[], length: uint64, taken: uint64) {
-    requires length < 18446744073709551615u64;
-    requires length + 1u64 <= 9223372036854775807u64;
-    requires viewable(bytes[0u64..length + 1u64]);
-    requires taken <= length;
-    ensures viewable(bytes[0u64..taken]) by {
-        apply(uint64_less_than_to_integer(length, 18446744073709551615u64));
-        apply(uint64_less_equal_to_integer(taken, length));
-        apply(uint64_add_to_integer(length, 1u64));
-        apply(uint64_to_integer_less_equal_implies_less_equal(taken, length + 1u64));
-        apply(uint64_less_equal_transitive(taken, length + 1u64, 9223372036854775807u64));
-        simp() using {
-            taken <= length + 1u64;
-            taken <= 9223372036854775807u64;
-            viewable(bytes[0u64..length + 1u64]);
-        };
+    if length < 32u64 {
+        execute();
+        have 32u64 <= length implies result == 31u64 by {
+            intro();
+            apply(uint64_less_equal_less_than_transitive(32u64, length, 32u64));
+            contradiction(32u64 < 32u64);
+        }
+        simp();
+    } else {
+        execute();
+        have result <= length by auto;
+        have length < 32u64 implies result == length by {
+            intro();
+            contradiction(length < 32u64);
+        }
+        simp();
     }
 }
 
 uint64 label_measure(const char* src) {
-    requires click::cstr::readable(src);
-    ensures result < 32;
-} by {
-    execute();
-    simp();
-}
+    views s: cstr_at(src, _);
+    ensures s.len < 32u64 implies result == s.len;
+    ensures 32u64 <= s.len implies result == 31u64;
+} by auto;
 
 uint64 label_copy(char* dst, const char* src) {
-    requires click::cstr::readable(src);
+    views s: cstr_at(src, _);
     owns dst[0u64..32u64];
-    requires separate(memory(dst[0u64..32u64]), memory(src[0u64..32u64]));
-    ensures result < 32;
+    requires separate(memory(dst[0u64..32u64]), memory(src[0u64..s.len + 1u64]));
+    ensures s.len < 32u64 implies result == s.len;
+    ensures 32u64 <= s.len implies result == 31u64;
     ensures dst[result] == '\0';
 } by {
     step();
-    unfold(click::cstr::readable);
-    have exists (len: uint64) {
-        len < 18446744073709551615u64 and
-        viewable(((uint8*)src)[0..len + 1u64]) and
-        forall (k: uint64) { k < len implies ((uint8*)src)[k] != 0u8 } and
-        ((uint8*)src)[len] == 0u8 and
-        forall (k: uint64) { k < len + 1u64 implies defined(((uint8*)src)[k]) }
-    } by {
-        obtain (len: uint64) { at(function.entry,
-            len < 18446744073709551615u64 and
-            viewable(((uint8*)src)[0..len + 1u64]) and
-            forall (k: uint64) { k < len implies ((uint8*)src)[k] != 0u8 } and
-            ((uint8*)src)[len] == 0u8 and
-            forall (k: uint64) { k < len + 1u64 implies defined(((uint8*)src)[k]) }
-        ) }
-        witness { len: len };
-        extract(at(function.entry, len) < at(function.entry, 18446744073709551615u64));
-        transport(at(function.entry, viewable(((uint8*)src)[0..len + 1u64])),
-                  viewable(((uint8*)src)[0..len + 1u64])) using {
-            at(function.entry, viewable(((uint8*)src)[0..len + 1u64]));
-        }
-        have forall (k: uint64) { k < len + 1u64 implies defined(((uint8*)src)[k]) } by {
-            extract(at(function.entry, forall (k: uint64) {
-                k < len + 1u64 implies defined(((uint8*)src)[k])
-            }));
-            intro();
-            intro();
-            instantiate(at(function.entry, forall (k: uint64) {
-                k < len + 1u64 implies defined(((uint8*)src)[k])
-            }), k) using { k < len + 1u64; }
-            transport(at(function.entry, defined(((uint8*)src)[k])),
-                      defined(((uint8*)src)[k])) using {
-                at(function.entry, defined(((uint8*)src)[k]));
-            }
-        }
-        extract(at(function.entry, forall (k: uint64) { k < len implies ((uint8*)src)[k] != 0u8 }));
-        extract(at(function.entry, ((uint8*)src)[len] == 0u8));
-        simp();
+    step();
+    step();
+    open(cstr_at(src, s.len)) {
+        execute();
     }
-    let { result: length } = step(strlen(src), {});
-    let { result: taken } = step(label_fit(length), {});
-    have viewable(((uint8*)src)[0u64..length + 1u64]) by {
-        transport(at(statement(2).entry, viewable(((uint8*)src)[0u64..length + 1u64])),
-                  viewable(((uint8*)src)[0u64..length + 1u64])) using {
-            at(statement(2).entry, viewable(((uint8*)src)[0u64..length + 1u64]));
-        }
-    }
-    apply(label_source_prefix_viewable(((uint8*)src), length, taken));
-    execute();
-    simp();
 }
 ```
 
-The theorem cites `uint64` facts from the `click::integer` and
-`click::machine_integer` library modules, so the sidecar imports both; see
+`label_fit` now states exactly what it returns, and `label_measure` and
+`label_copy` state exactly which length they keep: the whole string when it
+fits, 31 bytes otherwise. `label_fit`'s proof splits on the length and cites
+a `uint64` ordering theorem from the `click::machine_integer` library module,
+so the sidecar imports it, and `click::cstr` for `cstr_at`; see
 [Click library imports](sidecars.md#click-library-imports).
-The copy needs a separate destination and source prefix, because `memcpy`
-requires its accessed ranges not to overlap. Its source may be `const`, as
+`label_copy` opens the string it views to lend a prefix of its bytes to
+`memcpy`. `memcpy` owns its destination and views its source, and a call
+cannot lend overlapping bytes both ways, so the copy needs a separate
+destination and source. `label_copy` owns `dst` and views the string, which
+keeps them apart, and its contract also states the separation over the
+string's own bytes, `src[0u64..s.len + 1u64]`. Its source may be `const`, as
 in the existing C. The destination's 32-byte ownership and `label_fit`'s bound
 also cover the terminator store. Verify this complete sidecar with
 `click verify label.click`.

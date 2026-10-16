@@ -376,3 +376,39 @@ fn scalar_read_conflicts_require_the_same_snapshot() {
 mod scaling_tests {
     include!("../../scaling_tests/kernel/equality_graph/algebraic_tests.rs");
 }
+
+#[test]
+fn model_constructor_lookup_uses_shared_classes_and_scoped_evidence() {
+    let ty = model_type("ConstructorLookup", AlgebraicValueType::C(CType::Int32));
+    let (a, b, c) = (variable(&ty, 71), variable(&ty, 72), variable(&ty, 73));
+    let ctor = constructor(&ty, "Node", vec![scalar(17)]);
+    for reverse in [false, true] {
+        let base = PureFactContext::new().assume_proposition(eq(&a, &b));
+        let joined = if reverse {
+            base.clone()
+                .assume_proposition(eq(&c, &ctor))
+                .assume_proposition(eq(&b, &c))
+        } else {
+            base.clone()
+                .assume_proposition(eq(&b, &c))
+                .assume_proposition(eq(&c, &ctor))
+        };
+        assert_eq!(joined.known_algebraic_constructor(&a), Some(ctor.clone()));
+        assert_eq!(base.known_algebraic_constructor(&a), None);
+        let mut withdrawn = joined.clone();
+        withdrawn.remove_proposition_fact(&eq(&b, &c));
+        assert_eq!(withdrawn.known_algebraic_constructor(&a), None);
+        assert_eq!(
+            withdrawn.known_algebraic_constructor(&c),
+            Some(ctor.clone())
+        );
+        assert_eq!(joined.known_algebraic_constructor(&a), Some(ctor.clone()));
+    }
+    let other_ty = model_type(
+        "OtherConstructorLookup",
+        AlgebraicValueType::C(CType::Int32),
+    );
+    let other = variable(&other_ty, 71);
+    let joined = PureFactContext::new().assume_proposition(eq(&a, &ctor));
+    assert_eq!(joined.known_algebraic_constructor(&other), None);
+}

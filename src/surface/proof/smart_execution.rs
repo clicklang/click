@@ -279,7 +279,12 @@ impl<'a> Proof<'a> {
             "execution-frontier fact transport",
         ) {
             Ok(proof) => Ok(Some(proof)),
-            Err(error) if crate::instrumentation::deadline_exceeded() => Err(error),
+            Err(error) if crate::instrumentation::deadline_exceeded() => {
+                // A budget stop is a failure of this written operation, not
+                // an abandoned candidate. Retain the checked predecessor.
+                self.record_certification_failure_trace(self.claim_label(), 0);
+                Err(self.attach_step_diagnostic(error))
+            }
             Err(_) => Ok(None),
         }
     }

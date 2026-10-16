@@ -93,8 +93,10 @@ fn graph_reference_checks_index_growing_caller_places_once() {
         };
         let mut caller = CppFunction {
             axiom: None,
+            virtual_method: None,
             declaration_id: "caller".into(),
             name: "caller".into(),
+            path: vec!["caller".into()],
             function_kind: CppFunctionKind::Free,
             return_type: signed_integer(32, false),
             parameters: (0..size)
@@ -137,8 +139,10 @@ fn graph_reference_checks_index_growing_caller_places_once() {
         }
         let callee = CppFunction {
             axiom: None,
+            virtual_method: None,
             declaration_id: "read".into(),
             name: "read".into(),
+            path: vec!["read".into()],
             function_kind: CppFunctionKind::Free,
             return_type: signed_integer(32, false),
             parameters: vec![place("parameter-0".into(), reference_type)],
@@ -184,8 +188,10 @@ fn call_depth_budget_accounts_for_previously_checked_subgraphs() {
         let mut functions = (0..size)
             .map(|index| CppFunction {
                 axiom: None,
+                virtual_method: None,
                 declaration_id: format!("f{index}"),
                 name: format!("f{index}"),
+                path: vec![format!("f{index}").to_string()],
                 function_kind: CppFunctionKind::Free,
                 return_type: signed_integer(32, false),
                 parameters: vec![],
@@ -258,6 +264,8 @@ fn record_inventory_reachability_rejects_unused_layouts() {
         destructor: None,
         span: cleanup_span(),
         base: None,
+        polymorphic: false,
+        path: Vec::new(),
         fields: vec![CppField {
             declaration_id: "field".into(),
             name: "value".into(),
@@ -325,8 +333,10 @@ fn record_inventory_reachability_rejects_unused_layouts() {
     );
     let function = CppFunction {
         axiom: None,
+        virtual_method: None,
         declaration_id: "function".into(),
         name: "read".into(),
+        path: vec!["read".into()],
         function_kind: CppFunctionKind::Free,
         return_type: signed_integer(32, false),
         declared_noexcept: true,
@@ -360,6 +370,8 @@ fn standard_byte_template_metadata_validation_scales_with_inventory() {
                 size_bytes: 4,
                 alignment_bytes: 4,
                 base: None,
+                polymorphic: false,
+                path: Vec::new(),
                 destructor: None,
                 span: cleanup_span(),
                 fields: vec![CppField {
@@ -415,6 +427,8 @@ fn embedded_record_graph_validation_is_linear_and_rejects_cycles() {
                 destructor: None,
                 span: cleanup_span(),
                 base: None,
+                polymorphic: false,
+                path: Vec::new(),
                 fields: vec![CppField {
                     declaration_id: format!("f{index}"),
                     name: "value".into(),
@@ -504,6 +518,8 @@ fn field_projection_lookup_does_not_scan_sibling_fields() {
             destructor: None,
             span: cleanup_span(),
             base: None,
+            polymorphic: false,
+            path: Vec::new(),
             fields: (0..size)
                 .map(|index| CppField {
                     declaration_id: format!("f{index}"),
@@ -565,6 +581,8 @@ fn single_base_inventory_walks_have_linear_work_and_reject_cycles() {
                 alignment_bytes: 4,
                 destructor: None,
                 span: cleanup_span(),
+                polymorphic: false,
+                path: Vec::new(),
                 base: (index + 1 < size).then(|| CppBase {
                     value_type: CppType::Record {
                         declaration_id: format!("r{}", index + 1),
@@ -662,7 +680,9 @@ fn cross_header_call_origins_have_linear_graph_work() {
     };
     let function = |name: String, source: String, body| CppFunction {
         axiom: None,
+        virtual_method: None,
         declaration_id: name.clone(),
+        path: vec![name.clone()],
         name,
         function_kind: CppFunctionKind::Free,
         return_type: CppType::Void,

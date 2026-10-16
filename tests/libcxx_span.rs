@@ -7,17 +7,21 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use click::cli::read_click_project;
-use click::languages::cpp::{PreparedCppImport, load_import, refresh_import};
+use click::languages::cpp::PreparedCppImport;
+#[path = "support/cpp_description.rs"]
+mod cpp_description;
 use click::surface::{
-    ProgramInputs, expand_project_claim_source_by_label, verify_program_prepared_project,
+    ProgramInputs, display_source_names, expand_project_claim_source_by_label,
+    verify_program_prepared_project,
 };
+use cpp_description::{load_import, refresh_import};
 
 #[path = "support/pinned_clang.rs"]
 mod pinned_clang;
 use pinned_clang::{output, pinned_clang, sha256};
 
 const ARCHIVE: &[u8] = include_bytes!("fixtures/libcxx-span/input-closure.tar.gz");
-const SPAN: &str = "struct span__int__value_unsigned_long_18446744073709551615";
+const SPAN: &str = "std::span<int>";
 
 /// Imports `probe` from `harness`, compiled against the pinned libc++.
 fn libcxx_fixture(
@@ -76,7 +80,7 @@ fn libcxx_fixture(
         "dependencies": dependencies,
         "function": "probe", "artifact": "span.click-cpp.json"
     });
-    let config_path = root.join("span.click.import.json");
+    let config_path = root.join("span.import-description.json");
     fs::write(&config_path, serde_json::to_vec_pretty(&config).unwrap()).unwrap();
     refresh_import(&config_path).unwrap();
     fs::remove_file(exporter).unwrap();
@@ -111,7 +115,7 @@ fn check(root: &Path, import: &PreparedCppImport, sidecar: &str, refusals: &[(St
         let error = verify_program_prepared_project(&parsed, import)
             .expect_err("an unsupported claim must not verify");
         assert!(
-            error.message().contains(expected),
+            display_source_names(error.message()).contains(expected),
             "{}\n{edited}",
             error.message()
         );
@@ -132,7 +136,7 @@ fn libcxx_span_binds_the_model_accessors_and_catalog() {
         .export()
         .records
         .iter()
-        .find(|record| format!("struct {}", record.name) == SPAN)
+        .find(|record| record.path.join("::") == SPAN)
         .unwrap();
     assert_eq!(
         span.fields
@@ -159,7 +163,7 @@ fn libcxx_span_binds_the_model_accessors_and_catalog() {
         &sidecar,
         &[(
             sidecar.replace("    requires 2u64 <= std_span_size(s);\n", ""),
-            "operator_index",
+            "::operator[]",
         )],
     );
     fs::remove_dir_all(root).unwrap();

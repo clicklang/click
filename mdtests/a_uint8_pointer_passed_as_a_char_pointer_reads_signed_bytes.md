@@ -3,7 +3,7 @@
 GCC and Clang accept passing an `unsigned char *` (`uint8 *`) where a
 `char *` is expected with only a `-Wpointer-sign` warning, so Click lowers the
 uncast argument exactly as the explicit `(char *)` cast. Under the default
-x86_64-linux-userspace target plain `char` is signed, so the callee reads the
+user-space target plain `char` is signed, so the callee reads the
 byte `0xC8` (200) as `-56`: the conversion reinterprets the bytes rather than
 just being accepted. The same holds for an array argument, which decays to
 `uint8 *`, and for a `const char *` parameter of a `static inline` callee.

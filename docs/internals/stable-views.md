@@ -8,8 +8,8 @@ a test. The public meaning for contract authors is in
 [Resources](../concepts/resources.md); the kernel layout is in
 [Kernel implementation](kernel.md) and [Separation logic](separation-logic.md).
 The campaign that landed it, "fix-views", ran from 2026-09-11 to
-2026-09-14; its dated checkpoints are in the git history of
-`issues/fix-views.md`.
+2026-09-14; its dated checkpoints are preserved in the
+[archived campaign record](https://github.com/clicklang/click/blob/0e1f41f01614184635ccabcd3766cbb3a6120dea/issues/fix-views.md).
 
 ## Meaning
 
@@ -121,7 +121,9 @@ lending the requested subrange and keeping the remainder usable, from the
 caller's own view by a reborrow, from an owned composite by a composite
 lend, and from a different owned composite or the caller's owned frontier
 when the viewed composite's checked expansion is covered piecewise and its
-facts hold at the call. Coverage starts from the exact owner occurrence
+facts hold at the call. A fact holds by the exact routes a fold uses: a
+quantified fact the caller states matches the body's up to its binder and the
+registered loads that binder indexes. Coverage starts from the exact owner occurrence
 checked before reservations. If memory splitting assigns a fresh occurrence
 to a residual fragment, the planner accepts it only when the original owner
 uniquely supported the view and the residual is contained in that owner. It

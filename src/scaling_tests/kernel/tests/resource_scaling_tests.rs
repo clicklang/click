@@ -1257,6 +1257,40 @@ fn a_proved_parameter_separation_reads_only_the_nominated_members() {
     );
 }
 
+/// Refusing a missing or overlapping field must be as local as proving a
+/// separation: the frame's other independent parameters are not candidates.
+#[test]
+fn refused_parameter_separation_ignores_unrelated_owned_objects() {
+    let mut samples = Vec::new();
+    for size in PARAMETER_SIZES {
+        let _session = crate::kernel::VerificationSession::enter();
+        let (_, assumptions) = parameter_frame(size);
+        let range = |id| {
+            CResource::Memory(CMemoryRange::new_with_element_width(
+                parameter_base(id),
+                1u32.into(),
+                2u32.into(),
+                4,
+            ))
+        };
+        let left = range(FIRST_PARAMETER);
+        let outside = range(3 * FIRST_PARAMETER);
+        let (refused, work) = crate::instrumentation::measure_deterministic_work(|| {
+            !assumptions.proves_resource_separate(&left, &outside)
+                && !assumptions.proves_resource_separate(&left, &left)
+        });
+        assert!(
+            refused,
+            "unowned or overlapping fields must not be separated"
+        );
+        samples.push((size, work));
+    }
+    assert!(
+        samples.iter().all(|(_, work)| *work == samples[0].1),
+        "{samples:?}"
+    );
+}
+
 #[test]
 fn normalizing_external_ranges_compares_only_related_bases() {
     let mut samples = Vec::new();

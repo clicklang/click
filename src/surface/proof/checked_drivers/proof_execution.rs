@@ -52,8 +52,15 @@ pub(in crate::surface::proof) fn take_short_of_exit_decline() -> bool {
 /// unimplemented.
 #[track_caller]
 fn decline_region_depth<T>() -> Result<Option<T>, ClickError> {
-    REGION_DEPTH_DECLINED.with(|declined| declined.set(true));
+    note_region_depth_exceeded();
     decline()
+}
+
+/// Records that an analysis of the proof's regions stopped at the nesting
+/// bound, so a driver that then finds no region to run reports the bound
+/// rather than an unimplemented shape.
+fn note_region_depth_exceeded() {
+    REGION_DEPTH_DECLINED.with(|declined| declined.set(true));
 }
 
 /// Takes whether any driver declined on the region-depth bound since the
@@ -346,6 +353,7 @@ fn checked_execution_region_end_at(
     initial: CheckedExecutionRegionEnd,
 ) -> Option<CheckedExecutionRegionEnd> {
     if depth >= MAX_CHECKED_EXECUTION_REGION_DEPTH {
+        note_region_depth_exceeded();
         return None;
     }
     let mut node = node;
@@ -586,6 +594,7 @@ fn checked_execution_region_contains_source_at(
     depth: usize,
 ) -> bool {
     if depth >= MAX_CHECKED_EXECUTION_REGION_DEPTH {
+        note_region_depth_exceeded();
         return false;
     }
     let nested = |region: &InternalProofNode| {
@@ -2349,10 +2358,19 @@ pub(in crate::surface::proof) fn advance_preservation_region<'a>(
                             FrontierPosition::StatementEntry { .. }
                         )
                     }) {
-                        unfinished.push(UnfinishedPreservationPath {
-                            proof: proof.clone(),
-                            last_tactic,
-                        });
+                        // The script ran out before the body did: the rest
+                        // of the body runs as the automatic closer runs a
+                        // whole one, and each path it reaches closes its
+                        // back edge like a written one. A rest that does not
+                        // run reports the frontier the script reached.
+                        match walk_loop_body(claim_label, proof.clone()) {
+                            Ok((completed, _)) => leaves.extend(completed),
+                            Err(error) => unfinished.push(UnfinishedPreservationPath {
+                                proof: proof.clone(),
+                                last_tactic,
+                                walk_failure: Some(error.raw_summary().to_string()),
+                            }),
+                        }
                         return Ok(proof);
                     }
                     return Err(ClickError::new(format!(
@@ -2813,6 +2831,8 @@ pub(in crate::surface::proof) fn advance_preservation_region<'a>(
 pub(in crate::surface::proof) struct UnfinishedPreservationPath<'a> {
     pub(in crate::surface::proof) proof: Proof<'a>,
     pub(in crate::surface::proof) last_tactic: Option<(usize, &'static str)>,
+    /// Why the rest of the body did not run from where the script stopped.
+    pub(in crate::surface::proof) walk_failure: Option<String>,
 }
 
 impl UnfinishedPreservationPath<'_> {
@@ -2829,7 +2849,12 @@ impl UnfinishedPreservationPath<'_> {
             leaves,
             self.last_tactic,
         ) {
-            Some(frontier) => ClickError::new(frontier),
+            Some(frontier) => ClickError::new(match &self.walk_failure {
+                Some(failure) => {
+                    format!("{frontier}; the rest of the body did not run from there: {failure}")
+                }
+                None => frontier,
+            }),
             None => ClickError::new(format!(
                 "`{claim_label}` must execute exactly one complete loop-body iteration, ending at the body's end, a `continue`, or a `break`"
             )),
@@ -4455,6 +4480,7 @@ fn advance_checked_branch_arms<'a>(
 /// structural driver.
 fn arm_execution_steps(node: &InternalProofNode, depth: usize) -> Option<Vec<ProofStep>> {
     if depth >= MAX_CHECKED_EXECUTION_REGION_DEPTH {
+        note_region_depth_exceeded();
         return None;
     }
     let mut steps = Vec::new();

@@ -1,0 +1,107 @@
+{
+  "units": {
+    "bitcoin": {
+      "language": "c++",
+      "exceptions": true,
+      "rtti": true,
+      "args": [
+        "--sysroot=sysroot",
+        "-DBOOST_ALL_NO_LIB",
+        "-DBOOST_MULTI_INDEX_DISABLE_SERIALIZATION",
+        "-DBOOST_NO_CXX98_FUNCTION_BASE",
+        "-Ibitcoin-build/src",
+        "-Ibitcoin-src/src",
+        "-Ibitcoin-src/src/univalue/include",
+        "-Ibitcoin-src/src/secp256k1/include",
+        "-nostdinc++",
+        "-isystem",
+        "sysroot/usr/include/c++/12",
+        "-isystem",
+        "sysroot/usr/include/x86_64-linux-gnu/c++/12",
+        "-isystem",
+        "sysroot/usr/include/x86_64-linux-gnu",
+        "-O2",
+        "-g",
+        "-fmacro-prefix-map=bitcoin-src/src=.",
+        "-U_FORTIFY_SOURCE",
+        "-D_FORTIFY_SOURCE=3",
+        "-Wstack-protector",
+        "-fstack-protector-all",
+        "-fcf-protection=full",
+        "-fstack-clash-protection",
+        "-Wall",
+        "-Wextra",
+        "-Wgnu",
+        "-Wformat",
+        "-Wformat-security",
+        "-Wvla",
+        "-Wshadow-field",
+        "-Wthread-safety",
+        "-Wloop-analysis",
+        "-Wredundant-decls",
+        "-Wunused-member-function",
+        "-Wdate-time",
+        "-Wconditional-uninitialized",
+        "-Woverloaded-virtual",
+        "-Wsuggest-override",
+        "-Wimplicit-fallthrough",
+        "-Wunreachable-code",
+        "-Wdocumentation",
+        "-Wself-assign",
+        "-Wundef",
+        "-Wno-unused-parameter"
+      ],
+      "sources": {
+        "bitcoin-src/src/consensus/amount.h": {
+          "translation_unit": "bitcoin-src/src/policy/feerate.cpp",
+          "functions": [
+            "MoneyRange"
+          ],
+          "dependencies": [
+            "sysroot/usr/include/x86_64-linux-gnu/bits/stdint-intn.h",
+            "sysroot/usr/include/x86_64-linux-gnu/bits/types.h"
+          ]
+        },
+        "bitcoin-src/src/serialize.h": {
+          "translation_unit": "bitcoin-src/src/policy/feerate.cpp",
+          "functions": [
+            "GetSizeOfCompactSize"
+          ],
+          "dependencies": [
+            "sysroot/usr/include/x86_64-linux-gnu/bits/stdint-uintn.h",
+            "sysroot/usr/include/x86_64-linux-gnu/bits/types.h"
+          ]
+        },
+        "bitcoin-src/src/util/feefrac.h": {
+          "translation_unit": "bitcoin-src/src/policy/feerate.cpp",
+          "functions": [
+            "FeeFrac::operator+=",
+            "FeeFrac::operator-=",
+            "FeeFrac::IsEmpty",
+            "FeeFrac::Mul",
+            "FeeFrac::Div"
+          ],
+          "dependencies": [
+            "bitcoin-src/src/util/check.h",
+            "sysroot/usr/include/c++/12/string_view",
+            "sysroot/usr/include/x86_64-linux-gnu/bits/stdint-intn.h",
+            "sysroot/usr/include/x86_64-linux-gnu/bits/types.h"
+          ],
+          "library_assertions": [
+            {
+              "kind": "checked_boolean_statement_with_literal_metadata",
+              "function": "inline_assertion_check",
+              "header": "bitcoin-src/src/util/check.h",
+              "sha256": "82705f6150e57b4de9123d22b3820f60f6f75f58c1c8b9fbff78863afca816a7",
+              "literal_constructor": {
+                "function": "std::basic_string_view::basic_string_view",
+                "header": "sysroot/usr/include/c++/12/string_view",
+                "sha256": "9b1a575ffad1e8575cd6fc1c9a24b0cdde3793275be431726cc9c1b178a8733c"
+              }
+            }
+          ]
+        }
+      }
+    }
+  }
+}

@@ -21,8 +21,13 @@ and a loop walking past a member array. The fixtures are
 siblings. Step 3 refuses passing a member pointer to a callee, or folding it
 into a resource, whose clause claims more than the member
 (`mdtests/a_member_pointer_cannot_be_passed_as_a_longer_range.md`). Still
-accepted: reaching another object through address equality inside a callee,
-or from a pointer loaded at function entry (Phase B).
+accepted before Phase B: reaching another object through a C address
+comparison inside a callee. Phase B makes a C pointer comparison state only
+address equality, which carries no permission, and refuses that read
+(`mdtests/address_equality_does_not_grant_access_to_a_one_past_pointer.md`).
+Still accepted: a pointer whose formation the verifier never saw, such as a
+static pointer initialized to a scalar member and stepped past in a function
+that loads it at entry. It has the root extent.
 
 ## Reproduction
 

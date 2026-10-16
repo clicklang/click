@@ -135,7 +135,7 @@ using a Rust core slice method brings its contract. The contracts are
 written under `library/c/`, `library/cpp/` and `library/rust/`, with module
 paths such as `click::c::string` for documentation and explicit reference.
 A model's own specification dependencies (for example, `strlen` on
-`cstr::readable`) are imported by its model file, not by the sidecar.
+`cstr_at`) are imported by its model file, not by the sidecar.
 
 ### Qualified names (accepted 2026-10-14)
 

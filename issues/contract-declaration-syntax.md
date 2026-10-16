@@ -169,9 +169,16 @@ that writes `int32` for such a source already writes the source's spelling.
 2. **Native C++ heads.** Done for verified functions: qualified members with
    implicit `this`, constructors, destructors, `operator` names, `const` and
    `static` members, and `bool` function template arguments, with the corpus
-   migrated. Remaining: class template arguments in heads (`Stored<long long>`,
-   `std::span<int>`), and C++ names in diagnostics and in proof references to
-   functions.
+   migrated. Done: class template arguments in heads
+   (`Stored<long long>::Read`), as Clang prints the instance, and C++ names
+   in diagnostics, claim labels and proof references to functions
+   (`step(FeeFrac::IsEmpty(...))`, `&FeeFrac::EvaluateFeeDown`, `executes`
+   targets). As the Rust importer does, the C++ importer names each
+   function by an injective encoding of its path, which every diagnostic
+   decodes. Done: a head's types write records by their C++ paths,
+   `std::span<int>&` and `Box<int, false>&`, the instance printed without
+   defaulted arguments. Remaining: diagnostics print a record type by its
+   layout name.
 3. **`extern` and `contract` for C++ and Rust.** Done: native C++ `extern`
    heads, members included, and calls through C++ function-pointer
    parameters under a named contract, and Rust `contract fn` with calls
@@ -212,7 +219,19 @@ that writes `int32` for such a source already writes the source's spelling.
    importer packs the struct into the object at generic instantiation and
    `dyn` coercion. Remaining: `&mut self` object state, implementations of
    function-free traits that rename the interface's parameters, generic
-   traits and default methods, and C++ virtual methods.
+   traits and default methods, and C++ virtual methods. Done for C++
+   virtual methods without object state: a virtual method's contract is the
+   interface a call through it assumes, each override in the source
+   inherits it and is checked to refine it, a pure virtual method's contract
+   is written `extern`, and polymorphic classes with one polymorphic base
+   are admitted by reference. Object state is done for `const` methods and
+   `const` references: a `class Shape { function size(this) -> int32; }`
+   block declares it, each direct subclass defines it on its own memory and
+   is verified there against an `_iface` contract, and the importer packs
+   the subclass into the object where a reference converts to the base.
+   Remaining for C++: state through mutable receivers and references,
+   overriding a defining class's method, constructing polymorphic objects,
+   and virtual destructors.
 
 ## Intended regressions
 

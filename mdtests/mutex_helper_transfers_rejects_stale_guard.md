@@ -9,7 +9,7 @@ void twice(struct holder *p) { acquire(p); release(p); release(p); }
 ```
 
 ```click
-target "x86_64-linux-userspace";
+target "x86_64-unknown-linux-gnu";
 runtime "modeled-pthread";
 verifying "stale_helper_guard.c";
 void acquire(struct holder *p) {

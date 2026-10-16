@@ -1726,6 +1726,53 @@ impl PureFactContext {
         Some(bases)
     }
 
+    /// The objects whose addresses known 64-bit equalities connect with the
+    /// address of the object `pointer` points into. A C pointer comparison
+    /// states such an equality and not a pointer equality, and memory is
+    /// addressed, so a store through `pointer` may write the bytes of any
+    /// object returned here: separation keeps none of their cached cells.
+    /// Computed once per store; the walk follows only the equalities filed
+    /// under the objects it reaches.
+    pub(in crate::kernel) fn address_connected_objects(
+        &self,
+        pointer: &Pointer,
+    ) -> BTreeSet<Pointer> {
+        let mut reached_objects = BTreeSet::new();
+        if self.wide_pointer_alias_endpoints_by_object.is_empty() {
+            return reached_objects;
+        }
+        let mut pending = vec![parameter_alias_bucket(pointer)];
+        let mut seen = BTreeSet::new();
+        let mut visited_terms = BTreeSet::new();
+        while let Some(bucket) = pending.pop() {
+            if !seen.insert(bucket.clone()) {
+                continue;
+            }
+            crate::instrumentation::record_deterministic_work(1);
+            let mut terms: Vec<_> = self
+                .wide_pointer_alias_endpoints_by_object
+                .get(&bucket)
+                .into_iter()
+                .flat_map(|endpoints| endpoints.iter().cloned())
+                .collect();
+            while let Some(term) = terms.pop() {
+                if !visited_terms.insert(term.clone()) {
+                    continue;
+                }
+                crate::instrumentation::record_deterministic_work(1);
+                if let Bitvector32Term::PointerAddress(address) = &term {
+                    let reached = parameter_alias_bucket(address);
+                    reached_objects.insert(reached.clone());
+                    pending.push(reached);
+                }
+                if let Some(neighbors) = self.bitvector64_equality_facts.get(&term) {
+                    terms.extend(neighbors.keys().cloned());
+                }
+            }
+        }
+        reached_objects
+    }
+
     pub(in crate::kernel) fn parameter_partition_cell_base(
         &self,
         resources: &ResourceContext,
@@ -1840,6 +1887,14 @@ impl PureFactContext {
         pointer: &Pointer,
         bytes: u32,
     ) -> Option<&'a CMemoryRange> {
+        // Checked pointer classes select owned memory for ordinary accesses.
+        // A kept call frame must use that same selection: one-hop aliases
+        // and a block-local fallback miss transitive model-pointer aliases
+        // crossing symbolic blocks. Coverage remains the selected access's
+        // whole byte extent; views never grant kept ownership.
+        if let Some(range) = ranges.kept_range_via_address_class(pointer, bytes, self) {
+            return Some(range);
+        }
         let spellings = additive_base_spellings(pointer);
         let mut spelled = Vec::new();
         let mut seen = BTreeSet::new();
@@ -2799,6 +2854,19 @@ impl PureFactContext {
         if left == right {
             return true;
         }
+        // Memory is addressed: two pointers with equal addresses name the
+        // same bytes, whatever objects they designate. A C pointer comparison
+        // states exactly that (`c_pointer_comparison_condition`). Such a
+        // fact files its address endpoints by object, so a context with none
+        // filed asks nothing.
+        if !self.wide_pointer_alias_endpoints_by_object.is_empty()
+            && self.uint64_values_known_equal(
+                &Bitvector32Term::pointer_address(left.clone()),
+                &Bitvector32Term::pointer_address(right.clone()),
+            )
+        {
+            return true;
+        }
         if left.blocks_proven_distinct(right) {
             return false;
         }
@@ -3190,8 +3258,8 @@ impl PureFactContext {
                 "resource separation: composition members",
                 || {
                     self.composition_separated_members(
-                        left_range.base(),
-                        right_range.base(),
+                        &left_range.start_pointer(),
+                        &right_range.start_pointer(),
                         |member| {
                             self.proves_resource_contains_inner(
                                 &CResource::Memory(member.clone()),
@@ -3237,26 +3305,49 @@ impl PureFactContext {
                     return false;
                 }
                 self.resource_compositions.iter().any(|resources| {
-                    let intervals = resources
-                        .owned_memory_ranges_separate_from(
-                            &target.base().block,
-                            &CResource::Memory(other.clone()),
-                            |owner, child| self.proves_resource_contains_inner(owner, child),
-                        )
-                        .into_iter()
-                        .filter_map(|range| {
-                            if range.wide_bounds().is_some() {
-                                return None;
-                            }
-                            self.fact_range_interval_on_target(
-                                target,
-                                range.base(),
-                                range.start(),
-                                range.end(),
-                            )
-                        })
-                        .collect();
-                    range_intervals_cover_target(target, intervals)
+                    let cover = |ranges: Vec<CMemoryRange>| {
+                        let intervals = ranges
+                            .into_iter()
+                            .filter_map(|range| {
+                                if range.wide_bounds().is_some() {
+                                    return None;
+                                }
+                                self.fact_range_interval_on_target(
+                                    target,
+                                    range.base(),
+                                    range.start(),
+                                    range.end(),
+                                )
+                            })
+                            .collect();
+                        range_intervals_cover_target(target, intervals)
+                    };
+                    let indexed = cover(resources.owned_memory_ranges_separate_from(
+                        target,
+                        other,
+                        self,
+                        |owner, child| self.proves_resource_contains_inner(owner, child),
+                    ));
+                    #[cfg(debug_assertions)]
+                    if crate::instrumentation::separation_candidate_cross_checks_enabled()
+                        && !crate::instrumentation::in_uncharged_debug_check()
+                    {
+                        crate::instrumentation::uncharged_debug_check(|| {
+                            let full =
+                                cover(resources.owned_memory_ranges_separate_from_full_scan(
+                                    &target.base().block,
+                                    &CResource::Memory(other.clone()),
+                                    |owner, child| {
+                                        self.proves_resource_contains_inner(owner, child)
+                                    },
+                                ));
+                            assert_eq!(
+                                indexed, full,
+                                "indexed separation interval cover differs from full scan"
+                            );
+                        });
+                    }
+                    indexed
                 })
             };
             if crate::instrumentation::measure_operation(
@@ -4725,7 +4816,7 @@ fn parameter_partition_variable(base: &Pointer) -> Option<&Variable> {
     .then_some(variable)
 }
 
-pub(super) fn parameter_alias_bucket(pointer: &Pointer) -> Pointer {
+pub(in crate::kernel) fn parameter_alias_bucket(pointer: &Pointer) -> Pointer {
     let mut stem = &pointer.offset;
     if pointer.block != crate::kernel::PointerBlock::ExternalArgument {
         return Pointer {

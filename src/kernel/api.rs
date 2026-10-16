@@ -1528,7 +1528,7 @@ fn abstract_c_state_for_join_across_with_policy(
                 crate::kernel::primitives::SnapshotMapChange::Removed(_) => None,
                 crate::kernel::primitives::SnapshotMapChange::Added(block)
                 | crate::kernel::primitives::SnapshotMapChange::Changed(block) => {
-                    block.starts_with("havoc:").then(|| block.clone())
+                    block.is_havoc_block().then(|| block.clone())
                 }
             })
             .collect::<Vec<_>>();
@@ -3254,6 +3254,27 @@ pub(crate) fn c_mutex_use_resource(state: &CState, mutex: &Pointer) -> CResource
     crate::kernel::mutexes::use_resource(state, mutex)
 }
 
+/// Binds a contract's value parameters in an entry state, as a call binds
+/// them beside its arguments.
+pub(crate) fn bind_contract_value_parameters(
+    entry: &mut CState,
+    parameters: &[CParameter],
+    values: &[CValue],
+) {
+    for (parameter, value) in parameters.iter().zip(values) {
+        entry.locals.set_typed_qualified_with_all_qualifiers(
+            parameter.name().to_string(),
+            value.clone(),
+            parameter.c_type(),
+            CMemory::value_parameter_pointer(parameter.name()),
+            false,
+            false,
+            false,
+            false,
+        );
+    }
+}
+
 pub fn c_function_entry_state(
     caller_state: &CState,
     function: &CFunction,
@@ -3544,7 +3565,7 @@ fn install_borrowed_contract_inputs(
         if matches!(
             input.fact.resource(),
             CResource::Memory(range)
-                if range.base().block.starts_with("local:")
+                if range.base().block.is_local_block()
                     || state.memory().is_read_only_block(&range.base().block)
         ) {
             continue;
@@ -3578,7 +3599,7 @@ fn install_borrowed_contract_inputs(
         if matches!(
             viewed.resource(),
             CResource::Memory(range)
-                if range.base().block.starts_with("local:")
+                if range.base().block.is_local_block()
                     || state.memory().is_read_only_block(&range.base().block)
         ) {
             continue;
@@ -4133,6 +4154,7 @@ pub(crate) fn proposition_variables(proposition: &Proposition) -> BTreeSet<Varia
     variables
 }
 
+#[cfg(test)]
 pub fn c_max_body() -> CStatement {
     c_if(
         c_less_than(c_variable("a"), c_variable("b")),
@@ -4141,6 +4163,7 @@ pub fn c_max_body() -> CStatement {
     )
 }
 
+#[cfg(test)]
 pub fn c_max_function() -> CFunction {
     c_function(
         CType::Int32,
@@ -4153,10 +4176,12 @@ pub fn c_max_function() -> CFunction {
     )
 }
 
+#[cfg(test)]
 pub fn c_max_state(a: CValue, b: CValue) -> CState {
     CState::new().with_local("a", a).with_local("b", b)
 }
 
+#[cfg(test)]
 pub fn c_max_lt_condition(a: Bitvector32Term, b: Bitvector32Term) -> ConditionTerm {
     ConditionTerm::signed_less_than(a, b)
 }
@@ -4678,6 +4703,7 @@ fn symbolic_c_statement_execution_with_loop_rule(
         // on its paths was discharged or assumable, so this is the kernel's
         // own note of what the summary already paid for.
         recursion_anchor: environment.recursion_anchor_handle(),
+        variable_index: Default::default(),
     });
     let paths = paths
         .into_iter()
@@ -6782,6 +6808,7 @@ pub fn prove_c_function_satisfies_specification_with_environment(
     )))
 }
 
+#[cfg(test)]
 pub fn prove_c_max_lt_returns_right(a: Variable, b: Variable) -> Option<Theorem> {
     let a_bits = Bitvector32Term::Variable(a);
     let b_bits = Bitvector32Term::Variable(b);
@@ -6817,6 +6844,7 @@ pub fn prove_c_max_lt_returns_right(a: Variable, b: Variable) -> Option<Theorem>
     )))
 }
 
+#[cfg(test)]
 pub fn prove_c_max_not_lt_returns_left(a: Variable, b: Variable) -> Option<Theorem> {
     let a_bits = Bitvector32Term::Variable(a);
     let b_bits = Bitvector32Term::Variable(b);
@@ -7768,6 +7796,24 @@ pub fn c_function_refines_named_contract(
     };
     super::functions::function_refines_named_contract(
         contract,
+        function,
+        &mut ExecutionBudget::for_new_execution(),
+    )
+    .map_err(ExecutionLimit::describe)
+}
+
+/// Whether `function`'s contract refines the contract `interface` is
+/// verified against, as an override's must refine the virtual method's it
+/// overrides: the same judgment as a named contract's.
+pub fn c_function_refines_function_contract(
+    interface: &CFunction,
+    function: &CFunction,
+) -> Result<bool, String> {
+    let Some(contract) = CFunctionContract::new(interface.name(), interface.clone()) else {
+        return Ok(false);
+    };
+    super::functions::function_refines_named_contract(
+        &contract,
         function,
         &mut ExecutionBudget::for_new_execution(),
     )

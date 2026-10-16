@@ -25,8 +25,9 @@ memory accesses must be covered by the current resource context:
 - a store requires an owned memory resource,
 - automatic scalar declarations create ownership of their exact byte extent;
   ordinary local access uses it without additional proof annotations,
-- legacy automatic array and ordinary aggregate declarations retain implicit
-  local access; construction destinations have explicit allocation ownership.
+- ordinary record declarations and construction destinations create ownership
+  of their complete byte extent, including padding, without initializing fields;
+- legacy automatic arrays retain implicit local access.
 
 Scalar allocation ownership is independent of initialization. It can be lent to
 an ordinary helper contract and is retired when storage leaves its scope or is
@@ -757,11 +758,12 @@ under explicitly borrowed authorities, with different families at the same
 anchor. It does not admit arbitrary batches or authority replacement.
 
 Private external memory can use its checked `viewable(...)` facts together with
-owned body resources. A local struct's implicit storage access currently does
-not supply a transferable `owns *p`; the preserved
-`authority_family_exchange_stack_object_unavailable` regression records that
-separate limitation. The positive caller fixture receives explicit object
-ownership on entry.
+owned body resources. Ordinary local records also supply transferable storage
+ownership: `authority_family_exchange_stack_object` packages the caller's two
+records into checked resource members. A modular helper must separately export
+any payload-value guarantee the caller needs. The paired
+`authority_family_exchange_stack_payload_unavailable` control retains the same
+C and count guarantees but omits that value guarantee; its final sum is refused.
 
 An ordinary control resource can own both authorities and the C fields that
 record their totals. A checkout helper borrows that control as one resource:
@@ -1191,7 +1193,14 @@ they name the state the execution has reached. After `root = root->left` a
 and a body fact such as `fact parent->left == child` instantiates to the link
 the body just walked. The fold's field values are read the same way, so one
 tactic never straddles two states
-(`mdtests/fold_argument_reads_current_cursor.md`).
+(`mdtests/fold_argument_reads_current_cursor.md`). An explicit `old(...)`
+argument selects function entry even in a fold with explicit fields: after
+`p = q`, `fold(saved_at(old(p)), { model: old(saved.model) })` keeps the
+entry-indexed instance, while `fold(saved_at(p), ...)` selects the current
+pointer. The argument and field initializer retain their own snapshot selectors
+(`mdtests/fielded_resource_fold_keeps_entry_arguments.md`); a current-pointer
+model cannot establish the old instance's body
+(`mdtests/fielded_resource_fold_rejects_current_model_for_entry_argument.md`).
 A resource argument may also read an owned field through a proved model-pointer
 alias. Named folds retain the facts already checked at that point when
 evaluating those arguments; a model pointer without read authority is refused

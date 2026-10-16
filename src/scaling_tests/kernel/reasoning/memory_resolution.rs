@@ -204,3 +204,55 @@ fn mixed_index_offsets_work_ignores_unrelated_facts() {
     assert_eq!(counts[1], counts[2]);
     assert!(counts[0] > 0);
 }
+
+/// A load through an unresolved pointer observes every pointer-reachable
+/// cell, so its canonical memory keeps the cells of every other object; it is
+/// projected from the store's maintained reachable map rather than rebuilt
+/// cell by cell, and the slots of locals no pointer reaches are not visited
+/// (`issues/scaling.md` cause 6). Canonicalizing the newest object's load
+/// along one memory lineage costs the same beside 16, 64 or 256 earlier
+/// objects and hidden slots.
+#[test]
+fn unresolved_load_projection_ignores_earlier_objects_and_hidden_slots() {
+    let mut samples = Vec::new();
+    for size in [16usize, 64, 256] {
+        let _session = crate::kernel::VerificationSession::enter();
+        crate::kernel::set_never_address_taken_locals(
+            (0..=size).map(|index| format!("hidden{index}")).collect(),
+        );
+        let slot = |index: usize| Pointer {
+            block: PointerBlock::Concrete(format!("local:hidden{index}")),
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        let object = |index: usize| Pointer::symbolic(Variable(98_700 + index as u64));
+        let value = |index: usize| CValue::Int32((index as u32).into());
+        let mut memory = CMemory::new();
+        let mut last = 0;
+        for index in 0..=size {
+            memory = memory
+                .with_block(slot(index).block.clone(), 4)
+                .store(slot(index), value(index))
+                .store(object(index), value(index));
+            let (canonical, work) = crate::instrumentation::measure_deterministic_work(|| {
+                canonical_memory_for_pointer_load(&memory, &object(index))
+            });
+            if index == size {
+                assert!(
+                    index == 0 || canonical.has_known_cell_at(&object(index - 1)),
+                    "size {size}: the projection dropped another object's cell"
+                );
+                assert!(
+                    !canonical.has_known_cell_at(&slot(0)),
+                    "size {size}: the projection kept a slot no pointer reaches"
+                );
+                last = work;
+            }
+        }
+        crate::kernel::clear_never_address_taken_locals();
+        samples.push((size, last));
+    }
+    assert!(
+        samples.windows(2).all(|pair| pair[1].1 <= pair[0].1 + 4),
+        "an unresolved load's projection grows with earlier objects: {samples:?}"
+    );
+}

@@ -1,5 +1,41 @@
 # Charon extraction assessment for Click
 
+## Completed Linux frontend delivery
+
+The Rust P1 frontend milestone is complete. By maintainer decision on 2026-10-15,
+its launch host scope is Linux x86-64 GNU (`x86_64-unknown-linux-gnu`). A second
+host platform is optional and is not a launch requirement. Rust continues to
+cover the experimental subset in the [reference](../docs/reference/rust.md)
+and [coverage matrix](../docs/reference/coverage.md).
+
+The installed pipeline ships pinned Charon, its paired driver and rustc runtime;
+uses explicit versioned resolution and identity checks; emits portable schema-9
+release/profile lock identities; and names crate-closure and frontend recovery
+errors. Legacy identities remain readable offline. The real release-archive
+regression relocates installation and demonstration, reproduces the committed
+basic/adler2 locks, then verifies all 881 C/Rust demonstration proofs with an
+empty PATH and the frontend removed. The [installed instructions](../examples/basic-rust/README.md)
+and [checksum demonstration](charon-trial/checksum-correspondence.md#reproduce)
+record the supported workflow and its original-source, signed-length and
+matched-input boundaries.
+
+Delivery landed in [#1086](https://github.com/clicklang/click/pull/1086),
+[#1095](https://github.com/clicklang/click/pull/1095),
+[#1109](https://github.com/clicklang/click/pull/1109),
+[#1118](https://github.com/clicklang/click/pull/1118) and
+[#1134](https://github.com/clicklang/click/pull/1134). The completed P1 roadmap
+entry has been removed. Additional hosts and broader language coverage are
+optional future work; shared project configuration remains owned by
+[project-config](../issues/project-config.md).
+
+The compiler investigation below is historical evidence. Current production
+borrow authority is recorded in its [assessment](rust-borrow-authority-assessment.md),
+resource laws in [Rust resource correspondence](rust-resource-correspondence.md),
+and the construction/return contract in [aggregate construction](aggregate-construction.md).
+Existing post-launch context is retained at the end of this assessment.
+
+## Historical extraction assessment
+
 Assessed on 2026-10-02. This is extraction evidence and an adoption proposal,
 not a new supported frontend or a checksum verification result.
 
@@ -192,3 +228,99 @@ The script checks both source hashes before extraction. Artifacts and logs are
 external investigation outputs; the normal repository gate does not run Charon
 or install this extra toolchain. No external tool source was patched for the
 experiment.
+
+## Existing post-launch context
+
+The following context is preserved from the closed P1 roadmap. It records
+existing limitations and evidence, rather than new roadmap commitments or
+requirements for the Linux launch. The dedicated production assessments remain
+the authority for their current implementation boundaries.
+
+
+The checksum demonstration is complete for P1, and none of these items is
+needed to finish a claim already made:
+
+- **Wider checksum range.** Lengths beyond the shared signed specification
+  range (2,147,483,647 bytes) remain unproved for both implementations; the
+  current claims state that range explicitly.
+- **Borrow authority.** Connect explicit exclusive-child suspension and
+  recovery to production resource transitions. Compiler borrow rejection
+  alone does not establish rejection of forged sidecar authority. The
+  [production assessment](rust-borrow-authority-assessment.md)
+  records what is delivered:
+  - the synchronous borrowed-memory call protocol, with kernel negatives;
+  - parent reuse after the child's last use;
+  - the read-only import-bound checker for same-block scalar reborrows,
+    with indexed access certificates and scaling checks.
+  - operation identities carried through lowering into completed kernel reads
+    and stores, including cached scalar reads; indexed bindings retain the
+    actual pointer and reject another locked import identity. Failed writes
+    produce no store observation, and source deltas have ambient-scaling checks.
+  - the checked kernel lifecycle for exclusive scalar-reference identities:
+    parent suspension, nested dependencies and one-time child recovery, with
+    exact owned-support checks and indexed scaling regressions. The restricted
+    source integration below now issues and consumes these transitions.
+  - completed scalar-reborrow assignment receipts and execution-bound endings
+    immediately after selected child stores. Bindings require both operations
+    on one path, check the source and actual pointer, and refuse ambiguous
+    repeated observations. These receipts do not yet carry local-loan leases
+    or authorize recovery.
+  - a private scalar-memory lease adapter that withholds the selected owner,
+    checks custody in ordinary loads/stores, preserves child writes through
+    recovery and rejects copied stale children after ownership returns. Kernel
+    execution negatives and indexed adapter scaling checks cover this layer;
+    restricted Rust source execution now activates it as described below.
+    Calls, reference storage, aggregates and loop summarization remain refused
+    while a lease is active.
+
+  - source-bound births and explicit borrow-end operations for straight-line
+    scalar borrow forests. An indexed alias/tree pass computes frontiers once;
+    nested endings at one frontier run innermost first. Endings resolve live
+    invocation handles, reject live children and consume each handle once,
+    preserving the original owned support and current memory. Copies and moves
+    retain the same identity, even after replacement of the original variable.
+    Read/store observations remain read-only. Native store, alias, read-ending
+    and nested-frontier fixtures cover helper/caller verification, expansion,
+    parent reuse and authority/value negatives. Preparation scaling includes
+    source length, aliases, nested depth and repeated shared diamonds.
+    Structured acyclic branches now retain one exact live ledger through both
+    arms and end at a common continuation. Arm accesses and conditions extend
+    the frontier. Fully closed arm-local borrows/copies now use checked ledger
+    checkpoints: all new references end, original ownership returns, private
+    reference slots are cleared and the exact entry ledger is restored. Fresh
+    IDs are not rewound. Nested scopes preserve existing live references and
+    current writes; escaping or cross-arm references are refused. Source and
+    selected-delta scaling cover this path. Native
+    conditional and nested-borrow helpers/callers cover expansion and negatives,
+    while kernel tests exercise joins with live custody.
+
+  Wider source coverage remains open: escaping/conditionally live arm references,
+  writes to outer reference bindings, early returns, loops, aggregates, shared
+  borrow graphs and call/havoc transport
+  need checked protocols. Only the
+  activated source subset executes local leases. A reproduced false acceptance
+  here would be `unsound`, and so P1, under the [issue rules](../issues/README.md).
+- **Stable proof observations.** Provide source-facing slice, array and
+  iterator observations, so that contracts need not depend on compiler
+  temporary names or storage details. They must preserve qualified
+  identities, shadowing, source spans, snapshot meaning, and correspondence
+  with expanded proofs.
+- **Consistent library models.** Consolidate the supported resolved
+  instances. Document their preconditions, effects, panic behavior and trust
+  assumptions. Validate their declarations, and bind model versions into
+  prepared identities. Lookalike methods must not acquire models by
+  spelling.
+- **Composition and scale.** Keep one execution path and shared CFG joins,
+  compact repeated initialization, and checked cleanup on every supported
+  exit. Add combined regressions, and verify that ordinary verification,
+  profile, expansion and audit agree.
+- **Broader coverage.** These stay outside the supported subset until a
+  selected program needs a precise slice of them:
+  - unsafe Rust and interior mutability;
+  - returned references;
+  - general traits and generics;
+  - closures, async and threading;
+  - heap support;
+  - mutable or adapted iterators;
+  - Cargo dependencies;
+  - broad standard-library verification.

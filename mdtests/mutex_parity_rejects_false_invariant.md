@@ -28,7 +28,7 @@ int alternate_mutex(struct parity_mutex *object, int n) {
 ```
 
 ```click
-target "x86_64-linux-userspace";
+target "x86_64-unknown-linux-gnu";
 runtime "modeled-pthread";
 verifying "mutex_parity_rejects_false_invariant.c";
 

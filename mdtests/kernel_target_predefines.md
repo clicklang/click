@@ -18,7 +18,8 @@ int selected(void) { return TARGET_VALUE; }
 ```
 
 ```click
-target "x86_64-linux-kernel";
+target "x86_64-unknown-linux-gnu";
+mode "kernel";
 verifying "main.c";
 int selected() { ensures result == 8; } by { execute(); simp(); }
 ```

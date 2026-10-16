@@ -168,9 +168,10 @@ the head's copy-back has already kept the cell's value because the checked
 footprint is disjoint from it.
 
 A scalar seeded run that caches loads from the same producer-maintained read
-identity as its base does not change bytes. When ordinary cell lookup cannot
-prove separation, `SeededLoadsOfBase` carries that local fact across the edge.
-The same witness preserves a read wider than a cached slot: two four-byte
+identity as its base does not change bytes. `SeededLoadsOfBase` carries that
+local fact across the edge before slot selection: an exact slot match is a
+cached read, not a new write or cell version. The same witness preserves a
+read wider than a cached slot: two four-byte
 loads of unchanged bytes do not partially overwrite an eight-byte pointer.
 A real partial store remains a barrier before those cache-only edges.
 Checking compares the source identity, load mode and exact scalar stride; it
@@ -306,6 +307,13 @@ that reasoning globally can change which surface facts a planner selects and
 therefore change expansion spellings. Isolated memory-resolution fuel keeps
 a nested graph query from consuming the caller's bounded reasoning budget.
 
+The bridging and the explicit certificate check (`with_extended_dag_bridging`,
+`explicit_dag_check_active`) are thread-local modes, so a memo whose
+computation can read either one keys on both. Otherwise an answer computed
+inside the scope would be served outside it, where the bridging must not
+apply, or the reverse. The resolution memos, the context-inconsistency memo,
+the DAG load-equality memo and the atomic derivation memo each do.
+
 Loop havoc uses the same edge-local rule as call havoc when a whole-loop effect
 summary has been checked: its owned ranges are carried on `LoopHavoc`, and a
 load may cross only with evidence that it is outside every range. The copy-back
@@ -364,3 +372,19 @@ coverage in `src/kernel/tests/heap_tests.rs`.
 The chronological implementation record, measurements, and rejected
 experiments are preserved in `design/memory-dag.md`. They aren't part of the
 current architecture contract.
+
+## Failed explicit transport walks
+
+A rejected `transport(source, target) using { ... }` reports the cell walks
+actually performed while checking that operation. Each observation identifies
+the queried address and byte width, starting and stopping snapshots, number of
+crossed edges, stopping reason, and the extended/explicit DAG modes used by the
+query. The address and snapshot identities share the checked source, target,
+and execution facts' exact formatter and construction legend.
+
+These observations are captured as each walk returns, not reconstructed by
+walking memory again while rendering the error. They describe checker queries,
+not additional facts or a proposed missing premise. Repeated identical
+observations are shown once; memo hits perform no new walk. Capture is scoped
+to the explicit check and restored on return or unwind; ordinary memory
+queries retain no diagnostic history.

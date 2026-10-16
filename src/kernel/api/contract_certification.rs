@@ -796,7 +796,9 @@ fn certification_proves_exists_obligation_from_facts(
 /// than dumped as internal state.
 pub(in crate::kernel) fn describe_certification_runtime_error(error: &CRuntimeError) -> String {
     match error {
-        CRuntimeError::PointerConversion(message) | CRuntimeError::FunctionContract(message) => {
+        CRuntimeError::PointerConversion(message)
+        | CRuntimeError::FunctionContract(message)
+        | CRuntimeError::UnsuppliedResourceValue(message) => {
             message.clone()
         }
         CRuntimeError::PendingCallObligations(pending) => format!(

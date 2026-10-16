@@ -26,7 +26,7 @@ int char_range(void) {
 ```
 
 ```click
-target "x86_64-linux-userspace";
+target "x86_64-unknown-linux-gnu";
 verifying "userspace_char_limits.c";
 
 int32 char_range() {

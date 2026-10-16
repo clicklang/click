@@ -1233,14 +1233,17 @@ fn frontier_loop_initialization_rejects_execution_tactics() {
 }
 
 #[test]
-fn frontier_loop_preservation_requires_one_complete_iteration() {
+fn frontier_loop_preservation_reports_a_rest_that_does_not_run() {
+    // The script stops one statement short; the rest of the body runs
+    // implicitly, except that `1 / (i - 1)` may divide by zero, so the path
+    // is reported at the frontier the script reached, with the reason.
     let c_source = r#"
             int32 count_once() {
                 int32 i;
                 i = 0;
                 while (i < 1) {
                     i = i + 1;
-                    i = i;
+                    i = 1 / (i - 1);
                 }
                 return i;
             }
@@ -1263,12 +1266,13 @@ fn frontier_loop_preservation_requires_one_complete_iteration() {
         "#;
 
     let error = verify_c0_sources(click_source, &[("count_once.c", c_source)])
-        .expect_err("preservation should traverse the complete loop body");
+        .expect_err("a rest of the body that does not run is reported");
     let message = error.message();
     assert!(
         message.contains("stopped inside the loop body")
             && message.contains("the frontier is at statement")
-            && message.contains("still ahead on this path: the body's end"),
+            && message.contains("still ahead on this path: the body's end")
+            && message.contains("the rest of the body did not run from there"),
         "{message}"
     );
 }

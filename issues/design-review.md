@@ -3,8 +3,8 @@
 Priority: P1.
 
 Soundness: soundness-adjacent. This file is a tracker. Items M1 (no
-independent checker), M2 (no written semantics) and M3 (`memcpy` reading under
-`viewable`) are trust questions without a known false acceptance. Each item that becomes a reproduced false acceptance is filed in
+independent checker) and M2 (no written semantics) are trust questions
+without a known false acceptance. Each item that becomes a reproduced false acceptance is filed in
 `bugs/` with its own label.
 
 Items P1–P4, W4 and W5 waited on the SMT-backed `auto`
@@ -118,6 +118,13 @@ Decision: fix (maintainer, 2026-10-15). Specification arithmetic is over
   on `examples/bounded-pool` and one unsigned-heavy example comes first, to
   measure the proof that disappears and check timing against the
   [verification efficiency contract](../docs/internals/verification-efficiency.md).
+
+Progress: a prototype on `examples/bounded-pool` written in Integer form
+shrinks the sidecar from 437 to 284 lines, and showed that built-in checks
+read only machine facts. Step 1 is done: an Integer comparison of exact
+machine observations also files its native comparison, so resource
+quantities and count definedness accept Integer premises. Next: the
+switch-over itself, then Integer-valued population counts.
 
 Afterwards, delete the `machine_integer` and `integer` lemmas Integer
 arithmetic makes unnecessary, complete the families that remain, and give
@@ -276,23 +283,6 @@ Decision: fix, after performance and completeness (maintainer,
 it would slow the priorities, which are performance at the scale of large
 real-world projects and then completeness, both measured in practice. A
 false acceptance, once found, is still fixed first, as a bug.
-
-### M3. Several read-permission notions and no fractions
-
-Today: `views` (call-scoped loans), `viewable` (bounds only), reads granted
-by a folded composite, and reads from match-arm selection. The trusted
-`memcpy` contract reads its source under `viewable` alone
-(`docs/internals/byte-representation.md`), against "external loads require a
-covering viewed or owned memory resource". No fractional permissions, so no
-reader-writer pattern.
-
-Proposed fix: fractional or counted read permissions; fold `viewable` into
-them; reconcile `memcpy`.
-
-Decision: split (maintainer, 2026-10-14). Fix now: the trusted `memcpy`
-contract reads its source under `views`, as every other external load does.
-Fractional and counted read permissions are deferred until a program needs a
-reader-writer pattern.
 
 ### M4. Field-less resources hide a record
 

@@ -1170,7 +1170,7 @@ fn synthesizes_dynamically_indexed_pointer_offset_equality() {
 }
 
 /// A bare `step()` whose call precondition no fact states exactly
-/// (`memcmp`'s per-byte `defined` requirement, from the caller's `viewable`
+/// (`memcmp`'s per-byte `defined` requirement, from the caller's viewed
 /// range) proves it by the implicit `auto` and records no hidden derivation.
 #[test]
 fn bare_step_proves_an_open_obligation_by_implicit_auto() {
@@ -1183,7 +1183,7 @@ fn bare_step_proves_an_open_obligation_by_implicit_auto() {
             verifying "compare.c";
 
             int32 compare_self(uint8 bytes[]) {
-                requires viewable(bytes[0..2]);
+                views bytes[0..2];
                 ensures 1 == 1 by { step(); step(); simp(); }
             }
         "#;

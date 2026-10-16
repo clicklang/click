@@ -25,7 +25,14 @@ remain in [C++ object model and shared memory semantics](https://github.com/lack
 construction/return protocol. Their implementation claims must be checked
 against the revision they describe before being presented as upstream behavior.
 [cpp-support.md](cpp-support.md) owns subsequent C++ coverage and Bitcoin Core
-milestones; [rust-support.md](rust-support.md) owns Rust coverage.
+milestones; [the Rust reference](../docs/reference/rust.md) records the supported Rust subset;
+its [Linux frontend milestone](../design/rust-charon-assessment.md#completed-linux-frontend-delivery) is complete.
+
+Pointer-field compatibility recovery is complete in candidate `ebe4f69a1` on
+`codex/pointer-field-recovery`: the original vector and string projects verify
+all 13 and 15 proofs with unchanged C, contracts, resources and limits. See the
+[closure evidence](../design/object-model-recovery-audit.md#pointer-field-postcondition-closure).
+This does not activate the archived model or change the last full audit count.
 
 ## Recovery starting point
 
@@ -157,7 +164,7 @@ archived native-entry machinery and is not an independently landed activation;
 its introducing commit still needs attribution.
 
 The next reduced compatibility group is
-[native-span output admission for ordinary C buffers](../bugs/native-span-output-loses-c-carrier.md).
+[native-span output admission for ordinary C buffers](https://github.com/clicklang/click/blob/463c91ae609f6f680b074bdbd36861454ea63471/bugs/native-span-output-loses-c-carrier.md).
 Its producer/caller witness passes all four proof modes on the delivered
 entry-fold tree and fails on both the frozen archive and the conditional-record
 repair checkpoint. Preserve explicit typed validity while repairing automatic
@@ -417,7 +424,7 @@ keep the 41/52 audit count until a new complete example run establishes otherwis
 bindings, including retained-session checking, without publishing their value
 bridges to sibling contexts. The positive regression passes all four proof
 modes; 133 selected recovery controls pass. Continue with the
-[string/vector postcondition gap](../bugs/c-pointer-field-postconditions-lose-frame-evidence.md),
+[string/vector postcondition gap](https://github.com/clicklang/click/blob/439b841c4633c9282354e772ffdf95748fb5dc41/bugs/c-pointer-field-postconditions-lose-frame-evidence.md),
 keeping C and claims intact and distinguishing an explicit checked equality
 proof from `assumption`'s exact-fact lookup. The full example audit remains 41/52.
 
@@ -587,3 +594,109 @@ The new regression and all 73 active diagnostic controls pass (nine ignored).
 On the archive, the original refcount trace now records the post-retain read
 equal to `1 + amount`; its functional failure still needs diagnosis. Retain
 the 46/52 audit count.
+
+The shared diagnostic repair landed through
+[PR #1131](https://github.com/clicklang/click/pull/1131), with its pushed commit
+verified on upstream. The restored refcount trace showed the same read in the
+goal and the `1 + amount` value fact, together with its bounds and overflow
+premise. Rewriting that value and invoking arithmetic with the existing
+premises completes the comparison. The original C, contracts and resources
+remain unchanged. The explicit pipeline proof passes fresh, expanded,
+rewritten and retained checking on both the archive and upstream-based
+`3c616ce13` tree.
+
+Recovery checkpoint `cb6c3772c` restores refcount. The full normal archive audit
+now passes **47/52** in 146.33 seconds, with no new failing project. The five
+remaining failures are arena, owned-vector, rbtree-augmented, rust-byte-sum and
+rust-chunks-exact. Concurrent local compilation affected this run's elapsed
+time. The archive's trace bug file is closed; its historical reproduction at
+the immutable link above remains available. This is not a full green gate or
+native-feature activation.
+
+Refcount delivery [PR #1136](https://github.com/clicklang/click/pull/1136)
+merged; both pushed commits are verified on upstream. The next shared repair
+recognizes cached function-pointer values in definitional memory comparison:
+the canonical representation names an exact registered load at zero offset,
+which the existing comparison did not recognize. The read must still have the
+cell's load kind, read that cell and be unchanged across snapshots. The kernel
+regression reproduces upstream before the fix; controls reject a different
+cell, narrower load, arbitrary symbol, displacement and changed cell value.
+
+On the recovery archive, that repair gets past the original red-black tree
+callback `open`. Explicit references to the callee's existing result and
+inorder facts complete the entry-module proofs without changing C or contracts.
+The normal archive audit is **48/52** in 111.13 seconds; remaining failures are
+arena, owned-vector, rust-byte-sum and rust-chunks-exact. This is the normal
+entry-module audit under conditional imported interfaces, not proof of every
+imported helper. Selected proof-unit checking additionally reaches the known
+integer-to-pointer origin refusal in an imported rotation helper. No full green
+gate or native-feature activation is claimed.
+
+Byte-sum's two exhausted smart searches are now explicit applications of the
+existing integer-conversion lemmas and arithmetic over relevant premises.
+Original Rust and contracts are unchanged. Its result proof passes fresh,
+expanded, rewritten and retained checking on both the archive and this
+upstream-based branch. The last complete archive audit remains **48/52**;
+byte-sum is individually restored pending the next complete audit.
+
+The next shared repair makes iterated ownership use checked read equality both
+when selecting an element and when comparing complete iterated holdings. The
+same pointer slot read across an unrelated store remains the same address;
+wrong-slot and changed-slot controls reject, and element widths and guard
+locations remain strict. Nine focused upstream controls pass (four ignored),
+including the existing flat-work checks at four range sizes. The corresponding
+seven archive controls pass (one ignored). Arena now gets past `take`; its
+window fold is still under diagnosis. Retain the last full **48/52** audit.
+
+The next complete normal archive audit is **49/52** in 131.48 seconds, with no
+new failure: only arena, owned-vector and rust-chunks-exact remain. Concurrent
+compilation affected timing. CI's byte-sum mirror checks caught the stale
+migrated `sum-proof.click`; it now matches the explicit canonical proof. Both
+failing Rust parity checks pass locally. The original frozen sidecar and its
+hash are unchanged.
+
+[PR #1144](https://github.com/clicklang/click/pull/1144) merged; all four pushed
+commits are verified on upstream. The next bounded proof repair completes
+Rust chunks-exact with existing native-to-Integer conversion lemmas and explicit
+cursor/last-byte formation and read bounds. Original Rust and contracts are
+unchanged, and the migrated sidecar remains synchronized with its canonical
+copy. Fresh, expanded, rewritten and retained checks pass on the archive and
+upstream-based `95fe8cbd1`. The active migration inventory control and the
+specifically selected source/obligation control pass; the other two ignored
+chunk tool controls were not run. The last complete archive audit remains
+**49/52** pending a rerun; arena and owned-vector are the other failures.
+
+
+The complete normal archive audit at `a9635866d` passes **50/52** in 121.71
+seconds: chunks-exact is restored, leaving arena and owned-vector. Concurrent
+compilation affected elapsed time. PR #1150 merged; its sole pushed commit
+`64f0f0d46` is verified as an upstream ancestor. No full green gate or native
+feature activation is claimed.
+
+Recovery commit `31c252a80` reconciles the already-landed held-owner address-class
+repair `a676ba284`. Its nine selected kernel controls and Markdown fixture pass,
+including scope, physical-width and four-size scaling controls. Neither remaining
+original example is restored by that repair. The reduced
+[descriptor-window failure](../bugs/archive-descriptor-window-fold-misses-owned-prefix.md)
+preserves direct descriptor-field access and the occupancy store; it passes the
+identified upstream baseline and fails the recovery archive at the window fold.
+The checked cell walk stops at loop havoc, and indexed reassembly misses the
+prefix despite the checked memory-resolution comparison accepting its base.
+Endpoint-chain and canonical-`take` experiments did not repair it and were
+reverted. Keep the remaining work focused on checked loop/frame evidence and
+selected resource suppliers, without reopening the accepted object-model design.
+
+
+Recovery checkpoint `df56e3e28` reconciles upstream PR #1155's checked structural
+branch-join effects and explicit vector preservation proof. The complete normal
+example audit now passes **51/52** in 116.53 seconds, with no new failure.
+Owned-vector is restored; arena alone fails at `arena_alloc.contract` tactic 239.
+This is a failed audit with one known failure, not a green-tree verdict.
+
+In the reduced arena proof, explicitly proving that the current data pointer
+equals its entry value gets past ownership reassembly. The fold then rejects
+the resource's separation fact; additionally proving the occupied pointer and
+capacity unchanged does not discharge that fact automatically. Preserve the
+distinction between selecting ownership and transferring separation premises
+when investigating the remaining failure. No new object-model design choice
+has been identified.

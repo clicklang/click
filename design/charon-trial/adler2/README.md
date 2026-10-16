@@ -389,6 +389,16 @@ byte-preservation claims, missing length/view and empty-input rejections, and
 verify/profile/audit/expansion rechecks are nightly tests. The original-body
 checks exceed the ordinary per-test budget.
 
+The four-byte B-lane normalization selects the checked modular-call equation
+and divisor equality together. A rewrite of the current read can also replace
+a historical read of the same value, introducing a second remainder that the
+divisor equality alone cannot remove. The
+[reduced snapshot fixture](../../../mdtests/remainder_normalization_with_aliased_snapshot_reads.md)
+keeps this case small. The later subtraction bound uses explicit unsigned
+transitivity before converting the subtraction to Integer arithmetic. These
+proof repairs retain the Rust source, contracts, and work budgets; nightly
+controls also reject a wrong modulus and an off-by-one remainder equality.
+
 ## Original two- and three-byte serial tails
 
 [two-byte-compute.click](two-byte-compute.click) and
@@ -638,7 +648,8 @@ the same signed length limit and canonical seed range. The
 [correspondence demonstration](../checksum-correspondence.md) derives native
 result equality under matched entry bytes and state, and records the checked
 incremental and reset cases. Experimental Rust architecture work remains in
-the [rust-support roadmap](../../../issues/rust-support.md).
+the [production borrow assessment](../../rust-borrow-authority-assessment.md) and
+[retained post-launch context](../../rust-charon-assessment.md#existing-post-launch-context).
 
 Full original-computation smart audits exhaust the standard ten-minute run bound
 before completing a site, although ordinary verification succeeds. This is an

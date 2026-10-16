@@ -91,6 +91,23 @@ pub(super) fn uint64_binary(
     Some((op, a, b))
 }
 
+/// The same registered four-byte read accepted by `enqueue_int32_load`.
+/// A scalar variable without this typed producer metadata stays opaque.
+pub(super) fn int32_read(
+    term: &crate::kernel::Bitvector32Term,
+) -> Option<(crate::kernel::SharedCMemory, Pointer)> {
+    let crate::kernel::Bitvector32Term::Variable(variable) = term else {
+        return None;
+    };
+    if crate::kernel::registered_load_kind_for_variable(variable)
+        != Some(crate::kernel::LoadKind::Bits32)
+        || crate::kernel::registered_load_bytes_for_variable(variable) != Some(4)
+    {
+        return None;
+    }
+    crate::kernel::registered_load_for_variable(variable)
+}
+
 pub(super) fn uint64_read(
     term: &crate::kernel::Bitvector32Term,
 ) -> Option<(crate::kernel::SharedCMemory, Pointer)> {
@@ -160,7 +177,7 @@ enum Application {
     Int32Scaled(u64, i64),
     // Defining snapshot, exact storage block ID, offset node/class ID.
     // Only registered four-byte loads in the int32 interpretation enter here.
-    Int32Load((u32, u32), u64, u64),
+    Int32Load((u32, u32), u64),
 }
 
 impl Application {
@@ -179,7 +196,7 @@ impl Application {
             | Self::PointerRead(_, value, _)
             | Self::AddressShift(value, _)
             | Self::Int32Scaled(value, _)
-            | Self::Int32Load(_, _, value) => [Some(value), None],
+            | Self::Int32Load(_, value) => [Some(value), None],
         }
         .into_iter()
         .flatten()
@@ -218,9 +235,7 @@ impl Application {
                 Self::Int32Binary(op, classes.root(left), classes.root(right))
             }
             Self::Int32Scaled(value, width) => Self::Int32Scaled(classes.root(value), width),
-            Self::Int32Load(snapshot, block, offset) => {
-                Self::Int32Load(snapshot, block, classes.root(offset))
-            }
+            Self::Int32Load(snapshot, address) => Self::Int32Load(snapshot, classes.root(address)),
         }
     }
 }
@@ -263,6 +278,10 @@ pub(super) struct TermClasses {
             crate::kernel::SharedPureApplication,
         ),
     >,
+    // One exact constructor witness per typed model class. Only a selected
+    // equality's root operands are retained, once, so nested models are not
+    // copied at every subtree. Union carries this witness in constant work.
+    algebraic_constructors: PersistentMap<u64, Arc<crate::kernel::AlgebraicTerm>>,
     condition_kinds: PersistentSet<(congruence::ConditionKind, bool)>,
     // Truth is an annotation of a condition class, not a union between all
     // true facts. Unrelated order facts must not create value equivalences.
@@ -1192,21 +1211,11 @@ impl TermClasses {
     fn register_pending_loads(&mut self) {
         while let Some((id, memory, pointer)) = self.pending_loads.pop() {
             crate::instrumentation::record_deterministic_work(1);
-            let next_block = self.load_blocks.len() as u64;
-            let block = match self.load_blocks.get(&pointer.block) {
-                Some(block) => *block,
-                None => {
-                    self.address_blocks
-                        .insert(next_block, pointer.block.clone());
-                    self.load_blocks.insert(pointer.block, next_block);
-                    next_block
-                }
-            };
-            let offset = self.intern(&pointer.offset);
-            self.register_application(
-                id,
-                Application::Int32Load(memory.read_identity(), block, offset),
-            );
+            // Integer reads use the same complete address application as
+            // pointer and uint64 reads. A checked equality between addresses
+            // must reindex this read even when no affine block relabel exists.
+            let address = self.address(pointer.block, pointer.offset).0;
+            self.register_application(id, Application::Int32Load(memory.read_identity(), address));
         }
     }
 
@@ -1552,6 +1561,13 @@ impl TermClasses {
             }
             self.merge_storage_addresses(moved, kept);
             self.merge_pointer_facts(moved, kept);
+            if let Some(constructor) = self.algebraic_constructors.get(&moved).cloned() {
+                crate::instrumentation::record_deterministic_work(1);
+                self.algebraic_constructors.remove(&moved);
+                if !self.algebraic_constructors.contains_key(&kept) {
+                    self.algebraic_constructors.insert(kept, constructor);
+                }
+            }
             self.merge_additive_addresses(moved, kept);
             self.merge_additive_offsets(moved, kept);
             self.merge_alignment_witnesses(moved, kept);

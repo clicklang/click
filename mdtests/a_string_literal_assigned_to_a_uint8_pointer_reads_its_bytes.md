@@ -2,7 +2,7 @@
 
 The assignment form of
 `a_string_literal_initializing_a_uint8_pointer_reads_its_bytes.md`: under the
-default x86_64-linux-userspace target, assigning a string literal to a
+default user-space target, assigning a string literal to a
 `uint8 *` local without a cast is lowered as the explicit `(uint8 *)` cast,
 which GCC and Clang accept with only a `-Wpointer-sign` warning.
 

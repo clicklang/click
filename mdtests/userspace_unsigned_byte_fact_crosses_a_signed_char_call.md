@@ -26,7 +26,7 @@ int first_of_chars(char *p) {
 ```
 
 ```click
-target "x86_64-linux-userspace";
+target "x86_64-unknown-linux-gnu";
 verifying "unsigned_byte_fact_crosses_a_signed_char_call.c";
 
 int32 first_char(char* p) {

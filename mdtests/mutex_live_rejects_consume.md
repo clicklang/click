@@ -7,7 +7,7 @@ void keep(struct holder *holder) {}
 ```
 
 ```click
-target "x86_64-linux-userspace";
+target "x86_64-unknown-linux-gnu";
 runtime "modeled-pthread";
 verifying "mutex_live_rejects_consume.c";
 void keep(struct holder *holder) { consumes mutex_live(&holder->mu); } by { execute(); simp(); }

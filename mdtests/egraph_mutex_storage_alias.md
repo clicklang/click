@@ -16,7 +16,7 @@ int run(struct holder *first, struct holder *middle, struct holder *last) {
 ```
 
 ```click
-target "x86_64-linux-userspace";
+target "x86_64-unknown-linux-gnu";
 runtime "modeled-pthread";
 verifying "mutex_alias.c";
 int32 run(struct holder *first, struct holder *middle, struct holder *last) {

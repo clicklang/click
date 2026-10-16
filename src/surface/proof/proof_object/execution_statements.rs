@@ -225,10 +225,11 @@ impl<'a> Proof<'a> {
     ///
     /// The candidate list is exactly what the loop head, the contract, and
     /// this path's own C branches name. A candidate is kept only when it
-    /// lowers here, is exactly available, and is a premise the arithmetic
-    /// checker supports, so the work is one indexed lookup and one
-    /// classification per named clause and does not grow with unrelated
-    /// ambient facts.
+    /// lowers here and is exactly available, so the work is one indexed
+    /// lookup per named clause and does not grow with unrelated ambient
+    /// facts. The signed arithmetic planner cites the subset its checker
+    /// supports; a `normalize() using` member closer cites all of them, so
+    /// an unsigned or 64-bit guard is not lost.
     fn named_arithmetic_premises(
         &self,
         bundle: &InvariantBodyContext,
@@ -290,12 +291,6 @@ impl<'a> Proof<'a> {
                 continue;
             };
             if !proof.facts().exact_available_across_effects(&lowered, &[]) {
-                continue;
-            }
-            // The premise classification is the checker's own: a clause it
-            // would reject as unsupported must not be cited, or one unusable
-            // premise would lose the whole candidate.
-            if !crate::surface::checking::signed_arithmetic_premise_supported(&lowered) {
                 continue;
             }
             // Two written spellings of one clause can lower to the same fact
@@ -663,7 +658,6 @@ impl<'a> Proof<'a> {
                 proof = extracted;
             }
             if !proof.facts().exact_available_across_effects(&lowered, &[])
-                || !crate::surface::checking::signed_arithmetic_premise_supported(&lowered)
                 || premises.iter().any(|(kernel, _)| kernel == &lowered)
             {
                 continue;
@@ -682,10 +676,19 @@ impl<'a> Proof<'a> {
         premises: &[NamedArithmeticPremise],
         loop_head_surfaces: &[ClickProposition],
     ) -> Result<Option<Self>, ClickError> {
-        if !premises.is_empty()
+        // The signed planner cites only the premises its checker classifies
+        // as supported: one unusable premise would lose the whole candidate.
+        let signed = premises
+            .iter()
+            .filter(|(kernel, _)| {
+                crate::surface::checking::signed_arithmetic_premise_supported(kernel)
+            })
+            .cloned()
+            .collect::<Vec<_>>();
+        if !signed.is_empty()
             && let Some(goal) = self.goal()
         {
-            let kernels = premises
+            let kernels = signed
                 .iter()
                 .map(|(kernel, _)| kernel.clone())
                 .collect::<Vec<_>>();
@@ -719,7 +722,7 @@ impl<'a> Proof<'a> {
                 crate::surface::checking::plan_signed_arithmetic_certificate(goal, &kernels)
                 && let Some(surface_goal) = self.surface_goal()
                 && let Some(certificate) =
-                    { self.signed_plan_to_surface_certificate(&plan, premises, surface_goal) }
+                    { self.signed_plan_to_surface_certificate(&plan, &signed, surface_goal) }
                 && let Some(closed) = {
                     let attempt =
                         self.apply_step(ProofStep::ArithmeticCertificate(ArithmeticCertificate {
@@ -745,6 +748,41 @@ impl<'a> Proof<'a> {
             }
         }
         if let Some(closed) = self.try_named_forall_goal_from_surfaces(&forall_surfaces) {
+            return Ok(Some(closed));
+        }
+        // The named premises together, as one `normalize() using`: a member
+        // such as `i + 1 <= n` after `i += 1` normalizes to true under the
+        // guard `i < n` at any width, which the signed arithmetic planner
+        // above does not reach for an unsigned or 64-bit counter.
+        if !premises.is_empty() {
+            let normalize = |using: &[ClickProposition]| -> Result<Option<Self>, ClickError> {
+                Ok(attempt::candidate_outcome(
+                    self.apply_step(ProofStep::NormalizeUsing(using.to_vec())),
+                )?
+                .filter(|closed| closed.focused_discharged() || closed.is_complete()))
+            };
+            let mut using = premises
+                .iter()
+                .map(|(_, surface)| surface.clone())
+                .collect::<Vec<_>>();
+            let Some(mut closed) = normalize(&using)? else {
+                return Ok(None);
+            };
+            // Keep only the premises the step needs, so the expansion cites
+            // the guard and not every precondition: one pass, one check per
+            // named premise.
+            let mut index = 0;
+            while index < using.len() {
+                let mut fewer = using.clone();
+                fewer.remove(index);
+                match normalize(&fewer)? {
+                    Some(smaller) => {
+                        using = fewer;
+                        closed = smaller;
+                    }
+                    None => index += 1,
+                }
+            }
             return Ok(Some(closed));
         }
         Ok(None)
@@ -1157,7 +1195,54 @@ impl<'a> Proof<'a> {
                     ),
                 );
             }
+            // A value binder's entry names the instance that gives the
+            // callee's `_` arguments their values, as a resource term at the
+            // call's state; the kernel takes the values from it and still
+            // requires the clause.
+            let mut value_instances = Vec::new();
+            for (binder, argument) in transport.value_arguments() {
+                crate::instrumentation::record_deterministic_work(1);
+                let clause = match argument {
+                    crate::surface::ValueBinderArgument::Term(resource) => resource.clone(),
+                    crate::surface::ValueBinderArgument::Binder(caller) => {
+                        let Some(own) = context
+                            .function_block
+                            .value_binders()
+                            .iter()
+                            .find(|own| own.name == *caller)
+                        else {
+                            return Err(self.step_error(format!(
+                                "`{caller}` is not a value binder of this function"
+                            )));
+                        };
+                        match context.function_block.requires().get(own.requirement_index) {
+                            Some(Requirement::Resource(clause)) => clause.clone(),
+                            _ => {
+                                return Err(self.step_error(format!(
+                                    "value binder `{caller}` has no resource clause"
+                                )));
+                            }
+                        }
+                    }
+                };
+                let state = &*self
+                    .execution()
+                    .ok_or_else(|| {
+                        self.step_error(format!("binder `{binder}` needs an execution state"))
+                    })?
+                    .core
+                    .state;
+                value_instances.push(crate::surface::lowering::lower_resource_clause_at_state(
+                    &clause,
+                    context.parameter_binding(),
+                    state,
+                )?);
+            }
             let mut environment = context.function_environment.clone();
+            if !value_instances.is_empty() {
+                environment =
+                    environment.with_selected_call_value_instances(callee, value_instances);
+            }
             let arity = if transport.is_named_contract() {
                 let definition = context
                     .spec_definitions
@@ -1169,8 +1254,16 @@ impl<'a> Proof<'a> {
             } else {
                 transport.arguments().len()
             };
+            let execution_callee = if transport.is_named_contract() {
+                callee
+            } else {
+                context
+                    .spec_definitions
+                    .predicates
+                    .function_execution_name(callee)
+            };
             selected_environment = environment.with_selected_call_binders_and_types(
-                callee,
+                execution_callee,
                 arity,
                 bindings,
                 type_arguments,
@@ -1637,24 +1730,48 @@ impl<'a> Proof<'a> {
         let recorded = recorded.recorded;
         let open = distinct_requirements(recorded.clone());
         let open = open.iter().collect::<Vec<_>>();
-        let (proved, mut entries) =
-            match self.prove_obligations_by_auto_or_name_the_first_missed(&step, &open)? {
-                Ok(proved) => proved,
-                // Refuse at the obligation the implicit `auto` missed, with
-                // the fast path's own diagnostic for it; another open
-                // obligation it did prove is not what is wrong.
-                Err(missed) => {
-                    return match recorded.iter().position(|requirement| {
-                        crate::kernel::proof::propositions_are_alpha_equal(
-                            &requirement.proposition,
-                            &open[missed].proposition,
-                        )
-                    }) {
-                        Some(position) if position > 0 => Err(refusals[position].clone()),
-                        _ => refused(),
+        let (proved, mut entries) = match self
+            .prove_obligations_by_auto_or_name_the_first_missed(&step, &open)?
+        {
+            Ok(proved) => proved,
+            // Refuse at the obligation the implicit `auto` missed, with
+            // the fast path's own diagnostic for it; another open
+            // obligation it did prove is not what is wrong.
+            Err(missed) => {
+                let refused = match recorded.iter().position(|requirement| {
+                    crate::kernel::proof::propositions_are_alpha_equal(
+                        &requirement.proposition,
+                        &open[missed].proposition,
+                    )
+                }) {
+                    Some(position) if position > 0 => Err(refusals[position].clone()),
+                    _ => refused(),
+                };
+                return refused.map_err(|error| {
+                    // The numeric count carrier can also be a C field
+                    // read. Name the authoritative source requirement.
+                    let Ok(Some(spelling)) = self.requirement_surface(open[missed], &step) else {
+                        return error;
                     };
-                }
-            };
+                    if matches!(
+                        &spelling.surface,
+                        ClickProposition::Comparison {
+                            left: ContractExpression::ResourceCount(_),
+                            ..
+                        } | ClickProposition::Comparison {
+                            right: ContractExpression::ResourceCount(_),
+                            ..
+                        }
+                    ) {
+                        error.with_missing_tactic_requirement(
+                            crate::surface::printing::source_click_proposition(&spelling.surface),
+                        )
+                    } else {
+                        error
+                    }
+                });
+            }
+        };
         let stepped = proved.apply_fast_simple_step(&step)?;
         let proof = if entries.len() == 1 {
             StepProofCertificate::By(Box::new(entries.pop().expect("one entry").proof))
@@ -2574,8 +2691,9 @@ impl<'a> Proof<'a> {
         tactic_index: usize,
     ) -> Result<Self, ClickError> {
         self.apply_planned_fact_transport_inner(surface_source, surface_target, tactic_index)
-            .inspect_err(|_| {
+            .map_err(|error| {
                 self.record_certification_failure_trace(self.claim_label(), 0);
+                self.attach_step_diagnostic(error)
             })
     }
 
@@ -2656,15 +2774,29 @@ impl<'a> Proof<'a> {
                 context.spec_definitions,
             )
             .map_err(|error| {
-                ClickError::new(format!(
-                    "`{claim_label}` tactic {tactic_index}: {}",
-                    fact_transport_planning_failure(
-                        surface_source,
-                        surface_target,
-                        view.unfolded_predicates,
-                        &error,
-                    )
-                ))
+                let mut reason = fact_transport_planning_failure(
+                    surface_source,
+                    surface_target,
+                    view.unfolded_predicates,
+                    &error,
+                );
+                if crate::instrumentation::deadline_exceeded() {
+                    // Lowering already produced these checked identities.
+                    // A stopped planner may print them without rechecking or
+                    // trying further proof routes after its budget expired.
+                    use crate::surface::proof_diagnostics::render;
+                    let _typed = render::TypedNotationScope::enter();
+                    let mut labels = render::SnapshotLabels::with_state(
+                        context.parameter_binding(), state,
+                    );
+                    let source = render::render_proposition_labeled(&source, &mut labels);
+                    let target = render::render_proposition_labeled(&target, &mut labels);
+                    reason.push_str(&format!(
+                        "\n  checked source (holds): {source}\n  checked target (wanted): {target}{}",
+                        labels.trace_legend(),
+                    ));
+                }
+                ClickError::new(format!("`{claim_label}` tactic {tactic_index}: {reason}"))
             })?
         };
         self.apply_step(ProofStep::TransportUsing {
@@ -2751,7 +2883,11 @@ impl<'a> Proof<'a> {
             .execution()
             .cloned()
             .ok_or_else(|| self.step_error("execution-frontier proof lost its semantic state"))?;
-        let mut facts = PureFactList::from_source(self.facts());
+        // The loop's executions copy these facts and transport them; the
+        // proof keeps their transport context from here on, so a later loop
+        // extends it by the facts added since instead of rebuilding it.
+        let source_facts = self.facts().with_direct_transport_assumptions();
+        let mut facts = PureFactList::from_proof_facts(&source_facts);
         let base_facts = facts.len();
         let capture_this_tactic = begin_tactic_expansion_capture(
             expansion_capture.as_deref_mut(),
@@ -2799,7 +2935,7 @@ impl<'a> Proof<'a> {
         }
         debug_assert!(facts.len() >= base_facts);
         let added = facts[base_facts..].to_vec();
-        let mut proof_facts = self.facts().clone();
+        let mut proof_facts = source_facts;
         for fact in &added {
             proof_facts = proof_facts.with_kernel_checked_fact(fact.clone());
         }

@@ -8,11 +8,96 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use click::languages::c::compiler_import::{PreparedCImport, create_lock, load_imports};
+use click::languages::c::compiler_import::PreparedCImport;
 use click::surface::{
     expand_c0_prepared_tactic_source_at, verify_c0_prepared_sources, verify_sources_at,
 };
 use serde_json::json;
+
+/// The fixtures describe each import as the per-sidecar config of earlier
+/// releases, `main.import-description.json`. Click reads only project units,
+/// so this translates a description into the equivalent unit `main` of a
+/// `click.project.json` beside it.
+fn describe_project(description: &Path) -> Result<PathBuf, String> {
+    let directory = description.parent().unwrap();
+    let config: serde_json::Value = serde_json::from_slice(
+        &fs::read(description).map_err(|error| format!("read import description: {error}"))?,
+    )
+    .map_err(|error| format!("parse import description: {error}"))?;
+    let mut sources = serde_json::Map::new();
+    for source in config["sources"].as_array().unwrap() {
+        let mut entry = json!({"args": source["args"]});
+        if let Some(projection) = source.get("projection") {
+            entry["projection"] = projection.clone();
+        }
+        sources.insert(source["path"].as_str().unwrap().to_string(), entry);
+    }
+    let mut unit = json!({
+        "language": "c",
+        "compiler": config["compiler"],
+        "env": config["environment"]["allow"],
+        "sources": sources,
+    });
+    if let Some(root) = config["working_directory"]
+        .as_str()
+        .filter(|root| *root != ".")
+    {
+        unit["root"] = root.into();
+    }
+    if let Some(profile) = config.get("option_profile") {
+        unit["option_profile"] = profile.clone();
+    }
+    let mut project = json!({"units": {"main": unit}});
+    if let Some(target) = config.get("target") {
+        project["target"] = target.clone();
+    }
+    if let Some(mode) = config.get("mode") {
+        project["mode"] = mode.clone();
+    }
+    let project_file = directory.join(click::project::FILE_NAME);
+    fs::write(&project_file, serde_json::to_vec_pretty(&project).unwrap()).unwrap();
+    Ok(project_file)
+}
+
+/// The `main` unit's entry in a project lock.
+fn unit_lock(lock: &serde_json::Value) -> &serde_json::Value {
+    &lock["units"]["main"]["lock"]
+}
+
+fn unit_lock_mut(lock: &mut serde_json::Value) -> &mut serde_json::Value {
+    &mut lock["units"]["main"]["lock"]
+}
+
+/// Prepares the described import as its project's unit.
+fn create_lock(description: &Path) -> Result<(), String> {
+    click::project::Project::load(&describe_project(description)?)?.lock()
+}
+
+/// Loads every described source from its project's lock, without the
+/// compiler.
+fn load_imports(description: &Path) -> Result<Vec<PreparedCImport>, String> {
+    let project_file = describe_project(description)?;
+    let config: serde_json::Value =
+        serde_json::from_slice(&fs::read(description).unwrap()).unwrap();
+    let root = description
+        .parent()
+        .unwrap()
+        .join(config["working_directory"].as_str().unwrap_or("."));
+    let requested = config["sources"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|source| {
+            let path = source["path"].as_str().unwrap().to_string();
+            let canonical = fs::canonicalize(root.join(&path)).ok();
+            (path, canonical)
+        })
+        .collect::<Vec<_>>();
+    match click::project::Project::load(&project_file)?.prepared_sources(&requested)? {
+        Some(click::project::UnitSelection::C(imports)) => Ok(imports),
+        _ => Err("expected the prepared C unit".into()),
+    }
+}
 
 struct Project(PathBuf);
 
@@ -49,7 +134,7 @@ impl Project {
     }
 
     fn config(&self) -> PathBuf {
-        self.0.join("main.click.import.json")
+        self.0.join("main.import-description.json")
     }
 
     fn configure(&self, variant: u32, extra: &[&str]) {
@@ -65,7 +150,8 @@ impl Project {
         args.extend(extra.iter().map(|arg| (*arg).to_string()));
         let config = json!({
             "schema": 1,
-            "target": "x86_64-linux-kernel",
+            "target": "x86_64-unknown-linux-gnu",
+            "mode": "kernel",
             "compiler": "/usr/bin/gcc",
             "working_directory": ".",
             "environment": {"allow": {"PATH": "/usr/bin:/bin", "LC_ALL": "C", "SOURCE_DATE_EPOCH": "0"}},
@@ -172,12 +258,15 @@ fn compiler_import_identity_binds_invocation_even_when_c_bytes_match() {
     let project = Project::new();
     create_lock(&project.config()).unwrap();
     let first = load_imports(&project.config()).unwrap();
-    let original = fs::read(project.0.join("main.i")).unwrap();
+    let original = fs::read(project.0.join(".click/main/main.c.i")).unwrap();
     project.configure(1, &["-DUNUSED_CONFIGURATION_VALUE=123"]);
     assert!(load_imports(&project.config()).is_err());
     create_lock(&project.config()).unwrap();
     let second = load_imports(&project.config()).unwrap();
-    assert_eq!(original, fs::read(project.0.join("main.i")).unwrap());
+    assert_eq!(
+        original,
+        fs::read(project.0.join(".click/main/main.c.i")).unwrap()
+    );
     assert_ne!(first[0].identity(), second[0].identity());
 }
 
@@ -186,7 +275,7 @@ fn compiler_import_identity_binds_invocation_even_when_c_bytes_match() {
 fn compiler_import_header_and_artifact_changes_cannot_reuse_a_lock() {
     let project = Project::new();
     create_lock(&project.config()).unwrap();
-    let artifact = project.0.join("main.i");
+    let artifact = project.0.join(".click/main/main.c.i");
     let original = fs::read(&artifact).unwrap();
     fs::write(&artifact, "int answer(void) { return 999; }\n").unwrap();
     assert!(load_imports(&project.config()).is_err());
@@ -351,43 +440,6 @@ fn compiler_import_results_bind_helpers_in_other_translation_units() {
 }
 
 #[test]
-#[ignore = "nightly: 1.5s in the parallel gate"]
-fn compiler_import_rejects_output_input_collisions_before_writing() {
-    let project = Project::new();
-    let original = fs::read(project.0.join("main.c")).unwrap();
-    let original_config = fs::read(project.config()).unwrap();
-    for artifact in [
-        "main.c",
-        "main.click.import.json",
-        "main.click.import.lock.json",
-    ] {
-        let mut config: serde_json::Value = serde_json::from_slice(&original_config).unwrap();
-        config["sources"][0]["artifact"] = json!(artifact);
-        fs::write(
-            project.config(),
-            serde_json::to_vec_pretty(&config).unwrap(),
-        )
-        .unwrap();
-        assert!(create_lock(&project.config()).is_err());
-        assert_eq!(fs::read(project.0.join("main.c")).unwrap(), original);
-    }
-    let mut config: serde_json::Value = serde_json::from_slice(&original_config).unwrap();
-    config["sources"][0]["artifact"] = json!("context.h");
-    let header = fs::read(project.0.join("context.h")).unwrap();
-    fs::write(
-        project.config(),
-        serde_json::to_vec_pretty(&config).unwrap(),
-    )
-    .unwrap();
-    assert!(
-        create_lock(&project.config())
-            .unwrap_err()
-            .contains("owned output")
-    );
-    assert_eq!(fs::read(project.0.join("context.h")).unwrap(), header);
-}
-
-#[test]
 #[ignore = "nightly: 3s in the parallel gate"]
 fn compiler_import_preserves_explicit_external_assumption_reporting() {
     let project = Project::new();
@@ -396,7 +448,7 @@ fn compiler_import_preserves_explicit_external_assumption_reporting() {
         "int external_identity(int x);\nint caller(int x) { return external_identity(x); }\n",
     )
     .unwrap();
-    let proof = "target \"x86_64-linux-kernel\";\nverifying \"main.c\";\nextern int32 external_identity(int32 x) { requires x >= 0; ensures result == x; }\nint32 caller(int32 x) { requires x >= 0; ensures result == x; }\n";
+    let proof = "target \"x86_64-unknown-linux-gnu\";\nmode \"kernel\";\nverifying \"main.c\";\nextern int32 external_identity(int32 x) { requires x >= 0; ensures result == x; }\nint32 caller(int32 x) { requires x >= 0; ensures result == x; }\n";
     create_lock(&project.config()).unwrap();
     let imports = load_imports(&project.config()).unwrap();
     let assumptions = click::surface::c0_prepared_external_dependencies(proof, &imports).unwrap();
@@ -410,7 +462,8 @@ fn compiler_import_preserves_explicit_external_assumption_reporting() {
 fn configure_userspace(project: &Project) {
     let mut config: serde_json::Value =
         serde_json::from_slice(&fs::read(project.config()).unwrap()).unwrap();
-    config["target"] = json!("x86_64-linux-userspace");
+    config["target"] = json!("x86_64-unknown-linux-gnu");
+    config.as_object_mut().unwrap().remove("mode");
     fs::write(
         project.config(),
         serde_json::to_vec_pretty(&config).unwrap(),
@@ -441,7 +494,7 @@ int answer(void) { return ANSWER; }
 "#,
     )
     .unwrap();
-    let proof = "target \"x86_64-linux-userspace\"; verifying \"main.c\"; int answer() { ensures result == 42; } by { execute(); simp(); }";
+    let proof = "target \"x86_64-unknown-linux-gnu\"; verifying \"main.c\"; int answer() { ensures result == 42; } by { execute(); simp(); }";
     create_lock(&project.config()).unwrap();
     let imports = load_imports(&project.config()).unwrap();
     let verified = verify_c0_prepared_sources(proof, &imports).unwrap();
@@ -453,7 +506,7 @@ int answer(void) { return ANSWER; }
     let expanded = expand_c0_prepared_tactic_source_at(proof, &imports, 1, column).unwrap();
     verify_c0_prepared_sources(&expanded, &imports).unwrap();
     // Both whole-file and selected-site checking must reject a target mismatch.
-    let wrong = proof.replace("x86_64-linux-userspace", "x86_64-linux-kernel");
+    let wrong = proof.replace("verifying", "mode \"kernel\"; verifying");
     let error = verify_c0_prepared_sources(&wrong, &imports).unwrap_err();
     assert!(
         error.message().contains("but the sidecar selects"),
@@ -479,14 +532,17 @@ fn userspace_and_kernel_imports_have_distinct_identity_for_identical_c() {
     .unwrap();
     create_lock(&project.config()).unwrap();
     let kernel = load_imports(&project.config()).unwrap();
-    let original = fs::read(project.0.join("main.i")).unwrap();
+    let original = fs::read(project.0.join(".click/main/main.c.i")).unwrap();
     configure_userspace(&project);
     assert!(load_imports(&project.config()).is_err());
     create_lock(&project.config()).unwrap();
     let userspace = load_imports(&project.config()).unwrap();
-    assert_eq!(original, fs::read(project.0.join("main.i")).unwrap());
+    assert_eq!(
+        original,
+        fs::read(project.0.join(".click/main/main.c.i")).unwrap()
+    );
     assert_ne!(kernel[0].identity(), userspace[0].identity());
-    let proof = "target \"x86_64-linux-userspace\"; verifying \"main.c\"; int answer() { ensures result == 42; } by { execute(); simp(); }";
+    let proof = "target \"x86_64-unknown-linux-gnu\"; verifying \"main.c\"; int answer() { ensures result == 42; } by { execute(); simp(); }";
     assert!(verify_c0_prepared_sources(proof, &kernel).is_err());
     verify_c0_prepared_sources(proof, &userspace).unwrap();
 }
@@ -519,7 +575,7 @@ fn userspace_compiler_import_refuses_profile_overrides_and_ambient_headers() {
     fs::write(project.0.join("main.c"), "#include <pthread.h>\n").unwrap();
     let error = create_lock(&project.config()).unwrap_err();
     assert!(error.contains("pthread.h"), "{error}");
-    assert!(!project.0.join("main.i").exists());
+    assert!(!project.0.join(".click/main/main.c.i").exists());
 }
 
 #[test]
@@ -1256,14 +1312,14 @@ fn userspace_import(files: &[(&str, &str)], args: &[&str]) -> tempfile::TempDir 
 fn write_userspace_config(root: &Path, args: &[&str]) {
     let config = json!({
         "schema": 1,
-        "target": "x86_64-linux-userspace",
+        "target": "x86_64-unknown-linux-gnu",
         "compiler": "/usr/bin/gcc",
         "working_directory": ".",
         "environment": {"allow": {"PATH": "/usr/bin:/bin", "LC_ALL": "C"}},
         "sources": [{"logical_source": "main.c", "path": "main.c", "args": args, "artifact": "main.i"}]
     });
     fs::write(
-        root.join("main.click.import.json"),
+        root.join("main.import-description.json"),
         serde_json::to_vec_pretty(&config).unwrap(),
     )
     .unwrap();
@@ -1283,11 +1339,11 @@ int32_t label_fits(const char *label) {
 }
 "#;
 
-const LABEL_PROOF: &str = r#"target "x86_64-linux-userspace";
+const LABEL_PROOF: &str = r#"target "x86_64-unknown-linux-gnu";
 verifying "main.c";
 
 int32 label_fits(const char* label) {
-    requires click::cstr::readable(label);
+    views str: click::cstr::cstr_at(label, _);
     ensures result == 0 or result == 1;
 } by {
     execute();
@@ -1305,26 +1361,27 @@ fn compiler_import_supplies_clicks_modeled_headers_beside_project_flags() {
         ],
         &["-I", "include", "-DLIMIT_FROM_BUILD=16"],
     );
-    let config = project.path().join("main.click.import.json");
+    let config = project.path().join("main.import-description.json");
     create_lock(&config).expect("lock a user-space import that includes libc headers");
-    let artifact = fs::read_to_string(project.path().join("main.i")).unwrap();
+    let artifact = fs::read_to_string(project.path().join(".click/main/main.c.i")).unwrap();
     // The artifact names Click's headers, not the private directory GCC
     // read them from, so a refresh reproduces it byte for byte.
     assert!(artifact.contains("# 1 \"<string.h>\" 1 3 4"), "{artifact}");
     assert!(!artifact.contains("click-import-headers"), "{artifact}");
     assert!(artifact.contains("size_t strlen(const char *s);"));
-    let lock: serde_json::Value = serde_json::from_slice(
-        &fs::read(project.path().join("main.click.import.lock.json")).unwrap(),
-    )
-    .unwrap();
-    assert_eq!(lock["schema"], 3);
-    let opened = lock["sources"][0]["click_headers"].as_object().unwrap();
+    let lock: serde_json::Value =
+        serde_json::from_slice(&fs::read(project.path().join("click.project.lock.json")).unwrap())
+            .unwrap();
+    assert_eq!(unit_lock(&lock)["schema"], 3);
+    let opened = unit_lock(&lock)["sources"][0]["click_headers"]
+        .as_object()
+        .unwrap();
     assert_eq!(
         opened.keys().map(String::as_str).collect::<Vec<_>>(),
         ["limits.h", "stdint.h", "string.h"]
     );
     assert!(
-        lock["sources"][0]["dependencies"]
+        unit_lock(&lock)["sources"][0]["dependencies"]
             .as_object()
             .unwrap()
             .keys()
@@ -1335,14 +1392,14 @@ fn compiler_import_supplies_clicks_modeled_headers_beside_project_flags() {
     verify_c0_prepared_sources(LABEL_PROOF, &imports).expect("strlen binds to Click's contract");
     // The call is checked against the contract: without its precondition
     // the proof fails, and so does a claim the length does not decide.
-    let unreadable = LABEL_PROOF.replace("    requires click::cstr::readable(label);\n", "");
+    let unreadable = LABEL_PROOF.replace("    views str: click::cstr::cstr_at(label, _);\n", "");
     assert!(verify_c0_prepared_sources(&unreadable, &imports).is_err());
     let false_claim = LABEL_PROOF.replace("result == 0 or result == 1", "result == 1");
     assert!(verify_c0_prepared_sources(&false_claim, &imports).is_err());
     create_lock(&config).unwrap();
     assert_eq!(
         artifact,
-        fs::read_to_string(project.path().join("main.i")).unwrap(),
+        fs::read_to_string(project.path().join(".click/main/main.c.i")).unwrap(),
         "a refresh reproduces the artifact"
     );
 }
@@ -1351,7 +1408,7 @@ fn compiler_import_supplies_clicks_modeled_headers_beside_project_flags() {
 #[ignore = "nightly: 9s serial; the examples gate locks a modeled-header import"]
 fn compiler_import_refuses_unmodeled_system_headers_by_name() {
     let project = userspace_import(&[("main.c", "#include <stdio.h>\nint x;\n")], &[]);
-    let config = project.path().join("main.click.import.json");
+    let config = project.path().join("main.import-description.json");
     let error = create_lock(&config).unwrap_err();
     assert!(
         error.contains("<stdio.h> is not one of Click's modeled system headers")
@@ -1359,7 +1416,7 @@ fn compiler_import_refuses_unmodeled_system_headers_by_name() {
             && !error.contains("click-import-headers"),
         "{error}"
     );
-    assert!(!project.path().join("main.i").exists());
+    assert!(!project.path().join(".click/main/main.c.i").exists());
 
     // `__has_include` finds a hosted header Click refuses, as it finds the C
     // library's, so the program cannot silently take the other branch.
@@ -1379,7 +1436,7 @@ fn compiler_import_refuses_unmodeled_system_headers_by_name() {
     let error = create_lock(&config).unwrap_err();
     assert!(
         error.contains("openssl/ssl.h: No such file or directory")
-            && error.contains("the system headers Click supplies for x86_64-linux-userspace are <inttypes.h>, <limits.h>"),
+            && error.contains("the system headers Click supplies for x86_64-unknown-linux-gnu (userspace) are <inttypes.h>, <limits.h>"),
         "{error}"
     );
 
@@ -1394,7 +1451,7 @@ fn compiler_import_refuses_unmodeled_system_headers_by_name() {
     // The kernel target has only the freestanding headers Click models.
     let mut kernel: serde_json::Value =
         serde_json::from_slice(&fs::read(&config).unwrap()).unwrap();
-    kernel["target"] = json!("x86_64-linux-kernel");
+    kernel["mode"] = json!("kernel");
     fs::write(&config, serde_json::to_vec_pretty(&kernel).unwrap()).unwrap();
     fs::write(
         project.path().join("main.c"),
@@ -1405,7 +1462,7 @@ fn compiler_import_refuses_unmodeled_system_headers_by_name() {
     assert!(
         error.contains("string.h: No such file or directory")
             && error.contains(
-                "for x86_64-linux-kernel are <inttypes.h>, <limits.h>, <stdbool.h>, <stdint.h>;"
+                "for x86_64-unknown-linux-gnu (kernel) are <inttypes.h>, <limits.h>, <stdbool.h>, <stdint.h>;"
             ),
         "{error}"
     );
@@ -1429,12 +1486,12 @@ fn compiler_import_project_headers_precede_clicks_in_gcc_search_order() {
         ],
         &["-iquote", "quoted"],
     );
-    let config = project.path().join("main.click.import.json");
+    let config = project.path().join("main.import-description.json");
     let which = |args: &[&str]| {
         write_userspace_config(project.path(), args);
         create_lock(&config).unwrap();
         let imports = load_imports(&config).unwrap();
-        let lock = fs::read_to_string(project.path().join("main.click.import.lock.json")).unwrap();
+        let lock = fs::read_to_string(project.path().join("click.project.lock.json")).unwrap();
         // GCC splits an expansion from a system header across line markers,
         // so compare the C without whitespace.
         let source = imports[0].source().split_whitespace().collect::<String>();
@@ -1473,15 +1530,15 @@ fn compiler_import_lock_binds_clicks_header_text_and_catalog() {
         ],
         &["-Iinclude"],
     );
-    let config = project.path().join("main.click.import.json");
-    let lock_path = project.path().join("main.click.import.lock.json");
+    let config = project.path().join("main.import-description.json");
+    let lock_path = project.path().join("click.project.lock.json");
     create_lock(&config).unwrap();
     let original = fs::read_to_string(&lock_path).unwrap();
     load_imports(&config).unwrap();
     let mut lock: serde_json::Value = serde_json::from_str(&original).unwrap();
     // A lock prepared against a different `<string.h>` text, as after a
     // Click upgrade that changes the model, must be refreshed.
-    lock["sources"][0]["click_headers"]["string.h"] = json!("0".repeat(64));
+    unit_lock_mut(&mut lock)["sources"][0]["click_headers"]["string.h"] = json!("0".repeat(64));
     fs::write(&lock_path, serde_json::to_vec_pretty(&lock).unwrap()).unwrap();
     let error = load_imports(&config).unwrap_err();
     assert!(
@@ -1490,23 +1547,25 @@ fn compiler_import_lock_binds_clicks_header_text_and_catalog() {
     );
     // So must one prepared against a different header set.
     let mut lock: serde_json::Value = serde_json::from_str(&original).unwrap();
-    lock["click_header_catalog_sha256"] = json!("0".repeat(64));
+    unit_lock_mut(&mut lock)["click_header_catalog_sha256"] = json!("0".repeat(64));
     fs::write(&lock_path, serde_json::to_vec_pretty(&lock).unwrap()).unwrap();
     let error = load_imports(&config).unwrap_err();
     assert!(
-        error.contains("Click's system headers for x86_64-linux-userspace changed"),
+        error.contains("Click's system headers for x86_64-unknown-linux-gnu (userspace) changed"),
         "{error}"
     );
     // Dropping the record does not turn the lock into a legacy one.
     let mut lock: serde_json::Value = serde_json::from_str(&original).unwrap();
-    lock.as_object_mut()
+    unit_lock_mut(&mut lock)
+        .as_object_mut()
         .unwrap()
         .remove("click_header_catalog_sha256");
     fs::write(&lock_path, serde_json::to_vec_pretty(&lock).unwrap()).unwrap();
     assert!(load_imports(&config).is_err());
     let mut lock: serde_json::Value = serde_json::from_str(&original).unwrap();
-    lock["schema"] = json!(2);
-    lock.as_object_mut()
+    unit_lock_mut(&mut lock)["schema"] = json!(2);
+    unit_lock_mut(&mut lock)
+        .as_object_mut()
         .unwrap()
         .remove("click_header_catalog_sha256");
     fs::write(&lock_path, serde_json::to_vec_pretty(&lock).unwrap()).unwrap();
@@ -2141,12 +2200,12 @@ fn project_unit_verifies_an_external_tree_in_place() {
     let project_file = root.join("proofs/click.project.json");
     let describe = |capacity: u32| {
         json!({
-            "target": "x86_64-linux-userspace",
+            "target": "x86_64-unknown-linux-gnu",
             "units": {"label": {
                 "language": "c",
                 "root": "../vendor/label-1.0",
                 "compiler": "/usr/bin/gcc",
-                "environment": {"PATH": "/usr/bin:/bin", "LC_ALL": "C"},
+                "env": {"PATH": "/usr/bin:/bin", "LC_ALL": "C"},
                 "args": ["-Isrc/include", format!("-DLABEL_CAPACITY={capacity}")],
                 "sources": {"src/label_fit.c": {}, "src/label_copy.c": {}}
             }}

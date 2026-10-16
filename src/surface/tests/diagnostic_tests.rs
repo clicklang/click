@@ -1,6 +1,38 @@
 use super::*;
 
 #[test]
+fn callback_sources_keep_field_names_through_subobject_lowering() {
+    let functions = syntax::parse_functions_for_source(
+        r#"
+        struct callbacks {
+            void (*propagate)(int32* p);
+            void (*copy)(int32* p);
+        };
+        struct owner { struct callbacks* callbacks; };
+        void first(struct callbacks* cb, int32* p) { cb->propagate(p); }
+        void later(struct callbacks* cb, int32* p) { cb->copy(p); }
+        void nested(struct owner* owner, int32* p) { owner->callbacks->copy(p); }
+        "#,
+        "callback-names.c",
+    )
+    .unwrap();
+    for (function, expected) in
+        functions
+            .iter()
+            .zip(["cb->propagate", "cb->copy", "owner->callbacks->copy"])
+    {
+        let sources = function.callback_statement_sources();
+        assert_eq!(sources.len(), 1, "{}", function.name());
+        let source = sources.values().next().unwrap();
+        assert_eq!(
+            crate::surface::diagnostics::describe_callback_source(source),
+            expected
+        );
+    }
+    assert_eq!(functions.len(), 3);
+}
+
+#[test]
 fn implicit_loop_closure_is_smart_while_written_closure_is_simple() {
     use crate::instrumentation::{VerificationEvent, collect};
     let c = "int f(int n) { while (n > 0) { n = n - 1; } return n; }";
@@ -182,7 +214,7 @@ fn uninitialized_mutex_is_a_named_proof_prerequisite() {
         void use_mutex(struct cell *cell) { pthread_mutex_lock(&cell->mu); }
     "#;
     let click_source = r#"
-        target "x86_64-linux-userspace";
+        target "x86_64-unknown-linux-gnu";
         runtime "modeled-pthread";
         verifying "mutex.c";
         void use_mutex(struct cell *cell) { ensures 0 == 0; } by { step(); }
@@ -217,7 +249,7 @@ fn worker_without_protocol_contract_is_a_proof_error() {
         }
     "#;
     let click_source = r#"
-        target "x86_64-linux-userspace";
+        target "x86_64-unknown-linux-gnu";
         runtime "modeled-pthread";
         resource box_state(box: struct box*) {
             field value: int32;
@@ -2758,7 +2790,7 @@ const CLOSURE_TRACE_C: &str = r#"unsigned long drain(unsigned long len) {
 }
 "#;
 
-const CLOSURE_TRACE_CLICK: &str = r#"target "x86_64-linux-userspace";
+const CLOSURE_TRACE_CLICK: &str = r#"target "x86_64-unknown-linux-gnu";
 verifying "loop.c";
 uint64 drain(uint64 len) {
  requires len == 16u64;
@@ -2886,7 +2918,7 @@ fn failed_invariant_closure_trace_prefix_is_lazy_and_scales() {
 #[test]
 fn failed_invariant_closure_trace_keeps_its_branch_guard() {
     let c = "unsigned long branch_drain(unsigned long len, int flag) { while (len >= 16) { if (flag == 0) { len -= 16; } else { len -= 8; } } return len; }";
-    let source = r#"target "x86_64-linux-userspace";
+    let source = r#"target "x86_64-unknown-linux-gnu";
         verifying "loop.c";
         uint64 branch_drain(uint64 len, int32 flag) {
             requires len == 16u64;
@@ -2928,7 +2960,7 @@ fn failed_invariant_closure_trace_keeps_its_branch_guard() {
 fn native_view_simp_reports_the_actual_premise_spelling_limit() {
     let source = |extra_bounds: usize, body: &str| {
         let mut source = String::from(
-            "target \"x86_64-linux-userspace\"; theorem broad_view(p: uint8[], n: uint64) { views p[0u64..n]; requires 1u64 <= n;",
+            "target \"x86_64-unknown-linux-gnu\"; theorem broad_view(p: uint8[], n: uint64) { views p[0u64..n]; requires 1u64 <= n;",
         );
         for bound in 2..2 + extra_bounds {
             source.push_str(&format!(" requires n <= {bound}u64;"));
@@ -2990,7 +3022,7 @@ fn native_view_simp_reports_the_actual_premise_spelling_limit() {
 
 #[test]
 fn native_view_simp_distinguishes_a_rejected_kernel_query() {
-    let source = "target \"x86_64-linux-userspace\"; theorem false_view(p: uint8[], n: uint64) { views p[0u64..n]; requires n == 0u64; ensures viewable(p[0u64..1u64]) by { simp(); } }";
+    let source = "target \"x86_64-unknown-linux-gnu\"; theorem false_view(p: uint8[], n: uint64) { views p[0u64..n]; requires n == 0u64; ensures viewable(p[0u64..1u64]) by { simp(); } }";
     let error = verify_c0_sources(source, &[]).expect_err("an empty view cannot cover one byte");
     let report = error.concise_report();
     assert!(
@@ -3381,9 +3413,68 @@ fn rejected_loop_transport_premise_uses_shared_exact_diagnostic() {
     });
 }
 
+#[test]
+fn rejected_wide_transport_shows_actual_walk_stop_and_prefix() {
+    let c = "void f(uint64 *p) { p[0] = 9; int32 y = 0; return; }";
+    let source = r#"verifying "f.c";
+        void f(uint64 *p) {
+            owns p[0]; requires p[0] == 7u64; ensures true;
+        } by {
+            mark before_write; step();
+            transport(at(before_write, p[0] == 7u64), p[0] == 7u64) using {
+                at(before_write, p[0] == 7u64);
+            };
+            execute(); normalize();
+        }
+    "#;
+    with_proof_trace("f", || {
+        let error = verify_c0_sources(source, &[("f.c", c)])
+            .expect_err("a real write invalidates the old word");
+        let message = error.message();
+        for expected in [
+            "cell walks performed while checking transport",
+            "address: value#",
+            "width: 8 bytes",
+            "start: snapshot#",
+            "stop: snapshot#",
+            "oldest recorded snapshot reached",
+            "step affects the queried bytes",
+            "transport label definitions",
+            "store",
+            "read<Bits64>",
+        ] {
+            assert!(message.contains(expected), "missing {expected}: {message}");
+        }
+        assert!(!message.contains("information unavailable"), "{message}");
+        let trace = error
+            .trace_context_report()
+            .expect("retain the failed written check's prefix");
+        assert!(trace.contains("steps through: p[0] = 9"), "{trace}");
+    });
+}
+
 #[cfg(test)]
 mod scaling_tests {
     include!("../../scaling_tests/surface/tests/diagnostic_tests.rs");
+}
+
+#[test]
+#[ignore = "nightly: repeated-retain source diagnostic took 0.63s in parallel"]
+fn a_failed_retain_names_the_population_count_requirement() {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("mdtests/repeated_child_retains_require_enough_count_capacity.md");
+    let markdown = std::fs::read_to_string(&path).unwrap();
+    let fixture = crate::cli::parse_mdtest(&path, &markdown).unwrap();
+    let sources = fixture
+        .c_sources
+        .iter()
+        .map(|(name, source)| (name.as_str(), source.as_str()))
+        .collect::<Vec<_>>();
+    let error = verify_c0_sources(fixture.click_source.as_deref().unwrap(), &sources)
+        .expect_err("the caller does not establish the helper's stricter count bound");
+    let (report, _) = error.concise_report_parts();
+    assert!(report.contains("count(child_ref(obj)) < 8"), "{report}");
+    assert!(!report.contains("*obj"), "{report}");
 }
 
 /// A written auto miss keeps the same checked prefix as other have failures.
@@ -3410,5 +3501,47 @@ fn auto_have_failure_trace_retains_checked_call_prefix() {
         );
         assert!(!trace.contains("adds: x == 2"), "{trace}");
         assert!(!trace.contains("<no checked simple steps"), "{trace}");
+    });
+}
+
+#[test]
+fn budget_stopped_transport_retains_its_checked_loop_prefix() {
+    use crate::instrumentation::{TacticWorkLimits, with_tactic_work_limits};
+    let source = r#"verifying "f.c";
+        void f(int32 *p) { owns p[0]; requires p[0] == 7; ensures true; } by {
+            loop {
+                owns p[0];
+                invariant p[0] == 7;
+                decreases 0;
+                initialize by { assumption(); }
+                preserve by {
+                    mark before;
+                    step();
+                    transport(at(before, p[0] == 7), p[0] == 7);
+                    step();
+                }
+            }
+            execute(); normalize();
+        }
+    "#;
+    with_proof_trace("f", || {
+        let error = with_tactic_work_limits(
+            TacticWorkLimits {
+                smart: 0,
+                ..TacticWorkLimits::default()
+            },
+            || {
+                verify_c0_sources(
+                    source,
+                    &[("f.c", "void f(int32 *p) { while (1) { *p = 9; break; } }")],
+                )
+            },
+        )
+        .expect_err("the written smart transport has no work allowance");
+        assert!(error.message().contains("budget"), "{}", error.message());
+        let trace = error
+            .trace_context_report()
+            .expect("attach the checked predecessor even on a budget error");
+        assert!(trace.contains("steps through: *p = 9"), "{trace}");
     });
 }

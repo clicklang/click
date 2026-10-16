@@ -1433,6 +1433,19 @@ impl CFunction {
         self.contract_interface.parameters.pop()
     }
 
+    /// This function with its last `count` parameters as contract value
+    /// parameters: values its contract names that are not C arguments. A
+    /// call binds them per call; the body is proved for every value.
+    pub(crate) fn with_trailing_value_parameters(mut self, count: usize) -> Option<Self> {
+        if count == 0 {
+            return Some(self);
+        }
+        self.contract_interface = self
+            .contract_interface
+            .with_trailing_value_parameters(count)?;
+        Some(self)
+    }
+
     pub fn global_variables(&self) -> &[CGlobal] {
         &self.global_variables
     }
@@ -3319,6 +3332,18 @@ impl CExecutionEnvironment {
         self
     }
 
+    /// Selects the instances, as resource terms, that give one ordinary C
+    /// call to `function` its contract value parameters.
+    pub(crate) fn with_selected_call_value_instances(
+        mut self,
+        function: &str,
+        instances: Vec<CResourceFact>,
+    ) -> Self {
+        self.selected_call_value_arguments =
+            Some(std::sync::Arc::new((function.to_string(), instances)));
+        self
+    }
+
     /// Selects the binder transport for one ordinary C call to `function`.
     /// The map is the only source of bindings for that call.
     pub(crate) fn with_selected_call_binders(
@@ -3450,8 +3475,9 @@ impl CExecutionEnvironment {
         mut self,
         rules: impl IntoIterator<Item = CVerifiedLoopRule>,
     ) -> Self {
+        // Loop rules keep their own variable indexes, so the environment's
+        // index of its other parts stays valid.
         std::sync::Arc::make_mut(&mut self.verified_loop_rules).extend(rules);
-        self.variable_index = CExecutionEnvironmentVariableIndex::default();
         self
     }
 
@@ -3586,9 +3612,13 @@ impl CExecutionEnvironment {
         assumptions: &PureFactContext,
     ) -> Option<&CVerifiedLoopRule> {
         self.verified_loop_rules.iter().find(|rule| {
-            let statement_matches =
-                rule.loop_statement == *statement && self.loop_rule_answers_for_recursion(rule);
-            let assumptions_match = rule
+            // Every rule this environment holds is a candidate; only the one
+            // for this loop statement is worth checking further. The checks
+            // below read the rule's whole prerequisite context and state.
+            if rule.loop_statement != *statement || !self.loop_rule_answers_for_recursion(rule) {
+                return false;
+            }
+            let assumptions_match = || rule
                 .required_assumptions
                 .pure_facts()
                 .iter()
@@ -3639,7 +3669,7 @@ impl CExecutionEnvironment {
                     state.resources(),
                     assumptions,
                 );
-            state_matches && statement_matches && assumptions_match
+            state_matches && assumptions_match()
         })
     }
 }

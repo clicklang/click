@@ -18,7 +18,7 @@ void *producer(void *argument) {
 ```
 
 ```click
-target "x86_64-linux-userspace";
+target "x86_64-unknown-linux-gnu";
 runtime "modeled-pthread";
 verifying "publication_release_store_requires_release_order.c";
 resource ready_payload(channel: struct channel*) {

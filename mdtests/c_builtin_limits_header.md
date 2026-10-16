@@ -27,7 +27,8 @@ int limits_sum(void) {
 ```
 
 ```click
-target "x86_64-linux-kernel";
+target "x86_64-unknown-linux-gnu";
+mode "kernel";
 verifying "builtin_limits.c";
 
 int limits_sum() {

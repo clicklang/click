@@ -276,6 +276,40 @@ fn related_memory_base_roots(
     roots
 }
 
+/// A constant translation of exactly one unregistered int32 scalar atom.
+/// Loads, sums of atoms, and native/wide expressions stay open. In particular
+/// a registered load variable is not an independent address parameter.
+fn memory_base_variable(base: &Pointer) -> Option<Variable> {
+    let mut variable = None;
+    let mut pending = vec![&base.offset];
+    while let Some(offset) = pending.pop() {
+        match offset {
+            PointerOffsetTerm::Constant(_) => {}
+            PointerOffsetTerm::Add(left, right) => {
+                pending.push(right);
+                pending.push(left);
+            }
+            PointerOffsetTerm::Int32Scaled { value, byte_width } if *byte_width > 0 => {
+                let Bitvector32Term::Variable(candidate) = value.as_ref() else {
+                    return None;
+                };
+                if variable.is_some() || crate::kernel::is_load_variable(candidate) {
+                    return None;
+                }
+                variable = Some(*candidate);
+            }
+            _ => return None,
+        }
+    }
+    variable
+}
+
+fn owned_range_base_variable(range: &CMemoryRange) -> Option<Variable> {
+    range.signed_constant_start()?;
+    range.signed_constant_end()?;
+    memory_base_variable(range.base())
+}
+
 /// A range's two endpoints as the signed `int32` numbers they are, present
 /// only when both are constant.
 ///
@@ -363,6 +397,9 @@ impl ResourceContextIndex {
             }
         }
         if fact.is_own() {
+            if fact.memory_own_range().is_none() {
+                result.owned_non_memory_entries = result.owned_non_memory_entries.with_value(entry);
+            }
             result.owned_count += 1;
             if let CResource::Composite { arguments, .. } = fact.resource() {
                 result.owned_composite_count += 1;
@@ -502,6 +539,19 @@ impl ResourceContextIndex {
                 .update(range, fact.is_own(), entry, true, fact);
             result.memory_objects.update(entry, true, fact);
             if mode {
+                if let Some(variable) = owned_range_base_variable(range) {
+                    result.owned_memory_by_base_variable = insert_resource_index_entry(
+                        &result.owned_memory_by_base_variable,
+                        (block.clone(), variable),
+                        entry,
+                    );
+                } else {
+                    result.owned_memory_open_bases = insert_resource_index_entry(
+                        &result.owned_memory_open_bases,
+                        block.clone(),
+                        entry,
+                    );
+                }
                 result.owned_memory_by_root = insert_resource_index_entry(
                     &result.owned_memory_by_root,
                     memory_base_root(range.base()),
@@ -516,7 +566,7 @@ impl ResourceContextIndex {
                     block.clone(),
                     entry,
                 );
-                if block.starts_with("local:") {
+                if block.is_local_block() {
                     result.owned_automatic_memory_by_block = insert_resource_index_entry(
                         &result.owned_automatic_memory_by_block,
                         block.clone(),
@@ -593,6 +643,10 @@ impl ResourceContextIndex {
             }
         }
         if fact.is_own() {
+            if fact.memory_own_range().is_none() {
+                result.owned_non_memory_entries =
+                    result.owned_non_memory_entries.without_value(&entry);
+            }
             result.owned_count -= 1;
             if let CResource::Composite { arguments, .. } = fact.resource() {
                 result.owned_composite_count -= 1;
@@ -760,6 +814,16 @@ impl ResourceContextIndex {
                 .update(range, fact.is_own(), entry, false, fact);
             result.memory_objects.update(entry, false, fact);
             if mode {
+                if let Some(variable) = owned_range_base_variable(range) {
+                    result.owned_memory_by_base_variable = remove_resource_index_entry(
+                        &result.owned_memory_by_base_variable,
+                        &(block.clone(), variable),
+                        entry,
+                    );
+                } else {
+                    result.owned_memory_open_bases =
+                        remove_resource_index_entry(&result.owned_memory_open_bases, &block, entry);
+                }
                 result.owned_memory_by_root = remove_resource_index_entry(
                     &result.owned_memory_by_root,
                     &memory_base_root(range.base()),
@@ -771,7 +835,7 @@ impl ResourceContextIndex {
                 }
                 result.owned_memory_by_block =
                     remove_resource_index_entry(&result.owned_memory_by_block, &block, entry);
-                if block.starts_with("local:") {
+                if block.is_local_block() {
                     result.owned_automatic_memory_by_block = remove_resource_index_entry(
                         &result.owned_automatic_memory_by_block,
                         &block,
@@ -3840,6 +3904,38 @@ impl ResourceContext {
         };
         let left_view = CResourceFact::View(left.clone());
         let right_view = CResourceFact::View(right.clone());
+        if let (CResource::Memory(left), CResource::Memory(right)) = (left, right) {
+            let left_positions = self.owned_memory_candidates_for_range(left, assumptions);
+            let right_positions = self.owned_memory_candidates_for_range(right, assumptions);
+            #[cfg(debug_assertions)]
+            {
+                self.cross_check_owned_candidates(&left.base().block, &left_positions, |range| {
+                    resource_fact_entails(
+                        &CResourceFact::own_memory(range.clone()),
+                        &left_view,
+                        assumptions,
+                    )
+                });
+                self.cross_check_owned_candidates(&right.base().block, &right_positions, |range| {
+                    resource_fact_entails(
+                        &CResourceFact::own_memory(range.clone()),
+                        &right_view,
+                        assumptions,
+                    )
+                });
+            }
+            return left_positions.iter().any(|left_entry| {
+                resource_fact_entails(self.fact(*left_entry), &left_view, assumptions)
+                    && right_positions.iter().any(|right_entry| {
+                        left_entry != right_entry
+                            && resource_fact_entails(
+                                self.fact(*right_entry),
+                                &right_view,
+                                assumptions,
+                            )
+                    })
+            });
+        }
         let Some(left_positions) = self.direct_match_candidate_positions(&left_view) else {
             return false;
         };
@@ -4117,8 +4213,8 @@ impl ResourceContext {
     /// query costs those members, not every owned member of the block
     /// (every object a pointer parameter reaches shares one block, so a
     /// call naming two of them used to ask all the others). Only when that
-    /// nominated selection holds no admitted pair is every member asked, as
-    /// before, reusing the answers already given.
+    /// nominated selection holds no admitted pair, the complete conservative
+    /// candidate selection is asked, reusing answers already given.
     ///
     /// The answer is the one the full scan gives. A pair the nominated
     /// selection finds is a pair of the full scan's candidate set meeting
@@ -4127,8 +4223,9 @@ impl ResourceContext {
     /// admitted), so the full scan answers `Some` as well; the witness may
     /// differ, and every caller either reads only that one exists or
     /// rechecks the witness it returns (`AccessInRangeEvidence`). When the
-    /// selection finds none, the full scan runs and decides. The member
-    /// predicates do not depend on the order in which members are asked, so
+    /// selection finds none, `owned_memory_candidates_at` supplies every
+    /// member that could hold either operand; open or related bases keep
+    /// the full block. The member predicates do not depend on ask order, so
     /// reusing an answer changes nothing. The nomination itself grants
     /// nothing: it chooses which members are asked first.
     pub(in crate::kernel) fn separated_owned_members_in_block(
@@ -4204,26 +4301,24 @@ impl ResourceContext {
                 }
             }
         }
-        let owned = self
-            .storage
-            .index
-            .owned_memory_by_block
-            .get(block)
+        let left_candidates = self.owned_memory_candidates_at(block, left_at, assumptions);
+        let right_candidates = self.owned_memory_candidates_at(block, right_at, assumptions);
+        #[cfg(debug_assertions)]
+        {
+            self.cross_check_owned_candidates(block, &left_candidates, &mut left);
+            self.cross_check_owned_candidates(block, &right_candidates, &mut right);
+        }
+        let lefts = left_candidates
             .into_iter()
-            .flat_map(ResourceEntryIds::iter)
-            .filter_map(|entry| member(*entry))
-            .collect::<Vec<_>>();
-        let lefts = owned
-            .iter()
-            .copied()
+            .filter_map(member)
             .filter(|(entry, range)| ask(&mut left_answers, &mut left, *entry, range))
             .collect::<Vec<_>>();
         if lefts.is_empty() {
             return None;
         }
-        let rights = owned
-            .iter()
-            .copied()
+        let rights = right_candidates
+            .into_iter()
+            .filter_map(member)
             .filter(|(entry, range)| ask(&mut right_answers, &mut right, *entry, range))
             .collect::<Vec<_>>();
         let (left_entry, right_entry) = pair(&lefts, &rights, &mut admit)?;
@@ -4231,6 +4326,131 @@ impl ResourceContext {
             self.fact(left_entry).memory_own_range()?,
             self.fact(right_entry).memory_own_range()?,
         ))
+    }
+
+    #[cfg(debug_assertions)]
+    fn cross_check_owned_candidates(
+        &self,
+        block: &PointerBlock,
+        candidates: &BTreeSet<ResourceEntryId>,
+        mut accepts: impl FnMut(&CMemoryRange) -> bool,
+    ) {
+        if !crate::instrumentation::separation_candidate_cross_checks_enabled()
+            || crate::instrumentation::in_uncharged_debug_check()
+        {
+            return;
+        }
+        crate::instrumentation::uncharged_debug_check(|| {
+            for (entry, range) in self
+                .storage
+                .index
+                .owned_memory_by_block
+                .get(block)
+                .into_iter()
+                .flat_map(ResourceEntryIds::iter)
+                .filter(|entry| !candidates.contains(entry))
+                .filter_map(|entry| {
+                    self.fact(*entry)
+                        .memory_own_range()
+                        .map(|range| (*entry, range))
+                })
+            {
+                assert!(
+                    !accepts(range),
+                    "separation candidate index omitted owned entry {entry:?}: {range:?}"
+                );
+            }
+        });
+    }
+
+    /// Complete conservative candidates for containment of `at`.
+    ///
+    /// A fixed footprint at a single scalar base cannot contain a pointer
+    /// at a different independent scalar base: the containment routes need
+    /// either a fact relating those scalars, or memory/symbolic arithmetic
+    /// in one footprint. The condition adjacency is maintained at fact
+    /// insertion. If it names the queried scalar, retain the entire block;
+    /// this includes order-derived equalities, constant pinning and
+    /// transitive aliases without approximating the solver's equality.
+    /// Open query bases also keep the full block. Otherwise the same-scalar
+    /// bucket plus the open-footprint bucket is complete. A member in the
+    /// latter may resolve a load to the queried parameter or cancel a
+    /// symbolic endpoint, and must never be discarded just by its root.
+    /// This index selects candidates only; the original containment rule
+    /// and composition authority still decide every accepted separation.
+    fn owned_memory_candidates_at(
+        &self,
+        block: &PointerBlock,
+        at: &Pointer,
+        assumptions: &PureFactContext,
+    ) -> BTreeSet<ResourceEntryId> {
+        let full_block = || {
+            self.storage
+                .index
+                .owned_memory_by_block
+                .get(block)
+                .into_iter()
+                .flat_map(ResourceEntryIds::iter)
+                .copied()
+                .inspect(|_| crate::instrumentation::record_deterministic_work(1))
+                .collect()
+        };
+        let Some(variable) = memory_base_variable(at) else {
+            return full_block();
+        };
+        let key = AtomicConnectionKey::Variable(variable);
+        let (mut facts, _) = assumptions.atomic_facts_connected_to(&key, true);
+        // Authority and read permissions do not equate scalar addresses.
+        // Keep every other proposition conservatively, including model
+        // equalities whose projections may expose a pointer equality.
+        let related = facts.any(|fact| {
+            crate::instrumentation::record_deterministic_work(1);
+            match fact {
+                AtomicConnectedFact::Condition(..) => true,
+                AtomicConnectedFact::Proposition(proposition) => !matches!(
+                    proposition,
+                    Proposition::CResourceComposition(_)
+                        | Proposition::CMemoryLoadable { .. }
+                        | Proposition::CMemoryCanStore { .. }
+                        | Proposition::CMemoryReadDefined { .. }
+                        | Proposition::CMemoryMutatesOnly { .. }
+                ),
+            }
+        });
+        if at.block != *block || related {
+            return full_block();
+        }
+        crate::instrumentation::record_deterministic_work(2);
+        self.storage
+            .index
+            .owned_memory_by_base_variable
+            .get(&(block.clone(), variable))
+            .into_iter()
+            .chain(self.storage.index.owned_memory_open_bases.get(block))
+            .flat_map(ResourceEntryIds::iter)
+            .copied()
+            .inspect(|_| crate::instrumentation::record_deterministic_work(1))
+            .collect()
+    }
+
+    fn owned_memory_candidates_for_range(
+        &self,
+        range: &CMemoryRange,
+        assumptions: &PureFactContext,
+    ) -> BTreeSet<ResourceEntryId> {
+        if range.signed_constant_start().is_none() || range.signed_constant_end().is_none() {
+            return self
+                .storage
+                .index
+                .owned_memory_by_block
+                .get(&range.base().block)
+                .into_iter()
+                .flat_map(ResourceEntryIds::iter)
+                .copied()
+                .inspect(|_| crate::instrumentation::record_deterministic_work(1))
+                .collect();
+        }
+        self.owned_memory_candidates_at(&range.base().block, &range.start_pointer(), assumptions)
     }
 
     /// The owned members of `block` filed under the root of `at`
@@ -4401,10 +4621,36 @@ impl ResourceContext {
             .is_some_and(|(left_position, right_position)| left_position != right_position)
     }
 
-    /// Returns the owned memory members that are distinct from every owned
-    /// resource containing `other`. A caller can use the returned members to
-    /// cover a larger queried range without enumerating all member pairs.
+    /// Returns candidate members for covering `target` that are distinct
+    /// from every owned resource containing `other`. The caller checks
+    /// interval coverage without enumerating unrelated members or pairs.
     pub(in crate::kernel) fn owned_memory_ranges_separate_from(
+        &self,
+        target: &CMemoryRange,
+        other: &CMemoryRange,
+        assumptions: &PureFactContext,
+        contains: impl Fn(&CResource, &CResource) -> bool,
+    ) -> Vec<CMemoryRange> {
+        let other_resource = CResource::Memory(other.clone());
+        let candidates = self.owned_memory_candidates_for_range(other, assumptions);
+        let excluded = candidates
+            .iter()
+            .chain(self.storage.index.owned_non_memory_entries.iter())
+            .copied()
+            .filter(|entry| contains(self.fact(*entry).resource(), &other_resource))
+            .collect::<BTreeSet<_>>();
+        if excluded.is_empty() {
+            return Vec::new();
+        }
+        self.owned_memory_candidates_for_range(target, assumptions)
+            .into_iter()
+            .filter(|entry| !excluded.contains(entry))
+            .filter_map(|entry| self.fact(entry).memory_own_range().cloned())
+            .collect()
+    }
+
+    #[cfg(debug_assertions)]
+    pub(in crate::kernel) fn owned_memory_ranges_separate_from_full_scan(
         &self,
         block: &PointerBlock,
         other: &CResource,
@@ -4429,7 +4675,7 @@ impl ResourceContext {
                     return None;
                 }
                 let range = fact.memory_own_range()?;
-                (range.base().block == *block).then_some(range.clone())
+                (range.base().block == *block).then(|| range.clone())
             })
             .collect()
     }
@@ -5611,37 +5857,6 @@ impl ResourceContext {
         } else {
             Vec::new()
         }
-    }
-
-    /// Description comparison for a checked resource rewrite, not call/lend
-    /// authority. Existing read cores may jointly cover a view even when their
-    /// separate support/loan bindings forbid merging actual supplier entries.
-    /// Only a boolean escapes; no binding is dropped from the real context.
-    pub(in crate::kernel) fn read_core_description_entails(
-        &self,
-        fact: &CResourceFact,
-        assumptions: &PureFactContext,
-    ) -> bool {
-        if self.satisfies_fact(fact, assumptions) {
-            return true;
-        }
-        let Some(range) = fact.memory_view_range() else {
-            return false;
-        };
-        let candidates = self.memory_fact_candidates(range, false, assumptions);
-        let mut cores = Self::new_with_equalities(assumptions);
-        for entry in candidates.entries.iter() {
-            let supplier = candidates
-                .supplier_at_base(entry, range.base())
-                .unwrap_or_else(|| self.fact(entry).clone());
-            if let Some(core) = supplier.core_with_assumptions(assumptions) {
-                cores.insert_fact(core);
-            }
-        }
-        cores
-            .normalized_with_byte_endpoints(assumptions, true)
-            .directly_supporting_fact(fact, assumptions)
-            .is_some()
     }
 
     pub fn satisfies_fact(&self, fact: &CResourceFact, assumptions: &PureFactContext) -> bool {
@@ -6856,8 +7071,9 @@ impl ResourceNormalizationIndex {
             }
             CResource::Memory(range) => {
                 // A window at a 64-bit index from its root, a piece a call
-                // handed back, also meets its wide neighbours there.
-                if let Some((base, start, end)) = wide_normalization_form(range) {
+                // handed back, also meets its wide neighbours there, and so
+                // does a constant piece at the root itself.
+                if let Some((base, start, end)) = native_wide_normalization_key(range) {
                     keys.push(ResourceNormalizationKey::MemoryNativeStart(
                         base.clone(),
                         range.element_width(),
@@ -6998,7 +7214,7 @@ impl ResourceNormalizationIndex {
                 }
             }
             CResource::Memory(range) => {
-                if let Some((base, start, end)) = wide_normalization_form(range) {
+                if let Some((base, start, end)) = native_wide_normalization_key(range) {
                     keys.push(ResourceNormalizationKey::MemoryNativeEnd(
                         base.clone(),
                         range.element_width(),
@@ -8405,7 +8621,7 @@ pub(in crate::kernel) fn iterated_memories_proven_equal(
             )) == Some(true)
     };
     let pointer_equal = |a: &Pointer, b: &Pointer| {
-        a == b || assumptions.pointers_proven_equal_ignoring_memory_separation(a, b)
+        crate::kernel::prelude::pointers_proven_equal_for_memory_resolution(a, b, assumptions)
     };
     left.element_width == right.element_width
         && left.stride == right.stride
@@ -9443,6 +9659,29 @@ fn exact_shifted_endpoint(
         endpoint.clone(),
     )) == Some(false))
     .then(|| Bitvector32Term::add(delta.clone(), endpoint.clone()))
+}
+
+/// The wide lookup key of an `Int32` range: its [`wide_normalization_form`],
+/// or, for a range at its own root with nonnegative constant bounds, those
+/// bounds as unsigned 64-bit values. A constant piece a composite body
+/// splits off the front of a wide owned range, `p[0..1]` beside
+/// `p[1..n + 1]`, then meets its wide neighbour. Like the form itself, this
+/// only proposes a pair; [`merge_memory_ranges`] checks the merge.
+fn native_wide_normalization_key(
+    range: &CMemoryRange,
+) -> Option<(Pointer, Bitvector32Term, Bitvector32Term)> {
+    if let Some(form) = wide_normalization_form(range) {
+        return Some(form);
+    }
+    let constant = |bound: &Bitvector32Term| {
+        let value = bound.as_const()?;
+        (value as i32 >= 0).then(|| Bitvector32Term::UInt64Constant(u64::from(value)))
+    };
+    Some((
+        range.base().clone(),
+        constant(range.start())?,
+        constant(range.end())?,
+    ))
 }
 
 /// The owned ranges left to the holder once `required` is taken out of
@@ -10845,86 +11084,5 @@ fn absent_view_queries_ignore_owned_frames_and_track_view_lifecycle() {
             work, 0,
             "removing the last view restores empty lookup: size={size}"
         );
-    }
-}
-
-#[cfg(test)]
-mod read_core_description_tests {
-    use super::*;
-    use crate::kernel::loans::{LoanLedger, LoanViewBinding};
-
-    #[test]
-    fn bound_read_descriptions_compose_without_merging_loan_authority() {
-        let base = Pointer::symbolic(Variable(956_001));
-        let range = |start, end| CMemoryRange::new(base.clone(), start, end);
-        let whole = CResourceFact::own_memory(range(0.into(), 4.into()));
-        let backing = ResourceContext::new().unchecked_with_fact(whole.clone());
-        let support = backing.owned_occurrences_for_fact(&whole)[0];
-        let ledger = LoanLedger::new();
-        let owner = ledger.fresh_participant().unwrap();
-        let reader = ledger.fresh_participant().unwrap();
-        let opening = ledger.lend(owner, reader, support, whole).unwrap();
-        let ledger = ledger.apply(&opening.transition).unwrap();
-        let facts = PureFactContext::new();
-        let required = CResourceFact::view_memory(range(0.into(), 4.into()));
-        for gap in [false, true] {
-            let mut samples = Vec::new();
-            for count in [0, 16, 64, 256] {
-                let mut context = ResourceContext::new();
-                for piece in [
-                    CResourceFact::view_memory(range(0.into(), (if gap { 1 } else { 2 }).into())),
-                    CResourceFact::view_memory(range(2.into(), 4.into())),
-                ] {
-                    context = context.unchecked_with_fact(piece.clone());
-                    let occurrence = context.view_occurrences_for_fact(&piece, &facts)[0];
-                    let binding = LoanViewBinding {
-                        loan: opening.loan,
-                        scope: opening.scope,
-                        share: opening.root_share,
-                        support,
-                        viewed: piece,
-                        hold: None,
-                    };
-                    ledger
-                        .validate_view_binding(binding.clone(), reader)
-                        .unwrap();
-                    context = context.with_loan_dependency(occurrence, binding);
-                }
-                for index in 0..count {
-                    context =
-                        context.unchecked_with_fact(CResourceFact::view_memory(CMemoryRange::new(
-                            Pointer {
-                                block: PointerBlock::Heap(956_100 + index),
-                                offset: PointerOffsetTerm::Constant(0),
-                            },
-                            0.into(),
-                            4.into(),
-                        )));
-                }
-                let bindings = context.loan_dependency_state();
-                assert!(
-                    !context.satisfies_fact(&required, &facts),
-                    "actual suppliers retain their separate loan bindings"
-                );
-                let (covered, work) = crate::instrumentation::measure_deterministic_work(|| {
-                    context.read_core_description_entails(&required, &facts)
-                });
-                assert_eq!(covered, !gap);
-                assert_eq!(context.loan_dependency_state().identity, bindings.identity);
-                assert!(!context.read_core_description_entails(
-                    &CResourceFact::own_memory(range(0.into(), 4.into())),
-                    &facts
-                ));
-                assert!(!context.read_core_description_entails(
-                    &CResourceFact::view_memory(range(0.into(), 5.into())),
-                    &facts
-                ));
-                samples.push(work);
-            }
-            assert!(
-                samples.windows(2).all(|pair| pair[1] <= pair[0] + 64),
-                "{samples:?}"
-            );
-        }
     }
 }

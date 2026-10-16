@@ -596,6 +596,20 @@ pub(crate) fn render_read_resolution(
     result
 }
 
+pub(crate) fn render_transport_cell_walk(
+    walk: &crate::kernel::TransportCellWalkDiagnostic,
+    labels: &mut SnapshotLabels,
+) -> String {
+    let _typed = TypedNotationScope::enter();
+    let pointer = labels.pointer_value_name(&walk.pointer);
+    let start = labels.snapshot_name(walk.start.memory());
+    let stop = labels.snapshot_name(walk.stopped_at.memory());
+    format!(
+        "address: {pointer}; width: {} bytes; start: {start}; stop: {stop}: {}; crossed: {} steps; extended bridging: {}; explicit DAG check: {}",
+        walk.bytes, walk.reason, walk.crossed, walk.extended, walk.explicit,
+    )
+}
+
 pub(crate) fn render_memory_history_check(
     history: &super::MemoryHistoryDiagnostic,
     labels: &mut SnapshotLabels,

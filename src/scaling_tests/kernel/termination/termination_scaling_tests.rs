@@ -225,6 +225,7 @@ fn many_ranked_loops_in_one_function_cost_linear_termination_work() {
                     paths: Vec::new(),
                     composite_resource_definitions: Vec::new(),
                     recursion_anchor: None,
+                    variable_index: Default::default(),
                 })
                 .collect::<Vec<_>>(),
         )]);

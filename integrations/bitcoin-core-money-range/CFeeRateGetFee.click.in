@@ -23,7 +23,7 @@ int64 CFeeRate::GetFee(int32 virtual_bytes) const {
     ensures this->m_feerate.base.size != 0 implies (virtual_bytes != 0 implies (this->m_feerate.base.fee < 0i64 implies result != 0i64));
 } by {
     step(); step();
-    let { result: empty } = step(FeeFrac_IsEmpty(&this->m_feerate.base), { });
+    let { result: empty } = step(FeeFrac::IsEmpty(&this->m_feerate.base), { });
     branch then {
         have this->m_feerate.base.size == 0;
         execute(); simp();
@@ -36,7 +36,7 @@ int64 CFeeRate::GetFee(int32 virtual_bytes) const {
     have -9223372036854775809 * to_integer(this->m_feerate.base.size) < to_integer(this->m_feerate.base.fee) * to_integer(virtual_bytes);
     have to_integer(this->m_feerate.base.fee) * to_integer(virtual_bytes) <= 9223372036854775807 * to_integer(this->m_feerate.base.size);
     step();
-    let { result: rounded } = step(FeeFrac_EvaluateFeeUp(&this->m_feerate.base, virtual_bytes), { });
+    let { result: rounded } = step(FeeFrac::EvaluateFeeUp(&this->m_feerate.base, virtual_bytes), { });
     if rounded == 0i64 {
         have to_integer(rounded) == 0 by { rewrite(rounded == 0i64); normalize(); }
         have to_integer(rounded) * to_integer(this->m_feerate.base.size) == 0 by { rewrite(to_integer(rounded) == 0); normalize(); }

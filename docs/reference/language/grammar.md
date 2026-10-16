@@ -37,7 +37,7 @@ documentation inventory keep the following accepted words synchronized.
 | --- | --- |
 | `import` | Loads declarations from a local Click module, or names a Click library module with `click::`, without selecting that module's proofs. |
 | `verifying` | C-source declaration. |
-| `target` | Selects the C implementation target the file's C sources are preprocessed and verified under. |
+| `target`, `mode` | Select the C implementation target the file's C sources are preprocessed and verified under: the target triple and its `kernel` or `userspace` mode. |
 | `predicate`, `function`, `theorem`, `contract`, `tactic` | Top-level logic and behavioral-interface declarations; `tactic` declares a user-defined tactic. A C function's contract starts with its C return type, not `function`. |
 | `executes` | Gives a contract-refinement theorem an explicit one-call execution frontier, over the theorem's callback parameter or a named project function. |
 | `spec`, `enum`, `match` | Specification-only algebraic datatype declarations and exhaustive elimination. |
@@ -130,7 +130,7 @@ verifying-declaration := "verifying" string-literal ";"
 import-declaration    := "import" (string-literal | library-path) ";"
 library-path          := "click" ("::" identifier)+
 qualified-name        := ("click" "::")? identifier ("::" identifier)* "::" identifier
-target-declaration    := "target" string-literal ";"
+target-declaration    := ("target" | "mode") string-literal ";"
 algebraic-declaration := "spec" "enum" identifier type-parameters?
                          "{" variant ("," variant)* ","? "}"
 type-parameters       := "<" identifier ("," identifier)* ">"

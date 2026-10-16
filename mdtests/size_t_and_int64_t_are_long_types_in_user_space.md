@@ -51,7 +51,7 @@ int identities(void) {
 ```
 
 ```click
-target "x86_64-linux-userspace";
+target "x86_64-unknown-linux-gnu";
 verifying "main.c";
 
 uint64 *sizes(uint64 *p) {

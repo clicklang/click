@@ -1,12 +1,21 @@
 # Borrowed C strings: contract length binders and call-site assembly
 
-Status: proposal for maintainer review. Nothing here is implemented.
+Status: approved 2026-10-15, with an owning `cstr_at` body. The owning body,
+the contract's choice of `views`, `owns`, or `consumes`/`produces`, and
+call-site assembly from owned bytes are implemented. The binder form (c) and
+the resource-term call map are implemented on per-call contract value
+parameters (see [Kernel mechanism for (c)](#kernel-mechanism-for-c)), a
+kernel concept the original proposal assumed already existed. The library's
+`strlen` and the `label-build-flags` example use the binder (migration steps
+3 to 5). Assembly from viewed bytes is deferred (see
+[(d)](#d-call-site-assembly-of-a-viewed-composite)). M3 landed: `memcpy` and
+`memcmp` read under `views`.
 
-`click::cstr` declares the borrowed C string (landed with this proposal):
+`click::cstr` declares the C string:
 
 ```click
 resource cstr_at(p: const uint8*, len: uint64) {
-    views p[0..len + 1u64];
+    owns p[0..len + 1u64];
     fact len < 18446744073709551615u64;
     fact forall (k: uint64) { 0u64 <= k and k < len implies p[k] != '\0' };
     fact p[len] == '\0';
@@ -14,11 +23,33 @@ resource cstr_at(p: const uint8*, len: uint64) {
 }
 ```
 
+The body owns the bytes, and a contract chooses how it holds them:
+
+- `views cstr_at(p, n)` borrows the string read-only. An opened view exposes
+  the bytes as views, so the callee cannot write them
+  (`mdtests/cstr_at_viewed_string_cannot_be_written.md`).
+- `owns cstr_at(p, n)` holds it exclusively and returns the same instance.
+  The callee may write bytes inside the string and refold the same length
+  (`mdtests/cstr_at_owner_rewrites_a_byte_and_refolds_the_same_length.md`).
+- `consumes cstr_at(p, n)` with `produces` changes it.
+
+The length is a parameter of the instance, so it is fixed by the bytes
+through the first terminator. Shortening a string is an unfold, a store of an
+earlier terminator, and a fold of a smaller instance; the bytes after the new
+terminator leave the instance as plain owned memory. Growing one requires
+owning further bytes. An `owns` clause returns the instance it received, so a
+function that changes the length must consume the old instance and produce
+the new one: the `owns` form is refused
+(`mdtests/cstr_at_owns_clause_cannot_shorten_the_string.md`) and the
+consumes/produces form verifies
+(`mdtests/cstr_at_consumes_and_produces_a_shorter_string.md`).
+
 The goal is `strlen` and `label_copy` contracts that hold the string under
 `views`, so the trusted `memcpy`/`memcmp` can read under `views` (M3) without
-narrowing a claim. Two pieces are missing: a contract cannot name a length its
-C signature does not carry (c), and a caller that holds only the bytes cannot
-pass a `cstr_at` it never folded (d).
+narrowing a claim. Two pieces were missing: a contract cannot name a length
+its C signature does not carry (c), and a caller that holds only the bytes
+cannot pass a `cstr_at` it never folded (d). Both are implemented, (d) for
+owned bytes.
 
 ## (c) The length is an instance binder's argument
 
@@ -109,7 +140,95 @@ to decide which clause determines `len`. Under B the instance carries the value
 and binding stays one rule. **Recommendation: B.** A remains open if bare
 names are preferred.
 
+### Kernel mechanism for (c)
+
+Implemented as sketched here. The paragraph above assumed that the kernel binds the
+argument value "the same way" it binds instance identities. It does not: a
+binder today names an exclusive, field-bearing instance
+(`CResource::Instance`), and `cell.field` is a kernel projection of that
+instance's field by its identity. `cstr_at` is fieldless, so a clause
+`cstr_at(bytes, len)` is an ordinary composite with no identity, and an
+instance cannot be viewed at all (stable views, D12). Neither a field
+projection nor an instance binding can carry `s.len`.
+
+The smallest kernel concept that can is a value parameter of the C function's
+own contract. `CFunctionContractInterface` already has one,
+`value_parameters`, which named contracts and closure captures use:
+
+- The surface elaborates `views s: cstr_at(bytes, _);` to a contract value
+  parameter `s.len: uint64` and the ordinary clause
+  `views cstr_at(bytes, s.len);`, and resolves `s.len` and `old(s.len)` to it.
+  `s.p` for a written argument is that argument.
+- The body is proved with the value parameter bound to a fresh value, as
+  `contract_refinement_context_for_interface` already does for a named
+  contract that no fact fixes: the contract holds for every `len`.
+- A call binds it per call: from an explicit `{ s: cstr_at(src, n) }` or
+  `{ s: str }`, or, when no map entry is written, by the kernel choosing the
+  argument of the one held `cstr_at` whose written arguments agree, as
+  `selected_call_binder_application` chooses a unique instance today. The
+  choice is not trusted: the instantiated requirement is checked as any
+  other.
+
+This changes the kernel's call rule (per-call value arguments for a direct
+call, today only fixed by a function-value fact) and the function entry
+(fresh values for value parameters), and it touches certification, the
+contract interface identity, expansion, and the import summary. The
+maintainer approved this mechanism on 2026-10-15.
+
+What landed:
+
+- A `views` binder, or an `owns` or `consumes` binder with a `_` argument,
+  is a value binder. An `owns` or `consumes` binder without `_` still names
+  a field-bearing instance. Value binders are refused in named contracts.
+- Declaration expansion names each `_` after the resource's parameter and
+  appends `s.len` to the signature after the C parameters; the signature
+  check compares only the C parameters, and lowering moves the value
+  parameters back out of the kernel function's C parameters
+  (`CFunction::with_trailing_value_parameters`).
+- A proof entry binds the value parameters at fresh values beside the C
+  arguments (`bind_c_function_arguments`).
+- At a call, `call_value_arguments` takes each value from the one instance
+  that agrees with the clause's other arguments: a term the call map names,
+  otherwise a held instance found by the indexed shape-and-root candidate
+  query. `{ s: str }` names the caller's own binder's clause. No instance, or
+  two with different values, is refused; equal values are not searched for.
+- `s` itself is a name for the clause, not an instance identity, so
+  `{ s: str }` and `s.len` are the whole interface.
+- A C library function's value binders, such as `strlen`'s `s`, are named
+  in a program's call map too. The library is parsed apart from the
+  sidecar, so the sidecar's parser asks the loaded library for the binders
+  of a callee whose contract the library supplies
+  (`library_c_function_value_binders`) when the sidecar declares none.
+
+Mdtests: `cstr_at_binder_*`, `cstr_at_owning_binder_keeps_its_length.md`,
+and `cstr_at_call_map_*`.
+
 ## (d) Call-site assembly of a viewed composite
+
+**Status.** Implemented for owned bytes by the kernel's existing composite
+view adapter (`candidate_composite_view_adapter`): a caller that owns the
+body's bytes and holds its facts, but no instance, has the call materialize
+`owns R(a)` from those bytes, lend it as `views R(a)`, and recover the bytes
+at return (`mdtests/cstr_at_call_assembles_a_view_from_owned_bytes.md`; the
+refusal without the terminator fact is
+`mdtests/cstr_at_call_assembly_needs_the_terminator_fact.md`). The adapter
+used to check the body facts by the refinement route only, which missed a
+quantified fact the caller states under another binder; it now also accepts
+the exact routes a fold uses. An owner of `cstr_at` lends it to a `views`
+callee as before (`mdtests/cstr_at_owner_lends_its_string_to_a_viewing_callee.md`).
+With the owning body this is the answer to "should assembly lend a body's
+`owns` clauses as views": it does, from owned bytes.
+
+Assembly from bytes the caller only views is deferred (maintainer decision,
+2026-10-15) until a real proof needs it. The adapter
+escrows an owned head; a caller holding `views src[0..n + 1u64]` has nothing
+to escrow, and lending it `views cstr_at(src, n)` needs a ledger transition
+that derives a composite description from a live view binding whose
+description covers the body, the inverse of the existing projection. That is
+a ledger change and needs approval.
+
+The rest of this section is the original proposal, written for a
+views-only body; the owned-bytes route above is what landed.
 
 **Rule.** At a call whose callee requires `views R(a)`, all of `a` is known
 once binders are resolved; under (c), from `{ s: R(a) }`. Assembly applies
@@ -174,55 +293,81 @@ structure; assembly for `owns` or `consumes` requirements.
 
 ## Migration plan
 
-1. Implement (c): `views` and fieldless binders, `_`, `s.param`, the
-   resource-term map entry. Add mdtests for each, including ambiguity
-   refusal, an `owns` binder with `old(s.len)`, and a later segment that
-   names `s.len`.
-2. Implement (d), with positive, missing-view, failed-fact and
-   non-qualifying-body mdtests, and a scaling regression that grows string
-   length and unrelated held resources.
-3. Change the `strlen` library contract to
-   `views s: cstr_at(bytes, _); ensures result == s.len;`. It now needs read
-   authority, not only `viewable`. This deliberately strengthens the
-   precondition, as M3 does for `memcpy`/`memcmp`. 29 mdtest files mention
-   `strlen`, and 26 of them use `cstr::readable`:
-   - Declaration and binding tests (redeclarations, kernel-target refusals,
-     `<string.h>` binding, about 8) keep their shape. Their callers change
-     only where they verify a call.
-   - The `cstr_dynamic_*` (8) and plain-, signed-char caller-requirement
-     tests (about 8) state `views s: cstr_at(src, _)`, or
-     `views src[0..n + 1u64]` with the facts, so that the call assembles.
-     The tests whose subject was `cstr::readable` transport (epochs, offset
-     copies, writes) keep a variant that holds the predicate and refuses
-     the call. That shows `viewable` alone no longer suffices.
-   - `stdlib_every_symbol.md` and
-     `strlen_of_an_empty_string_and_memcmp_use_the_catalog_contracts.md`
-     use `views cstr_at(text, 0u64)`.
-4. In `examples/label-build-flags`, `label_measure` and `label_copy` take
-   `views s: cstr_at(src, _)`. They state
-   `ensures s.len < 32u64 implies result == s.len;` and
-   `ensures 32u64 <= s.len implies result == 31u64;`, and `label_copy` adds
-   `requires separate(memory(dst[0u64..32u64]), memory(src[0u64..s.len + 1u64]));`
-   and `ensures bytes::equal(dst, 0u64, src, 0u64, result);`. The
-   obtain-and-transport proof becomes `execute()` plus arithmetic.
-5. In `src/surface/tests/expansion_tests.rs`, the `read_terminator` fixture
-   tests the source identity of a reordered `cstr::readable` requirement.
-   It becomes an assembly fixture: `views haystack[0..known_len + 1u64]`,
-   the facts, and `{ s: cstr_at(haystack, known_len) }` in the expanded
-   proof. It still asserts that no hidden planning transitions occur.
-6. In `src/surface/proof/surface_synthesis/tests.rs`, the strlen-shaped tests
-   synthesize the guarded quantified `loadable` carrier that `cstr::readable`
-   produced. If `memcmp`'s guarded `defined` range still produces that
-   carrier after M3, they are renamed to C-string shapes. Otherwise they are
-   retired with the shape.
-7. Then M3: `memcpy`/`memcmp` read under `views`.
+PR A landed the owning body, the `views`/`owns`/`consumes`-`produces`
+choice, the terminator mdtests, and assembly from owned bytes. Its second
+increment landed step 1. PR B landed steps 3 to 6. The viewed-bytes half of
+step 2 is deferred.
+
+1. Done: (c), `views` and fieldless binders, `_`, `s.param`, the
+   resource-term map entry, with ambiguity, missing-instance and unheld-term
+   refusals, an `owns` binder with `old(s.len)`, and a later memory segment
+   that names `s.len`.
+2. Implement (d) from viewed bytes, with positive, missing-view, failed-fact
+   and non-qualifying-body mdtests, and a scaling regression that grows
+   string length and unrelated held resources.
+3. Done: the `strlen` library contract is
+   `views s: cstr_at(bytes, _); ensures result == s.len;`, switched in one
+   step. It needs a held string, not only `viewable`, which deliberately
+   strengthens the precondition. The 29 mdtests that mention `strlen`
+   migrated as follows:
+   - Declaration and binding tests keep their shape; the ones that verify a
+     call view `cstr_at(s, _)` and ensure `result == str.len`.
+   - Callers whose subject was the call (`<string.h>`, redeclaration,
+     return and copy forms, identity casts, plain and signed `char`
+     forwarding, reordered clauses, the empty-string catalog test) view
+     `cstr_at(p, _)` or `cstr_at(p, n)`. Offset, missing-requirement and cast
+     refusals now report the missing string. The write refusal owns the
+     string and unfolds it to write, so the call finds no instance.
+   - `cstr_readable_witness_stated_before_call.md` owns its three bytes and
+     states the string's facts with `have` before
+     `step(strlen(bytes), { s: cstr_at(bytes, 2u64) })`, which assembles the
+     string.
+   - The transport tests keep their `cstr::readable` witnesses and
+     transports: the positive ones add the viewed string the call uses, the
+     refusals that fail before the call are unchanged, and
+     `cstr_dynamic_indexed_read_requires_permission.md` and
+     `cstr_dynamic_invalidated_transport.md` hold only the predicate and
+     show that the call refuses it.
+   - `stdlib_every_symbol.md` needed no change.
+4. Done: in `examples/label-build-flags`, `label_measure` and `label_copy`
+   take `views s: cstr_at(src, _)` and state exactly the kept length,
+   `s.len < 32u64 implies result == s.len` and
+   `32u64 <= s.len implies result == 31u64`, which `label_fit` now states
+   too. `label_copy` requires
+   `separate(memory(dst[0u64..32u64]), memory(src[0u64..s.len + 1u64]))`,
+   opens the string to lend `memcpy` its prefix, and keeps
+   `dst[result] == '\0'`. The obtain-and-transport proof became
+   `step`s, an `open` and `execute()`. The copied bytes are not yet stated.
+   With M3 the contract's `owns` and `views` already keep `dst` and the
+   string apart, so the `separate` is implied; it stays, unchanged. Three
+   verifier gaps stand between the proof and a `bytes::equal` postcondition
+   (investigated with M3, 2026-10-16): a bare `transport` in a `have` body
+   is refused (`bugs/bare-transport-in-a-have-body-is-unsupported.md`); a
+   `char *` argument to `bytes::equal`'s `uint8[]` parameters unfolds to
+   converted reads that `memcpy`'s postcondition does not match
+   (`bugs/char-argument-to-a-byte-predicate-unfolds-to-converted-reads.md`);
+   and a quantified frame of `dst[k]` with `k < n` across the store to
+   `dst[n]` is refused even with explicit `transport ... using`, which needs
+   a ruling on whether the frame should derive `k != n` from the guard.
+5. Done: in `src/surface/tests/expansion_tests.rs`, the `read_terminator`
+   fixture views `cstr_at(haystack, _)` among the reordered clauses and
+   still asserts that no hidden planning transitions occur. It is not an
+   assembly fixture, since assembly from viewed bytes is deferred.
+6. Open. The strlen-shaped tests in `src/surface/proof/surface_synthesis/tests.rs`
+   synthesize the guarded quantified `loadable` carrier of
+   `cstr::readable`, which no longer depends on `strlen`. Revisit them with
+   M3: rename them to C-string shapes if `memcmp`'s guarded `defined` range
+   still produces that carrier, otherwise retire them.
+7. Done: M3, `memcpy` views its source and `memcmp` both operands, and
+   the explicit `separate` left `memcpy`'s contract.
 
 ## Open questions for the maintainer
 
-- B (instance binder, `s.len`) or A (`forall (len: uint64);`, bare `len`)?
-- The resource-term map entry `{ s: cstr_at(src, n) }`: accept it, or require
-  the caller to name a held instance and rely on assembly only when the
-  arguments follow from the callee's clause?
-- Should assembly also lend a body's `owns` clauses as views?
-- Should `strlen` keep its `cstr::readable`-based guarantees beside the new
-  ones during the migration, or switch in one step?
+Decided on 2026-10-15: B (the instance binder, `s.len`); the resource-term
+map entry `{ s: cstr_at(src, n) }` is accepted; an owner lends its body's
+`owns` clauses as views; the body owns its bytes. (c) is built on per-call
+value parameters of a C function's contract, as sketched in
+[Kernel mechanism for (c)](#kernel-mechanism-for-c). Assembly from viewed
+bytes is deferred until a real proof needs it.
+
+Decided on 2026-10-15: `strlen` switches in one step.

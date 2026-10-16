@@ -684,7 +684,11 @@ statement at different positions (each `drop_box(p#)`, each call) must cost
 the same, so a step whose work moves the same way by more than a small band
 at each of its last positions depends on how many statements ran before it.
 A warm-up, such as the first call or the first store into a block, jumps once
-and then holds, which this does not flag. The proof's `unfold` and `fold`
+and then holds, which this does not flag. A slower drift, too small for the
+band, still never falls and rises at most positions of the second half, which
+the check also flags; a bounded window (a cost that climbs with the statements
+near it, then holds) passes once the shape runs past it. Roles name statements
+with each number replaced by one `#`, so `x9` and `x10` share a role. The proof's `unfold` and `fold`
 tactics are held to the same rule, each tactic name one role in proof order.
 Uncharged costs do not show in work; the script's mean step time is the check
 for those. Shapes whose every step sees the

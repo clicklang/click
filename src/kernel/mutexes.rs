@@ -206,7 +206,7 @@ impl StorageProvenance {
     fn of(block: &super::PointerBlock) -> Self {
         use super::PointerBlock;
         match block {
-            PointerBlock::Concrete(name) if name.starts_with("local:") => Self::Local,
+            PointerBlock::Concrete(name) if PointerBlock::is_local_name(name) => Self::Local,
             PointerBlock::Concrete(_) => Self::Global,
             PointerBlock::Heap(_) | PointerBlock::Temporary(_) => Self::Fresh,
             PointerBlock::ExternalArgument | PointerBlock::ExternalObject(_) => Self::External,
@@ -396,7 +396,7 @@ pub(super) fn abstract_guard_acquisition_refusal(
     assumptions: &PureFactContext,
 ) -> Option<super::CRuntimeError> {
     let inputs = state.mutex_input_reservations.as_ref()?;
-    if inputs.guard_unnamed && !mutex.block.starts_with("local:") {
+    if inputs.guard_unnamed && !mutex.block.is_local_block() {
         return Some(super::CRuntimeError::FunctionContract(
             "cannot establish that the mutex is available: an input guard has an unresolved mutex address".into(),
         ));
@@ -890,7 +890,7 @@ pub(super) fn storage_is_automatic(
     assumptions: &PureFactContext,
 ) -> bool {
     let resolved = assumptions.equality_graph.storage_address(mutex);
-    resolved.block.starts_with("local:") && state.memory.access_in_bounds(&resolved, bytes)
+    resolved.block.is_local_block() && state.memory.access_in_bounds(&resolved, bytes)
 }
 
 /// A storage release must not leave a live initialization behind. Abstract

@@ -41,13 +41,14 @@ show the expected identity and the bounded identity actually reported. A
 and the source-build setup command. Hosts without a packaged bundle are
 reported as unavailable rather than being given an install command that
 cannot supply their platform.
-Only the Linux x86-64 GNU host is packaged initially.
+Linux x86-64 GNU is the agreed launch host scope. The P1 frontend delivery
+milestone is complete for that scope; additional host bundles and broader Rust
+coverage are optional future work.
 
 Rust project units use this frontend automatically. `CLICK_CHARON` is a
 contributor override: a bundle directory selects that bundle, while an
 executable selects the existing source-build path and its rustup-managed pinned
-toolchain. Legacy per-sidecar configs may still name an `exporter`; omitting it
-selects the same resolution. The project schema and lock format are described
+toolchain. The project schema and lock format are described
 in [`click import`](cli/import.md#project-units) and
 [project configuration](../concepts/own-project.md).
 
@@ -533,9 +534,10 @@ for it is checked as one passed for `&dyn Fn`, and a crate function item,
 parameter's type from its `Fn` bound and the output type constraint, a
 call `TraitClause::call` through it as a call through the value, and the
 closure state or `FnDef` constant the caller passes as the value; one
-verified body covers every instantiation. A type parameter with any other
-bound, `impl FnMut` and `impl FnOnce`, generic function items, and
-non-scalar parameters or results are refused
+verified body covers every instantiation. Other callable bounds, including
+`impl FnMut` and `impl FnOnce`, generic function items, and non-scalar callable
+parameters or results are refused; crate trait bounds follow the
+method-interface rules below
 ([`design/charon-trial/impl-fn`](https://github.com/clicklang/click/blob/master/design/charon-trial/impl-fn/closure.click)).
 
 ### Trait method interfaces
@@ -671,8 +673,13 @@ zero through 2,147,483,647 bytes from canonical initial states. The unchanged
 `write_slice` and `adler32_slice` wrappers compose checked bodies over the same
 range, preserve input bytes, and prove field and packed checksum correctness.
 A locked client also proves that two actual updates equal the full-input
-checksum for every valid split over that range. Saved-checksum restoration
-and resumed updates remain pending.
+checksum for every valid split over that range. The unchanged `from_checksum`
+constructor is checked for every `u32` checksum. A separate
+[resumed client](https://github.com/clicklang/click/blob/master/design/charon-trial/adler2/resumed.click)
+restores the checksum of a checked prefix, updates with the suffix, and proves
+the full-input checksum and byte preservation over the same length and split
+bounds. Arbitrary saved words need not satisfy the canonical-seed preconditions
+for an update.
 
 ```sh
 cargo run --bin click -- import lock examples/rust-unsigned/arithmetic.click
@@ -803,16 +810,21 @@ the callee's `views`/`owns` requirements. See the synthetic
 
 By-value array parameters or returns, nested arrays, and non-byte slices
 remain unsupported. Supported flat records can contain owned array fields,
-including in crate-unit record returns described above. Indexed compound
-assignment remains outside the supported subset. The builtin length
-operation also supports non-byte fixed arrays by recovering their fixed
-length; this does not enable non-byte slices or general library methods.
+including in crate-unit record returns described above. Imported
+assignment-operator bodies support indexed `u32` updates, as checked by the
+[assignment-operator fixture](https://github.com/clicklang/click/blob/master/design/charon-trial/assignment-operators/operators.rs).
+The builtin length operation also supports non-byte fixed arrays by
+recovering their fixed length; this does not enable non-byte slices or
+general library methods.
 
 Single-file units exclude modules and imports; crate units support
 the locked module closure described above. Macros, semantic attributes,
-dependencies, unsafe code, general traits, type/const generics, heap
-allocation, nested aggregate parameters, reference returns, and other integer widths
-are outside this slice. Unsupported syntax
+dependencies, unsafe code, heap allocation, nested aggregate parameters,
+reference returns, and other integer widths are outside this slice. Trait
+dispatch and type parameters are limited to the forms described under
+[callable bounds](#function-pointers-and-named-contracts) and
+[trait method interfaces](#trait-method-interfaces); const generics
+remain unsupported. Unsupported syntax
 fails during extraction or direct lowering. This is not general Cargo-project
 support.
 

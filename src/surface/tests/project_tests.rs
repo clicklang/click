@@ -1274,8 +1274,8 @@ int32 stuck(int32 n) diverges {
     assert!(!session.function_termination_is_verified("stuck"));
 }
 
-/// The regression from `issues/termination-required.md`: a loop nobody ranked
-/// is refused by name, and its caller is refused for it.
+/// Required termination refuses an unranked loop by name and rejects its
+/// caller for depending on that loop.
 #[test]
 fn required_termination_refuses_an_unranked_loop_and_its_caller() {
     let c_source = r#"int32 wait_for_zero(int32 x) {

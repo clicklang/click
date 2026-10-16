@@ -1,7 +1,7 @@
 use super::*;
 
 fn crate_project() -> Project {
-    let p = Project::new("");
+    let p = Project::isolated("");
     fs::create_dir(p.root.join("src")).unwrap();
     for (name, source) in [
         (
@@ -21,6 +21,7 @@ fn crate_project() -> Project {
             "roots":["demo::entry","demo::right::read","demo::left_read","demo::Value::read"],
             "files":["src/lib.rs","src/left.rs","src/right.rs","src/unused.rs"]}
     })).unwrap()).unwrap();
+    p.adopt_config();
     p
 }
 
@@ -51,7 +52,7 @@ fn rust_crate_locks_all_compiler_inputs_and_preserves_qualified_calls() {
         )
         .is_err()
     );
-    let artifact = fs::read(p.artifact("crate.rs")).unwrap();
+    let artifact = fs::read(p.artifact("src/lib.rs")).unwrap();
     let lock = fs::read(p.lock_file()).unwrap();
     // Even a module with no translated body is part of the compiler closure.
     fs::write(
@@ -59,20 +60,23 @@ fn rust_crate_locks_all_compiler_inputs_and_preserves_qualified_calls() {
         "pub fn not_reachable() -> u32 { 2 }",
     )
     .unwrap();
-    assert!(p.prepared().unwrap_err().contains("lock differs"));
+    assert!(
+        p.prepared()
+            .unwrap_err()
+            .contains("src/unused.rs` differs from its import lock")
+    );
     p.refresh().unwrap();
     assert_ne!(p.prepared().unwrap().identity(), prepared.identity());
     // Omitted and extra inputs are rejected before replacing existing outputs.
-    let mut config: serde_json::Value =
-        serde_json::from_slice(&fs::read(p.config()).unwrap()).unwrap();
-    config["crate"]["files"]
+    let (mut config, unit) = p.project_json();
+    config["units"][&unit]["crate"]["files"]
         .as_array_mut()
         .unwrap()
         .push("extra.rs".into());
     fs::write(p.root.join("extra.rs"), "pub fn extra() {} ").unwrap();
-    let fresh_artifact = fs::read(p.artifact("crate.rs")).unwrap();
+    let fresh_artifact = fs::read(p.artifact("src/lib.rs")).unwrap();
     let fresh_lock = fs::read(p.lock_file()).unwrap();
-    fs::write(p.config(), serde_json::to_vec(&config).unwrap()).unwrap();
+    fs::write(p.project_file(), serde_json::to_vec(&config).unwrap()).unwrap();
     let mismatch = p.refresh().unwrap_err();
     assert!(mismatch.contains("source closure differs"), "{mismatch}");
     assert!(
@@ -83,21 +87,21 @@ fn rust_crate_locks_all_compiler_inputs_and_preserves_qualified_calls() {
         mismatch.contains("extra in `crate.files`: \"extra.rs\""),
         "{mismatch}"
     );
-    assert_eq!(fs::read(p.artifact("crate.rs")).unwrap(), fresh_artifact);
+    assert_eq!(fs::read(p.artifact("src/lib.rs")).unwrap(), fresh_artifact);
     assert_eq!(fs::read(p.lock_file()).unwrap(), fresh_lock);
 
-    config["crate"]["files"]
+    config["units"][&unit]["crate"]["files"]
         .as_array_mut()
         .unwrap()
         .retain(|name| name != "extra.rs" && name != "src/unused.rs");
-    fs::write(p.config(), serde_json::to_vec(&config).unwrap()).unwrap();
+    fs::write(p.project_file(), serde_json::to_vec(&config).unwrap()).unwrap();
     let missing = p.refresh().unwrap_err();
     assert!(missing.contains("crate input check failed"), "{missing}");
     assert!(
         missing.contains("crate.files") && missing.contains("src/unused.rs"),
         "{missing}"
     );
-    assert_eq!(fs::read(p.artifact("crate.rs")).unwrap(), fresh_artifact);
+    assert_eq!(fs::read(p.artifact("src/lib.rs")).unwrap(), fresh_artifact);
     assert_eq!(fs::read(p.lock_file()).unwrap(), fresh_lock);
 
     assert!(!artifact.is_empty() && !lock.is_empty());
@@ -108,27 +112,32 @@ fn rust_crate_locks_all_compiler_inputs_and_preserves_qualified_calls() {
 fn rust_crate_rejects_escape_symlink_and_changed_configuration() {
     let p = crate_project();
     p.refresh().unwrap();
-    let original = fs::read(p.config()).unwrap();
+    let original = fs::read(p.project_file()).unwrap();
+    let unit = p.project_json().1;
     for (field, value) in [
         ("edition", serde_json::json!("2024")),
         ("features", serde_json::json!(["std"])),
         ("roots", serde_json::json!(["demo::left_read"])),
     ] {
         let mut config: serde_json::Value = serde_json::from_slice(&original).unwrap();
-        config["crate"][field] = value;
-        fs::write(p.config(), serde_json::to_vec(&config).unwrap()).unwrap();
-        assert!(p.prepared().unwrap_err().contains("lock differs"));
+        config["units"][&unit]["crate"][field] = value;
+        fs::write(p.project_file(), serde_json::to_vec(&config).unwrap()).unwrap();
+        assert!(
+            p.prepared()
+                .unwrap_err()
+                .contains("does not match its description")
+        );
     }
-    fs::write(p.config(), &original).unwrap();
+    fs::write(p.project_file(), &original).unwrap();
     let mut config: serde_json::Value = serde_json::from_slice(&original).unwrap();
-    config["crate"]["files"][1] = "../left.rs".into();
-    fs::write(p.config(), serde_json::to_vec(&config).unwrap()).unwrap();
+    config["units"][&unit]["crate"]["files"][1] = "../left.rs".into();
+    fs::write(p.project_file(), serde_json::to_vec(&config).unwrap()).unwrap();
     assert!(
         p.refresh()
             .unwrap_err()
             .contains("inside the import directory")
     );
-    fs::write(p.config(), &original).unwrap();
+    fs::write(p.project_file(), &original).unwrap();
     #[cfg(unix)]
     {
         fs::rename(p.root.join("src/left.rs"), p.root.join("src/real-left.rs")).unwrap();
@@ -140,7 +149,7 @@ fn rust_crate_rejects_escape_symlink_and_changed_configuration() {
 #[test]
 #[ignore = "requires the pinned live Charon extractor"]
 fn charon_adler2_locked_crate_imports_compute_and_proves_constants() {
-    let p = Project::new("");
+    let p = Project::isolated("");
     for (name, bytes) in [
         (
             "lib.rs",
@@ -158,6 +167,7 @@ fn charon_adler2_locked_crate_imports_compute_and_proves_constants() {
         "exporter":std::env::var("CLICK_CHARON").unwrap(),"artifact":"crate.ullbc",
         "crate":{"name":"adler2","edition":"2021","features":["std"],"roots":["adler2::adler32_slice"],"files":["lib.rs","algo.rs"]}
     })).unwrap()).unwrap();
+    p.adopt_config();
     p.refresh().unwrap();
     let prepared = p.prepared().unwrap();
     let mut proof = String::from("verifying \"lib.rs\";\nimpl adler2::Adler32 {\n");
@@ -192,14 +202,14 @@ fn charon_adler2_locked_crate_imports_compute_and_proves_constants() {
         )
         .is_err()
     );
-    assert!(p.artifact("crate.rs").exists());
+    assert!(p.artifact("lib.rs").exists());
     assert!(p.lock_file().exists());
 }
 
 #[test]
 #[ignore = "nightly: live compiler/extraction checks measured at 10–20 s"]
 fn rust_crate_constructor_bodies_return_owned_field_values() {
-    let p = Project::new("");
+    let p = Project::isolated("");
     let source = r#"
         pub mod inner {
             pub struct Value { pub a: u32, pub b: u32 }
@@ -224,6 +234,7 @@ fn rust_crate_constructor_bodies_return_owned_field_values() {
         "exporter":std::env::var("CLICK_CHARON").unwrap(),"artifact":"crate.ullbc",
         "crate":{"name":"demo","edition":"2021","features":[],"roots":["demo::entry","demo::second","demo::argument","demo::token_entry","demo::packet_entry"],"files":["lib.rs"]}
     })).unwrap()).unwrap();
+    p.adopt_config();
     p.refresh().unwrap();
     let prepared = p.prepared().unwrap();
     let constructors = "verifying \"lib.rs\";
@@ -279,7 +290,7 @@ fn rust_crate_constructor_bodies_return_owned_field_values() {
 #[test]
 #[ignore = "requires the pinned live Charon extractor"]
 fn charon_adler2_unchanged_constructor_returns_initialized_state() {
-    let p = Project::new("");
+    let p = Project::isolated("");
     fs::write(
         p.root.join("lib.rs"),
         include_bytes!("../../design/charon-trial/adler2/src/lib.rs"),
@@ -295,6 +306,7 @@ fn charon_adler2_unchanged_constructor_returns_initialized_state() {
         "exporter":std::env::var("CLICK_CHARON").unwrap(),"artifact":"crate.ullbc",
         "crate":{"name":"adler2","edition":"2021","features":["std"],"roots":["adler2::Adler32::new"],"files":["lib.rs","algo.rs"]}
     })).unwrap()).unwrap();
+    p.adopt_config();
     p.refresh().unwrap();
     let prepared = p.prepared().unwrap();
     assert_eq!(
@@ -322,7 +334,7 @@ fn charon_adler2_unchanged_constructor_returns_initialized_state() {
 #[test]
 #[ignore = "nightly: 20s in the parallel gate"]
 fn rust_crate_owned_operator_operands_copy_and_move_independently() {
-    let p = Project::new("");
+    let p = Project::isolated("");
     let source = r#"
         #[derive(Copy, Clone)]
         pub struct Packet { pub words: [u32; 4] }
@@ -362,6 +374,7 @@ fn rust_crate_owned_operator_operands_copy_and_move_independently() {
         "exporter":std::env::var("CLICK_CHARON").unwrap(),"artifact":"crate.ullbc",
         "crate":{"name":"demo","edition":"2021","features":[],"roots":["demo::entry","demo::moving","demo::independent","demo::drop_argument"],"files":["lib.rs"]}
     })).unwrap()).unwrap();
+    p.adopt_config();
     p.refresh().unwrap();
     let prepared = p.prepared().unwrap();
     assert!(
@@ -408,7 +421,7 @@ fn rust_crate_owned_operator_operands_copy_and_move_independently() {
 #[test]
 #[ignore = "nightly: 15s in the parallel gate"]
 fn rust_crate_scalar_constants_execute_checked_initializers() {
-    let p = Project::new("");
+    let p = Project::isolated("");
     let source = r#"
         pub mod left { pub const MOD: u32 = 65521; pub fn read() -> u32 { MOD } }
         pub mod right { pub const MOD: u32 = 7; pub fn read() -> u32 { MOD } }
@@ -424,6 +437,7 @@ fn rust_crate_scalar_constants_execute_checked_initializers() {
         "crate":{"name":"demo","edition":"2021","features":[],
             "roots":["demo::left::read","demo::right::read","demo::entry","demo::wide","demo::small","demo::flag"],"files":["lib.rs"]}
     })).unwrap()).unwrap();
+    p.adopt_config();
     p.refresh().unwrap();
     let prepared = p.prepared().unwrap();
     let mut proof = String::from("verifying \"lib.rs\";\n");
@@ -445,7 +459,7 @@ fn rust_crate_scalar_constants_execute_checked_initializers() {
         };
         proof.push_str(&format!(
             "fn {}() -> {ty} {{ ensures result == {value}; }} by {{ execute(); simp(); }}\n",
-            click::surface::rust_display_name(&function.name).unwrap()
+            click::surface::source_display_name(&function.name).unwrap()
         ));
     }
     assert_eq!(prepared.export().functions.len(), 12);

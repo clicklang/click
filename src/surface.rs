@@ -1,8 +1,8 @@
-//! Surface Click proof-language syntax, checking, and proof orchestration.
+//! Surface Click specification syntax, checking, and proof orchestration.
 //!
-//! Surface Click is the single proof language. Its current program-language
-//! binding targets C0; additional program languages belong under
-//! `crate::languages` rather than beside this module.
+//! Surface Click is the shared specification language for C, C++, and Rust.
+//! Target-language frontends belong under `crate::languages`; proof checking
+//! uses the shared kernel.
 
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
@@ -102,9 +102,7 @@ mod integer_truncation;
 mod lowering;
 mod modules;
 mod parser;
-pub use crate::languages::rust::names::{
-    claim_label_matches, display_rust_names, rust_display_name,
-};
+pub use crate::languages::{claim_label_matches, display_source_names, source_display_name};
 pub(crate) mod planning;
 pub(crate) mod proof_diagnostics;
 mod source_registry;
@@ -313,6 +311,7 @@ pub const SURFACE_CLICK_WORDS: &[&str] = &[
     "mark",
     "match",
     "memory",
+    "mode",
     "normalize",
     "not",
     "object",
@@ -1076,7 +1075,21 @@ pub struct CallBinderTransport {
     produced: Vec<CallBinderBinding>,
     /// Runtime binders that name a resource type, with the type written.
     type_arguments: Vec<(String, Variable, ResourceClause)>,
+    /// Value binders the map selects an instance for, `s: cstr_at(src, n)`
+    /// or `s: str`, in written order.
+    value_arguments: Vec<(String, ValueBinderArgument)>,
     result: Option<String>,
+}
+
+/// What a call map entry for a callee's value binder names.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ValueBinderArgument {
+    /// A resource term, `cstr_at(src, n)`: the binder's `_` arguments take
+    /// the term's arguments at those positions.
+    Term(ResourceClause),
+    /// One of the caller's own value binders: the callee's binder takes the
+    /// instance the caller's selects.
+    Binder(String),
 }
 
 impl CallBinderTransport {
@@ -1103,7 +1116,26 @@ impl CallBinderTransport {
             .into_iter()
             .map(|(name, identity, resource)| Ok((name, identity, map(resource)?)))
             .collect::<Result<_, ClickError>>()?;
+        self.value_arguments = self
+            .value_arguments
+            .into_iter()
+            .map(|(name, argument)| {
+                Ok((
+                    name,
+                    match argument {
+                        ValueBinderArgument::Term(resource) => {
+                            ValueBinderArgument::Term(map(resource)?)
+                        }
+                        binder @ ValueBinderArgument::Binder(_) => binder,
+                    },
+                ))
+            })
+            .collect::<Result<_, ClickError>>()?;
         Ok(self)
+    }
+
+    pub fn value_arguments(&self) -> &[(String, ValueBinderArgument)] {
+        &self.value_arguments
     }
 
     /// `binder: instance` and `binder: Type(args)` entries in written order
@@ -1115,6 +1147,16 @@ impl CallBinderTransport {
             .chain(self.type_arguments.iter().map(|(name, _, resource)| {
                 format!("{name}: {}", printing::format_resource_call(resource))
             }))
+            .chain(
+                self.value_arguments
+                    .iter()
+                    .map(|(name, argument)| match argument {
+                        ValueBinderArgument::Term(resource) => {
+                            format!("{name}: {}", printing::format_resource_call(resource))
+                        }
+                        ValueBinderArgument::Binder(binder) => format!("{name}: {binder}"),
+                    }),
+            )
             .collect()
     }
 
@@ -1289,7 +1331,9 @@ pub struct FunctionBlock {
     /// aggregate clause share their clause's id. Empty when the block was
     /// built without a source; labels then read the kind off each clause.
     ensure_claim_ids: Vec<claim_labels::ClaimClauseId>,
-    grouped_proof: Option<SourceProof>,
+    /// Shared: every frontier `loop` binds its clause into a copy of this
+    /// block, and the grouped proof is the whole claim's script.
+    grouped_proof: Option<std::sync::Arc<SourceProof>>,
     /// The struct each opaque `void *` parameter is cast to in this block's
     /// clauses and proof, by parameter name. A block casts a parameter to at
     /// most one struct; proof synthesis reads memory through the parameter
@@ -1302,6 +1346,36 @@ pub struct FunctionBlock {
     /// The scalar fields of each struct those places point to, by struct
     /// name, transitively. Printing only, as above.
     pointee_field_places: BTreeMap<String, Vec<FieldPlace>>,
+    /// The contract's value binders, `views s: cstr_at(bytes, _);`, in
+    /// declaration order.
+    value_binders: Vec<ValueBinder>,
+    /// How many of the signature's parameters, at its end, are the value
+    /// parameters its binders' `_` arguments introduce, such as `s.len`.
+    /// They are not C parameters: a call supplies them from the instance
+    /// the binder selects, and the body is proved for every value.
+    witness_count: usize,
+}
+
+/// A contract binder that names the instance one resource clause selects:
+/// `views s: cstr_at(bytes, _);`. Each `_` argument is a value parameter of
+/// the contract named `s.<parameter>`, and `s.<parameter>` of a written
+/// argument is that argument.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ValueBinder {
+    pub(in crate::surface) name: String,
+    pub(in crate::surface) resource: String,
+    /// The written arguments, `None` at each `_`.
+    pub(in crate::surface) arguments: Vec<Option<ContractExpression>>,
+    /// The position of the binder's clause among the block's `requires`.
+    pub(in crate::surface) requirement_index: usize,
+}
+
+impl ValueBinder {
+    /// The placeholder the parser writes for the `_` at `index`, before the
+    /// resource's parameter names are known.
+    pub(in crate::surface) fn placeholder(binder: &str, index: usize) -> String {
+        format!("{binder}.#{index}")
+    }
 }
 
 /// Turns the source clause of each flattened clause into its position among
@@ -1356,6 +1430,8 @@ pub struct FunctionSignature {
     return_pointee_constant: bool,
     return_reference: bool,
     name: String,
+    /// Translation unit selected by a file-qualified C contract head.
+    c_source: Option<String>,
     parameters: Vec<FunctionParameter>,
     /// The payload type of the function's declared exceptional outcome.
     /// This surface slice currently accepts only `throws int32`.
@@ -1434,7 +1510,7 @@ pub(in crate::surface) struct FieldPlace {
 /// elements a read names by index. A union is not one place and is left out.
 pub(in crate::surface) fn scalar_field_places(
     layout: &syntax::C0StructLayout,
-    layouts: &BTreeMap<String, syntax::C0StructLayout>,
+    layouts: &impl syntax::StructLayouts,
 ) -> Vec<FieldPlace> {
     // Each nested struct is entered once per field that holds it, so the
     // places are as many as the scalar members the layout has. A struct
@@ -1442,7 +1518,7 @@ pub(in crate::surface) fn scalar_field_places(
     // layout map and never for a real one.
     fn collect(
         layout: &syntax::C0StructLayout,
-        layouts: &BTreeMap<String, syntax::C0StructLayout>,
+        layouts: &impl syntax::StructLayouts,
         prefix: &str,
         base: u32,
         depth: usize,
@@ -1479,7 +1555,7 @@ pub(in crate::surface) fn scalar_field_places(
             // scalar place like any other pointer field.
             match field.struct_name() {
                 Some(nested) if !field.c_type().is_pointer() => {
-                    if let Some(nested) = layouts.get(nested)
+                    if let Some(nested) = layouts.struct_layout(nested)
                         && depth < 8
                     {
                         collect(
@@ -1516,7 +1592,7 @@ pub(in crate::surface) fn scalar_field_places(
 /// `p->next->second`, can name. Each struct is laid out once.
 pub(in crate::surface) fn pointee_field_places<'a>(
     places: impl IntoIterator<Item = &'a Vec<FieldPlace>>,
-    layouts: &BTreeMap<String, syntax::C0StructLayout>,
+    layouts: &impl syntax::StructLayouts,
 ) -> BTreeMap<String, Vec<FieldPlace>> {
     let mut reached = BTreeMap::new();
     let mut pending = places
@@ -1528,7 +1604,7 @@ pub(in crate::surface) fn pointee_field_places<'a>(
         if reached.contains_key(&name) {
             continue;
         }
-        let Some(layout) = layouts.get(&name) else {
+        let Some(layout) = layouts.struct_layout(&name) else {
             continue;
         };
         let fields = scalar_field_places(layout, layouts);
@@ -2626,7 +2702,7 @@ pub enum ContractExpression {
     /// Persistent sequence concatenation. This is specification syntax only;
     /// it does not denote C pointer arithmetic or allocate C memory.
     SequenceConcat(Box<ContractExpression>, Box<ContractExpression>),
-    /// A C0 expression fragment appearing inside Surface Click.
+    /// A C expression fragment appearing inside Surface Click.
     CFragment(CExpression),
     /// A C unary operation whose operand retains explicit binding syntax.
     /// Scalar casts and typed loads may also wrap a pure or historical expression. `operand` is authoritative;
@@ -6788,6 +6864,34 @@ fn contract_expression_reads_memory(
         | ContractExpression::Binding(_)
         | ContractExpression::CBinding(_)
         | ContractExpression::CFragment(CExpression::Variable(_) | CExpression::Value(_)) => false,
+        // `address(p)` of a name is that pointer value's integer
+        // representation: it reads nothing its operand does not.
+        ContractExpression::CUnary {
+            operand,
+            lowered:
+                CExpression::Cast {
+                    expression,
+                    target_type: CType::UInt64,
+                    ..
+                },
+        } if matches!(
+            expression.as_ref(),
+            CExpression::Variable(_) | CExpression::Value(_)
+        ) =>
+        {
+            contract_expression_reads_memory(operand, callees)
+        }
+        ContractExpression::CFragment(CExpression::Cast {
+            expression,
+            target_type: CType::UInt64,
+            ..
+        }) if matches!(
+            expression.as_ref(),
+            CExpression::Variable(_) | CExpression::Value(_)
+        ) =>
+        {
+            false
+        }
         // A memory read, a snapshot selector, a resource observation, or any
         // C fragment richer than a name is conservatively memory-dependent.
         ContractExpression::QualifiedC { .. }
@@ -7728,6 +7832,16 @@ impl FunctionBlock {
         &self.signature
     }
 
+    pub(in crate::surface) fn value_binders(&self) -> &[ValueBinder] {
+        &self.value_binders
+    }
+
+    /// The number of trailing signature parameters that are contract value
+    /// parameters rather than C parameters.
+    pub(in crate::surface) fn witness_count(&self) -> usize {
+        self.witness_count
+    }
+
     /// Adds a crate trait method's interface to this implementation's
     /// contract: its `ensures`, which the implementation's proof establishes
     /// with its own, each named `interface_ensures_<i>`, and its `requires`
@@ -7737,6 +7851,7 @@ impl FunctionBlock {
     pub(in crate::surface) fn inherit_interface(
         &mut self,
         interface: &FunctionBlock,
+        source: &str,
     ) -> Result<(), String> {
         let names = |block: &FunctionBlock| {
             block
@@ -7748,7 +7863,7 @@ impl FunctionBlock {
         };
         if names(self) != names(interface) {
             return Err(format!(
-                "an implementation names its parameters as the trait's interface does, ({}), \
+                "an implementation names its parameters as {source} does, ({}), \
                  so the interface's clauses read the same in it",
                 names(interface).join(", ")
             ));
@@ -7950,7 +8065,7 @@ impl FunctionBlock {
 
     /// The written grouped proof after the contract block, if any.
     pub fn grouped_proof(&self) -> Option<&SourceProof> {
-        self.grouped_proof.as_ref()
+        self.grouped_proof.as_deref()
     }
 
     /// The one proof of every claim without its own `by`: the written
@@ -8035,6 +8150,20 @@ impl FunctionBlock {
 }
 
 impl FunctionSignature {
+    fn matches_c_definition(&self, source_path: &str, function: &syntax::C0Function) -> bool {
+        let name = if let Some(source) = &self.c_source {
+            if source != source_path {
+                return false;
+            }
+            self.name
+                .rsplit_once("::")
+                .map_or(self.name.as_str(), |(_, name)| name)
+        } else {
+            &self.name
+        };
+        name == function.source_name()
+    }
+
     pub fn new(
         return_type: C0Type,
         name: impl Into<String>,
@@ -8045,6 +8174,7 @@ impl FunctionSignature {
             return_pointee_constant: false,
             return_reference: false,
             name: name.into(),
+            c_source: None,
             parameters,
             exceptional_type: None,
             diverges: false,

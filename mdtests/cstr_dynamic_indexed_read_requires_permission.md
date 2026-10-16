@@ -1,7 +1,9 @@
 # Dynamic C-string reads require an explicit permission range
 
 `cstr::readable` and `viewable` describe safe contents, but neither one grants
-the resource-sensitive permission needed by an actual C array read.
+a resource. `strlen` views a `cstr_at` instance, and a caller that holds only
+the predicate has none to lend it, so the call is refused before the C array
+read that would need a permission as well.
 
 ```c filename=cstr_dynamic_indexed_read_requires_permission.c
 int32 read_terminator_without_permission(uint8 bytes[]) {
@@ -25,5 +27,5 @@ int32 read_terminator_without_permission(uint8 bytes[]) {
 ```
 
 ```expect
-fail: missing resource fact `views bytes
+fail: call to `strlen` needs a held `cstr_at` instance to give `s.len` its value
 ```

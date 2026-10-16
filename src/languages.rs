@@ -1,7 +1,4 @@
-//! Program languages supported by Surface Click.
-
-use std::fs;
-use std::path::Path;
+//! Target languages supported by Surface Click.
 
 pub mod c;
 pub(crate) mod compiler_process;
@@ -51,57 +48,6 @@ impl SourceLanguage {
 impl std::fmt::Display for SourceLanguage {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         formatter.write_str(self.name())
-    }
-}
-
-#[derive(Clone, Debug)]
-pub enum PreparedCompilerImport {
-    C(Vec<c::compiler_import::PreparedCImport>),
-    Program(PreparedProgram),
-}
-
-fn import_language(config_path: &Path) -> Result<Option<String>, String> {
-    const MAX_CONFIG_BYTES: u64 = 1 << 20;
-    let metadata = fs::symlink_metadata(config_path)
-        .map_err(|error| format!("read import config `{}`: {error}", config_path.display()))?;
-    if !metadata.file_type().is_file() || metadata.len() > MAX_CONFIG_BYTES {
-        return Err("compiler import config must be a regular file of at most 1 MiB".into());
-    }
-    let bytes = fs::read(config_path)
-        .map_err(|error| format!("read import config `{}`: {error}", config_path.display()))?;
-    if bytes.len() > MAX_CONFIG_BYTES as usize {
-        return Err("compiler import config exceeds its 1 MiB limit".into());
-    }
-    let value: serde_json::Value =
-        serde_json::from_slice(&bytes).map_err(|error| format!("parse import config: {error}"))?;
-    match value.get("language") {
-        Some(serde_json::Value::String(language)) => Ok(Some(language.clone())),
-        Some(_) => Err("compiler import language must be a string".into()),
-        None => Ok(None),
-    }
-}
-
-pub fn load_compiler_import(config_path: &Path) -> Result<PreparedCompilerImport, String> {
-    match import_language(config_path)?.as_deref() {
-        Some("c++") => cpp::load_import(config_path)
-            .map(|import| PreparedCompilerImport::Program(import.into())),
-        Some("rust") => rust::load_import(config_path)
-            .map(|import| PreparedCompilerImport::Program(import.into())),
-        Some(language) => Err(format!("unsupported compiler import language `{language}`")),
-        None => c::compiler_import::load_imports(config_path).map(PreparedCompilerImport::C),
-    }
-}
-
-/// Explicitly refresh the compiler-owned artifact selected by an import file.
-///
-/// Existing C configurations have no language field. Typed C++ and Rust
-/// boundaries identify themselves explicitly and never fall back to C handling.
-pub fn refresh_compiler_import(config_path: &Path) -> Result<(), String> {
-    match import_language(config_path)?.as_deref() {
-        Some("c++") => cpp::refresh_import(config_path),
-        Some("rust") => rust::refresh_import(config_path),
-        Some(language) => Err(format!("unsupported compiler import language `{language}`")),
-        None => c::compiler_import::create_lock(config_path),
     }
 }
 
@@ -191,4 +137,31 @@ pub(crate) struct PreparedExecution {
     /// Click `extern` contracts the frontend supplies for library functions
     /// the program calls but does not define, parsed with the sidecar.
     pub library_contracts: String,
+    /// The layout name of each record whose source spelling differs from
+    /// it, by that spelling: a C++ class template instance,
+    /// `Stored<long long>`, is laid out as `Stored__long_long`.
+    pub record_spellings: std::collections::BTreeMap<String, String>,
+}
+
+/// `text` with every whole importer name it contains spelled as its source
+/// language spells it: a Rust item by its path, `quad::walk`, and a C++
+/// declaration as C++ names it, `Square::area`.
+pub fn display_source_names(text: &str) -> std::borrow::Cow<'_, str> {
+    match rust::names::display_rust_names(text) {
+        std::borrow::Cow::Borrowed(text) => cpp::names::display_cpp_names(text),
+        std::borrow::Cow::Owned(text) => {
+            std::borrow::Cow::Owned(cpp::names::display_cpp_names(&text).into_owned())
+        }
+    }
+}
+
+/// The source spelling `name` stands for when it is a whole importer name.
+pub fn source_display_name(name: &str) -> Option<String> {
+    rust::names::rust_display_name(name).or_else(|| cpp::names::cpp_display_name(name))
+}
+
+/// Whether the claim label `label` is the one `requested` names, as the
+/// importer spells it or as its source language does.
+pub fn claim_label_matches(label: &str, requested: &str) -> bool {
+    label == requested || (requested.contains("::") && display_source_names(label) == requested)
 }

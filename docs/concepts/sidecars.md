@@ -47,9 +47,32 @@ verifying "increment.c";
 This tells Click which C source files are part of the verification unit. Larger
 sidecars can name multiple C files when a proof depends on helper functions.
 
+A source alias can select a translation unit's function definition. This is
+needed when several selected files include a `static inline` helper with the
+same source name:
+
+<!-- verified-example: mdtests/qualified_inline_function_contract.md -->
+```click
+verifying "first.c" as first;
+verifying "second.c" as second;
+int32 first::helper() {
+    ensures result == 1;
+} by { execute(); simp(); }
+```
+
+`first::helper` selects `helper` from `first.c`; calls in that translation unit
+use this contract. Call binder maps use the same qualified spelling, as in
+`step(first::helper(p), { before: input })`; the selected definition must be
+the actual call at the execution frontier. The alias is resolved in the declaring sidecar and keeps
+that binding when the contract is imported. An unqualified head still works
+when the source name identifies one definition. Ambiguous names, unknown
+aliases, missing definitions, and multiple ordinary contracts for one C
+definition are rejected. Named contracts remain the way to give one function
+additional separately proved interfaces.
+
 A directory can set the C target and modeled runtime once for its sidecars in
 `click.project.json`, with optional `target` and `runtime` string fields. For
-example, `{"target":"x86_64-linux-userspace","runtime":"modeled-pthread"}`
+example, `{"target":"x86_64-unknown-linux-gnu","runtime":"modeled-pthread"}`
 selects the conditional pthread model. A sidecar in a subdirectory without
 its own file uses the nearest one above it. The file can also declare the
 project's compiler-import units ([Project units](../reference/cli/import.md#project-units)).

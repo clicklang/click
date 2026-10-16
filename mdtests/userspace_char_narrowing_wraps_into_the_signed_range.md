@@ -12,7 +12,7 @@ int narrow(int x) {
 ```
 
 ```click
-target "x86_64-linux-userspace";
+target "x86_64-unknown-linux-gnu";
 verifying "userspace_char_narrowing.c";
 
 int32 narrow(int32 x) {
