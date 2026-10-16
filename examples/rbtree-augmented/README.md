@@ -317,3 +317,12 @@ model, and uses the shared indexed separation rule through `assumption()`.
 The sized parent-update helper now calls this proof internally, so its callers
 no longer need an explicit parent-disequality premise. Full non-root insertion
 still needs the writable callback and whole-context restoration.
+
+
+`rbtree_size_insert_context_rotation.click` composes the checked parent-update
+helper and writable size callback for a left-left insertion rotation under an
+arbitrary owned ancestor context. The unchanged C and both augmented insertion
+wrappers return the repaired three-node subtree and the same outer context,
+including its ancestor caches. Its retained-session expansion is a nightly
+regression for call-frame address matching. Refolding that pair into the whole
+root tree remains the next step.
