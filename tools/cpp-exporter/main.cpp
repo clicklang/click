@@ -4393,16 +4393,57 @@ private:
     return true;
   }
 
+  // Whether `statement` reads `this`, directly or through an implicit
+  // member access.
+  static bool reads_this(const clang::Stmt *statement) {
+    if (statement == nullptr) return false;
+    if (llvm::isa<clang::CXXThisExpr>(statement)) return true;
+    for (const clang::Stmt *child : statement->children()) {
+      if (reads_this(child)) return true;
+    }
+    return false;
+  }
+
   bool validate_constructor(const clang::CXXConstructorDecl *constructor,
                             const clang::CXXRecordDecl *record) {
-    if (record->isPolymorphic()) {
-      fail(constructor->getLocation(),
-           "constructing a polymorphic C++ object remains unsupported");
-      return false;
-    }
+    // A polymorphic class's construction also sets its vtable pointer,
+    // which no field names and no proof reads. Its one base may be a
+    // polymorphic class with no fields and no constructor of its own,
+    // whose implicit default construction only sets that pointer. While
+    // either constructs, the object's dynamic type is still changing, so
+    // nothing reads `this`: the members initialize from the parameters and
+    // the body is empty.
+    const clang::CXXRecordDecl *empty_base = nullptr;
     if (record->getNumBases() != 0) {
-      fail(constructor->getLocation(), "C++ constructors with base subobjects remain unsupported");
-      return false;
+      const clang::CXXBaseSpecifier &specifier = *record->bases_begin();
+      const auto *base = specifier.getType()->getAsCXXRecordDecl();
+      if (!record->isPolymorphic() || record->getNumBases() != 1 ||
+          specifier.isVirtual() || base == nullptr || !base->isPolymorphic() ||
+          base->getNumBases() != 0 || !base->field_empty() ||
+          base->hasUserDeclaredConstructor()) {
+        fail(constructor->getLocation(),
+             "C++ constructors with base subobjects remain unsupported, except "
+             "a polymorphic class's polymorphic base with no fields or "
+             "constructors of its own");
+        return false;
+      }
+      empty_base = base->getCanonicalDecl();
+    }
+    if (record->isPolymorphic()) {
+      const auto *body =
+          llvm::dyn_cast_or_null<clang::CompoundStmt>(constructor->getBody());
+      bool reads = body == nullptr || !body->body_empty();
+      for (const clang::CXXCtorInitializer *initializer : constructor->inits()) {
+        reads = reads || (initializer->isMemberInitializer() &&
+                          reads_this(initializer->getInit()));
+      }
+      if (reads) {
+        fail(constructor->getLocation(),
+             "a polymorphic C++ constructor initializes its members without "
+             "reading `this` and has an empty body: the object's dynamic type "
+             "changes while it constructs");
+        return false;
+      }
     }
     const auto *prototype =
         constructor->getType()->getAs<clang::FunctionProtoType>();
@@ -4437,7 +4478,8 @@ private:
            "supported constructors require records without stateless members");
       return false;
     }
-    if (constructor->getNumCtorInitializers() != field_count) {
+    if (constructor->getNumCtorInitializers() !=
+        field_count + (empty_base == nullptr ? 0 : 1)) {
       fail(constructor->getLocation(),
            "the supported constructor must explicitly initialize every field in declaration order");
       return false;
@@ -4445,6 +4487,13 @@ private:
     std::vector<const clang::CXXCtorInitializer *> source_order(field_count,
                                                                 nullptr);
     for (const clang::CXXCtorInitializer *initializer : constructor->inits()) {
+      // The field-less base's implicit default construction.
+      if (empty_base != nullptr && initializer->isBaseInitializer() &&
+          !initializer->isWritten() &&
+          initializer->getBaseClass()->getAsCXXRecordDecl()->getCanonicalDecl() ==
+              empty_base) {
+        continue;
+      }
       const unsigned order = initializer->getSourceOrder();
       if (!initializer->isWritten() || !initializer->isMemberInitializer() ||
           order >= field_count || source_order[order] != nullptr) {

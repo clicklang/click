@@ -1822,6 +1822,51 @@ impl CppRecord {
         Ok(())
     }
 
+    /// A polymorphic class constructed in place: its own fields after the
+    /// vtable pointer, and at most one polymorphic base with no fields,
+    /// bases, or destructor, whose construction only sets the vtable pointer.
+    fn require_polymorphic_construction_layout(
+        &self,
+        records: &BTreeMap<String, &CppRecord>,
+    ) -> Result<(), String> {
+        if !self.polymorphic {
+            return self.require_constructor_local_layout();
+        }
+        if self.destructor.is_some() {
+            return Err(
+                "automatic polymorphic C++ objects with destructors remain unsupported".into(),
+            );
+        }
+        if let Some(base) = &self.base {
+            self.require_empty_polymorphic_base(base, records)?;
+        }
+        Ok(())
+    }
+
+    fn require_empty_polymorphic_base(
+        &self,
+        base: &CppBase,
+        records: &BTreeMap<String, &CppRecord>,
+    ) -> Result<(), String> {
+        let CppType::Record {
+            declaration_id,
+            name,
+            ..
+        } = &base.value_type
+        else {
+            return Err("C++ base subobject is not a record".into());
+        };
+        let base_record = validate_record_reference(records, declaration_id, name)?;
+        if !base_record.polymorphic
+            || !base_record.fields.is_empty()
+            || base_record.base.is_some()
+            || base_record.destructor.is_some()
+        {
+            return Err("C++ objects with base subobjects remain unsupported, except a polymorphic class's polymorphic base with no fields, bases, or destructor".into());
+        }
+        Ok(())
+    }
+
     fn require_flat_local_layout(&self) -> Result<(), String> {
         self.require_constructor_local_layout()?;
         if self
@@ -2394,8 +2439,11 @@ impl CppFunction {
         {
             let self_parameter = &self.parameters[0];
             let record = validate_record_reference(records, record_declaration_id, record_name)?;
-            if record.base.is_some() {
-                return Err("C++ constructors with base subobjects remain unsupported".into());
+            if let Some(base) = &record.base {
+                if !record.polymorphic {
+                    return Err("C++ constructors with base subobjects remain unsupported".into());
+                }
+                record.require_empty_polymorphic_base(base, records)?;
             }
             if self.body.len() < record.fields.len() {
                 return Err(format!(
@@ -2554,11 +2602,9 @@ impl CppFunction {
                             ));
                         }
                         let record = validate_record_reference(records, declaration_id, name)?;
-                        if matches!(
-                            initializer,
-                            CppInitializer::Constructor { .. }
-                                | CppInitializer::ConstructionCall { .. }
-                        ) {
+                        if matches!(initializer, CppInitializer::Constructor { .. }) {
+                            record.require_polymorphic_construction_layout(records)?;
+                        } else if matches!(initializer, CppInitializer::ConstructionCall { .. }) {
                             record.require_constructor_local_layout()?;
                         } else {
                             record.require_flat_local_layout()?;
