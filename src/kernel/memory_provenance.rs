@@ -2773,21 +2773,13 @@ pub(in crate::kernel) fn complete_pointer_reads_equal_across_frame(
     }
     let a_memory = complete_pointer_read_source(&a);
     let b_memory = complete_pointer_read_source(&b);
-    a_memory == b_memory
-        || typed_read_has_same_memory_source(
-            &a_memory,
-            &b_memory,
-            &a.defining_address,
-            crate::kernel::C_POINTER_BYTE_WIDTH,
-            assumptions,
-        )
-        || typed_read_has_same_memory_source(
-            &b_memory,
-            &a_memory,
-            &b.defining_address,
-            crate::kernel::C_POINTER_BYTE_WIDTH,
-            assumptions,
-        )
+    typed_reads_share_memory_source(
+        &a_memory,
+        &b_memory,
+        &a.defining_address,
+        crate::kernel::C_POINTER_BYTE_WIDTH,
+        assumptions,
+    )
 }
 
 pub(in crate::kernel) fn pointer_read_designations_equal(
@@ -2827,16 +2819,10 @@ fn pointer_read_domains_equal(
     }
     // A frame can retain an opaque read without materializing its cell.
     // Follow only the selected cell, stopping at the older named snapshot.
-    if typed_read_has_same_memory_source(
+    if typed_reads_share_memory_source(
         &left_memory,
         &right_memory,
         &left.defining_address,
-        crate::kernel::C_POINTER_BYTE_WIDTH,
-        assumptions,
-    ) || typed_read_has_same_memory_source(
-        &right_memory,
-        &left_memory,
-        &right.defining_address,
         crate::kernel::C_POINTER_BYTE_WIDTH,
         assumptions,
     ) {
@@ -3428,6 +3414,65 @@ impl LoadCellWalks {
             None
         }
     }
+}
+
+/// Compare two selected read histories, stopping as soon as their checked
+/// no-write prefixes meet. Alternating the walks avoids inspecting history
+/// older than a nearby shared source, including for sibling snapshot views.
+fn typed_reads_share_memory_source(
+    left: &SharedCMemory,
+    right: &SharedCMemory,
+    pointer: &Pointer,
+    bytes: u32,
+    assumptions: &PureFactContext,
+) -> bool {
+    if left == right {
+        return true;
+    }
+    let _scope = ExplicitReadScope(EXPLICIT_DAG_CHECK.with(|flag| flag.replace(true)));
+    with_extended_dag_bridging(|| {
+        let mut current = [Some(left.clone()), Some(right.clone())];
+        let mut reached = [
+            std::collections::HashSet::from([left.clone()]),
+            std::collections::HashSet::from([right.clone()]),
+        ];
+        let evidence = crate::kernel::resource_tracker::step_effect::Evidence {
+            assumptions,
+            cross_loop_havoc: true,
+        };
+        while current.iter().any(Option::is_some) {
+            for side in 0..2 {
+                let Some(node) = current[side].take() else {
+                    continue;
+                };
+                crate::instrumentation::record_deterministic_work(1);
+                let Some(step) = node.derivation() else {
+                    continue;
+                };
+                if !matches!(
+                    crate::kernel::resource_tracker::step_effect::affects(
+                        &step,
+                        &node,
+                        crate::kernel::resource_tracker::Resource::Cell { pointer, bytes },
+                        &evidence,
+                    ),
+                    crate::kernel::resource_tracker::step_effect::StepEffect::Separate(
+                        crate::kernel::resource_tracker::step_effect::Separation::Cell(_)
+                    )
+                ) {
+                    continue;
+                }
+                let base = step.base();
+                if reached[1 - side].contains(base) {
+                    return true;
+                }
+                if reached[side].insert(base.clone()) {
+                    current[side] = Some(base.clone());
+                }
+            }
+        }
+        false
+    })
 }
 
 /// Initialization can cross only checked no-write edges for this typed range.
@@ -6750,6 +6795,37 @@ mod opaque_pointer_frame_tests {
             &same_storage
         ));
         assert!(!pointer_read_extents_equal(&left, &changed, &same_storage));
+    }
+
+    #[test]
+    fn complete_pointer_read_addresses_follow_a_shared_unchanged_source() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let field = Pointer::symbolic(Variable(9_880_490));
+        let base = intern_c_memory(CMemory::new());
+        let left = intern_c_memory(base.memory().clone().store(
+            field.offset_by_bytes(8),
+            CValue::UInt64(Bitvector32Term::UInt64Constant(1)),
+        ));
+        let right = intern_c_memory(base.memory().clone().store(
+            field.offset_by_bytes(16),
+            CValue::UInt64(Bitvector32Term::UInt64Constant(2)),
+        ));
+        let a = Pointer::loaded_value(&left, &field);
+        let b = Pointer::loaded_value(&right, &field);
+        let context = PureFactContext::new();
+        assert!(pointer_read_designations_equal(&a, &b, &context));
+        assert!(pointer_read_extents_equal(&a, &b, &context));
+        assert!(complete_pointer_reads_equal_across_frame(&a, &b, &context));
+        let changed = intern_c_memory(
+            base.memory()
+                .clone()
+                .store(field.offset_by_bytes(4), CValue::UInt32(0u32.into())),
+        );
+        assert!(!complete_pointer_reads_equal_across_frame(
+            &a,
+            &Pointer::loaded_value(&changed, &field),
+            &context,
+        ));
     }
 
     #[test]

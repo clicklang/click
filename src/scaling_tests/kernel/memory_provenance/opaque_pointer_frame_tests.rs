@@ -176,3 +176,35 @@ fn copied_pointer_frames_ignore_unrelated_separations() {
     });
     assert!(costs[0] > 0 && costs.iter().all(|work| *work <= costs[0] + 128), "{costs:?}");
 }
+
+#[test]
+fn sibling_pointer_reads_stop_before_unrelated_shared_history() {
+    let costs = [16u64, 64, 256, 1024].map(|size| {
+        let _session = crate::kernel::VerificationSession::enter();
+        let field = Pointer::symbolic(Variable(9_920_000));
+        let mut memory = CMemory::new().with_block("local:read-common-history", 4096);
+        for index in 0..size {
+            memory = memory.store(Pointer {
+                block: "local:read-common-history".into(),
+                offset: PointerOffsetTerm::Constant(index as i64 * 4),
+            }, CValue::Int32(0u32.into()));
+        }
+        let left = intern_c_memory(memory.clone().store(
+            field.offset_by_bytes(8), CValue::UInt64(Bitvector32Term::UInt64Constant(1)),
+        ));
+        let right = intern_c_memory(memory.store(
+            field.offset_by_bytes(16), CValue::UInt64(Bitvector32Term::UInt64Constant(2)),
+        ));
+        let a = Pointer::loaded_value(&left, &field);
+        let b = Pointer::loaded_value(&right, &field);
+        let context = PureFactContext::new();
+        let (holds, work) = crate::instrumentation::measure_deterministic_work(|| {
+            complete_pointer_reads_equal_across_frame(&a, &b, &context)
+                && pointer_read_designations_equal(&a, &b, &context)
+                && pointer_read_extents_equal(&a, &b, &context)
+        });
+        assert!(holds);
+        work
+    });
+    assert!(costs[0] > 0 && costs.iter().all(|work| *work <= costs[0] + 128), "{costs:?}");
+}
