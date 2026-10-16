@@ -240,10 +240,11 @@ that writes `int32` for such a source already writes the source's spelling.
    A mutable receiver or reference may change the state, which its
    `ensures` read as new and `old(...)` as at entry. A polymorphic local is
    built by its explicit constructor when the constructor reads no `this`
-   and its base has no fields; the compiler's vtable setup is trusted.
-   Remaining for C++: overriding a defining class's method, virtual
-   destructors, and constructing objects whose base has fields or a
-   constructor.
+   and its base has no fields; the compiler's vtable setup is trusted. A
+   defaulted, implicit or empty virtual destructor only resets the vtable
+   pointer and runs no proof code. Remaining for C++: overriding a defining
+   class's method, virtual destructors with effects, and constructing
+   objects whose base has fields or a constructor.
 
 ## Intended regressions
 

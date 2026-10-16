@@ -5637,7 +5637,7 @@ fn terminal_destructor_rejects_throwing_virtual_empty_and_nonterminal_cleanup() 
                 "~RestoreState() noexcept",
                 "virtual ~RestoreState() noexcept",
             ),
-            "public, non-virtual, non-deleted, and explicitly noexcept",
+            "virtual with an empty body",
         ),
         (
             TERMINAL_DESTRUCTOR_SOURCE.replace(
@@ -18415,6 +18415,14 @@ fn virtual_dispatch_refuses_construction_recursion_and_other_class_shapes() {
                 ),
             ][..],
             "polymorphic base with no fields or constructors of its own",
+        ),
+        // A virtual destructor that runs code.
+        (
+            &[(
+                "= 0; };",
+                "= 0;\n    virtual ~Shape() noexcept { int unused = 0; (void)unused; }\n};",
+            )][..],
+            "virtual with an empty body",
         ),
         // A call back through the interface from an override.
         (

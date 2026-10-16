@@ -4210,7 +4210,48 @@ private:
     // Deleted and other explicitly written declarations retain their checks.
     return destructor != nullptr && !destructor->isImplicit() &&
            !(destructor->isDefaulted() && !destructor->isDeleted() &&
-             destructor->isTrivial());
+             destructor->isTrivial()) &&
+           !no_op_virtual_destructor(destructor->getParent());
+  }
+
+  // A polymorphic class whose destruction does nothing but reset the
+  // vtable pointer, which the compiler does and no proof reads: its
+  // destructor is implicit, defaulted, or public with an empty body, its
+  // fields have trivial destruction, and so does its base or it is such a
+  // class too. Its virtual destructor then runs no code a proof sees.
+  static bool no_op_virtual_destructor(const clang::CXXRecordDecl *record) {
+    record = record == nullptr ? nullptr : record->getDefinition();
+    if (record == nullptr || !record->isPolymorphic() ||
+        record->hasTrivialDestructor())
+      return false;
+    if (const clang::CXXDestructorDecl *destructor = record->getDestructor()) {
+      if (destructor->isDeleted() || destructor->getAccess() != clang::AS_public)
+        return false;
+      if (!destructor->isImplicit() && !destructor->isDefaulted()) {
+        const auto *definition = llvm::dyn_cast_or_null<clang::CXXDestructorDecl>(
+            destructor->getDefinition());
+        const auto *body = definition == nullptr
+                               ? nullptr
+                               : llvm::dyn_cast_or_null<clang::CompoundStmt>(
+                                     definition->getBody());
+        if (body == nullptr || !body->body_empty())
+          return false;
+      }
+    }
+    for (const clang::FieldDecl *field : record->fields()) {
+      const auto *field_record = field->getType()->getAsCXXRecordDecl();
+      if (field_record != nullptr && field_record->getDefinition() != nullptr &&
+          !field_record->getDefinition()->hasTrivialDestructor())
+        return false;
+    }
+    for (const clang::CXXBaseSpecifier &base : record->bases()) {
+      const auto *base_record = base.getType()->getAsCXXRecordDecl();
+      if (base_record == nullptr || base_record->getDefinition() == nullptr ||
+          (!base_record->getDefinition()->hasTrivialDestructor() &&
+           !no_op_virtual_destructor(base_record)))
+        return false;
+    }
+    return true;
   }
 
   bool validate_record(const clang::CXXRecordDecl *record) {
@@ -4292,8 +4333,9 @@ private:
   // A polymorphic class: its object starts with the vtable pointer Clang
   // lays out, which no field names and no contract reads. It has at most
   // one public non-virtual base, itself polymorphic, at offset zero; its own
-  // fields follow the whole base, and nothing destroys or copies it, so it
-  // is only ever reached through a reference.
+  // fields follow the whole base. Nothing copies it: it is reached through a
+  // reference or built in a local by its constructor, and its destruction
+  // runs no code a proof sees.
   bool validate_polymorphic_record(const clang::CXXRecordDecl *record) {
     if (record->getNumVBases() != 0 || record->getNumBases() > 1) {
       fail(record->getLocation(),
@@ -4301,14 +4343,19 @@ private:
       return false;
     }
     const clang::CXXDestructorDecl *destructor = record->getDestructor();
-    // A written destructor is checked as any is, which names what it lacks.
-    if (needs_destructor_body(destructor) && !validate_destructor(destructor, record))
+    const bool no_op_destructor = no_op_virtual_destructor(record);
+    // A written non-virtual destructor is checked as any is, which names
+    // what it lacks.
+    if ((destructor == nullptr || !destructor->isVirtual()) &&
+        needs_destructor_body(destructor) && !validate_destructor(destructor, record))
       return false;
-    if ((destructor != nullptr && destructor->isVirtual()) ||
-        needs_destructor_body(destructor) || !record->hasTrivialDestructor()) {
+    if (!no_op_destructor &&
+        ((destructor != nullptr && destructor->isVirtual()) ||
+         needs_destructor_body(destructor) || !record->hasTrivialDestructor())) {
       fail(record->getLocation(),
-           "a polymorphic C++ class has a trivial non-virtual destructor; "
-           "virtual destructors remain unsupported");
+           "a polymorphic C++ class's destructor is trivial, or virtual with an "
+           "empty body over fields with trivial destruction and a base of the "
+           "same kind; other destructors remain unsupported");
       return false;
     }
     const auto &layout = context_.getASTRecordLayout(record);
