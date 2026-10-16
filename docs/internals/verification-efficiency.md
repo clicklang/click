@@ -52,6 +52,13 @@ line ambiguity, and target containment. Matching delimiters skip nested bodies,
 and direct tactic ranges are cached by body rather than rebuilt per child.
 Regressions cover siblings, long lines, deep nesting, and unrelated source text.
 
+Loop-frame reconstruction checks each retained fact as it is composed, then
+normalizes the completed resource context once. Re-normalizing the growing
+frame after each insertion revisits all earlier scalar and view endpoints.
+The kernel regression rebuilds frames of 4, 8, 16, 32 and 64 views, checks near
+linear work growth, and retains the rule hiding undeclared views behind an
+explicit loop view interface.
+
 ## Construction, not re-validation
 
 Efficiency outranks the size of the trusted base. A proof-object operation
