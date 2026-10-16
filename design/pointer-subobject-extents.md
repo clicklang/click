@@ -260,6 +260,9 @@ none of that.
     (`examples/byte-representation`).
   - The consequence: `*(int32*)((char*)&p->first + 4)` is accepted. An explicit
     character round trip is the standard escape hatch, and compilers honor it.
+  - Conversions between character-pointer spellings preserve the existing byte
+    view. Character signedness and qualifier adjustments do not widen it again;
+    the original C-string caller/callee fixtures cover these conversions.
   - Recommended: accept, and document it in `docs/`.
 - **D5. Staging.**
   - Recommended: Phase A in three PRs:

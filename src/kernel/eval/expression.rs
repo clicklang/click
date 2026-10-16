@@ -1120,12 +1120,20 @@ fn cast_c_value_to_type_with_integer_origin(
                 return Ok(CValue::Pointer(pointer.with_type(target_type)));
             }
             CValue::Pointer(pointer) => {
+                // Signedness and qualifiers do not create a new byte view.
+                // A byte pointer already names that view; keep its bounds when
+                // converting between the C character-pointer spellings.
+                let byte_to_byte =
+                    matches!(pointer.c_type(), CType::UInt8Pointer | CType::Int8Pointer)
+                        && matches!(target_type, CType::UInt8Pointer | CType::Int8Pointer);
                 let pointer = pointer.with_type(target_type);
                 return Ok(CValue::Pointer(
-                    if matches!(
-                        target_type,
-                        CType::VoidPointer | CType::UInt8Pointer | CType::Int8Pointer
-                    ) {
+                    if !byte_to_byte
+                        && matches!(
+                            target_type,
+                            CType::VoidPointer | CType::UInt8Pointer | CType::Int8Pointer
+                        )
+                    {
                         pointer.with_root_extent()
                     } else {
                         pointer

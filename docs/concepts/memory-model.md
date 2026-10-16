@@ -33,7 +33,9 @@ address. Whole local, store/reload and aggregate copies retain a representation;
 ordinary arithmetic, changes of integer format and partial overwrites discard
 it. A lossless cast back preserves the selected bounds, including when the
 target is `void*` or a character pointer. It does not apply the widening rule
-for a direct pointer-to-pointer byte/void cast.
+for a direct pointer-to-pointer byte/void cast. Converting between character
+pointer spellings retains the existing byte view, including its bounds; changing
+signedness or qualifiers does not create a wider view.
 
 C pointer comparisons state only numeric address equality. Equal addresses do
 not make equal pointer values or transfer bounds: one object's one-past address

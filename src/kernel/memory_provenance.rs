@@ -2631,6 +2631,27 @@ fn complete_pointer_read_source(read: &LoadedPointerView) -> SharedCMemory {
         .unwrap_or_else(|| read.defining_memory.clone())
 }
 
+/// Storage identity is numeric: two complete reads of the same bytes carry
+/// the same pointer value even when their access pointers have distinct bounds.
+/// This query is confined to actual read origins, never access authority.
+fn pointer_read_addresses_equal(
+    left: &Pointer,
+    right: &Pointer,
+    assumptions: &PureFactContext,
+) -> bool {
+    if crate::kernel::reasoning::pointers_proven_equal_for_memory_resolution(
+        left,
+        right,
+        assumptions,
+    ) {
+        return true;
+    }
+    assumptions.equality_graph.are_uint64_equal(
+        &Bitvector32Term::pointer_address(left.clone()),
+        &Bitvector32Term::pointer_address(right.clone()),
+    )
+}
+
 /// Equal complete read applications across a frame denote equal numeric
 /// addresses too. This rule is used only when comparing complete C pointers;
 /// ordinary scalar load variables cannot acquire a typed read from it.
@@ -2646,11 +2667,8 @@ pub(in crate::kernel) fn complete_pointer_reads_equal_across_frame(
         &a.displacement,
         &b.displacement,
         assumptions,
-    ) || !crate::kernel::reasoning::pointers_proven_equal_for_memory_resolution(
-        &a.defining_address,
-        &b.defining_address,
-        assumptions,
-    ) {
+    ) || !pointer_read_addresses_equal(&a.defining_address, &b.defining_address, assumptions)
+    {
         return false;
     }
     let a_memory = complete_pointer_read_source(&a);
@@ -2699,11 +2717,7 @@ fn pointer_read_domains_equal(
     let (Some(left), Some(right)) = (left.as_loaded_value(), right.as_loaded_value()) else {
         return false;
     };
-    if !crate::kernel::reasoning::pointers_proven_equal_for_memory_resolution(
-        &left.defining_address,
-        &right.defining_address,
-        assumptions,
-    ) {
+    if !pointer_read_addresses_equal(&left.defining_address, &right.defining_address, assumptions) {
         return false;
     }
     let left_memory = complete_pointer_read_source(&left);
@@ -6568,6 +6582,51 @@ fn directly_matched_effect_endpoint(
 #[cfg(test)]
 mod opaque_pointer_frame_tests {
     use super::*;
+
+    #[test]
+    fn complete_pointer_domains_follow_numeric_storage_equality_only() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let [a, b, c, d] = [1, 2, 3, 4].map(|id| Pointer::symbolic(Variable(9_880_450 + id)));
+        let memory = intern_c_memory(CMemory::new());
+        let left = Pointer::loaded_value(&memory, &a);
+        let right = Pointer::loaded_value(&memory, &d);
+        let address_equality = |a: &Pointer, b: &Pointer| {
+            ConditionTerm::uint64_equal(
+                Bitvector32Term::pointer_address(a.clone()),
+                Bitvector32Term::pointer_address(b.clone()),
+            )
+        };
+        let numbers_only =
+            PureFactContext::new().assume_condition(address_equality(&left, &right), true);
+        assert!(!pointer_read_designations_equal(
+            &left,
+            &right,
+            &numbers_only
+        ));
+        let mut same_storage = PureFactContext::new();
+        for (a, b) in [(&a, &b), (&c, &d), (&b, &c)] {
+            same_storage = same_storage.assume_condition(address_equality(a, b), true);
+        }
+        assert!(pointer_read_designations_equal(
+            &left,
+            &right,
+            &same_storage
+        ));
+        assert!(pointer_read_extents_equal(&left, &right, &same_storage));
+        let overwritten = intern_c_memory(
+            memory
+                .memory()
+                .clone()
+                .store(a.offset_by_bytes(4), CValue::UInt32(0u32.into())),
+        );
+        let changed = Pointer::loaded_value(&overwritten, &d);
+        assert!(!pointer_read_designations_equal(
+            &left,
+            &changed,
+            &same_storage
+        ));
+        assert!(!pointer_read_extents_equal(&left, &changed, &same_storage));
+    }
 
     #[test]
     fn complete_pointer_domain_uses_explicit_whole_header_separation() {

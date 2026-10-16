@@ -96,3 +96,42 @@ fn bounded_pointer_value_skips_unrelated_facts_cells_and_history() {
         "{wide_samples:?}"
     );
 }
+
+#[test]
+fn complete_read_domains_use_numeric_storage_classes_without_scanning_other_classes() {
+    let costs = [16u64, 64, 256, 1024].map(|size| {
+        let _session = crate::kernel::VerificationSession::enter();
+        let mut facts = PureFactContext::new();
+        let equal = |a: Pointer, b: Pointer| {
+            ConditionTerm::uint64_equal(
+                Bitvector32Term::pointer_address(a),
+                Bitvector32Term::pointer_address(b),
+            )
+        };
+        for index in 0..size {
+            facts = facts.assume_condition(
+                equal(
+                    Pointer::symbolic(Variable(9_890_000 + index * 2)),
+                    Pointer::symbolic(Variable(9_890_001 + index * 2)),
+                ),
+                true,
+            );
+        }
+        let a = Pointer::symbolic(Variable(9_889_000));
+        let b = Pointer::symbolic(Variable(9_889_001));
+        facts = facts.assume_condition(equal(a.clone(), b.clone()), true);
+        let memory = intern_c_memory(CMemory::new());
+        let left = Pointer::loaded_value(&memory, &a);
+        let right = Pointer::loaded_value(&memory, &b);
+        let (holds, work) = crate::instrumentation::measure_deterministic_work(|| {
+            pointer_read_designations_equal(&left, &right, &facts)
+                && pointer_read_extents_equal(&left, &right, &facts)
+        });
+        assert!(holds);
+        work
+    });
+    assert!(
+        costs[0] > 0 && costs.iter().all(|work| *work <= costs[0] + 128),
+        "{costs:?}"
+    );
+}
