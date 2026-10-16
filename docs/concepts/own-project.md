@@ -449,6 +449,7 @@ lists it among the external assumptions. See
 Try the remaining function, `label_copy`:
 
 ```click filename=label.click
+import click::bytes;
 import click::cstr;
 
 verifying "label_fit.c";
@@ -474,11 +475,24 @@ uint64 label_copy(char* dst, const char* src) {
     ensures s.len < 32u64 implies result == s.len;
     ensures 32u64 <= s.len implies result == 31u64;
     ensures dst[result] == '\0';
+    ensures bytes::equal(dst, 0u64, src, 0u64, result);
 } by {
     step();
     step();
     step();
     open(cstr_at(src, s.len)) {
+        unfold(bytes::equal);
+        step();
+        mark copied;
+        step();
+        have bytes::equal(dst, 0u64, src, 0u64, n) by {
+            transport(
+                at(copied, (0u64..n).all(|k| {
+                    ((uint8*)dst)[0u64 + k] == old(((uint8*)src)[0u64 + k])
+                })),
+                (0u64..n).all(|k| { ((uint8*)dst)[0u64 + k] == ((uint8*)src)[0u64 + k] })
+            );
+        }
         execute();
     }
 }
@@ -497,8 +511,18 @@ destination and source. `label_copy` owns `dst` and views the string, which
 keeps them apart, and its contract also states the separation over the
 string's own bytes, `src[0u64..s.len + 1u64]`. Its source may be `const`, as
 in the existing C. The destination's 32-byte ownership and `label_fit`'s bound
-also cover the terminator store. Verify this complete sidecar with
-`click verify label.click`.
+also cover the terminator store.
+
+`label_copy` also states the bytes it copied,
+`bytes::equal(dst, 0u64, src, 0u64, result)`, which needs `import
+click::bytes`. `memcpy` states them about the memory right after the call; the
+proof marks that point `copied`, steps over the terminator store, and
+`transport`s the unfolded fact to the current memory as a `have` over `n`.
+The frame check assumes the fact's guard `k < n` for each read: `dst[k]` is
+below the store at `dst[n]`, and `src[k]` is kept apart from `dst` by the
+`separate` requirement. `execute()` then closes the postcondition, where
+`result` is `n`. The casts to `uint8*` read the bytes as `bytes::equal` does.
+Verify this complete sidecar with `click verify label.click`.
 
 Three kinds of report look different:
 

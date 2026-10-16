@@ -45,6 +45,7 @@ const NIGHTLY: &[&str] = &[
     "a_read_back_across_a_store_that_misses_its_cell_is_the_earlier_store.md", // 0.5s
     "a_store_at_a_bounded_index_inside_an_owned_array_parameter_is_authorized.md", // 0.9s
     "a_store_below_an_owned_global_range_is_refused.md",                       // 0.6s
+    "a_store_inside_the_copy_does_not_keep_copied_bytes.md",                   // 0.8s
     "a_table_of_three_named_callback_contracts_calls_one.md",                  // 0.5s
     "a_wide_store_after_a_root_call_is_not_the_old_tag.md",                    // 0.6s
     "abutting_contract_ranges_keep_each_clause_at_certification.md",           // 0.7s
@@ -106,6 +107,7 @@ const NIGHTLY: &[&str] = &[
     "consumed_population_count_in_ensured_predicate.md",                       // 0.6s
     "contract_owns_composite_argument.md",                                     // 1.2s
     "contract_owns_through_composite_field.md",                                // 0.7s
+    "copied_bytes_through_result_need_an_explicit_transport.md",               // 1.1s
     "copy_n_segment_invariant.md",                                             // 1.4s
     "cpp_guard_unwind_before_second.md",                                       // 1.4s
     "cpp_one_guard_unwind.md",                                                 // 1.0s
@@ -165,6 +167,8 @@ const NIGHTLY: &[&str] = &[
     "loop_semantically_duplicate_invariants.md",                               // 1.2s
     "loop_symbolic_disjoint_array_store_frame.md",                             // 0.6s
     "loop_three_invariant_initialization.md",                                  // 1.0s
+    "memcpy_then_terminator_keeps_copied_bytes.md",                            // 0.6s
+    "memcpy_then_terminator_keeps_copied_unsigned_bytes.md",                   // 1.3s
     "modular_buffer_ranges_rejoin_after_field_preserving_calls.md",            // 6.2s
     "mutex_population_missing_value_relation.md",                              // 0.6s
     "mutex_population_separate_body.md",                                       // 0.6s

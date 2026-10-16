@@ -2652,7 +2652,7 @@ fn element_indices_of(
 
 /// Cancel a structurally identical additive base from two same-block offsets
 /// and return what remains on each side.
-fn common_base_index_offsets(
+pub(in crate::kernel) fn common_base_index_offsets(
     left: &Pointer,
     right: &Pointer,
 ) -> Option<(PointerOffsetTerm, PointerOffsetTerm)> {

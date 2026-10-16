@@ -5365,3 +5365,67 @@ fn a_cpp_class_function_is_its_object_field() {
         assert!(error.message().contains(expected), "{}", error.message());
     }
 }
+
+#[test]
+fn a_conjunct_of_one_source_facts_lowering_finds_that_fact() {
+    // `x == 1` stands for a source atom (such as a contract `separate`) whose
+    // lowering adds conditions beside the fact it states.
+    let surface = ClickProposition::Comparison {
+        left: current_var("x"),
+        operator: ComparisonOperator::Equal,
+        right: current_int(1),
+    };
+    let stated = Proposition::ConditionIs(
+        ConditionTerm::Bitvector32Equal(
+            Box::new(Bitvector32Term::Variable(Variable(984_500))),
+            Box::new(Bitvector32Term::Constant(1)),
+        ),
+        true,
+    );
+    let side = Proposition::ConditionIs(
+        ConditionTerm::Bitvector32SignedLessThan(
+            Box::new(Bitvector32Term::Variable(Variable(984_501))),
+            Box::new(Bitvector32Term::Constant(7)),
+        ),
+        true,
+    );
+    let lowered = Proposition::And(Box::new(stated.clone()), Box::new(side.clone()));
+    let mut forms = SurfacePropositionMap::default();
+    forms.record_lowering(&surface, &lowered).unwrap();
+    // The conjunct has no spelling of its own; the whole lowering does.
+    assert!(forms.surface(&stated).is_err());
+    assert_eq!(
+        forms
+            .kernels_containing_conjunct(&stated)
+            .collect::<Vec<_>>(),
+        vec![&lowered]
+    );
+    assert_eq!(
+        forms.kernels_containing_conjunct(&side).collect::<Vec<_>>(),
+        vec![&lowered]
+    );
+    let unrelated = Proposition::ConditionIs(ConditionTerm::Constant(true), true);
+    assert_eq!(forms.kernels_containing_conjunct(&unrelated).count(), 0);
+    // A written conjunction records its conjuncts as pairs, not containment.
+    let left = ClickProposition::Comparison {
+        left: current_var("y"),
+        operator: ComparisonOperator::Equal,
+        right: current_int(2),
+    };
+    let left_kernel = Proposition::ConditionIs(
+        ConditionTerm::Bitvector32Equal(
+            Box::new(Bitvector32Term::Variable(Variable(984_502))),
+            Box::new(Bitvector32Term::Constant(2)),
+        ),
+        true,
+    );
+    let mut written = SurfacePropositionMap::default();
+    written
+        .record_lowering(
+            &ClickProposition::And(Box::new(left.clone()), Box::new(surface.clone())),
+            &Proposition::And(Box::new(left_kernel.clone()), Box::new(stated.clone())),
+        )
+        .unwrap();
+    assert_eq!(written.surface(&left_kernel).unwrap(), &left);
+    assert_eq!(written.kernels_containing_conjunct(&left_kernel).count(), 0);
+}

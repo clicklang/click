@@ -348,6 +348,24 @@ charged to visible semantic output rather than hidden ambient state:
   store axis asserts the whole verification as well, since a store's
   refusal to keep a cell it may alias reads only filed order facts (see
   [Indexed contradiction and premise search](#indexed-contradiction-and-premise-search)).
+  Binders of every C integer width take the same route: a `uint64` binder is
+  renamed and guarded exactly as an `int32` one, so the cost is unchanged.
+- Typed range membership of an unsigned 64-bit index `k` in a range with
+  constant 32-bit bounds (`PointerInRangeEvidence::UnsignedIndexed` in
+  `src/kernel/resource_tracker/cell_source.rs`) cancels the range's base
+  structurally from the read, builds at most four spellings of `k < end`,
+  and looks each up exactly; checking repeats the same lookups. It reads no
+  other fact and runs only inside a demand-driven frame question, never when
+  a store executes. `unsigned_index_membership_ignores_unrelated_facts_and_stores`
+  pins one unit to find and one to check beside 4, 8, 16 and 32 unrelated
+  order facts, separations and recorded stores.
+- A premise that is one conjunct of a recorded source fact's lowering (a
+  contract `separate(..)` beside its well-formedness conditions) is spelled
+  by that whole fact through the surface proposition map's conjunct index.
+  Recording files each conjunct once while walking the kernel tree it
+  already charges; the lookup is keyed by the conjunct and reads only the
+  facts filed under it, and runs only when the premise has no spelling of
+  its own.
 - Field stores beside separately owned parameter objects use a derived cell
   partition (`CellStore::parameter_partition_index`). Input setup checks each
   whole cached access against an owned member and groups it by the parameter's

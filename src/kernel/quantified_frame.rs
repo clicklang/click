@@ -15,7 +15,8 @@
 //! **The rule.** `prove(from, to, context)` establishes `from => to`:
 //!
 //! - equal propositions hold;
-//! - `forall (k: int32)` on both sides: both bodies are renamed to one binder
+//! - `forall (k: T)` on both sides, for a C integer `T` (`int32`, `int64`,
+//!   or a machine integer such as `uint64`): both bodies are renamed to one binder
 //!   identity no fact mentions ([`ProofFacts::freshen_int32_forall_body`], the
 //!   identity `intro` chooses), so no fact about another `k` can decide a
 //!   read of this one, and the bodies are proved for that arbitrary `k`;
@@ -183,7 +184,12 @@ impl Framer<'_> {
                     sort: to_sort,
                     body: to_body,
                 },
-            ) if from_sort == to_sort && matches!(from_sort, Sort::CInt32 | Sort::Bitvector32) => {
+            ) if from_sort == to_sort
+                && matches!(
+                    from_sort,
+                    Sort::CInt32 | Sort::Bitvector32 | Sort::CInt64 | Sort::CMachineInteger(_)
+                ) =>
+            {
                 // One binder identity for both bodies. When the two lowerings
                 // chose different identities, the second is renamed to the
                 // first only where that cannot capture a free variable.
