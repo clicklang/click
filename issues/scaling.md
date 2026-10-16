@@ -167,10 +167,9 @@ instead of from what the step changed.
    function of its contents, so equal contexts share one root and compare
    by pointer (`comparing_equal_resource_contexts_walks_no_facts`).
    Equality is now multiset equality rather than insertion order.
-   `objects_and_calls` at N = 128: 9.58 to 9.04 billion instructions. Still
-   superlinear there: dropping chains of memory constructions
-   (`CMemoryConstruction`, x24 from N = 32 to 128) and `evaluate_c_add_paths`
-   (x18).
+   `objects_and_calls` at N = 128: 9.58 to 9.04 billion instructions. Its
+   charged step work is now flat (largest step 4,692 units at N = 16 to
+   128) and mean step time grows x1.1 from N = 32 to 128.
 
 Related scaling bugs stay in `bugs/` until fixed:
 [sequential-loop-clause-grows-with-earlier-loops.md](../bugs/sequential-loop-clause-grows-with-earlier-loops.md).
