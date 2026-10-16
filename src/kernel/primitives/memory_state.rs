@@ -2247,7 +2247,7 @@ impl CallKeptOwnership {
 
 /// How the call havoc rule treats one cell.
 enum CallHavocCellRule {
-    /// Kept by the separation rule, without the caller's ownership.
+    /// Kept by separation or the checked flat caller frame.
     Separate,
     /// Kept because this member of what the caller keeps owning holds it.
     KeptByCaller,
@@ -2301,6 +2301,16 @@ fn call_havoc_keeps_cell(
         };
     }
     let bytes = crate::kernel::reasoning::cell_access_byte_width(value);
+    // Whole parameter runs are filtered by the flat caller frame already.
+    // A partial borrow leaves the run as a candidate; apply the same rule
+    // to its individual slots before consulting older compositions.
+    if kept.is_some_and(|kept| {
+        assumptions
+            .parameter_partition_cell_base(&kept.residual, pointer, bytes)
+            .is_some()
+    }) {
+        return CallHavocCellRule::Separate;
+    }
     if assumptions.ranges_directly_disjoint_from_access(mutable_ranges, pointer, bytes)
         || assumptions.ranges_proven_disjoint_from_pointer(mutable_ranges, pointer)
     {

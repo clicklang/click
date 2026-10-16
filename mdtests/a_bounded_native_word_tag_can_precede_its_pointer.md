@@ -16,3 +16,7 @@ void stamp(struct slot* slot, int32* p, unsigned long tag) {
     ensures ((int32*)(slot->word & ~3)) == p;
 } by { execute(); simp(); }
 ```
+
+```expect
+pass
+```

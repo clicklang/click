@@ -1776,8 +1776,20 @@ impl PureFactContext {
                 };
                 let mut probe = alignment;
                 while probe <= MAX_PROBED_ALIGNMENT {
-                    let fact = ConditionTerm::pointer_aligned(base_pointer.clone(), probe);
-                    if self.exact_condition_value(&fact) == Some(true) {
+                    let premise_at = |pointer: &Pointer, alignment| {
+                        self.equality_graph
+                            .admitted
+                            .pointer_alignment_facts
+                            .get(&(pointer.clone(), alignment))
+                            .and_then(|sources| sources.iter().next())
+                            .cloned()
+                            .or_else(|| {
+                                let fact =
+                                    ConditionTerm::pointer_aligned(pointer.clone(), alignment);
+                                (self.exact_condition_value(&fact) == Some(true)).then_some(fact)
+                            })
+                    };
+                    if let Some(fact) = premise_at(&base_pointer, probe) {
                         found = Some(Proposition::ConditionIs(fact, true));
                         break 'candidates;
                     }
@@ -1785,9 +1797,8 @@ impl PureFactContext {
                         .then(|| self.equality_graph.alignment_witness(&base_pointer))
                         .flatten()
                         .filter(|(known, _)| probe <= *known)
-                        .map(|(known, source)| ConditionTerm::pointer_aligned(source, known));
-                    let fact = witness.unwrap_or(fact);
-                    if self.exact_condition_value(&fact) == Some(true) {
+                        .and_then(|(known, source)| premise_at(&source, known));
+                    if let Some(fact) = witness {
                         found = Some(Proposition::ConditionIs(fact, true));
                         break 'candidates;
                     }
@@ -3314,6 +3325,46 @@ mod slice_index_tests {
     mod scaling_tests {
         include!(
             "../../../scaling_tests/kernel/assumptions/condition_reasoning/order_paths/slice_index_tests.rs"
+        );
+    }
+}
+
+#[cfg(test)]
+mod annotated_alignment_premise_tests {
+    use super::*;
+
+    #[test]
+    fn alignment_certificates_cite_the_exact_annotated_premise() {
+        use crate::kernel::effective_type::{CAccessClass, CScalarClass};
+        let _session = crate::kernel::VerificationSession::enter();
+        let pointer = Pointer::symbolic(Variable(996_210));
+        let source = ConditionTerm::uint64_equal(
+            Bitvector32Term::uint64_bitwise_and(
+                Bitvector32Term::object_pointer_address(
+                    pointer.clone(),
+                    Some(CAccessClass::Scalar(CScalarClass::Int)),
+                ),
+                Bitvector32Term::UInt64Constant(7),
+            ),
+            Bitvector32Term::UInt64Constant(0),
+        );
+        let bare = ConditionTerm::pointer_aligned(pointer.clone(), 8);
+        let context = PureFactContext::new().assume_condition(source.clone(), true);
+        assert_eq!(
+            context.pointer_alignment_certificate_decision(&pointer, 4),
+            Some((true, Some(Proposition::ConditionIs(source.clone(), true))))
+        );
+        let both = context.assume_condition(bare.clone(), true);
+        let remaining = both.without_exact_fact(&Proposition::ConditionIs(source, true));
+        assert_eq!(
+            remaining.pointer_alignment_certificate_decision(&pointer, 4),
+            Some((true, Some(Proposition::ConditionIs(bare.clone(), true))))
+        );
+        assert_eq!(
+            remaining
+                .without_exact_fact(&Proposition::ConditionIs(bare, true))
+                .pointer_alignment_certificate_decision(&pointer, 4),
+            None
         );
     }
 }

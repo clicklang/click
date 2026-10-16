@@ -49,9 +49,11 @@ pub(in crate::kernel) struct InputData {
         Bitvector32Term,
         crate::persistent::PersistentMap<ConditionTerm, i64>,
     >,
-    /// Original alignment premises, retained for graph reconstruction only.
-    pub(in crate::kernel) pointer_alignment_facts:
-        crate::persistent::PersistentMap<(Pointer, u64), ()>,
+    /// Exact alignment premises, including their numeric address annotations.
+    pub(in crate::kernel) pointer_alignment_facts: crate::persistent::PersistentMap<
+        (Pointer, u64),
+        crate::persistent::PersistentSet<ConditionTerm>,
+    >,
     /// Exact equalities between two pointers of *different* blocks, indexed
     /// under each side and carrying the fact that states them. An equality
     /// inside one block is a `PointerOffsetEqual` that never reaches this

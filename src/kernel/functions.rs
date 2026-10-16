@@ -4954,6 +4954,8 @@ pub(super) fn retained_population_call_partition(
     callee_resources: &ResourceContext,
     assumptions: &PureFactContext,
 ) -> Option<ResourceContext> {
+    // Consumption already retained a valid caller frame. Extend it with
+    // the selected callee pieces without rechecking untouched owner pairs.
     let mut partition = caller_frame.clone();
     for fact in callee_resources
         .facts()
@@ -4962,7 +4964,7 @@ pub(super) fn retained_population_call_partition(
     {
         if !partition.contains_exact_representation(fact) {
             partition = partition
-                .try_compose_with_facts_delaying_normalization([fact.clone()], assumptions)
+                .try_compose_into_valid_context_delaying_normalization([fact.clone()], assumptions)
                 .ok()?;
         }
     }

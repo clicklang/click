@@ -2884,17 +2884,32 @@ impl PureFactContext {
         if let Some((pointer, alignment)) = condition.as_pointer_alignment() {
             if value && alignment.is_power_of_two() {
                 let key = (pointer.clone(), alignment);
-                if insert {
-                    self.equality_graph
-                        .admitted
-                        .pointer_alignment_facts
-                        .insert(key, ());
-                    self.equality_graph.register_alignment(pointer, alignment);
+                let sources = self
+                    .equality_graph
+                    .admitted
+                    .pointer_alignment_facts
+                    .get(&key)
+                    .cloned()
+                    .unwrap_or_default();
+                let sources = if insert {
+                    sources.with_value(condition.clone())
                 } else {
+                    sources.without_value(condition)
+                };
+                if sources.is_empty() {
                     self.equality_graph
                         .admitted
                         .pointer_alignment_facts
                         .remove(&key);
+                } else {
+                    self.equality_graph
+                        .admitted
+                        .pointer_alignment_facts
+                        .insert(key, sources);
+                }
+                if insert {
+                    self.equality_graph.register_alignment(pointer, alignment);
+                } else {
                     self.rebuild_equality_graph();
                 }
             }
@@ -5943,6 +5958,19 @@ impl PureFactContext {
                 .contains_key(&condition.flipped()))
         {
             return Some(true);
+        }
+        // Object-class annotations do not change numeric addresses. The
+        // typed numeric graph shares those spellings, including disequality.
+        if let ConditionTerm::Bitvector64Equal(left, right) = condition
+            && left.address_pointer().is_some()
+            && right.address_pointer().is_some()
+        {
+            if self.equality_graph.are_uint64_equal(left, right) {
+                return Some(true);
+            }
+            if self.equality_graph.knows_condition(condition, false) {
+                return Some(false);
+            }
         }
         let graph = self.difference_graph.graph(|| {
             self.condition_facts
@@ -9990,5 +10018,37 @@ mod framed_opaque_pointer_entry_tests {
     use super::*;
     mod scaling_tests {
         include!("../scaling_tests/kernel/assumptions/framed_opaque_pointer_entry_tests.rs");
+    }
+}
+
+#[cfg(test)]
+mod annotated_numeric_pointer_condition_tests {
+    use super::*;
+
+    #[test]
+    fn address_conditions_ignore_annotations_without_equating_pointer_domains() {
+        use crate::kernel::effective_type::{CAccessClass, CScalarClass};
+        let _session = crate::kernel::VerificationSession::enter();
+        let p = Pointer::symbolic(Variable(995_100));
+        let q = Pointer::symbolic(Variable(995_101));
+        let address = |p: Pointer| {
+            Bitvector32Term::object_pointer_address(
+                p,
+                Some(CAccessClass::Scalar(CScalarClass::Int)),
+            )
+        };
+        let source = ConditionTerm::uint64_equal(address(p.clone()), address(q.clone()));
+        let target = crate::kernel::eval::c_pointer_comparison_condition(p.clone(), q.clone());
+        for value in [false, true] {
+            let context = PureFactContext::new().assume_condition(source.clone(), value);
+            assert_eq!(context.fast_leaf_decision(&target, &[]), Some(value));
+            assert!(!context.pointer_designations_match(
+                &CPointerValue::new(p.clone(), CType::Int32Pointer),
+                &CPointerValue::new(q.clone(), CType::Int32Pointer)
+            ));
+            let withdrawn =
+                context.without_exact_fact(&Proposition::ConditionIs(source.clone(), value));
+            assert_eq!(withdrawn.fast_leaf_decision(&target, &[]), None);
+        }
     }
 }

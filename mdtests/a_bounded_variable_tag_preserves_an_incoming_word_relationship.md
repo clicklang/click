@@ -15,3 +15,7 @@ unsigned long recolor(unsigned long word, int32 tag) {
     ensures ((struct node*)(result & ~3)) == old((struct node*)(word & ~3));
 } by { execute(); simp(); }
 ```
+
+```expect
+pass
+```
