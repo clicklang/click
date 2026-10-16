@@ -412,3 +412,32 @@ fn model_constructor_lookup_uses_shared_classes_and_scoped_evidence() {
     let joined = PureFactContext::new().assume_proposition(eq(&a, &ctor));
     assert_eq!(joined.known_algebraic_constructor(&other), None);
 }
+
+#[test]
+fn model_constructor_lookup_prefers_a_stated_constructor_on_an_infeasible_path() {
+    // `__rb_insert` matches `c.model` as `Left` on a path where `c.model` is
+    // also derived to be `Top`. The class keeps one witness, so the stated
+    // constructor must win whichever reached the class first.
+    let ty = model_type("StatedConstructor", AlgebraicValueType::C(CType::Int32));
+    let (model, alias) = (variable(&ty, 81), variable(&ty, 82));
+    let empty = constructor(&ty, "Empty", vec![]);
+    let node = constructor(&ty, "Node", vec![scalar(18)]);
+    for derived_first in [false, true] {
+        let base = PureFactContext::new().assume_proposition(eq(&model, &alias));
+        let joined = if derived_first {
+            base.assume_proposition(eq(&alias, &empty))
+                .assume_proposition(eq(&model, &node))
+        } else {
+            base.assume_proposition(eq(&model, &node))
+                .assume_proposition(eq(&alias, &empty))
+        };
+        assert_eq!(
+            joined.known_algebraic_constructor(&model),
+            Some(node.clone())
+        );
+        assert_eq!(
+            joined.known_algebraic_constructor(&alias),
+            Some(empty.clone())
+        );
+    }
+}

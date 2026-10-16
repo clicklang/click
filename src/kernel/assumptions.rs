@@ -4653,6 +4653,27 @@ impl PureFactContext {
     ) -> Option<AlgebraicTerm> {
         match &value.node {
             AlgebraicTermNode::Constructor { .. } => value.is_well_formed().then(|| value.clone()),
+            // A constructor stated for the variable itself comes first. On an
+            // infeasible path the variable's class can join two constructors
+            // (a matched `Left` arm and a derived `Top`), and the class keeps
+            // only the first witness it saw; the stated one is what the proof
+            // is reasoning about.
+            AlgebraicTermNode::Variable(variable)
+                if let Some((premise, constructor)) = self
+                    .algebraic_variable_constructors
+                    .get(variable)
+                    .and_then(|constructors| {
+                        constructors
+                            .iter()
+                            .inspect(|_| crate::instrumentation::record_deterministic_work(1))
+                            .find(|(_, constructor)| {
+                                constructor.algebraic_type == value.algebraic_type
+                            })
+                    }) =>
+            {
+                record_reasoning_provenance(self, premise);
+                Some(constructor.clone())
+            }
             _ => {
                 let constructor = self.equality_graph.known_algebraic_constructor(value)?;
                 record_reasoning_provenance(
