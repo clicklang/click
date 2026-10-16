@@ -640,6 +640,22 @@ fn reduce_contract_binary_expression(
     values.push(constructor(Box::new(left), Box::new(right)));
 }
 
+/// A binding a proof binder hid, put back when the binder's block ends.
+enum ShadowRestore {
+    /// A fact name: its previous proposition, or none when `have` bound it
+    /// fresh and its block's end ends it.
+    Fact {
+        name: String,
+        previous: Option<ClickProposition>,
+    },
+    /// A resource instance a value binder of the same spelling hid.
+    Resource {
+        name: String,
+        binding: (Variable, String),
+        target: Option<ResourceClause>,
+    },
+}
+
 struct ProofLetParserRestore {
     name: String,
     was_integer_let: bool,
@@ -821,7 +837,7 @@ struct Parser {
     /// the proposition, exactly as if it were restated there.
     fact_names: BTreeMap<String, ClickProposition>,
     /// The bindings each name shadowed, undone when its block ends.
-    fact_name_restores: Vec<(String, Option<ClickProposition>)>,
+    fact_name_restores: Vec<ShadowRestore>,
     /// Names whose `have` proof is being parsed, and names whose block has
     /// ended inside the current proof, so citing one is refused by name
     /// rather than read as an unbound variable.
@@ -5759,6 +5775,7 @@ impl Parser {
                             return Err(self
                                 .error(format!("call result name `{name}` is already in scope")));
                         }
+                        self.bind_proof_name(&name, false)?;
                         result = Some(name);
                         continue;
                     }
@@ -5815,6 +5832,7 @@ impl Parser {
         {
             return Err(self.error("produced instance conflicts with a C or pure binding"));
         }
+        self.bind_proof_name(name, true)?;
         let family = declaration.family.as_ref().ok_or_else(|| {
             self.error("produced resource assertion parameter has not been instantiated")
         })?;
@@ -7441,21 +7459,82 @@ impl Parser {
         result
     }
 
+    /// Ends the fact names bound since `checkpoint` and puts back each fact
+    /// or resource a later binder hid.
     fn restore_fact_names(&mut self, checkpoint: usize) {
         while self.fact_name_restores.len() > checkpoint {
-            let (name, previous) = self
+            match self
                 .fact_name_restores
                 .pop()
-                .expect("restore above checkpoint");
-            match previous {
-                Some(proposition) => {
+                .expect("restore above checkpoint")
+            {
+                ShadowRestore::Fact {
+                    name,
+                    previous: Some(proposition),
+                } => {
                     self.fact_names.insert(name, proposition);
                 }
-                None => {
+                ShadowRestore::Fact {
+                    name,
+                    previous: None,
+                } => {
                     self.fact_names.remove(&name);
                     self.ended_fact_names.insert(name);
                 }
+                ShadowRestore::Resource {
+                    name,
+                    binding,
+                    target,
+                } => {
+                    if let Some(target) = target {
+                        self.current_resource_targets.insert(name.clone(), target);
+                    }
+                    self.current_resource_bindings.insert(name, binding);
+                }
             }
+        }
+    }
+
+    /// Makes `name` a proof binder of a value or a resource instance. The
+    /// newest binding of a name wins everywhere it is read: a fact or a
+    /// resource of the same spelling is hidden until the binder's block
+    /// ends, so a citation, a value and a resource argument all read the
+    /// same binding. A C variable cannot be hidden: execution keeps reading
+    /// the program's variable, so a proof binder of its name would change
+    /// what the proof's propositions mean without changing what runs.
+    fn bind_proof_name(&mut self, name: &str, resource: bool) -> Result<(), ClickError> {
+        if self.current_c_parameter_types.contains_key(name)
+            || self
+                .current_c_object_names
+                .as_ref()
+                .is_some_and(|names| names.contains(name))
+        {
+            return Err(self.error(format!(
+                "`{name}` names a C variable here; a proof binder cannot hide it, since execution keeps reading the program's `{name}`; choose another name"
+            )));
+        }
+        self.hide_for_proof_binder(name, resource);
+        Ok(())
+    }
+
+    /// Hides the fact, and for a value binder the resource instance, that
+    /// `name` names, until the block that binds it ends. `intro() as` uses
+    /// this directly: an introduced binder may hide a C parameter, which
+    /// `outer.name` still reaches.
+    fn hide_for_proof_binder(&mut self, name: &str, resource: bool) {
+        if let Some(previous) = self.fact_names.remove(name) {
+            self.fact_name_restores.push(ShadowRestore::Fact {
+                name: name.to_string(),
+                previous: Some(previous),
+            });
+        }
+        if !resource && let Some(binding) = self.current_resource_bindings.remove(name) {
+            let target = self.current_resource_targets.remove(name);
+            self.fact_name_restores.push(ShadowRestore::Resource {
+                name: name.to_string(),
+                binding,
+                target,
+            });
         }
     }
 
@@ -7591,6 +7670,7 @@ impl Parser {
             if self.current_contract_bindings.contains(&name) {
                 return Err(self.error("child resource name conflicts with a C or pure binding"));
             }
+            self.bind_proof_name(&name, true)?;
             // A mixed unfold pattern also names C-valued fields. They are
             // ordinary proof values, not references to owned resources.
             let scalar_field = self
@@ -7734,6 +7814,7 @@ impl Parser {
                         self.error(format!("step result name `{name}` is already in scope"))
                     );
                 }
+                self.bind_proof_name(&name, false)?;
                 self.position += 1;
                 return self.parse_step_proof(ProofTactic::StepBind(name));
             }
@@ -7777,6 +7858,7 @@ impl Parser {
                         )));
                     }
                     let _ = slot;
+                    self.bind_proof_name(name, false)?;
                     self.current_proof_let_names.insert(name.clone());
                 }
                 return Ok(ProofTactic::UnfoldWitnesses {
@@ -7839,6 +7921,7 @@ impl Parser {
         {
             return Err(self.error("fold result conflicts with a C or pure binding"));
         }
+        self.bind_proof_name(&name, true)?;
         let identity = if let Some((identity, previous)) = self.current_resource_bindings.get(&name)
         {
             if previous != resource_name && !self.child_slot_identities.contains(identity) {
@@ -8035,6 +8118,7 @@ impl Parser {
         self.expect(Token::LBrace)?;
         let previous_integer_context = self.integer_literal_context;
         for (name, click_type) in &bindings {
+            self.bind_proof_name(name, false)?;
             self.proof_let_restores.push(ProofLetParserRestore {
                 name: name.clone(),
                 was_integer_let: self.current_integer_lets.contains(name),
@@ -8177,7 +8261,8 @@ impl Parser {
             let previous = self
                 .fact_names
                 .insert(name.clone(), have.proposition.clone());
-            self.fact_name_restores.push((name, previous));
+            self.fact_name_restores
+                .push(ShadowRestore::Fact { name, previous });
         }
         Ok(have)
     }
@@ -8341,8 +8426,13 @@ impl Parser {
                 // it with.
                 let saved_struct_params = self.current_struct_params.clone();
                 let saved_arm_binding_types = std::mem::take(&mut self.current_arm_binding_types);
+                let shadow_checkpoint = self.fact_name_restores.len();
+                for binding in &bindings {
+                    self.bind_proof_name(binding, false)?;
+                }
                 self.bind_arm_binding_types(&type_name, &variant, &bindings);
                 let tactics = self.parse_possibly_empty_tactic_block();
+                self.restore_fact_names(shadow_checkpoint);
                 self.current_struct_params = saved_struct_params;
                 self.current_arm_binding_types = saved_arm_binding_types;
                 for name in newly_bound {
@@ -8928,11 +9018,7 @@ impl Parser {
                 if self.peek_ident() == Some("as") {
                     self.position += 1;
                     let name = self.expect_ident("name for the introduced variable")?;
-                    if self.fact_names.contains_key(&name) {
-                        return Err(self.error(format!(
-                            "`intro() as {name}` would hide the fact named `{name}` by `have {name}: ...`; choose another name"
-                        )));
-                    }
+                    self.hide_for_proof_binder(&name, false);
                     self.ended_fact_names.remove(&name);
                     ProofTactic::IntroAs(name)
                 } else {

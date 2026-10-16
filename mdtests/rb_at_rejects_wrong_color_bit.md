@@ -79,7 +79,7 @@ void set_parent_black(struct rb_node* node, struct rb_node* old_parent, struct r
 } by {
     match t.model {
         RbTree::Empty => { contradiction(t.model == RbTree::Empty); },
-        RbTree::Node(identity, parent, color, left_model, right_model) => {
+        RbTree::Node(identity, model_parent, color, left_model, right_model) => {
             let { left: l, right: r } = unfold(t);
             have color_bit(Color::Red) == 0 by {
                 unfold(color_bit(Color::Red));
@@ -96,5 +96,5 @@ void set_parent_black(struct rb_node* node, struct rb_node* old_parent, struct r
 ```
 
 ```expect
-fail: fold requires the instance body facts for the proposed fields: fact 5 of 6 of arm `Node` is not established
+fail: fold requires the instance body facts for the proposed fields: fact 6 of 6 of arm `Node` is not established
 ```
