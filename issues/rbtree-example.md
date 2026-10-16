@@ -1672,3 +1672,11 @@ parent/color word, and calls the checked sized incoming-link helper. The
 ancestor model and caches and the demoted node's cache are preserved. Full
 non-root insertion must still compose this helper with the writable rotation
 callback and whole-context restoration.
+
+
+`rbtree_size_link_distinct.click` derives the promoted node's inequality with
+the outer parent from separated owned words in either ancestor orientation,
+while preserving the incoming-link model. The sized parent-update helper now
+calls it internally and no longer requires callers to supply this disequality.
+C comparisons and `assumption()` share the indexed nonempty separation rule;
+full non-root insertion still needs callback composition and context restoration.

@@ -664,3 +664,71 @@ fn store_separation_work_is_independent_of_earlier_compositions() {
         "store separation work grows with the compositions stated earlier: {work:?}"
     );
 }
+
+#[test]
+fn stated_pointer_separation_lookup_visits_only_its_anchor_index() {
+    for cross_block in [false, true] {
+        let pointer = |id, right| Pointer {
+            block: if right && cross_block {
+                PointerBlock::Symbolic(Variable(941_000))
+            } else {
+                PointerBlock::ExternalArgument
+            },
+            offset: PointerOffsetTerm::Variable(Variable(id)),
+        };
+        let fact = |id| Proposition::CResourceSeparate {
+            left: Box::new(CResource::Memory(memory_range(pointer(id, false), 0, 1))),
+            right: Box::new(CResource::Memory(memory_range(pointer(id + 1, true), 0, 1))),
+        };
+        let left = pointer(1, false);
+        let right = pointer(2, true);
+        let comparison = ConditionTerm::pointer_equal(left.clone(), right.clone());
+        let mut overhead = Vec::new();
+        let mut proof_overhead = Vec::new();
+        for size in [16u64, 64, 256, 1024] {
+            let mut context = PureFactContext::new().assume_proposition(fact(1));
+            for index in 0..size {
+                context = context.assume_proposition(fact(100 + index * 2));
+            }
+            let comparisons = if cross_block {
+                context.separated_anchor_pointers.lookup_comparisons(
+                    &PureFactContext::separated_pointer_key(left.clone(), right.clone()),
+                )
+            } else {
+                context.separated_anchor_offsets.lookup_comparisons(
+                    &PureFactContext::separated_anchor_key(
+                        left.offset.clone(),
+                        right.offset.clone(),
+                    ),
+                )
+            };
+            let ((result, _work), work) = crate::persistent::measure_persistent_work(|| {
+                crate::instrumentation::measure_deterministic_work(|| {
+                    context.decide_pointer_disequality(&comparison)
+                })
+            });
+            assert_eq!(result, Some(false));
+            assert!(work >= comparisons);
+            overhead.push(work - comparisons);
+            let goal = Proposition::ConditionIs(comparison.clone(), false);
+            let (known, proof_work) =
+                crate::persistent::measure_persistent_work(|| context.contains_known(&goal));
+            assert!(known);
+            assert!(proof_work >= comparisons);
+            proof_overhead.push(proof_work - comparisons);
+            let height_bound = 2 * (size + 2).ilog2() as usize + 2;
+            assert!(
+                comparisons <= height_bound,
+                "persistent anchor lookup follows tree height"
+            );
+        }
+        assert!(
+            proof_overhead.iter().all(|work| *work == proof_overhead[0]),
+            "proof lookup only grows with the selected tree path: {proof_overhead:?}"
+        );
+        assert!(
+            overhead.iter().all(|work| *work == overhead[0]),
+            "only the selected tree path may grow: {overhead:?}"
+        );
+    }
+}
