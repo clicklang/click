@@ -183,11 +183,17 @@ fn partial_value_binding_join_cannot_supply_a_missing_read_or_drop_declared_stor
     );
 
     let mut declared = value;
-    if let Some(CLocalBinding::Object {
-        storage_declared, ..
-    }) = Arc::make_mut(&mut declared.locals.bindings).get_mut("temporary")
-    {
-        *storage_declared = true;
+    if let Some(mut binding) = declared.locals.bindings.get("temporary").cloned() {
+        if let CLocalBinding::Object {
+            storage_declared, ..
+        } = &mut binding
+        {
+            *storage_declared = true;
+        }
+        declared
+            .locals
+            .bindings
+            .insert("temporary".to_string(), binding);
     }
     let mut exits = [empty.clone(), declared];
     discard_loop_exit_partial_value_bindings(&empty, &body, &mut exits);

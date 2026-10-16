@@ -1722,6 +1722,25 @@ pub(super) fn initial_claim_context_with_caller_owner(
     // lowered requirement facts, built once rather than once per requirement
     // (which was quadratic in the requirement count).
     let requirement_context = assumptions_from_propositions(&requirement_pure_facts);
+    // Every requirement below is lowered at `state` with these arguments, so
+    // one lowering state serves them all.
+    let lowering_state = crate::surface::lowering::RequirementLoweringState::default();
+    let lower_one = |requirement: &Requirement| {
+        crate::surface::lowering::requirement_propositions_sharing_lowering_state(
+            std::slice::from_ref(requirement),
+            ParameterBinding::new(parsed_function.parameters(), &arguments),
+            &state,
+            spec_definitions,
+            &requirement_context,
+            &lowering_state,
+        )
+        .map(|facts| {
+            facts
+                .into_iter()
+                .map(|fact| fact.proposition)
+                .collect::<Vec<_>>()
+        })
+    };
     let folded_defined_facts = function_block
         .requires()
         .iter()
@@ -1731,15 +1750,7 @@ pub(super) fn initial_claim_context_with_caller_owner(
                 Requirement::Proposition(surface) if click_proposition_mentions_defined(surface)
             )
         })
-        .map(|requirement| {
-            requirement_propositions_with_assumptions(
-                std::slice::from_ref(requirement),
-                ParameterBinding::new(parsed_function.parameters(), &arguments),
-                &state,
-                spec_definitions,
-                &requirement_context,
-            )
-        })
+        .map(lower_one)
         .collect::<Result<Vec<_>, _>>()?
         .into_iter()
         .flatten()
@@ -1763,13 +1774,7 @@ pub(super) fn initial_claim_context_with_caller_owner(
         if click_proposition_mentions_defined(&surface) {
             continue;
         }
-        let lowered = requirement_propositions_with_assumptions(
-            std::slice::from_ref(requirement),
-            ParameterBinding::new(parsed_function.parameters(), &arguments),
-            &state,
-            spec_definitions,
-            &requirement_context,
-        )?;
+        let lowered = lower_one(requirement)?;
         if let Some(kernel) = lowered.first() {
             surface_propositions.record_lowering(&surface, kernel)?;
         }
@@ -2197,19 +2202,29 @@ fn explicit_entry_loadability_facts(
     state: &CState,
     spec_definitions: SpecDefinitions<'_>,
 ) -> Result<Vec<Proposition>, ClickError> {
+    // Every requirement is lowered at `state` with these arguments, so one
+    // lowering state serves them all; a set keeps each fact once.
+    let lowering_state = crate::surface::lowering::RequirementLoweringState::default();
+    let lower_one = |requirement: &Requirement| {
+        crate::surface::lowering::requirement_propositions_sharing_lowering_state(
+            std::slice::from_ref(requirement),
+            ParameterBinding::new(parsed_function.parameters(), arguments),
+            state,
+            spec_definitions,
+            &PureFactContext::new(),
+            &lowering_state,
+        )
+        .map(|facts| facts.into_iter().map(|fact| fact.proposition))
+    };
     let mut facts = Vec::new();
+    let mut seen = std::collections::BTreeSet::new();
     for requirement in function_block.requires() {
         match requirement {
             Requirement::LoadableSegment { .. } => {
-                let lowered = crate::surface::lowering::requirement_propositions_with_assumptions(
-                    std::slice::from_ref(requirement),
-                    ParameterBinding::new(parsed_function.parameters(), arguments),
-                    state,
-                    spec_definitions,
-                    &PureFactContext::new(),
-                )?;
+                let lowered = lower_one(requirement)?;
                 for fact in lowered {
-                    if matches!(fact, Proposition::CMemoryLoadable { .. }) && !facts.contains(&fact)
+                    if matches!(fact, Proposition::CMemoryLoadable { .. })
+                        && seen.insert(fact.clone())
                     {
                         facts.push(fact);
                     }
@@ -2220,17 +2235,10 @@ fn explicit_entry_loadability_facts(
                 collect_conjunctive_loadability_segments(proposition, &mut segments);
                 for segment in segments {
                     let loadable = Requirement::Proposition(ClickProposition::Loadable { segment });
-                    let lowered =
-                        crate::surface::lowering::requirement_propositions_with_assumptions(
-                            std::slice::from_ref(&loadable),
-                            ParameterBinding::new(parsed_function.parameters(), arguments),
-                            state,
-                            spec_definitions,
-                            &PureFactContext::new(),
-                        )?;
+                    let lowered = lower_one(&loadable)?;
                     for fact in lowered {
                         if matches!(fact, Proposition::CMemoryLoadable { .. })
-                            && !facts.contains(&fact)
+                            && seen.insert(fact.clone())
                         {
                             facts.push(fact);
                         }
@@ -2481,19 +2489,26 @@ fn available_initial_requirement_propositions(
     state: &CState,
     spec_definitions: SpecDefinitions<'_>,
 ) -> Vec<Proposition> {
+    // Each requirement is lowered on its own, at one shared lowering state;
+    // a set keeps the first of each proposition without comparing every
+    // pair.
+    let lowering_state = crate::surface::lowering::RequirementLoweringState::default();
     let mut propositions = Vec::new();
+    let mut seen = std::collections::BTreeSet::new();
     for requirement in requires {
-        let Ok(lowered) = requirement_propositions(
+        let Ok(lowered) = crate::surface::lowering::requirement_propositions_sharing_lowering_state(
             std::slice::from_ref(requirement),
             parameter_binding,
             state,
             spec_definitions,
+            &PureFactContext::new(),
+            &lowering_state,
         ) else {
             continue;
         };
-        for proposition in lowered {
-            if !propositions.contains(&proposition) {
-                propositions.push(proposition);
+        for fact in lowered {
+            if seen.insert(fact.proposition.clone()) {
+                propositions.push(fact.proposition);
             }
         }
     }

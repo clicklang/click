@@ -64,7 +64,10 @@ impl<K: Ord, V> PersistentMap<K, V> {
         None
     }
 
-    pub(crate) fn contains_key(&self, key: &K) -> bool {
+    pub(crate) fn contains_key<Q: Ord + ?Sized>(&self, key: &Q) -> bool
+    where
+        K: Borrow<Q>,
+    {
         self.get(key).is_some()
     }
 
@@ -131,6 +134,10 @@ impl<K: Ord, V> PersistentMap<K, V> {
         PersistentMapIter::new(self.root.as_deref(), self.len)
     }
 
+    pub(crate) fn values(&self) -> impl DoubleEndedIterator<Item = &V> + ExactSizeIterator {
+        self.iter().map(|(_, value)| value)
+    }
+
     pub(crate) fn keys(&self) -> impl DoubleEndedIterator<Item = &K> + ExactSizeIterator {
         self.iter().map(|(key, _)| key)
     }
@@ -193,6 +200,36 @@ impl<K: Ord + PartialEq, V: PartialEq> PartialEq for PersistentMap<K, V> {
 }
 
 impl<K: Ord + Eq, V: Eq> Eq for PersistentMap<K, V> {}
+
+impl<K: Ord, V: PartialOrd> PartialOrd for PersistentMap<K, V> {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        if self.shares_root_with(other) {
+            return Some(Ordering::Equal);
+        }
+        self.iter().partial_cmp(other.iter())
+    }
+}
+
+/// In key order, as `BTreeMap`'s order: entries compared lexicographically.
+impl<K: Ord, V: Ord> Ord for PersistentMap<K, V> {
+    fn cmp(&self, other: &Self) -> Ordering {
+        if self.shares_root_with(other) {
+            return Ordering::Equal;
+        }
+        self.iter().cmp(other.iter())
+    }
+}
+
+/// As `BTreeMap` hashes: the length, then every entry in key order.
+impl<K: Ord + std::hash::Hash, V: std::hash::Hash> std::hash::Hash for PersistentMap<K, V> {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        state.write_usize(self.len);
+        for (key, value) in self.iter() {
+            key.hash(state);
+            value.hash(state);
+        }
+    }
+}
 
 impl<K: Ord + fmt::Debug, V: fmt::Debug> fmt::Debug for PersistentMap<K, V> {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {

@@ -2322,15 +2322,28 @@ pub(crate) fn resolve_pending_heap_allocations(
                 .resolve_pending_heap_reallocation(&base, !is_null, assumptions)
                 .expect("collected pending reallocation should still exist");
             state = state.with_memory(memory);
-            for binding in std::sync::Arc::make_mut(&mut state.locals.bindings).values_mut() {
-                if let CLocalBinding::Object {
-                    value: CValue::Pointer(pointer),
-                    ..
-                } = binding
-                    && pointer.pointer() == &base
-                {
+            let rebound = state
+                .locals
+                .bindings
+                .iter()
+                .filter_map(|(name, binding)| {
+                    let mut binding = binding.clone();
+                    let CLocalBinding::Object {
+                        value: CValue::Pointer(pointer),
+                        ..
+                    } = &mut binding
+                    else {
+                        return None;
+                    };
+                    if pointer.pointer() != &base {
+                        return None;
+                    }
                     *pointer = rebase_resolved_allocation(pointer, &base, &resolved_base);
-                }
+                    Some((name.clone(), binding))
+                })
+                .collect::<Vec<_>>();
+            for (name, binding) in rebound {
+                state.locals.bindings.insert(name, binding);
             }
             if !is_null {
                 let old_allocation = CResourceFact::own_allocation(
@@ -2382,15 +2395,28 @@ pub(crate) fn resolve_pending_heap_allocations(
             &base.block,
             (!is_null).then(|| resolved_base.block.clone()),
         );
-        for binding in std::sync::Arc::make_mut(&mut state.locals.bindings).values_mut() {
-            if let CLocalBinding::Object {
-                value: CValue::Pointer(pointer),
-                ..
-            } = binding
-                && pointer.pointer() == &base
-            {
+        let rebound = state
+            .locals
+            .bindings
+            .iter()
+            .filter_map(|(name, binding)| {
+                let mut binding = binding.clone();
+                let CLocalBinding::Object {
+                    value: CValue::Pointer(pointer),
+                    ..
+                } = &mut binding
+                else {
+                    return None;
+                };
+                if pointer.pointer() != &base {
+                    return None;
+                }
                 *pointer = rebase_resolved_allocation(pointer, &base, &resolved_base);
-            }
+                Some((name.clone(), binding))
+            })
+            .collect::<Vec<_>>();
+        for (name, binding) in rebound {
+            state.locals.bindings.insert(name, binding);
         }
         if !is_null {
             let (element_count, range_width) = heap_range_element_count(&bytes, element_width);
