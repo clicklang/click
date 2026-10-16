@@ -1,7 +1,8 @@
 # An index keeps its type until it is an offset
 
-Status: direction accepted on 2026-10-08. Stage 1 and the kernel half of
-stage 3 are built. This document states
+Status: direction accepted on 2026-10-08. Stages 1, 2 and 3 are built; the
+stage 2 status names what is left. The [rulings](#rulings) at the end record
+what was decided not to build. This document states
 the design, what a survey of the kernel found, and the order to build it in.
 The site counts come from one read-only survey of `src/kernel` by text
 search; they size the work and are not an audit.
@@ -41,7 +42,11 @@ an object is at most `isize::MAX` bytes, which C and Rust both guarantee and
 the memory model supplies. Each language indexes with the types it has; the
 kernel has one notion underneath, an offset from a base.
 
-## What the kernel has today
+## What the kernel had on 2026-10-08
+
+This is the survey the stages were planned from, kept for its reasoning.
+Each 32-bit restriction it lists has since been lifted: range bounds and the
+object extent by stage 2, order reasoning by stage 3.
 
 The offset layer is already typed. `PointerOffsetTerm`
 (`src/kernel/primitives.rs`) is an exact integer held in `i64`, with
@@ -189,7 +194,9 @@ above `INT_MAX`, so `(int32)length` is still inexact.
 last field, `kind: RangeIndexKind { Int32, UInt64 }`, part of its `Hash`,
 `Eq` and `Ord`, since `p[0..n]` in two kinds can share one untyped term.
 `Bitvector32Term::Variable` carries no width, so a reader that puts a
-64-bit bound in a signed 32-bit comparison is accepted silently today.
+64-bit bound in a signed 32-bit comparison was accepted silently. Debug
+builds now refuse it: a fact context keeps each variable at one width
+(`src/kernel/primitives/term_width.rs`).
 To fence that off the fields become private, `start()` and `end()` assert
 `kind == Int32`, and a wide reader calls `wide_bounds()`. A reader that
 was not audited then stops at once on a wide range instead of answering.
@@ -361,3 +368,40 @@ and range-membership tests in `src/scaling_tests/surface/tests/scaling_tests.rs`
 
 Stage 1 should wait until the Rust sidecar work has landed, since both
 change how a place's index is parsed and lowered.
+
+## Rulings
+
+`Bitvector32Term` stays the one term arena for every width, with the width
+implied by the operator family, the constant's shape, a load's kind or a
+cast's destination. On 2026-10-16 these were ruled **wontfix**, after the
+width invariant was made checkable instead:
+
+- **One integer term type that carries its width.** Merging the per-width
+  operator, constant and conversion variants into format-carrying nodes
+  rewrites about 8,000 match sites, more than 6,000 of them on the 32-bit
+  forms, across the files the kernel's other work edits daily. The term
+  order is load-bearing (equalities are filed with their smaller operand
+  first), so a merged node either changes canonical forms or encodes
+  signedness in its operator and removes nothing. The uniform view the
+  merge would give already exists: `as_binary`, `as_unary` and `build` in
+  `src/kernel/primitives/term_shape.rs`.
+- **One comparison family for every width.** The same holds for the
+  `Bitvector32*`, `Bitvector64*` and `Integer*` comparisons, whose uniform
+  view is `as_bitvector_comparison`. The 64-bit order reasoning the merge was
+  meant to bring is stage 3, which is built; the same chain, bound and gap
+  questions decide alike at `int32`, `int64` and `uint64`
+  (`order_chains_decide_alike_at_every_width`).
+- **A width on `Variable`.** Variables are rebuilt from their numbers in
+  many places, and a width in their identity would split equal variables
+  silently. Each fact context records the width its facts use each variable
+  at instead, and debug builds refuse a second width.
+- **Load equations at their load's width.** A store fact or a load
+  variable's defining fact is written with the 32-bit equality at every
+  width; `is_load_variable_defining_fact` and `is_store_fact` read that
+  shape. The width checker treats it as the one exception: its two sides
+  must agree with each other.
+
+What is enforced instead, in debug builds, by `term_width.rs`: an operator's
+operands, `If` arms and a comparison's operands have the width they need, a
+`CValue`'s term has its tag's width, a narrow constant lies inside its
+type's range, and a fact context uses each variable at one width.
