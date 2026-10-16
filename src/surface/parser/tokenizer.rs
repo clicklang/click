@@ -270,7 +270,7 @@ pub(super) fn tokenize(
                 if !matches!(suffix, "" | "u8" | "u32" | "i64" | "u64") {
                     let literal = rust_literals::IntegerLiteral::parse(&candidate)
                         .map_err(|message| ClickError::new(format!("{position}: {message}")))?;
-                    tokens.push(Token::RustInteger(literal));
+                    tokens.push(Token::RustInteger(std::sync::Arc::new(literal)));
                     index = end;
                     positions.push(position);
                     continue;

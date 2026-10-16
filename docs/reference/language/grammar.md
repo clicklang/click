@@ -21,7 +21,10 @@ block comment is a syntax error. `#` does not start a comment and is refused
 with the `//` spelling. Comments preserve source locations and are ignored when
 loading imports or selecting proof steps.
 
-Integer literals are decimal. Character literals use single quotes, including
+Integer literals are decimal in the default grammar. Rust sidecars also accept
+radix prefixes, underscore separators, and the suffixes described under
+[Rust integer literals](../rust.md#integer-literals).
+Character literals use single quotes, including
 the ordinary C escapes accepted by the parser. String literals occur in source
 locations and other explicitly documented string positions; Click doesn't
 have a first-class string type.

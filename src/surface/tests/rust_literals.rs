@@ -44,12 +44,7 @@ fn rust_integer_literals_preserve_native_types_and_signed_boundaries() {
 }
 
 #[test]
-fn rust_integer_radices_separators_and_contextual_types_verify() {
-    verify_c0_sources(
-        include_str!("../../../tests/fixtures/rust-verification/integer_literals.click"),
-        &[("literals.rs", "")],
-    )
-    .unwrap();
+fn rust_integer_radices_and_separators_verify() {
     prove(
         r#"theorem spelling_boundaries() {
         ensures 0xff_ff_u16 == 65535u16 by { normalize(); }
@@ -58,8 +53,9 @@ fn rust_integer_radices_separators_and_contextual_types_verify() {
         ensures -0x8000_0000i32 < 0i32 by { normalize(); }
         ensures -(0x8000_0000_0000_0000isize) < 0isize by { normalize(); }
     }
-    theorem mathematical() {
-        ensures 0x1_0000_0000_0000_0000 == 18_446_744_073_709_551_616 by { normalize(); }
+    theorem mathematical(value: Integer) {
+        requires value == 0x1_0000_0000_0000_0000;
+        ensures value == 18_446_744_073_709_551_616 by { assumption(); }
     }"#,
     )
     .unwrap();

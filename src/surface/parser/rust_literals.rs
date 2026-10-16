@@ -276,17 +276,17 @@ pub(super) fn normalize_tokens(tokens: &mut [Token]) {
             Token::Int64MinimumMagnitude => (1 << 63, IntegerSuffix::I64),
             _ => continue,
         };
-        *token = Token::RustInteger(IntegerLiteral {
+        *token = Token::RustInteger(std::sync::Arc::new(IntegerLiteral {
             digits: value.to_string(),
             suffix: Some(suffix),
-        });
+        }));
     }
 }
 
 impl Parser {
     /// Rust permits parentheses between unary minus and a minimum literal,
     /// but not an intervening operation that would first evaluate it positive.
-    pub(super) fn negated_rust_literal(&self) -> Option<(IntegerLiteral, usize)> {
+    pub(super) fn negated_rust_literal(&self) -> Option<(std::sync::Arc<IntegerLiteral>, usize)> {
         let mut index = self.position + 1;
         let mut parentheses = 0;
         while self.tokens.get(index) == Some(&Token::LParen) {

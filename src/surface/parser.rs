@@ -432,7 +432,9 @@ fn is_tactic_name(name: &str) -> bool {
 enum Token {
     Ident(String),
     Number(u32),
-    RustInteger(rust_literals::IntegerLiteral),
+    // Keep literal metadata shared so adding Rust forms does not enlarge
+    // every token in C and C++ sidecars too.
+    RustInteger(std::sync::Arc<rust_literals::IntegerLiteral>),
     BigNumber(String),
     UnsuffixedInt64(i64),
     UnsuffixedUInt64(u64),
