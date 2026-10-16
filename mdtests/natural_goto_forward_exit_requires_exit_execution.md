@@ -31,5 +31,5 @@ int32 count_down(int32 n) {
 ```
 
 ```expect
-fail: requires execution to reach function exit first
+fail: closes the outcome claims at function exit and does not execute
 ```
