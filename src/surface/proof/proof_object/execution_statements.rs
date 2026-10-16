@@ -2868,7 +2868,11 @@ impl<'a> Proof<'a> {
             .execution()
             .cloned()
             .ok_or_else(|| self.step_error("execution-frontier proof lost its semantic state"))?;
-        let mut facts = PureFactList::from_source(self.facts());
+        // The loop's executions copy these facts and transport them; the
+        // proof keeps their transport context from here on, so a later loop
+        // extends it by the facts added since instead of rebuilding it.
+        let source_facts = self.facts().with_direct_transport_assumptions();
+        let mut facts = PureFactList::from_proof_facts(&source_facts);
         let base_facts = facts.len();
         let capture_this_tactic = begin_tactic_expansion_capture(
             expansion_capture.as_deref_mut(),
@@ -2916,7 +2920,7 @@ impl<'a> Proof<'a> {
         }
         debug_assert!(facts.len() >= base_facts);
         let added = facts[base_facts..].to_vec();
-        let mut proof_facts = self.facts().clone();
+        let mut proof_facts = source_facts;
         for fact in &added {
             proof_facts = proof_facts.with_kernel_checked_fact(fact.clone());
         }

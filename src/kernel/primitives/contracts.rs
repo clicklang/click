@@ -3475,8 +3475,9 @@ impl CExecutionEnvironment {
         mut self,
         rules: impl IntoIterator<Item = CVerifiedLoopRule>,
     ) -> Self {
+        // Loop rules keep their own variable indexes, so the environment's
+        // index of its other parts stays valid.
         std::sync::Arc::make_mut(&mut self.verified_loop_rules).extend(rules);
-        self.variable_index = CExecutionEnvironmentVariableIndex::default();
         self
     }
 
@@ -3611,9 +3612,13 @@ impl CExecutionEnvironment {
         assumptions: &PureFactContext,
     ) -> Option<&CVerifiedLoopRule> {
         self.verified_loop_rules.iter().find(|rule| {
-            let statement_matches =
-                rule.loop_statement == *statement && self.loop_rule_answers_for_recursion(rule);
-            let assumptions_match = rule
+            // Every rule this environment holds is a candidate; only the one
+            // for this loop statement is worth checking further. The checks
+            // below read the rule's whole prerequisite context and state.
+            if rule.loop_statement != *statement || !self.loop_rule_answers_for_recursion(rule) {
+                return false;
+            }
+            let assumptions_match = || rule
                 .required_assumptions
                 .pure_facts()
                 .iter()
@@ -3664,7 +3669,7 @@ impl CExecutionEnvironment {
                     state.resources(),
                     assumptions,
                 );
-            state_matches && statement_matches && assumptions_match
+            state_matches && assumptions_match()
         })
     }
 }

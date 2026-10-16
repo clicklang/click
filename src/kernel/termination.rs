@@ -6980,6 +6980,7 @@ mod local_descent_tests {
             paths: Vec::new(),
             composite_resource_definitions: Vec::new(),
             recursion_anchor: anchor.map(Arc::new),
+            variable_index: Default::default(),
         }
     }
 

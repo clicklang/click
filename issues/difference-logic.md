@@ -291,8 +291,10 @@ Each step is its own pull request.
      `collect_local_pointer_element_types`. The first needs the path's facts
      about dead values retired or the loop's context extended rather than
      rebuilt. The scans now run once per function. Most of the rebuilds
-     now extend a kept context. Together they take the clause from about 160
-     units per earlier loop to about 44; the bug records what remains.
+     now extend a kept context, and the `loop` tactic extends the proof's
+     own transport context and indexed facts rather than building them from
+     every path fact. Together they take the clause from about 160 units per
+     earlier loop to a few; the bug records what remains.
 
 ## Acceptance criteria
 

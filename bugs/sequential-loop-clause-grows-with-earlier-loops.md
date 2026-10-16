@@ -94,21 +94,51 @@ transport context once, before its executions copy the list. The largest
 clause now charges 1,388, 1,566, 1,920 and 2,272 units at N = 4, 8, 16 and
 24, about 44 per earlier loop.
 
-What remains is the context built at each `loop` tactic from the proof's
-facts (`PureFactList::from_source` in `apply_frontier_local_loop`). Its
-transport context, and the initialization proof's `ProofFacts`
-(`for_fixed_state`), are built from every path fact. They cannot be carried
-as a prefix, because an execution proof's statement steps put their
-transported facts ahead of the ambient ones (`ProofFacts` prioritized
-batches), so the list arrives at each loop in a new order. The loop step
-also re-annotates the whole function (`annotated_function_with_assumptions`,
-`to_kernel_function`). That work is charged nothing, so it shows only in
-time. Building `ProofFacts` fact by fact from a kept prefix was tried and
-cost more than the full build.
+The `loop` tactic no longer rebuilds what the proof keeps. It copied the
+path's facts into a flat list and then built two things from every fact: the
+list's direct-transport context, and the initialization proof's indexed
+`ProofFacts`. The proof now keeps the transport context once a loop asks for
+it, extending it as facts arrive (`ProofFacts::with_direct_transport_assumptions`),
+and the list carries the `ProofFacts` it was copied from, which the
+initialization proof and the automatic preservation body extend by the
+loop's own facts (`PureFactList::from_proof_facts`, `proof_facts`). The order
+the list presents facts in was never the obstacle: a context is the facts
+it assumes, and the list already kept the proof's main context in the same
+way. `sequential_loops_build_the_same_context_entries_each` counts every
+context entry built, charged or not, at 3, 6 and 12 loops: 80 per loop at
+both steps, where either rebuild makes the count grow.
 
-The gate records the drift: `known_drift_sequential_loop_clauses` in
-`src/scaling_tests/surface/tests/step_shape_scaling_tests.rs` fails once the
-clauses stop growing, and then becomes an ordinary no-drift test.
+Two kernel scans grew with the loop rules. Each `loop` tactic builds an
+environment holding every earlier loop's verified rule, and adding a rule
+reset the environment's variable index, so the next statement collected the
+variables of every rule again, each rule's whole required context included.
+Each rule now indexes its own variables once, shared by its clones, and the
+environment's index of its other parts survives adding rules
+(`adding_a_loop_rule_collects_only_that_rules_variables`). Finding the rule
+for a loop also checked every rule's required context before comparing its
+loop statement; it now compares the statement first.
+
+The largest loop clause now charges 1,484, 1,596, 1,820 and 2,268 units at
+N = 8, 16, 32 and 64. At N = 5 the clauses charge 1,442, 1,351, 1,353, 1,357
+and 1,359, which the gate holds flat
+(`sequential_loop_clauses_cost_the_same_at_every_position`). N = 64 verifies
+in 1.0 s instead of 1.6 s, and N = 192 in 5.6 s instead of 15.2 s.
+
+What remains, all linear in the earlier loops at each loop:
+
+- About 2 to 7 units per earlier loop, charged where the loop head's state
+  is prepared (`prepare_loop_top_state`): comparing and havocking a memory
+  whose history holds every earlier loop's stores
+  (`record_c_memory_derivation`).
+- Uncharged time, so each loop clause still takes about twice as long at
+  N = 192 as at N = 24: applying the loop's verified rule checks its whole
+  required context, which is the path's context at the loop
+  (`applicable_verified_loop_rule`); a statement that needs a fresh variable
+  collects the variables of the whole context (`statement_kernel_variables`);
+  the loop step copies the path's facts into a list
+  (`PureFactList::from_proof_facts`) and every earlier rule into its
+  environment; and it re-annotates the whole function
+  (`annotated_function_with_assumptions`, about 0.5 ms at every N).
 
 Acceptance: a multi-size regression over `loops` shows each loop clause's
 work and time constant in the number of earlier loops, up to logarithmic

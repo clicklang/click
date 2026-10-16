@@ -201,6 +201,50 @@ impl CExecutionEnvironmentVariableIndex {
     }
 }
 
+/// A derived index, so two rules or environments that agree on their
+/// semantic content are equal whatever their indexes hold.
+impl PartialEq for CExecutionEnvironmentVariableIndex {
+    fn eq(&self, _: &Self) -> bool {
+        true
+    }
+}
+
+impl Eq for CExecutionEnvironmentVariableIndex {}
+
+impl std::fmt::Debug for CExecutionEnvironmentVariableIndex {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("CExecutionEnvironmentVariableIndex")
+    }
+}
+
+/// The symbolic variables an execution environment reserves, held as the
+/// sets of its parts: one for its functions, contracts, function rules and
+/// recursion anchor, and one for each verified loop rule. Each set is
+/// collected once and shared by every clone holding its part, so an
+/// environment that gains a loop rule collects that rule alone.
+#[derive(Clone, Debug, Default)]
+pub(crate) struct ReservedVariableSets(Vec<Arc<BTreeSet<Variable>>>);
+
+impl ReservedVariableSets {
+    pub(crate) fn contains(&self, variable: &Variable) -> bool {
+        self.0.iter().any(|set| set.contains(variable))
+    }
+
+    pub(crate) fn iter(&self) -> impl Iterator<Item = &Variable> {
+        self.0.iter().flat_map(|set| set.iter())
+    }
+
+    pub(super) fn push(&mut self, set: Arc<BTreeSet<Variable>>) {
+        self.0.push(set);
+    }
+}
+
+impl From<Arc<BTreeSet<Variable>>> for ReservedVariableSets {
+    fn from(set: Arc<BTreeSet<Variable>>) -> Self {
+        Self(vec![set])
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum Sort {
     Condition,
@@ -4814,6 +4858,9 @@ pub struct CVerifiedLoopRule {
     /// judgment both read it; see
     /// [`CExecutionEnvironment::applicable_verified_loop_rule`].
     pub(super) recursion_anchor: Option<std::sync::Arc<CRecursionAnchor>>,
+    /// The variables this rule reserves in an environment holding it,
+    /// collected the first time one asks and shared by the rule's clones.
+    pub(super) variable_index: CExecutionEnvironmentVariableIndex,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
@@ -11927,7 +11974,7 @@ enum KernelVariableCounter {
 pub(super) struct KernelVariableGenerator<'scope> {
     counter: KernelVariableCounter,
     reserved: BTreeSet<Variable>,
-    shared_reserved: Option<Arc<BTreeSet<Variable>>>,
+    shared_reserved: Option<ReservedVariableSets>,
     deferred_reserved: Option<Box<dyn FnOnce() -> BTreeSet<Variable> + 'scope>>,
 }
 
@@ -11961,12 +12008,12 @@ impl<'scope> KernelVariableGenerator<'scope> {
 
     pub(super) fn fresh_for_execution_with_shared_reservations(
         existing: BTreeSet<Variable>,
-        shared_reserved: Arc<BTreeSet<Variable>>,
+        shared_reserved: impl Into<ReservedVariableSets>,
     ) -> Self {
         Self {
             counter: KernelVariableCounter::Execution,
             reserved: existing,
-            shared_reserved: Some(shared_reserved),
+            shared_reserved: Some(shared_reserved.into()),
             deferred_reserved: None,
         }
     }
@@ -11975,7 +12022,7 @@ impl<'scope> KernelVariableGenerator<'scope> {
     /// actually needs a fresh identity. A plain store requests none.
     pub(super) fn fresh_for_execution_with_deferred_reservations(
         collect: impl FnOnce() -> BTreeSet<Variable> + 'scope,
-        shared_reserved: Arc<BTreeSet<Variable>>,
+        shared_reserved: impl Into<ReservedVariableSets>,
     ) -> Self {
         let mut generator =
             Self::fresh_for_execution_with_shared_reservations(BTreeSet::new(), shared_reserved);

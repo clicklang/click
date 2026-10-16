@@ -1589,6 +1589,48 @@ fn statement_checks_share_one_execution_environment_variable_index() {
     assert_eq!(changed.variable_index.build_count(), 1);
 }
 
+/// An environment that gains a verified loop rule collects that rule's
+/// reserved variables alone. A proof's `loop` tactic adds its rule to an
+/// environment holding every earlier loop's, and each rule holds its whole
+/// path context, so collecting them all again made each loop linear in the
+/// loops before it and the proof quadratic.
+#[test]
+fn adding_a_loop_rule_collects_only_that_rules_variables() {
+    let rule = |index: u64| CVerifiedLoopRule {
+        symbolic_entry_state: CState::default(),
+        loop_statement: c_skip(),
+        loop_index: Some(index as usize),
+        required_assumptions: PureFactContext::new()
+            .assume_proposition(guard_operand_fact(1_000_000 + index, true)),
+        paths: Vec::new(),
+        composite_resource_definitions: Vec::new(),
+        recursion_anchor: None,
+        variable_index: Default::default(),
+    };
+    let base = CExecutionEnvironment::new();
+    execution_environment_variable_index(&base);
+    let mut environment = base.clone();
+    for index in 0..8 {
+        environment = environment.with_verified_loop_rules([rule(index)]);
+        let reserved = execution_environment_variable_index(&environment);
+        assert!((0..=index).all(|earlier| reserved.contains(&Variable(1_000_000 + earlier))));
+    }
+    assert!(
+        environment
+            .variable_index
+            .shares_storage_with(&base.variable_index),
+        "adding loop rules keeps the index of the environment's other parts"
+    );
+    assert_eq!(environment.variable_index.build_count(), 1);
+    assert!(
+        environment
+            .verified_loop_rules
+            .iter()
+            .all(|rule| rule.variable_index.build_count() == 1),
+        "each loop rule's variables are collected once, by the first environment that asks"
+    );
+}
+
 #[test]
 fn environment_variable_scans_do_not_multiply_by_statement_count() {
     for size in [8, 32, 128, 512] {

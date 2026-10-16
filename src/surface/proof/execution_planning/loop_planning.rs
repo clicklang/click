@@ -403,7 +403,7 @@ pub(in crate::surface::proof) fn verify_loop_initialization_pure_proof(
         )));
     }
     let layout = initialize_script_layout(proof, &invariant_items, initialize_source_index);
-    let mut phase = Proof::for_fixed_state_frontier(
+    let mut phase = Proof::for_fixed_state_frontier_of_list(
         &claim_label,
         0,
         &context.pure_facts,
