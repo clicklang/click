@@ -1161,6 +1161,7 @@ pub(in crate::surface) fn annotated_function_with_assumptions(
         body,
     )
     .with_return_pointee_constant(parsed_function.return_pointee_is_constant())
+    .with_return_pointee_class(parsed_function.return_pointee_class())
     .with_source_body(source_body)
     .with_control_targets_from(&parsed_kernel_function);
     if parsed_kernel_function.is_program_entry() {

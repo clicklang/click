@@ -183,6 +183,17 @@ allowed cases:
     expression of an ambiguous type stays unclassed.
   - A declared local `uint8_t` or `int8_t` array records `char`; a local
     array of structs records its struct.
+- **Step 3a (call boundary):** done.
+  - A call is refused when a pointer argument's known object class, from
+    its block's declaration or the pointer, is one the parameter's pointee
+    class cannot designate (`CAccessClass::may_designate`: the accesses
+    through that pointee type, a struct pointee as a member access through
+    its struct). The refusal is a contract failure, not undefined behavior:
+    passing the pointer is defined, but the callee is verified accessing it
+    through the parameter's type.
+  - A return is refused on the same rule against the declared return
+    type, and the caller's result carries the return type's pointee class.
+- **Step 3b (heap effective types):** next.
 
 ## Validation
 

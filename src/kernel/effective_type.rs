@@ -320,6 +320,18 @@ impl CAccessClass {
         }
     }
 
+    /// Whether a pointer whose pointee has class `self`, as a parameter
+    /// declares, may designate an object of class `object`: whether the
+    /// accesses that pointer's type makes are allowed on it. A struct pointee
+    /// is consistent with what a member access through that struct may
+    /// touch, so a pointer to a member of an enclosing struct is accepted.
+    pub fn may_designate(&self, object: &Self) -> bool {
+        match self {
+            Self::Struct(container) => Self::member(container.clone(), None).may_access(object),
+            _ => self.may_access(object),
+        }
+    }
+
     /// The C spelling of the class, for diagnostics. A member access is
     /// spelled as the struct it goes through.
     pub fn spelling(&self) -> String {
