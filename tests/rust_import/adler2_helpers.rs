@@ -2156,6 +2156,8 @@ fn charon_adler2_general_partition_rejects_stale_and_truncated_metadata() {
     )
     .unwrap();
     click::surface::verify_c0_sources(&expanded_guard, &guard_sources).unwrap();
+    // This full check also verifies every unchanged GENERAL_PARTITION theorem.
+    // Each pure expansion below cold-checks its complete owner separately.
     for (before, after) in [
         ("requires remaining % 22208 == 0;", ""),
         ("ensures result == 0;", "ensures result == 1;"),
@@ -2183,7 +2185,7 @@ fn charon_adler2_general_partition_rejects_stale_and_truncated_metadata() {
         let expanded =
             click::surface::expand_c0_claim_source_by_label(GENERAL_PARTITION, &[], claim)
                 .unwrap_or_else(|error| panic!("{claim}: {}", error.message()));
-        click::surface::verify_c0_sources(&expanded, &[]).unwrap();
+        recheck_expanded_theorem(GENERAL_PARTITION, &expanded, claim);
     }
     for (before, after) in [
         (
@@ -2322,6 +2324,7 @@ fn adler_lane_state_recurrences_and_reductions_verify() {
 #[ignore = "nightly: lane-state expansion and mutation checks"]
 fn adler_lane_state_expands_and_rejects_false_relations() {
     let source = format!("{COMMON_ADLER_SPEC}\n{LANE_STATE}");
+    click::surface::verify_c0_sources(&source, &[]).unwrap();
     for claim in [
         "adler_four_lane_state_step.ensures_0",
         "adler_four_lane_state_step.ensures_1",
@@ -2334,7 +2337,7 @@ fn adler_lane_state_expands_and_rejects_false_relations() {
     ] {
         let expanded = click::surface::expand_c0_claim_source_by_label(&source, &[], claim)
             .unwrap_or_else(|error| panic!("{claim}: {}", error.message()));
-        click::surface::verify_c0_sources(&expanded, &[]).unwrap();
+        recheck_expanded_theorem(&source, &expanded, claim);
     }
     for (before, after) in [
         (
@@ -3285,6 +3288,7 @@ fn charon_adler2_public_serial_tails_tools_check_all_original_bodies() {
 #[ignore = "nightly: serial-tail specification expansion and mutation checks"]
 fn adler_serial_tail_spec_expands_and_rejects_false_weights() {
     let source = format!("{COMMON_ADLER_SPEC}\n{SERIAL_TAIL_SPEC}");
+    click::surface::verify_c0_sources(&source, &[]).unwrap();
     for claim in [
         "adler_spec_two.ensures_0",
         "adler_spec_two.ensures_1",
@@ -3300,7 +3304,7 @@ fn adler_serial_tail_spec_expands_and_rejects_false_weights() {
     ] {
         let expanded = click::surface::expand_c0_claim_source_by_label(&source, &[], claim)
             .unwrap_or_else(|error| panic!("{claim}: {}", error.message()));
-        click::surface::verify_c0_sources(&expanded, &[]).unwrap();
+        recheck_expanded_theorem(&source, &expanded, claim);
     }
     for (before, after) in [
         (
