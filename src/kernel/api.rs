@@ -7762,7 +7762,8 @@ fn universally_close_pure_implication(
 }
 
 /// Opens one verified concrete target as a local named-contract refinement
-/// problem for a pure theorem proof.
+/// problem for a pure theorem proof, with the contract's value parameters
+/// fixed to `values`.
 ///
 /// No project search occurs: both names are exact map lookups, and a concrete
 /// target must already carry a verified or explicitly external rule.
@@ -7770,8 +7771,11 @@ pub fn c_function_contract_refinement_context(
     environment: &CExecutionEnvironment,
     contract_name: &str,
     target_name: &str,
+    values: &[CValue],
 ) -> Option<CFunctionContractRefinementContext> {
-    let contract = environment.get_function_contract(contract_name)?;
+    let contract = environment
+        .get_function_contract(contract_name)?
+        .instantiated(values)?;
     let function = if let Some(rule) = environment.get_verified_function_rule(target_name) {
         &rule.function
     } else {
@@ -7780,7 +7784,7 @@ pub fn c_function_contract_refinement_context(
             .function
     };
     prepare_function_contract_refinement_context(
-        contract,
+        &contract,
         function,
         &mut ExecutionBudget::for_new_execution(),
     )
@@ -7856,7 +7860,8 @@ pub fn c_named_contract_refinement_theorem_skeleton(
 }
 
 /// Opens one named contract as an implementation of another for the same
-/// exact symbolic function-pointer value.
+/// exact symbolic function-pointer value, each with its value parameters
+/// fixed to its facts' values.
 ///
 /// Both contract names are exact environment lookups. The source fact remains
 /// an explicit premise of the theorem authority issued after refinement; this
@@ -7865,11 +7870,17 @@ pub fn c_named_contract_refinement_theorem_skeleton(
 pub fn c_contract_refinement_context(
     environment: &CExecutionEnvironment,
     target_contract_name: &str,
+    target_values: &[CValue],
     source_contract_name: &str,
+    source_values: &[CValue],
     pointer: &CValue,
 ) -> Option<CFunctionContractRefinementContext> {
-    let target = environment.get_function_contract(target_contract_name)?;
-    let source = environment.get_function_contract(source_contract_name)?;
+    let target = environment
+        .get_function_contract(target_contract_name)?
+        .instantiated(target_values)?;
+    let source = environment
+        .get_function_contract(source_contract_name)?
+        .instantiated(source_values)?;
     let CValue::Pointer(pointer) = pointer else {
         return None;
     };
@@ -7881,13 +7892,14 @@ pub fn c_contract_refinement_context(
         return None;
     }
     let mut context = super::functions::contract_refinement_context_for_interface(
-        target,
+        &target,
         source.name(),
         source.interface(),
         &mut ExecutionBudget::for_new_execution(),
     )?;
     context.pointer = pointer.clone();
-    context.source_contract = Some(source.clone());
+    context.function_value_arguments = source.value_arguments().to_vec();
+    context.source_contract = Some(source);
     Some(context)
 }
 
@@ -7926,9 +7938,12 @@ pub(crate) fn prove_c_function_contract_refinement(
     let Proposition::Predicate { name, arguments } = &conclusion else {
         return None;
     };
+    // The fact names the pointer and then the values the contract's value
+    // parameters were fixed to.
     let [
         state @ Term::CState(_),
         Term::CValue(CValue::Pointer(pointer)),
+        values @ ..,
     ] = arguments.as_slice()
     else {
         return None;
@@ -7936,6 +7951,11 @@ pub(crate) fn prove_c_function_contract_refinement(
     if name != &context.contract.predicate_name()
         || pointer != &context.pointer
         || pointer.c_type() != context.contract.function_pointer_type()
+        || values.len() != context.contract.value_arguments().len()
+        || !values
+            .iter()
+            .zip(context.contract.value_arguments())
+            .all(|(term, value)| matches!(term, Term::CValue(term) if term == value))
     {
         return None;
     }
@@ -7959,10 +7979,13 @@ pub(crate) fn prove_c_function_contract_refinement(
             };
             let premise = Proposition::Predicate {
                 name: source.predicate_name(),
-                arguments: vec![
+                arguments: [
                     state.clone(),
                     Term::CValue(CValue::Pointer(context.pointer.clone())),
-                ],
+                ]
+                .into_iter()
+                .chain(source.value_arguments().iter().cloned().map(Term::CValue))
+                .collect(),
             };
             Proposition::ForAll {
                 var: *variable,

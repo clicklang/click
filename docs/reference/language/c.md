@@ -1677,8 +1677,16 @@ function: `requires Adds(f, { amount: k });`. A call through `f` then binds
 `amount` to `k` beside the call's arguments. Passing `&add3` where
 `Adds(f, { amount: 3 })` is needed checks `add3`'s contract against `Adds`
 with `amount` fixed to `3`. An unknown, missing, or repeated name is refused.
-A refinement or execution theorem cannot yet conclude a contract with value
-parameters; formation at `&f` checks it automatically.
+A refinement theorem may conclude a contract with value parameters, fixing
+them as an attachment does: `ensures Adds(&add3, { amount: 3 }) by {
+unfold(Adds); simp(); }`, whose `unfold(Adds)` opens the obligation with
+`amount` bound to `3`. An abstract refinement fixes the values of both its
+source fact and its conclusion, `requires Adds(f, { amount: 3 }); ensures
+Shifts(f, { offset: 3 })`. See
+`mdtests/named_contract_value_parameter_refinement_theorem.md` and
+`mdtests/named_contract_value_parameter_contract_refinement_theorem.md`. An
+execution theorem cannot yet conclude a contract with value parameters;
+formation at `&f` checks it automatically.
 
 A top-level `contract` block defines a reusable behavioral interface without
 declaring a concrete C function:
