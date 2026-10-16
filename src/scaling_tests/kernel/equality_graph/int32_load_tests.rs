@@ -146,7 +146,9 @@ fn nested_named_pointer_reads_ignore_unrelated_definitions() {
         let memory = memory();
         for index in 0..size {
             memory.memory().symbolic_pointer_load(
-                &address(950_000 + index), 4, CType::Int32Pointer,
+                &address(950_000 + index),
+                4,
+                CType::Int32Pointer,
             );
         }
         let field = address(940_061);
@@ -169,5 +171,8 @@ fn nested_named_pointer_reads_ignore_unrelated_definitions() {
         assert!(equal);
         work
     });
-    assert!(costs[0] > 0 && costs.iter().all(|work| *work <= costs[0] + 128), "{costs:?}");
+    assert!(
+        costs[0] > 0 && costs.iter().all(|work| *work <= costs[0] + 128),
+        "{costs:?}"
+    );
 }

@@ -556,7 +556,8 @@ fn complete_pointer_scalar_evidence_ignores_unrelated_inputs() {
         };
         for (a, b) in [(941_010, 941_011), (941_011, 941_012)] {
             context = context.assume_condition(
-                ConditionTerm::pointer_value_equal(pointer(a), pointer(b)), true,
+                ConditionTerm::pointer_value_equal(pointer(a), pointer(b)),
+                true,
             );
         }
         let (class, work) = crate::instrumentation::measure_deterministic_work(|| {

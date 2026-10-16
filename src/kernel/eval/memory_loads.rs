@@ -5652,7 +5652,7 @@ mod tests {
     }
 
     #[test]
-    fn logical_cached_raw_pointer_reads_retain_their_canonical_names() {
+    fn logical_cached_raw_pointer_reads_retain_their_load_variables() {
         let _session = crate::kernel::VerificationSession::enter();
         let base = CMemory::new();
         let origin = intern_c_memory_ref(&base);

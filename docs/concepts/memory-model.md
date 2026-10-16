@@ -51,6 +51,7 @@ carriers or supplies pointer bounds. A complete word can name an opaque pointer
 without granting allocation or access authority. An explicit contract can state
 the full relationship using existing cast syntax:
 
+<!-- verified-example: mdtests/a_cast_contract_preserves_an_incoming_packed_pointer.md -->
 ```click
 requires ((struct node*)(word & ~1)) == p;
 ```
@@ -71,8 +72,8 @@ can recover numeric coordinates, but does not establish the full relationship
 or authorize a dereference. Clearing a word known to contain only tag bits
 recovers the unique null pointer.
 
-See [integer representation policy](../../design/pointer-integer-representations.md)
-for the unpublished implementation checkpoint and remaining Phase B work.
+See [integer representation policy](https://github.com/clicklang/click/blob/master/design/pointer-integer-representations.md)
+for implementation details and remaining Phase B work.
 
 Alignment is evidence, not a property of the pointee type. `aligned(p, n)`
 holds when the address of `p` is a multiple of `n`; Click derives it from a

@@ -651,7 +651,7 @@ impl EqualityGraph {
             NEXT_LOGICAL_READ_GENERATION.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     }
 
-    /// A logical observation can retain the canonical name of an existing
+    /// A logical observation can retain the load variable of an existing
     /// exact typed read. Do not publish names computed only by program reads,
     /// or names resolved through a different cell or a narrower scalar prefix.
     pub(in crate::kernel) fn retain_canonical_pointer_read_definition(&self, value: &Pointer) {
@@ -2077,7 +2077,7 @@ impl EqualityGraph {
         state.parent.contains_key(block) || state.members.contains_key(block)
     }
 
-    /// The affine class containing one selected base, without replaying
+    /// The affine class containing one selected base, without rebuilding
     /// unrelated admitted merges. Used only for a disposable cold resource
     /// view; published indexes retain their incremental merge protocol.
     pub(in crate::kernel) fn pointer_merges_for_block(

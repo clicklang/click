@@ -6022,7 +6022,7 @@ impl PureFactContext {
             return true;
         }
         // An exact full-pointer premise directly supplies its numeric
-        // equality. Retain the actual source premise for proof replay; this
+        // equality. Retain the actual source premise for proof reconstruction; this
         // projection never runs in the reverse direction.
         if let Proposition::ConditionIs(
             condition @ (ConditionTerm::PointerEqual(..) | ConditionTerm::PointerOffsetEqual(..)),
