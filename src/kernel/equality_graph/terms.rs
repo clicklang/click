@@ -309,6 +309,10 @@ pub(super) struct TermClasses {
     // A displacement definition is permanent for one raw address spelling.
     // Repeated queries reuse it without re-registering its base or closure.
     registered_address_shifts: PersistentSet<(u64, u64)>,
+    // The displacement of each registered shifted address whose numeric sum
+    // no read has needed yet: `read_address` defines it on first use, so an
+    // address that is never read (a resource's) adds no numeric nodes.
+    numeric_shifts: PersistentMap<u64, (u64, i64)>,
     // The address node of each registered (block, raw offset) spelling. Its
     // affine definition is permanent, so a repeated registration (every
     // pointer equality query registers both sides) returns it after interning
@@ -605,6 +609,9 @@ impl TermClasses {
             let base = self.address_without_shift(block, base).0;
             let shifted = self.intern_node(Node::AddressShift(base, bytes));
             self.close_with_affine_definition(vec![(address, shifted)], true);
+            if !self.numeric_shifts.contains_key(&address) {
+                self.numeric_shifts = self.numeric_shifts.with_inserted(address, (base, bytes));
+            }
             self.registered_address_shifts = self
                 .registered_address_shifts
                 .with_value((address, raw_offset));
@@ -623,9 +630,37 @@ impl TermClasses {
         value: u64,
         block: PointerBlock,
     ) {
+        let address = self.read_address(address);
         let read = self.intern_node(Node::PointerRead(snapshot, address, kind));
         self.close_with_affine_definition(vec![(value, read)], true);
         self.retain_read_witness(self.root(value), block);
+    }
+
+    /// The operand of a read: the numeric address of `address`, not the
+    /// pointer. Memory is addressed, so two reads of one snapshot at equal
+    /// addresses read the same bytes even when the pointers are not equal
+    /// (a C pointer comparison states only an address equality). Equal
+    /// pointers have equal addresses, so pointer congruence still reaches
+    /// every read through this application.
+    pub(super) fn read_address(&mut self, address: u64) -> u64 {
+        let numeric = self.intern_node(Node::UInt64Address(address));
+        // The numeric address of a displaced pointer is the base's plus the
+        // displacement (modulo 2^64), so an address equality of two bases
+        // relates the reads of one field of each. Defined once, on first read.
+        if let Some((base, bytes)) = self.numeric_shifts.get(&address).copied() {
+            self.numeric_shifts = self.numeric_shifts.without_key(&address);
+            let numeric_base = self.read_address(base);
+            let displacement = self.intern_node(Node::UInt64(MachineAtom::uint64(
+                crate::kernel::Bitvector32Term::UInt64Constant(bytes as u64),
+            )));
+            let sum = self.intern_node(Node::UInt64Binary(
+                UInt64Binary::Add,
+                numeric_base,
+                displacement,
+            ));
+            self.close_with_affine_definition(vec![(numeric, sum)], true);
+        }
+        numeric
     }
 
     fn retain_read_witness(&mut self, root: u64, block: PointerBlock) {
@@ -1215,6 +1250,7 @@ impl TermClasses {
             // pointer and uint64 reads. A checked equality between addresses
             // must reindex this read even when no affine block relabel exists.
             let address = self.address(pointer.block, pointer.offset).0;
+            let address = self.read_address(address);
             self.register_application(id, Application::Int32Load(memory.read_identity(), address));
         }
     }

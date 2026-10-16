@@ -3,13 +3,9 @@
 Two nonvolatile pointer fields are read before the C branch establishes a
 three-link chain between their source addresses. A C pointer comparison
 states only that the addresses are equal (`(uint64)a == (uint64)b`), not that
-the pointers are, so the trusted equality graph no longer relates the two
-reads through it. The reads are of one cell, so `x == y` holds; proving it
-needs load congruence over address equality, the follow-up recorded in
-`design/pointer-subobject-extents.md` (Phase B).
-
-This fixture pins the current refusal so that the follow-up turns it back
-into a pass.
+the pointers are. The trusted equality graph keys a read by its snapshot and
+numeric address, so the already-read values still have one `simp()` proof of
+equality: two reads of one snapshot at equal addresses read the same bytes.
 
 ```c filename=late_pointer_load_equality.c
 struct node { struct node *next; };
@@ -51,5 +47,5 @@ int32 equal_reads(struct node* a, struct node* b, struct node* c,
 ```
 
 ```expect
-fail: could not establish `x == y`
+pass
 ```
