@@ -201,7 +201,8 @@ that writes `int32` for such a source already writes the source's spelling.
    attached as `Adds(f, { amount: k })`. Parameterized contracts are done
    for C and Rust function pointers, through automatic formation at
    `&f`, and for capturing closures by contract-to-contract refinement;
-   refinement and execution theorems for them remain,
+   refinement theorems conclude them with the values fixed, and execution
+   theorems for them remain,
    through the C++ exporter and Charon, with the same refinement check as C
    (`Comparator(&f)`).
 4. **Base-class and trait method interfaces.** A contract on a C++ virtual
