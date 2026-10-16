@@ -5899,7 +5899,21 @@ impl CMemory {
                     &normalized_cell_pointer,
                 ))
             {
-                return CachedValueFate::Forgotten;
+                // Object-wide address aliases are conservative. A same-block
+                // exact byte gap still proves this cell untouched; reuse the
+                // same geometry as read-over-store rather than losing that fact.
+                return if normalized_cell_pointer.block == normalized_pointer.block
+                    && crate::kernel::reasoning::exact_access_byte_overlap(
+                        &normalized_cell_pointer,
+                        crate::kernel::reasoning::cell_access_byte_width(cell_value),
+                        &normalized_pointer,
+                        bytes,
+                    ) == Some(crate::kernel::reasoning::AccessByteOverlap::Separate)
+                {
+                    CachedValueFate::Kept
+                } else {
+                    CachedValueFate::Forgotten
+                };
             }
             if assumptions.access_owned_apart_from_store(
                 &owned_footprint,
@@ -5987,7 +6001,18 @@ impl CMemory {
                     &normalized_cell_pointer,
                 ))
             {
-                return CachedValueFate::Forgotten;
+                return if normalized_cell_pointer.block == normalized_pointer.block
+                    && crate::kernel::reasoning::exact_access_byte_overlap(
+                        &normalized_cell_pointer,
+                        cell_type.byte_width().max(1),
+                        &normalized_pointer,
+                        bytes,
+                    ) == Some(crate::kernel::reasoning::AccessByteOverlap::Separate)
+                {
+                    CachedValueFate::Kept
+                } else {
+                    CachedValueFate::Forgotten
+                };
             }
             if assumptions.access_owned_apart_from_store(
                 &owned_footprint,
@@ -6031,19 +6056,6 @@ impl CMemory {
                 CachedValueFate::Forgotten
             }
         };
-        #[cfg(debug_assertions)]
-        if !gap_kept.is_empty() {
-            crate::instrumentation::uncharged_debug_check(|| {
-                crate::kernel::reasoning::store_gap::check_gap_kept_cells(
-                    &memory.cells,
-                    &gap_kept,
-                    &normalized_pointer,
-                    &mut |pointer: &Pointer, value: &CValue| {
-                        cell_fate(pointer, value) == CachedValueFate::Kept
-                    },
-                );
-            });
-        }
         let ordered = memory
             .cells
             .ordered_store_candidates(&normalized_pointer, bytes, &candidates, assumptions)

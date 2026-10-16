@@ -3,15 +3,7 @@
 verifying "rb_insert_augmented.c";
 verifying "rbtree_size_copy.c";
 verifying "rbtree_size_compute.c";
-import "rbtree_size_metadata.click";
-
-function sized_recolor(tree: SizedTree, color: Color) -> SizedTree {
-    match tree {
-        SizedTree::Empty => SizedTree::Empty,
-        SizedTree::Node(node, parent, before, value, left, right) =>
-            SizedTree::Node(node, parent, color, value, left, right),
-    }
-}
+import "rbtree_size_recolor.click";
 
 contract void InsertSizedRoot(struct rb_node* node, struct rb_root* root,
                   void (*augment_rotate)(struct rb_node*, struct rb_node*)) {
