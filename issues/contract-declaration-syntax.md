@@ -33,7 +33,7 @@ The head is written the way the target language writes the declaration. In C
 it uses C declaration syntax, in C++ C++ declaration syntax (qualified member
 names, implicit `this`, references, `const` methods), and in Rust Rust item
 syntax (`fn`, `impl` blocks, module paths). Rust sidecars already work this
-way. C sidecars mostly do; C++ sidecars do not yet.
+way, and so do C and C++ sidecars.
 
 ```click
 // C
@@ -132,8 +132,9 @@ that writes `int32` for such a source already writes the source's spelling.
   `void FeeFrac::operator+=(const FeeFrac& other)`, `bool FeeFrac::IsEmpty() const`,
   `static int64 FeeFrac::Div(...)`, `choose<true>(...)`, with `this` implicit
   and records named without `struct`. A member of a class template instance
-  (`Stored<long long>`) keeps the mangled name and explicit receiver, since a
-  head does not yet spell class template arguments. An `extern` head for a
+  is written with the instance, `Stored<long long>::Read`, and a head's types
+  write records by their C++ paths, `std::span<int>&`; diagnostics, claim
+  labels and proof steps name functions the same way. An `extern` head for a
   system-header function is its C++ declaration too,
   `extern int ministd::Box::get() const`. A `contract` head is a free function
   type in C++ types, `contract int PositiveRead(const State& state)`. A
