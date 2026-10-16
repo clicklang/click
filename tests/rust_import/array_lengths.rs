@@ -109,10 +109,10 @@ fn charon_rust_integer_literals_preserve_native_array_contracts() {
         .replace("9u32", "0o11_u32");
     assert_ne!(sidecar, ARRAYS_SIDECAR);
     fs::write(p.root.join("borrow.click"), &sidecar).unwrap();
-    C0VerificationSession::new_program_prepared(&sidecar, &p.prepared().unwrap()).unwrap();
+    C0VerificationSession::new_program_prepared(&sidecar, p.prepared().unwrap()).unwrap();
     assert_cli(&p, &["expand", "--claim", "length.contract", "--in-place"]);
     assert_cli(&p, &["verify"]);
     let invalid = sidecar.replace("ensures result == 0o3usize;", "ensures result == 0o4usize;");
     assert_ne!(invalid, sidecar);
-    assert!(C0VerificationSession::new_program_prepared(&invalid, &p.prepared().unwrap()).is_err());
+    assert!(C0VerificationSession::new_program_prepared(&invalid, p.prepared().unwrap()).is_err());
 }
