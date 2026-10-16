@@ -942,7 +942,10 @@ contract claims are closed.
 /// premise of a closure that failed on it, so listing it only pushes the
 /// relevant ones past the item limit. The walk is over a variable-to-fact
 /// index, so it reads each fact's variables once.
-fn pure_facts_relevant_to(goal: &Proposition, facts: &[Proposition]) -> Vec<Proposition> {
+pub(super) fn pure_facts_relevant_to(
+    goal: &Proposition,
+    facts: &[Proposition],
+) -> Vec<Proposition> {
     use std::collections::{BTreeMap, BTreeSet};
     let variables_of = |proposition: &Proposition| {
         let mut variables = BTreeSet::new();

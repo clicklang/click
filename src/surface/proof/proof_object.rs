@@ -1188,7 +1188,7 @@ impl crate::surface::proof_diagnostics::ProofDiagnosticState for ProofDiagnostic
             if let ContractExpression::CFragment(CExpression::Value(value)) = expression
                 && let Some(variable) = diagnostic_value_variable(value)
             {
-                labels.source_name(variable, name.clone());
+                labels.immutable_source_name(variable, name.clone());
                 labels.source_type(variable, value.c_type());
             }
         }

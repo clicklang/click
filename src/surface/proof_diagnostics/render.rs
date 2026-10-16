@@ -437,6 +437,11 @@ impl SnapshotLabels {
         self.source_names.entry(variable).or_insert(name);
     }
 
+    /// An explicit proof binding takes precedence over a compiler temporary.
+    pub(crate) fn immutable_source_name(&mut self, variable: Variable, name: String) {
+        self.source_names.insert(variable, name);
+    }
+
     /// Names the `Integer` variable `variable` with `name`, when nothing named
     /// it yet.
     pub(crate) fn integer_source_name(&mut self, variable: Variable, name: String) {

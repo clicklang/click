@@ -9226,14 +9226,17 @@ impl ClickError {
                     ));
                 }
                 if diagnostic.checks.is_some() {
-                    let premises = state.premises(8);
+                    let recent = state.premises(8).into_iter().cloned().collect::<Vec<_>>();
+                    let premises = state.kernel_goal().map_or_else(
+                        || recent.clone(),
+                        |goal| diagnostics::pure_facts_relevant_to(goal, &recent),
+                    );
                     if !premises.is_empty() {
                         let mut available = format!(
-                            "available premises at the failed check (showing {} of {}):",
-                            premises.len(),
-                            state.premise_count()
+                            "available premises at the failed check (showing up to 8 relevant facts from {} recorded premises):",
+                            state.premise_count(),
                         );
-                        for premise in premises {
+                        for premise in premises.iter().take(8) {
                             available.push_str("\n  ");
                             available.push_str(
                                 &proof_diagnostics::render::render_proposition_labeled(
