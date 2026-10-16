@@ -3248,16 +3248,6 @@ impl PureFactContext {
                         || read.extent_is_known()
                         || read.extent().is_some()
                         || read.opaque_extent() != Some(read.designation())
-                        || !crate::kernel::memory_provenance::pointer_read_designations_equal(
-                            value.designation(),
-                            read.designation(),
-                            self,
-                        )
-                        || !crate::kernel::memory_provenance::pointer_read_extents_equal(
-                            value.designation(),
-                            read.designation(),
-                            self,
-                        )
                     {
                         continue;
                     }
@@ -3270,7 +3260,20 @@ impl PureFactContext {
                         &representative,
                         &self.equality_graph.pointer_value_representative(read),
                     );
-                    if representative.extent_is_known() {
+                    // An opaque candidate supplies no known extent. Reject it
+                    // before walking a frame that cannot make it usable.
+                    if !representative.extent_is_known() {
+                        continue;
+                    }
+                    if crate::kernel::memory_provenance::pointer_read_designations_equal(
+                        value.designation(),
+                        read.designation(),
+                        self,
+                    ) && crate::kernel::memory_provenance::pointer_read_extents_equal(
+                        value.designation(),
+                        read.designation(),
+                        self,
+                    ) {
                         return Some(representative);
                     }
                 }
@@ -9979,5 +9982,13 @@ mod execution_variable_ceiling_tests {
             }
             assert_eq!(WHOLE_CEILING_FACTS.with(Cell::get), size, "size {size}");
         }
+    }
+}
+
+#[cfg(test)]
+mod framed_opaque_pointer_entry_tests {
+    use super::*;
+    mod scaling_tests {
+        include!("../scaling_tests/kernel/assumptions/framed_opaque_pointer_entry_tests.rs");
     }
 }
