@@ -13,6 +13,24 @@ verify a false claim.
 
 P1 by user direction (2026-10-16).
 
+## Progress
+
+The first consolidation shares the parser tokenizer's byte spans with source
+expansion and `ProofSourceIndex`, removes the expansion lexer and its three
+raw-text name-spelling helpers, and puts library import and theorem-shadowing
+policy in `src/surface/names.rs`. Source and diagnostic propositions now use
+one printer with an explicit mode, including conditional-expression predicates.
+Comments and literals cannot introduce bindings or have their paths rewritten.
+See [Surface names and source printing](../docs/internals/source-names-and-printing.md)
+for the implemented boundary and remaining migration.
+
+The complete scoped table for parameters, fields, binders, constructors,
+resources, program points and project modules remains open. Proof inventories
+still interpret shared parser tokens; parser-produced AST spans and integration
+of all source printers are also still required. Keep this issue until all
+acceptance criteria below are met. The audit below describes the original
+baseline; the separate lexer and raw-text spelling helpers it names are removed.
+
 ## Current state and violated invariant
 
 There is no scoped symbol table for surface names. Resolution is spread by

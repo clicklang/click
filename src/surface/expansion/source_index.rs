@@ -42,7 +42,7 @@ impl ProofSourceIndex {
 
     pub fn new(source: &str) -> Result<Self, ClickError> {
         crate::instrumentation::record_deterministic_work(source.len());
-        let tokens = scan_source_tokens(source)?;
+        let tokens = proof_source_tokens(source)?;
         let mut pairs = vec![None; tokens.len()];
         let mut stack = Vec::new();
         for (index, token) in tokens.iter().enumerate() {
@@ -112,7 +112,7 @@ impl ProofSourceIndex {
             }
             let previous = open.checked_sub(1).map(|i| result.tokens[i].text.as_str());
             let direct = matches!(previous, Some("by" | "then" | "else" | "and" | "both"))
-                || (open >= 2 && result.tokens[open - 2].text == "=" && previous == Some(">"));
+                || previous == Some("=>");
             let is_open_body = previous == Some(")") && open_since_boundary;
             open_since_boundary = false;
             if !direct && !is_open_body && !arm_blocks.contains(&open) {
@@ -196,7 +196,7 @@ impl ProofSourceIndex {
                     let next = self.tokens.get(cursor + 1).map(|t| t.text.as_str());
                     let kind = self.tokens[start].text.as_str();
                     if have_body_started
-                        && !(matches!(next, Some("else" | "by" | "="))
+                        && !(matches!(next, Some("else" | "by" | "=" | "=>"))
                             || (kind == "both" && next == Some("and"))
                             || (kind == "match" && next == Some("{"))
                             || (matches!(kind, "branch" | "if") && next == Some("then")))
@@ -261,14 +261,11 @@ impl ProofSourceIndex {
                         crate::instrumentation::record_deterministic_work(1);
                         if self.tokens[arm].text == "{" {
                             let arm_close = self.pairs[arm].expect("balanced arm");
-                            if arm >= 2
-                                && self.tokens[arm - 2].text == "="
-                                && self.tokens[arm - 1].text == ">"
-                            {
+                            if arm >= 1 && self.tokens[arm - 1].text == "=>" {
                                 if matches!(kind, "cases" | "match") {
                                     result.arms.push((arm, arm_close));
-                                } else if arm >= 3 {
-                                    match self.tokens[arm - 3].text.as_str() {
+                                } else if arm >= 2 {
+                                    match self.tokens[arm - 2].text.as_str() {
                                         "returned" => returned = Some((arm, arm_close)),
                                         "threw" => threw = Some((arm, arm_close)),
                                         _ => {}
