@@ -278,7 +278,10 @@ fn check_fixed_state_fact_transport_using_facts_inner(
         // (`proposition_holds_without_facts`), and a transport also accepts
         // one that holds that way under binders and guards: the reflexive
         // source a quantified frame transports from.
-        if !available.listed_premise_available(&premise, &[], false)
+        // A quantified premise is accepted up to its binder's name, as
+        // `apply using` accepts it: a call's postcondition is held with the
+        // binder its lowering chose, and the written premise names its own.
+        if !available.listed_premise_available(&premise, &[], true)
             && !holds_without_facts_under_binders(&premise)
         {
             return Err(ClickError::new(format!(

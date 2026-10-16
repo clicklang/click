@@ -4206,6 +4206,34 @@ impl<'a> Proof<'a> {
                     let surface = self.available_surface_fact(surface_facts, anchor, &form);
                     surface.map(|surface| (form, surface))
                 })
+                .or_else(|| {
+                    // A conjunct of one source fact's lowering — a contract
+                    // clause beside its well-formedness conditions, a
+                    // comparison beside the range facts its conversion
+                    // adds — is spelled by that whole source fact. The
+                    // containing kernel is spelled and re-lowered exactly as
+                    // any premise is; citing it supplies this conjunct.
+                    surface_facts
+                        .kernels_containing_conjunct(premise)
+                        .chain(
+                            self.local_surface_facts()
+                                .kernels_containing_conjunct(premise),
+                        )
+                        .find_map(|whole| {
+                            if crate::instrumentation::deadline_exceeded() {
+                                return None;
+                            }
+                            self.available_surface_fact(surface_facts, anchor, whole)
+                                .or_else(|| {
+                                    self.available_surface_fact(
+                                        self.local_surface_facts(),
+                                        anchor,
+                                        whole,
+                                    )
+                                })
+                                .map(|surface| (premise.clone(), surface))
+                        })
+                })
         };
         let mut premise_pairs = premises
             .iter()

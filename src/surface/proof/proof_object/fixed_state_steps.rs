@@ -3385,7 +3385,7 @@ impl<'a> Proof<'a> {
         for surface_premise in premises {
             let premise =
                 self.lower_cited_surface_proposition(surface_premise, "`transport using` premise")?;
-            if !self.facts().listed_premise_available(&premise, &[], false) {
+            if !self.facts().listed_premise_available(&premise, &[], true) {
                 return Err(self.step_error_with_requirement(
                     "`transport using` requires an exact premise",
                     None,
