@@ -1,11 +1,11 @@
 # Pointer bounds through integer representations
 
 Status: the policy below was accepted in the task conversation on 2026-10-15.
-The first implementation under test uses a hidden record for unchanged
-complete C integers. On 2026-10-16 the user also approved cast-based contracts
+The draft implementation uses a hidden record for unchanged complete C integers. On 2026-10-16 the user also approved cast-based contracts
 for full packed-pointer relationships, using existing syntax such as
-`requires ((struct node*)(word & ~1)) == p;`. Their implementation and checked
-tagged-word transport are in progress. No new `represents` predicate is approved.
+`requires ((struct node*)(word & ~1)) == p;`. Their implementation and checked tagged-word transport are in
+[draft PR #1245](https://github.com/clicklang/click/pull/1245); affected nightly
+compatibility remains under investigation. No new `represents` predicate is approved.
 This extends [pointer subobject extents](pointer-subobject-extents.md)
 and does not close its tracked bug.
 
@@ -28,7 +28,10 @@ value from its original complete pointer. Direct casts back recover that
 pointer and its selected extent. Assignment, complete stores/reloads and
 whole-value copies retain the record. Changes of integer format and ordinary arithmetic discard it. Checked low-bit
 tag operations retain the source pointer; the tag must be cleared before the
-value is used as a pointer. Numerical equality never supplies a missing record.
+value is used as a pointer. Bounded variable tags work in either OR operand
+position. Positive constant tag addition on an incoming word requires its low
+bit prefix to be clear, preventing carries into the pointer. Addition by zero
+and additions with an unknown carry discard the record. Numerical equality never supplies a missing record.
 Integer observations in specifications project only the number, so model
 functions and numeric resource parameters cannot transport pointer authority.
 
@@ -39,90 +42,54 @@ is never interned by integer bits or merged by numeric congruence. An incoming p
 its own opaque identity. An explicit specification cast names its reconstructed
 pointer, so a contract can constrain that identity without first proving a
 numeric address equation. Numeric expressions and model integer fields have
-no such carrier. The alternative predicate below remains an unapproved design
-note, not an API.
+no such carrier.
 
-## Unpublished prototype checkpoint
+## Implementation status
 
-At the 2026-10-16 build-75 checkpoint, all 5,526 ordinary library tests
-pass, including all 733 ordinary scaling tests. All 4,049 ordinary Markdown
-fixtures pass. This includes the original tagged-pointer fixtures and ten new
-cast-contract cases covering copies, calls, stores, snapshots, loops, partial
-writes, arithmetic invalidation and member bounds. Clippy passes with warnings
-denied. The basic incoming-word, selected-member and modular-call proofs expand
-and verify independently. Existing branch/mark, nested-field, packed numeric
-witness and loop-exit expansion checks passed at the earlier build-58 checkpoint;
-they must be rerun after the final compatibility changes.
+Complete pointer read domains track all eight bytes, while numeric pointer
+coordinates retain their existing representation. Cached scalar observations
+have a no-write memory edge. A producer-retained unchanged-byte source lets
+new observations skip prior cache entries directly; upper-half overwrites
+invalidate the old bounds. Logical pointer names retain only their exact typed
+producer's definition, with specification observations scoped separately from
+program facts. Scalar-prefix names cannot supply a complete pointer read.
 
-Cached scalar observations now have a no-write memory edge, with the observed
-value computed inside the kernel. Complete pointer bounds track eight bytes,
-including both halves of a cached pointer. A producer-retained unchanged-byte
-source lets new observations skip prior cache entries directly; the regression
-measures 16, 64, 256 and 1,024 observations. Real upper-half overwrites still
-invalidate the old bounds. The broader experiment that also replaced numeric
-pointer coordinates with native eight-byte read nodes was withdrawn after its
-compatibility regressions; numeric pointer coordinates retain their existing
-representation.
-
-After integrating upstream through `3e3f5ccd4`, the build-94 ordinary
-non-scaling library run passes all 4,853 selected tests. It includes a reduced
-complete-pointer read regression: a cached four-byte scalar prefix may recover
-only a complete stored eight-byte pointer; an upper-half overwrite invalidates
-that recovery. Numeric wide-read observations project a retained integer
-record's bits without copying its pointer authority.
-
-Complete-pointer comparisons also recover one actual whole-pointer store when
+Complete-pointer comparisons can recover one actual whole-pointer store when
 an untouched opaque read denotes a value copied from another cell. They do not
-recursively chase stored records, recover from a stopped walk's scalar-prefix
-cache, or undo explicit byte/void views and member selection. A focused
-regression covers two cells, an intervening separated write, partial overwrite,
-numeric-only stores and changed views. Its scaling test uses 16, 64, 256 and
-1,024 unrelated numeric classes; all 755 scaling tests pass at build 111.
+recursively chase records, recover metadata from a stopped scalar-prefix cache,
+or undo explicit byte/void views and member selection. Framed read comparisons
+follow checked no-write prefixes until their memory sources meet, and stop
+before unrelated shared history. Retained coordinate names use their exact
+typed-read definitions; arithmetic resemblance is insufficient. Scaling
+regressions vary unrelated facts, definitions, cells and history across
+16, 64, 256 and 1,024 entries.
 
-At build 89, all ordinary Markdown fixtures, all 51 ordinary example projects,
-and all 754 scaling tests passed, and Clippy passed with warnings denied.
-That checkpoint used character-to-character casts that preserve their incoming
-bounds. One existing library policy test expects an authored signedness cast
-to widen instead. On 2026-10-16 the user approved retaining bounds across
-character-pointer signedness changes. The implementation and policy test now
-reflect that refinement, and all 48 C-string fixtures pass. The build-99
-library run passes all 5,607 ordinary tests, including all 754 scaling tests.
-The build-101 full ordinary Markdown run passes all 4,169 fixtures and the
-ordinary example run passes all 51 projects. With stored-value comparison
-recovery, build 111 passes all 4,854 ordinary non-scaling library tests, all
-755 scaling tests, all 4,171 ordinary Markdown fixtures, and all 51 ordinary
-example projects. The named packed-cast fresh/expanded/retained test passes,
-and eight independent expansions verify again at build 113. Clippy passes
-with warnings denied. These runs include the complete read producer fix and
-the approved character-pointer cast policy. The resource
-semantics version is 71 to invalidate retained artifacts from the earlier
-byte-cast policy.
+Quantified read instantiation retains the original byte width at the rewritten
+address before canonicalization. This prevents a four-byte scalar load from
+falling back to the eight-byte footprint of a pointer coordinate, and restores
+the unchanged arena proof.
 
-The earlier arena, vector and Rust integer compatibility failures are resolved.
-Eight independent expansion/verification checks and the named packed-cast
-fresh/expanded/retained test passed after the first upstream integration.
-They need rerunning after the final compatibility changes.
+Character-pointer identity and signedness casts preserve their incoming bounds,
+as approved on 2026-10-16. Other authored pointer-to-character casts and every
+authored cast to `void*`, including identity casts, widen to the enclosing
+object. Compiler-inserted conversions preserve the incoming view.
 
-The affected named `rbtree-erase` nightly project is under investigation.
-Its packed-parent resources need the approved full cast relationships in
-addition to numeric address facts. A scratch proof with those relationships
-gets farther, but its complete left-child read across the transplant still
-fails; this is not counted as fixed. The equality holds before the transplant.
-An explicit frame transport and an explicit separation of the intervening
-parent-word store from the child field do not close the later obligation.
-Smaller model-alias and packed-cast/store/call probes pass, so the general
-cause is not established. The investigation and resource adaptations remain
-in a scratch copy; the existing tree proof has not been weakened.
+After integrating master `3a9a01368`, the implementation passes 4,954 ordinary
+non-scaling library tests, all 795 scaling tests, all 42 documentation tests,
+and seven targeted pointer fixtures in fresh, expanded and retained checking.
+All 4,272 ordinary Markdown fixtures and all 51 ordinary example projects pass.
+The saved-link regression also verifies and expands independently. Both formatting
+checks and the PR CI quality check pass, including Clippy for all targets.
 
-After the complete-read producer fix, all 754 scaling tests and the named
-packed-cast fresh/expanded/retained test pass again. Clippy passes with warnings
-denied. The authored `void*` identity-cast control also passes: every explicit
-cast to `void*` still widens, including when its operand already has that type.
-No C implementation source was changed, no full nightly suite was run, and no
-PR has been published.
-
-The hidden-record experiment closes the direct integer escape; it does not
-complete Phase B or justify closing the parent bug.
+The complete minimized `__rb_erase_augmented` proof and rotation-helper proof
+pass with full cast relationships in packed-parent resources. Their adaptations
+are committed. The color-repair adaptation remains local: after the saved-link
+fix it reaches a subtree unfold that exceeds the simple-work budget, dominated
+by hypothetical resource-arm preparation. No budget was raised. The existing
+erase-color budget report also identifies resource-arm refutation costs.
+The C implementation is preserved. The full nightly suite has not been run,
+following repository policy. This remains an incomplete Phase B checkpoint and
+does not close the parent bug.
 
 ## Reproduced escape
 
@@ -176,36 +143,6 @@ A distinct representation-bearing word type is another alternative. It makes
 full-value transport explicit but changes substantially more model and contract
 interfaces. Ordinary mathematical integer values and equality must remain
 numeric whichever spelling is chosen.
-
-The explicit predicate below is an alternative proposal, not an approved API.
-It was initially recommended for clarity around packed/tagged words; existing
-cast equality is preferable if it can express and transport the same relation.
-
-## Alternative explicit predicate
-
-Add `represents(word, pointer, tag)`, stating both:
-
-- `word` numerically equals `address(pointer) + tag` under the checked tag rules;
-- the complete C word carries `pointer`'s origin and selected extent.
-
-The first operand denotes a complete C parameter, result, or scalar load,
-including an `old`/`at` observation of one. A mathematical integer expression
-alone has no representation carrier. The pointer operand is a complete pointer
-value. The tag operand is numeric. Proving only the first bullet cannot prove
-the predicate.
-
-For a tagged parent field, the model would use:
-
-```click
-let parent: struct rb_node* where aligned(parent, 8) and
-    represents(node->__rb_parent_color, parent, node->__rb_parent_color & 1);
-```
-
-For a modular word copy, its contract must preserve `represents` when callers
-need to reconstruct a pointer with usable bounds. A numeric postcondition
-`result == word` still establishes only its mathematical meaning. Existing
-C and its claims stay intact; resource/proof contracts receive the explicit
-representation relation where their intent already depends on it.
 
 ## Representation and proof boundary
 
