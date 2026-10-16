@@ -12,7 +12,9 @@ language's role.
 | --- | --- |
 | `src/languages.rs`, `src/languages/c.rs`, `src/languages/c/` | Parse, represent, and lower supported C. The C++ and Rust importers live in the sibling `src/languages/cpp/` and `src/languages/rust/` modules. |
 | `src/surface.rs` | Define Surface Click forms and connect its checking, lowering, proof, and presentation modules. |
-| `src/surface/parser.rs` | Tokenize and parse Surface Click. |
+| `src/surface/parser.rs` | Tokenize and parse Surface Click; share exact token spans with source tools. |
+| `src/surface/names.rs` | Resolve library imports and theorem shadowing; share those bindings with source printing. |
+| `src/surface/printing.rs` | Print Surface proof text and propositions with an explicit source or refusal mode. |
 | `src/surface/validation/` | Resolve declarations and enforce source-level type and form rules. |
 | `src/surface/lowering/` | Translate checked surface contracts, propositions, resources, and source locations. |
 | `src/surface/checking/` | Evaluate contract forms and connect them to kernel structures. |

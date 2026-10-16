@@ -887,9 +887,7 @@ pub(super) fn plan_recorded_wide_order_path(
         };
         let application = ProofTactic::ApplyTheoremUsing {
             application: TheoremApplication {
-                name: crate::surface::parser::library_theorem_identity(&format!(
-                    "{carrier}_{link}"
-                )),
+                name: crate::surface::names::library_theorem_identity(&format!("{carrier}_{link}")),
                 arguments: vec![lower.clone(), middle.clone(), upper.clone()],
             },
             premises: vec![current.clone(), next.1.clone()],

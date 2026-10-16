@@ -97,7 +97,7 @@ fn trace_source_index_scales_with_sites_and_unrelated_source() {
     let query = |unrelated| {
         let source = format!(
             "{}by {{ have true by {{ normalize(); }} }}",
-            "# unrelated αβ\n".repeat(unrelated)
+            "// unrelated αβ\n".repeat(unrelated)
         );
         let index = ProofSourceIndex::new(&source).unwrap();
         let have = position_at_offset(&source, source.find("have").unwrap());
@@ -163,7 +163,7 @@ fn qualified_c_declaration_inventory_scales_with_source() {
         for index in 0..size {
             source.push_str(&format!("verifying \"unit{index}.c\" as unit{index};\nint32 unit{index}::helper() {{ ensures result == 1; }} by {{ execute(); simp(); }}\n"));
         }
-        let tokens = scan_source_tokens(&source).unwrap();
+        let tokens = proof_source_tokens(&source).unwrap();
         let (declarations, work) = crate::instrumentation::measure_deterministic_work(|| {
             declaration_source_index(&tokens).unwrap()
         });
@@ -177,4 +177,22 @@ fn qualified_c_declaration_inventory_scales_with_source() {
             "qualified declaration index must walk source once: {measurements:?}"
         );
     }
+}
+
+#[test]
+fn library_name_spelling_queries_do_not_walk_unrelated_source() {
+    let mut work = Vec::new();
+    for size in [4, 16, 64, 256] {
+        let mut source = String::from("/* ; # */ import click::list::{append_cons};\n");
+        for i in 0..size {
+            source.push_str(&format!("theorem unrelated{i}() {{}}\n"));
+        }
+        let symbols = names::FileSymbols::for_source(&source).unwrap();
+        let (spelling, units) = crate::instrumentation::measure_deterministic_work(|| {
+            symbols.spelling("click::list::append_cons")
+        });
+        assert_eq!(spelling, "append_cons");
+        work.push(units);
+    }
+    assert!(work.iter().all(|units| *units == work[0]), "{work:?}");
 }

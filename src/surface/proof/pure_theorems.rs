@@ -4167,7 +4167,7 @@ mod tests {
         // The kernel checks a library theorem by its qualified identity, so
         // the test declaration is named as the library names it.
         for theorem in &mut file.theorem_definitions {
-            theorem.name = crate::surface::parser::library_theorem_identity(&theorem.name);
+            theorem.name = crate::surface::names::library_theorem_identity(&theorem.name);
         }
         let predicate_environment = PredicateEnvironment::new(file.predicate_definitions())
             .with_contracts(file.contract_definitions(), &file.c_function_names);
