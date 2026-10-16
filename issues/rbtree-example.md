@@ -1710,3 +1710,10 @@ values and recursive count validity for arbitrary subtrees, with checked bridges
 to the existing structural model operations. Root-only insertion uses the shared
 recoloring definition. These lemmas prepare general color-flip propagation;
 the existing C flip sidecars still cover their documented finite cases.
+
+
+The black-parent stopping case now restores whole-root ownership for arbitrary
+focused and sibling subtrees and either parent orientation, through both
+augmented wrappers. Its contract returns the root link and the exact original
+`sized_plug` model. This supplies the general stopping boundary for subsequent
+color-flip propagation proofs.
