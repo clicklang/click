@@ -2100,7 +2100,14 @@ fn index_bitvector_equality_fact(
                 _ => return index,
             }
         }
-        Proposition::ConditionIs(condition @ ConditionTerm::PointerEqual(_, _), true) => {
+        // An Integer equality over machine observations, such as a premise
+        // `to_integer(count(r)) == 0`, is filed under the machine operands
+        // it observes, so a goal over those operands selects it as `simp`
+        // selects their native equalities.
+        Proposition::ConditionIs(
+            condition @ (ConditionTerm::PointerEqual(_, _) | ConditionTerm::IntegerEqual(_, _)),
+            true,
+        ) => {
             let mut atoms = BTreeSet::new();
             collect_condition_bitvector_atoms(condition, &mut atoms);
             for atom in atoms {
@@ -2393,7 +2400,11 @@ fn collect_condition_bitvector_atoms(
             collect_bitvector_atoms(left, atoms);
             collect_bitvector_atoms(right, atoms);
         }
-        crate::kernel::integer_comparison_condition!(_, _) => {}
+        crate::kernel::integer_comparison_condition!(left, right) => {
+            let mut visited = BTreeSet::new();
+            collect_integer_bitvector_atoms(left, atoms, &mut visited);
+            collect_integer_bitvector_atoms(right, atoms, &mut visited);
+        }
         ConditionTerm::Float32(float_condition) | ConditionTerm::Float64(float_condition) => {
             float_condition.for_each_bitvector_term(|term| collect_bitvector_atoms(term, atoms));
         }
@@ -2406,6 +2417,27 @@ fn collect_condition_bitvector_atoms(
             collect_pointer_bitvector_atoms(right, atoms);
         }
         ConditionTerm::Constant(_) | ConditionTerm::Variable(_) => {}
+    }
+}
+
+/// The atoms of the machine values an Integer term observes. Arithmetic is
+/// walked once per shared node; applications, matches and folds are opaque.
+fn collect_integer_bitvector_atoms(
+    term: &SharedIntegerTerm,
+    atoms: &mut BTreeSet<BitvectorEqualityAtomKey>,
+    visited: &mut BTreeSet<u64>,
+) {
+    if !visited.insert(term.id()) {
+        return;
+    }
+    match &**term {
+        IntegerTerm::Machine(machine) => collect_bitvector_atoms(machine.value(), atoms),
+        IntegerTerm::Negate(inner) => collect_integer_bitvector_atoms(inner, atoms, visited),
+        crate::kernel::binary_integer_term!(left, right) => {
+            collect_integer_bitvector_atoms(left, atoms, visited);
+            collect_integer_bitvector_atoms(right, atoms, visited);
+        }
+        _ => {}
     }
 }
 
