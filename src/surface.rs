@@ -3864,73 +3864,20 @@ pub fn sorry_outside_have_bodies(tactics: &[ProofTactic]) -> bool {
 }
 
 fn tactic_sorry_outside_have(tactic: &ProofTactic, in_have: bool) -> bool {
-    match tactic {
-        ProofTactic::Sorry => !in_have,
-        ProofTactic::Have(have) => match &have.proof {
-            SourceProof::Script(body) => body
-                .iter()
-                .any(|tactic| tactic_sorry_outside_have(tactic, true)),
-            SourceProof::Default | SourceProof::Tactic(_) => false,
-        },
-        // The close's `by` proves a body fact as a `have` does.
-        ProofTactic::Open(open) => {
-            open.tactics
-                .iter()
-                .any(|tactic| tactic_sorry_outside_have(tactic, in_have))
-                || open
-                    .close_proof
-                    .as_ref()
-                    .is_some_and(|body| tactic_sorry_outside_have_in(body, true))
-        }
-        ProofTactic::If(proof_if) => {
-            tactic_sorry_outside_have_in(&proof_if.then_tactics, in_have)
-                || tactic_sorry_outside_have_in(&proof_if.else_tactics, in_have)
-        }
-        ProofTactic::Match(proof_match) => proof_match
-            .arms
-            .iter()
-            .any(|arm| tactic_sorry_outside_have_in(&arm.tactics, in_have)),
-        ProofTactic::Cases(cases) => cases
-            .arms
-            .iter()
-            .any(|arm| tactic_sorry_outside_have_in(&arm.tactics, in_have)),
-        ProofTactic::Both(both) => {
-            tactic_sorry_outside_have_in(&both.left_tactics, in_have)
-                || tactic_sorry_outside_have_in(&both.right_tactics, in_have)
-        }
-        ProofTactic::Branch(branch) => {
-            tactic_sorry_outside_have_in(&branch.then_tactics, in_have)
-                || tactic_sorry_outside_have_in(&branch.else_tactics, in_have)
-        }
-        ProofTactic::CallOutcomes(outcomes) => {
-            tactic_sorry_outside_have_in(&outcomes.returned_tactics, in_have)
-                || tactic_sorry_outside_have_in(&outcomes.threw_tactics, in_have)
-        }
-        ProofTactic::Loop(clause) => {
-            clause
-                .initialize_proof
-                .as_ref()
-                .is_some_and(|proof| source_proof_sorry_outside_have(proof, in_have))
-                || clause
-                    .preserve_proof
-                    .as_ref()
-                    .is_some_and(|proof| source_proof_sorry_outside_have(proof, in_have))
-        }
-        ProofTactic::StructuralInduct { arms, .. } => arms
-            .iter()
-            .any(|arm| tactic_sorry_outside_have_in(&arm.tactics, in_have)),
-        ProofTactic::CloseInvariantsBy(body) => tactic_sorry_outside_have_in(body, in_have),
-        // Each body proves an obligation as a `have` does.
-        ProofTactic::StepProved { step, proof } => {
-            tactic_sorry_outside_have(step, in_have)
-                || match proof {
-                    StepProof::By(body) => tactic_sorry_outside_have_in(body, true),
-                    StepProof::Requires(entries) => entries
-                        .iter()
-                        .any(|entry| source_proof_sorry_outside_have(&entry.have.proof, true)),
-                }
-        }
-        _ => false,
+    if matches!(tactic, ProofTactic::Sorry) {
+        return !in_have;
+    }
+    // An obligation proves a fact as a `have` does.
+    tactic.children().into_iter().any(|child| match child {
+        TacticChild::Continuing(proof) => child_proof_sorry_outside_have(proof, in_have),
+        TacticChild::Obligation(proof) => child_proof_sorry_outside_have(proof, true),
+    })
+}
+
+fn child_proof_sorry_outside_have(proof: ChildProof<'_>, in_have: bool) -> bool {
+    match proof {
+        ChildProof::Script(tactics) => tactic_sorry_outside_have_in(tactics, in_have),
+        ChildProof::Source(proof) => source_proof_sorry_outside_have(proof, in_have),
     }
 }
 
@@ -4338,6 +4285,107 @@ pub const PUBLIC_TACTIC_FORMS: &[PublicTacticForm] = &[
 
 mod proof_certificate;
 pub use proof_certificate::*;
+
+/// One child proof of a structured tactic, as [`ProofTactic::children`]
+/// yields it.
+#[derive(Clone, Copy)]
+pub(crate) enum TacticChild<'a> {
+    /// A block that continues the tactic's own proof: an `if`, `branch`,
+    /// `match`, `cases`, induction or `outcomes` arm, an `open` body, a side
+    /// of `both`, a `close_invariants by` body, or a loop's `initialize` or
+    /// `preserve` proof.
+    Continuing(ChildProof<'a>),
+    /// A proof of a separate proposition, as a `have` body is: a `have`, the
+    /// close proof of an `open`, or a step's obligation proofs.
+    Obligation(ChildProof<'a>),
+}
+
+/// The written form of a child proof.
+#[derive(Clone, Copy)]
+pub(crate) enum ChildProof<'a> {
+    Script(&'a [ProofTactic]),
+    /// A `have`, step-requirement or loop proof, which may be the default
+    /// proof or a smart tactic instead of a script.
+    Source(&'a SourceProof),
+}
+
+impl<'a> ChildProof<'a> {
+    /// The written tactics, when the child is a script.
+    pub(crate) fn tactics(self) -> Option<&'a [ProofTactic]> {
+        match self {
+            Self::Script(tactics) => Some(tactics),
+            Self::Source(proof) => proof.tactics(),
+        }
+    }
+}
+
+impl ProofTactic {
+    /// Every child proof of this tactic, in source order. This is the one
+    /// place that knows where each structured tactic keeps its children: a
+    /// traversal matches the tactics it treats specially and recurses
+    /// through this for the rest, so a new control tactic is visited
+    /// everywhere once it is listed here. A leaf has no children. The step a
+    /// `StepProved` proves is a leaf of the tactic, not a child proof.
+    pub(crate) fn children(&self) -> Vec<TacticChild<'_>> {
+        use ChildProof::{Script, Source};
+        use TacticChild::{Continuing, Obligation};
+        match self {
+            Self::CloseInvariantsBy(body) => vec![Continuing(Script(body))],
+            Self::StepProved { proof, .. } => match proof {
+                StepProof::By(body) => vec![Obligation(Script(body))],
+                StepProof::Requires(entries) => entries
+                    .iter()
+                    .map(|entry| Obligation(Source(&entry.have.proof)))
+                    .collect(),
+            },
+            Self::StructuralInduct { arms, .. } => arms
+                .iter()
+                .map(|arm| Continuing(Script(&arm.tactics)))
+                .collect(),
+            Self::Have(have) => vec![Obligation(Source(&have.proof))],
+            Self::Open(open) => {
+                let mut children = vec![Continuing(Script(&open.tactics))];
+                if let Some(close) = &open.close_proof {
+                    children.push(Obligation(Script(close)));
+                }
+                children
+            }
+            Self::If(proof_if) => vec![
+                Continuing(Script(&proof_if.then_tactics)),
+                Continuing(Script(&proof_if.else_tactics)),
+            ],
+            Self::Match(proof_match) => proof_match
+                .arms
+                .iter()
+                .map(|arm| Continuing(Script(&arm.tactics)))
+                .collect(),
+            Self::Cases(cases) => cases
+                .arms
+                .iter()
+                .map(|arm| Continuing(Script(&arm.tactics)))
+                .collect(),
+            Self::Both(both) => vec![
+                Continuing(Script(&both.left_tactics)),
+                Continuing(Script(&both.right_tactics)),
+            ],
+            Self::Branch(branch) => vec![
+                Continuing(Script(&branch.then_tactics)),
+                Continuing(Script(&branch.else_tactics)),
+            ],
+            Self::CallOutcomes(outcomes) => vec![
+                Continuing(Script(&outcomes.returned_tactics)),
+                Continuing(Script(&outcomes.threw_tactics)),
+            ],
+            Self::Loop(clause) => clause
+                .initialize_proof()
+                .into_iter()
+                .chain(clause.preserve_proof())
+                .map(|proof| Continuing(Source(proof)))
+                .collect(),
+            _ => Vec::new(),
+        }
+    }
+}
 
 impl ProofTactic {
     pub fn class(&self) -> TacticClass {
@@ -7355,55 +7403,14 @@ impl ProofTactic {
         &'a self,
         clauses: &mut Vec<&'a StructuralClause>,
     ) {
-        match self {
-            Self::Have(have) => have.proof.collect_termination_loop_clauses(clauses),
-            Self::Open(open) => {
-                for tactic in &open.tactics {
-                    tactic.collect_termination_loop_clauses(clauses);
-                }
+        if let Self::Loop(clause) = self {
+            clauses.push(clause);
+        }
+        for child in self.children() {
+            let (TacticChild::Continuing(proof) | TacticChild::Obligation(proof)) = child;
+            for tactic in proof.tactics().unwrap_or_default() {
+                tactic.collect_termination_loop_clauses(clauses);
             }
-            Self::If(proof_if) => {
-                for tactic in proof_if.then_tactics.iter().chain(&proof_if.else_tactics) {
-                    tactic.collect_termination_loop_clauses(clauses);
-                }
-            }
-            Self::Cases(proof_cases) => {
-                for arm in &proof_cases.arms {
-                    for tactic in &arm.tactics {
-                        tactic.collect_termination_loop_clauses(clauses);
-                    }
-                }
-            }
-            Self::StructuralInduct { arms, .. } => {
-                for arm in arms {
-                    for tactic in &arm.tactics {
-                        tactic.collect_termination_loop_clauses(clauses);
-                    }
-                }
-            }
-            Self::Match(proof_match) => {
-                let arms = &proof_match.arms;
-                for arm in arms {
-                    for tactic in &arm.tactics {
-                        tactic.collect_termination_loop_clauses(clauses);
-                    }
-                }
-            }
-            Self::Branch(branch) => {
-                for tactic in branch.then_tactics.iter().chain(&branch.else_tactics) {
-                    tactic.collect_termination_loop_clauses(clauses);
-                }
-            }
-            Self::Loop(clause) => {
-                clauses.push(clause);
-                if let Some(proof) = clause.initialize_proof() {
-                    proof.collect_termination_loop_clauses(clauses);
-                }
-                if let Some(proof) = clause.preserve_proof() {
-                    proof.collect_termination_loop_clauses(clauses);
-                }
-            }
-            _ => {}
         }
     }
 }

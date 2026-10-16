@@ -124,6 +124,31 @@ impl EqualityGraph {
         }
     }
 
+    /// Select an exact common-base address equality by its indexed offset
+    /// coordinates. The index nominates sources; their complete offset sides
+    /// must still match, so this does not cancel scaling or discard a base.
+    pub(in crate::kernel) fn exact_pointer_offset_equality_source(
+        &self,
+        left: &PointerOffsetTerm,
+        right: &PointerOffsetTerm,
+    ) -> Option<&Proposition> {
+        let left_index = crate::kernel::reasoning::int32_element_index_from_offset(left)?;
+        let right_index = crate::kernel::reasoning::int32_element_index_from_offset(right)?;
+        self.admitted
+            .scalar_evidence_inputs
+            .get(&equality_graph_term_key(&left_index))?
+            .get(&equality_graph_term_key(&right_index))?
+            .iter()
+            .find_map(|(_, premise)| {
+                crate::instrumentation::record_deterministic_work(1);
+                let Proposition::ConditionIs(condition, true) = premise else {
+                    return None;
+                };
+                let (a, b) = condition.pointer_offset_sides()?;
+                ((a == left && b == right) || (a == right && b == left)).then_some(premise)
+            })
+    }
+
     pub(in crate::kernel) fn has_scalar_evidence(&self, term: &Bitvector32Term) -> bool {
         self.admitted
             .scalar_evidence_inputs

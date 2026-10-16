@@ -5737,6 +5737,11 @@ impl<'a> Proof<'a> {
                         true
                     ) if matches!(left.as_ref(), Bitvector32Term::Constant(_) | Bitvector32Term::Int64Constant(_) | Bitvector32Term::UInt64Constant(_))
                         || matches!(right.as_ref(), Bitvector32Term::Constant(_) | Bitvector32Term::Int64Constant(_) | Bitvector32Term::UInt64Constant(_))
+                ) || matches!(
+                    &equality,
+                    Proposition::ConditionIs(ConditionTerm::IntegerEqual(left, right), true)
+                        if matches!(&**left, crate::kernel::IntegerTerm::Constant(_))
+                            || matches!(&**right, crate::kernel::IntegerTerm::Constant(_))
                 );
                 if used.contains(&equality) {
                     continue;
@@ -5774,6 +5779,8 @@ impl<'a> Proof<'a> {
                                 ConditionTerm::Bitvector32Equal(left, right) | ConditionTerm::Bitvector64Equal(left, right), true
                             ) if matches!(if source { left.as_ref() } else { right.as_ref() },
                                 Bitvector32Term::Constant(_) | Bitvector32Term::Int64Constant(_) | Bitvector32Term::UInt64Constant(_)))
+                                || matches!(kernel, Proposition::ConditionIs(ConditionTerm::IntegerEqual(left, right), true)
+                                    if matches!(if source { &**left } else { &**right }, crate::kernel::IntegerTerm::Constant(_)))
                         };
                         // A retained source spelling may be a proxy for a
                         // symbolic operand. Trust its recorded lowering, not
@@ -6720,7 +6727,7 @@ impl<'a> Proof<'a> {
                 }
                 return None;
             }
-            let step = explicit_linear_step(tactic)?;
+            let step = SourceContext::PureGoal.leaf_step(tactic)?;
             proof = proof.apply_step(step).ok()?;
         }
         proof.focused_discharged().then_some(proof)
@@ -8907,7 +8914,8 @@ impl<'a> Proof<'a> {
                         proof = proof.admit_focused_goal_for_sorry()?;
                         continue;
                     }
-                    let step = explicit_linear_step(tactic)
+                    let step = SourceContext::PureGoal
+                        .leaf_step(tactic)
                         .ok_or_else(|| proof.unsupported_operation_error(tactic_name(tactic)))?;
                     proof = proof.apply_step(step)?;
                 }

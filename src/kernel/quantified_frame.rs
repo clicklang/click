@@ -30,6 +30,8 @@
 //!   equality, `explicit_atomic_equality_from_memory_derivations` and the
 //!   condition bridge's `memory_loads_proven_equal`), or when the caller's
 //!   `leaf` check, the ordinary single-fact transport, carries it.
+//! - a typed-read definedness leaf through the ordinary single-fact transport,
+//!   which preserves initialization and lifetime evidence for that read.
 //!
 //! What this rule adds to a single `transport` is only *which facts a read
 //! may use*: the read-history question reads the querying context's own
@@ -84,10 +86,12 @@ impl std::fmt::Display for QuantifiedFrameRefusal {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::ShapeMismatch => {
-                formatter.write_str("source and target differ outside their condition leaves")
+                formatter.write_str(
+                    "source and target differ outside their condition or definedness leaves",
+                )
             }
             Self::NothingToFrame => {
-                formatter.write_str("no condition leaf differs between source and target")
+                formatter.write_str("no condition or definedness leaf differs between source and target")
             }
             Self::BinderExhausted => {
                 formatter.write_str("no fresh identity was left for a universal binder")
@@ -104,8 +108,8 @@ impl std::fmt::Display for QuantifiedFrameRefusal {
 ///
 /// `assumptions` is the querying context the read-history question reads.
 /// `leaf_assumptions` is the smaller context the single-fact transport
-/// `leaf` reads when a differing condition leaf's reads alone do not decide
-/// it: the transport's own listed and certified premises, as the single-fact
+/// `leaf` reads for definedness or a condition not decided by its reads:
+/// the transport's own listed and certified premises, as the single-fact
 /// route reads them, so a fallback costs what that route costs. Each assumed
 /// antecedent joins both. `facts` supplies the identities a fresh binder must
 /// avoid, and `refine` adds what the context exposes once an antecedent is
@@ -256,6 +260,28 @@ impl Framer<'_> {
                 self.prove(b, d, contexts)
             }
             (Proposition::Not(a), Proposition::Not(b)) => self.prove(b, a, contexts),
+            (
+                Proposition::CMemoryReadDefined {
+                    value_type: from_type,
+                    ..
+                },
+                Proposition::CMemoryReadDefined {
+                    value_type: to_type,
+                    ..
+                },
+            ) if from_type == to_type => {
+                // Definedness needs typed-read evidence; equal read values
+                // alone do not establish initialization or preserve lifetime.
+                if (self.leaf)(from, to, &contexts.leaf) {
+                    self.framed_leaves.set(self.framed_leaves.get() + 1);
+                    Ok(())
+                } else {
+                    Err(QuantifiedFrameRefusal::LeafNotCarried {
+                        from: Box::new(from.clone()),
+                        to: Box::new(to.clone()),
+                    })
+                }
+            }
             (
                 Proposition::ConditionIs(left, left_value),
                 Proposition::ConditionIs(right, right_value),

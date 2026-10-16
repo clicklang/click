@@ -435,7 +435,6 @@ impl ProofStep {
                         .collect(),
                 )),
             },
-            ProofTactic::Mark(name) => Self::Mark(name.clone()),
             ProofTactic::StepProved { step, proof } => Self::StepProved {
                 step: Box::new(Self::from_validated_tactic(step)),
                 proof: match proof {
@@ -457,34 +456,6 @@ impl ProofStep {
                             .collect(),
                     ),
                 },
-            },
-            ProofTactic::Step => Self::Step,
-            ProofTactic::StepBind(name) => Self::StepBind(name.clone()),
-            ProofTactic::StepContract(name) => Self::StepContract(name.clone()),
-            ProofTactic::StepCall(transport) => Self::StepCall(transport.clone()),
-            ProofTactic::UserTactic(application) => Self::UserTactic(application.clone()),
-            ProofTactic::UnfoldPredicate(name) => Self::UnfoldPredicate(name.clone()),
-            ProofTactic::UnfoldFunction(application) => Self::UnfoldFunction(application.clone()),
-            ProofTactic::PeelFunction {
-                application,
-                premises,
-            } => Self::PeelFunction {
-                application: application.clone(),
-                premises: premises.clone(),
-            },
-            ProofTactic::UnfoldResource(resource) => Self::UnfoldResource(resource.clone()),
-            ProofTactic::UnfoldWitnesses { resource, names } => Self::UnfoldWitnesses {
-                resource: resource.clone(),
-                names: names.clone(),
-            },
-            ProofTactic::FoldResource(resource) => Self::FoldResource(resource.clone()),
-            ProofTactic::ConstructResource(resource) => Self::ConstructResource(resource.clone()),
-            ProofTactic::Induct {
-                parameter,
-                hypothesis,
-            } => Self::Induct {
-                parameter: parameter.clone(),
-                hypothesis: hypothesis.clone(),
             },
             ProofTactic::Match(proof_match) => Self::Match {
                 scrutinee: proof_match.scrutinee.clone(),
@@ -530,61 +501,9 @@ impl ProofStep {
             ProofTactic::ApplyInduction { .. } => {
                 unreachable!("bare induction application is smart")
             }
-            ProofTactic::ApplyInductionUsing {
-                hypothesis,
-                arguments,
-                premises,
-            } => Self::ApplyInduction {
-                hypothesis: hypothesis.clone(),
-                arguments: arguments.clone(),
-                premises: premises.clone(),
-            },
-            ProofTactic::ApplyTheoremUsing {
-                application,
-                premises,
-            } => Self::ApplyTheoremUsing {
-                application: application.clone(),
-                premises: premises.clone(),
-            },
-            ProofTactic::ObserveResource(resource) => Self::ObserveResource(resource.clone()),
-            ProofTactic::Iterated(tactic) => Self::Iterated(tactic.clone()),
-            ProofTactic::Witness(witness) => Self::Witness(witness.clone()),
-            ProofTactic::LetSatisfy(binding) => Self::LetSatisfy(binding.clone()),
-            ProofTactic::Choose(choice) => Self::Choose(choice.clone()),
-            ProofTactic::Assumption => Self::Assumption,
-            ProofTactic::Extract(proposition) => Self::Extract(proposition.clone()),
-            ProofTactic::Normalize => Self::Normalize,
-            ProofTactic::NormalizeUsing(premises) => Self::NormalizeUsing(premises.clone()),
-            ProofTactic::ArithmeticUsing(premises) => Self::ArithmeticUsing(premises.clone()),
-            ProofTactic::ArithmeticCertificate(certificate) => {
-                Self::ArithmeticCertificate(certificate.clone())
-            }
-            ProofTactic::Intro => Self::Intro,
-            ProofTactic::IntroAs(name) => Self::IntroAs(name.clone()),
-            ProofTactic::Enumerate => Self::Enumerate,
-            ProofTactic::Contradiction(proposition) => Self::Contradiction(proposition.clone()),
             ProofTactic::CloseInvariants => {
                 unreachable!("bare invariant closure is smart")
             }
-            ProofTactic::Rewrite(proposition) => Self::Rewrite(proposition.clone()),
-            ProofTactic::TransportUsing {
-                source,
-                target,
-                premises,
-            } => Self::TransportUsing {
-                source: source.clone(),
-                target: target.clone(),
-                premises: premises.clone(),
-            },
-            ProofTactic::InstantiateUsing {
-                quantified,
-                argument,
-                premises,
-            } => Self::InstantiateUsing {
-                quantified: quantified.clone(),
-                argument: argument.clone(),
-                premises: premises.clone(),
-            },
             ProofTactic::Have(proof_have) => Self::Have {
                 proposition: proof_have.proposition.clone(),
                 proof: Box::new(ProofCertificate::from_validated_proof(&proof_have.proof)),
@@ -690,8 +609,101 @@ impl ProofStep {
                     .as_ref()
                     .map(|proof| Box::new(ProofCertificate::from_validated_proof(proof))),
             }),
-            _ => unreachable!("certificate validation admitted a non-surface tactic"),
+            _ => Self::from_leaf_tactic(tactic)
+                .expect("certificate validation admitted a non-surface tactic"),
         }
+    }
+
+    /// The certificate step for a written tactic with no child proof and no
+    /// search: the leaves every proof context shares. This is the one
+    /// `ProofTactic` -> `ProofStep` mapping for leaves; a context chooses
+    /// which of them it admits ([`crate::surface::proof::SourceContext`]),
+    /// never how one converts. A structured or smart tactic is `None`.
+    pub(crate) fn from_leaf_tactic(tactic: &ProofTactic) -> Option<Self> {
+        Some(match tactic {
+            ProofTactic::Mark(name) => Self::Mark(name.clone()),
+            ProofTactic::Step => Self::Step,
+            ProofTactic::StepBind(name) => Self::StepBind(name.clone()),
+            ProofTactic::StepContract(name) => Self::StepContract(name.clone()),
+            ProofTactic::StepCall(transport) => Self::StepCall(transport.clone()),
+            ProofTactic::UserTactic(application) => Self::UserTactic(application.clone()),
+            ProofTactic::UnfoldPredicate(name) => Self::UnfoldPredicate(name.clone()),
+            ProofTactic::UnfoldFunction(application) => Self::UnfoldFunction(application.clone()),
+            ProofTactic::PeelFunction {
+                application,
+                premises,
+            } => Self::PeelFunction {
+                application: application.clone(),
+                premises: premises.clone(),
+            },
+            ProofTactic::UnfoldResource(resource) => Self::UnfoldResource(resource.clone()),
+            ProofTactic::UnfoldWitnesses { resource, names } => Self::UnfoldWitnesses {
+                resource: resource.clone(),
+                names: names.clone(),
+            },
+            ProofTactic::FoldResource(resource) => Self::FoldResource(resource.clone()),
+            ProofTactic::ConstructResource(resource) => Self::ConstructResource(resource.clone()),
+            ProofTactic::Induct {
+                parameter,
+                hypothesis,
+            } => Self::Induct {
+                parameter: parameter.clone(),
+                hypothesis: hypothesis.clone(),
+            },
+            ProofTactic::ApplyInductionUsing {
+                hypothesis,
+                arguments,
+                premises,
+            } => Self::ApplyInduction {
+                hypothesis: hypothesis.clone(),
+                arguments: arguments.clone(),
+                premises: premises.clone(),
+            },
+            ProofTactic::ApplyTheoremUsing {
+                application,
+                premises,
+            } => Self::ApplyTheoremUsing {
+                application: application.clone(),
+                premises: premises.clone(),
+            },
+            ProofTactic::ObserveResource(resource) => Self::ObserveResource(resource.clone()),
+            ProofTactic::Iterated(tactic) => Self::Iterated(tactic.clone()),
+            ProofTactic::Witness(witness) => Self::Witness(witness.clone()),
+            ProofTactic::LetSatisfy(binding) => Self::LetSatisfy(binding.clone()),
+            ProofTactic::Choose(choice) => Self::Choose(choice.clone()),
+            ProofTactic::Assumption => Self::Assumption,
+            ProofTactic::Extract(proposition) => Self::Extract(proposition.clone()),
+            ProofTactic::Normalize => Self::Normalize,
+            ProofTactic::NormalizeUsing(premises) => Self::NormalizeUsing(premises.clone()),
+            ProofTactic::ArithmeticUsing(premises) => Self::ArithmeticUsing(premises.clone()),
+            ProofTactic::ArithmeticCertificate(certificate) => {
+                Self::ArithmeticCertificate(certificate.clone())
+            }
+            ProofTactic::Intro => Self::Intro,
+            ProofTactic::IntroAs(name) => Self::IntroAs(name.clone()),
+            ProofTactic::Enumerate => Self::Enumerate,
+            ProofTactic::Contradiction(proposition) => Self::Contradiction(proposition.clone()),
+            ProofTactic::Rewrite(proposition) => Self::Rewrite(proposition.clone()),
+            ProofTactic::TransportUsing {
+                source,
+                target,
+                premises,
+            } => Self::TransportUsing {
+                source: source.clone(),
+                target: target.clone(),
+                premises: premises.clone(),
+            },
+            ProofTactic::InstantiateUsing {
+                quantified,
+                argument,
+                premises,
+            } => Self::InstantiateUsing {
+                quantified: quantified.clone(),
+                argument: argument.clone(),
+                premises: premises.clone(),
+            },
+            _ => return None,
+        })
     }
 
     pub(super) fn to_proof_tactic(&self) -> ProofTactic {

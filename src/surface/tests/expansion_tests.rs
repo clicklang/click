@@ -13184,6 +13184,20 @@ fn quantified_old_transport_substitutes_its_introduced_binder_on_the_checked_pro
 }
 
 #[test]
+fn guarded_definedness_transport_expands_and_reverifies() {
+    let (source, sources) =
+        mdtest_sources("mdtests/guarded_definedness_survives_a_disjoint_store.md");
+    let sources = sources
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    let expanded = expand_c0_claim_source_by_label(&source, &sources, "fill_t.contract").unwrap();
+    assert!(expanded.contains("transport("), "{expanded}");
+    assert!(expanded.contains("defined("), "{expanded}");
+    verify_c0_sources(&expanded, &sources).unwrap();
+}
+
+#[test]
 #[ignore = "nightly: 0.9s in the parallel gate"]
 fn quantified_old_transport_expands_to_one_quantified_frame() {
     let c_source = r#"

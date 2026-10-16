@@ -2,11 +2,16 @@
 //! `size` is `side` for a `Square` and `radius + radius` for a `Circle`, and
 //! `total` and `dynamic` reach `area` through a bound and `&dyn Shape`.
 //! `set` changes the object through `&mut self`, which `reset` and
-//! `reset_dyn` reach through `&mut T` and `&mut dyn Shape`.
+//! `reset_dyn` reach through `&mut T` and `&mut dyn Shape`. `area_twice`
+//! has a default body, which holds the object as `area` does and which
+//! `default_square` calls on a `Square`.
 
 pub trait Shape {
     fn area(&self, scale: i32) -> i32;
     fn set(&mut self, half: i32);
+    fn area_twice(&self, scale: i32) -> i32 {
+        self.area(scale + scale)
+    }
 }
 
 pub struct Square {
@@ -73,4 +78,9 @@ pub fn reset_dyn_square(half: i32) -> i32 {
     let mut square = Square { side: 9 };
     reset_dyn(&mut square, half);
     square.side
+}
+
+pub fn default_square(scale: i32) -> i32 {
+    let square = Square { side: 3 };
+    square.area_twice(scale)
 }

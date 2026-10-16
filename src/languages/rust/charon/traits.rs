@@ -16,8 +16,8 @@ use super::*;
 
 impl Adapter<'_> {
     /// Whether `id` is a crate trait whose methods are interfaces, refusing
-    /// one of a shape the importer does not take: generic, with associated
-    /// items or supertraits, or with a default method.
+    /// one of a shape the importer does not take: generic, or with
+    /// associated items or supertraits.
     pub(super) fn interface_trait(&self, id: a::TraitDeclId) -> Result<bool, String> {
         let Some(decl) = self.krate.trait_decls.get(id) else {
             return Err(unsupported("missing trait"));
@@ -50,13 +50,6 @@ impl Adapter<'_> {
             return Err(unsupported(
                 "crate trait with generics, associated items, or supertraits",
             ));
-        }
-        if decl
-            .methods
-            .iter()
-            .any(|method| method.skip_binder.default.is_some())
-        {
-            return Err(unsupported("crate trait method with a default body"));
         }
         Ok(true)
     }
@@ -134,6 +127,11 @@ impl Adapter<'_> {
             let return_type = self.ty(&signature.output)?;
             if !closures::callable_scalar(&return_type) && return_type != Type::Unit {
                 return Err(unsupported("trait method result other than a scalar or ()"));
+            }
+            // A default method's body defines its interface function, as
+            // the crate function the trait's default names.
+            if binder.default.is_some() {
+                continue;
             }
             functions.push(out::Function {
                 name: self.interface_name(id, method_id)?,
@@ -696,7 +694,6 @@ mod tests {
     #[test]
     fn charon_trait_methods_refuse_unread_traits_and_implementations() {
         for (mutation, expected) in [
-            (0, "crate trait method with a default body"),
             (1, "crate trait implementation method not imported"),
             (
                 2,
@@ -712,22 +709,6 @@ mod tests {
                 .unwrap()
                 .def_id;
             match mutation {
-                0 => {
-                    let default = krate
-                        .fun_decls
-                        .iter()
-                        .find(|f| {
-                            matches!(&f.src, a::FunSource::TraitImpl { trait_ref, .. } if trait_ref.id == shape)
-                        })
-                        .unwrap()
-                        .def_id;
-                    for method in krate.trait_decls[shape].methods.iter_mut() {
-                        method.skip_binder.default = Some(a::FunDeclRef {
-                            id: default,
-                            generics: Box::new(a::GenericArgs::empty()),
-                        });
-                    }
-                }
                 1 => {
                     // `Circle`'s, which only a call through the trait reaches.
                     let circle = krate

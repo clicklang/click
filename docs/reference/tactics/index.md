@@ -1944,6 +1944,11 @@ excluding a store to `dst[n]`, `k != cur`
 excluding a store to `visited[cur]`, or `0 <= k and k < n` with a contract
 separation placing `left[k]` apart from it).
 
+The structural frame carries `defined(...)` leaves through the typed-read
+transport rule, preserving initialization and lifetime evidence. Equal read
+values alone do not justify carrying definedness across deallocation. See the
+[checked disjoint-store regression](https://github.com/clicklang/click/blob/master/mdtests/guarded_definedness_survives_a_disjoint_store.md).
+
 The structural frame includes 64-bit equality and preserves the read kind, all
 eight bytes, and the other operand. A source that is a reflexive equality, under
 binders and guards, needs no proof and no `using` entry. A listed quantified

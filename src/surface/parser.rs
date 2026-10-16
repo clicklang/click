@@ -1563,8 +1563,8 @@ impl Parser {
         }
         // A crate trait method's implementation, or a C++ override, inherits
         // its interface, which the sidecar may declare before or after it: a
-        // trait's `extern` method, or the virtual method overridden, whose
-        // contract a call through it assumes.
+        // trait's method, external or a default method with its proof, or the
+        // virtual method overridden, whose contract a call through it assumes.
         let cpp = self.language == SourceLanguage::Cpp;
         for (implementation, interface) in std::mem::take(&mut self.rust_trait_implementations) {
             // A defining class's method is stated on that class's memory, which
@@ -1592,7 +1592,7 @@ impl Parser {
             }
             let Some(interface) = function_blocks
                 .iter()
-                .find(|block| (cpp || block.is_external()) && block.signature().name() == interface)
+                .find(|block| block.signature().name() == interface)
                 .cloned()
             else {
                 continue;
@@ -7267,8 +7267,10 @@ impl Parser {
     /// compares an Integer with a machine value, compares exact Integers:
     /// each machine operand of its arithmetic is observed with
     /// `to_integer`, so `x + 1 > x` reads
-    /// `to_integer(x) + 1 > to_integer(x)`. A comparison with a pointer
-    /// operand keeps its C meaning.
+    /// `to_integer(x) + 1 > to_integer(x)`. A population count is a
+    /// quantity, so a comparison with a `count(...)` operand compares
+    /// Integers too. A comparison with a pointer operand keeps its C
+    /// meaning.
     fn specification_comparison(
         &self,
         left: ContractExpression,
@@ -7280,8 +7282,9 @@ impl Parser {
             let right_integer = self.integer_operand(&right);
             let mixed = left_integer != right_integer;
             let arithmetic = has_arithmetic_spine(&left) || has_arithmetic_spine(&right);
+            let counted = has_count_operand(&left) || has_count_operand(&right);
             if !(left_integer && right_integer)
-                && (mixed || arithmetic)
+                && (mixed || arithmetic || counted)
                 && !self.has_pointer_operand(&left)
                 && !self.has_pointer_operand(&right)
             {
@@ -14849,6 +14852,23 @@ fn composite_body_child_slots(body: &CompositeResourceBody) -> BTreeSet<String> 
             _ => None,
         })
         .collect()
+}
+
+/// Whether `expression` or an operand of its arithmetic is a population
+/// count, looking through `old`.
+fn has_count_operand(expression: &ContractExpression) -> bool {
+    match expression {
+        ContractExpression::ResourceCount(_) => true,
+        ContractExpression::Add(left, right)
+        | ContractExpression::Subtract(left, right)
+        | ContractExpression::Multiply(left, right) => {
+            has_count_operand(left) || has_count_operand(right)
+        }
+        ContractExpression::Negate(inner) | ContractExpression::Old(inner) => {
+            has_count_operand(inner)
+        }
+        _ => false,
+    }
 }
 
 /// Whether `expression` does `+`, `-`, `*` or negation at its top, looking
