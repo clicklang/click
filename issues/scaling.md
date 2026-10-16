@@ -157,6 +157,20 @@ instead of from what the step changed.
    (`binding_a_local_copies_a_search_path_not_the_frame`); `objects_and_calls`
    at N = 128, 9.90 to 9.58 billion instructions. Still open: each resource
    clause's lowering rebuilds the parameter values and array references.
+9. **Fixed: comparing equal resource contexts walked every fact.** A call
+   that takes the caller's ownership and returns it rebuilds a context with
+   the same facts in fresh storage. Contexts order by content hash first, so
+   every equal pair fell through to a fact-by-fact walk: in
+   `objects_and_calls` about 78 such walks per step at N = 128, each over
+   every live object. A context now also keeps its facts as a canonical
+   multiset (`canonical_fact_set.rs`), a hash-consed treap whose shape is a
+   function of its contents, so equal contexts share one root and compare
+   by pointer (`comparing_equal_resource_contexts_walks_no_facts`).
+   Equality is now multiset equality rather than insertion order.
+   `objects_and_calls` at N = 128: 9.58 to 9.04 billion instructions. Still
+   superlinear there: dropping chains of memory constructions
+   (`CMemoryConstruction`, x24 from N = 32 to 128) and `evaluate_c_add_paths`
+   (x18).
 
 Related scaling bugs stay in `bugs/` until fixed:
 [sequential-loop-clause-grows-with-earlier-loops.md](../bugs/sequential-loop-clause-grows-with-earlier-loops.md).
