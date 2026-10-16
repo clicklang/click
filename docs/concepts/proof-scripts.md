@@ -3,9 +3,12 @@
 A Click contract says what must hold, and its proof clause says how Click
 should establish it.
 
-Use an omitted proof clause or `by auto;` by default. `auto` orchestrates C
-execution, effect reasoning, and proposition reasoning through checked proof
-operations.
+Omit a function's proof clause when the default automation is sufficient.
+`auto` orchestrates execution, effect reasoning, and proposition reasoning
+through checked proof operations; write `by auto;` when you want to name that
+default explicitly. For a proof that needs written steps, use a `by { ... }`
+block with parenthesized tactic calls such as `execute();` and `simp();`.
+The shorthand forms described below remain available.
 
 Prefer smart tactics while authoring unless profiling identifies a hotspot.
 Exact `using` blocks are ordinary Click and may be committed after expansion,

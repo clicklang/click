@@ -88,13 +88,13 @@ verifies or fails exactly as `click verify` does, whatever the machine's load.
 
 Profile all example projects:
 
-```sh
+```console
 click profile examples
 ```
 
 Profile one mdtest and show five attribution rows:
 
-```sh
+```console
 click profile --top 5 mdtests/bubble_sort3_two_pass_sorted.md
 ```
 
