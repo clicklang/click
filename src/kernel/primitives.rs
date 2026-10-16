@@ -1131,9 +1131,7 @@ impl SubobjectExtent {
     /// The unknown extent of a pointer whose formation the function did not
     /// see (`design/pointer-subobject-extents.md`, Phase C). `variable` names
     /// it and nothing else: its start and width are opaque, so no access
-    /// through it is inside it until evidence says so. No producer assigns
-    /// one yet (Phase C step 2).
-    #[cfg(test)]
+    /// through it is inside it until evidence says so.
     pub(crate) fn opaque(variable: Variable) -> Self {
         debug_assert!(
             (Self::OPAQUE_VARIABLE_BASE..Self::OPAQUE_VARIABLE_CEILING).contains(&variable.0)
