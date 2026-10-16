@@ -1654,3 +1654,21 @@ subtree; cached counts and links are preserved throughout. The ranking measure
 is the actual context depth, reduced by two on the continuing path. This covers
 a single flip followed by a black-parent exit, not repeated flips through red
 ancestors or non-root rotations.
+
+
+`rbtree_size_change_child.click` now checks the insertion translation unit's
+`__rb_change_child` helper using a file-qualified contract. It replaces a
+root, left-parent, or right-parent incoming link while retaining the exact
+owned `SizedContext`, every ancestor cache, the old focus cache, and the old
+focus parent/color word. A nonempty sibling is separated using its existing
+ownership. This supplies the sized incoming-link interface for non-root
+rotations.
+
+
+`rbtree_size_rotate_set_parents.click` also checks the selected insertion
+helper for root, left-parent, and right-parent contexts. It transfers the old
+packed parent/color word to the promoted node, sets the demoted node's new
+parent/color word, and calls the checked sized incoming-link helper. The
+ancestor model and caches and the demoted node's cache are preserved. Full
+non-root insertion must still compose this helper with the writable rotation
+callback and whole-context restoration.

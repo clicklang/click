@@ -154,3 +154,27 @@ fn trace_source_index_indexes_many_case_arms() {
         );
     }
 }
+
+#[test]
+fn qualified_c_declaration_inventory_scales_with_source() {
+    let mut measurements = Vec::new();
+    for size in [8, 32, 128, 512] {
+        let mut source = String::new();
+        for index in 0..size {
+            source.push_str(&format!("verifying \"unit{index}.c\" as unit{index};\nint32 unit{index}::helper() {{ ensures result == 1; }} by {{ execute(); simp(); }}\n"));
+        }
+        let tokens = scan_source_tokens(&source).unwrap();
+        let (declarations, work) = crate::instrumentation::measure_deterministic_work(|| {
+            declaration_source_index(&tokens).unwrap()
+        });
+        assert_eq!(declarations.len(), size);
+        assert!(declarations.contains_key(&format!("unit{}::helper", size - 1)));
+        measurements.push(work);
+    }
+    for pair in measurements.windows(2) {
+        assert!(
+            pair[1] <= 5 * pair[0],
+            "qualified declaration index must walk source once: {measurements:?}"
+        );
+    }
+}

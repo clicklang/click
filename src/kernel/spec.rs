@@ -8214,6 +8214,40 @@ pub(super) fn symbolic_spec_range_fold_value(
     )))
 }
 
+/// Turn a compound scalar guard into one existing condition without changing
+/// its meaning under ambient facts. Each logical node owns its children once;
+/// the selected value's arms are not copied through the guard tree.
+fn compound_spec_value_condition(proposition: &Proposition) -> Option<(ConditionTerm, bool)> {
+    crate::instrumentation::record_deterministic_work(1);
+    let (left, right, conjunction) = match proposition {
+        Proposition::And(left, right) => (left.as_ref(), right.as_ref(), true),
+        Proposition::Or(left, right) => (left.as_ref(), right.as_ref(), false),
+        Proposition::Not(body) => {
+            let (condition, expected) = compound_spec_value_condition(body)?;
+            return Some((condition, !expected));
+        }
+        _ => return proposition_as_single_condition(proposition),
+    };
+    let (left, left_expected) = compound_spec_value_condition(left)?;
+    let (right, right_expected) = compound_spec_value_condition(right)?;
+    let right_value = Bitvector32Term::if_then_else(
+        right,
+        Bitvector32Term::Constant(u32::from(right_expected)),
+        Bitvector32Term::Constant(u32::from(!right_expected)),
+    );
+    let constant = Bitvector32Term::Constant(u32::from(!conjunction));
+    let (then_term, else_term) = if conjunction == left_expected {
+        (right_value, constant)
+    } else {
+        (constant, right_value)
+    };
+    let value = Bitvector32Term::if_then_else(left, then_term, else_term);
+    Some((
+        ConditionTerm::equal(value, Bitvector32Term::Constant(1)),
+        true,
+    ))
+}
+
 pub(super) fn conditional_spec_value(
     proposition: &Proposition,
     then_value: CValue,
@@ -8222,7 +8256,8 @@ pub(super) fn conditional_spec_value(
     if then_value == else_value {
         return Some(then_value);
     }
-    let (condition, expected) = proposition_as_single_condition(proposition)?;
+    let (condition, expected) = proposition_as_single_condition(proposition)
+        .or_else(|| compound_spec_value_condition(proposition))?;
     // A `bool` conditional of two `bool` values selects one of them, so its
     // leaves stay exactly `0` or `1`.
     let (then_term, else_term, rebuild): (_, _, fn(Bitvector32Term) -> CValue) =
@@ -10395,5 +10430,49 @@ mod integer_truncation_tests {
     #[cfg(test)]
     mod scaling_tests {
         include!("../scaling_tests/kernel/spec/integer_truncation_tests.rs");
+    }
+}
+
+#[cfg(test)]
+mod compound_conditional_tests {
+    use super::*;
+
+    #[test]
+    fn compound_guards_select_exact_values_and_keep_unknowns_undecided() {
+        let a = ConditionTerm::Variable(Variable(701));
+        let b = ConditionTerm::Variable(Variable(702));
+        for conjunction in [false, true] {
+            let left = Box::new(Proposition::ConditionIs(a.clone(), true));
+            let right = Box::new(Proposition::ConditionIs(b.clone(), false));
+            let guard = if conjunction {
+                Proposition::And(left, right)
+            } else {
+                Proposition::Or(left, right)
+            };
+            let value = conditional_spec_value(&guard, int32(7), int32(9)).unwrap();
+            let CValue::Int32(bits) = value else {
+                panic!("int32 conditional");
+            };
+            let is_seven = ConditionTerm::equal(bits, Bitvector32Term::Constant(7));
+            assert_eq!(PureFactContext::new().decide(&is_seven), None);
+            for left in [false, true] {
+                for right in [false, true] {
+                    let facts = PureFactContext::new()
+                        .assume_proposition(Proposition::ConditionIs(a.clone(), left))
+                        .assume_proposition(Proposition::ConditionIs(b.clone(), right));
+                    let expected = if conjunction {
+                        left && !right
+                    } else {
+                        left || !right
+                    };
+                    assert_eq!(facts.decide(&is_seven), Some(expected));
+                }
+            }
+        }
+    }
+
+    #[cfg(test)]
+    mod scaling_tests {
+        include!("../scaling_tests/kernel/spec/compound_conditional_tests.rs");
     }
 }

@@ -205,6 +205,7 @@ impl Parser {
         };
         Ok(ParsedFunctionSignature {
             signature: FunctionSignature {
+                c_source: None,
                 return_type,
                 return_pointee_constant: false,
                 return_reference: false,
