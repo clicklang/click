@@ -7,7 +7,10 @@ Click specs.
 
 - `src/kernel/`: proof terms, C semantics, assumptions, symbolic execution,
   and theorem-producing functions.
-- `src/languages/c/syntax.rs`: C parser and lowering to kernel C terms.
+- `src/languages/c/syntax.rs`: C parser and lowering to kernel C terms. The
+  parser's global declarations, type declarations and initializers are in
+  `syntax/global_declarations.rs`, `syntax/type_declarations.rs` and
+  `syntax/initializers.rs`.
 - `src/surface.rs` and `src/surface/`: Click parser (`parser.rs`, `parser/`),
   validation (`validation/`), lowering (`lowering/`), tactics, and proof
   orchestration.
