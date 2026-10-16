@@ -322,7 +322,8 @@ still needs the writable callback and whole-context restoration.
 `rbtree_size_insert_context_rotation.click` composes the checked parent-update
 helper and writable size callback for a left-left insertion rotation under an
 arbitrary owned ancestor context. The unchanged C and both augmented insertion
-wrappers return the repaired three-node subtree and the same outer context,
-including its ancestor caches. Its retained-session expansion is a nightly
-regression for call-frame address matching. Refolding that pair into the whole
-root tree remains the next step.
+wrappers return ownership of the whole root tree after refolding the repaired
+three-node subtree through the preserved ancestor context. The postcondition
+identifies its model with `sized_plug` and retains the subtree's exact rotated
+shape. Its retained-session expansion is a nightly regression for call-frame
+address matching. The other non-root rotation shapes remain.
