@@ -101,8 +101,13 @@ Kernel files:
   Its children hold self-contained parts: `authority_contracts.rs` (calls
   whose contracts touch populations, mutexes and authority resources),
   `contract_refinement.rs` (whether an interface refines a named contract),
-  `globals_and_aggregates.rs` (entry storage and aggregate values) and
-  `resource_clause_worklist.rs` (the indexes that order resource clauses).
+  `named_contract_refinement.rs` and `refinement_side_conditions.rs` (checking
+  a function against a named contract), `call_arguments.rs` (binding and
+  coercing a call's arguments and result), `globals_and_aggregates.rs` (entry
+  storage and aggregate values), `composite_expansion.rs` (composite resources
+  and their member facts), `instance_case_selection.rs` (which case of a
+  matched resource instance applies) and `resource_clause_worklist.rs` (the
+  indexes that order resource clauses).
 - `tests.rs`: kernel unit tests.
 
 ## Trusted shape
