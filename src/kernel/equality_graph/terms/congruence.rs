@@ -65,15 +65,15 @@ impl TermClasses {
     }
 
     fn intern_typed_machine(&mut self, term: &T, width: W) -> u64 {
-        self.intern_expression(Some((term, width)), None, None)
+        self.intern_expression(Some((term, width)), None, None, None)
     }
 
     pub(super) fn intern_algebraic(&mut self, term: &crate::kernel::AlgebraicTerm) -> u64 {
-        self.intern_expression(None, Some(term), None)
+        self.intern_expression(None, Some(term), None, None)
     }
 
     pub(super) fn intern_integer(&mut self, term: &crate::kernel::IntegerTerm) -> u64 {
-        self.intern_expression(None, None, Some(term))
+        self.intern_expression(None, None, Some(term), None)
     }
 
     pub(in crate::kernel::equality_graph) fn add_integer_equality(
@@ -98,11 +98,16 @@ impl TermClasses {
         self.root(a) == self.root(b)
     }
 
+    pub(super) fn intern_pointer_call(&mut self, application: &SharedPureApplication) -> u64 {
+        self.intern_expression(None, None, None, Some(application))
+    }
+
     fn intern_expression(
         &mut self,
         machine: Option<(&T, W)>,
         algebraic: Option<&crate::kernel::AlgebraicTerm>,
         integer: Option<&crate::kernel::IntegerTerm>,
+        pointer_call: Option<&SharedPureApplication>,
     ) -> u64 {
         enum Binary {
             Int32Add,
@@ -110,6 +115,7 @@ impl TermClasses {
             UInt64(UInt64Binary),
         }
         enum Work<'a> {
+            PointerCall(&'a SharedPureApplication),
             Algebraic(&'a crate::kernel::AlgebraicTerm),
             Integer(&'a crate::kernel::IntegerTerm),
             RememberInteger(crate::kernel::SharedIntegerTerm),
@@ -127,6 +133,8 @@ impl TermClasses {
             vec![Work::Machine(term, width)]
         } else if let Some(term) = integer {
             vec![Work::Integer(term)]
+        } else if let Some(call) = pointer_call {
+            vec![Work::PointerCall(call)]
         } else {
             vec![Work::Algebraic(algebraic.expect("expression"))]
         };
@@ -152,6 +160,15 @@ impl TermClasses {
                 _ => None,
             };
             let node = match work {
+                Work::PointerCall(application) => {
+                    let symbol =
+                        SharedPureApplication::intern(application.name().to_owned(), vec![]);
+                    let head = self
+                        .intern_node(Node::PointerFunction(symbol, application.arguments().len()));
+                    pending.push(Work::Call(head, application.arguments().len()));
+                    pending.extend(application.arguments().iter().rev().map(Work::Argument));
+                    continue;
+                }
                 Work::OpaqueCount(term) => {
                     values.push(self.opaque_argument(&A::Value(CValue::UInt64(term.clone()))));
                     continue;
