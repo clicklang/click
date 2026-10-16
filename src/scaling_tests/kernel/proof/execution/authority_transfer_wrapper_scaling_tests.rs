@@ -7,12 +7,19 @@ use super::*;
 #[test]
 #[ignore = "nightly: 6s in the parallel gate"]
 fn ordinary_authority_wrapper_checks_only_its_delta() {
+    // An ordinary wrapper around an authorized member reaches population
+    // accounting and must authenticate its exchange. A wrapper around a
+    // plain token instead keeps the ordinary definition law: its recorded
+    // successor comes from the fold/unfold producer, not arbitrary test input.
+    let member_definition =
+        CCompositeResourceDefinition::new("member", vec![], None, false, vec![], vec![])
+            .with_authorized(true);
     let definition = CCompositeResourceDefinition::new(
         "held",
         vec![],
         None,
         false,
-        vec![CResourceSpec::token(
+        vec![CResourceSpec::composite(
             CResourceAccessMode::Own,
             "member".into(),
             vec![],
@@ -26,9 +33,14 @@ fn ordinary_authority_wrapper_checks_only_its_delta() {
         vec![],
         CStatement::Return(CExpression::Value(CValue::Void)),
     )
-    .with_composite_resource_definitions(vec![definition]);
+    .with_composite_resource_definitions(vec![definition, member_definition]);
+    let wrapper = function
+        .proof_composite_resource_definition("held")
+        .unwrap();
+    assert!(!wrapper.is_authorized());
+    assert!(wrapper.reaches_population());
     let selected = CResourceFact::own_composite("held".into(), vec![]);
-    let child = CResourceFact::own_token("member".into(), vec![]);
+    let child = CResourceFact::own_composite("member".into(), vec![]);
     let samples = [64usize, 256, 1024].map(|size| {
         let mut before = CState::new().with_population_creation_tracking();
         let mut facts = ProofFacts::default();

@@ -102,12 +102,12 @@ theorem sized_context_depth_nonnegative(ctx: SizedContext) {
             SizedContext::Left(node, parent, color, value, sibling, up) => {
                 apply(ih(up));
                 unfold(sized_context_depth(SizedContext::Left(node, parent, color, value, sibling, up)));
-                arithmetic() using { 0 <= sized_context_depth(up); }
+                arithmetic() using { 0 <= sized_context_depth(up); };
             },
             SizedContext::Right(node, parent, color, value, sibling, up) => {
                 apply(ih(up));
                 unfold(sized_context_depth(SizedContext::Right(node, parent, color, value, sibling, up)));
-                arithmetic() using { 0 <= sized_context_depth(up); }
+                arithmetic() using { 0 <= sized_context_depth(up); };
             },
         }
     }
@@ -127,13 +127,13 @@ theorem sized_context_early_stop(ctx: SizedContext, sub: SizedTree, previous: in
             },
             SizedContext::Left(node, parent, color, value, sibling, up) => {
                 unfold(sized_context_valid(SizedContext::Left(node, parent, color, value, sibling, up), to_integer(previous)));
-                have to_integer(value) == 1 + to_integer(previous) + to_integer(sized_value(sibling)) by auto;
-                have sized_counts_valid(sibling) == 1 by auto;
-                have sized_context_valid(up, to_integer(value)) == 1 by auto;
+                have to_integer(value) == 1 + to_integer(previous) + to_integer(sized_value(sibling)) by auto();
+                have sized_counts_valid(sibling) == 1 by auto();
+                have sized_context_valid(up, to_integer(value)) == 1 by auto();
                 have sized_counts_valid(SizedTree::Node(node, parent, color, value, sub, sibling)) == 1 by {
                     unfold(sized_counts_valid(SizedTree::Node(node, parent, color, value, sub, sibling)));
                     rewrite(sized_value(sub) == previous);
-                    normalize() using { to_integer(value) == 1 + to_integer(previous) + to_integer(sized_value(sibling)); sized_counts_valid(sub) == 1; sized_counts_valid(sibling) == 1; }
+                    normalize() using { to_integer(value) == 1 + to_integer(previous) + to_integer(sized_value(sibling)); sized_counts_valid(sub) == 1; sized_counts_valid(sibling) == 1; };
                 }
                 have sized_value(SizedTree::Node(node, parent, color, value, sub, sibling)) == value by {
                     unfold(sized_value(SizedTree::Node(node, parent, color, value, sub, sibling))); normalize();
@@ -144,13 +144,13 @@ theorem sized_context_early_stop(ctx: SizedContext, sub: SizedTree, previous: in
             },
             SizedContext::Right(node, parent, color, value, sibling, up) => {
                 unfold(sized_context_valid(SizedContext::Right(node, parent, color, value, sibling, up), to_integer(previous)));
-                have to_integer(value) == 1 + to_integer(sized_value(sibling)) + to_integer(previous) by auto;
-                have sized_counts_valid(sibling) == 1 by auto;
-                have sized_context_valid(up, to_integer(value)) == 1 by auto;
+                have to_integer(value) == 1 + to_integer(sized_value(sibling)) + to_integer(previous) by auto();
+                have sized_counts_valid(sibling) == 1 by auto();
+                have sized_context_valid(up, to_integer(value)) == 1 by auto();
                 have sized_counts_valid(SizedTree::Node(node, parent, color, value, sibling, sub)) == 1 by {
                     unfold(sized_counts_valid(SizedTree::Node(node, parent, color, value, sibling, sub)));
                     rewrite(sized_value(sub) == previous);
-                    normalize() using { to_integer(value) == 1 + to_integer(sized_value(sibling)) + to_integer(previous); sized_counts_valid(sub) == 1; sized_counts_valid(sibling) == 1; }
+                    normalize() using { to_integer(value) == 1 + to_integer(sized_value(sibling)) + to_integer(previous); sized_counts_valid(sub) == 1; sized_counts_valid(sibling) == 1; };
                 }
                 have sized_value(SizedTree::Node(node, parent, color, value, sibling, sub)) == value by {
                     unfold(sized_value(SizedTree::Node(node, parent, color, value, sibling, sub))); normalize();
@@ -177,14 +177,14 @@ theorem sized_plug_contains_focus(ctx: SizedContext, sub: SizedTree) {
                 have rb_subtree_size(sized_shape(sub)) <= rb_subtree_size(sized_shape(SizedTree::Node(node, parent, color, value, sub, sibling))) by {
                     unfold(sized_shape(SizedTree::Node(node, parent, color, value, sub, sibling)));
                     unfold(rb_subtree_size(RbTree::Node(node, parent, color, sized_shape(sub), sized_shape(sibling))));
-                    arithmetic() using { rb_subtree_size(sized_shape(sibling)) >= 0; }
+                    arithmetic() using { rb_subtree_size(sized_shape(sibling)) >= 0; };
                 }
                 apply(ih(up, SizedTree::Node(node, parent, color, value, sub, sibling)));
                 have rb_subtree_size(sized_shape(sub)) <= rb_subtree_size(sized_shape(sized_plug(up, SizedTree::Node(node, parent, color, value, sub, sibling)))) by {
                     arithmetic() using {
                         rb_subtree_size(sized_shape(sub)) <= rb_subtree_size(sized_shape(SizedTree::Node(node, parent, color, value, sub, sibling)));
                         rb_subtree_size(sized_shape(SizedTree::Node(node, parent, color, value, sub, sibling))) <= rb_subtree_size(sized_shape(sized_plug(up, SizedTree::Node(node, parent, color, value, sub, sibling))));
-                    }
+                    };
                 }
                 unfold(sized_plug(SizedContext::Left(node, parent, color, value, sibling, up), sub));
                 assumption();
@@ -194,14 +194,14 @@ theorem sized_plug_contains_focus(ctx: SizedContext, sub: SizedTree) {
                 have rb_subtree_size(sized_shape(sub)) <= rb_subtree_size(sized_shape(SizedTree::Node(node, parent, color, value, sibling, sub))) by {
                     unfold(sized_shape(SizedTree::Node(node, parent, color, value, sibling, sub)));
                     unfold(rb_subtree_size(RbTree::Node(node, parent, color, sized_shape(sibling), sized_shape(sub))));
-                    arithmetic() using { rb_subtree_size(sized_shape(sibling)) >= 0; }
+                    arithmetic() using { rb_subtree_size(sized_shape(sibling)) >= 0; };
                 }
                 apply(ih(up, SizedTree::Node(node, parent, color, value, sibling, sub)));
                 have rb_subtree_size(sized_shape(sub)) <= rb_subtree_size(sized_shape(sized_plug(up, SizedTree::Node(node, parent, color, value, sibling, sub)))) by {
                     arithmetic() using {
                         rb_subtree_size(sized_shape(sub)) <= rb_subtree_size(sized_shape(SizedTree::Node(node, parent, color, value, sibling, sub)));
                         rb_subtree_size(sized_shape(SizedTree::Node(node, parent, color, value, sibling, sub))) <= rb_subtree_size(sized_shape(sized_plug(up, SizedTree::Node(node, parent, color, value, sibling, sub))));
-                    }
+                    };
                 }
                 unfold(sized_plug(SizedContext::Right(node, parent, color, value, sibling, up), sub));
                 assumption();

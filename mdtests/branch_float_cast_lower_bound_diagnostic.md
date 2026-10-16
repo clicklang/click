@@ -16,7 +16,7 @@ int32 positive(double d) {
     requires isfinite(d);
     ensures result >= 0;
 } by {
-    branch then { step(); simp(); } else {}
+    branch { step(); simp(); } else {}
     step();
     simp();
 }

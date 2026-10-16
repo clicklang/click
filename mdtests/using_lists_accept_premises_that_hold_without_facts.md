@@ -46,7 +46,7 @@ function icount(p: int32[], lo: int32, hi: int32) -> Integer {
 theorem start_below(lo: int32, n: int32) {
     requires 0 <= lo;
     requires lo <= n;
-    ensures 0 <= n by simp;
+    ensures 0 <= n by simp();
 }
 
 theorem last_cell(a: int32[], n: int32) {
@@ -58,7 +58,7 @@ theorem last_cell(a: int32[], n: int32) {
         instantiate(forall (k: int32) { 0 <= k and k <= n implies a[k] == 0 }, n) using {
             0 <= n;
             n <= n;
-        }
+        };
         assumption();
     }
 }
@@ -66,7 +66,7 @@ theorem last_cell(a: int32[], n: int32) {
 theorem listed_arithmetic(n: int32) {
     requires 0 <= n;
     ensures 0 <= n by {
-        arithmetic() using { 0 <= n; n <= n; 0 <= 0; }
+        arithmetic() using { 0 <= n; n <= n; 0 <= 0; };
     }
 }
 
@@ -76,7 +76,7 @@ void empty_prefix(int32 a[], int32 n) {
 } by {
     step();
     have icount(a, 0, 0) == 0 by {
-        peel(icount(a, 0, 0)) using { 0 <= 0; }
+        peel(icount(a, 0, 0)) using { 0 <= 0; };
         normalize();
     }
     execute();
@@ -89,7 +89,7 @@ void empty_suffix(int32 a[], int32 n) {
 } by {
     step();
     have icount(a, n, n) == 0 by {
-        peel(icount(a, n, n)) using { n <= n; }
+        peel(icount(a, n, n)) using { n <= n; };
         normalize();
     }
     execute();
@@ -104,19 +104,19 @@ int32 probe(int32 n) {
     apply(start_below(n, n)) using {
         0 <= n;
         n <= n;
-    }
+    };
     simp();
 }
 
 int32 span(int32 lo, int32 hi) {
     requires lo <= hi;
     requires 0 <= lo;
-    ensures result == hi - lo by auto;
+    ensures result == hi - lo by auto();
 }
 
 int32 call_span(int32 n) {
     requires 0 <= n;
-    ensures result == 0 by auto;
+    ensures result == 0 by auto();
 }
 ```
 

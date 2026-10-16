@@ -45,7 +45,7 @@ struct packet finish(struct packet value) {
     ensures result.length == 7;
     ensures result.data == value.data;
 } by {
-    auto;
+    auto();
 }
 
 int32 run_struct_by_value_pointer() {

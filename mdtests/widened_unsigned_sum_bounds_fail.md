@@ -19,7 +19,7 @@ int64 add_byte(uint32 sum, uint8 byte) {
 } by {
     execute();
     have result <= 4294967294i64 by {
-        simp() using { ((uint32)byte) <= 255u32; sum <= 4294967040u32; }
+        simp() using { ((uint32)byte) <= 255u32; sum <= 4294967040u32; };
     }
     simp();
 }

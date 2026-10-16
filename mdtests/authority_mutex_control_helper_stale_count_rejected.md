@@ -65,7 +65,7 @@ int32 run() {
 } by {
     step();
     step();
-    branch then { step(); simp(); } else {}
+    branch { step(); simp(); } else {}
     step();
     fold(authority(reference(obj)));
     let control = fold(control(obj), { refs: 0 });
@@ -78,8 +78,8 @@ int32 run() {
     step(release(obj), { access: lifetime, guard: first, state: retained });
     let { guard: second, state: reentered } = step(acquire(obj), { access: lifetime });
     unfold(reentered);
-    have count(reference(obj)) == 0 by simp;
-    have count(reference(obj)) == 1 by simp;
+    have count(reference(obj)) == 0 by simp();
+    have count(reference(obj)) == 1 by simp();
     unfold(reference(obj));
     step();
     let released = fold(control(obj), { refs: 0 });

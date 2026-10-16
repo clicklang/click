@@ -55,7 +55,7 @@ theorem decrement_is_decrease() {
             } and {
                 apply(int32_positive_predecessor_strictly_decreases(old(*cell))) using {
                     0 < old(*cell);
-                }
+                };
             }
         }
     }

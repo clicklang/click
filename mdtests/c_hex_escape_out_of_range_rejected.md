@@ -10,7 +10,7 @@ int32 value(void) {
 verifying "c_hex_escape_out_of_range_rejected.c";
 
 int32 value() {
-    ensures true by auto;
+    ensures true by auto();
 }
 ```
 

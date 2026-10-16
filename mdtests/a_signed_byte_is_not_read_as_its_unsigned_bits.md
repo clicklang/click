@@ -10,7 +10,7 @@ int minus_one(void) { signed char x = -1; return x; }
 ```click
 verifying "signed_byte_bits.c";
 
-int minus_one() { ensures result == 255 by auto; }
+int minus_one() { ensures result == 255 by auto(); }
 ```
 
 ```expect

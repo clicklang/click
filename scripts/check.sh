@@ -278,8 +278,18 @@ fi
 # standalone binary), so `--bin click` runs every command's tests once.
 if [[ -n "$ci_artifacts" ]]; then
     mkdir -p "$ci_artifacts"
-    cargo nextest archive "${unit_targets[@]}" --test mdtests \
-        --archive-file "$ci_artifacts/tests.tar.zst"
+    # CI restores `master`'s incremental state. rustc 1.98.1 can panic
+    # reusing it ("encountered incremental compilation error with
+    # evaluate_obligation") after a change to an auto-trait's inputs, and
+    # does so on every retry. Clearing the incremental state and building
+    # once more removes that failure; a real compile error fails again.
+    if ! cargo nextest archive "${unit_targets[@]}" --test mdtests \
+        --archive-file "$ci_artifacts/tests.tar.zst"; then
+        echo "warning: build failed; retrying without the restored incremental state" >&2
+        rm -rf "${CARGO_TARGET_DIR:-target}/debug/incremental"
+        cargo nextest archive "${unit_targets[@]}" --test mdtests \
+            --archive-file "$ci_artifacts/tests.tar.zst"
+    fi
     tar -cf "$ci_artifacts/exporter.tar" \
         -C "$(dirname "$CLICK_CPP_EXPORTER")" "$(basename "$CLICK_CPP_EXPORTER")"
     mkdir -p "$ci_artifacts/rust"

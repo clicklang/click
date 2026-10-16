@@ -21,10 +21,18 @@ block comment is a syntax error. `#` does not start a comment and is refused
 with the `//` spelling. Comments preserve source locations and are ignored when
 loading imports or selecting proof steps.
 
-Integer literals are decimal. Character literals use single quotes, including
+Integer literals are decimal in the default grammar. Rust sidecars also accept
+radix prefixes, underscore separators, and the suffixes described under
+[Rust integer literals](../rust.md#integer-literals).
+Character literals use single quotes, including
 the ordinary C escapes accepted by the parser. String literals occur in source
 locations and other explicitly documented string positions; Click doesn't
 have a first-class string type.
+
+Call-style proof tactics require parentheses, including the no-argument
+calls `simp()` and `auto()`. A single tactic call can follow `by` directly;
+braces enclose a sequence and may also enclose one call. `auto()` is
+whole-proof automation, written `by auto();` or `by { auto(); }`.
 
 ## Word index
 
@@ -469,9 +477,15 @@ change the proposition or expression it denotes.
 
 ## Proof syntax
 
-A proof is omitted, written `by auto`, or written as a `by { ... }` block of
-tactic statements. Tactic arguments use the expression and proposition forms
-documented for that tactic. The exhaustive surface-spelling inventory is in
+Binary proof splits follow one rule: `then` appears exactly when there is an
+`ensuring` interface. Write `if P { ... } else { ... }` or
+`branch { ... } else { ... }` without an interface, and
+`if P ensuring { ... } then { ... } else { ... }` or
+`branch ensuring { ... } then { ... } else { ... }` with one.
+
+A proof is omitted, written as a single tactic call such as `by auto();` or
+`by simp();`, or written as a `by { ... }` block of tactic statements. Tactic
+arguments use the expression and proposition forms documented for that tactic. The exhaustive surface-spelling inventory is in
 [Tactics](../tactics/index.md).
 
 One tactic carries syntax beyond an argument list. A `step` on an ordinary C
@@ -488,10 +502,10 @@ binder-map     := "{" (identifier ":" identifier
                    ("," identifier ":" identifier)* ","?)? "}"
 step-proof     := ";" | "by" proof-body | "{" requires-entry+ "}"
 requires-entry := "requires" (identifier ":")? proposition "by" proof-body
-proof-body     := tactic-call ";" | "simp" ";" | "{" tactic-statement+ "}"
+proof-body     := tactic-call ";" | "{" tactic-statement+ "}"
 ```
 
-Omitting a proof and writing `by auto` request smart proof construction. Smart
+Omitting a proof and writing `by auto()` request smart proof construction. Smart
 search can advance proof state only through checked operations. Use
 [`click expand`](../cli/expand.md) to replace expandable smart proof sites with
 the corresponding explicit proof steps; Click verifies the complete rewritten

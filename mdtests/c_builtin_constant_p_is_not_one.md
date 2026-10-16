@@ -14,7 +14,7 @@ int32 flag(int32 value) {
 verifying "c_builtin_constant_p_is_not_one.c";
 
 int32 flag(int32 value) {
-    ensures result == 1 by auto;
+    ensures result == 1 by auto();
 }
 ```
 

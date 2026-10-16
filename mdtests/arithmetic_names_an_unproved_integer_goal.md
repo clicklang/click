@@ -15,7 +15,7 @@ theorem unentailed_integer_successor(x: Integer, y: Integer, z: Integer, n: int3
         arithmetic() using {
             x == y + 1;
             0 < n;
-        }
+        };
     }
 }
 ```

@@ -35,11 +35,11 @@ impl Parser {
         self.expect(Token::LParen)?;
         let mut parameters = Vec::new();
         let mut struct_params = BTreeMap::new();
-        // A method is the function `Type_name`, and its receiver is the
-        // first parameter, a pointer to the type named `self`.
+        // The importer encodes a method's receiver type and declaration path
+        // in its identity. Its receiver is the first parameter, named `self`.
         let name = match self.rust_impl_type.clone() {
-            // A crate trait's method takes a reference to a value of a type
-            // it does not know, so its contract reads nothing through it.
+            // A trait interface does not know the receiver's concrete fields.
+            // Declared object state is handled by `rewrite_trait_objects`.
             None if let Some(interface) = self.rust_trait_interface.clone() => {
                 let Some(mut receiver) = self.parse_rust_receiver("")? else {
                     return Err(

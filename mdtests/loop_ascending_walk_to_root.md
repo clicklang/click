@@ -154,7 +154,7 @@ struct tree_node* tree_root_of(struct tree_node* node, struct tree_node* parent)
         invariant t.model != HeapTree::Empty;
         invariant plug(c.model, t.model) == plug(old(c.model), old(t.model));
 
-        initialize by simp;
+        initialize by simp();
         preserve by {
             match c.model {
                 Context::Top => { contradiction(c.model == Context::Top); },

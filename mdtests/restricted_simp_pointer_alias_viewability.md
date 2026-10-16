@@ -46,7 +46,7 @@ int32 alias_value(
             original[0] == value;
             alias == original;
             index == 0;
-        }
+        };
     }
     fold(valued_array(original, length, value));
     simp();

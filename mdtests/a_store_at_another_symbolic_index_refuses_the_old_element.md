@@ -24,7 +24,7 @@ int32 overwrite_then_read(int32 i, int32 j) {
     requires 0 <= j;
     requires j < 4;
     owns words[0..4];
-    ensures result == old(words[i]) by auto;
+    ensures result == old(words[i]) by auto();
 }
 ```
 

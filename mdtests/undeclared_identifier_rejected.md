@@ -14,7 +14,7 @@ int32 undeclared_identifier_rejected(int32 x) {
 verifying "undeclared_identifier_rejected.c";
 
 int32 undeclared_identifier_rejected(int32 x) {
-    ensures true by auto;
+    ensures true by auto();
 }
 ```
 

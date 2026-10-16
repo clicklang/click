@@ -30,8 +30,8 @@ int32 after(int32 x) {
 verifying "execute_splits_a_throwing_call_inside_a_c_if.c";
 
 int32 helper(int32 x) throws int32 {
-    ensures result == x by auto;
-    exceptional ensures exception == 7 by auto;
+    ensures result == x by auto();
+    exceptional ensures exception == 7 by auto();
 }
 
 int32 inside(int32 x) throws int32 {

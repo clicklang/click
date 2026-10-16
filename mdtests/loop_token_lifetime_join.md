@@ -29,7 +29,7 @@ verifying "take_token.c";
 
 int32 take_token(int32* p) {
     consumes can_complete(p);
-    ensures result == 0 by auto;
+    ensures result == 0 by auto();
 }
 
 int32 loop_token_lifetime_join(int32* p) {

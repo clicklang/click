@@ -41,7 +41,7 @@ int32 wait_while_nonzero(int32 flag[]) diverges {
 
 int32 call_wait(int32 flag[]) diverges {
     views flag[0..1];
-    ensures result == 0 by auto;
+    ensures result == 0 by auto();
 }
 ```
 

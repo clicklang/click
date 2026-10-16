@@ -61,7 +61,7 @@ theorem preserving_used_preserves_available(
 void keep_used(int32 available, int32 used) {
     requires 0 <= used;
     owns used of credit();
-} by auto;
+} by auto();
 
 void invoke_preserving(
     void (*callback)(int32, int32),
@@ -71,12 +71,12 @@ void invoke_preserving(
     requires PreserveAvailable(callback);
     requires 0 <= used and used <= available;
     owns available of credit();
-} by auto;
+} by auto();
 
 void concrete_quantity_caller(int32 available, int32 used) {
     requires 0 <= used and used <= available;
     owns available of credit();
-} by auto;
+} by auto();
 
 void abstract_quantity_caller(
     void (*callback)(int32, int32),

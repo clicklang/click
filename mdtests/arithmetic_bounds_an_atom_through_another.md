@@ -22,8 +22,8 @@ int32 gap(int32 n, int32 i) {
     requires i < n;
     ensures result == 0;
 } by {
-    have 1 <= n - i by { arithmetic() using { 0 <= i; i < n; } }
-    have n - i - 1 < n - i by { arithmetic() using { i >= 0; i < n; } }
+    have 1 <= n - i by { arithmetic() using { 0 <= i; i < n; }; }
+    have n - i - 1 < n - i by { arithmetic() using { i >= 0; i < n; }; }
     step();
     simp();
 }

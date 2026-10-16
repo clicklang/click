@@ -82,7 +82,7 @@ int32 caller(struct node* p, struct node* q) {
     step();
     step();
     step();
-    have next->value == 0 by simp;
+    have next->value == 0 by simp();
     fold(hop(p));
     let h = fold(holder(p, q), { tag: t }, { side: s });
     mark before;
@@ -92,9 +92,9 @@ int32 caller(struct node* p, struct node* q) {
         transport(
             at(before, next->value) == at(before, next->value),
             next->value == at(before, next->value)
-        ) using { }
+        ) using { };
     }
-    have next->value == 0 by simp;
+    have next->value == 0 by simp();
     unfold(hop(p));
     step();
     step();

@@ -79,12 +79,12 @@ verifying "c_decreases_checks_past_a_switch.c";
 
 int32 descends_past_a_switch(int32 n) {
     decreases n;
-    ensures result == 0 by auto;
+    ensures result == 0 by auto();
 }
 
 int32 spin_past_a_switch(int32 n) {
     decreases n;
-    ensures result == 0 by auto;
+    ensures result == 0 by auto();
 }
 ```
 

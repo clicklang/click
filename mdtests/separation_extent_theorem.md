@@ -11,7 +11,7 @@ theorem bounded_application(a: int32[], b: int32[], n: int32) {
     ensures 0 <= n by {
         apply(nonnegative(a, b, n)) using {
             separate(memory(a[0..n]), memory(b[0..1]));
-        }
+        };
     }
 }
 ```

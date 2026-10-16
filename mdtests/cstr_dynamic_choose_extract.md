@@ -51,7 +51,7 @@ uint64 read_terminator(uint8 bytes[]) {
                                 viewable(bytes[0..found_len + 1u64])
                             ) using {
                                 at(function.entry, viewable(bytes[0..found_len + 1u64]));
-                            }
+                            };
                         }
                     } and {
                         simp();
@@ -69,13 +69,13 @@ uint64 read_terminator(uint8 bytes[]) {
                     k < found_len + 1u64 implies defined(bytes[k])
                 }), k) using {
                     k < found_len + 1u64;
-                }
+                };
                 transport(
                     at(function.entry, defined(bytes[k])),
                     defined(bytes[k])
                 ) using {
                     at(function.entry, defined(bytes[k]));
-                }
+                };
             }
         }
         execute();

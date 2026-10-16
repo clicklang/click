@@ -41,11 +41,11 @@ verifying "state.c";
 verifying "reader.c";
 
 int32 read_shared() {
-    ensures result == 15 by auto;
+    ensures result == 15 by auto();
 }
 
 int32 run() {
-    ensures result == 15 by auto;
+    ensures result == 15 by auto();
 }
 ```
 

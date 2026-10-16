@@ -20,7 +20,7 @@ verifying "fill3_bad_memory.c";
 
 int32 fill3_bad_memory(int32* p) {
     consumes p[0..3];
-    ensures third: p[2] == 3 by auto;
+    ensures third: p[2] == 3 by auto();
 }
 ```
 

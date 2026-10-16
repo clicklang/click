@@ -12,7 +12,7 @@ theorem bounded_value(value: int32, limit: int32) {
     ensures 2 <= value by {
         instantiate(forall (k: int32) {
             0 <= k and k < limit implies k <= value
-        }, 2) using {}
+        }, 2) using {};
         assumption();
     }
 }

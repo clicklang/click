@@ -46,7 +46,7 @@ void spin(struct cell* node, int32 n) {
         invariant i <= n;
         invariant c.model == Maybe::Some(7);
 
-        initialize by simp;
+        initialize by simp();
         preserve by {
             step();
             close_invariants();

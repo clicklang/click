@@ -23,7 +23,7 @@ int32 sharpen(int32 a, int32 b) {
     requires b <= 1;
     ensures result == 0;
 } by {
-    have 0 < a + b by { arithmetic() using { a > 0; b >= 0; a <= 1; b <= 1; } }
+    have 0 < a + b by { arithmetic() using { a > 0; b >= 0; a <= 1; b <= 1; }; }
     step();
     simp();
 }

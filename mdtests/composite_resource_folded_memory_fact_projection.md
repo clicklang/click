@@ -18,9 +18,9 @@ resource zero_flag(flag: int32*) {
 verifying "noop_flag.c";
 
 int32 noop_flag(int32* flag) {
-    owns zero_flag(flag) by auto;
+    owns zero_flag(flag) by auto();
 
-    ensures flag[0] == 0 by auto;
+    ensures flag[0] == 0 by auto();
 }
 ```
 

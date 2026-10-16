@@ -41,7 +41,7 @@ int32 probe(int32 *cell) {
     owns cell[0..2];
     ensures result == 0 or result == 1;
     ensures result == 0 implies cell[0] == 0 and cell[1] == old(cell[0]);
-} by auto;
+} by auto();
 
 int32 use_probe(int32 *cell) {
     owns cell[0..2];

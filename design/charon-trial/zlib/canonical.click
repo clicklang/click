@@ -327,7 +327,7 @@ have viewable(buf[0u64..len]) by simp();
      }
      apply(uint64_to_integer_bounds(len));
      have to_integer(len) < at(before_decrement, to_integer(len)) by arithmetic() using { to_integer(len) == at(before_decrement, to_integer(len)) - 1; };
-     close_invariants by { simp(); }
+     close_invariants() by { simp(); }
     }
    }
   }
@@ -489,8 +489,8 @@ apply(zlib_seed_bounds(adler));
      have to_integer(sum2) == to_integer(at(loop(2).entry, sum2)) + to_integer(zlib_batch_count(n)) * to_integer(at(loop(2).entry, adler)) + adler_weighted_sum(at(loop(2).entry, buf), zlib_batch_count(n), zlib_batch_count(n)) by {
       rewrite(zlib_batch_count(n) == 0); rewrite(adler_weighted_sum(at(loop(2).entry, buf), 0, 0) == 0); normalize();
      }
-     have to_integer(adler) <= 65520 + 255 * to_integer(zlib_batch_count(n)) by { rewrite(zlib_batch_count(n) == 0); arithmetic() using { to_integer(adler) <= 65520; } }
-     have to_integer(sum2) <= 65520 + 1481280 * to_integer(zlib_batch_count(n)) by { rewrite(zlib_batch_count(n) == 0); arithmetic() using { to_integer(sum2) <= 65520; } }
+     have to_integer(adler) <= 65520 + 255 * to_integer(zlib_batch_count(n)) by { rewrite(zlib_batch_count(n) == 0); arithmetic() using { to_integer(adler) <= 65520; }; }
+     have to_integer(sum2) <= 65520 + 1481280 * to_integer(zlib_batch_count(n)) by { rewrite(zlib_batch_count(n) == 0); arithmetic() using { to_integer(sum2) <= 65520; }; }
      simp();
     }
     preserve by {
@@ -1241,7 +1241,7 @@ apply(zlib_seed_bounds(adler));
         16u64 * (uint64)n + len <= 9223372036854775807u64;
        };
       }
-      close_invariants by assumption();
+      close_invariants() by assumption();
      }
     }
    }
@@ -1335,7 +1335,7 @@ apply(zlib_seed_bounds(adler));
    };
    apply(uint64_to_integer_bounds(len));
    have to_integer(len) < at(batch_entry, to_integer(len)) by arithmetic() using { to_integer(len) == at(batch_entry, to_integer(len)) - 5552; };
-   close_invariants by assumption();
+   close_invariants() by assumption();
   }
 
  }
@@ -2054,7 +2054,7 @@ apply(zlib_seed_bounds(adler));
     zlib_prefix_count(old(len), len) == zlib_prefix_count(old(len), at(before_block, len)) + 16;
     old(buf) + (old(len) - len) == old(buf) + zlib_prefix_count(old(len), len);
    };
-   close_invariants by assumption();
+   close_invariants() by assumption();
   }
  }
  have len <= 15u64 by arithmetic() using { not (len >= 16u64); len <= at(loop(3).entry, len); at(loop(3).entry, len) <= 5551u64; };
@@ -2236,7 +2236,7 @@ apply(zlib_seed_bounds(adler));
      }
      apply(uint64_to_integer_bounds(len));
      have to_integer(len) < at(before_decrement, to_integer(len)) by arithmetic() using { to_integer(len) == at(before_decrement, to_integer(len)) - 1; };
-     close_invariants by assumption();
+     close_invariants() by assumption();
     }
    }
   }

@@ -18,7 +18,7 @@ verifying "branch_overshoot.c";
 int32 branch_overshoot(int32 x) {
     ensures result >= 0 by {
         step();
-        branch then {
+        branch {
             step();
             step();
         } else {

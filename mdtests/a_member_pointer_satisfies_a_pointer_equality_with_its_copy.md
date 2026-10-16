@@ -30,19 +30,19 @@ int32 update(struct holder *h, int32 *p) {
     views h->value;
     owns p[0..1];
     requires h->value == p;
-    ensures result == 7 by auto;
+    ensures result == 7 by auto();
 }
 int32 caller(struct Pair *pair, struct holder *h) {
     owns pair->first;
     owns pair->second;
     owns h->value;
-    ensures result == 7 by auto;
+    ensures result == 7 by auto();
 }
 int32 offset(struct Pair *pair, struct holder *h) {
     owns pair->first;
     owns pair->second;
     owns h->value;
-    ensures result == 7 by auto;
+    ensures result == 7 by auto();
 }
 ```
 

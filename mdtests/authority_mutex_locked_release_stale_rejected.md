@@ -54,7 +54,7 @@ int32 run() {
 } by {
     step();
     step();
-    branch then { step(); simp(); } else {}
+    branch { step(); simp(); } else {}
     step();
     fold(authority(reference(obj)));
     fold(reference(obj));
@@ -63,7 +63,7 @@ int32 run() {
     step(release(obj), { access: lifetime });
     step(pthread_mutex_destroy(&obj->mu), { lifetime: lifetime });
     unfold(control);
-    have obj->refs == 1 by simp;
+    have obj->refs == 1 by simp();
     unfold(authority(reference(obj)));
     step();
     step();

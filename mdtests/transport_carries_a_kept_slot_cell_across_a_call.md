@@ -59,7 +59,7 @@ void put(struct pool* pool, struct slot* s, int32 value) {
     have a + 1 <= e by {
         apply(int32_increment_upper_bound(a, e)) using {
             a < e;
-        }
+        };
     }
     have s->at == a by {
         assumption();
@@ -88,7 +88,7 @@ void two_puts(struct pool* pool, struct slot* first, struct slot* second) {
         transport(at(m1, pool->data[first->at]) == 11, pool->data[first->at] == 11) using {
             at(m1, pool->data[first->at]) == 11;
             pool->data == at(m1, pool->data);
-        }
+        };
     }
     execute();
     simp();

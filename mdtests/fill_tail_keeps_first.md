@@ -36,8 +36,8 @@ int32 fill_tail_keeps_first(int32 p[], int32 n) {
             transport(at(before_store, p[0]) == old(p[0]), p[0] == old(p[0])) using {
                 at(before_store, p[0]) == old(p[0]);
                 at(before_store, i) >= 1;
-            }
-            close_invariants by simp;
+            };
+            close_invariants() by simp();
         }
     }
     step();

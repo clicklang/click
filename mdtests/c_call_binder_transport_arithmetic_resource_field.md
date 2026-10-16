@@ -29,7 +29,7 @@ void caller(int32* state) {
 } by {
     step(increment(state), { first: c });
     have at(statement(0).exit, c.revision) < 1000 by {
-        arithmetic() using { c.revision == 1; }
+        arithmetic() using { c.revision == 1; };
     }
     execute();
     simp();

@@ -14,7 +14,7 @@ int32 run(int32 value) {
 verifying "c_unused_attribute_rejects_arguments.c";
 
 int32 run(int32 value) {
-    ensures result == value by auto;
+    ensures result == value by auto();
 }
 ```
 

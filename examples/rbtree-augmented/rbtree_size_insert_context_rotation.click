@@ -135,7 +135,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                 invariant state.phase == SizedInsertContextThreePhase::Before(g, p, above);
                 invariant old(state.phase) == SizedInsertContextThreePhase::Before(g, p, above);
                 invariant state.model == sized_context_three_before(g, p, node, above);
-                initialize by simp;
+                initialize by simp();
                 preserve by {
                     let { tree: loop_tree, link: link } = unfold(state);
                     unfold(sized_context_three_before(g, p, node, above));

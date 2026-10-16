@@ -51,7 +51,7 @@ theorem checked_integer_scaled_product_bounds(value: Integer, amount: Integer, s
                 conclusion 0;
             }
         }
-        arithmetic() using { lower * size <= lower * amount; lower * amount <= value * amount; }
+        arithmetic() using { lower * size <= lower * amount; lower * amount <= value * amount; };
     }
     ensures value * amount <= upper * size by {
         apply(integer_multiply_order_nonnegative(value, upper, amount));
@@ -63,7 +63,7 @@ theorem checked_integer_scaled_product_bounds(value: Integer, amount: Integer, s
                 conclusion 0;
             }
         }
-        arithmetic() using { value * amount <= upper * amount; upper * amount <= upper * size; }
+        arithmetic() using { value * amount <= upper * amount; upper * amount <= upper * size; };
     }
 }
 

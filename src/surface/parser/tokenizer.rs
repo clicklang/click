@@ -282,6 +282,23 @@ fn tokenize_impl<const SPANS: bool>(
             }
             ch if ch.is_ascii_digit() => {
                 let start = index;
+                let mut end = index;
+                while chars.get(end).is_some_and(|next| is_ident_continue(*next)) {
+                    end += 1;
+                }
+                let candidate: String = chars[start..end].iter().collect();
+                let suffix_start = candidate
+                    .find(|ch: char| !ch.is_ascii_digit())
+                    .unwrap_or(candidate.len());
+                let suffix = &candidate[suffix_start..];
+                if !matches!(suffix, "" | "u8" | "u32" | "i64" | "u64") {
+                    let literal = rust_literals::IntegerLiteral::parse(&candidate)
+                        .map_err(|message| ClickError::new(format!("{position}: {message}")))?;
+                    tokens.push(Token::RustInteger(std::sync::Arc::new(literal)));
+                    index = end;
+                    positions.push(position);
+                    continue;
+                }
                 while chars.get(index).is_some_and(|next| next.is_ascii_digit()) {
                     index += 1;
                 }
@@ -521,6 +538,7 @@ fn follows_operand(tokens: &[Token]) -> bool {
         tokens.last(),
         Some(
             Token::Ident(_)
+                | Token::RustInteger(_)
                 | Token::Number(_)
                 | Token::BigNumber(_)
                 | Token::UnsuffixedInt64(_)

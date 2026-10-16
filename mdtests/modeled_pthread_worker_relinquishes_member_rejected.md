@@ -32,7 +32,7 @@ int32 run(void* p) {
 } by {
     step();
     step();
-    branch then { unfold(ticket(p)); step(); simp(); } else {}
+    branch { unfold(ticket(p)); step(); simp(); } else {}
     step();
     step();
     simp();

@@ -8,9 +8,9 @@ theorem t(x: int32) {
     requires x == 5;
     ensures x == 5 by {
         have five: x == 5 by {
-            normalize() using { five; }
+            normalize() using { five; };
         }
-        normalize() using { five; }
+        normalize() using { five; };
     }
 }
 ```

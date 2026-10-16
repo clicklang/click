@@ -24,15 +24,15 @@ verifying "main.c";
 
 int64 twice(int64 value) {
     requires value >= 0 and value <= 100;
-    ensures result == value + value by auto;
+    ensures result == value + value by auto();
 }
 
 int64 apply(int64 (*callback)(int64), int64 value) {
-    ensures true by auto;
+    ensures true by auto();
 }
 
 int64 caller() {
-    ensures true by auto;
+    ensures true by auto();
 }
 ```
 

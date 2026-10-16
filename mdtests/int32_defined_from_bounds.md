@@ -154,7 +154,7 @@ int32 sum_by_listed_simp(int32 a, int32 b) {
         simp() using {
             a < 100;
             b == 1;
-        }
+        };
     }
     execute();
     simp();
@@ -169,7 +169,7 @@ int32 sum_by_arithmetic(int32 a, int32 b) {
         arithmetic() using {
             a < 100;
             b == 1;
-        }
+        };
     }
     execute();
     simp();

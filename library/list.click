@@ -120,7 +120,7 @@ theorem contains_append<T>(xs: List<T>, ys: List<T>, value: T) {
                     apply(list::contains_cons(head, tail, value));
                     rewrite(list::contains(List<T>::Cons(head, tail), value)
                         == if head == value { true } else { list::contains(tail, value) });
-                    normalize() using { head == value; }
+                    normalize() using { head == value; };
                 } else {
                     apply(list::contains_cons(head, list::append(tail, ys), value));
                     rewrite(list::contains(List<T>::Cons(head, list::append(tail, ys)), value)
@@ -130,7 +130,7 @@ theorem contains_append<T>(xs: List<T>, ys: List<T>, value: T) {
                         == if head == value { true } else { list::contains(tail, value) });
                     rewrite(list::contains(list::append(tail, ys), value)
                         == if list::contains(tail, value) { true } else { list::contains(ys, value) });
-                    normalize() using { not(head == value); }
+                    normalize() using { not(head == value); };
                 }
             }
         }

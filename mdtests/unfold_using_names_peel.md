@@ -13,7 +13,7 @@ theorem icount_empty(p: int32[], lo: int32, hi: int32) {
     ensures icount(p, lo, hi) == 0 by {
         unfold(icount(p, lo, hi)) using {
             hi <= lo;
-        }
+        };
         normalize();
     }
 }

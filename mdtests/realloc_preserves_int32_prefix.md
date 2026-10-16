@@ -28,7 +28,7 @@ int32 realloc_preserves_int32_prefix() {
 verifying "realloc_preserves_int32_prefix.c";
 
 int32 realloc_preserves_int32_prefix() {
-    ensures result == 0 or result == 7 by auto;
+    ensures result == 0 or result == 7 by auto();
 }
 ```
 

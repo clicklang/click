@@ -50,7 +50,7 @@ void mark(int32 *next, int32 *visited) {
                 0 <= k and k < 2 implies 0 <= next[k]
             });
             separate(memory(next[0..2]), memory(visited[0..1]));
-        }
+        };
         assumption();
     }
     have forall (k: int32) {
@@ -68,7 +68,7 @@ void mark(int32 *next, int32 *visited) {
                 0 <= k and k < 2 implies at(entry, next[k]) == at(entry, next[k])
             };
             separate(memory(next[0..2]), memory(visited[0..1]));
-        }
+        };
         assumption();
     }
     execute();

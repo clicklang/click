@@ -20,7 +20,7 @@ int32 read_past(int32 *x, int32 i, int32 j) {
     requires j < 1000;
     views x[0..(i + 1)];
     views x[j..(j + 1)];
-    ensures result == x[j + 1] by auto;
+    ensures result == x[j + 1] by auto();
 }
 ```
 

@@ -34,23 +34,23 @@ void clear(int32* values) {
         preserve by {
             step();
             step();
-            close_invariants by {
+            close_invariants() by {
                 both {
                     arithmetic() using {
                         0 <= at(statement(3).entry, x);
                         at(statement(3).entry, x) < 4;
-                    }
+                    };
                 } and {
                     both {
                         arithmetic() using {
                             0 <= at(statement(3).entry, x);
                             at(statement(3).entry, x) < 4;
-                        }
+                        };
                     } and {
                         arithmetic() using {
                             0 <= at(statement(3).entry, x);
                             at(statement(3).entry, x) < 4;
-                        }
+                        };
                     }
                 }
             }

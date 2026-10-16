@@ -35,22 +35,22 @@ verifying "c_pointer_cell_cast_store.c";
 
 void write_once(struct node* parent, struct node* new) {
     owns parent->left;
-    ensures parent->left == new by auto;
+    ensures parent->left == new by auto();
 }
 
 void spelled(struct node* parent, struct node* new) {
     owns parent->left;
-    ensures parent->left == new by auto;
+    ensures parent->left == new by auto();
 }
 
 void plain(struct node* parent, struct node* new) {
     owns parent->left;
-    ensures parent->left == new by auto;
+    ensures parent->left == new by auto();
 }
 
 struct node* read_back(struct node* parent, struct node* new) {
     owns parent->left;
-    ensures result == new by auto;
+    ensures result == new by auto();
 }
 ```
 

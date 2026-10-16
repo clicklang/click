@@ -125,23 +125,23 @@ void arena_write(struct region* region, int32 index, int32 value) {
     have defined(s + index) by {
         simp() using {
             defined(s + index) and s + index < e;
-        }
+        };
     }
     have s + index < e by {
         simp() using {
             defined(s + index) and s + index < e;
-        }
+        };
     }
     have s <= s + index by {
         apply(int32_add_nonnegative_right_is_at_least_left(s, index)) using {
             0 <= index;
             defined(s + index);
-        }
+        };
     }
     have s + index + 1 <= e by {
         apply(int32_increment_upper_bound(s + index, e)) using {
             s + index < e;
-        }
+        };
     }
     have region->start == s by {
         assumption();
@@ -163,13 +163,13 @@ void arena_write(struct region* region, int32 index, int32 value) {
         apply(int32_less_equal_transitive(0, s, s + index)) using {
             0 <= s;
             s <= s + index;
-        }
+        };
     }
     have s + index < c by {
         apply(int32_less_than_less_equal_transitive(s + index, e, c)) using {
             s + index < e;
             e <= c;
-        }
+        };
     }
     have region->arena->capacity == c by {
         simp();

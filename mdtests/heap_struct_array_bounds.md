@@ -23,7 +23,7 @@ int32 heap_struct_array_bounds() {
 verifying "heap_struct_array_bounds.c";
 
 int32 heap_struct_array_bounds() {
-    ensures result == 0 by auto;
+    ensures result == 0 by auto();
 }
 ```
 

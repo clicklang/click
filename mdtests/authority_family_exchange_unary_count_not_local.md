@@ -11,7 +11,7 @@ void inspect(int32* pool) {
     owns authority(capacity(pool));
     owns capacity(pool);
 } by {
-    have count(capacity(pool)) == 1 by simp;
+    have count(capacity(pool)) == 1 by simp();
     execute(); simp();
 }
 ```

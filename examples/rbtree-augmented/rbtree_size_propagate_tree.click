@@ -21,7 +21,7 @@ void sized_propagate(struct rb_node* rb, struct rb_node* stop) {
         invariant sized_walk_root(walk.model) == sized_walk_root(old(walk.model));
         invariant sized_shape(sized_walk_tree(walk.model)) == sized_shape(sized_walk_tree(old(walk.model)));
         invariant rb_subtree_size(sized_shape(sized_walk_tree(walk.model))) <= 2147483647;
-        initialize by simp;
+        initialize by simp();
         preserve by {
             mark iteration;
             match walk.model {
@@ -60,7 +60,7 @@ void sized_propagate(struct rb_node* rb, struct rb_node* stop) {
                         arithmetic() using {
                             rb_subtree_size(sized_shape(sub_model)) <= rb_subtree_size(sized_shape(sized_plug(sized_path_context(path_model), sub_model)));
                             rb_subtree_size(sized_shape(sized_plug(sized_path_context(path_model), sub_model))) <= 2147483647;
-                        }
+                        };
                     }
                     let { focus: dirty, path: path } = unfold(walk);
                     let { prepared: dirty } = prepare_sized_focus(rb, { tree: dirty });
@@ -91,7 +91,7 @@ void sized_propagate(struct rb_node* rb, struct rb_node* stop) {
                                 have sized_parent_is(SizedTree::Node(identity, parent, color, value, left_model, right_model), sized_context_parent(sized_path_context(path_model), stop)) == 1 by {
                                     rewrite(SizedTree::Node(identity, parent, color, value, left_model, right_model) == repaired.model); assumption();
                                 }
-                                have parent == sized_context_parent(sized_path_context(path_model), stop) by auto;
+                                have parent == sized_context_parent(sized_path_context(path_model), stop) by auto();
                                 let { metadata: metadata, left: left, right: right } = unfold(repaired);
                                 step(); step();
                                 have rb == parent by { normalize(); }
@@ -118,7 +118,7 @@ void sized_propagate(struct rb_node* rb, struct rb_node* stop) {
                                 have sized_walk_rank(walk.model) < sized_walk_rank(at(iteration, walk.model)) by {
                                     rewrite(sized_walk_rank(at(iteration, walk.model)) == sized_context_depth(sized_path_context(path_model)) + 1); assumption();
                                 }
-                                close_invariants by { simp(); }
+                                close_invariants() by { simp(); }
                             },
                         }
                     }

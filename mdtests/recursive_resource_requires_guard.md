@@ -16,7 +16,7 @@ resource endless(p: int32*) {
 verifying "recursive_resource_requires_guard.c";
 
 int32 recursive_resource_requires_guard(int32* p) {
-    ensures result == 0 by auto;
+    ensures result == 0 by auto();
 }
 ```
 

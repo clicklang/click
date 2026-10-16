@@ -56,7 +56,7 @@ void produce_population(struct owner* owner, int32 amount) {
         apply(int32_greater_equal_and_not_greater_than_implies_equal(amount, 0)) using {
             0 <= amount;
             not (0 < amount);
-        }
+        };
         execute(); simp();
     }
 }
@@ -69,7 +69,7 @@ void produce_population_pipeline(struct owner* owner, int32 amount) {
     produces amount of slot(owner);
 
     ensures valid_capacity(owner);
-} by auto;
+} by auto();
 ```
 
 ```expect

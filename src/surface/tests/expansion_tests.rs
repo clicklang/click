@@ -223,6 +223,9 @@ fn long_flat_integer_sum_expands_and_rechecks_without_parenthesis_growth() {
     let expanded =
         expand_c0_tactic_source_at(&source, &[], position.line, position.column).unwrap();
     assert!(!expanded.contains("arithmetic()"), "{expanded}");
+    let certificate = expanded.split("arithmetic_certificate {").nth(1).unwrap();
+    let body = certificate.split('}').next().unwrap();
+    assert!(body.lines().all(|line| line.len() <= 100), "{expanded}");
     verify_click_theorems(&expanded).unwrap();
 }
 
@@ -414,7 +417,7 @@ fn byte_initialized_uint32_expands_and_retains() {
 #[test]
 fn selected_tactic_batch_uses_the_project_entry_scope() {
     let c = [("identity.c", "int32 identity(int32 x) { return x; }")];
-    let source = "verifying \"identity.c\"; int32 identity(int32 x) { ensures result == x; } by { execute(); have x == x by simp; have x + 0 == x by simp; simp(); }";
+    let source = "verifying \"identity.c\"; int32 identity(int32 x) { ensures result == x; } by { execute(); have x == x by simp(); have x + 0 == x by simp(); simp(); }";
     let project = ClickProject::new(
         "unit.click",
         [ClickModuleSource::new("unit.click", source, [])],
@@ -438,7 +441,7 @@ fn selected_tactic_batch_removes_all_sites_in_a_dropped_arm() {
         "flag.c",
         "int32 flag(int32 x) { if (x > 0) { return 1; } return 0; }",
     )];
-    let source = "verifying \"flag.c\"; int32 flag(int32 x) { requires x <= 0; ensures result == 0; } by { branch then { step(); simp(); simp(); } else {} step(); simp(); }";
+    let source = "verifying \"flag.c\"; int32 flag(int32 x) { requires x <= 0; ensures result == 0; } by { branch { step(); simp(); simp(); } else {} step(); simp(); }";
     verify_c0_sources(source, &c).unwrap();
     let sites = c0_smart_tactic_source_sites(source, &c).unwrap();
     let positions = sites[..2]
@@ -509,7 +512,7 @@ fn selected_tactic_batch_preserves_checked_loop_and_branch_routing() {
 #[test]
 fn selected_tactic_batch_retains_the_unselected_prefix_and_suffix() {
     let c = [("identity.c", "int32 identity(int32 x) { return x; }")];
-    let source = "verifying \"identity.c\";\nint32 identity(int32 x) { ensures result == x; } by {\nexecute();\nhave x == x by simp;\nhave x + 0 == x by simp;\nhave x - 0 == x by simp;\nsimp();\n}\n";
+    let source = "verifying \"identity.c\";\nint32 identity(int32 x) { ensures result == x; } by {\nexecute();\nhave x == x by simp();\nhave x + 0 == x by simp();\nhave x - 0 == x by simp();\nsimp();\n}\n";
     verify_c0_sources(source, &c).unwrap();
     let sites = c0_smart_tactic_source_sites(source, &c).unwrap();
     let selected = sites[1..3]
@@ -518,14 +521,14 @@ fn selected_tactic_batch_retains_the_unselected_prefix_and_suffix() {
         .collect::<Vec<_>>();
     let expanded = expand_c0_tactics_source_at(source, &c, &selected).unwrap();
     assert!(expanded.source.contains("execute();"));
-    assert!(expanded.source.contains("have x - 0 == x by simp;"));
+    assert!(expanded.source.contains("have x - 0 == x by simp();"));
     assert!(
-        !expanded.source.contains("have x == x by simp;"),
+        !expanded.source.contains("have x == x by simp();"),
         "{}",
         expanded.source
     );
     assert!(
-        !expanded.source.contains("have x + 0 == x by simp;"),
+        !expanded.source.contains("have x + 0 == x by simp();"),
         "{}",
         expanded.source
     );
@@ -546,7 +549,10 @@ fn post_execution_have_expansion_preserves_later_smart_proofs() {
         .map(|(name, source)| (name.as_str(), source.as_str()))
         .collect::<Vec<_>>();
     verify_c0_sources(source, &sources).unwrap();
-    for needle in ["have p[0] <= p[1] by simp;", "have p[1] <= p[2] by simp;"] {
+    for needle in [
+        "have p[0] <= p[1] by simp();",
+        "have p[1] <= p[2] by simp();",
+    ] {
         let offset = source.find(needle).unwrap();
         let position = expansion::position_at_offset(source, offset);
         let expanded = expand_c0_tactic_source_at(source, &sources, position.line, position.column)
@@ -604,12 +610,12 @@ fn an_arms_invariant_closer_expands_with_that_arms_checked_body() {
         "{expanded}"
     );
     assert_eq!(
-        expanded.matches("close_invariants by").count(),
+        expanded.matches("close_invariants() by").count(),
         1,
         "{expanded}"
     );
     assert_eq!(expanded.matches("if n > 0").count(), 1, "{expanded}");
-    assert!(expanded.contains("initialize by simp;"), "{expanded}");
+    assert!(expanded.contains("initialize by simp();"), "{expanded}");
     assert!(
         expanded.contains("    step();\n    simp();\n}"),
         "the phase's unselected successor stays written: {expanded}"
@@ -1271,10 +1277,10 @@ fn expand_mdtest_site_and_reverify(relative: &str, anchor: &str, skip: usize) ->
 fn loop_initialize_after_proof_branch_expands_and_reverifies() {
     let expanded = expand_mdtest_site_and_reverify(
         "mdtests/loop_after_proof_branch_expands.md",
-        "initialize by simp;",
+        "initialize by simp();",
         "initialize by ".len(),
     );
-    assert!(!expanded.contains("initialize by simp;"), "{expanded}");
+    assert!(!expanded.contains("initialize by simp();"), "{expanded}");
     assert_eq!(expanded.matches("branch ").count(), 1, "{expanded}");
 }
 
@@ -1362,7 +1368,7 @@ fn flattened_aggregate_claims_resolve_to_their_written_clause() {
     assert_eq!(write_inner.ensure_claim_label(0), "write_inner.owns_0");
     let sites = expansion::c0_smart_tactic_source_sites(&click_source, &c_sources).unwrap();
     let written = click_source
-        .find("owns packet->inner by auto;")
+        .find("owns packet->inner by auto();")
         .expect("the fixture states the aggregate clause");
     let written = expansion::position_at_offset(&click_source, written);
     let produced_sites = sites
@@ -1400,13 +1406,13 @@ fn a_conditional_produces_clause_is_located_in_its_place() {
     let start = click.find("    if old(obj->refs) > 1 {").unwrap();
     let end = click.find("int32 cleanup(int32 payload) {").unwrap();
     let inputs = ProgramInputs::Bundle(sources.clone());
-    for produces_proof in ["", " by auto"] {
+    for produces_proof in ["", " by auto()"] {
         let click = format!(
             "{}    if old(obj->refs) > 1 {{
         produces child_control(obj){produces_proof};
     }}
-    ensures count(child_ref(obj)) == old(count(child_ref(obj))) - 1 by auto;
-    ensures obj->refs >= 0 by auto;
+    ensures count(child_ref(obj)) == old(count(child_ref(obj))) - 1 by auto();
+    ensures obj->refs >= 0 by auto();
 }}
 
 {}",
@@ -2422,7 +2428,7 @@ theorem reflexive_implication(x: int32) {
         .expect_err("removing the retained introduction must invalidate the proof");
 }
 
-/// A `have` with no written proof is `have P by simp;`. Expansion addresses
+/// A `have` with no written proof is `have P by simp();`. Expansion addresses
 /// a proof's tactics through source positions, so a default proof must not
 /// leave it without a block to rewrite: the `have` gains one, and a smart
 /// tactic beside it still expands and rechecks.
@@ -2919,11 +2925,11 @@ int32 early(int32 x) {
     requires x != 0;
     ensures result == 0 or result == 1;
 } by {
-    branch then {
+    branch {
         step();
         simp();
     } else {}
-    branch then {
+    branch {
         step();
         simp();
     } else {}
@@ -3916,7 +3922,7 @@ fn selected_post_execution_smart_have_uses_its_path_certificate() {
                 ensures result == x;
             } by {
                 execute();
-                have result == x by simp;
+                have result == x by simp();
                 simp();
             }
         "#;
@@ -3941,7 +3947,10 @@ fn selected_post_execution_smart_have_uses_its_path_certificate() {
     let expanded =
         expand_c0_tactic_source_at(click_source, &[("identity.c", c_source)], line, column)
             .expect("selected post-execution smart have should expand after finalization");
-    assert!(!expanded.contains("have result == x by simp"), "{expanded}");
+    assert!(
+        !expanded.contains("have result == x by simp()"),
+        "{expanded}"
+    );
     assert!(expanded.contains("have result == x by {"), "{expanded}");
     verify_c0_sources(&expanded, &[("identity.c", c_source)])
         .expect("selected post-execution have certificate should check");
@@ -4024,7 +4033,7 @@ fn selected_post_execution_capture_ignores_nested_certificate_indices() {
                 execute();
                 have value == value by { normalize(); }
                 have result == value by { normalize(); }
-                have data[0] == value by simp;
+                have data[0] == value by simp();
                 simp();
             }
         "#;
@@ -4543,7 +4552,7 @@ fn post_execution_smart_have_builds_recursive_conjunction_on_proof() {
             ensures 0 <= x and 0 <= y;
         } by {
             execute();
-            have 0 <= x and 0 <= y by simp;
+            have 0 <= x and 0 <= y by simp();
             assumption();
         }
     "#;
@@ -4562,7 +4571,7 @@ fn post_execution_smart_have_builds_recursive_conjunction_on_proof() {
         position.column,
     )
     .expect("the retained smart have should expand");
-    assert!(!expanded.contains("by simp"), "{expanded}");
+    assert!(!expanded.contains("by simp()"), "{expanded}");
     assert_eq!(
         expanded
             .matches("apply(int32_positive_is_nonnegative(")
@@ -4797,7 +4806,7 @@ fn smart_apply_surfaces_a_framed_comparison_after_an_immutable_call() {
 
             int32 peek(int32* data) {
                 views data[0..1];
-                ensures result == data[0] by auto;
+                ensures result == data[0] by auto();
             }
 
             int32 pipeline(int32* data, int32 expected) {
@@ -4850,8 +4859,8 @@ fn smart_apply_preserves_statement_snapshots_in_explicit_premises() {
             } by {
                 unfold(one_cell(p));
                 step();
-                have at(statement(0).entry, p[0]) == 1 by simp;
-                have at(statement(0).exit, p[0]) == 0 by simp;
+                have at(statement(0).entry, p[0]) == 1 by simp();
+                have at(statement(0).exit, p[0]) == 0 by simp();
                 apply(changed_one_to_zero(
                     at(statement(0).entry, p[0]),
                     at(statement(0).exit, p[0])
@@ -5179,13 +5188,13 @@ fn source_expander_locates_frontier_local_have_proofs() {
             int32 preserve_value(int32 x) {
                 ensures result == x;
             } by {
-                have x == x by simp;
+                have x == x by simp();
                 execute();
                 simp();
             }
         "#;
     let have_offset = click_source
-        .find("have x == x by simp")
+        .find("have x == x by simp()")
         .expect("frontier-local proof should exist");
     let line = click_source[..have_offset]
         .bytes()
@@ -5373,7 +5382,7 @@ fn selected_branched_post_execution_have_shares_identical_path_certificates() {
                 ensures result == 1 or result == 2;
             } by {
                 execute();
-                have result == 1 or result == 2 by simp;
+                have result == 1 or result == 2 by simp();
                 simp();
             }
         "#;
@@ -5397,7 +5406,7 @@ fn selected_branched_post_execution_have_shares_identical_path_certificates() {
             .expect("branched post-execution have should produce path certificates");
     verify_c0_sources(&expanded, &[("choose.c", c_source)])
         .expect("expanded have must verify before checking its formatting");
-    assert!(!expanded.contains("have result == 1 or result == 2 by simp"));
+    assert!(!expanded.contains("have result == 1 or result == 2 by simp()"));
     assert!(
         !expanded.contains("if at(statement(0).entry, flag) != at(statement(0).entry, 0) {"),
         "{expanded}"
@@ -5509,7 +5518,7 @@ fn smart_tactic_in_an_infeasible_branch_arm_expands_by_removal() {
                 requires x <= 0;
                 ensures result == 0;
             } by {
-                branch then { step(); simp(); } else {}
+                branch { step(); simp(); } else {}
                 step();
                 simp();
             }
@@ -5536,7 +5545,7 @@ fn smart_tactic_in_an_infeasible_branch_arm_expands_by_removal() {
     let expanded = expand_c0_tactic_source_at(click_source, &sources, line, column)
         .expect("a smart tactic on a dropped C path should expand");
     assert!(!expanded.contains("step(); simp();"), "{expanded}");
-    assert!(expanded.contains("then { step();"), "{expanded}");
+    assert!(expanded.contains("branch { step();"), "{expanded}");
     verify_c0_sources(&expanded, &sources)
         .expect("removing the dropped arm's closer should still verify");
 }
@@ -5554,7 +5563,7 @@ fn source_expander_lowers_smart_simp_inside_have() {
             int32 identity(int32 x) {
                 ensures result == x;
             } by {
-                have x == x by simp;
+                have x == x by simp();
                 execute();
                 simp();
             }
@@ -5590,7 +5599,7 @@ fn source_expander_lowers_smart_simp_inside_have() {
 }
 
 /// The `simp` written in a smart `have` body selects the `have` site, as
-/// the `have` keyword does, for a bare `by simp` and for a block body.
+/// the `have` keyword does, for a bare `by simp()` and for a block body.
 #[test]
 fn source_expander_selects_a_smart_have_by_the_simp_in_its_body() {
     let c_source = "int32 identity(int32 x) { return x; }";
@@ -5598,7 +5607,7 @@ fn source_expander_selects_a_smart_have_by_the_simp_in_its_body() {
         int32 identity(int32 x) {\n\
         \x20   ensures result == x;\n\
         } by {\n\
-        \x20   have x == x by simp;\n\
+        \x20   have x == x by simp();\n\
         \x20   have x <= x by {\n\
         \x20       simp();\n\
         \x20   }\n\
@@ -5728,7 +5737,7 @@ fn source_expander_rewrites_a_have_body_tactic_in_a_post_execution_if_arm() {
         \x20       simp();\n\
         \x20   } else {\n\
         \x20       have x <= x by {\n\
-        \x20           have x == x by simp;\n\
+        \x20           have x == x by simp();\n\
         \x20           simp();\n\
         \x20       }\n\
         \x20       simp();\n\
@@ -5756,9 +5765,9 @@ fn source_expander_rewrites_a_have_body_tactic_in_a_branch_arm() {
         } by {\n\
         \x20   step();\n\
         \x20   step();\n\
-        \x20   branch then {\n\
+        \x20   branch {\n\
         \x20       have c != 0 by {\n\
-        \x20           have c == c by simp;\n\
+        \x20           have c == c by simp();\n\
         \x20           simp();\n\
         \x20       }\n\
         \x20       step();\n\
@@ -5794,10 +5803,10 @@ fn source_expander_rewrites_a_have_body_tactic_in_a_loop_preserve_phase() {
         \x20       decreases n - i;\n\
         \x20       invariant i >= 0;\n\
         \x20       invariant i <= n;\n\
-        \x20       initialize by simp;\n\
+        \x20       initialize by simp();\n\
         \x20       preserve by {\n\
         \x20           have i <= n by {\n\
-        \x20               have i == i by simp;\n\
+        \x20               have i == i by simp();\n\
         \x20               simp();\n\
         \x20           }\n\
         \x20           step();\n\
@@ -5854,7 +5863,7 @@ fn count_up_with_initialize(phase: &str) -> String {
 fn source_expander_rewrites_a_have_body_tactic_in_a_loop_initialize_helper() {
     let click_source = count_up_with_initialize(
         "\x20           have 0 <= n by {\n\
-        \x20               have n == n by simp;\n\
+        \x20               have n == n by simp();\n\
         \x20               simp();\n\
         \x20           }\n\
         \x20           simp();\n",
@@ -5867,9 +5876,9 @@ fn source_expander_rewrites_a_have_body_tactic_in_a_loop_initialize_helper() {
 #[test]
 fn source_expander_rewrites_a_have_body_tactic_in_an_initialize_invariant_body() {
     let click_source = count_up_with_initialize(
-        "\x20           have i >= 0 by simp;\n\
+        "\x20           have i >= 0 by simp();\n\
         \x20           have i <= n by {\n\
-        \x20               have n == n by simp;\n\
+        \x20               have n == n by simp();\n\
         \x20               simp();\n\
         \x20           }\n",
     );
@@ -5888,12 +5897,12 @@ fn source_expander_rewrites_a_tactic_in_an_arm_inside_a_have_body() {
         \x20   ensures result == x;\n\
         } by {\n\
         \x20   have x <= x by {\n\
-        \x20       have x == x by simp;\n\
+        \x20       have x == x by simp();\n\
         \x20       if x > 0 {\n\
-        \x20           have x > 0 by simp;\n\
+        \x20           have x > 0 by simp();\n\
         \x20           simp();\n\
         \x20       } else {\n\
-        \x20           have x == x by simp;\n\
+        \x20           have x == x by simp();\n\
         \x20           simp();\n\
         \x20       }\n\
         \x20   }\n\
@@ -5917,7 +5926,7 @@ fn source_expander_rewrites_a_tactic_in_an_arm_inside_a_have_body() {
         \x20       }\n\
         \x20       cases {\n\
         \x20           x > 0 => {\n\
-        \x20               have x > 0 by simp;\n\
+        \x20               have x > 0 by simp();\n\
         \x20               simp();\n\
         \x20           }\n\
         \x20           not (x > 0) => {\n\
@@ -5946,10 +5955,10 @@ fn source_expander_rewrites_the_continuation_after_an_if_in_a_have_body() {
         } by {\n\
         \x20   have x <= x by {\n\
         \x20       if x > 0 {\n\
-        \x20           have x == x by simp;\n\
-        \x20           have x > 0 by simp;\n\
+        \x20           have x == x by simp();\n\
+        \x20           have x > 0 by simp();\n\
         \x20       } else {\n\
-        \x20           have x == x by simp;\n\
+        \x20           have x == x by simp();\n\
         \x20       }\n\
         \x20       simp();\n\
         \x20   }\n\
@@ -5979,7 +5988,7 @@ fn smart_tactic_selection_by_line_is_unique_or_lists_candidates() {
         \x20       have x == x by { simp(); }\n\
         \x20       simp();\n\
         \x20   }\n\
-        \x20   have x >= x by { have x == x by simp; simp(); }\n\
+        \x20   have x >= x by { have x == x by simp(); simp(); }\n\
         \x20   execute();\n\
         \x20   simp();\n\
         }\n";
@@ -6006,10 +6015,10 @@ fn smart_tactic_selection_by_line_is_unique_or_lists_candidates() {
             .iter()
             .map(|candidate| (candidate.position.line, candidate.position.column))
             .collect::<Vec<_>>(),
-        [(9, 22), (9, 43)]
+        [(9, 22), (9, 45)]
     );
     let selected = select(9, Some(45)).expect("a column disambiguates the line");
-    assert_eq!((selected.position.line, selected.position.column), (9, 43));
+    assert_eq!((selected.position.line, selected.position.column), (9, 45));
     let none = select(5, None).expect_err("line 5 starts only a non-smart have");
     assert!(none.reason.contains("no smart tactic starts on this line"));
 }
@@ -6020,7 +6029,7 @@ fn pure_structural_simp_builds_recursive_conjunction_on_proof() {
         theorem nonnegative_pair_direct(x: int32, y: int32) {
             requires 0 < x;
             requires 0 < y;
-            ensures 0 <= x and 0 <= y by simp;
+            ensures 0 <= x and 0 <= y by simp();
         }
 
         theorem nonnegative_pair_script(x: int32, y: int32) {
@@ -6056,7 +6065,7 @@ fn pure_structural_simp_builds_recursive_conjunction_on_proof() {
     for (offset, expected_applications) in [
         (
             click_source
-                .find("simp;")
+                .find("simp();")
                 .expect("the direct theorem should contain smart simp"),
             2,
         ),
@@ -8507,7 +8516,7 @@ fn restricted_simp_expands_loadable_subrange_to_explicit_transport() {
          viewable(data[0..length]);\n\
          0 <= index;\n\
          index < length;\n\
-         }\n\
+         };\n\
          }"
     );
     assert!(!expanded_have.contains("simp() using"), "{expanded_have}");
@@ -9998,7 +10007,7 @@ fn execution_branch_arm_terminal_proof_if_stays_on_one_proof() {
         int32 choose_x_or_zero(int32 x, int32 flag) {
             ensures result == x or result == 0;
         } by {
-            branch then {
+            branch {
                 if x >= 0 {
                     execute();
                     simp();
@@ -10754,7 +10763,7 @@ fn post_execution_have_anchors_strict_increment_theorem_premises() {
                 fact selected < 2147483647;
             } then { step(); } else { step(); }
             execute();
-            have result > 0 by simp;
+            have result > 0 by simp();
             simp();
         }
     "#;
@@ -10776,7 +10785,10 @@ fn post_execution_have_anchors_strict_increment_theorem_premises() {
         position.column,
     )
     .expect("the retained strict-positive have should expand");
-    assert!(!expanded.contains("have result > 0 by simp"), "{expanded}");
+    assert!(
+        !expanded.contains("have result > 0 by simp()"),
+        "{expanded}"
+    );
     assert!(
         expanded.contains("apply(int32_less_than_implies_less_equal("),
         "{expanded}"
@@ -10965,7 +10977,7 @@ fn explicit_branch_arms_retain_terminal_execute_search() {
         int32 choose_one_or_two(int32 flag) {
             ensures result == 1 or result == 2;
         } by {
-            branch then {
+            branch {
                 execute();
             } else {
                 execute();
@@ -11491,7 +11503,7 @@ fn open_scope_retains_its_checked_execution_branch() {
             ensures result == x;
         } by {
             open(marker(x)) {
-                branch then {
+                branch {
                 } else {
                 }
                 step();
@@ -11558,7 +11570,7 @@ fn open_scope_retains_a_decided_execution_branch_and_its_continuation() {
             ensures result == 1;
         } by {
             open(marker(x)) {
-                branch then { step(); } else { step(); }
+                branch { step(); } else { step(); }
                 step();
             }
             simp();
@@ -11718,7 +11730,7 @@ fn fixed_state_smart_have_retains_a_checked_simple_closer() {
                 requires value >= 0;
                 ensures result >= 0;
             } by {
-                have value >= 0 by simp;
+                have value >= 0 by simp();
                 step();
                 assumption();
             }
@@ -11742,7 +11754,7 @@ fn fixed_state_smart_have_retains_a_checked_theorem_application() {
                 requires y < z;
                 ensures result < z;
             } by {
-                have x < z by simp;
+                have x < z by simp();
                 execute();
                 simp();
             }
@@ -11757,7 +11769,7 @@ fn fixed_state_smart_have_retains_a_checked_theorem_application() {
         CProofClaim::Grouped,
     )
     .expect("the theorem-backed have should expand into proof steps");
-    assert!(!expanded.contains("have x < z by simp"), "{expanded}");
+    assert!(!expanded.contains("have x < z by simp()"), "{expanded}");
     assert!(expanded.contains("have x < z by {"), "{expanded}");
     assert!(expanded.contains("apply"), "{expanded}");
     verify_c0_sources(&expanded, &[("first.c", c_source)])
@@ -12115,14 +12127,14 @@ fn successive_post_execution_ifs_stay_on_one_proof() {
             ensures 0 <= result and result <= 3 by {
                 execute();
                 if at(statement(2).entry, x) > at(statement(2).entry, 0) {
-                    have result == result by simp;
+                    have result == result by simp();
                 } else {
-                    have result == result by simp;
+                    have result == result by simp();
                 }
                 if at(statement(5).entry, y) > at(statement(5).entry, 0) {
-                    have result == result by simp;
+                    have result == result by simp();
                 } else {
-                    have result == result by simp;
+                    have result == result by simp();
                 }
                 simp();
             }
@@ -12564,7 +12576,7 @@ const RESOURCE_EXAMPLE_PIPELINE_CASES: &[(&str, &str, &str, &str)] = &[
         "input-cursor",
         "input_cursor.click",
         "input_cursor_shared_pipeline",
-        "have right->data[right->pos] == data[0] by {\n        rewrite(",
+        "have right->data[right->pos] == data[0] by {\n        normalize() using {",
     ),
     (
         "owned-segmented-buffer",
@@ -13370,7 +13382,7 @@ fn source_expander_preserves_pointer_field_form_inside_smart_have() {
                 views holder_storage(owner);
                 ensures result == 0;
             } by {
-                have owner->data == data by simp;
+                have owner->data == data by simp();
                 execute();
                 simp();
             }
@@ -13437,7 +13449,7 @@ fn source_expander_synthesizes_an_indexed_load_through_a_pointer_field() {
                 ensures result == 0;
             } by {
                 unfold(second_is);
-                have data[1] == value by simp;
+                have data[1] == value by simp();
                 execute();
                 simp();
             }
@@ -13486,7 +13498,7 @@ fn smart_have_uses_transport_planned_at_the_mutation_boundary() {
             } by {
                 unfold(first_is_seven);
                 step();
-                have p[0] == 7 by simp;
+                have p[0] == 7 by simp();
                 step();
                 simp();
             }
@@ -13560,7 +13572,7 @@ fn source_expander_recalls_a_fact_at_a_recorded_statement_entry() {
             } by {
                 observe(one(p));
                 execute_until(statement(2));
-                have at(statement(1).entry, p[0]) == 1 by simp;
+                have at(statement(1).entry, p[0]) == 1 by simp();
                 execute();
                 simp();
             }
@@ -14587,7 +14599,7 @@ fn loop_preservation_case_after_step_expands_in_place() {
                 decreases 1 - i;
                 invariant i >= 0;
                 invariant i <= 1;
-                initialize by simp;
+                initialize by simp();
                 preserve by {
                     step();
                     if flag == i {
@@ -14645,7 +14657,7 @@ fn loop_preservation_case_before_step_expands_in_place() {
                 decreases 1 - i;
                 invariant i >= 0;
                 invariant i <= 1;
-                initialize by simp;
+                initialize by simp();
                 preserve by {
                     if flag == i {
                         have flag == i by { assumption(); }
@@ -14746,8 +14758,8 @@ fn loop_entry_logical_read_expands_without_hidden_introductions() {
                 decreases 3 - i;
                 invariant i >= 0 and i <= 3;
                 invariant forall (k: int32) { 0 <= k and k < i implies p[k] == k };
-                initialize by simp;
-                preserve by simp;
+                initialize by simp();
+                preserve by simp();
             }
             step();
             simp();
@@ -15323,11 +15335,11 @@ int spin(int n) {
         invariant i <= n;
 
         initialize by {
-            have i >= 0 by simp;
-            have i <= n by simp;
+            have i >= 0 by simp();
+            have i <= n by simp();
             assumption();
         }
-        preserve by simp;
+        preserve by simp();
     }
     step();
     simp();
@@ -15373,7 +15385,7 @@ fn each_smart_have_in_a_loop_initialize_script_expands_on_its_own() {
     verify_c0_sources(LOOP_INITIALIZE_SMART_HAVE_CLICK, &sources)
         .expect("the initialize script should verify");
 
-    for have in ["have i >= 0 by simp;", "have i <= n by simp;"] {
+    for have in ["have i >= 0 by simp();", "have i <= n by simp();"] {
         let offset = LOOP_INITIALIZE_SMART_HAVE_CLICK
             .find(have)
             .unwrap_or_else(|| panic!("the proof should contain `{have}`"));
@@ -15397,29 +15409,26 @@ fn each_smart_have_in_a_loop_initialize_script_expands_on_its_own() {
 
 #[test]
 fn a_smart_loop_preserve_phase_tactic_expands_and_reverifies() {
-    // `preserve by simp;` is one smart tactic standing for the whole phase,
-    // like `initialize by simp;`. Every driver step under it is generated, so
+    // `preserve by simp();` is one smart tactic standing for the whole phase,
+    // like `initialize by simp();`. Every driver step under it is generated, so
     // none claimed the source occurrence and audit reported
     // `Grouped proof has no source tactic 4`.
     let sources = [("spin.c", LOOP_INITIALIZE_PHASE_C)];
-    let offset = LOOP_INITIALIZE_SMART_HAVE_CLICK
-        .find("preserve by simp;")
-        .expect("the proof should contain the smart preserve phase");
-    let position = expansion::position_at_offset(LOOP_INITIALIZE_SMART_HAVE_CLICK, offset + 12);
-    let expanded = expand_c0_tactic_source_at(
-        LOOP_INITIALIZE_SMART_HAVE_CLICK,
-        &sources,
-        position.line,
-        position.column,
-    )
-    .expect("a smart `preserve` phase should expand");
-    assert!(
-        !expanded.contains("preserve by simp;"),
-        "the smart preserve phase should be replaced by its certificate: {expanded}"
-    );
-    verify_c0_sources(&expanded, &sources).unwrap_or_else(|error| {
-        panic!("the expanded preserve phase should reverify: {error:?}\n{expanded}")
-    });
+    for phase in ["preserve by simp();", "preserve by { simp(); }"] {
+        let source = LOOP_INITIALIZE_SMART_HAVE_CLICK.replace("preserve by simp();", phase);
+        let offset = source.find(phase).expect("the proof contains the phase");
+        let position = expansion::position_at_offset(&source, offset + phase.find("simp").unwrap());
+        let expanded =
+            expand_c0_tactic_source_at(&source, &sources, position.line, position.column)
+                .expect("a smart `preserve` phase should expand");
+        assert!(
+            !expanded.contains(phase),
+            "the smart preserve phase should be replaced by its certificate: {expanded}"
+        );
+        verify_c0_sources(&expanded, &sources).unwrap_or_else(|error| {
+            panic!("the expanded preserve phase should reverify: {error:?}\n{expanded}")
+        });
+    }
 }
 
 #[test]
@@ -16344,9 +16353,9 @@ void caller(struct parent* p, struct child* kid) {
     ensures p->kid == kid;
 } by {
     let { link: link } = step(attach(p, kid), {});
-    have p->kid == kid by simp;
+    have p->kid == kid by simp();
     step();
-    have p->kid == kid by simp;
+    have p->kid == kid by simp();
     execute();
     simp();
 }
@@ -16528,17 +16537,41 @@ fn expanding_the_only_tactic_of_an_empty_initialize_phase_keeps_a_step() {
         \x20   simp();\n\
         }\n";
     let c_sources = [("drain.c", c_source)];
-    let column = click_source.lines().nth(6).unwrap().find("simp").unwrap() + 1;
-    let expanded = expand_c0_tactic_source_at(click_source, &c_sources, 7, column)
-        .expect("the initialize `simp` expands");
-    assert!(
-        expanded.contains("initialize by { assumption(); }"),
-        "{expanded}"
-    );
-    verify_c0_sources(&expanded, &c_sources).expect("the expanded proof verifies");
+    for proof in ["simp();", "{ simp(); }", "auto();", "{ auto(); }"] {
+        let source = click_source.replace(
+            "initialize by { simp(); }",
+            &format!("initialize by {proof}"),
+        );
+        let name = if proof.contains("auto") {
+            "auto"
+        } else {
+            "simp"
+        };
+        let column = source.lines().nth(6).unwrap().find(name).unwrap() + 1;
+        let expanded = expand_c0_tactic_source_at(&source, &c_sources, 7, column)
+            .expect("the initialize call expands");
+        assert!(
+            expanded.contains("initialize by { assumption(); }"),
+            "{expanded}"
+        );
+        verify_c0_sources(&expanded, &c_sources).expect("the expanded proof verifies");
+        let batch = expand_c0_tactics_source_at(
+            &source,
+            &c_sources,
+            &[expansion::position_at_offset(
+                &source,
+                source.find("initialize by").unwrap()
+                    + "initialize by ".len()
+                    + proof.find(name).unwrap(),
+            )],
+        )
+        .expect("the initialize call expands in a batch");
+        assert!(batch.source.contains("assumption();"));
+        verify_c0_sources(&batch.source, &c_sources).expect("the batch expansion verifies");
+    }
 }
 
-/// Omitted proofs of several claims share one implicit `} by auto;`, which
+/// Omitted proofs of several claims share one implicit `} by auto();`, which
 /// `click expand` at the contract's closing brace writes out after it; a
 /// claim with its own proof keeps it unchanged.
 #[test]
@@ -16553,7 +16586,7 @@ fn the_implicit_grouped_proof_expands_after_the_contract_and_reverifies() {
 
         int32 inc(int32 x) {
             requires x >= 0 and x <= 100;
-            ensures result >= 1 by auto;
+            ensures result >= 1 by auto();
             ensures result <= 101;
             ensures result <= 200;
         }
@@ -16568,7 +16601,7 @@ fn the_implicit_grouped_proof_expands_after_the_contract_and_reverifies() {
         expand_c0_tactic_source_at(click_source, &c_sources, position.line, position.column)
             .expect("the implicit grouped proof should expand");
     assert!(
-        expanded.contains("ensures result >= 1 by auto;"),
+        expanded.contains("ensures result >= 1 by auto();"),
         "{expanded}"
     );
     assert!(
@@ -16618,11 +16651,11 @@ fn throwing_call_forks_expand_and_reverify_in_every_position() {
     let c_sources = [("forks.c", c_source)];
     for proofs in [
         ["", "", ""],
-        [" by auto", " by auto", ""],
-        ["", "", " by auto;"],
+        [" by auto()", " by auto()", ""],
+        ["", "", " by auto();"],
     ] {
         let click_source = format!(
-            "verifying \"forks.c\";\nint32 helper(int32 x) throws int32 {{\n    ensures result == x by auto;\n    exceptional ensures exception == 7 by auto;\n}}\n{}{}{}",
+            "verifying \"forks.c\";\nint32 helper(int32 x) throws int32 {{\n    ensures result == x by auto();\n    exceptional ensures exception == 7 by auto();\n}}\n{}{}{}",
             contract("straight", "result == x", proofs),
             contract("after", "result == x", proofs),
             contract("inside", "result >= 0", proofs),
@@ -17091,8 +17124,8 @@ fn whole_claim_expansion_routes_return_closers_only_to_checked_branches() {
         .iter()
         .map(|(name, source)| (name.as_str(), source.as_str()))
         .collect::<Vec<_>>();
-    let tail = "branch then { step(); simp(); } else {}\n    step(); simp();";
-    let original_branch = "branch then { step(); simp(); } else { step(); simp(); }";
+    let tail = "branch { step(); simp(); } else {}\n    step(); simp();";
+    let original_branch = "branch { step(); simp(); } else { step(); simp(); }";
     for (case, source) in [
         ("then only", original.clone()),
         (
@@ -17155,8 +17188,8 @@ int32 f(int32 n) {
     requires n == 5;
     ensures result == 5;
 } by {
-    branch then {
-        branch then { step(); simp(); } else { step(); simp(); }
+    branch {
+        branch { step(); simp(); } else { step(); simp(); }
     } else { step(); simp(); }
 }
 "#;
@@ -17213,11 +17246,11 @@ fn check_exceptional_claim_label_expansion(fixture: &str) {
         expand_c0_claim_source_by_label(&source, &sources, "helper.exceptional_ensures_0")
             .unwrap_or_else(|error| panic!("{fixture}: {}", error.message()));
     assert!(
-        expanded.contains("ensures result == x by auto;"),
+        expanded.contains("ensures result == x by auto();"),
         "the normal claim remains unselected: {expanded}"
     );
     assert!(
-        !expanded.contains("exceptional ensures exception == 7 by auto;"),
+        !expanded.contains("exceptional ensures exception == 7 by auto();"),
         "the selected exceptional proof is expanded: {expanded}"
     );
     verify_c0_sources(&expanded, &sources)
@@ -17249,9 +17282,9 @@ fn exceptional_claim_label_expands_routed_throw_fixture() {
 #[test]
 fn exceptional_claim_labels_preserve_names_and_covering_proofs_in_projects() {
     let c_sources = [("helper.c", "int32 helper(int32 x) { return x; }")];
-    for proof in [" by auto", ""] {
+    for proof in [" by auto()", ""] {
         let source = format!(
-            "verifying \"helper.c\"; int32 helper(int32 x) throws int32 {{ ensures result == x by auto; exceptional ensures threw: exception == 7{proof}; }}"
+            "verifying \"helper.c\"; int32 helper(int32 x) throws int32 {{ ensures result == x by auto(); exceptional ensures threw: exception == 7{proof}; }}"
         );
         let project = |source: &str| {
             ClickProject::new(
@@ -17590,7 +17623,7 @@ fn a_written_loop_phase_expands_alone_by_label_and_by_line() {
     let body = expanded
         .strip_prefix("import click::machine_integer;\n")
         .unwrap_or_else(|| panic!("expansion adds the cited import\n{expanded}"));
-    let written = "preserve by simp;";
+    let written = "preserve by simp();";
     let start = click.find(written).unwrap();
     let end = start + written.len();
     assert!(body.starts_with(&click[..start]), "{expanded}");
@@ -17834,7 +17867,7 @@ fn unfolding_proof_bound_integer_arguments_expands_and_rechecks() {
         let source = fixture
             .click_source
             .unwrap()
-            .replace("unfold(black", "have d == d by auto; unfold(black");
+            .replace("unfold(black", "have d == d by auto(); unfold(black");
         verify_c0_sources(&source, &[]).unwrap();
         let expanded = expand_c0_claim_source_by_label(&source, &[], label).unwrap();
         verify_c0_sources(&expanded, &[]).unwrap();
@@ -17863,7 +17896,7 @@ function is_positive(value: int32) -> int32 { if value > 0 { 1 } else { 0 } }
 int32 first(int32 x, int32 y) {
     requires is_positive(x) == 1 or is_positive(y) == 1;
     requires is_positive(y) == 1 or is_positive(x) == 1;
-    ensures 1 == 1 by auto;
+    ensures 1 == 1 by auto();
 }
 
 int32 caller(int32 a, int32 b) {
@@ -17897,7 +17930,7 @@ int32 caller(int32 a, int32 b) {
         expanded.contains("step() {")
             && expanded.contains("requires is_positive(a) == 1 or is_positive(b) == 1 by {")
             && expanded.contains("requires is_positive(b) == 1 or is_positive(a) == 1 by {")
-            && !expanded.contains("by simp"),
+            && !expanded.contains("by simp()"),
         "the expansion should keep both entries with checked bodies: {expanded}"
     );
     verify_c0_sources(&expanded, &c_sources).expect("the expansion should reverify");
@@ -18535,5 +18568,41 @@ fn repeated_retains_expand_with_checked_count_bounds() {
         let expanded = expand_c0_tactic_source_at(source, &sources, position.line, position.column)
             .expect("each retained call's implicit proof should expand");
         verify_c0_sources(&expanded, &sources).expect("the selected call expansion rechecks");
+    }
+}
+
+#[test]
+fn branch_arm_source_selection_and_batch_expansion_follow_the_interface_rule() {
+    let c = [(
+        "split.c",
+        "int32 split(int32 x) { if (x > 0) { x = 1; } else { x = 2; } return 0; }",
+    )];
+    for head in ["branch", "branch ensuring { fact x >= 1; } then"] {
+        let source = format!(
+            "verifying \"split.c\";
+            int32 split(int32 x) {{ ensures result == 0; }} by {{
+                {head} {{
+                    step();
+                    have x >= 1 by {{ simp(); }}
+                }} else {{
+                    step();
+                    have x >= 1 by {{ simp(); }}
+                }}
+                step();
+                simp();
+            }}"
+        );
+        verify_c0_sources(&source, &c).unwrap();
+        let positions = source
+            .match_indices("simp();")
+            .map(|(offset, _)| expansion::position_at_offset(&source, offset))
+            .collect::<Vec<_>>();
+        for position in &positions {
+            let expanded =
+                expand_c0_tactic_source_at(&source, &c, position.line, position.column).unwrap();
+            verify_c0_sources(&expanded, &c).unwrap();
+        }
+        let batch = expand_c0_tactics_source_at(&source, &c, &positions).unwrap();
+        verify_c0_sources(&batch.source, &c).unwrap();
     }
 }

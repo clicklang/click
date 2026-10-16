@@ -1224,7 +1224,7 @@ mod observed_integer_argument_tests {
 
     #[test]
     fn integer_theorem_observed_arguments_preserve_types_guards_and_expansion() {
-        let prefix = "theorem reflexive(z: Integer) { ensures z == z by simp; } ";
+        let prefix = "theorem reflexive(z: Integer) { ensures z == z by simp(); } ";
         for (ty, expression, guard) in [
             ("int32", "x + 1", "defined(x + 1)"),
             ("int64", "x + 1i64", "defined(x + 1i64)"),
@@ -1275,7 +1275,7 @@ mod observed_integer_argument_tests {
     #[test]
     fn integer_theorem_arguments_capture_current_entry_snapshot_and_result_values() {
         let parsed = crate::surface::parser::parse_file_items(
-            "theorem reflexive(z: Integer) { ensures z == z by simp; }",
+            "theorem reflexive(z: Integer) { ensures z == z by simp(); }",
         )
         .unwrap();
         let theorem = &parsed.theorem_definitions()[0];

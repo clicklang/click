@@ -15,11 +15,11 @@ int32 *select(int32 *result, int32 *next) {
     views result[0..1];
     views next[0..1];
     requires c(result)[0] == 3 and next[0] == 7;
-    ensures load_int32(c(result)) == 3 by auto;
-    ensures *c(result) == 3 by auto;
-    ensures byte_offset(c(result), 0) == c(result) by auto;
-    ensures address(c(result)) == address(c(result)) by auto;
-    ensures result[0] == 7 by auto;
+    ensures load_int32(c(result)) == 3 by auto();
+    ensures *c(result) == 3 by auto();
+    ensures byte_offset(c(result), 0) == c(result) by auto();
+    ensures address(c(result)) == address(c(result)) by auto();
+    ensures result[0] == 7 by auto();
 }
 ```
 

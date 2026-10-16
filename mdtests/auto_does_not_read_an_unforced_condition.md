@@ -29,7 +29,7 @@ function balanced(tree: Tree) -> int
 
 theorem not_forced(value: int, left: Tree, right: Tree) {
     requires balanced(Tree::Node(value, left, right)) == 0;
-    ensures balanced(left) == 1 by auto;
+    ensures balanced(left) == 1 by auto();
 }
 ```
 

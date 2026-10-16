@@ -81,7 +81,7 @@ Run `scripts/setup-environment.sh` once for Click's pinned stable toolchain.
 Build pinned Charon and install its separate compiler with
 `scripts/build-charon.sh --install-toolchain`, then run:
 
-```sh
+```console
 cargo run --bin click -- import lock examples/basic-rust/borrow.click
 cargo run --bin click -- verify examples/basic-rust/borrow.click
 cargo run --bin click -- profile examples/basic-rust/borrow.click
@@ -92,7 +92,7 @@ cargo run --bin click -- verify examples/basic-rust/borrow.click
 
 Locked Rust imports also support focused proof tracing:
 
-```sh
+```console
 cargo run --bin click -- verify --trace-proof update examples/basic-rust/borrow.click
 ```
 
@@ -271,8 +271,10 @@ The contract names what it refers to as Rust does: `*value` for the
 referent and `parent.left` for a field. The type does not grant authority;
 the contract still states `views` or `owns`. Lifetimes may be written or
 left out, `fn pick<'a>(value: &'a u32) -> u32`; the contract does not use
-them, and a type parameter is refused, as the importer refuses a generic
-function. A tuple struct's field is named by its position, `self.0`.
+them. Type parameters are limited to the supported
+[callable bounds](#function-pointers-and-named-contracts) and
+[crate trait bounds](#trait-method-interfaces). A tuple struct's field is
+named by its position, `self.0`.
 
 A diagnostic about a function whose signature is written this way, and the
 proof `click expand` writes for it, spell its places the same way: a
@@ -377,12 +379,40 @@ sidecar keeps every comparison a proposition. A `bool` parameter is a claim
 too: `ensures early implies result == 7;`. Rust has no cast to `bool`, so
 `x as bool` is refused.
 
+### Integer literals
+
 An unsuffixed literal takes its type from what it is compared or combined
-with, so `bytes.len() == 4` compares two `usize` values. A suffix may still
-fix a literal's type: `4u64`, `255u8`, `7u32` and `-1i64` are both Rust and
-Click spellings. Click has no `usize`, `i32` or `u16` suffix, and no `_`
-separator; a literal that needs one of those types is written unsuffixed or
-cast with `as`.
+with, so `bytes.len() == 4` compares two `usize` values. Rust sidecars accept
+decimal literals and the Rust radix prefixes `0x`, `0o`, and `0b`. Underscore
+separators are accepted in the digits and before a suffix, as in
+`65_535u16`, `0xff_ff_u16`, and `0b1_010usize`.
+
+A suffix fixes the literal's native type: `i8`, `i16`, `i32`, `i64`, `isize`,
+`u8`, `u16`, `u32`, `u64`, or `usize`. On the pinned target, `isize` and
+`usize` are 64 bits. These are specification integer types; imported source
+coverage is defined under [Supported semantics](#supported-semantics).
+Floating-point suffixes and 128-bit integer suffixes are not supported.
+
+A suffixed literal must fit its type; it is never truncated to make it fit.
+A signed minimum, such as `-2_147_483_648i32` or `-(0x8000_0000i32)`, is
+accepted under unary minus. The same positive magnitude is out of range.
+Negating an unsigned suffixed literal is refused. Unsuffixed literals retain
+contextual typing, including arbitrary-precision mathematical `Integer`
+values when no native type is required.
+
+<!-- verified-example: tests/fixtures/rust-verification/integer_literals.click -->
+```click
+verifying "literals.rs";
+
+theorem literal_forms(word: u16, index: usize, signed_word: i32) {
+    requires word == 0xff_ff;
+    requires index == 0b1_010;
+    requires signed_word == -0x8000_0000;
+    ensures word == 65_535u16 by { assumption(); }
+    ensures index == 0o12usize by { assumption(); }
+    ensures signed_word == -2_147_483_648i32 by { assumption(); }
+}
+```
 
 ### Pure functions, predicates and theorems
 
@@ -686,7 +716,7 @@ the full-input checksum and byte preservation over the same length and split
 bounds. Arbitrary saved words need not satisfy the canonical-seed preconditions
 for an update.
 
-```sh
+```console
 cargo run --bin click -- import lock examples/rust-unsigned/arithmetic.click
 cargo run --bin click -- verify examples/rust-unsigned/arithmetic.click
 ```
@@ -784,7 +814,7 @@ covers all three element types, a checked element reborrow, a direct helper
 call, parent reuse, and preservation of an untouched word. Its helper owns
 only the indexed word, allowing the caller to retain the remaining storage.
 
-```sh
+```console
 scripts/build-charon.sh --install-toolchain
 cargo run --bin click -- import lock examples/rust-arrays/arrays.click
 cargo run --bin click -- verify examples/rust-arrays/arrays.click
@@ -860,7 +890,7 @@ signed indices must separately justify their conversions. The accumulator contra
 to one. These are synthetic loop regressions, not a checksum-library proof.
 Verification, profiling, auditing, and proof expansion use the shared engine.
 
-```sh
+```console
 cargo run --bin click -- import lock examples/rust-loops/loops.click
 cargo run --bin click -- verify examples/rust-loops/loops.click
 ```
@@ -1028,7 +1058,7 @@ nested aggregate arguments or returns, unstructured control flow, heap owners su
 as `Box`/`Vec`, and panic unwinding. Arithmetic, owned values, and loops use the
 same native body representation; there is no whole-function coverage switch.
 
-```sh
+```console
 cargo run --bin click -- import lock examples/rust-move-drop/guard.click
 cargo run --bin click -- verify examples/rust-move-drop/guard.click
 cargo run --bin click -- import lock examples/rust-field-borrow/guard.click

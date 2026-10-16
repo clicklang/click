@@ -12,7 +12,7 @@ block. Each site is measured twice, in a scratch copy of the project:
 - deletable: with the whole statement deleted, the proof unit that contained
   it still verifies. The proof's own automation (`auto` at the claims,
   `simp`, the steps after it) finds the fact, and no later step names it.
-- by auto: with its justification replaced by `by auto;`, the proof unit
+- by auto(): with its justification replaced by `by auto();`, the proof unit
   still verifies. `auto` proves the fact where it is stated, whether or not
   later steps cite it.
 
@@ -190,7 +190,7 @@ def evaluate_file(click, project, relative, chosen):
             by_auto, auto_reason, auto_seconds = verdict(
                 click,
                 path,
-                text[:by] + f"{indent}have {proposition} by auto;\n" + text[end:],
+                text[:by] + f"{indent}have {proposition} by auto();\n" + text[end:],
                 line - 1,
             )
             results.append(

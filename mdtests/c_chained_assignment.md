@@ -34,20 +34,20 @@ verifying "c_chained_assignment.c";
 uint64 copy(struct node* to, struct node* from) {
     owns to->color;
     views from->color;
-    ensures result == old(from->color) by auto;
-    ensures to->color == old(from->color) by auto;
+    ensures result == old(from->color) by auto();
+    ensures to->color == old(from->color) by auto();
 }
 
 uint64 same(struct node* node) {
     owns node->color;
-    ensures result == old(node->color) by auto;
-    ensures node->color == old(node->color) by auto;
+    ensures result == old(node->color) by auto();
+    ensures node->color == old(node->color) by auto();
 }
 
 int32 three(struct node* to, struct node* from) {
     owns to->color;
     views from->color;
-    ensures result == 1 by auto;
+    ensures result == 1 by auto();
 }
 ```
 

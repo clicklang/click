@@ -12,7 +12,7 @@ verifying "bump.c";
 
 int32 bump(int32 result) {
     requires 0 <= c(result) and c(result) <= 100;
-    ensures result == c(result) + 1 and result == old(c(result)) + 1 by auto;
+    ensures result == c(result) + 1 and result == old(c(result)) + 1 by auto();
 }
 ```
 

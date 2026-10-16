@@ -13,7 +13,7 @@ int32 scalar() {
 verifying "scalar.c";
 
 int32 scalar() {
-    ensures arithmetic_result: result == 1 by auto;
+    ensures arithmetic_result: result == 1 by auto();
 }
 ```
 

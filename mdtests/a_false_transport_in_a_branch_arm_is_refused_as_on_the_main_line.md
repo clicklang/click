@@ -31,7 +31,7 @@ void mark_one(int32 a[], int32 n, int32 i, int32 m, int32 c) {
     ensures a[m] == old(a[m]);
 } by {
     mark entry;
-    branch then {
+    branch {
         step();
         transport(at(entry, a[m]) == at(entry, a[m]), at(entry, a[m]) == 5);
     } else {

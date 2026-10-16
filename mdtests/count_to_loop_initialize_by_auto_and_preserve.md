@@ -1,6 +1,6 @@
 # a counter loop names its initialize and preserve obligations
 
-This checks the full induction syntax for a counter loop: `initialize by auto`
+This checks the full induction syntax for a counter loop: `initialize by auto()`
 proves the invariants at loop entry, and `preserve` executes one iteration and
 reestablishes them before the implicit invariant closer.
 
@@ -28,7 +28,7 @@ int32 count_to(int32 n) {
         invariant i >= 0;
         invariant i <= n;
 
-        initialize by auto;
+        initialize by auto();
         preserve by {
             step();
             simp();

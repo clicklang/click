@@ -27,11 +27,11 @@ verifying "write_parameter.c";
 verifying "same_named_parameter.c";
 
 int32 write_parameter(int32 n) {
-    ensures result == 5 by auto;
+    ensures result == 5 by auto();
 }
 
 int32 same_named_parameter(int32 n) {
-    ensures result == n by auto;
+    ensures result == n by auto();
 }
 ```
 

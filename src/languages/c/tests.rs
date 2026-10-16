@@ -957,8 +957,8 @@ fn c0_plain_char_unsigned_promotion_verifies() {
         target "x86_64-unknown-linux-gnu";
         mode "kernel";
         verifying "char.c";
-        int promote() { ensures result == 256 by auto; }
-        int compare() { ensures result == 1 by auto; }
+        int promote() { ensures result == 256 by auto(); }
+        int compare() { ensures result == 1 by auto(); }
         "#,
         &[("char.c", "int promote() { char c = 255; return c + 1; } int compare() { char c = 255; return c > 0; }")],
     ).expect("plain char must promote as an unsigned byte to int");
@@ -984,8 +984,8 @@ fn c0_plain_char_explicit_byte_pointer_casts_preserve_source_identity() {
         target "x86_64-unknown-linux-gnu";
         mode "kernel";
         verifying "cast.c";
-        int to_char() { ensures result == 255 by auto; }
-        int to_byte() { ensures result == 255 by auto; }
+        int to_char() { ensures result == 255 by auto(); }
+        int to_byte() { ensures result == 255 by auto(); }
         "#,
         &[("cast.c", "int to_char() { unsigned char b = 255; char *p = (char *)&b; return *p; } int to_byte() { char b = 255; unsigned char *p = (unsigned char *)&b; return *p; }")],
     ).expect("explicit byte pointer casts preserve byte memory semantics");
@@ -997,7 +997,7 @@ fn c0_plain_char_cross_file_signatures_remain_distinct() {
         r#"
         verifying "a.c";
         verifying "b.c";
-        int f(char *p) { ensures result == 0 by auto; }
+        int f(char *p) { ensures result == 0 by auto(); }
         "#,
         &[
             ("a.c", "int f(char *p) { return 0; }"),
@@ -2026,10 +2026,10 @@ fn c0_const_aggregate_extern_declarations_must_match_definitions() {
         verifying "state.c";
         verifying "reader.c";
         int32 state_value() {
-            ensures result == 7 by auto;
+            ensures result == 7 by auto();
         }
         int32 read() {
-            ensures result == 7 by auto;
+            ensures result == 7 by auto();
         }
         "#,
         &[
@@ -2843,13 +2843,13 @@ fn c0_links_incomplete_extern_arrays_to_complete_definitions() {
 
         int32 definitions_anchor() {
             requires values[0] == 2;
-            ensures result == 2 by auto;
+            ensures result == 2 by auto();
         }
 
         int32 run() {
             requires values[1] == 6;
             requires entries[0].value == 4;
-            ensures result == 10 by auto;
+            ensures result == 10 by auto();
         }
         "#,
         &[
@@ -2886,12 +2886,12 @@ fn c0_links_incomplete_tentative_array_to_complete_tentative_definition() {
 
         int32 read() {
             requires values[1] == 0;
-            ensures result == 0 by auto;
+            ensures result == 0 by auto();
         }
 
         int32 definition_anchor() {
             requires values[0] == 0;
-            ensures result == 0 by auto;
+            ensures result == 0 by auto();
         }
         "#,
         &[
@@ -3787,7 +3787,7 @@ fn c0_statement_expressions_preserve_order_and_value() {
     crate::surface::verify_c0_sources(
         r#"
         verifying "statement-expression.c";
-        int32 run() { ensures result == 4 by auto; }
+        int32 run() { ensures result == 4 by auto(); }
         "#,
         &[(
             "statement-expression.c",
@@ -12805,7 +12805,7 @@ fn c0_out_of_range_integer_constants_convert_modulo_the_destination_width() {
 #[test]
 fn signed_byte_proof_expansion_preserves_memory_and_negative_values() {
     let c = "int read(signed char *p) { return p[1] + 1; }";
-    let proof = "verifying \"byte.c\"; int read(signed char *p) { views p[0..2]; ensures result == p[1] + 1 by auto; }";
+    let proof = "verifying \"byte.c\"; int read(signed char *p) { views p[0..2]; ensures result == p[1] + 1 by auto(); }";
     crate::surface::verify_c0_sources(proof, &[("byte.c", c)]).unwrap();
     let expanded =
         crate::surface::expand_c0_claim_source_by_label(proof, &[("byte.c", c)], "read.ensures_0")
@@ -12863,7 +12863,7 @@ fn anonymous_struct_typedef_reuses_field_validation() {
 #[test]
 fn anonymous_struct_local_proof_expands_and_reverifies() {
     let c = "typedef struct { int __val[2]; } __fsid_t; int use_local(void) { __fsid_t a = {{3, 7}}; __fsid_t b = a; b.__val[0] = 11; return a.__val[0] + b.__val[0] + b.__val[1]; }";
-    let proof = "verifying \"anonymous.c\"; int use_local() { ensures result == 21 by auto; }";
+    let proof = "verifying \"anonymous.c\"; int use_local() { ensures result == 21 by auto(); }";
     crate::surface::verify_c0_sources(proof, &[("anonymous.c", c)]).unwrap();
     let expanded = crate::surface::expand_c0_claim_source_by_label(
         proof,
@@ -12908,7 +12908,7 @@ fn struct_wide_array_layout_and_size_overflow() {
 #[ignore = "nightly: 0.6s in the parallel gate"]
 fn struct_wide_array_proof_expands_and_reverifies() {
     let c = "struct words { char tag; unsigned long data[3]; }; unsigned long set(struct words *p, unsigned long value) { p->data[1] = value; return p->data[2]; }";
-    let proof = "verifying \"wide.c\"; unsigned long set(struct words *p, unsigned long value) { owns p->data[1..2]; views p->data[2..3]; ensures p->data[1] == value by auto; ensures result == old(p->data[2]) by auto; }";
+    let proof = "verifying \"wide.c\"; unsigned long set(struct words *p, unsigned long value) { owns p->data[1..2]; views p->data[2..3]; ensures p->data[1] == value by auto(); ensures result == old(p->data[2]) by auto(); }";
     crate::surface::verify_c0_sources(proof, &[("wide.c", c)]).unwrap();
     let expanded =
         crate::surface::expand_c0_claim_source_by_label(proof, &[("wide.c", c)], "set.ensures_0")
@@ -13027,7 +13027,7 @@ fn c0_nonnull_function_attributes_accept_parameter_indices_without_granting_owne
         .unwrap();
     }
     let c = "int inspect(int *p) __attribute__((nonnull(1))) { return *p; }";
-    let proof = "verifying \"nonnull.c\"; int inspect(int *p) { ensures result == 7 by auto; }";
+    let proof = "verifying \"nonnull.c\"; int inspect(int *p) { ensures result == 7 by auto(); }";
     assert!(crate::surface::verify_c0_sources(proof, &[("nonnull.c", c)]).is_err());
 }
 
@@ -13095,14 +13095,14 @@ fn c0_restrict_pointer_qualifiers_preserve_pointer_types_without_alias_facts() {
         assert!(syntax::parse_functions(source).is_err(), "{source}");
     }
     let c = "int read(int *restrict p) { return *p; }";
-    let proof = "verifying \"restrict.c\"; int read(int *p) { ensures result == 7 by auto; }";
+    let proof = "verifying \"restrict.c\"; int read(int *p) { ensures result == 7 by auto(); }";
     assert!(crate::surface::verify_c0_sources(proof, &[("restrict.c", c)]).is_err());
 }
 
 #[test]
 fn c0_leaf_memory_proof_expands_and_reverifies() {
     let c = "__attribute__((__nothrow__, __leaf__)) int set(int *p) { *p = 7; return *p; }";
-    let proof = "verifying \"leaf.c\"; int set(int *p) { owns p[0..1]; ensures p[0] == 7 by auto; ensures result == 7 by auto; }";
+    let proof = "verifying \"leaf.c\"; int set(int *p) { owns p[0..1]; ensures p[0] == 7 by auto(); ensures result == 7 by auto(); }";
     crate::surface::verify_c0_sources(proof, &[("leaf.c", c)]).unwrap();
     let expanded =
         crate::surface::expand_c0_claim_source_by_label(proof, &[("leaf.c", c)], "set.ensures_0")
@@ -13188,7 +13188,7 @@ fn c0_union_pointer_member_preserves_pointee_constness() {
 #[test]
 fn c0_const_pointer_fields_alias_proof_expands_and_reverifies() {
     let c = "struct holder { const int *value; }; int update(struct holder *h, int *p) { *p = 7; return h->value[0]; }";
-    let proof = "verifying \"fields.c\"; int update(struct holder *h, int *p) { views h->value; owns p[0..1]; requires h->value == p; ensures result == 7 by auto; }";
+    let proof = "verifying \"fields.c\"; int update(struct holder *h, int *p) { views h->value; owns p[0..1]; requires h->value == p; ensures result == 7 by auto(); }";
     crate::surface::verify_c0_sources(proof, &[("fields.c", c)]).unwrap();
     let expanded = crate::surface::expand_c0_claim_source_by_label(
         proof,
@@ -13203,7 +13203,7 @@ fn c0_const_pointer_fields_alias_proof_expands_and_reverifies() {
 #[ignore = "nightly: 0.5s in the parallel gate"]
 fn c0_const_pointer_fields_store_proof_expands_and_reverifies() {
     let c = "struct holder { const int *value; }; const int *set(struct holder *h, const int *p) { h->value = p; return h->value; }";
-    let proof = "verifying \"fields.c\"; const int *set(struct holder *h, const int *p) { owns h->value; ensures result == p by auto; ensures h->value == p by auto; }";
+    let proof = "verifying \"fields.c\"; const int *set(struct holder *h, const int *p) { owns h->value; ensures result == p by auto(); ensures h->value == p by auto(); }";
     crate::surface::verify_c0_sources(proof, &[("fields.c", c)]).unwrap();
     for label in ["set.ensures_0", "set.ensures_1"] {
         let expanded =
@@ -13338,7 +13338,7 @@ fn optimizing_imports_keep_the_compiletime_assert_declaration() {
         &format!("# 1 \"guarded.c\"\n{source}"),
         syntax::PromiseAttributes::Refuse,
     );
-    let proof = "verifying \"guarded.c\";\nint32 guarded(int32 value) {\n    ensures result == value by auto;\n}\n";
+    let proof = "verifying \"guarded.c\";\nint32 guarded(int32 value) {\n    ensures result == value by auto();\n}\n";
     let error = crate::surface::verify_c0_prepared_sources(proof, &[import])
         .expect_err("a reachable call to the error declaration must fail");
     assert!(

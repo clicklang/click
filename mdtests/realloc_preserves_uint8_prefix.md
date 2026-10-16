@@ -29,7 +29,7 @@ verifying "realloc_preserves_uint8_prefix.c";
 uint8 realloc_preserves_uint8_prefix(int32 count, int32 new_count) {
     requires 1 <= count;
     requires 1 <= new_count;
-    ensures result == 0 or result == 42 by auto;
+    ensures result == 0 or result == 42 by auto();
 }
 ```
 

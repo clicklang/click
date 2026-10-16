@@ -14,7 +14,7 @@ fn post_execution_fold_body_proofs_expand_and_retain() {
         .collect::<Vec<_>>();
     let expanded = expand_c0_claim_source(source, &sources, "probe", CProofClaim::Grouped).unwrap();
     verify_c0_sources(&expanded, &sources).unwrap();
-    let invalid = source.replace("by { simp(); }", "by { have n < 0 by simp; simp(); }");
+    let invalid = source.replace("by { simp(); }", "by { have n < 0 by simp(); simp(); }");
     assert!(verify_c0_sources(&invalid, &sources).is_err());
     let (session, _) = C0VerificationSession::new(source, &sources).unwrap();
     let position =

@@ -27,13 +27,13 @@ void mark_twice(int32 a[], int32 n, int32 i) {
     step();
     have 0 <= i;
     have i < 2147483647 by {
-        arithmetic() using { i < n; n <= 1073741823; }
+        arithmetic() using { i < n; n <= 1073741823; };
     }
     have icount(a, 0, i + 1) == icount(a, 0, i) + 1 by {
         peel(icount(a, 0, i + 1)) using {
             0 <= i;
             i < 2147483647;
-        }
+        };
         simp();
     }
     step();

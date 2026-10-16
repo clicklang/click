@@ -39,7 +39,7 @@ void caller(int32 *v, int32 i, int32 n) {
 } by {
     mark entry;
     have zeros(at(entry, v), 0, i) == zeros(at(entry, v), 0, i) by normalize();
-    have i <= n by { arithmetic() using { i < n; } }
+    have i <= n by { arithmetic() using { i < n; }; }
     step();
     have zeros(v, 0, i) == zeros(at(entry, v), 0, i) by {
         transport(
@@ -48,7 +48,7 @@ void caller(int32 *v, int32 i, int32 n) {
         ) using {
             zeros(at(entry, v), 0, i) == zeros(at(entry, v), 0, i);
             i <= n;
-        }
+        };
         assumption();
     }
     execute();

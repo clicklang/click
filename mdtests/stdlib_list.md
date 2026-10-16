@@ -42,7 +42,7 @@ theorem explicit_induction_application(xs: List<int32>) {
                 normalize();
             }
             List::Cons(head, tail) => {
-                apply(list::append_right_identity(tail)) using { }
+                apply(list::append_right_identity(tail)) using { };
                 unfold(list::append(List<int32>::Cons(head, tail), List<int32>::Nil));
                 rewrite(list::append(tail, List<int32>::Nil) == tail);
                 normalize();

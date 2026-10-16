@@ -41,7 +41,7 @@ int32 count_up(int32 n) {
         decreases n - i;
         invariant 0 <= i and i <= n and run == i;
 
-        initialize by simp;
+        initialize by simp();
         preserve by {
             mark iteration;
             have 0 <= at(iteration, i);
@@ -53,14 +53,14 @@ int32 count_up(int32 n) {
                     0 <= at(iteration, i);
                     at(iteration, i) < at(iteration, n);
                     0 <= n;
-                }
+                };
             }
             have n - at(iteration, i) - 1 < n - at(iteration, i) by {
                 arithmetic() using {
                     0 <= at(iteration, i);
                     at(iteration, i) < at(iteration, n);
                     0 <= n;
-                }
+                };
             }
             close_invariants();
         }

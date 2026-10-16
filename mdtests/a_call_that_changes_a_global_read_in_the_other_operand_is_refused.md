@@ -17,8 +17,8 @@ verifying "changes_operand.c";
 int bump() {
     requires g < 100;
     owns g;
-    ensures result == 0 by auto;
-    ensures g == old(g) + 1 by auto;
+    ensures result == 0 by auto();
+    ensures g == old(g) + 1 by auto();
 }
 int f() {
     requires g == 0;

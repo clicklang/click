@@ -53,22 +53,22 @@ resource inner_storage(p: struct outer*) {
 
 int32 read_inner(struct outer* packet) {
     views inner_storage(packet);
-    ensures result == packet->inner.count by auto;
+    ensures result == packet->inner.count by auto();
 }
 
 int32 write_inner(struct outer* packet) {
-    owns packet->inner by auto;
-    ensures result == 7 by auto;
+    owns packet->inner by auto();
+    ensures result == 7 by auto();
 }
 
 int32 own_inner(struct outer* packet) {
-    owns packet->inner by auto;
-    ensures result == 11 by auto;
+    owns packet->inner by auto();
+    ensures result == 11 by auto();
 }
 
 int32 write_array(struct array_outer* packet) {
-    owns packet->items by auto;
-    ensures result == 13 by auto;
+    owns packet->items by auto();
+    ensures result == 13 by auto();
 }
 ```
 

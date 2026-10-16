@@ -39,16 +39,16 @@ void advance(int32* rb, int32* stop) {
         decreases remaining(rb, stop);
         owns cell: Cell(old(rb));
         invariant cell.value == old(cell.value);
-        initialize by simp;
+        initialize by simp();
         preserve by {
             have remaining(rb, stop) == 1 by {
                 unfold(remaining(rb, stop));
-                normalize() using { address(rb) != address(stop); }
+                normalize() using { address(rb) != address(stop); };
             }
             step();
             have remaining(rb, stop) == 0 by {
                 unfold(remaining(rb, stop));
-                normalize() using { address(rb) == address(stop); }
+                normalize() using { address(rb) == address(stop); };
             }
             close_invariants();
         }
@@ -66,7 +66,7 @@ void change_index(int32* p, int32 index) {
         owns cell: IndexedCell(p, old(index));
         invariant index >= 0;
         invariant cell.value == old(cell.value);
-        initialize by simp;
+        initialize by simp();
         preserve by { step(); close_invariants(); }
     }
     execute();

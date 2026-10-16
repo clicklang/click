@@ -30,7 +30,7 @@ int32 range_probe(uint8 bytes[], int32 len) {
 } by {
     have forall (k: int32) {
         0 <= k and k < len implies viewable(bytes[k..k + 1])
-    } by simp;
+    } by simp();
     execute();
     simp();
 }

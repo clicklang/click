@@ -43,18 +43,18 @@ verifying "reader.c";
 int32 increment_counter() {
     requires counter < 1000;
     owns counter;
-    ensures result == old(counter) + 1 by auto;
-    ensures counter == old(counter) + 1 by auto;
+    ensures result == old(counter) + 1 by auto();
+    ensures counter == old(counter) + 1 by auto();
 }
 
 int32 read_counter() {
-    ensures result == old(counter) by auto;
+    ensures result == old(counter) by auto();
 }
 
 int32 run() {
     requires counter == 3;
     owns counter;
-    ensures result == 4 by auto;
+    ensures result == 4 by auto();
 }
 ```
 

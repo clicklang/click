@@ -244,7 +244,7 @@ number of steps or output bytes. Individual fact, resource, and label previews
 remain bounded. Traces are collected and rendered in memory, so memory use
 grows with the recorded trace. Redirect a long trace when useful:
 
-```sh
+```console
 click verify --trace-proof my_proof entry.click > trace.txt 2>&1
 ```
 
@@ -298,13 +298,13 @@ are in [Testing](../../internals/testing.md#time-bounded-runs).
 
 Verify one sidecar:
 
-```sh
+```console
 click verify examples/input-cursor/input_cursor.click
 ```
 
 Verify one project and then all example projects:
 
-```sh
+```console
 click verify examples/input-cursor
 click verify examples
 ```
@@ -313,14 +313,14 @@ The rbtree examples make the full scope explicit: the model is selected as its
 own theorem-only project, while the insert entry imports it without selecting
 it a second time.
 
-```sh
+```console
 click verify examples/rbtree-model
 click verify examples/rbtree-insert
 ```
 
 Explain incremental selection from the previous commit:
 
-```sh
+```console
 click verify --changed-since HEAD~1 --explain examples
 ```
 

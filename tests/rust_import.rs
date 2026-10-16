@@ -4,6 +4,16 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
+#[test]
+fn rust_integer_literal_documentation_preserves_contextual_types() {
+    let source = include_str!("fixtures/rust-verification/integer_literals.click");
+    let sources = [("literals.rs", "")];
+    click::surface::verify_c0_sources(source, &sources).unwrap();
+    let invalid = source.replace("ensures word == 65_535u16", "ensures word == 65_534u16");
+    assert_ne!(invalid, source);
+    assert!(click::surface::verify_c0_sources(&invalid, &sources).is_err());
+}
+
 const SOURCE: &str = include_str!("../examples/basic-rust/borrow.rs");
 const FIELD_BORROW_GUARD_SOURCE: &str = include_str!("../examples/rust-field-borrow/guard.rs");
 const SIDECAR: &str = include_str!("../examples/basic-rust/borrow.click");

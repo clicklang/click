@@ -50,7 +50,7 @@ void countdown(int32 n) {
         decreases c.model;
         invariant n >= 0;
 
-        initialize by simp;
+        initialize by simp();
         preserve by {
             step();
             close_invariants();

@@ -656,7 +656,7 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
    have to_integer(sum2) == to_integer(zlib_prefix_count(old(len), len)) + adler_weighted_sum(old(buf), zlib_prefix_count(old(len), len), zlib_prefix_count(old(len), len)) by { rewrite(zlib_prefix_count(old(len), len) == zlib_prefix_count(old(len), at(before_block, len)) + 16); assumption(); }
    have to_integer(adler) <= 1 + 255 * to_integer(zlib_prefix_count(old(len), len)) by { rewrite(zlib_prefix_count(old(len), len) == zlib_prefix_count(old(len), at(before_block, len)) + 16); assumption(); }
    have to_integer(sum2) <= 1415761 * to_integer(zlib_prefix_count(old(len), len)) by { rewrite(zlib_prefix_count(old(len), len) == zlib_prefix_count(old(len), at(before_block, len)) + 16); assumption(); }
-   close_invariants by assumption();
+   close_invariants() by assumption();
   }
  }
  have len <= 15u64 by arithmetic() using { not (len >= 16u64); len <= old(len); old(len) <= 5551u64; };
@@ -948,7 +948,7 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
     to_integer(adler) == 1 + adler_byte_sum(old(buf), zlib_prefix_count(old(len), len));
     to_integer(zlib_prefix_count(old(len), len)) == to_integer(zlib_prefix_count(old(len), at(before_decrement, len))) + 1;
    };
-   close_invariants by { simp(); }
+   close_invariants() by { simp(); }
    }
   }
  }

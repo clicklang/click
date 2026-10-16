@@ -19,7 +19,7 @@ theorem fold_appends_at_a_predecessor_endpoint(lo: int32, hi: int32) {
             0 < hi;
             lo <= hi - 1;
             hi - 1 < 2147483647;
-        }
+        };
     }
 }
 ```

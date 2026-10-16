@@ -28,13 +28,13 @@ void move_slot() { ensures 1 == 1; } by {
     fold(authority(slot(&source, _)));
     fold(authority(slot(&destination, _)));
     let original = fold(slot(&source, &cell), { label: 42 });
-    have count(slot(&source, _)) == 1 by simp;
-    have count(slot(&destination, _)) == 0 by simp;
+    have count(slot(&source, _)) == 1 by simp();
+    have count(slot(&destination, _)) == 0 by simp();
     let { label: saved } = unfold(original);
     let moved = fold(slot(&destination, &cell), { label: saved });
-    have moved.label == 42 by simp;
-    have count(slot(&source, _)) == 0 by simp;
-    have count(slot(&destination, _)) == 1 by simp;
+    have moved.label == 42 by simp();
+    have count(slot(&source, _)) == 0 by simp();
+    have count(slot(&destination, _)) == 1 by simp();
     unfold(moved);
     unfold(authority(slot(&source, _)));
     unfold(authority(slot(&destination, _)));

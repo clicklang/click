@@ -70,7 +70,7 @@ int32 vector_push(struct vector* owner, int32 value) {
             at(statement(5).entry, owner->len) <= at(statement(5).entry, owner->cap);
             0 <= k;
             k < old(owner->len);
-        }
+        };
         assumption();
     }
     assumption();

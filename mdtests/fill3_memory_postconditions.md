@@ -20,9 +20,9 @@ verifying "fill3_memory.c";
 
 int32 fill3_memory(int32* p) {
     consumes p[0..3];
-    ensures first: p[0] == 0 by auto;
-    ensures second: p[1] == 1 by auto;
-    ensures third: p[2] == 2 by auto;
+    ensures first: p[0] == 0 by auto();
+    ensures second: p[1] == 1 by auto();
+    ensures third: p[2] == 2 by auto();
 }
 ```
 

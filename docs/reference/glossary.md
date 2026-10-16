@@ -502,7 +502,7 @@ A proposition or resource condition that holds initially and is preserved by
 The conjunction a loop's `close_invariants` closer proves at the back edge:
 the loop's declared invariants in declaration order, followed by the loop's
 [ranking obligations](#ranking-obligation) when it declares a `decreases`
-clause. A hand-written `close_invariants by { ... }` body follows that order.
+clause. A hand-written `close_invariants() by { ... }` body follows that order.
 
 ## J
 

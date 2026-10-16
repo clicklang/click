@@ -30,11 +30,11 @@ verifying "call_in_do_while_condition.c";
 verifying "stop_now.c";
 
 int32 call_in_do_while_condition() {
-    ensures result == 2 by auto;
+    ensures result == 2 by auto();
 }
 
 int32 stop_now() {
-    ensures result == 0 by auto;
+    ensures result == 0 by auto();
 }
 ```
 

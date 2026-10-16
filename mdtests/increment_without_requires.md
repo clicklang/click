@@ -13,7 +13,7 @@ int32 increment(int32 x) {
 verifying "increment.c";
 
 int32 increment(int32 x) {
-    ensures increments: result == x + 1 by auto;
+    ensures increments: result == x + 1 by auto();
 }
 ```
 

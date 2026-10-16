@@ -44,7 +44,7 @@ theorem append_right_identity<T>(xs: TestList<T>) {
 }
 
 theorem reflexive<T>(value: T) {
-    ensures value == value by simp;
+    ensures value == value by simp();
 }
 
 theorem reflexive_via_generic<T>(value: T) {
@@ -78,7 +78,7 @@ theorem pointer_instance(xs: TestList<int32*>) {
 theorem scalar_parameter_instance(value: int32) {
     requires value == value;
     ensures value == value by {
-        apply(retain(value, value)) using { value == value; }
+        apply(retain(value, value)) using { value == value; };
         apply(reflexive_via_generic(value));
         assumption();
     }

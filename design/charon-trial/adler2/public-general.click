@@ -15,14 +15,14 @@ impl adler2::Adler32 {
      ensures (self.b as u32) <= 65520u32;
      ensures forall (k: int32) { 0 <= k and k < ((bytes.len() as u32) as i32) implies bytes[k] == old(bytes[k]) };
     } by {
-     apply(adler_bounded_count(bytes.len())) using { bytes.len() <= 2147483647u64; }
+     apply(adler_bounded_count(bytes.len())) using { bytes.len() <= 2147483647u64; };
      execute();
      apply(adler_canonical_observation(self.a));
      apply(adler_canonical_observation(self.b));
      have forall (k: int32) { 0 <= k and k < ((bytes.len() as u32) as i32) implies bytes[k] == old(bytes[k]) } by {
       intro(); intro();
       extract(0 <= k); extract(k < ((bytes.len() as u32) as i32));
-      apply(adler_bounded_signed_index(bytes.len(), k)) using { bytes.len() <= 2147483647u64; 0 <= k; k < ((bytes.len() as u32) as i32); }
+      apply(adler_bounded_signed_index(bytes.len(), k)) using { bytes.len() <= 2147483647u64; 0 <= k; k < ((bytes.len() as u32) as i32); };
       simp();
      }
      simp();
@@ -35,7 +35,7 @@ fn adler2::adler32_slice(data: &[u8]) -> u32 {
  ensures forall (k: int32) { 0 <= k and k < ((data.len() as u32) as i32) implies data[k] == old(data[k]) };
  ensures to_integer(result) == old(adler_spec_checksum(data, ((data.len() as u32) as i32), 1, 0));
 } by {
- apply(adler_bounded_count(data.len())) using { data.len() <= 2147483647u64; }
+ apply(adler_bounded_count(data.len())) using { data.len() <= 2147483647u64; };
  execute_until(assignment(__rust_mir_4, 0));
  have h.a == 1 by simp();
  have h.b == 0 by simp();

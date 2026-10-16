@@ -19,9 +19,9 @@ theorem a_prefix_of_a_stated_range(v: int32[], lo: int32, hi: int32) {
     requires lo < hi;
     requires hi >= 0 and viewable(v[lo..hi]);
     ensures viewable(v[lo..hi - 1]) by {
-        have 0 < hi by { arithmetic() using { 0 <= lo; lo < hi; } }
-        have lo <= hi - 1 by { arithmetic() using { lo < hi; 0 < hi; } }
-        have hi - 1 < hi by { arithmetic() using { 0 < hi; } }
+        have 0 < hi by { arithmetic() using { 0 <= lo; lo < hi; }; }
+        have lo <= hi - 1 by { arithmetic() using { lo < hi; 0 < hi; }; }
+        have hi - 1 < hi by { arithmetic() using { 0 < hi; }; }
         simp();
     }
 }
@@ -30,8 +30,8 @@ theorem a_wrapped_range_cannot_supply_it(v: int32[], n: int32) {
     requires n == 1073741824;
     ensures n >= 0 by {
         have 0 <= 0;
-        have 0 < n by { arithmetic() using { n == 1073741824; } }
-        have n >= 0 by { arithmetic() using { n == 1073741824; } }
+        have 0 < n by { arithmetic() using { n == 1073741824; }; }
+        have n >= 0 by { arithmetic() using { n == 1073741824; }; }
         have n >= 0 and viewable(v[0..n]) by {
             have viewable(v[0..n]);
             assumption();
@@ -40,7 +40,7 @@ theorem a_wrapped_range_cannot_supply_it(v: int32[], n: int32) {
             0 <= 0;
             0 < n;
             n >= 0 and viewable(v[0..n]);
-        }
+        };
         assumption();
     }
 }

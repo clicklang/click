@@ -15,7 +15,7 @@ int32 guarded(int32 value) {
 verifying "c_compiletime_assert_reachable_call_rejected.c";
 
 int32 guarded(int32 value) {
-    ensures result == value by auto;
+    ensures result == value by auto();
 }
 ```
 

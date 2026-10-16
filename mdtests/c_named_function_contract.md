@@ -43,7 +43,7 @@ int32 compare(int32 left, int32 right) {
     requires 0 <= left;
     requires 0 <= right;
     requires right <= left;
-    ensures result == left - right by auto;
+    ensures result == left - right by auto();
 }
 
 int32 apply(int32 (*callback)(int32, int32), int32 left, int32 right) {
@@ -51,11 +51,11 @@ int32 apply(int32 (*callback)(int32, int32), int32 left, int32 right) {
     requires 0 <= left;
     requires 0 <= right;
     requires right <= left;
-    ensures result == left - right by auto;
+    ensures result == left - right by auto();
 }
 
 int32 caller() {
-    ensures result == 38 by auto;
+    ensures result == 38 by auto();
 }
 ```
 

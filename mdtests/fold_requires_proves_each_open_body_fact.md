@@ -17,8 +17,8 @@ void make(int32 x, int32 y) {
     produces pair(x, y);
 } by {
     fold(pair(x, y)) {
-        requires x > 0 or y > 0 by simp;
-        requires y > 0 or x > 0 by simp;
+        requires x > 0 or y > 0 by simp();
+        requires y > 0 or x > 0 by simp();
     }
     execute();
     simp();

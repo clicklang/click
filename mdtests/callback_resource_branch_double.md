@@ -36,7 +36,7 @@ int32 complete(int32 cb) {
 int32 complete_maybe_twice(int32 cb, int32 failed) {
     consumes can_complete(cb);
 
-    ensures result == 0 by auto;
+    ensures result == 0 by auto();
 }
 ```
 

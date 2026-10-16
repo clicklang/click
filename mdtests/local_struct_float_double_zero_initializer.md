@@ -20,7 +20,7 @@ int32 local_struct_float_double_zero_initializer() {
 verifying "local_struct_float_double_zero_initializer.c";
 
 int32 local_struct_float_double_zero_initializer() {
-    ensures result == 9 by auto;
+    ensures result == 9 by auto();
 }
 ```
 

@@ -23,15 +23,15 @@ theorem parity_is_complementary(n: int32) {
         if n <= 0 {
             unfold(parity_even(n));
             unfold(parity_odd(n));
-            normalize() using { n <= 0; }
+            normalize() using { n <= 0; };
         } else {
             have parity_even(n) == parity_odd(n - 1) by {
                 unfold(parity_even(n));
-                normalize() using { not(n <= 0); }
+                normalize() using { not(n <= 0); };
             }
             have parity_odd(n) == parity_even(n - 1) by {
                 unfold(parity_odd(n));
-                normalize() using { not(n <= 0); }
+                normalize() using { not(n <= 0); };
             }
             rewrite(parity_even(n) == parity_odd(n - 1));
             rewrite(parity_odd(n) == parity_even(n - 1));

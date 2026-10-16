@@ -10,7 +10,7 @@ verifying "wide.c";
 void write_neighbor(struct words *p) {
     owns p->data[1..2];
     views p->data[2..3];
-    ensures p->data[2] == 4294967296 by auto;
+    ensures p->data[2] == 4294967296 by auto();
 }
 ```
 

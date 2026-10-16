@@ -32,17 +32,17 @@ verifying "c_compiletime_assert_declaration.c";
 
 int32 store(int32* cell, int32 value) {
     owns cell[0..1];
-    ensures result == value by auto;
+    ensures result == value by auto();
 }
 
 void write_once(struct node* parent, struct node* new) {
     owns parent->left;
-    ensures parent->left == new by auto;
+    ensures parent->left == new by auto();
 }
 
 int32 guarded(int32 value) {
     requires value == 0;
-    ensures result == 0 by auto;
+    ensures result == 0 by auto();
 }
 ```
 

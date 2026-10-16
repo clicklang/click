@@ -4262,12 +4262,13 @@ pub(super) fn finish_ordered_proof<'a>(
                                             let scope_surface_goal = if proof_context.constants.grouped_contract
                                                 && !direct_resource_claims.is_empty()
                                             {
-                                                unfold_structural_invariant_proposition(
-                                                    spec_definitions.predicates,
-                                                    surface_goal,
-                                                    &unfolded_predicates,
-                                                )
-                                                .map_err(ClickError::new)?
+                                                direct_proof
+                                                    .unfold_goal_surface(
+                                                        spec_definitions.predicates,
+                                                        surface_goal,
+                                                        &unfolded_predicates,
+                                                    )
+                                                    .map_err(ClickError::new)?
                                             } else {
                                                 surface_goal.clone()
                                             };
@@ -4377,12 +4378,13 @@ pub(super) fn finish_ordered_proof<'a>(
                                                 if proof_context.constants.grouped_contract
                                                     && !direct_resource_claims.is_empty()
                                                 {
-                                                    unfold_structural_invariant_proposition(
-                                                        spec_definitions.predicates,
-                                                        goal,
-                                                        &unfolded_predicates,
-                                                    )
-                                                    .map_err(ClickError::new)?
+                                                    direct_proof
+                                                        .unfold_goal_surface(
+                                                            spec_definitions.predicates,
+                                                            goal,
+                                                            &unfolded_predicates,
+                                                        )
+                                                        .map_err(ClickError::new)?
                                                 } else {
                                                     goal.clone()
                                                 },
@@ -5866,7 +5868,7 @@ mod evidence_tests {
         let source = r#"
             verifying "spin.c";
             int32 spin() diverges { ensures 0 == 1; } by {
-                loop diverges { invariant 0 == 0; initialize by simp;
+                loop diverges { invariant 0 == 0; initialize by simp();
                     preserve by { step(); close_invariants(); }
                 }
                 simp();

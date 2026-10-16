@@ -22,7 +22,7 @@ theorem step_two(i: int64, length: int64) {
     requires i + 1i64 < length;
     requires length <= 2147483647i64;
     ensures i + 2i64 <= length by {
-        arithmetic() using { 0i64 <= i; i <= length; i + 1i64 < length; length <= 2147483647i64; }
+        arithmetic() using { 0i64 <= i; i <= length; i + 1i64 < length; length <= 2147483647i64; };
     }
 }
 
@@ -30,7 +30,7 @@ theorem chain(i: int64, n: int64, length: int64) {
     requires i < n;
     requires n <= length;
     ensures i < length by {
-        arithmetic() using { i < n; n <= length; }
+        arithmetic() using { i < n; n <= length; };
     }
 }
 
@@ -39,7 +39,7 @@ theorem difference(i: int64, length: int64) {
     requires i <= length;
     requires length <= 1000i64;
     ensures length - i <= 1000i64 by {
-        arithmetic() using { 0i64 <= i; i <= length; length <= 1000i64; }
+        arithmetic() using { 0i64 <= i; i <= length; length <= 1000i64; };
     }
 }
 ```

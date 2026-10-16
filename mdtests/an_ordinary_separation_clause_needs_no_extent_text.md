@@ -21,7 +21,7 @@ int32 ordinary_separation(int32 a[], int32 b[], int32 n) {
     requires separate(memory(a[0..n]), memory(b[0..1]));
     owns b[0..1];
 
-    ensures result == b[0] by auto;
+    ensures result == b[0] by auto();
 }
 ```
 

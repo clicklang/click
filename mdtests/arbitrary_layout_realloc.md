@@ -50,11 +50,11 @@ int32 arbitrary_struct_realloc() {
 verifying "arbitrary_layout_realloc.c";
 
 int32 arbitrary_int32_realloc() {
-    ensures result == 0 or result == 7 by auto;
+    ensures result == 0 or result == 7 by auto();
 }
 
 int32 arbitrary_struct_realloc() {
-    ensures result == 0 or result == 11 by auto;
+    ensures result == 0 or result == 11 by auto();
 }
 ```
 

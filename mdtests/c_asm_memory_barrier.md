@@ -16,7 +16,7 @@ verifying "c_asm_memory_barrier.c";
 
 int32 run(int32* cell, int32 value) {
     owns cell[0..1];
-    ensures result == value by auto;
+    ensures result == value by auto();
 }
 ```
 

@@ -16,7 +16,7 @@ long long *view(long *p) {
 verifying "a_long_pointer_does_not_initialize_a_long_long_pointer.c";
 
 int64 *view(int64 *p) {
-    ensures result == p by auto;
+    ensures result == p by auto();
 }
 ```
 

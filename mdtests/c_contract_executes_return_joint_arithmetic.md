@@ -3,7 +3,7 @@
 ```click
 theorem zero_increment_defined(value: int32) {
     requires value == 0;
-    ensures defined(value + 1) by simp;
+    ensures defined(value + 1) by simp();
 }
 theorem zero_successor(value: int32, returned: int32) {
     requires returned == 0;

@@ -12,7 +12,7 @@ int32 identity(int32 x) {
     ensures (if x == 1 { result } else { 7 }) == result;
 } by {
     step();
-    normalize() using { x == 1; }
+    normalize() using { x == 1; };
 }
 ```
 

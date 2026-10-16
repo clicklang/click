@@ -12,7 +12,7 @@ int64_t int64_division_by_zero() {
 verifying "int64_division_by_zero.c";
 
 int64_t int64_division_by_zero() {
-    ensures no_result: result == 0 by auto;
+    ensures no_result: result == 0 by auto();
 }
 ```
 

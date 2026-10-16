@@ -101,7 +101,7 @@ int64 sum_by_listed_simp(int64 a, int64 b) {
         simp() using {
             a < 100;
             b == 1;
-        }
+        };
     }
     execute();
     simp();

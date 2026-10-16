@@ -100,29 +100,29 @@ int64_t local_int64_array() {
 int64_t read_int64(size_t index, int64_t values[2]) {
     requires index == 1;
     views values[0..2];
-    ensures result == values[1] by auto;
+    ensures result == values[1] by auto();
 }
 
 uint16_t read_uint16(size_t index, uint16_t values[2]) {
     requires index == 1;
     views values[0..2];
-    ensures result == values[1] by auto;
+    ensures result == values[1] by auto();
 }
 
 uint32_t read_uint32(size_t index, uint32_t values[2]) {
     requires index == 1;
     views values[0..2];
-    ensures result == values[1] by auto;
+    ensures result == values[1] by auto();
 }
 
 int16_t* read_int16_pointer_slot(int16_t* values[2]) {
     views values[0..2];
-    ensures result == values[1] by auto;
+    ensures result == values[1] by auto();
 }
 
 uint64_t* read_uint64_pointer_slot(uint64_t* values[2]) {
     views values[0..2];
-    ensures result == values[1] by auto;
+    ensures result == values[1] by auto();
 }
 
 int8_t local_int8_array() {
@@ -131,7 +131,7 @@ int8_t local_int8_array() {
 
 int8_t* read_int8_pointer_slot(int8_t* values[2]) {
     views values[0..2];
-    ensures result == values[1] by auto;
+    ensures result == values[1] by auto();
 }
 ```
 

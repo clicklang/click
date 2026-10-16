@@ -46,7 +46,7 @@ int32 walk(int32 n) {
         invariant i >= 0;
         invariant i <= n;
         invariant result == 0;
-        initialize by simp;
+        initialize by simp();
         preserve by {
             have 0 <= level(n) by {
                 unfold(level(n));

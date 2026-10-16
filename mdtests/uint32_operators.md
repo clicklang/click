@@ -61,43 +61,43 @@ uint32 uint32_negate() {
 verifying "uint32_operators.c";
 
 uint32 uint32_multiply(uint32 value) {
-    ensures product: result == value * 2u32 by auto;
+    ensures product: result == value * 2u32 by auto();
 }
 
 uint32 uint32_divide_high_bit() {
-    ensures quotient: result == 2147483647u32 by auto;
+    ensures quotient: result == 2147483647u32 by auto();
 }
 
 uint32 uint32_remainder_high_bit() {
-    ensures remainder: result == 1u32 by auto;
+    ensures remainder: result == 1u32 by auto();
 }
 
 uint32 uint32_bitwise(uint32 value) {
-    ensures bitwise: result == ((value & 255u32) | (value ^ 4294967295u32)) by auto;
+    ensures bitwise: result == ((value & 255u32) | (value ^ 4294967295u32)) by auto();
 }
 
 uint32 uint32_bitwise_not() {
-    ensures complement: result == 4294967295u32 by auto;
+    ensures complement: result == 4294967295u32 by auto();
 }
 
 uint32 uint32_shift_left() {
-    ensures wrapped: result == 0u32 by auto;
+    ensures wrapped: result == 0u32 by auto();
 }
 
 uint32 uint32_logical_shift_right() {
-    ensures shifted: result == 1u32 by auto;
+    ensures shifted: result == 1u32 by auto();
 }
 
 int32 int32_shift_with_uint32_count() {
-    ensures shifted: result == -4 by auto;
+    ensures shifted: result == -4 by auto();
 }
 
 uint32 uint32_compound_assignments() {
-    ensures updates: result == 1u32 by auto;
+    ensures updates: result == 1u32 by auto();
 }
 
 uint32 uint32_negate() {
-    ensures wrapped: result == 4294967295u32 by auto;
+    ensures wrapped: result == 4294967295u32 by auto();
 }
 ```
 

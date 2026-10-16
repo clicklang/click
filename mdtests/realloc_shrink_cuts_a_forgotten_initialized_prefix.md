@@ -45,11 +45,11 @@ verifying "realloc_shrink_cuts_a_forgotten_initialized_prefix.c";
 
 void touch(int32* p) {
     owns p[0..2];
-} by auto;
+} by auto();
 
 int32 shrink_then_grow() {
     ensures result == result;
-} by auto;
+} by auto();
 ```
 
 ```expect

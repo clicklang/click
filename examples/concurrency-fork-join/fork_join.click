@@ -37,7 +37,7 @@ void *fill_range(void *argument) {
         };
 
         initialize by {
-            have job->begin <= index and index <= job->end by auto;
+            have job->begin <= index and index <= job->end by auto();
             have forall (k: int32) { job->begin <= k and k < index implies job->output[k] == job->value } by {
                 intro();
                 intro();
@@ -56,18 +56,18 @@ void *fill_range(void *argument) {
                     extract(job->begin <= k);
                     instantiate(at(statement(5).entry, forall (k: int32) {
                         job->begin <= k and k < index implies job->output[k] == job->value
-                    }), k) using { job->begin <= k; k < index; }
+                    }), k) using { job->begin <= k; k < index; };
                     simp();
                 } else {
                     extract(k <= index);
-                    have k == index by auto;
+                    have k == index by auto();
                     rewrite(k == index);
                     simp();
                 }
             }
             step();
-            have 0 <= at(iteration, index) by auto;
-            have 0 <= job->end by auto;
+            have 0 <= at(iteration, index) by auto();
+            have 0 <= job->end by auto();
             have 0 - at(iteration, index) + job->end - 1
                 < 0 - at(iteration, index) + job->end by {
                 arithmetic() using {
@@ -75,7 +75,7 @@ void *fill_range(void *argument) {
                     0 <= job->end;
                     at(iteration, index) < at(iteration, job->end);
                     job->begin <= job->end;
-                }
+                };
             }
             have forall (k: int32) {
                 job->begin <= k and k < index implies job->output[k] == job->value
@@ -84,10 +84,10 @@ void *fill_range(void *argument) {
                 intro();
                 extract(job->begin <= k);
                 extract(k < index);
-                have k <= at(iteration, index) by auto;
+                have k <= at(iteration, index) by auto();
                 instantiate(at(statement(6).entry, forall (k: int32) {
                     job->begin <= k and k <= index implies job->output[k] == job->value
-                }), k) using { job->begin <= k; k <= at(iteration, index); }
+                }), k) using { job->begin <= k; k <= at(iteration, index); };
                 simp();
             }
             simp();

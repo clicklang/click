@@ -40,7 +40,7 @@ uint8 inspect_packet(struct packet* source) {
 }
 
 int32 run_inspect() {
-    ensures result == 0 or result == 2 by auto;
+    ensures result == 0 or result == 2 by auto();
 }
 ```
 

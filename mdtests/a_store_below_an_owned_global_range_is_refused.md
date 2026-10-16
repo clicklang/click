@@ -19,7 +19,7 @@ verifying "a_store_below_an_owned_global_range_is_refused.c";
 void set_upper(int32 j) {
     owns buf[1..1000];
     requires 0 <= j and j < 1000;
-    ensures buf[j] == 5 by auto;
+    ensures buf[j] == 5 by auto();
 }
 ```
 

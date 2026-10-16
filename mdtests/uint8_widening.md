@@ -20,11 +20,11 @@ int32 widen_assign(uint8 value) {
 verifying "uint8_widening.c";
 
 int32 widen_return(uint8 value) {
-    ensures return_value: result == value by auto;
+    ensures return_value: result == value by auto();
 }
 
 int32 widen_assign(uint8 value) {
-    ensures assigned_value: result == value by auto;
+    ensures assigned_value: result == value by auto();
 }
 ```
 

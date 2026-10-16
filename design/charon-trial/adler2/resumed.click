@@ -8,8 +8,8 @@ fn adler_resumed::resumed(bytes: &[u8], split: usize) -> u32 {
  ensures forall (k: int32) { 0 <= k and k < ((bytes.len() as u32) as i32) implies bytes[k] == old(bytes[k]) };
  ensures to_integer(result) == old(adler_spec_checksum(bytes, ((bytes.len() as u32) as i32), 1, 0));
 } by {
- apply(adler_incremental_split(bytes.len(), split)) using { bytes.len() <= 2147483647u64; split <= bytes.len(); }
- apply(adler_bounded_pointer_index(bytes, split)) using { split <= 2147483647u64; }
+ apply(adler_incremental_split(bytes.len(), split)) using { bytes.len() <= 2147483647u64; split <= bytes.len(); };
+ apply(adler_bounded_pointer_index(bytes, split)) using { split <= 2147483647u64; };
  execute_until(assignment(__rust_mir_10, 0));
  have prefix_len == split by simp();
  have suffix_len == bytes.len() - split by simp();
@@ -57,14 +57,14 @@ fn adler_resumed::resumed(bytes: &[u8], split: usize) -> u32 {
  have forall (k: int32) { 0 <= k and k < (((bytes.len() - split) as u32) as i32) implies suffix[k] == old((bytes + ((split as u32) as i32))[k]) } by {
   intro(); intro();
   extract(0 <= k); extract(k < (((bytes.len() - split) as u32) as i32));
-  apply(adler_bounded_signed_index(bytes.len() - split, k)) using { bytes.len() - split <= 2147483647u64; 0 <= k; k < (((bytes.len() - split) as u32) as i32); }
+  apply(adler_bounded_signed_index(bytes.len() - split, k)) using { bytes.len() - split <= 2147483647u64; 0 <= k; k < (((bytes.len() - split) as u32) as i32); };
   rewrite(suffix == bytes + ((split as u32) as i32));
   normalize();
  }
  apply(adler_spec_extensional(suffix, old(bytes + ((split as u32) as i32)), (((bytes.len() - split) as u32) as i32), to_integer((__rust_mir_14.a as u32)), to_integer((__rust_mir_14.b as u32)))) using {
   0 <= (((bytes.len() - split) as u32) as i32);
   forall (k: int32) { 0 <= k and k < (((bytes.len() - split) as u32) as i32) implies suffix[k] == old((bytes + ((split as u32) as i32))[k]) };
- }
+ };
  execute_until(assignment(__rust_mir_0, 0));
  have to_integer(__rust_mir_14.a) == at(prefix_done, adler_spec_a(suffix, (((bytes.len() - split) as u32) as i32), to_integer((__rust_mir_14.a as u32)))) by assumption();
  have to_integer(__rust_mir_14.b) == at(prefix_done, adler_spec_b(suffix, (((bytes.len() - split) as u32) as i32), to_integer((__rust_mir_14.a as u32)), to_integer((__rust_mir_14.b as u32)))) by assumption();
@@ -107,7 +107,7 @@ fn adler_resumed::resumed(bytes: &[u8], split: usize) -> u32 {
  have forall (k: int32) { 0 <= k and k < ((bytes.len() as u32) as i32) implies bytes[k] == old(bytes[k]) } by {
   intro(); intro();
   extract(0 <= k); extract(k < ((bytes.len() as u32) as i32));
-  apply(adler_bounded_signed_index(bytes.len(), k)) using { bytes.len() <= 2147483647u64; 0 <= k; k < ((bytes.len() as u32) as i32); }
+  apply(adler_bounded_signed_index(bytes.len(), k)) using { bytes.len() <= 2147483647u64; 0 <= k; k < ((bytes.len() as u32) as i32); };
   simp();
  }
  execute(); simp();

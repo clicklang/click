@@ -21,7 +21,7 @@ int32 scalar_compound_assignments() {
 verifying "scalar_compound_assignments.c";
 
 int32 scalar_compound_assignments() {
-    ensures result == 5 by auto;
+    ensures result == 5 by auto();
 }
 ```
 

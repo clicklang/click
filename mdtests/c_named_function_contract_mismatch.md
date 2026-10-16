@@ -45,7 +45,7 @@ int32 sum(int32 left, int32 right) {
     requires right <= left;
     requires left <= 1000;
     requires right <= 1000;
-    ensures result == left + right by auto;
+    ensures result == left + right by auto();
 }
 
 int32 apply_difference(int32 (*callback)(int32, int32), int32 left, int32 right) {
@@ -55,11 +55,11 @@ int32 apply_difference(int32 (*callback)(int32, int32), int32 left, int32 right)
     requires right <= left;
     requires left <= 1000;
     requires right <= 1000;
-    ensures result == left - right by auto;
+    ensures result == left - right by auto();
 }
 
 int32 bad_caller() {
-    ensures result == 38 by auto;
+    ensures result == 38 by auto();
 }
 ```
 

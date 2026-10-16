@@ -33,7 +33,7 @@ void link(struct node* p, struct node* q) {
     have sibling->left == p;
     mark stored;
     step();
-    have q->left == p by { normalize() using { sibling == q; at(stored, sibling->left) == p; } }
+    have q->left == p by { normalize() using { sibling == q; at(stored, sibling->left) == p; }; }
     execute(); simp();
 }
 ```

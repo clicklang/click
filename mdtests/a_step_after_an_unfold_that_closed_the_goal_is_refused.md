@@ -21,7 +21,7 @@ theorem bound_through_wrapper(a: Ctx, b: Ctx) {
     requires 0 <= d(a) + d(b);
     ensures 0 <= w2(a, b) by {
         unfold(w2(a, b));
-        arithmetic() using { 0 <= d(a) + d(b); }
+        arithmetic() using { 0 <= d(a) + d(b); };
     }
 }
 ```

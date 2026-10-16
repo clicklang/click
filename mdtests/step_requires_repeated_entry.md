@@ -21,7 +21,7 @@ function is_positive(value: int32) -> int32 { if value > 0 { 1 } else { 0 } }
 int32 first(int32 x, int32 y) {
     requires is_positive(x) == 1 or is_positive(y) == 1;
     requires is_positive(y) == 1 or is_positive(x) == 1;
-    ensures 1 == 1 by auto;
+    ensures 1 == 1 by auto();
 }
 
 int32 caller(int32 a, int32 b) {
@@ -30,13 +30,13 @@ int32 caller(int32 a, int32 b) {
         step() {
             requires is_positive(a) == 1 or is_positive(b) == 1 by {
                 have is_positive(a) == 1 by {
-                    unfold(is_positive(a)); normalize() using { a > 0; }
+                    unfold(is_positive(a)); normalize() using { a > 0; };
                 }
                 assumption();
             }
             requires is_positive(a) == 1 or is_positive(b) == 1 by {
                 have is_positive(a) == 1 by {
-                    unfold(is_positive(a)); normalize() using { a > 0; }
+                    unfold(is_positive(a)); normalize() using { a > 0; };
                 }
                 assumption();
             }

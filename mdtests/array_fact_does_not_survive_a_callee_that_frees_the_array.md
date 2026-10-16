@@ -64,14 +64,14 @@ int32 caller(int32 a[], int32 n) {
     unfold(allocated_int32s(a, n));
     have 0 <= 0;
     have icount(a, 0, 0) == 0 by {
-        peel(icount(a, 0, 0)) using { 0 <= 0; }
+        peel(icount(a, 0, 0)) using { 0 <= 0; };
         normalize();
     }
     fold(allocated_int32s(a, n));
     step();
     step();
     step();
-    branch then {
+    branch {
         execute();
         simp();
     } else {

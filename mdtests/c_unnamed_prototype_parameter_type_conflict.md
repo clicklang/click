@@ -15,7 +15,7 @@ int32 run(int32 value) {
 verifying "c_unnamed_prototype_parameter_type_conflict.c";
 
 int32 run(int32 value) {
-    ensures result == value by auto;
+    ensures result == value by auto();
 }
 ```
 

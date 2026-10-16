@@ -38,20 +38,20 @@ contract void Guarded(int32 flag, int32 n) {
 void use_seven(int32 flag, int32 n) {
     requires n == 7;
     ensures 0 <= n;
-} by auto;
+} by auto();
 
 void invoke_guarded(void (*callback)(int32, int32), int32 flag, int32 n) {
     requires Guarded(callback);
     requires flag == 1;
     requires n == 7;
     ensures 0 <= n;
-} by auto;
+} by auto();
 
 void guarded_caller(int32 flag, int32 n) {
     requires flag == 1;
     requires n == 7;
     ensures 0 <= n;
-} by auto;
+} by auto();
 ```
 
 ```expect

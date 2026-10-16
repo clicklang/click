@@ -52,12 +52,12 @@ int32 run(struct cell *task) {
     step();
     step();
     step();
-    branch then {
+    branch {
         step();
         simp();
     } else {}
     step();
-    branch then {
+    branch {
         step();
         step();
         simp();

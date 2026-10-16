@@ -49,13 +49,13 @@ uint8 realloc_uint8_pointer_array_shrink() {
 verifying "realloc_int32_pointer_array.c";
 
 int32 realloc_int32_pointer_array() {
-    ensures result == 0 or result == 37 by auto;
+    ensures result == 0 or result == 37 by auto();
 }
 
 verifying "realloc_uint8_pointer_array_shrink.c";
 
 uint8 realloc_uint8_pointer_array_shrink() {
-    ensures result == 0 or result == 42 by auto;
+    ensures result == 0 or result == 42 by auto();
 }
 ```
 

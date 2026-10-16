@@ -87,20 +87,20 @@ void claim(int32* data, int32 capacity, int32 start) {
         extract(old(before.start) + 1 <= k);
         apply(int32_increment_strictly_increases(old(before.start), capacity)) using {
             old(before.start) < capacity;
-        }
+        };
         apply(int32_increment_less_equal_implies_less_than(old(before.start), k)) using {
             old(before.start) < old(before.start) + 1;
             old(before.start) + 1 <= k;
-        }
+        };
         apply(int32_less_than_implies_less_equal(old(before.start), k)) using {
             old(before.start) < k;
-        }
+        };
         instantiate(forall (k: int32) {
             old(before.start) <= k and k < capacity implies data[k] == 0
         }, k) using {
             old(before.start) <= k;
             k < capacity;
-        }
+        };
         assumption();
     }
     let after = fold(zero_suffix(data, capacity), { start: old(before.start) + 1 });

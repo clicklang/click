@@ -43,7 +43,7 @@ resource item_storage(p: struct item*) {
 int32 read_item(struct item* item) {
     views item_storage(item);
 
-    ensures result == item->value by auto;
+    ensures result == item->value by auto();
 }
 
 int32 heap_scoped_borrow_then_free() {

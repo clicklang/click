@@ -1493,10 +1493,12 @@ int Square::area(int scale) const {
 ```
 
 The object is the sealed abstract resource `Shape__object`, with a field for
-each function. A `const` method of `Shape`, and a function's `const Shape&`
-parameter, hold it with no clause written, read `size(this)` or `size(shape)`
-as its field, and keep it, so an `ensures` reads it as it was at entry. A
-method of `Square` is stated on `Square`'s memory, `owns *this`, with
+each function. A method of `Shape`, and a function's `Shape&` parameter,
+hold it with no clause written and read `size(this)` or `size(shape)` as its
+field. A `const` method or `const Shape&` keeps it, so an `ensures` reads it
+as it was at entry; a mutable one may change it, which its `ensures` reads as
+new and `old(size(this))` as at entry
+(`mdtests/cpp_class_object_state_mutable.md`). A method of `Square` is stated on `Square`'s memory, `owns *this`, with
 `size(this)` read as the definition. An override of a `Shape` method
 inherits that method's clauses read the same way, labeled
 `Square::area.interface_ensures_0`. Its refinement is checked against the
@@ -1506,7 +1508,10 @@ receiver, the importer places `Square__click_pack__Shape` before the call
 and `Square__click_unpack__Shape` after it. The pack consumes the memory
 and produces the object, with the definitions as its fields; the unpack
 returns the memory with the definitions equal to the fields. A caller
-passing a `Square` therefore knows the object's `size` is its `side`.
+passing a `Square` therefore knows the object's `size` is its `side`, and
+after lending it as a `Shape&` that its `side` is the object's new `size`
+and nothing of the `side` it lent
+(`mdtests/cpp_class_object_state_mutable_reference_returns_new_state.md`).
 
 Limits:
 - An override in a class without a defining `class` block is refused.
@@ -1514,8 +1519,6 @@ Limits:
   since a further subclass would run its base's methods on an object its own
   definitions describe.
 - Overriding a defining class's method is refused.
-- A non-`const` method of the object class, or a non-`const` reference to
-  it, is refused.
 - A call through the interface inside a larger expression is an expression
   observer, whose contract must be read-only, so the object's call is
   written as its own statement

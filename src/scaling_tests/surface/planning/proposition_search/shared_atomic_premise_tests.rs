@@ -143,3 +143,53 @@ fn simp_retains_recorded_load_address_equality_premises() {
         assert!(pair[1].1 <= pair[0].1.saturating_mul(3), "{samples:?}");
     }
 }
+
+#[test]
+fn native_view_prefix_retains_only_its_order_path() {
+    let mut samples = Vec::new();
+    for count in [32, 64, 128, 256] {
+        let n = Bitvector32Term::Variable(Variable(9_340_000));
+        let middle = Bitvector32Term::Variable(Variable(9_340_001));
+        let le = |left, right| {
+            Proposition::ConditionIs(ConditionTerm::uint64_less_equal(left, right), true)
+        };
+        let first = le(Bitvector32Term::UInt64Constant(1), middle.clone());
+        let second = le(middle, n.clone());
+        let memory = CMemory::new();
+        let base = Pointer::symbolic(Variable(9_340_002));
+        let source = Proposition::CMemoryLoadable {
+            memory: memory.clone(),
+            base: base.clone(),
+            bytes: n.clone(),
+            wide: true,
+        };
+        let goal = Proposition::CMemoryLoadable {
+            memory,
+            base,
+            bytes: Bitvector32Term::UInt64Constant(1),
+            wide: true,
+        };
+        let mut context = PureFactContext::new()
+            .assume_proposition(source.clone())
+            .assume_proposition(first.clone())
+            .assume_proposition(second.clone());
+        for bound in 2..2 + count {
+            context =
+                context.assume_proposition(le(n.clone(), Bitvector32Term::UInt64Constant(bound)));
+        }
+        let (derivation, work) = crate::instrumentation::measure_deterministic_work(|| {
+            context.derive_simp_atomic_proposition(&goal).unwrap()
+        });
+        let premises = derivation.context_premises();
+        assert_eq!(premises.len(), 3);
+        for required in [&source, &first, &second] {
+            assert!(premises.contains(required));
+            assert!(!derivation.check(&context.without_exact_fact(required)));
+        }
+        assert!(derivation.check(&context));
+        samples.push((count, work));
+    }
+    for pair in samples.windows(2) {
+        assert!(pair[1].1 <= pair[0].1.saturating_mul(3), "{samples:?}");
+    }
+}

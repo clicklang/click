@@ -13,7 +13,7 @@ int32 three() {
 verifying "three.c";
 
 int32 three() {
-    ensures result == 1 + 2 by auto;
+    ensures result == 1 + 2 by auto();
 }
 ```
 

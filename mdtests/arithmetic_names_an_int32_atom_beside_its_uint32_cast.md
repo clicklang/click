@@ -32,7 +32,7 @@ int32 bounded(int32 m, int32 n) {
     ensures result < 2147483647;
 } by {
     have m < 2147483647 by {
-        arithmetic() using { m < n; ((uint32)n) <= 1073741823u32; }
+        arithmetic() using { m < n; ((uint32)n) <= 1073741823u32; };
     }
     execute();
     simp();

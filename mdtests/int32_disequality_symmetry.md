@@ -7,7 +7,7 @@ after comparing the marked index with the range endpoint.
 theorem swap_disequality(x: int32, y: int32) {
     requires x != y;
     ensures y != x by {
-        simp() using { x != y; }
+        simp() using { x != y; };
     }
 }
 ```

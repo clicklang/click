@@ -26,9 +26,9 @@ int32 keep(int32 p[], int32 n, int32 value) {
     });
     ensures unchanged: forall (k: int32) {
         0 <= k and k < n implies p[k] == old(p[k])
-    } by auto;
-    ensures still_zero: (0..n).all(|k| { p[k] == 0 }) by auto;
-    ensures still_found: (0..n).any(|k| { p[k] == value }) by auto;
+    } by auto();
+    ensures still_zero: (0..n).all(|k| { p[k] == 0 }) by auto();
+    ensures still_found: (0..n).any(|k| { p[k] == value }) by auto();
 }
 ```
 

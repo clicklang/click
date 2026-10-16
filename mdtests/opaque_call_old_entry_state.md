@@ -25,14 +25,14 @@ verifying "replace_cell.c";
 verifying "replace_caller.c";
 
 int32 replace_cell(int32 p[], int32 value) {
-    owns p[0..1] by auto;
-    ensures result == old(p[0]) by auto;
-    ensures p[0] == value by auto;
+    owns p[0..1] by auto();
+    ensures result == old(p[0]) by auto();
+    ensures p[0] == value by auto();
 }
 
 int32 replace_caller(int32 p[], int32 value) {
-    owns p[0..1] by auto;
-    ensures result == old(p[0]) by auto;
+    owns p[0..1] by auto();
+    ensures result == old(p[0]) by auto();
 }
 ```
 

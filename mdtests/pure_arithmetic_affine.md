@@ -12,7 +12,7 @@ theorem subtract_two_is_nonnegative(n: int32) {
     ensures 0 <= n - 2 by {
         arithmetic() using {
             1 < n;
-        }
+        };
     }
 }
 
@@ -24,7 +24,7 @@ theorem strict_order_is_transitive(a: int32, b: int32, c: int32) {
         arithmetic() using {
             a <= b;
             b < c;
-        }
+        };
     }
 }
 
@@ -36,7 +36,7 @@ theorem affine_normalization_cancels_x(x: int32) {
         arithmetic() using {
             0 <= x;
             x <= 1073741823;
-        }
+        };
     }
 }
 
@@ -46,7 +46,7 @@ theorem affine_equalities_normalize_both_sides(n: int32) {
     ensures n - 2 == (n - 1) - 1 by {
         arithmetic() using {
             1 < n;
-        }
+        };
     }
 }
 ```

@@ -16,7 +16,7 @@ void f(int32 a, int32 b) {
     requires a == 0 or b < 5;
     requires a != 0;
     ensures b < 5;
-} by { have b < 5 by simp; execute(); assumption(); }
+} by { have b < 5 by simp(); execute(); assumption(); }
 ```
 
 ```expect

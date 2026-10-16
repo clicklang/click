@@ -98,7 +98,7 @@ impl adler2::algo::U32X4 {
             255u32 >= result.0[3];
             to_integer(result.0[3]) >= 0;
             255 >= to_integer(result.0[3]);
-        }
+        };
     }
 }
 
@@ -495,7 +495,7 @@ impl adler2::Adler32 {
      execute();
      have self.a == 1 by simp() using { at(reduced_a, __rust_mir_149) == 1u32; };
      have self.b == 0 by simp() using { at(reduced_b, __rust_mir_151) == 0u32; };
-     simp() using { self.a == 1; self.b == 0; }
+     simp() using { self.a == 1; self.b == 0; };
     }
 }
 

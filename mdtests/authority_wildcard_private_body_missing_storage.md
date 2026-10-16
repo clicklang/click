@@ -21,9 +21,9 @@ int32 lifecycle() { ensures result == 9; } by {
     fold(authority(slot(&pool, _)));
     fold(slot(&pool, &first));
     fold(slot(&pool, &second));
-    have count(slot(&pool, _)) == 2 by simp;
+    have count(slot(&pool, _)) == 2 by simp();
     open(slot(&pool, &first)) { step(); }
-    have count(slot(&pool, _)) == 2 by simp;
+    have count(slot(&pool, _)) == 2 by simp();
     unfold(slot(&pool, &first));
     unfold(slot(&pool, &second));
     unfold(authority(slot(&pool, _)));

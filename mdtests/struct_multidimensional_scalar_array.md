@@ -91,7 +91,7 @@ uint8 update_bytes(struct byte_packet* packet) {
 struct copy_packet finish(struct copy_packet value) {
     ensures result.values[1][2] == 7;
 } by {
-    auto;
+    auto();
 }
 
 int32 run_struct_multidimensional_scalar_array() {

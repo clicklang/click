@@ -14,7 +14,7 @@ int32 long_double_rejected() {
 verifying "long_double_rejected.c";
 
 int32 long_double_rejected() {
-    ensures result == 0 by auto;
+    ensures result == 0 by auto();
 }
 ```
 

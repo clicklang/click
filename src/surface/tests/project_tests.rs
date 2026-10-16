@@ -169,7 +169,7 @@ int32 count_to(int32 n) {
         invariant i >= 0;
         invariant i <= n;
 
-        initialize by simp;
+        initialize by simp();
         preserve by {
             step();
             close_invariants();
@@ -313,15 +313,15 @@ verifying "caller.c";
 
 int32 compare(int32 left, int32 right) {
     ensures result == left;
-} by auto;
+} by auto();
 
 int32 apply(int32 (*callback)(int32, int32), int32 left, int32 right) {
     ensures result == left;
-} by auto;
+} by auto();
 
 int32 caller() {
     ensures result == 40;
-} by auto;
+} by auto();
 "#;
     let sources = [
         ("compare.c", compare_c),
@@ -369,8 +369,8 @@ verifying "first.c";
 verifying "later.c";
 verifying "caller.c";
 
-int32 first(int32 x) { ensures result == x; } by simp;
-int32 later(int32 x) { ensures result == x; } by simp;
+int32 first(int32 x) { ensures result == x; } by simp();
+int32 later(int32 x) { ensures result == x; } by simp();
 int32 caller(int32 x) { ensures result == x + x; } by {
     step();
     step();
@@ -474,14 +474,14 @@ int32 box_init(struct box* owner, int32 data[], int32 value) {
     ensures owner->value == 0;
 } by {
     execute();
-    have separate(memory(*owner), memory(owner->data[0..1])) by simp;
+    have separate(memory(*owner), memory(owner->data[0..1])) by simp();
     fold(owned_box(owner));
     simp();
 }
 
 int32 box_read(struct box* owner) {
     views owned_box(owner);
-    ensures result == owner->data[0] by auto;
+    ensures result == owner->data[0] by auto();
 }
 
 int32 box_set(struct box* owner, int32 value) {
@@ -492,9 +492,9 @@ int32 box_set(struct box* owner, int32 value) {
     ensures owner->data[old(owner->value)] == value;
 } by {
     unfold(owned_box(owner));
-    have owner->value < 2147483647 by simp;
+    have owner->value < 2147483647 by simp();
     execute();
-    have separate(memory(*owner), memory(owner->data[0..1])) by simp;
+    have separate(memory(*owner), memory(owner->data[0..1])) by simp();
     fold(owned_box(owner));
     simp();
 }
@@ -507,13 +507,13 @@ int32 box_pipeline(struct box* owner, int32 data[], int32 value) {
     ensures result == value;
 } by {
     execute_until(statement(3));
-    have owner->data == data by simp;
-    have owner->value == 0 by simp;
+    have owner->data == data by simp();
+    have owner->value == 0 by simp();
     step();
     have owner->data[at(statement(3).entry, owner->value)] == value by {
         assumption();
     }
-    have owner->data[0] == value by simp;
+    have owner->data[0] == value by simp();
     step();
     execute();
     simp();
@@ -736,7 +736,7 @@ int32 pipeline(struct counter* owner) {
     ensures owner->value == 1;
 } by {
     execute_until(statement(3));
-    have owner->value == 1 by simp;
+    have owner->value == 1 by simp();
     step();
     simp();
 }
@@ -751,7 +751,9 @@ int32 pipeline(struct counter* owner) {
         crate::instrumentation::collect(|| verify_c0_sources(click_source, &sources));
     verified.expect("the original smart proof should verify");
 
-    let frontier_have = click_source.find("have owner->value == 1 by simp").unwrap();
+    let frontier_have = click_source
+        .find("have owner->value == 1 by simp()")
+        .unwrap();
     let have_position = expansion::position_at_offset(click_source, frontier_have);
     let have_expanded = expand_c0_tactic_source_at(
         click_source,
@@ -760,7 +762,7 @@ int32 pipeline(struct counter* owner) {
         have_position.column,
     )
     .expect("the mixed-snapshot frontier-local fact should expand");
-    assert!(!have_expanded.contains("have owner->value == 1 by simp"));
+    assert!(!have_expanded.contains("have owner->value == 1 by simp()"));
     // Value-only proofs can now cite the current logical read directly;
     // only validity transport needs the historical read's source anchor.
     verify_c0_sources(&have_expanded, &sources)
@@ -912,13 +914,13 @@ int32 buffer_pipeline(
     produces nonempty_buffer(owner) by {
         execute_until(statement(2));
         unfold(empty_buffer(owner));
-        have 0 <= owner->len by simp;
-        have owner->len <= owner->cap by simp;
-        have viewable(owner->data[0..owner->len]) by simp;
+        have 0 <= owner->len by simp();
+        have owner->len <= owner->cap by simp();
+        have viewable(owner->data[0..owner->len]) by simp();
         fold(buffer_storage(owner));
         execute_until(statement(3));
         unfold(buffer_storage(owner));
-        have owner->len == 1 by simp;
+        have owner->len == 1 by simp();
         have 1 <= owner->len by {
             rewrite(owner->len == 1);
             normalize();
@@ -1057,10 +1059,10 @@ int32 identity(int32 x) throws int32 {
         .verify_at(&rewritten, position.line, position.column)
         .expect("normal and exceptional proof annotations belong to the selected proof unit");
 
-    let exceptional_rewritten = source.replace("exception == 7;", "exception == 7 by auto;");
+    let exceptional_rewritten = source.replace("exception == 7;", "exception == 7 by auto();");
     let exceptional_position = expansion::position_at_offset(
         &exceptional_rewritten,
-        exceptional_rewritten.find("auto;").unwrap(),
+        exceptional_rewritten.find("auto();").unwrap(),
     );
     session
         .verify_at(
@@ -1260,11 +1262,11 @@ verifying "stuck.c";
 
 int32 countdown(int32 n) {
     decreases n;
-    ensures result == 0 by auto;
+    ensures result == 0 by auto();
 }
 
 int32 stuck(int32 n) diverges {
-    ensures result == 0 by auto;
+    ensures result == 0 by auto();
 }"#;
     let sources = [("countdown.c", good_c), ("stuck.c", partial_c)];
     let (session, _) =
@@ -1294,7 +1296,7 @@ int32 caller(int32 x) {
 } by {
     loop {
         invariant 0 == 0;
-        initialize by simp;
+        initialize by simp();
         preserve by {
             step();
             close_invariants();
@@ -1350,7 +1352,7 @@ int32 wait_for_zero(int32 x) diverges {
 } by {
     loop diverges {
         invariant 0 == 0;
-        initialize by simp;
+        initialize by simp();
         preserve by {
             step();
             close_invariants();
@@ -1406,11 +1408,11 @@ int32 two() {
     let click_source = r#"verifying "two.c";
 
 int32 one() {
-    ensures result == 1 by auto;
+    ensures result == 1 by auto();
 }
 
 int32 two() {
-    ensures result == 2 by auto;
+    ensures result == 2 by auto();
 }
 "#;
     let (session, _) = C0VerificationSession::new(click_source, &[("two.c", c_source)])
@@ -1448,7 +1450,7 @@ int32 drain(int32 n) {
     loop {
         decreases n;
         invariant n >= 0;
-        initialize by simp;
+        initialize by simp();
         preserve by {
             have 0 <= n - 1 by {
                 apply(int32_positive_predecessor_is_nonnegative(n)) using { n > 0; }
@@ -1629,12 +1631,12 @@ verifying "leaf.c";
 verifying "middle.c";
 verifying "top.c";
 verifying "unrelated.c";
-int32 leaf(int32 x) { ensures result == x; } by simp;
-int32 middle(int32 x) { ensures result == x; } by auto;
-int32 top(int32 x) { ensures result == x; } by auto;
-int32 unrelated(int32 x) { ensures result == x; } by auto;
+int32 leaf(int32 x) { ensures result == x; } by simp();
+int32 middle(int32 x) { ensures result == x; } by auto();
+int32 top(int32 x) { ensures result == x; } by auto();
+int32 unrelated(int32 x) { ensures result == x; } by auto();
 "#;
-    let changed = baseline.replacen("} by simp;", "} by auto;", 1);
+    let changed = baseline.replacen("} by simp();", "} by auto();", 1);
     let selection = c0_incremental_selection(&changed, &sources, baseline, &sources).unwrap();
     assert_eq!(selection.selected_functions, ["leaf", "middle", "top"]);
     assert_eq!(selection.reused_functions, ["unrelated"]);
@@ -1670,8 +1672,8 @@ fn incremental_selection_rebuilds_all_functions_for_shared_logic_changes() {
 verifying "first.c";
 verifying "second.c";
 predicate allowed(x: int32) { x == x }
-int32 first(int32 x) { ensures result == x; } by simp;
-int32 second(int32 x) { ensures result == x; } by simp;
+int32 first(int32 x) { ensures result == x; } by simp();
+int32 second(int32 x) { ensures result == x; } by simp();
 "#;
     let changed = baseline.replace("x == x", "x == 0");
     let selection = c0_incremental_selection(&changed, &sources, baseline, &sources).unwrap();
@@ -1706,13 +1708,13 @@ contract int32 Comparator(int32 left, int32 right) {
 int32 compare(int32 left, int32 right) {
     requires 0 <= right;
     requires right <= left;
-    ensures result == left - right by auto;
+    ensures result == left - right by auto();
 }
 int32 apply(int32 (*callback)(int32, int32), int32 left, int32 right) {
     requires Comparator(callback);
     requires 0 <= right;
     requires right <= left;
-    ensures result == left - right by auto;
+    ensures result == left - right by auto();
 }
 "#;
     let changed = baseline.replace("ensures result == left - right;", "ensures result >= 0;");
@@ -1728,7 +1730,7 @@ fn incremental_selection_rebuilds_all_functions_for_algebraic_type_changes() {
     let baseline = r#"
 verifying "first.c";
 spec enum Flag { Off, On }
-int32 first(int32 x) { ensures result == x; } by simp;
+int32 first(int32 x) { ensures result == x; } by simp();
 "#;
     let changed = baseline.replace("Off, On", "Off, On, Unset");
     let selection = c0_incremental_selection(&changed, &sources, baseline, &sources).unwrap();
@@ -1751,8 +1753,8 @@ fn incremental_selection_rechecks_functions_when_an_imported_header_changes() {
     let click_source = r#"
 verifying "m.c";
 verifying "other.c";
-int32 read_cap() { ensures result == 0; } by simp;
-int32 unrelated() { ensures result == 0; } by simp;
+int32 read_cap() { ensures result == 0; } by simp();
+int32 unrelated() { ensures result == 0; } by simp();
 "#;
 
     let selection = c0_incremental_selection(

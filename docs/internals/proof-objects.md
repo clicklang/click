@@ -187,7 +187,7 @@ apply one admission rule: `from_proof_tactics` classifies source tactics and
 `from_steps` classifies serialized provenance, so a leaf that no explicit
 proof could spell is rejected from either direction. A smart tactic therefore
 has no step of its own. `close_invariants()`, for example, plans the
-back-edge bundle body, and the step retained for it is `close_invariants by`
+back-edge bundle body, and the step retained for it is `close_invariants() by`
 carrying that planned body; the bare closure request is a semantic-core
 update with no certificate leaf. Nested certificates are admitted where they
 are built, so validating one certificate costs a single pass over its own
@@ -313,6 +313,16 @@ Every lowered fact and safety obligation is still checked separately; lowering
 grants no ownership or read validity. The abstract successor retains state-only
 lowering so its propositions match the exact exported facts. Both paths share
 persistent contexts without rebuilding or scanning their premises.
+
+The kernel interface join constructs successor ownership once: consume the
+owned interface from each concrete arm, intersect the residual frames, and
+restore the exported interface under the successor facts. The surface supplies
+the abstract memory and locals and records the state the operation returns;
+it does not construct a second resource exchange for the kernel to compare.
+Execution state, retained evidence, and recorded snapshots use that same
+constructed successor. Clause lowering reads the common frame and projected
+interface models through an unpublished contract view. An arbitrary resource
+in a proposed state cannot add ownership to the result.
 
 An interface `branch ensuring` may join different heap lifetimes when the
 interface includes an owned, arm-sensitive resource that represents the

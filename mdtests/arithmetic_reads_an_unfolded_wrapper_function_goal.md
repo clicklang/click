@@ -20,7 +20,7 @@ theorem bound_through_wrapper(a: Ctx, b: Ctx) {
     requires 0 <= d(b);
     ensures 0 <= w2(a, b) by {
         unfold(w2(a, b));
-        arithmetic() using { 0 <= d(a); 0 <= d(b); }
+        arithmetic() using { 0 <= d(a); 0 <= d(b); };
     }
 }
 
@@ -29,7 +29,7 @@ theorem bound_between_wrappers(a: Ctx, b: Ctx, c: Ctx) {
     ensures w2(a, c) < w2(b, c) by {
         unfold(w2(a, c));
         unfold(w2(b, c));
-        arithmetic() using { d(a) < d(b); }
+        arithmetic() using { d(a) < d(b); };
     }
 }
 ```

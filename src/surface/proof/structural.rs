@@ -6,31 +6,14 @@ pub(super) fn resolve_code_region_ref(
     claim_label: &str,
     tactic_index: usize,
 ) -> Result<CodeRegion, ClickError> {
-    Ok(match region_ref {
-        CodeRegionRef::BackEdge => {
-            return Err(ClickError::new(
-                "back_edge regions are supported only by `execute_until`",
-            ));
-        }
-        CodeRegionRef::Assignment { .. } | CodeRegionRef::Read(_) => {
-            return Err(ClickError::new(
-                "assignment and read regions are supported only by `execute_until`",
-            ));
-        }
-        CodeRegionRef::Function => CodeRegion::Function,
-        CodeRegionRef::Loop(index) => CodeRegion::Loop(*index),
-        CodeRegionRef::Statement(index) => CodeRegion::Statement(*index),
-        CodeRegionRef::Label(label) => *function_block
-            .structural_clauses()
-            .iter()
-            .find(|clause| clause.label() == Some(label.as_str()))
-            .map(StructuralClause::region)
-            .ok_or_else(|| {
-                ClickError::new(format!(
-                    "`{claim_label}` tactic {tactic_index}: unknown code region label `{label}`"
-                ))
-            })?,
-    })
+    region_ref
+        .resolve(function_block.structural_clauses())
+        .map_err(|error| match error {
+            CodeRegionResolutionError::ExecutionTargetOnly(_) => ClickError::new(error.to_string()),
+            CodeRegionResolutionError::UnknownLabel(_) => {
+                ClickError::new(format!("`{claim_label}` tactic {tactic_index}: {error}"))
+            }
+        })
 }
 
 pub(super) fn requirements_with_structural_unfolds(

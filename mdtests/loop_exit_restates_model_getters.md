@@ -35,7 +35,7 @@ void walk(int32 n) {
         decreases n;
         invariant n >= 0;
         invariant state.model == Walk::Active;
-        initialize by simp;
+        initialize by simp();
         preserve by {
             let { done: state } = stop({ dirty: state });
             step();

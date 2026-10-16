@@ -30,19 +30,19 @@ mode "kernel";
 verifying "c_numeric_character_escapes.c";
 
 int32 soh() {
-    ensures result == 1 by auto;
+    ensures result == 1 by auto();
 }
 
 int32 high() {
-    ensures result == 382 by auto;
+    ensures result == 382 by auto();
 }
 
 int32 simple() {
-    ensures result == 101 by auto;
+    ensures result == 101 by auto();
 }
 
 int32 second_byte() {
-    ensures result == 15065 by auto;
+    ensures result == 15065 by auto();
 }
 ```
 

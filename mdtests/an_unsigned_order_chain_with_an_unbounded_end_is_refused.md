@@ -10,7 +10,7 @@ theorem below_unbounded(x: uint32, n: uint32) {
     ensures x < 4u32 by {
         arithmetic() using {
             x < n;
-        }
+        };
     }
 }
 ```

@@ -14,7 +14,7 @@ verifying "decrement.c";
 
 int32 decrement(int32 x) {
     requires x > 0;
-    ensures decrements: result == x - 1 by auto;
+    ensures decrements: result == x - 1 by auto();
 }
 ```
 

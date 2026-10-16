@@ -26,10 +26,10 @@ int32 summarize_resources(int32* p, int32* q) {
     requires contains(memory(p[0..2]), memory(p[0..1]));
     requires viewable(p[0..1]);
 
-    ensures keeps_separate: separate(memory(p[0..1]), memory(q[0..1])) by auto;
-    ensures keeps_containment: contains(memory(p[0..2]), memory(p[0..1])) by auto;
-    ensures keeps_viewable: viewable(p[0..1]) by auto;
-    ensures returns_zero: result == 0 by auto;
+    ensures keeps_separate: separate(memory(p[0..1]), memory(q[0..1])) by auto();
+    ensures keeps_containment: contains(memory(p[0..2]), memory(p[0..1])) by auto();
+    ensures keeps_viewable: viewable(p[0..1]) by auto();
+    ensures returns_zero: result == 0 by auto();
 }
 
 int32 use_resource_summary(int32* p, int32* q) {
@@ -37,10 +37,10 @@ int32 use_resource_summary(int32* p, int32* q) {
     requires contains(memory(p[0..2]), memory(p[0..1]));
     requires viewable(p[0..1]);
 
-    ensures keeps_separate: separate(memory(p[0..1]), memory(q[0..1])) by auto;
-    ensures keeps_containment: contains(memory(p[0..2]), memory(p[0..1])) by auto;
-    ensures keeps_viewable: viewable(p[0..1]) by auto;
-    ensures returns_zero: result == 0 by auto;
+    ensures keeps_separate: separate(memory(p[0..1]), memory(q[0..1])) by auto();
+    ensures keeps_containment: contains(memory(p[0..2]), memory(p[0..1])) by auto();
+    ensures keeps_viewable: viewable(p[0..1]) by auto();
+    ensures returns_zero: result == 0 by auto();
 }
 ```
 

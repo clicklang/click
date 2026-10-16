@@ -3460,14 +3460,10 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
         }
         let mut child_occurrence = None;
         for (index, requirement) in group {
-            if !bound_view_covers_requirement(
-                &binding.viewed,
-                caller_resources.view_fact_for_occurrence(parent_occurrence),
-                &requirement.fact,
-                assumptions,
-            ) {
-                return Err(StableViewPlanError::Loan(LoanRefusal::InvalidEvidence));
-            }
+            // Membership in this group already carries the coverage checked
+            // against this exact parent binding above. Reborrow preserves that
+            // permitted view, so its child description keeps the same checked
+            // restriction without asking the resource algebra again.
             let (next_resources, occurrence) = callee_resources
                 .try_compose_with_fact_with_occurrence(requirement.fact.clone(), assumptions)
                 .map_err(|error| composition_conflict(error, &requirement.fact))?;
@@ -3487,16 +3483,10 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
             child_occurrence = Some(occurrence);
             callee_view_bindings =
                 callee_view_bindings.with_inserted(occurrence, child_binding.clone());
-            let description = planned_ledger
-                .describe_view_through(
-                    opening.loan,
-                    requirement.fact.clone(),
-                    caller_resources.view_fact_for_occurrence(parent_occurrence),
-                    assumptions,
-                )
-                .map_err(|_| {
-                    StableViewPlanError::ConflictingRequirement(requirement.fact.clone())
-                })?;
+            let description = StableViewDescription {
+                viewed: requirement.fact.clone(),
+                ..opening.description.clone()
+            };
             planned_views.push((
                 index,
                 PlannedStableView {

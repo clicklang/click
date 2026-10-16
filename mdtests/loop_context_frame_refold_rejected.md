@@ -162,7 +162,7 @@ struct tree_node* tree_leftmost(struct tree_node* root) {
         invariant t.model != HeapTree::Empty;
         invariant plug(ctx.model, t.model) == old(t.model);
 
-        initialize by simp;
+        initialize by simp();
         preserve by {
             match t.model {
                 HeapTree::Empty => { contradiction(t.model == HeapTree::Empty); },

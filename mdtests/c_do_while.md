@@ -73,15 +73,15 @@ verifying "do_while_control.c";
 verifying "do_while_invariant.c";
 
 int32 do_while_count() {
-    ensures result == 3 by auto;
+    ensures result == 3 by auto();
 }
 
 int32 do_while_runs_once() {
-    ensures result == 1 by auto;
+    ensures result == 1 by auto();
 }
 
 int32 do_while_control() {
-    ensures result == 4 by auto;
+    ensures result == 4 by auto();
 }
 
 int32 do_while_invariant(int32 i) {

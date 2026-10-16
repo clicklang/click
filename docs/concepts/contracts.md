@@ -26,7 +26,7 @@ let max: int32 = 2147483647;
 let expected = x + 1;
 
 requires x < max;
-ensures result_value: result == expected by auto;
+ensures result_value: result == expected by auto();
 ```
 
 These `let` bindings are Click-side abbreviations. They do not add runtime C
@@ -99,8 +99,8 @@ An `ensures` clause is a postcondition:
 
 <!-- verified-example: mdtests/contract_clause_forms.md -->
 ```click
-ensures result == x + 1 by auto;
-ensures result > x by auto;
+ensures result == x + 1 by auto();
+ensures result > x by auto();
 ```
 
 Each `ensures` clause is proved separately. A function can have several
@@ -128,7 +128,7 @@ Guarantees can also be labeled:
 
 <!-- verified-example: mdtests/contract_clause_forms.md -->
 ```click
-ensures incremented: result == x + 1 by auto;
+ensures incremented: result == x + 1 by auto();
 ```
 
 Guarantee labels identify postcondition claims in diagnostics and proof scripts;
@@ -181,7 +181,7 @@ The `by` clause says how a guarantee is proved:
 
 <!-- verified-example: mdtests/contract_clause_forms.md -->
 ```click
-ensures result == 0 by auto;
+ensures result == 0 by auto();
 ensures result == x by { execute(); simp(); }
 ```
 

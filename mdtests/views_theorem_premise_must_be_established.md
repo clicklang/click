@@ -37,7 +37,7 @@ int32 ignore(int32 a[]) {
     step();
     apply(element_of_a_viewed_range(a, 0, 3, 1)) using {
         viewable(a[0..2]);
-    }
+    };
     simp();
 }
 ```

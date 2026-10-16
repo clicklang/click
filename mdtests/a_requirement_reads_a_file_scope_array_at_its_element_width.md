@@ -43,22 +43,22 @@ verifying "a_requirement_reads_a_file_scope_array_at_its_element_width.c";
 
 uint8 get_byte() {
     requires bytes[6] == 4;
-    ensures result == 4 by auto;
+    ensures result == 4 by auto();
 }
 
 int16 get_half() {
     requires halves[6] == 4;
-    ensures result == 4 by auto;
+    ensures result == 4 by auto();
 }
 
 int64 get_word() {
     requires words[6] == 4;
-    ensures result == 4 by auto;
+    ensures result == 4 by auto();
 }
 
 uint32 get_unit() {
     requires units[6] == 4;
-    ensures result == 4 by auto;
+    ensures result == 4 by auto();
 }
 ```
 

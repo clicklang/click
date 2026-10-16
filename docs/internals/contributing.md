@@ -101,9 +101,9 @@ Other contributors should use the normal PR and review process above.
    `gh pr merge <PR> --auto` again. Pushing to a PR that is already in the
    queue does not remove it: the queue merges the head it was enqueued with,
    and later commits are left behind on the branch. So first check the
-   queue entry:
+   queue entry, replacing `<PR>` with the pull request number:
 
-   ```sh
+   ```text
    gh api graphql -f query='{repository(owner:"clicklang",name:"click"){pullRequest(number:<PR>){id mergeQueueEntry{id state}}}}'
    ```
 

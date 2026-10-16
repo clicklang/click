@@ -21,9 +21,9 @@ int32 write_read_same_twice(int32 p[]) {
 verifying "write_read_same_twice.c";
 
 int32 write_read_same_twice(int32 p[]) {
-    owns p[0..1] by auto;
+    owns p[0..1] by auto();
 
-    ensures result == 1 by auto;
+    ensures result == 1 by auto();
 }
 ```
 

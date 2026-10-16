@@ -10,7 +10,7 @@ verifying "byte_neighbor.c";
 void set_second() {
     owns bytes[0..1];
     views bytes[1..2];
-    ensures bytes[1] == 7 by auto;
+    ensures bytes[1] == 7 by auto();
 }
 ```
 

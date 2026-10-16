@@ -6,7 +6,7 @@ An entry file can use a pure declaration supplied by a local Click module.
 import "specification_imports_model.click";
 
 theorem imported_function_is_available(x: int32) {
-    ensures imported_identity(x) == x by auto;
+    ensures imported_identity(x) == x by auto();
 }
 ```
 

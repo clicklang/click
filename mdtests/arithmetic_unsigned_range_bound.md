@@ -12,7 +12,7 @@ theorem allocation_range_fits(length: int32) {
         arithmetic() using {
             0 <= length;
             length <= 536870911;
-        }
+        };
     }
 }
 ```

@@ -25,7 +25,7 @@ int32 arbitrary_layout_realloc_bounds() {
 verifying "arbitrary_layout_realloc_bounds.c";
 
 int32 arbitrary_layout_realloc_bounds() {
-    ensures result == 0 by auto;
+    ensures result == 0 by auto();
 }
 ```
 

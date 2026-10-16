@@ -2,7 +2,7 @@
 
 The loop body's C `if` tests `a[i] == 0`, which the precondition refutes, so
 the kernel decides the branch: only the `else` arm is feasible. The proof
-spells that with `branch then { contradiction(...) } else { step(); }`.
+spells that with `branch { contradiction(...) } else { step(); }`.
 The checked certificate records a decided branch as a logical `if` over the
 C condition whose infeasible arm is empty, and whole-claim expansion prints
 it that way.
@@ -52,7 +52,7 @@ int32 count_zero_run(int32* a, int32 n) {
         decreases n - i;
         invariant 0 <= i and i <= n;
         invariant c == 0;
-        initialize by simp;
+        initialize by simp();
         preserve by {
             mark iteration;
             have a[i] == 1 by {
@@ -60,9 +60,9 @@ int32 count_zero_run(int32* a, int32 n) {
                 assumption();
             }
             have i + 1 <= n by {
-                apply(int32_increment_upper_bound(i, n)) using { i < n; }
+                apply(int32_increment_upper_bound(i, n)) using { i < n; };
             }
-            branch then { contradiction(a[i] == 0); } else {
+            branch { contradiction(a[i] == 0); } else {
                 step();
             }
             step();
@@ -73,14 +73,14 @@ int32 count_zero_run(int32* a, int32 n) {
                     0 <= at(iteration, i);
                     at(iteration, i) < n;
                     0 <= n;
-                }
+                };
             }
             have 0 - at(iteration, i) + n - 1 < 0 - at(iteration, i) + n by {
                 arithmetic() using {
                     0 <= at(iteration, i);
                     at(iteration, i) < n;
                     0 <= n;
-                }
+                };
             }
             close_invariants();
         }

@@ -14,7 +14,7 @@ verifying "uint8_buffer_read.c";
 
 uint8 read_first_byte(uint8 p[]) {
     views p[0..1];
-    ensures returns_first: result == p[0] by auto;
+    ensures returns_first: result == p[0] by auto();
 }
 ```
 

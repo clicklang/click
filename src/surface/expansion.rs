@@ -3353,6 +3353,9 @@ fn expand_selected_tactics_context(
                 span,
                 super::printing::format_partial_tactic_sequence(&tactics),
             ),
+            TacticSourceEdit::PartialProofClause(span) if tactics.is_empty() => {
+                (span, "by { assumption(); }".to_string())
+            }
             TacticSourceEdit::PartialProofClause(span) => (
                 span,
                 super::printing::format_proof_certificate(
@@ -3492,6 +3495,11 @@ impl LocatedSourceTactic {
                 self.replaced_span(span),
                 super::printing::format_partial_tactic_sequence(replacement_tactics),
             ),
+            // A whole phase can contribute no steps, but its written block
+            // must still contain a checked tactic.
+            TacticSourceEdit::PartialProofClause(span) if replacement_tactics.is_empty() => {
+                (span, "by { assumption(); }".to_string())
+            }
             TacticSourceEdit::PartialProofClause(span) => (span, certificate()?),
             TacticSourceEdit::WholeProof(edit) => {
                 let replacement = certificate()?;
@@ -4601,16 +4609,9 @@ fn proof_tactic_entries(
                         source_site_kind(tactic) == SourceSiteKind::ExpandableAutomation,
                         written_tactic_source_edit(tokens, item.tokens.start, item.span.clone())?,
                     ),
-                    FlatTactic::Phase(tactic) => {
+                    FlatTactic::Phase(tactic, by) => {
                         // A frontier-local loop phase proved by one smart
                         // tactic is rewritten as the whole `by` clause.
-                        let by =
-                            item.tokens.start.checked_sub(1).filter(|by| {
-                                tokens.get(*by).is_some_and(|token| token.text == "by")
-                            });
-                        let by = by.ok_or_else(|| {
-                            ClickError::new("selected nested tactic has no source `by` clause")
-                        })?;
                         (
                             smart_tactic_name(tactic).to_string(),
                             true,
@@ -4863,7 +4864,7 @@ fn block_tactic_entries(
 }
 
 /// Records each smart tactic written inside a smart site that owns its body
-/// (a smart `have`, `both`, or `close_invariants by`) as an alias selecting
+/// (a smart `have`, `both`, or `close_invariants() by`) as an alias selecting
 /// that site: the body is expanded as part of the site, never on its own.
 fn smart_container_alias_entries(
     tokens: &[SourceToken],
@@ -5478,7 +5479,7 @@ fn structured_tactic_arm_blocks(
     let end = tactic_end_token(tokens, start, tokens.len())?;
     let range = start..end + 1;
     let (first_open, first_close, second_open, second_close) = match kind {
-        "if" => find_if_branch_blocks(tokens, &range)?,
+        "if" => find_binary_branch_blocks(tokens, &range, "if")?,
         "cases" => return find_cases_arm_blocks(tokens, &range).map(Some),
         _ => {
             let left_open = (start + 1..range.end)
@@ -5625,7 +5626,7 @@ pub fn tactic_arm_containing_position(
     };
     let blocks = match tokens[start].text.as_str() {
         "branch" => pair(find_branch_blocks(&tokens, &range)?),
-        "if" => pair(find_if_branch_blocks(&tokens, &range)?),
+        "if" => pair(find_binary_branch_blocks(&tokens, &range, "if")?),
         "outcomes" => pair(find_outcomes_arm_blocks(&tokens, &range)?),
         "cases" => find_cases_arm_blocks(&tokens, &range)?,
         "match" => find_structural_induction_arm_blocks(&tokens, &range)?,
@@ -5773,7 +5774,7 @@ pub fn tactic_starts_on_line(source: &str, line: usize) -> Result<Vec<SourcePosi
         for range in ranges {
             match tokens[range.start].text.as_str() {
                 "if" => {
-                    if let Ok((then_open, ..)) = find_if_branch_blocks(&tokens, &range) {
+                    if let Ok((then_open, ..)) = find_binary_branch_blocks(&tokens, &range, "if") {
                         arm_blocks.insert(then_open);
                     }
                 }
@@ -5809,7 +5810,12 @@ fn proof_span(tokens: &[SourceToken], by: usize) -> Result<Range<usize>, ClickEr
     let body = by + 1;
     let end_token = match tokens.get(body).map(|token| token.text.as_str()) {
         Some("{") => matching_delimiter(tokens, body, "{", "}")?,
-        Some("auto" | "simp") => body,
+        Some("auto" | "simp") => {
+            if tokens.get(body + 1).map(|token| token.text.as_str()) != Some("(") {
+                return Err(ClickError::new("smart proof calls require parentheses"));
+            }
+            matching_delimiter(tokens, body + 1, "(", ")")?
+        }
         _ => return Err(ClickError::new("unsupported source proof clause")),
     };
     let semicolon = end_token + 1;
@@ -5844,8 +5850,8 @@ struct FlatSourceTactic<'t> {
 #[derive(Clone, Copy)]
 enum FlatTactic<'t> {
     Written(&'t ProofTactic),
-    /// A frontier-local loop phase proved by one smart tactic (`by simp`).
-    Phase(SmartTactic),
+    /// A frontier-local loop phase proved by one smart tactic (`by simp()`).
+    Phase(SmartTactic, usize),
 }
 
 fn collect_source_tactics<'t>(
@@ -5907,7 +5913,7 @@ fn collect_tactic_block_spans<'t>(
             }
             ProofTactic::If(proof_if) => {
                 let (then_open, then_close, else_open, else_close) =
-                    find_if_branch_blocks(tokens, &token_range)?;
+                    find_binary_branch_blocks(tokens, &token_range, "if")?;
                 collect_tactic_block_spans(
                     tokens,
                     then_open,
@@ -6071,13 +6077,16 @@ fn collect_nested_proof_spans<'t>(
                 .iter()
                 .position(|token| token.span.start == span.start && token.text == "by")
                 .ok_or_else(|| ClickError::new("could not locate nested source `by` clause"))?;
-            let tactic = tokens
-                .get(by + 1)
-                .ok_or_else(|| ClickError::new("nested source `by` clause has no tactic"))?;
+            let mut first = by + 1;
+            // Both written and implicit one-call blocks surround the call.
+            if tokens.get(first).is_some_and(|token| token.text == "{") {
+                first += 1;
+            }
+            let last = tactic_end_token(tokens, first, tokens.len())?;
             spans.push(FlatSourceTactic {
-                span: tactic.span.clone(),
-                tokens: by + 1..by + 2,
-                tactic: FlatTactic::Phase(*smart),
+                span: tokens[first].span.start..tokens[last].span.end,
+                tokens: first..last + 1,
+                tactic: FlatTactic::Phase(*smart, by),
             });
             Ok(())
         }
@@ -6188,9 +6197,10 @@ fn tactic_end_token(
     }
 }
 
-fn find_if_branch_blocks(
+fn find_binary_branch_blocks(
     tokens: &[SourceToken],
     tactic: &Range<usize>,
+    kind: &str,
 ) -> Result<(usize, usize, usize, usize), ClickError> {
     let mut depth = 0_usize;
     let mut outer_open = None;
@@ -6204,9 +6214,9 @@ fn find_if_branch_blocks(
                 depth += 1;
             }
             "}" => {
-                depth = depth
-                    .checked_sub(1)
-                    .ok_or_else(|| ClickError::new("unbalanced `if` tactic source block"))?;
+                depth = depth.checked_sub(1).ok_or_else(|| {
+                    ClickError::new(format!("unbalanced `{kind}` tactic source block"))
+                })?;
                 if depth == 0
                     && tokens.get(cursor + 1).map(|token| token.text.as_str()) == Some("else")
                 {
@@ -6216,12 +6226,14 @@ fn find_if_branch_blocks(
             _ => {}
         }
     }
-    let (then_open, then_close) =
-        then_block.ok_or_else(|| ClickError::new("could not locate proof `if` then branch"))?;
+    let (then_open, then_close) = then_block
+        .ok_or_else(|| ClickError::new(format!("could not locate proof `{kind}` then branch")))?;
     let else_keyword = then_close + 1;
     let else_open = else_keyword + 1;
     if tokens.get(else_open).map(|token| token.text.as_str()) != Some("{") {
-        return Err(ClickError::new("could not locate proof `if` else branch"));
+        return Err(ClickError::new(format!(
+            "could not locate proof `{kind}` else branch"
+        )));
     }
     let else_close = matching_delimiter(tokens, else_open, "{", "}")?;
     Ok((then_open, then_close, else_open, else_close))
@@ -6264,7 +6276,7 @@ fn find_branch_blocks(
     tokens: &[SourceToken],
     tactic: &Range<usize>,
 ) -> Result<(usize, usize, usize, usize), ClickError> {
-    find_named_arm_blocks(tokens, tactic, "then", "else", "branch")
+    find_binary_branch_blocks(tokens, tactic, "branch")
 }
 
 /// The `returned` and `threw` arm blocks of
@@ -6305,41 +6317,6 @@ fn find_outcomes_arm_blocks(
             "could not locate the arms of a source `outcomes`",
         )),
     }
-}
-
-fn find_named_arm_blocks(
-    tokens: &[SourceToken],
-    tactic: &Range<usize>,
-    first: &str,
-    second: &str,
-    kind: &str,
-) -> Result<(usize, usize, usize, usize), ClickError> {
-    // The arms follow the tactic's keyword at its own top level:
-    // `branch [ensuring { ... }] then { ... } else { ... }` and
-    // `outcomes returned { ... } threw { ... }`.
-    let find_named_block = |name: &str| -> Result<(usize, usize), ClickError> {
-        let mut depth = 0_usize;
-        for keyword in tactic.start + 1..tactic.end {
-            match tokens[keyword].text.as_str() {
-                "{" => depth += 1,
-                "}" => depth = depth.saturating_sub(1),
-                text if depth == 0
-                    && text == name
-                    && tokens.get(keyword + 1).map(|token| token.text.as_str()) == Some("{") =>
-                {
-                    let open = keyword + 1;
-                    return Ok((open, matching_delimiter(tokens, open, "{", "}")?));
-                }
-                _ => {}
-            }
-        }
-        Err(ClickError::new(format!(
-            "could not locate `{kind}` {name} arm"
-        )))
-    };
-    let (then_open, then_close) = find_named_block(first)?;
-    let (else_open, else_close) = find_named_block(second)?;
-    Ok((then_open, then_close, else_open, else_close))
 }
 
 fn find_structural_induction_arm_blocks(

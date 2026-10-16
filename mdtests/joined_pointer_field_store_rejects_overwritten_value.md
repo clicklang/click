@@ -72,7 +72,7 @@ void inspect(struct node* parent) {
         owns tree_context: parent_at(root);
         invariant parent == parent_identity(tree_context.model);
         decreases 0;
-        initialize by simp;
+        initialize by simp();
         preserve by {
             match tree_context.model {
                 Parent::At(pid, sm, fm) => {
@@ -109,14 +109,14 @@ void inspect(struct node* parent) {
                             have child == leaf;
                             have sibling->left == child;
                             have model->left == leaf by {
-                                rewrite(model == sibling); rewrite(leaf == child); normalize() using { sibling->left == child; }
+                                rewrite(model == sibling); rewrite(leaf == child); normalize() using { sibling->left == child; };
                             }
                             step();
                             step();
                             have sibling->right == child;
                             have model->right == parent by {
                                 rewrite(model == sibling);
-                                normalize() using { sibling->right == child; }
+                                normalize() using { sibling->right == child; };
                             }
                             let l = fold(leaf_at(parent->left->left), { model: Identity::At(leaf) });
                             let c = fold(cell(parent->left), { model: Pair::At(model, Identity::At(leaf)) }, { l: l });

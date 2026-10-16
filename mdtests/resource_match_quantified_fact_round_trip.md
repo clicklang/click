@@ -54,7 +54,7 @@ int32 write_zero(struct buffer* buffer) {
                 }, 0) using {
                     0 <= 0;
                     0 < end;
-                }
+                };
                 assumption();
             }
             unfold(prefix);
@@ -71,13 +71,13 @@ int32 write_zero(struct buffer* buffer) {
                     simp() using {
                         k < end;
                         end == 1;
-                    }
+                    };
                 }
                 have k == 0 by {
                     arithmetic() using {
                         0 <= k;
                         k < 1;
-                    }
+                    };
                 }
                 rewrite(k == 0);
                 normalize();

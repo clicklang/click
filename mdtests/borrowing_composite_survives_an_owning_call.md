@@ -60,7 +60,7 @@ int32 probe(struct s* p, int32 d[], int32 n) {
     step();
     transport(at(statement(2).entry, p->b) == n, p->b == n) using {
         at(statement(2).entry, p->b) == n;
-    }
+    };
     step();
     step();
     simp();

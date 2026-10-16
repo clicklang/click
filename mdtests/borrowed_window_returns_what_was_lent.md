@@ -32,7 +32,7 @@ void push(struct buffer* owner, int32 value) {
     ensures owner->len == old(owner->len) + 1;
     ensures owner->data == old(owner->data);
     ensures owner->data[old(owner->len)] == value;
-} by auto;
+} by auto();
 ```
 
 ```expect

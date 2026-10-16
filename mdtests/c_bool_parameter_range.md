@@ -46,11 +46,11 @@ int32 in_range_reversed(bool flag) {
 }
 
 int32 auto_equal(bool flag) {
-    ensures result == flag by auto;
+    ensures result == flag by auto();
 }
 
 int32 auto_range(bool flag) {
-    ensures result == 0 or result == 1 by auto;
+    ensures result == 0 or result == 1 by auto();
 }
 
 int32 forwards(bool b) {

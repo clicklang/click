@@ -30,7 +30,7 @@ int32 next_index(int32 i, int32 n) {
     ensures result == i + 1;
 } by {
     have 0 <= i + 1 by {
-        arithmetic() using { 0 <= i; i < n; n <= 1073741823; }
+        arithmetic() using { 0 <= i; i < n; n <= 1073741823; };
     }
     have (-2147483648 ^ (i + 1)) <= -1073741825 by {
         arithmetic() using {
@@ -38,7 +38,7 @@ int32 next_index(int32 i, int32 n) {
             0 <= i;
             i < n;
             n <= 1073741823;
-        }
+        };
     }
     execute();
     simp();

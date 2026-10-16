@@ -22,14 +22,14 @@ verifying "table.c";
 
 int32 read_middle() {
     requires table[1] == 4;
-    ensures result == 4 by auto;
+    ensures result == 4 by auto();
 }
 
 int32 increment_middle() {
     requires table[1] < 1000;
     owns table[0..3];
-    ensures result == old(table[1]) + 1 by auto;
-    ensures table[1] == old(table[1]) + 1 by auto;
+    ensures result == old(table[1]) + 1 by auto();
+    ensures table[1] == old(table[1]) + 1 by auto();
 }
 ```
 

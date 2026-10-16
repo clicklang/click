@@ -39,7 +39,7 @@ void inspect(struct node *p) {
  ensures 1 == 1;
 } by {
  execute_until(loop(0));
- loop { owns t: parent(root); invariant p == tree_identity(t.model); decreases 0; initialize by simp; preserve by {
+ loop { owns t: parent(root); invariant p == tree_identity(t.model); decreases 0; initialize by simp(); preserve by {
  match t.model { Tree::At(pid, cm) => {
  have p == tree_identity(Tree::At(pid, cm)) by { rewrite(Tree::At(pid, cm) == t.model); assumption(); }
  have p == pid by { unfold(tree_identity(Tree::At(pid, cm))); simp(); }
@@ -53,9 +53,9 @@ void inspect(struct node *p) {
    mark rotation;
    step(copy_tag(p,q), {});
    have q->tag == at(rotation,p->tag);
-   have identity->tag == q->tag by { normalize() using { q == identity; } }
+   have identity->tag == q->tag by { normalize() using { q == identity; }; }
    have identity->tag == at(rotation,p->tag) by { rewrite(identity->tag == q->tag); assumption(); }
-   have identity->right == q->right by { normalize() using { q == identity; } }
+   have identity->right == q->right by { normalize() using { q == identity; }; }
    let child = fold(cell(q), { model: Pair::At(identity) });
    have child.model == cm by { rewrite(child.model == Pair::At(identity)); assumption(); }
    let t = fold(parent(root), { model: Tree::At(pid, cm) }, { child: child });

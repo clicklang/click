@@ -14,7 +14,7 @@ int f(void) {
 ```click
 verifying "a_short_pointer_is_not_a_view_of_an_int.c";
 
-int32 f() { ensures result == 0 by auto; }
+int32 f() { ensures result == 0 by auto(); }
 ```
 
 ```expect

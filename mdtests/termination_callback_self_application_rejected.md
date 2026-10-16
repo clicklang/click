@@ -33,11 +33,11 @@ contract int32 Unary(int32 x) {
 
 int32 apply(int32 (*callback)(int32), int32 x) {
     requires Unary(callback);
-    ensures 0 == 0 by auto;
+    ensures 0 == 0 by auto();
 }
 
 int32 spin(int32 x) {
-    ensures 0 == 0 by auto;
+    ensures 0 == 0 by auto();
 }
 ```
 

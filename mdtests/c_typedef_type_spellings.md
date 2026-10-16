@@ -23,7 +23,7 @@ int read_record(struct record* record, int32_t index) {
     views record->value;
     requires index == 2;
     requires record->value <= 2147483645;
-    ensures result == record->value + index by auto;
+    ensures result == record->value + index by auto();
 }
 ```
 

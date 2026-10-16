@@ -14,7 +14,7 @@ uint32 uint32_invalid_shift() {
 verifying "uint32_invalid_shift.c";
 
 uint32 uint32_invalid_shift() {
-    ensures no_result: result == 0u32 by auto;
+    ensures no_result: result == 0u32 by auto();
 }
 ```
 

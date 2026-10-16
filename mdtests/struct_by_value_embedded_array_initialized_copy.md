@@ -56,7 +56,7 @@ struct packet finish(struct packet value) {
     ensures result.pair[1].value == 7;
     ensures result.grid[1][1].value == 9;
 } by {
-    auto;
+    auto();
 }
 
 int32 run_initialized_embedded_arrays() {

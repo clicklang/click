@@ -16,7 +16,7 @@ int32 run(int32 value) {
 verifying "c_variadic_function_address_rejected.c";
 
 int32 run(int32 value) {
-    ensures result == value by auto;
+    ensures result == value by auto();
 }
 ```
 

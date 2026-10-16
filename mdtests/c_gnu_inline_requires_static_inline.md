@@ -14,7 +14,7 @@ int32 run(int32 value) {
 verifying "c_gnu_inline_requires_static_inline.c";
 
 int32 run(int32 value) {
-    ensures result == value by auto;
+    ensures result == value by auto();
 }
 ```
 

@@ -12,7 +12,7 @@ int32 run(void) {
 verifying "c_const_cast_string_literal_write_rejected.c";
 
 int32 run() {
-    ensures result == result by auto;
+    ensures result == result by auto();
 }
 ```
 

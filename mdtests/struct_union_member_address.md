@@ -31,7 +31,7 @@ int32 read_number_through_address(struct packet* packet) {
 
     ensures result == packet->payload.number;
 } by {
-    auto;
+    auto();
 }
 ```
 

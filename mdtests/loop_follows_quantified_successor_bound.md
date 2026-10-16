@@ -51,7 +51,7 @@ int32 chase(int32 *next, int32 n) {
             have 0 <= next[cur] and next[cur] < n by {
                 instantiate(forall (k: int32) {
                     0 <= k and k < n implies 0 <= next[k] and next[k] < n
-                }, cur) using { 0 <= cur; cur < n; }
+                }, cur) using { 0 <= cur; cur < n; };
                 assumption();
             }
             step();

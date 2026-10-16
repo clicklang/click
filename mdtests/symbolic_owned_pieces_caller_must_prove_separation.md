@@ -30,7 +30,7 @@ void write_pieces(int32 p[], int32 n, int32 i, int32 j) {
     owns p[i..i + 1];
     owns p[j..j + 1];
     ensures p[i] == 1;
-} by auto;
+} by auto();
 
 void call_pieces(int32 p[], int32 n, int32 i, int32 j) {
     requires n >= 0;
@@ -40,7 +40,7 @@ void call_pieces(int32 p[], int32 n, int32 i, int32 j) {
     requires j < n;
     owns p[0..n];
     ensures p[i] == 1;
-} by auto;
+} by auto();
 ```
 
 ```expect

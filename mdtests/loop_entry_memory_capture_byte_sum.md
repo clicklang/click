@@ -84,7 +84,7 @@ int32 walk(const uint8* p, int32 n) {
    have total == at(before_sum, total) + at(before_sum, (int32)__click_call_result0[0]) by simp();
    have 0 <= total by arithmetic() using { total == at(before_sum, total) + at(before_sum, (int32)__click_call_result0[0]); 0 <= at(before_sum, total); at(before_sum, total) <= 3570; 0 <= at(before_sum, (int32)__click_call_result0[0]); at(before_sum, (int32)__click_call_result0[0]) <= 255; };
    have total <= 255 * (old(n) - n) by arithmetic() using { total == at(before_sum, total) + at(before_sum, (int32)__click_call_result0[0]); at(before_sum, total) <= 255 * (old(n) - at(before_pointer, n)); 0 <= at(before_sum, total); at(before_sum, total) <= 3570; 0 <= at(before_sum, (int32)__click_call_result0[0]); at(before_sum, (int32)__click_call_result0[0]) <= 255; old(n) - n == (old(n) - at(before_pointer, n)) + 1; 0 <= n; n <= old(n); 0 <= old(n); old(n) <= 15; 1 <= at(before_pointer, n); at(before_pointer, n) <= old(n); };
-   close_invariants by { simp(); }
+   close_invariants() by { simp(); }
   }
  }
  have n == 0 by arithmetic() using { 0 <= n; n <= 0; };

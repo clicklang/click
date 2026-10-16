@@ -97,7 +97,7 @@ int32 bubble_sort3_two_pass(int32 p[3]) {
                         have k != (j - 1) by {
                             apply(int32_less_than_implies_not_equal(k, (j - 1))) using {
                                 k < (j - 1);
-                            }
+                            };
                         }
                         instantiate(forall (__click_q0: int32) { at(statement(6).entry, 0) <= at(statement(6).entry, __click_q0) and at(statement(6).entry, 0) <= at(statement(6).entry, __click_q0) and at(statement(6).entry, __click_q0) < at(statement(6).entry, j) implies at(statement(6).entry, p[__click_q0]) <= at(statement(6).entry, tmp) }, k);
                         transport(at(statement(6).entry, p[k]) <= at(statement(6).entry, tmp), p[k] <= p[j]) using {
@@ -111,26 +111,26 @@ int32 bubble_sort3_two_pass(int32 p[3]) {
                             at(statement(4).entry, j) >= at(statement(4).entry, 0);
                             k != (j - 1);
                             at(function.entry, viewable(p[0..3]));
-                        }
+                        };
                     } else {
                         have k == (j - 1) by {
                             have k <= (j - 1) by {
                                 apply(int32_less_than_increment_implies_less_equal(k, (j - 1))) using {
                                     k < j;
-                                }
+                                };
                             }
                             apply(int32_less_equal_and_not_less_than_implies_equal(k, (j - 1))) using {
                                 k <= (j - 1);
                                 not k < (j - 1);
-                            }
+                            };
                         }
                         rewrite(k == (j - 1));
                         apply(int32_less_than_implies_less_equal(at(statement(7).entry, p[(j + 1)]), at(statement(7).entry, tmp))) using {
                             at(statement(7).entry, p[(j + 1)]) < at(statement(7).entry, tmp);
-                        }
+                        };
                     }
                 }
-                close_invariants by {
+                close_invariants() by {
                     both {
                         both {
                             arithmetic_certificate signed_int32 {
@@ -212,7 +212,7 @@ int32 bubble_sort3_two_pass(int32 p[3]) {
                         have k != (j - 1) by {
                             apply(int32_less_than_implies_not_equal(k, (j - 1))) using {
                                 k < (j - 1);
-                            }
+                            };
                         }
                         instantiate(forall (__click_q0: int32) { at(statement(9).entry, 0) <= at(statement(9).entry, __click_q0) and at(statement(9).entry, 0) <= at(statement(9).entry, __click_q0) and at(statement(9).entry, __click_q0) < at(statement(9).entry, j) implies at(statement(9).entry, p[__click_q0]) <= at(statement(9).entry, p[j]) }, k);
                         transport(at(statement(9).entry, p[k]) <= at(statement(9).entry, p[j]), p[k] <= p[j]) using {
@@ -226,29 +226,29 @@ int32 bubble_sort3_two_pass(int32 p[3]) {
                             at(statement(4).entry, j) >= at(statement(4).entry, 0);
                             k != (j - 1);
                             at(function.entry, viewable(p[0..3]));
-                        }
+                        };
                     } else {
                         have k == (j - 1) by {
                             have k <= (j - 1) by {
                                 apply(int32_less_than_increment_implies_less_equal(k, (j - 1))) using {
                                     k < j;
-                                }
+                                };
                             }
                             apply(int32_less_equal_and_not_less_than_implies_equal(k, (j - 1))) using {
                                 k <= (j - 1);
                                 not k < (j - 1);
-                            }
+                            };
                         }
                         rewrite(k == (j - 1));
                         apply(int32_not_less_than_implies_greater_equal(at(statement(9).entry, p[(j + 1)]), at(statement(9).entry, p[j]))) using {
                             not at(statement(9).entry, p[(j + 1)]) < at(statement(9).entry, p[j]);
-                        }
+                        };
                         apply(int32_greater_equal_implies_reversed_less_equal(at(statement(9).entry, p[(j + 1)]), at(statement(9).entry, p[j]))) using {
                             at(statement(9).entry, p[(j + 1)]) >= at(statement(9).entry, p[j]);
-                        }
+                        };
                     }
                 }
-                close_invariants by {
+                close_invariants() by {
                     both {
                         both {
                             arithmetic_certificate signed_int32 {
@@ -345,14 +345,14 @@ int32 bubble_sort3_two_pass(int32 p[3]) {
                     not at(loop(0).exit, j) < at(loop(0).exit, 2);
                     at(loop(0).exit, j) <= at(loop(0).exit, 2);
                     at(loop(0).exit, j) >= at(loop(0).exit, 0);
-                }
+                };
                 transport(at(statement(10).entry, p[k]) <= at(statement(10).entry, p[j]), p[k] <= p[2]) using {
                     at(statement(10).entry, p[k]) <= at(statement(10).entry, p[j]);
                     0 <= k and 0 <= k and k < 2;
                     not at(loop(0).exit, j) < at(loop(0).exit, 2);
                     at(loop(0).exit, j) <= at(loop(0).exit, 2);
                     at(loop(0).exit, j) >= at(loop(0).exit, 0);
-                }
+                };
             }
             have all_le_range(p, 0, j, p[j]) by {
                 unfold(all_le_range);
@@ -365,11 +365,11 @@ int32 bubble_sort3_two_pass(int32 p[3]) {
                 have j == 0 by {
                     apply(int32_less_than_increment_implies_less_equal(j, 0)) using {
                         j < 1;
-                    }
+                    };
                     apply(int32_less_equal_and_not_less_than_implies_equal(j, 0)) using {
                         j <= 0;
                         j >= 0;
-                    }
+                    };
                 }
                 have p[0] <= p[2] by {
                     instantiate(forall (k: int32) { 0 <= k and 0 <= k and k < 2 implies p[k] <= p[2] }, 0);
@@ -389,11 +389,11 @@ int32 bubble_sort3_two_pass(int32 p[3]) {
                 transport(at(before_swap, p[1] <= p[2]), p[0] <= p[2]) using {
                     at(before_swap, p[1] <= p[2]);
                     at(before_swap, j) == 0;
-                }
+                };
                 transport(at(before_swap, p[0] <= p[2]), p[1] <= p[2]) using {
                     at(before_swap, p[0] <= p[2]);
                     at(before_swap, j) == 0;
-                }
+                };
                 have forall (k: int32) { 0 <= k and 0 <= k and k < 2 implies p[k] <= p[2] } by {
                     enumerate();
                 }
@@ -404,28 +404,28 @@ int32 bubble_sort3_two_pass(int32 p[3]) {
                 transport(at(before_swap, p[(j + 1)] < p[j]), p[0] < p[1]) using {
                     at(before_swap, j) == 0;
                     at(before_swap, p[(j + 1)] < p[j]);
-                }
+                };
                 have p[0] <= p[1] by {
                     apply(int32_less_than_implies_less_equal(p[0], p[1])) using {
                         p[0] < p[1];
-                    }
+                    };
                 }
                 have all_le_range(p, 0, j, p[j]) by {
                     unfold(all_le_range);
                     rewrite(j == 1);
                     enumerate();
                 }
-                close_invariants by {
+                close_invariants() by {
                     both {
                         both {
                             apply(int32_increment_greater_equal_lower_bound(at(statement(12).entry, j), at(statement(12).entry, 0), at(statement(12).entry, 1))) using {
                                 at(statement(12).entry, j) >= at(statement(12).entry, 0);
                                 at(statement(12).entry, j) < at(statement(12).entry, 1);
-                            }
+                            };
                         } and {
                             apply(int32_increment_upper_bound(at(statement(12).entry, j), at(statement(12).entry, 1))) using {
                                 at(statement(12).entry, j) < at(statement(12).entry, 1);
-                            }
+                            };
                         }
                     } and {
                         both {
@@ -453,11 +453,11 @@ int32 bubble_sort3_two_pass(int32 p[3]) {
                 have j == 0 by {
                     apply(int32_less_than_increment_implies_less_equal(j, 0)) using {
                         j < 1;
-                    }
+                    };
                     apply(int32_less_equal_and_not_less_than_implies_equal(j, 0)) using {
                         j <= 0;
                         j >= 0;
-                    }
+                    };
                 }
                 have p[0] <= p[2] by {
                     instantiate(forall (k: int32) { 0 <= k and 0 <= k and k < 2 implies p[k] <= p[2] }, 0);
@@ -479,38 +479,38 @@ int32 bubble_sort3_two_pass(int32 p[3]) {
                 transport(at(before_swap, not p[(j + 1)] < p[j]), not p[1] < p[0]) using {
                     at(before_swap, j) == 0;
                     at(before_swap, not p[(j + 1)] < p[j]);
-                }
+                };
                 have p[0] <= p[1] by {
                     have p[0] <= p[1] by {
                         apply(int32_not_less_than_implies_greater_equal(p[1], p[0])) using {
                             not p[1] < p[0];
-                        }
+                        };
                     }
                     have p[0] <= p[1] by {
                         apply(int32_not_less_than_implies_greater_equal(at(statement(18).entry, p[1]), at(statement(18).entry, p[0]))) using {
                             not at(statement(18).entry, p[1]) < at(statement(18).entry, p[0]);
-                        }
+                        };
                     }
                     apply(int32_greater_equal_implies_reversed_less_equal(at(statement(18).entry, p[1]), at(statement(18).entry, p[0]))) using {
                         at(statement(18).entry, p[1]) >= at(statement(18).entry, p[0]);
-                    }
+                    };
                 }
                 have all_le_range(p, 0, j, p[j]) by {
                     unfold(all_le_range);
                     rewrite(j == 1);
                     enumerate();
                 }
-                close_invariants by {
+                close_invariants() by {
                     both {
                         both {
                             apply(int32_increment_greater_equal_lower_bound(at(statement(12).entry, j), at(statement(12).entry, 0), at(statement(12).entry, 1))) using {
                                 at(statement(12).entry, j) >= at(statement(12).entry, 0);
                                 at(statement(12).entry, j) < at(statement(12).entry, 1);
-                            }
+                            };
                         } and {
                             apply(int32_increment_upper_bound(at(statement(12).entry, j), at(statement(12).entry, 1))) using {
                                 at(statement(12).entry, j) < at(statement(12).entry, 1);
-                            }
+                            };
                         }
                     } and {
                         both {
@@ -547,18 +547,18 @@ int32 bubble_sort3_two_pass(int32 p[3]) {
                 not at(loop(1).exit, j) < at(loop(1).exit, 1);
                 at(loop(1).exit, j) <= at(loop(1).exit, 1);
                 at(loop(1).exit, j) >= at(loop(1).exit, 0);
-            }
+            };
             transport(at(loop(1).exit, p)[0] <= at(loop(1).exit, p[j]), p[0] <= p[1]) using {
-            }
+            };
         }
         have p[1] <= p[2] by {
             instantiate(all_le_range(at(loop(1).exit, p), at(loop(1).exit, 0), at(loop(1).exit, 2), at(loop(1).exit, p[2])), 1) using {
-            }
+            };
             assumption();
         }
         have p[0] <= p[2] by {
             instantiate(all_le_range(at(loop(1).exit, p), at(loop(1).exit, 0), at(loop(1).exit, 2), at(loop(1).exit, p[2])), 0) using {
-            }
+            };
             assumption();
         }
         enumerate();

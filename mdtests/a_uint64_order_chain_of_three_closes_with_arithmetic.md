@@ -12,13 +12,13 @@ theorem chain_of_three(i: uint64, n: uint64, m: uint64, length: uint64) {
     requires i < n;
     requires n <= m;
     requires m <= length;
-    ensures i < length by { arithmetic() using { i < n; n <= m; m <= length; } }
+    ensures i < length by { arithmetic() using { i < n; n <= m; m <= length; }; }
 }
 theorem int32_chain_of_three(a: int32, b: int32, c: int32, d: int32) {
     requires a < b;
     requires b <= c;
     requires c <= d;
-    ensures a < d by { arithmetic() using { a < b; b <= c; c <= d; } }
+    ensures a < d by { arithmetic() using { a < b; b <= c; c <= d; }; }
 }
 ```
 

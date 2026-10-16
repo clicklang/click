@@ -85,12 +85,12 @@ void child_release(struct child* obj) {
     } else {
         unfold(child_ref(obj));
         have 1 < obj->refs by {
-            arithmetic() using { 1 <= obj->refs; obj->refs != 1; }
+            arithmetic() using { 1 <= obj->refs; obj->refs != 1; };
         }
         have obj->refs - 1 >= 1 by {
             apply(int32_above_one_predecessor_is_at_least_one(obj->refs)) using {
                 1 < obj->refs;
-            }
+            };
         }
         step();
         step();
@@ -105,7 +105,7 @@ int32 cleanup(int32 payload) {
 } by {
     step();
     step();
-    branch then { step(); simp(); } else {}
+    branch { step(); simp(); } else {}
     fold(authority(child_ref(kid)));
     fold(child_storage(kid));
     step();
@@ -113,7 +113,7 @@ int32 cleanup(int32 payload) {
     fold(child_control(kid));
     step();
     step();
-    branch then { step(); step(); simp(); } else {}
+    branch { step(); step(); simp(); } else {}
     step();
     step();
     step();

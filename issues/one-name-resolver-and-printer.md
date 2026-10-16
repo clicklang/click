@@ -24,6 +24,13 @@ Comments and literals cannot introduce bindings or have their paths rewritten.
 See [Surface names and source printing](../docs/internals/source-names-and-printing.md)
 for the implemented boundary and remaining migration.
 
+Code regions now resolve through one function, `CodeRegionRef::resolve`, in
+annotation lowering and proof execution. A loop label can no longer be bound
+to two loops on one path. Before, `at(L.exit, ...)` read the last loop named
+`L` while label regions resolved to the first
+(`mdtests/a_loop_label_names_one_loop.md`). Snapshots are still keyed by
+spelling.
+
 The complete scoped table for parameters, fields, binders, constructors,
 resources, program points and project modules remains open. Proof inventories
 still interpret shared parser tokens; parser-produced AST spans and integration

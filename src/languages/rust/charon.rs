@@ -3202,7 +3202,7 @@ mod tests {
         {
             let _session = crate::kernel::VerificationSession::enter();
             crate::surface::verify_c0_sources(
-                "theorem warm_array_metadata_library() { ensures 0 == 0 by simp; }",
+                "theorem warm_array_metadata_library() { ensures 0 == 0 by simp(); }",
                 &[],
             )
             .unwrap();
