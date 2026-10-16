@@ -1250,6 +1250,28 @@ this is an allowed post-state”; it is not evidence that the return is
 reachable. Verified contract and loop rules cannot be converted into concrete
 execution or termination theorems.
 
+One driver steps statements and functions for both judgments
+(`execute_statement_paths` in `src/kernel/eval/statements.rs`, and
+`execute_function_body_paths` and `execute_function_paths` in
+`src/kernel/functions.rs`). The judgment is its parameter
+(`StatementJudgment`), and every statement a judgment contains, in a sequence,
+a branch, a loop body, a switch case or a handler, is stepped under the same
+judgment. The judgments differ in exactly two named branches:
+
+- a loop: under verification, an environment's verified loop rule, or the
+  loop's own invariant, effect and termination checks, step it as its checked
+  abstraction (`abstract_loop_paths`); execution, and verification of a loop
+  with neither, unroll it;
+- a function applied as a whole: under verification, a function that declares
+  a measure has its recursion anchor installed before its body runs.
+
+Everything else is shared: each statement is charged one step, every
+statement passes the same pending-thread-create gate, and a sequence whose
+first statement leaves abnormally carries that statement's facts and loan
+evidence out with it. `execute_c_statement_paths` and
+`execute_c_statement_verification_paths` remain only as names for the two
+judgments.
+
 `VerificationDiverges` is an internal outcome marker accepted only inside the
 verification propositions. It records a checked path with no finite successor,
 so enclosing sequences do not resume and return claims are vacuous. Concrete
