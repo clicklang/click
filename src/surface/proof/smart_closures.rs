@@ -6720,7 +6720,7 @@ impl<'a> Proof<'a> {
                 }
                 return None;
             }
-            let step = explicit_linear_step(tactic)?;
+            let step = SourceContext::PureGoal.leaf_step(tactic)?;
             proof = proof.apply_step(step).ok()?;
         }
         proof.focused_discharged().then_some(proof)
@@ -8907,7 +8907,8 @@ impl<'a> Proof<'a> {
                         proof = proof.admit_focused_goal_for_sorry()?;
                         continue;
                     }
-                    let step = explicit_linear_step(tactic)
+                    let step = SourceContext::PureGoal
+                        .leaf_step(tactic)
                         .ok_or_else(|| proof.unsupported_operation_error(tactic_name(tactic)))?;
                     proof = proof.apply_step(step)?;
                 }

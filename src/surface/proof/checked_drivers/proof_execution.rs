@@ -90,59 +90,10 @@ fn proof_if_arms_do_not_rejoin() -> ClickError {
     )
 }
 
-fn linear_execution_proof_step(tactic: &ProofTactic) -> Option<ProofStep> {
-    match tactic {
-        ProofTactic::Mark(name) => Some(ProofStep::Mark(name.clone())),
-        ProofTactic::Step => Some(ProofStep::Step),
-        ProofTactic::StepContract(name) => Some(ProofStep::StepContract(name.clone())),
-        ProofTactic::StepBind(name) => Some(ProofStep::StepBind(name.clone())),
-        ProofTactic::StepCall(transport) => Some(ProofStep::StepCall(transport.clone())),
-        ProofTactic::UserTactic(application) => Some(ProofStep::UserTactic(application.clone())),
-        ProofTactic::TransportUsing {
-            source,
-            target,
-            premises,
-        } => Some(ProofStep::TransportUsing {
-            source: source.clone(),
-            target: target.clone(),
-            premises: premises.clone(),
-        }),
-        ProofTactic::UnfoldPredicate(name) => Some(ProofStep::UnfoldPredicate(name.clone())),
-        ProofTactic::UnfoldFunction(application) => {
-            Some(ProofStep::UnfoldFunction(application.clone()))
-        }
-        ProofTactic::PeelFunction {
-            application,
-            premises,
-        } => Some(ProofStep::PeelFunction {
-            application: application.clone(),
-            premises: premises.clone(),
-        }),
-        ProofTactic::UnfoldResource(resource) => Some(ProofStep::UnfoldResource(resource.clone())),
-        ProofTactic::UnfoldWitnesses { resource, names } => Some(ProofStep::UnfoldWitnesses {
-            resource: resource.clone(),
-            names: names.clone(),
-        }),
-        ProofTactic::FoldResource(resource) => Some(ProofStep::FoldResource(resource.clone())),
-        ProofTactic::ObserveResource(resource) => {
-            Some(ProofStep::ObserveResource(resource.clone()))
-        }
-        ProofTactic::Iterated(tactic) => Some(ProofStep::Iterated(tactic.clone())),
-        ProofTactic::ApplyTheoremUsing {
-            application,
-            premises,
-        } => Some(ProofStep::ApplyTheoremUsing {
-            application: application.clone(),
-            premises: premises.clone(),
-        }),
-        _ => None,
-    }
-}
-
 /// `close_invariants()` is smart: it plans the back-edge bundle body. It has
 /// no certificate step of its own, so the drivers that support it route it
 /// through `apply_close_invariants_body`, which retains the checked body as a
-/// `close_invariants() by` step. It stays outside `linear_execution_proof_step`
+/// `close_invariants() by` step. It stays outside the frontier's leaf admissions
 /// so no driver can record a bare closure request as certificate provenance.
 fn closes_loop_invariants(tactic: &ProofTactic) -> bool {
     matches!(
@@ -257,7 +208,7 @@ fn checked_execution_arm_tactics_end(
             may_exit = true;
             continue;
         }
-        if linear_execution_proof_step(tactic).is_none()
+        if SourceContext::ExecutionFrontier.leaf_step(tactic).is_none()
             && !closes_loop_invariants(tactic)
             && !matches!(
                 tactic,
@@ -633,7 +584,7 @@ pub(in crate::surface::proof) fn apply_source_step_proofs<'a>(
     step_proof: &StepProof,
     tactic_index: usize,
 ) -> Result<Proof<'a>, ClickError> {
-    let Some(step) = linear_execution_proof_step(step) else {
+    let Some(step) = SourceContext::ExecutionFrontier.leaf_step(step) else {
         return Err(proof.step_error("obligation proofs follow a `step` form"));
     };
     let solve = |proof: &Proof<'a>, have: &ProofHave| -> Result<Proof<'a>, ClickError> {
@@ -678,27 +629,6 @@ pub(in crate::surface::proof) fn apply_source_step_proofs<'a>(
             })
         }
     }
-}
-
-/// Whether a written tactic runs at an execution frontier that has not
-/// reached the function exit. The linear continuation hands the first tactic
-/// outside this set, with its suffix, to the outcome driver; an arm refuses
-/// it.
-fn frontier_admits(tactic: &ProofTactic) -> bool {
-    linear_execution_proof_step(tactic).is_some()
-        || closes_loop_invariants(tactic)
-        || matches!(tactic, ProofTactic::Choose(_) | ProofTactic::LetSatisfy(_))
-        || matches!(
-            tactic,
-            ProofTactic::Step
-                | ProofTactic::StepProved { .. }
-                | ProofTactic::ApplyTheorem(_)
-                | ProofTactic::Transport { .. }
-                | ProofTactic::Have(_)
-                | ProofTactic::ExecuteUntil(_)
-                | ProofTactic::SmartExecute
-                | ProofTactic::Loop(_)
-        )
 }
 
 fn flat_post_execution_tactic(tactic: &ProofTactic) -> Option<PostExecutionTactic> {
@@ -909,7 +839,7 @@ fn checked_structural_execution_branch_supported(
 /// the function exit. The linear continuation, a focused execution arm and a
 /// loop's `preserve` body all run their frontier tactics through this one
 /// function, so a tactic means the same thing in each; the contexts differ
-/// only in which tactics they admit ([`frontier_admits`]) and in what they do
+/// only in which tactics they admit (`SourceContext::ExecutionFrontier`) and in what they do
 /// at the function exit. `Ok(None)` declines the proof shape.
 fn apply_frontier_source_tactic<'a>(
     proof: Proof<'a>,
@@ -935,7 +865,7 @@ fn apply_frontier_source_tactic<'a>(
     let checkpoint = proof.checkpoint();
     let next = if matches!(indexed.tactic, ProofTactic::CloseInvariants) {
         proof.apply_close_invariants_body(&[ProofTactic::Simp])?
-    } else if let Some(step) = linear_execution_proof_step(&indexed.tactic) {
+    } else if let Some(step) = SourceContext::ExecutionFrontier.leaf_step(&indexed.tactic) {
         proof
             .apply_step_at(step, indexed.source_index)
             .inspect_err(|_| {
@@ -1074,7 +1004,7 @@ fn advance_checked_linear_continuation<'a>(
         return decline();
     };
     for (offset, indexed) in tactics.iter().enumerate() {
-        if !frontier_admits(&indexed.tactic) {
+        if !SourceContext::ExecutionFrontier.admits(&indexed.tactic) {
             return Ok(Ok((proof, tactics[offset..].to_vec())));
         }
         check_verification_deadline()?;
@@ -3135,7 +3065,7 @@ fn advance_focused_execution_arm<'a>(
             )?;
             continue;
         }
-        if !frontier_admits(&indexed.tactic) {
+        if !SourceContext::ExecutionFrontier.admits(&indexed.tactic) {
             if matches!(indexed.tactic, ProofTactic::Simp) {
                 return Err(proof.step_error(simp_before_exit_reason(&proof)));
             }
@@ -4348,7 +4278,7 @@ fn arm_execution_steps(node: &InternalProofNode, depth: usize) -> Option<Vec<Pro
                 continuation,
             } => {
                 for indexed in tactics {
-                    steps.push(linear_execution_proof_step(&indexed.tactic)?);
+                    steps.push(SourceContext::ExecutionFrontier.leaf_step(&indexed.tactic)?);
                 }
                 node = continuation;
             }
@@ -4490,7 +4420,7 @@ fn advance_linear_open_scope<'a>(
             )?;
             continue;
         }
-        if let Some(step) = linear_execution_proof_step(&indexed.tactic) {
+        if let Some(step) = SourceContext::ExecutionFrontier.leaf_step(&indexed.tactic) {
             scope = scope.apply_step(step).inspect_err(|_| {
                 if matches!(indexed.tactic, ProofTactic::TransportUsing { .. }) {
                     scope.record_certification_failure_trace();
