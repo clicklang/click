@@ -48,6 +48,20 @@ fn proof_step_supports_explicit_fact_transport() {
         "{}",
         error.message()
     );
+    // The source is available, only unlisted: the refusal names it as
+    // written and does not print it as missing beside the facts holding it.
+    assert!(
+        error.message().contains(
+            "its source `old(p[0]) == 7` is an available fact, but this check reads only the facts listed in `using`"
+        ),
+        "{}",
+        error.message()
+    );
+    assert!(
+        !error.message().contains("available pure facts"),
+        "{}",
+        error.message()
+    );
 }
 
 #[test]

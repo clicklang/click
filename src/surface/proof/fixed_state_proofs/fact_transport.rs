@@ -413,11 +413,16 @@ fn check_fixed_state_fact_transport_using_facts_inner(
         );
     // At a completed return outcome, the source is its own checked slot in
     // `transport(source, target)`: it may name an exact result-path fact
-    // without being duplicated in `using`. Mid-execution transport retains
-    // the stricter rule that `using` must establish its logical source. A
-    // selected outcome snapshot that materializes to true likewise checks the
-    // equivalent symbolic source used for frame transport.
-    if !(fixed_state.result.is_some() && (available.contains(&source) || concrete_source_is_true))
+    // without being duplicated in `using`. A quantified source names it up
+    // to its binder's name, as a listed premise does: a call's postcondition
+    // is held with the binder its lowering chose. Both are indexed lookups.
+    // Mid-execution transport retains the stricter rule that `using` must
+    // establish its logical source. A selected outcome snapshot that
+    // materializes to true likewise checks the equivalent symbolic source
+    // used for frame transport.
+    let source_is_available =
+        || available.contains(&source) || available.quantified_fact_available(&source);
+    if !(fixed_state.result.is_some() && (concrete_source_is_true || source_is_available()))
         && !holds_without_facts_under_binders(&source)
         && !exact_fact_is_available(&source, &explicit_premises)
         && !separation_bridged_fact_is_available(
@@ -430,6 +435,15 @@ fn check_fixed_state_fact_transport_using_facts_inner(
             .derive_atomic_proposition(&source)
             .is_none()
     {
+        // Mid-execution, an available source that `using` does not list is
+        // refused only for not being listed. Say so, naming it as written,
+        // rather than print it as missing beside the facts that hold it.
+        if source_is_available() {
+            return Err(ClickError::new(format!(
+                "`{claim_label}` tactic {tactic_index}: `transport using` requires a source derivable from its explicit facts: its source `{}` is an available fact, but this check reads only the facts listed in `using`; list the source there",
+                crate::surface::printing::source_click_proposition(surface_source),
+            )));
+        }
         let available = available.to_vec();
         return Err(ClickError::new(format!(
             "`{claim_label}` tactic {tactic_index}: `transport using` requires a source derivable from its explicit facts: {}",

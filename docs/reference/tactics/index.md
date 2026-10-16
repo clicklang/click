@@ -1961,6 +1961,9 @@ its lowering chose is cited by a written form with another, as in `apply using`.
 
 **Failure, checking, and tools:**
 
+At a completed return outcome the source may name a held fact without being
+listed, up to its binder's name in the same way. Mid-execution the source must
+be listed; a refused source that is an available fact is named as one to list.
 An absent source, mismatched target, or insufficient evidence fails. A refused
 narrowing names the order fact it needs, as the two segments were written. A
 refused fold frame names the step it could not place, or why the function has no
