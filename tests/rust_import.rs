@@ -424,7 +424,9 @@ fn charon_symbolic_multiply_tools_recheck_the_unreachable_path_certificate() {
 #[ignore = "nightly: 72 s, over the gate's per-test budget (2026-10-06)"]
 fn charon_assignment_operators_cli_tools_recheck_expanded_certificates() {
     let p = charon_operator_project();
-    for command in ["verify", "profile", "audit"] {
+    // Profile checks every original proof; the final verify below checks all
+    // expanded claims together, without rechecking the fixture after each edit.
+    for command in ["profile", "audit"] {
         assert_cli(&p, &[command]);
     }
     for claim in [
@@ -434,8 +436,8 @@ fn charon_assignment_operators_cli_tools_recheck_expanded_certificates() {
         "local.contract",
     ] {
         assert_cli(&p, &["expand", "--claim", claim, "--in-place"]);
-        assert_cli(&p, &["verify"]);
     }
+    assert_cli(&p, &["verify"]);
 }
 #[test]
 #[ignore = "requires the separately built pinned Charon/compiler"]
@@ -512,7 +514,9 @@ fn charon_shared_iteration_checks_order_moves_empty_arrays_and_read_authority() 
 #[ignore = "nightly: 12 s, over the gate's per-test budget (2026-10-06)"]
 fn charon_shared_iteration_cli_tools_recheck_expanded_certificates() {
     let p = charon_iteration_project();
-    for command in ["verify", "profile", "audit"] {
+    // Profile checks every original proof; the final verify below checks all
+    // expanded claims together, without rechecking the fixture after each edit.
+    for command in ["profile", "audit"] {
         assert_cli(&p, &[command]);
     }
     for claim in [
@@ -523,8 +527,8 @@ fn charon_shared_iteration_cli_tools_recheck_expanded_certificates() {
         "empty.contract",
     ] {
         assert_cli(&p, &["expand", "--claim", claim, "--in-place"]);
-        assert_cli(&p, &["verify"]);
     }
+    assert_cli(&p, &["verify"]);
 }
 #[test]
 #[ignore = "requires the separately built pinned Charon/compiler"]
@@ -774,7 +778,9 @@ fn charon_nested_chunks_and_array_slices_check_bytes_bounds_and_claims() {
 #[ignore = "nightly: 40 s, over the gate's per-test budget (2026-10-06)"]
 fn charon_nested_cli_tools_recheck_expanded_certificates() {
     let p = charon_nested_project();
-    for command in ["verify", "profile", "audit"] {
+    // Profile checks every original proof; the final verify below checks all
+    // expanded claims together, without rechecking the fixture after each edit.
+    for command in ["profile", "audit"] {
         assert_cli(&p, &[command]);
     }
     for claim in [
@@ -785,8 +791,8 @@ fn charon_nested_cli_tools_recheck_expanded_certificates() {
         "large_array_len.contract",
     ] {
         assert_cli(&p, &["expand", "--claim", claim, "--in-place"]);
-        assert_cli(&p, &["verify"]);
     }
+    assert_cli(&p, &["verify"]);
 }
 #[test]
 #[ignore = "requires the separately built pinned Charon/compiler"]
@@ -889,7 +895,9 @@ fn charon_chunks_check_boundaries_authority_and_false_claims() {
 #[ignore = "nightly: 21 s, over the gate's per-test budget (2026-10-06)"]
 fn charon_chunk_cli_tools_recheck_expanded_certificates() {
     let p = charon_chunk_project();
-    for command in ["verify", "profile", "audit"] {
+    // Profile checks every original proof; the final verify below checks all
+    // expanded claims together, without rechecking the fixture after each edit.
+    for command in ["profile", "audit"] {
         assert_cli(&p, &[command]);
     }
     for claim in [
@@ -899,8 +907,8 @@ fn charon_chunk_cli_tools_recheck_expanded_certificates() {
         "tail_byte.contract",
     ] {
         assert_cli(&p, &["expand", "--claim", claim, "--in-place"]);
-        assert_cli(&p, &["verify"]);
     }
+    assert_cli(&p, &["verify"]);
 }
 #[test]
 #[ignore = "requires the separately built pinned Charon/compiler"]

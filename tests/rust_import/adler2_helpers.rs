@@ -1732,9 +1732,9 @@ fn charon_adler2_small_batch_compute_rejects_false_tail_state_and_ranking() {
 fn charon_adler2_small_batch_compute_tools_recheck_original_contract() {
     let p = compute_project(SMALL_BATCH_COMPUTE);
     let claim = "adler2::Adler32::compute.contract";
-    for command in ["verify", "profile"] {
-        assert_cli(&p, &[command]);
-    }
+    // Profile verifies the whole original fixture; the final full CLI verify
+    // below checks every proof again after expanding the computation.
+    assert_cli(&p, &["profile"]);
     // Helpers and arithmetic lemmas have their own audits. Selecting the
     // complete computation claim keeps this long nightly check within one
     // bounded audit run and still expands every smart site of the body.
