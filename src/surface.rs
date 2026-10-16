@@ -5085,6 +5085,53 @@ pub enum CodeRegionRef {
     BackEdge,
 }
 
+impl CodeRegionRef {
+    /// The C code region this written region names, through the one binding
+    /// of each loop label: the structural clause that declared it. Assignment,
+    /// read and back-edge regions name execution targets, not regions.
+    pub(in crate::surface) fn resolve(
+        &self,
+        structural_clauses: &[StructuralClause],
+    ) -> Result<CodeRegion, CodeRegionResolutionError> {
+        match self {
+            CodeRegionRef::Function => Ok(CodeRegion::Function),
+            CodeRegionRef::Loop(index) => Ok(CodeRegion::Loop(*index)),
+            CodeRegionRef::Statement(index) => Ok(CodeRegion::Statement(*index)),
+            CodeRegionRef::Label(label) => structural_clauses
+                .iter()
+                .find(|clause| clause.label() == Some(label.as_str()))
+                .map(|clause| *clause.region())
+                .ok_or_else(|| CodeRegionResolutionError::UnknownLabel(label.clone())),
+            CodeRegionRef::BackEdge => Err(CodeRegionResolutionError::ExecutionTargetOnly(
+                "back_edge regions are",
+            )),
+            CodeRegionRef::Assignment { .. } | CodeRegionRef::Read(_) => Err(
+                CodeRegionResolutionError::ExecutionTargetOnly("assignment and read regions are"),
+            ),
+        }
+    }
+}
+
+/// Why a written code region names no C code region.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(in crate::surface) enum CodeRegionResolutionError {
+    /// A region only `execute_until` accepts; the text names which.
+    ExecutionTargetOnly(&'static str),
+    /// No loop on this execution path was given this label.
+    UnknownLabel(String),
+}
+
+impl std::fmt::Display for CodeRegionResolutionError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::ExecutionTargetOnly(regions) => {
+                write!(formatter, "{regions} supported only by `execute_until`")
+            }
+            Self::UnknownLabel(label) => write!(formatter, "unknown code region label `{label}`"),
+        }
+    }
+}
+
 /// A proof-visible name for one recorded symbolic state.
 ///
 /// Program points are locations in C. Marks are proof-local names bound to

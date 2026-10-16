@@ -1911,11 +1911,14 @@ fn adler_four_byte_recombination_rejects_off_by_one_residues() {
     }
 }
 
-// The original module is checked once by the caller. Each expansion changes
-// one theorem, so its cold check selects that entire owner (including any
-// other ensures clauses), rather than repeating every unchanged proof body.
-fn recheck_expanded_theorem(original: &str, source: &str, claim: &str) {
-    let (owner, _) = claim.split_once(".ensures_").expect("a pure theorem claim");
+// The caller checks the original module once. Each rewrite or mutation changes
+// one theorem, so cold-check its entire owner (including all ensures clauses)
+// rather than repeating every unchanged proof body.
+fn check_isolated_theorem(
+    original: &str,
+    source: &str,
+    owner: &str,
+) -> Result<(), click::surface::ClickError> {
     // These fixtures place each theorem's outer closing brace at column one.
     // Confirm every other declaration/proof is byte-for-byte unchanged before
     // reusing the original module's full positive check.
@@ -1935,12 +1938,12 @@ fn recheck_expanded_theorem(original: &str, source: &str, claim: &str) {
     assert_eq!(
         &original[..before_start],
         &source[..after_start],
-        "{claim}: changed prefix"
+        "{owner}: changed prefix"
     );
     assert_eq!(
         &original[before_end..],
         &source[after_end..],
-        "{claim}: changed suffix"
+        "{owner}: changed suffix"
     );
     let project = click::surface::ClickProject::new(
         "expanded.click",
@@ -1955,7 +1958,32 @@ fn recheck_expanded_theorem(original: &str, source: &str, claim: &str) {
         &click::surface::ProgramInputs::Bundle(vec![]),
         owner,
     )
-    .unwrap_or_else(|error| panic!("{claim}: {}", error.message()));
+    .map(|_| ())
+}
+
+fn recheck_expanded_theorem(original: &str, source: &str, claim: &str) {
+    let (owner, _) = claim.split_once(".ensures_").expect("a pure theorem claim");
+    check_isolated_theorem(original, source, owner)
+        .unwrap_or_else(|error| panic!("{claim}: {}", error.message()));
+}
+
+// A valid original module and a one-owner source diff keep unrelated failures
+// from making a mutation pass. Budget/parse failures are not proof refusals.
+fn reject_isolated_theorem(original: &str, changed: &str, owner: &str) {
+    let Err(error) = check_isolated_theorem(original, changed, owner) else {
+        panic!("{owner}: a mutated theorem was accepted");
+    };
+    assert_eq!(
+        error.kind(),
+        click::surface::ClickErrorKind::Proof,
+        "{owner}: {}",
+        error.message()
+    );
+    assert!(
+        !error.message().contains("budget exhausted"),
+        "{owner}: {}",
+        error.message()
+    );
 }
 
 #[test]
@@ -2003,51 +2031,61 @@ fn adler_common_spec_expands_and_rejects_false_results() {
                 .unwrap_or_else(|error| panic!("{claim}: {}", error.message()));
         recheck_expanded_theorem(COMMON_ADLER_SPEC, &expanded, claim);
     }
-    for (before, after) in [
+    for (owner, before, after) in [
         (
+            "adler_weighted_prefix_step",
             "adler_weighted_sum(bytes, n - 1, n - 1) + adler_byte_sum(bytes, n) by",
             "adler_weighted_sum(bytes, n - 1, n - 1) + 2 * adler_byte_sum(bytes, n) by",
         ),
         (
+            "adler_weighted_append_four",
             "+ 3 * to_integer((int32)bytes[n + 1]) + 2 * to_integer((int32)bytes[n + 2])",
             "+ 2 * to_integer((int32)bytes[n + 1]) + 3 * to_integer((int32)bytes[n + 2])",
         ),
         (
+            "adler_residue_congruent",
             "requires n == m + 65521 * q;",
             "requires n == m + 65520 * q;",
         ),
-        ("requires n <= 2147483643;", "requires n <= 2147483644;"),
-        ("<= 4293984240 by", "<= 4293984239 by"),
         (
+            "adler_sum_append_four",
+            "requires n <= 2147483643;",
+            "requires n <= 2147483644;",
+        ),
+        (
+            "adler_spec_packing_bounds",
+            "<= 4293984240 by",
+            "<= 4293984239 by",
+        ),
+        (
+            "adler_sum_concat",
             "ensures adler_byte_sum(bytes, prefix + suffix) == adler_byte_sum(bytes, prefix) + adler_byte_sum(bytes + prefix, suffix) by",
             "ensures adler_byte_sum(bytes, prefix + suffix) == adler_byte_sum(bytes, prefix) + adler_byte_sum(bytes + prefix, suffix) + 1 by",
         ),
         (
+            "adler_spec_b_concat",
             "ensures adler_spec_b(bytes, prefix + suffix, a0, b0) == adler_spec_b(bytes + prefix, suffix, adler_spec_a(bytes, prefix, a0), adler_spec_b(bytes, prefix, a0, b0)) by",
             "ensures adler_spec_b(bytes, prefix + suffix, a0, b0) == adler_spec_b(bytes + prefix, suffix, adler_spec_a(bytes, prefix, a0), adler_spec_b(bytes, prefix, a0, b0) + 1) by",
         ),
         (
+            "adler_spec_checksum_concat",
             "ensures adler_spec_checksum(bytes, prefix + suffix, a0, b0) == adler_spec_checksum(bytes + prefix, suffix, adler_spec_a(bytes, prefix, a0), adler_spec_b(bytes, prefix, a0, b0)) by",
             "ensures adler_spec_checksum(bytes, prefix + suffix, a0, b0) == adler_spec_checksum(bytes + prefix, suffix, adler_spec_a(bytes, prefix, a0), adler_spec_b(bytes, prefix, a0, b0)) + 1 by",
         ),
         (
+            "adler_spec_empty",
             "adler_spec_a(bytes, 0, a0) == a0 by",
             "adler_spec_a(bytes, 0, a0) == a0 + 1 by",
         ),
         (
+            "adler_spec_empty",
             "adler_spec_b(bytes, 0, a0, b0) == b0 by",
             "adler_spec_b(bytes, 0, a0, b0) == a0 by",
         ),
     ] {
         let invalid = COMMON_ADLER_SPEC.replacen(before, after, 1);
         assert_ne!(invalid, COMMON_ADLER_SPEC, "missing mutation: {before}");
-        let error = click::surface::verify_c0_sources(&invalid, &[])
-            .expect_err("false checksum specification lemma accepted");
-        assert!(
-            !error.message().contains("budget exhausted"),
-            "{}",
-            error.message()
-        );
+        reject_isolated_theorem(COMMON_ADLER_SPEC, &invalid, owner);
     }
 }
 
@@ -2057,6 +2095,7 @@ const GENERAL_PARTITION: &str =
 #[test]
 #[ignore = "nightly: absolute byte observations, expansion and false offsets"]
 fn charon_adler2_absolute_chunk_bytes_expand_and_reject_false_offsets() {
+    click::surface::verify_c0_sources(GENERAL_PARTITION, &[]).unwrap();
     for claim in [
         "adler_defined_add_zero.ensures_0",
         "adler_full_batch_prefix_window.ensures_0",
@@ -2074,23 +2113,23 @@ fn charon_adler2_absolute_chunk_bytes_expand_and_reject_false_offsets() {
         let expanded =
             click::surface::expand_c0_claim_source_by_label(GENERAL_PARTITION, &[], claim)
                 .unwrap_or_else(|error| panic!("{claim}: {}", error.message()));
-        click::surface::verify_c0_sources(&expanded, &[]).unwrap();
+        recheck_expanded_theorem(GENERAL_PARTITION, &expanded, claim);
     }
-    for (before, after) in [
-        ("requires defined(left + right);", ""),
+    for (owner, before, after) in [
         (
+            "adler_defined_byte_pointer_add",
+            "requires defined(left + right);",
+            "",
+        ),
+        (
+            "adler_absolute_chunk_byte_observation",
             "ensures to_integer((int32)((bytes + start) + pos)[lane]) == to_integer((int32)bytes[(start + pos) + lane])",
             "ensures to_integer((int32)((bytes + start) + pos)[lane]) == to_integer((int32)bytes[(start + pos) + lane]) + 1",
         ),
     ] {
         let invalid = GENERAL_PARTITION.replacen(before, after, 1);
         assert_ne!(invalid, GENERAL_PARTITION);
-        let error = click::surface::verify_c0_sources(&invalid, &[]).unwrap_err();
-        assert!(
-            !error.message().contains("budget exhausted"),
-            "{}",
-            error.message()
-        );
+        reject_isolated_theorem(GENERAL_PARTITION, &invalid, owner);
     }
 }
 
@@ -2187,39 +2226,61 @@ fn charon_adler2_general_partition_rejects_stale_and_truncated_metadata() {
                 .unwrap_or_else(|error| panic!("{claim}: {}", error.message()));
         recheck_expanded_theorem(GENERAL_PARTITION, &expanded, claim);
     }
-    for (before, after) in [
+    for (owner, before, after) in [
         (
+            "adler_outer_signed_partition_identity",
             "and (int32)(uint32)p == (int32)(uint32)(p - p % 22208u64) + (int32)(uint32)(p % 22208u64) by",
             "and (int32)(uint32)p == (int32)(uint32)(p - p % 22208u64) + (int32)(uint32)(p % 22204u64) by",
         ),
         (
+            "adler_outer_exhausted_remaining",
             "requires not (0 < remaining) or not ((int32)(uint32)size <= remaining);",
             "requires 0 < remaining or (int32)(uint32)size <= remaining;",
         ),
-        ("requires pos + 4 <= length;", "requires pos <= length;"),
-        ("requires pos <= 22204;", "requires pos <= 22205;"),
         (
+            "adler_bounded_slice_access",
+            "requires pos + 4 <= length;",
+            "requires pos <= length;",
+        ),
+        (
+            "adler_absolute_chunk_pointer",
+            "requires pos <= 22204;",
+            "requires pos <= 22205;",
+        ),
+        (
+            "adler_outer_cursor_step",
             "base + (total - (remaining - 22208)) by",
             "base + (total - (remaining - 22204)) by",
         ),
-        ("and (t + pos) + 4 <= n by", "and (t + pos) + 4 < n by"),
-        ("<= 2147483647u64;", "<= 2147483648u64;"),
-        ("<= 22204 by", "<= 22200 by"),
         (
+            "adler_bounded_slice_access",
+            "and (t + pos) + 4 <= n by",
+            "and (t + pos) + 4 < n by",
+        ),
+        (
+            "adler_general_unsigned_bounded_partition",
+            "<= 2147483647u64;",
+            "<= 2147483648u64;",
+        ),
+        (
+            "adler_aligned_outer_partition",
+            "<= 22204 by",
+            "<= 22200 by",
+        ),
+        (
+            "adler_outer_remaining_step",
             "ensures remaining - 22208 < remaining",
             "ensures remaining < remaining - 22208",
         ),
         (
+            "adler_outer_remaining_step_divisible",
             "ensures (remaining - 22208) % 22208 == 0",
             "ensures remaining - 22208 == remaining",
         ),
     ] {
         let invalid = GENERAL_PARTITION.replacen(before, after, 1);
         assert_ne!(invalid, GENERAL_PARTITION, "{before}");
-        assert!(
-            click::surface::verify_c0_sources(&invalid, &[]).is_err(),
-            "{before}"
-        );
+        reject_isolated_theorem(GENERAL_PARTITION, &invalid, owner);
     }
 }
 
@@ -2339,44 +2400,47 @@ fn adler_lane_state_expands_and_rejects_false_relations() {
             .unwrap_or_else(|error| panic!("{claim}: {}", error.message()));
         recheck_expanded_theorem(&source, &expanded, claim);
     }
-    for (before, after) in [
+    for (owner, before, after) in [
         (
+            "adler_four_lane_state_step",
             "+ 4 * v0 + 3 * v1 + 2 * v2 + v3 by",
             "+ 4 * v0 + 2 * v1 + 3 * v2 + v3 by",
         ),
         (
+            "adler_lane_b_reduction",
             "requires 0 <= adler_lane_b(b, a1, a2, a3, b0, b1, b2, b3);",
             "",
         ),
         (
+            "adler_prefix_b_step_four",
             "+ 3 * to_integer((int32)bytes[n + 1]) + 2 * to_integer((int32)bytes[n + 2])",
             "+ 2 * to_integer((int32)bytes[n + 1]) + 3 * to_integer((int32)bytes[n + 2])",
         ),
         (
+            "adler_prefix_b_step_four",
             "adler_spec_b(bytes, n + 4, a_seed, b_seed) by",
             "adler_spec_b(bytes, n + 4, a_seed, b_seed + 1) by",
         ),
         (
+            "adler_prefix_b_step_one",
             "adler_spec_b(bytes, n + 1, a_seed, b_seed) by",
             "adler_spec_b(bytes, n + 1, a_seed, b_seed + 1) by",
         ),
-        ("requires 0 <= b_rep;", ""),
-        ("requires n <= 2147483643;", "requires n <= 2147483644;"),
+        ("adler_prefix_b_step_four", "requires 0 <= b_rep;", ""),
         (
+            "adler_prefix_a_step_four",
+            "requires n <= 2147483643;",
+            "requires n <= 2147483644;",
+        ),
+        (
+            "adler_prefix_a_step_one",
             "adler_spec_a(bytes, n + 1, seed) by",
             "adler_spec_a(bytes, n + 1, seed + 1) by",
         ),
     ] {
         let changed = LANE_STATE.replacen(before, after, 1);
         assert_ne!(changed, LANE_STATE, "missing mutation: {before}");
-        let error =
-            click::surface::verify_c0_sources(&format!("{COMMON_ADLER_SPEC}\n{changed}"), &[])
-                .expect_err("false lane-state relation accepted");
-        assert!(
-            !error.message().contains("budget exhausted"),
-            "{}",
-            error.message()
-        );
+        reject_isolated_theorem(&source, &format!("{COMMON_ADLER_SPEC}\n{changed}"), owner);
     }
 }
 
@@ -3306,26 +3370,26 @@ fn adler_serial_tail_spec_expands_and_rejects_false_weights() {
             .unwrap_or_else(|error| panic!("{claim}: {}", error.message()));
         recheck_expanded_theorem(&source, &expanded, claim);
     }
-    for (before, after) in [
+    for (owner, before, after) in [
         (
+            "adler_serial_two_native_result",
             "2 + 2 * to_integer((int32)x0) + to_integer((int32)x1), 65521) by",
             "2 + to_integer((int32)x0) + 2 * to_integer((int32)x1), 65521) by",
         ),
         (
+            "adler_serial_three_native_result",
             "3 + 3 * to_integer((int32)x0) + 2 * to_integer((int32)x1) + to_integer((int32)x2), 65521) by",
             "3 + to_integer((int32)x0) + 2 * to_integer((int32)x1) + 3 * to_integer((int32)x2), 65521) by",
         ),
-        ("393126u32 + (1u32", "393125u32 + (1u32"),
+        (
+            "adler_serial_two_native_result",
+            "393126u32 + (1u32",
+            "393125u32 + (1u32",
+        ),
     ] {
         let changed = source.replacen(before, after, 1);
         assert_ne!(changed, source, "{before}");
-        let error = click::surface::verify_c0_sources(&changed, &[])
-            .expect_err("incorrect serial weights or modulus offset must be refused");
-        assert!(
-            !error.message().contains("budget exhausted"),
-            "{}",
-            error.message()
-        );
+        reject_isolated_theorem(&source, &changed, owner);
     }
 }
 
@@ -3470,51 +3534,77 @@ fn adler_deferred_batch_b_tools_expand_and_reverify() {
 #[test]
 #[ignore = "nightly: deferred B position, weighting, overflow and reduction mutations"]
 fn adler_deferred_batch_b_rejects_false_transitions() {
-    for (before, after) in [
-        ("requires pos <= 22204;", "requires pos <= 2147483647;"),
+    let original = batch_prefix_proof(BATCH_PREFIX);
+    click::surface::verify_c0_sources(&original, &[]).unwrap();
+    for (owner, before, after) in [
         (
+            "adler_native_deferred_b_step",
+            "requires pos <= 22204;",
+            "requires pos <= 2147483647;",
+        ),
+        (
+            "adler_native_deferred_b_step",
             "to_integer(pos + 4) * to_integer(a)",
             "to_integer(pos + 3) * to_integer(a)",
         ),
         (
+            "adler_native_deferred_b_step",
             "requires to_integer(a0) + to_integer(v0) <= 4294967295;",
             "",
         ),
         (
+            "adler_native_deferred_b_step",
             "requires to_integer(b0) + (to_integer(a0) + to_integer(v0)) <= 4294967295;",
             "",
         ),
         (
+            "adler_native_deferred_b_step",
             "+ 4 * to_integer(v0) + 3 * to_integer(v1)",
             "+ 3 * to_integer(v0) + 3 * to_integer(v1)",
         ),
-        ("requires 0 <= b;", ""),
-        ("requires a3 <= 65520;", "requires a3 <= 65523;"),
+        ("adler_canonical_lane_b_floor", "requires 0 <= b;", ""),
         (
+            "adler_canonical_lane_b_floor",
+            "requires a3 <= 65520;",
+            "requires a3 <= 65523;",
+        ),
+        (
+            "adler_native_deferred_b_prefix_step",
             "adler_spec_b(bytes, n + 4, a_seed, b_seed) by",
             "adler_spec_b(bytes, n + 4, a_seed, b_seed + 1) by",
         ),
         (
+            "adler_native_deferred_b_prefix_step",
             "adler_spec_b(bytes, n + 4, a_seed, b_seed) by",
             "adler_spec_b(bytes, n + 3, a_seed, b_seed) by",
         ),
         (
+            "adler_native_deferred_b_prefix_step",
             "requires to_integer(v1) == to_integer((int32)bytes[n + 1]);",
             "requires to_integer(v1) == to_integer((int32)bytes[n]);",
         ),
         (
+            "adler_empty_full_batch_position",
             "ensures to_integer(22208 - remaining) == 0 by",
             "ensures to_integer(22208 - remaining) == 1 by",
         ),
         (
+            "adler_complete_full_batch_position",
             "ensures to_integer(22208 - remaining) == 22208 by",
             "ensures to_integer(22208 - remaining) == 22207 by",
         ),
     ] {
         let changed = BATCH_PREFIX.replacen(before, after, 1);
         assert_ne!(changed, BATCH_PREFIX, "{before}");
-        let error = click::surface::verify_c0_sources(&batch_prefix_proof(&changed), &[])
+        let changed = batch_prefix_proof(&changed);
+        let error = check_isolated_theorem(&original, &changed, owner)
             .expect_err("incorrect deferred contribution or native guard must be refused");
+        assert_eq!(
+            error.kind(),
+            click::surface::ClickErrorKind::Proof,
+            "{owner}: {}",
+            error.message()
+        );
         assert!(
             !error.message().contains("budget exhausted"),
             "{}",
@@ -3589,43 +3679,66 @@ fn adler_native_vector_prefix_tools_expand_and_reverify() {
 #[test]
 #[ignore = "nightly: native vector-prefix byte, overflow, residue and cursor mutations"]
 fn adler_native_vector_prefix_rejects_false_transitions() {
-    for (before, after) in [
+    let original = vector_prefix_proof();
+    click::surface::verify_c0_sources(&original, &[]).unwrap();
+    for (owner, before, after) in [
         (
+            "adler_native_four_lane_a_prefix_step",
             "requires to_integer(v0) == to_integer((int32)bytes[n]);",
             "requires to_integer(v0) == to_integer((int32)bytes[n + 1]);",
         ),
         (
+            "adler_native_four_lane_a_prefix_step",
             "requires to_integer(a0) + to_integer(v0) <= 4294967295;",
             "",
         ),
         (
+            "adler_native_four_lane_prefix_step",
             "requires to_integer(b0) + (to_integer(a0) + to_integer(v0)) <= 4294967295;",
             "",
         ),
         (
+            "adler_four_lane_a_prefix_step",
             "requires truncating_remainder(adler_lane_a(a, a0, a1, a2, a3), 65521) == adler_spec_a(bytes, n, a_seed);",
             "",
         ),
         (
+            "adler_four_lane_prefix_step",
             "requires 0 <= adler_lane_b(b, a1, a2, a3, b0, b1, b2, b3);",
             "",
         ),
         (
+            "adler_four_lane_prefix_step",
             "adler_spec_b(bytes, n + 4, a_seed, b_seed) by",
             "adler_spec_b(bytes, n + 4, a_seed, b_seed + 1) by",
         ),
         (
+            "adler_native_iterator_prefix_step",
             "adler_spec_a(bytes, total - (remaining - 4), a_seed) by",
             "adler_spec_a(bytes, total - (remaining - 3), a_seed) by",
         ),
-        ("requires 4 <= remaining;", "requires 3 <= remaining;"),
-        ("requires remaining <= total;", ""),
+        (
+            "adler_native_iterator_prefix_step",
+            "requires 4 <= remaining;",
+            "requires 3 <= remaining;",
+        ),
+        (
+            "adler_native_iterator_prefix_step",
+            "requires remaining <= total;",
+            "",
+        ),
     ] {
         let changed = VECTOR_PREFIX.replacen(before, after, 1);
         assert_ne!(changed, VECTOR_PREFIX, "{before}");
         let source = format!("{COMMON_ADLER_SPEC}\n{LANE_STATE}\n{changed}");
-        let error = click::surface::verify_c0_sources(&source, &[])
+        let error = check_isolated_theorem(&original, &source, owner)
             .expect_err("incorrect vector prefix or missing native guard must be refused");
+        assert_eq!(
+            error.kind(),
+            click::surface::ClickErrorKind::Proof,
+            "{owner}: {}",
+            error.message()
+        );
         assert!(
             !error.message().contains("budget exhausted"),
             "{}",
