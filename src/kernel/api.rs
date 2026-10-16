@@ -8036,25 +8036,23 @@ mod contract_interface_identity;
 /// parameter in order. No target-contract assumption authorizes this call.
 pub(crate) fn prove_executed_contract_refinement(
     environment: &CExecutionEnvironment,
-    source_names: &[&str],
+    sources: &[(&str, Vec<CValue>)],
     target_name: &str,
     conclusion: Proposition,
     rule: &CVerifiedFunctionRule,
 ) -> Option<CVerifiedPureTheorem> {
-    if source_names.is_empty() {
+    if sources.is_empty() {
         return None;
     }
     let target = environment.get_function_contract(target_name)?;
+    let target_values = executed_conclusion_values(&conclusion, target)?;
     let mut function = rule.function.clone();
     let callback = function.pop_parameter()?;
     if callback.c_type() != target.function_pointer_type() {
         return None;
     }
-    let arguments = function
-        .parameters()
-        .iter()
-        .map(|parameter| CExpression::Variable(parameter.name().to_string()))
-        .collect();
+    pop_executed_value_pins(&mut function, &target_values)?;
+    let arguments = executed_call_arguments(&function, target_values.len())?;
     let call = if function.return_type() == CType::Void {
         CStatement::Call {
             function_name: callback.name().to_string(),
@@ -8073,24 +8071,32 @@ pub(crate) fn prove_executed_contract_refinement(
     if function.body() != &call || function.source_body() != &call {
         return None;
     }
-    for source_name in source_names.iter().rev() {
+    for (source_name, source_values) in sources.iter().rev() {
         let source = environment.get_function_contract(source_name)?;
-        if callback.c_type() != source.function_pointer_type() {
+        if callback.c_type() != source.function_pointer_type()
+            || source_values.len() != source.interface().value_parameters().len()
+        {
             return None;
         }
-        let source_requirement = SpecProposition::Predicate {
-            // A function-contract predicate denotes its closed interface,
-            // independently of the caller's current population model.
-            resource_state_dependent: false,
-            name: source.predicate_name(),
-            arguments: vec![SpecPredicateArgument::Value(SpecExpression::CExpression(
-                CExpression::Variable(callback.name().to_string()),
-            ))],
-        };
+        let source_requirement =
+            SpecProposition::Predicate {
+                // A function-contract predicate denotes its closed interface,
+                // independently of the caller's current population model.
+                resource_state_dependent: false,
+                name: source.predicate_name(),
+                arguments: std::iter::once(SpecPredicateArgument::Value(
+                    SpecExpression::CExpression(CExpression::Variable(callback.name().to_string())),
+                ))
+                .chain(source_values.iter().map(|value| {
+                    SpecPredicateArgument::Value(SpecExpression::Value(value.clone()))
+                }))
+                .collect(),
+            };
         if function.pop_contract_requirement()? != source_requirement {
             return None;
         }
     }
+    let function = function.with_trailing_value_parameters(target_values.len())?;
     if !contract_interface_identity::same_interface(target, &function) {
         return None;
     }
@@ -8100,6 +8106,7 @@ pub(crate) fn prove_executed_contract_refinement(
     let [
         state @ Term::CState(_),
         Term::CValue(CValue::Pointer(pointer)),
+        ..,
     ] = arguments.as_slice()
     else {
         return None;
@@ -8114,15 +8121,18 @@ pub(crate) fn prove_executed_contract_refinement(
         return None;
     }
     let mut implication = conclusion.clone();
-    for source_name in source_names.iter().rev() {
+    for (source_name, source_values) in sources.iter().rev() {
         let premise = Proposition::Predicate {
             name: environment
                 .get_function_contract(source_name)?
                 .predicate_name(),
-            arguments: vec![
+            arguments: [
                 state.clone(),
                 Term::CValue(CValue::Pointer(pointer.clone())),
-            ],
+            ]
+            .into_iter()
+            .chain(source_values.iter().cloned().map(Term::CValue))
+            .collect(),
         };
         implication = Proposition::Implies(Box::new(premise), Box::new(implication));
     }
@@ -8133,6 +8143,59 @@ pub(crate) fn prove_executed_contract_refinement(
             body: Box::new(implication),
         }),
     })
+}
+
+/// The values an execution theorem's conclusion fixes the target contract's
+/// value parameters to, after its function pointer: one per parameter.
+fn executed_conclusion_values(
+    conclusion: &Proposition,
+    target: &CFunctionContract,
+) -> Option<Vec<CValue>> {
+    let Proposition::Predicate { arguments, .. } = conclusion else {
+        return None;
+    };
+    let values = arguments
+        .get(2..)?
+        .iter()
+        .map(|argument| match argument {
+            Term::CValue(value) => Some(value.clone()),
+            _ => None,
+        })
+        .collect::<Option<Vec<_>>>()?;
+    (values.len() == target.interface().value_parameters().len()).then_some(values)
+}
+
+/// An execution theorem's one-call wrapper carries the target contract's
+/// value parameters as its trailing parameters, each pinned to the
+/// conclusion's value by a trailing requirement `parameter == value`: the
+/// wrapper is verified for every value that equals it, which is the target
+/// contract at those values. Pops and checks the pins.
+fn pop_executed_value_pins(function: &mut CFunction, values: &[CValue]) -> Option<()> {
+    let call_count = function.parameters().len().checked_sub(values.len())?;
+    let parameters = function.parameters()[call_count..].to_vec();
+    for (parameter, value) in parameters.iter().zip(values).rev() {
+        let pin = SpecProposition::Comparison {
+            left: SpecExpression::CExpression(CExpression::Variable(parameter.name().to_string())),
+            operator: CComparisonOperator::Equal,
+            right: SpecExpression::Value(value.clone()),
+        };
+        if function.pop_contract_requirement()? != pin {
+            return None;
+        }
+    }
+    Some(())
+}
+
+/// The arguments of the one call an execution wrapper makes: its call
+/// parameters, in order, without the value parameters that trail them.
+fn executed_call_arguments(function: &CFunction, value_count: usize) -> Option<Vec<CExpression>> {
+    let call_count = function.parameters().len().checked_sub(value_count)?;
+    Some(
+        function.parameters()[..call_count]
+            .iter()
+            .map(|parameter| CExpression::Variable(parameter.name().to_string()))
+            .collect(),
+    )
 }
 
 /// The declared interface of a verified or explicitly external project
@@ -8182,12 +8245,10 @@ pub(crate) fn prove_executed_concrete_contract_refinement(
     // The callee has to be a function this project has a rule for. An
     // unverified name would make the checked call vacuous.
     project_function_interface(environment, callee_name)?;
-    let function = rule.function.clone();
-    let arguments = function
-        .parameters()
-        .iter()
-        .map(|parameter| CExpression::Variable(parameter.name().to_string()))
-        .collect();
+    let target_values = executed_conclusion_values(&conclusion, target)?;
+    let mut function = rule.function.clone();
+    pop_executed_value_pins(&mut function, &target_values)?;
+    let arguments = executed_call_arguments(&function, target_values.len())?;
     let call = if function.return_type() == CType::Void {
         CStatement::Call {
             function_name: callee_name.to_string(),
@@ -8206,13 +8267,14 @@ pub(crate) fn prove_executed_concrete_contract_refinement(
     if function.body() != &call || function.source_body() != &call {
         return None;
     }
+    let function = function.with_trailing_value_parameters(target_values.len())?;
     if !contract_interface_identity::same_interface(target, &function) {
         return None;
     }
     let Proposition::Predicate { name, arguments } = &conclusion else {
         return None;
     };
-    let [Term::CState(_), Term::CValue(CValue::Pointer(pointer))] = arguments.as_slice() else {
+    let [Term::CState(_), Term::CValue(CValue::Pointer(pointer)), ..] = arguments.as_slice() else {
         return None;
     };
     if pointer.pointer().block != PointerBlock::Function(callee_name.to_string()) {

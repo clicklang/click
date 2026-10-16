@@ -591,17 +591,20 @@ crate struct, and a generic implementation
 A trait block may declare model functions of its object, `function
 size(self) -> i32;`, which are the object's state: the trait's object is a
 sealed abstract resource, `trait_objects::Shape::object`, with a field for
-each function. A `&self` method of the trait, a parameter `x: &T` with a
-`T: Trait` bound, and `x: &dyn Trait` each hold the object `x` refers to,
-with no clause written for it, and read its state as `size(x)`. A shared
-reference keeps it, so the caller still knows `size(x)` after the call, and
-an `ensures` reads it as it was at entry. No proof folds or unfolds the
-object: it has no body.
+each function. A `&self` or `&mut self` method of the trait, a parameter
+`x: &T` or `x: &mut T` with a `T: Trait` bound, and `x: &dyn Trait` or
+`x: &mut dyn Trait` each hold the object `x` refers to, with no clause
+written for it, and read its state as `size(x)`. A shared reference keeps
+it, so the caller still knows `size(x)` after the call, and an `ensures`
+reads it as it was at entry. A mutable one may change it: an `ensures`
+reads the new state, `size(self) == half + half`, and `old(size(self))` the
+state at entry, and the caller knows only what the `ensures` say. No proof
+folds or unfolds the object: it has no body.
 
 Each `impl` of such a trait defines every function from its type's
 fields, `function size(self) -> i32 { self.side }`; an `impl` that omits
 one is refused. Its methods are stated on the struct's own memory, `owns
-*self` for `&self`, with `size(self)` read as the definition in its own
+*self` for `&self` and `&mut self`, with `size(self)` read as the definition in its own
 clauses and in the interface's it inherits, and its proof is an ordinary
 method proof. Its refinement is checked against the interface read on that
 memory, an implementation's `contract fn` `..._iface`.
@@ -612,9 +615,11 @@ importer brackets the call with the struct's pack and unpack: pack
 consumes the struct's memory and produces its object, whose fields are the
 definitions read on it, and unpack returns the memory with the definitions
 equal to the fields. A caller passing `&Square { side: 3 }` therefore knows
-`size` is `3` and gets the interface's guarantee read with that value.
-`&mut self` receivers, generic traits, and default methods are not yet
-supported
+`size` is `3` and gets the interface's guarantee read with that value; one
+lending `&mut square` gets back a struct whose fields the definitions equate
+to the object's new state, so after `reset(&mut square, half)` it knows
+`square.side == half + half` and nothing of the side it lent. Generic
+traits and default methods are not yet supported
 ([`design/charon-trial/trait-objects`](https://github.com/clicklang/click/blob/master/design/charon-trial/trait-objects/shapes.click)).
 
 ### `extern` block functions

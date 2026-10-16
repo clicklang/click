@@ -1685,8 +1685,12 @@ source fact and its conclusion, `requires Adds(f, { amount: 3 }); ensures
 Shifts(f, { offset: 3 })`. See
 `mdtests/named_contract_value_parameter_refinement_theorem.md` and
 `mdtests/named_contract_value_parameter_contract_refinement_theorem.md`. An
-execution theorem cannot yet conclude a contract with value parameters;
-formation at `&f` checks it automatically.
+execution theorem fixes them the same way, `theorem t() executes add3(int32
+x) { ensures Adds(&add3, { amount: 3 }) by { step(); simp(); } }` or, from a
+source fact, `requires Adds(f, { amount: 3 }); ensures Shifts(f, { offset: 3
+})`: its one checked call is proved with the target's value parameters at
+the conclusion's values
+(`mdtests/named_contract_value_parameter_execution_theorem.md`).
 
 A top-level `contract` block defines a reusable behavioral interface without
 declaring a concrete C function:

@@ -930,7 +930,10 @@ fn check_executed_refinement_shape(return_type: CType, alter_result: bool) {
         assert_eq!(
             crate::kernel::prove_executed_contract_refinement(
                 &environment,
-                &sources,
+                &sources
+                    .iter()
+                    .map(|source| (*source, Vec::new()))
+                    .collect::<Vec<_>>(),
                 "Target",
                 conclusion.clone(),
                 &CVerifiedFunctionRule {
