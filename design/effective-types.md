@@ -1,7 +1,8 @@
 # Effective types: checking strict aliasing in the kernel
 
-Status: proposed 2026-10-16; decisions D1-D7 await approval. The maintainer
-chose a kernel check over a frontend refusal on 2026-10-16. This is the
+Status: approved 2026-10-16: the principle and the undecidable-position rule
+in [Decisions](#decisions).
+The maintainer chose a kernel check over a frontend refusal the same day. This is the
 prerequisite for one optimization level per project with `-O2` as the default
 ([project configuration, decision 1](../issues/project-config.md#further-decisions)).
 
@@ -56,7 +57,7 @@ nothing compares the access type with the object afterwards.
   allows exactly what C11 6.5p7 allows for scalars. `Char` reads and writes
   anything. A pointer's class keeps its pointee type, including signedness,
   and erases only the pointee's qualifiers; `VoidPointer` aliases every
-  pointer class (D2).
+  pointer class.
 - **Object type:** a scalar class, a struct or union (translation-unit-qualified
   tag, size, members by offset), or an array of an object type.
 - **Built in the frontend** from `C0Type` and `C0StructLayout` next to
@@ -90,48 +91,55 @@ known layout are allowed. Positions are constants or `k * element + c`
 through `canonical_offset_term`. Cost is one block lookup plus a walk of the
 layout's depth per access, with no scan of unrelated state.
 
-## Decisions (recommendations)
+## Decisions
 
-- **D1. Scalar access classes erase signedness and qualifiers, and `Char`
-  aliases everything.** This is C11 6.5p7's list for scalars. Plain `char`,
-  `signed char`, `unsigned char`, `int8` and `uint8` are all `Char`. GCC 13.3
-  at `-O2` agrees: it reloads after a store through `unsigned *` into an
-  `int`, and folds the reload after a store through `long long *` into a
-  `long`.
-- **D2. Pointer classes follow GCC, not a coarser rule.** GCC 13.3 at `-O2`
-  assumes `int **` and `long **` do not alias, nor `int **` and `unsigned **`,
-  `int **` and `char **`, pointers to different structs, or `int ***` and
-  `long ***`. It does reload across `int **` and `const int **`, and across
-  `int **` and `void **`. So a pointer class is its pointee type with the
-  pointee's qualifiers erased, and `VoidPointer` is compatible with every
-  pointer class. The probes are in [GCC alias probes](#gcc-alias-probes).
-- **D3. Union member reads are allowed.** GCC documents reading a union member
-  other than the one last written as defined. A union at a position admits
-  every member's class.
-- **D4. An undecidable position over a non-uniform layout is refused.** An
-  array of one scalar class needs no position. A struct with different classes
-  needs the access's offset modulo the layout. When the kernel cannot decide
-  it, the access is refused with the aliasing reason rather than allowed.
-- **D5. The call boundary checks consistency.** An argument's known object
-  type must be consistent with the parameter's declared pointee type, so a
-  callee's assumption about its parameter holds. The same applies to returned
-  pointers.
-- **D6. Heap cells take their effective type from stores.** A store through
-  a non-character type sets the effective type of the cells it writes. A later
-  access must be consistent with it. `memcpy` copies effective types, `free`
-  clears them, and `calloc` and untouched `malloc` memory have none, which
-  allows the first access.
-- **D7. Staging.** Each step is one PR with regressions for the refused and
-  the allowed cases:
-  1. scalar classes, so `long` vs `long long` and `int` vs `long` are refused
-     through `void *`, for declared objects and pointer parameters;
-  2. struct access paths, including the struct probe, union reads and
-     `container_of`;
-  3. heap effective types and the call boundary;
-  4. the project optimization level, `-O2` by default. The Linux profile then
-     stops requiring `-fno-strict-aliasing`, `-fno-strict-overflow` and
-     `-fno-delete-null-pointer-checks`, and the promise attributes are refused
-     in every project.
+The maintainer approved this section on 2026-10-16.
+
+**Principle.** Click refuses every C access that C11 6.5p7 makes undefined,
+except where GCC documents a defined meaning. This is the rule GCC's optimizer
+may rely on at `-O2`, not merely what it exploits today. The
+[GCC alias probes](#gcc-alias-probes) confirm that GCC 13.3 relies on it.
+
+Consequences, which follow from the principle and need no separate choice:
+
+- **Scalars.** An access class erases signedness and qualifiers, and `Char`
+  (plain `char`, `signed char`, `unsigned char`, `int8`, `uint8`) reads and
+  writes anything. `long` and `long long` are distinct.
+- **Pointers.** A pointer class is its pointee type with the pointee's
+  qualifiers erased: `int *` and `const int *` agree, `int *` and
+  `unsigned *` do not, and `void *` is compatible with every pointer class.
+- **Unions.** Reading a union member other than the one last written is
+  allowed, as GCC documents. A union at a position admits every member's
+  class.
+- **Calls.** Click verifies each function separately, so an argument's known
+  object type must be consistent with the parameter's declared pointee type,
+  and a returned pointer's with the declared return type.
+- **Heap.** Memory without a declared type takes its effective type from the
+  store that wrote it (C11 6.5p6). `memcpy` copies effective types, `free`
+  clears them, and fresh `malloc` and `calloc` memory has none, so the first
+  access is allowed and sets it.
+
+The one decision beyond the principle:
+
+- **Undecidable positions over a non-uniform layout are refused.** An
+  array of one scalar class needs no position. A struct with members of
+  different classes needs the access's offset modulo the layout. When the
+  kernel cannot decide it, the access is refused with the aliasing reason
+  rather than allowed. GCC has no such rule; it is the conservative choice
+  where Click's knowledge runs out.
+
+**Staging.** Each step is one PR with regressions for the refused and the
+allowed cases:
+
+1. scalar and pointer classes, so `long` vs `long long` and `int` vs `long`
+   are refused through `void *`, for declared objects and pointer parameters;
+2. struct access paths, including the struct probe, union reads and
+   `container_of`;
+3. heap effective types and the call boundary;
+4. the project optimization level, `-O2` by default. The Linux profile then
+   stops requiring `-fno-strict-aliasing`, `-fno-strict-overflow` and
+   `-fno-delete-null-pointer-checks`, and the promise attributes are refused
+   in every project.
 
 ## Validation
 
