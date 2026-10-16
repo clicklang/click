@@ -29,6 +29,17 @@ Still accepted: a pointer whose formation the verifier never saw, such as a
 static pointer initialized to a scalar member and stepped past in a function
 that loads it at entry. It has the root extent.
 
+A contract pointer equality compared addresses only, so a caller could
+satisfy a callee's `requires q == p` with `&pair->first + 1` and
+`&pair->second`; the callee then read through `q` with `p`'s permission.
+The kernel now also requires equal extents whenever both pointers carry one
+(`mdtests/a_one_past_member_pointer_does_not_satisfy_a_pointer_equality.md`,
+with `a_member_pointer_satisfies_a_pointer_equality_with_its_copy.md` as its
+control). A member address written in a contract, such as `&pair->second`,
+designates the member as the C frontend's does, so a function returning
+`&pair->first + 1` cannot promise `result == &pair->second`
+(`mdtests/a_contract_member_address_is_not_a_one_past_pointer.md`).
+
 ## Reproduction
 
 Save this as a Markdown proof and verify it with the ordinary C frontend:

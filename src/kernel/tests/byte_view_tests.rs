@@ -53,6 +53,7 @@ fn store_byte(memory: CMemory, offset: i64, byte: CValue, byte_order: ByteOrder)
         CType::UInt8
     };
     let statement = CStatement::TypedStore {
+        access_class: None,
         pointer: CExpression::Value(CValue::typed_pointer(
             word(offset),
             if value_type == CType::Int8 {

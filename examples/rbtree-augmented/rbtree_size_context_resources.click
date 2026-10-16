@@ -24,7 +24,7 @@ resource sized_context_at(child: struct rb_node*, root: struct rb_node*,
             owns sibling: sized_at(node->rb_right);
             owns up: sized_context_at(node, root, stop, value);
             fact node != 0;
-            fact node != stop;
+            fact address(node) != address(stop);
             fact node->rb_left == child;
             fact node->rb_left != node;
             fact node->rb_right != node;
@@ -47,7 +47,7 @@ resource sized_context_at(child: struct rb_node*, root: struct rb_node*,
             owns sibling: sized_at(node->rb_left);
             owns up: sized_context_at(node, root, stop, value);
             fact node != 0;
-            fact node != stop;
+            fact address(node) != address(stop);
             fact node->rb_right == child;
             fact node->rb_left != node;
             fact node->rb_right != node;

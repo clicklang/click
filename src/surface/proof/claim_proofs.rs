@@ -223,26 +223,14 @@ fn unsupported_proof_shape(
     grouped: bool,
     claim_labels: &[String],
     tactics: &[ProofTactic],
+    decline: Decline,
 ) -> ClickError {
-    // The decline records are internal bookkeeping. Consume them here so a
-    // later diagnostic does not inherit stale state, but do not expose the
-    // driver topology to users.
-    let _ = take_driver_declines();
-    let depth_declined = take_region_depth_decline();
-    let short_of_exit = take_short_of_exit_decline();
-    let declined_operation = take_declined_operation();
-    if let Some(reason) = declined_operation {
-        // The drivers stopped at a written operation they refused for a
-        // stated reason, such as an `apply` whose premise is missing. That
-        // reason is the actionable part; the proof shape is not at fault.
-        return reason.with_context(format!("`{proof_label}`"));
-    }
-    if depth_declined {
+    if decline == Decline::RegionDepth {
         return ClickError::new(format!(
             "`{proof_label}`: checked execution-region recursion exceeds the supported depth of {MAX_CHECKED_PROOF_REGION_RECURSION}. This bound counts active recursive regions, not written proof nesting; completed early-return cases run iteratively. Move an inner `match`, `branch`, or proof `if` into a contracted helper, or prove part of it in a `have`."
         ));
     }
-    if short_of_exit {
+    if decline == Decline::ShortOfExit {
         // The written shape is supported; what stopped the drivers is a path
         // the proof left open. Say which, rather than calling the shape
         // unimplemented, since the fix is in the proof script.
@@ -553,12 +541,6 @@ fn prove_claims_by_checked_tactics(
     // The checked drivers are tried in order: the structural driver owns
     // scopes and branches, and the flat driver owns linear proofs. A decline
     // tries the next checked driver; an error is terminal.
-    // A decline recorded by an earlier claim's attempt, which another driver
-    // then satisfied, must not colour this claim's diagnostic.
-    let _ = take_driver_declines();
-    let _ = take_region_depth_decline();
-    let _ = take_short_of_exit_decline();
-    let _ = take_declined_operation();
     let structural = try_check_structural_function_proof(
         &initial,
         &pure_facts,
@@ -576,10 +558,9 @@ fn prove_claims_by_checked_tactics(
         &function,
         &arguments,
     )?;
-    let direct_proof = if structural.is_some() {
-        structural
-    } else {
-        try_check_flat_function_proof(
+    let direct_proof = match structural {
+        Ok(proof) => Ok(proof),
+        Err(structural_decline) => try_check_flat_function_proof(
             &initial,
             &pure_facts,
             &constants,
@@ -596,8 +577,11 @@ fn prove_claims_by_checked_tactics(
             &function,
             &arguments,
         )?
+        // The structural driver's reason names more than the flat driver's,
+        // which only checks linear proofs: keep the more specific of the two.
+        .map_err(|flat_decline| structural_decline.max(flat_decline)),
     };
-    if let Some(proof) = direct_proof {
+    if let Ok(proof) = direct_proof {
         match finish_ordered_proof_units(
             expansion_capture,
             vec![proof],
@@ -626,11 +610,13 @@ fn prove_claims_by_checked_tactics(
         .iter()
         .map(|claim| diagnostic_claim_label(function_block, claim))
         .collect::<Vec<_>>();
+    let decline = direct_proof.err().unwrap_or(Decline::Shape);
     Err(unsupported_proof_shape(
         proof_label,
         grouped,
         &claim_labels,
         tactics,
+        decline,
     ))
 }
 
@@ -1821,18 +1807,28 @@ pub(super) fn finish_ordered_proof<'a>(
         let mut surface_grouped_closers_by_path = Vec::with_capacity(execution.paths().len());
         let mut surface_post_tactics_by_path = Vec::with_capacity(execution.paths().len());
         let mut surface_post_choices_by_path = Vec::with_capacity(execution.paths().len());
-        // A summarized loop's terminal return and continuing exit need not
-        // have separate leaves in the execution surface. For two outcomes,
-        // a contract disjunct can name a post-execution case, provided the
-        // focused checker decides it independently on both paths below.
-        let loop_outcome_selector = (execution.paths().len() == 2
+        // Distinct terminal outcomes can share one written execution leaf:
+        // a summarized loop, or a scalar result decided at return. Keep a
+        // post-execution selector only when both outcomes decide it below.
+        let shared_terminal_leaf = execution.paths().len() == 2
+            && !matches!(
+                through_single_arm_matches(&retained_surface.steps).last(),
+                Some(
+                    ProofStep::If { .. }
+                        | ProofStep::Match { .. }
+                        | ProofStep::CallOutcomes { .. }
+                        | ProofStep::Open { .. }
+                )
+            );
+        let terminal_outcome_selector = (execution.paths().len() == 2
             && (0..2).all(|index| proof_execution.loop_return_proof(index).is_none())
-            && (0..2).any(|index| {
-                proof_execution
-                    .core
-                    .pending_loop_return_loop_index(index)
-                    .is_some()
-            }))
+            && (shared_terminal_leaf
+                || (0..2).any(|index| {
+                    proof_execution
+                        .core
+                        .pending_loop_return_loop_index(index)
+                        .is_some()
+                })))
         .then(|| {
             claims
                 .iter()
@@ -1842,9 +1838,23 @@ pub(super) fn finish_ordered_proof<'a>(
                     }
                     _ => None,
                 })
+                .or_else(|| {
+                    shared_terminal_leaf
+                        .then(|| {
+                            claims
+                                .iter()
+                                .find_map(|claim| match claim.clause().ensure() {
+                                    Ensure::Proposition(ClickProposition::Implies(left, _)) => {
+                                        Some(left.as_ref().clone())
+                                    }
+                                    _ => None,
+                                })
+                        })
+                        .flatten()
+                })
         })
         .flatten();
-        let mut loop_outcome_choices = Vec::new();
+        let mut terminal_outcome_choices = Vec::new();
         let mut loop_return_closures = Vec::new();
         let mut surface_post_path_indices = Vec::with_capacity(execution.paths().len());
         let mut deferred_capture_tactics_by_path = Vec::with_capacity(execution.paths().len());
@@ -2129,8 +2139,8 @@ pub(super) fn finish_ordered_proof<'a>(
                         &proof_label,
                         "post-execution claim tactics",
                     );
-                    let loop_outcome_choice =
-                        loop_outcome_selector.as_ref().and_then(|condition| {
+                    let terminal_outcome_choice =
+                        terminal_outcome_selector.as_ref().and_then(|condition| {
                             outcome_proof
                                 .as_ref()?
                                 .checked_outcome_if_value(condition, None)
@@ -5120,8 +5130,8 @@ pub(super) fn finish_ordered_proof<'a>(
                         }
                         surface_grouped_closers_by_path.push(path_grouped_surface_closers);
                         surface_post_choices_by_path.push(surface_post_choices);
-                        if loop_outcome_selector.is_some() {
-                            loop_outcome_choices.push(loop_outcome_choice);
+                        if terminal_outcome_selector.is_some() {
+                            terminal_outcome_choices.push(terminal_outcome_choice);
                         }
                         surface_post_path_indices.push(path_index);
                         surface_post_tactics_by_path.push(path_surface_post_tactics);
@@ -5164,7 +5174,7 @@ pub(super) fn finish_ordered_proof<'a>(
         )?;
         // This is surface routing, never additional proof authority. If
         // either outcome cannot decide the guard, retain the existing refusal.
-        let distinct_loop_suffixes = loop_outcome_choices.len() == 2
+        let distinct_terminal_suffixes = terminal_outcome_choices.len() == 2
             && (surface_post_tactics_by_path
                 .windows(2)
                 .any(|pair| pair[0] != pair[1])
@@ -5174,13 +5184,13 @@ pub(super) fn finish_ordered_proof<'a>(
                 || surface_closers_by_claim
                     .iter()
                     .any(|paths| paths.windows(2).any(|pair| pair[0] != pair[1])));
-        if loop_outcome_choices.len() == 2
-            && distinct_loop_suffixes
+        if terminal_outcome_choices.len() == 2
+            && distinct_terminal_suffixes
             && surface_post_choices_by_path.iter().all(Vec::is_empty)
             && let (Some(first), Some(second), Some(condition)) = (
-                loop_outcome_choices[0],
-                loop_outcome_choices[1],
-                loop_outcome_selector,
+                terminal_outcome_choices[0],
+                terminal_outcome_choices[1],
+                terminal_outcome_selector,
             )
             && first != second
         {
@@ -5657,9 +5667,6 @@ mod tests {
 
     #[test]
     fn unsupported_shape_diagnostic_names_route_and_tactic() {
-        // Do not let a decline recorded by another proof attempt leak into
-        // this direct diagnostic-unit test.
-        take_driver_declines();
         let error = unsupported_proof_shape(
             "f.ensures_0",
             false,
@@ -5668,6 +5675,7 @@ mod tests {
                 parameter: "n".to_string(),
                 hypothesis: "ih".to_string(),
             }],
+            Decline::Shape,
         );
 
         assert!(error.message().contains("cannot yet certify it"));

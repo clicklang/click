@@ -949,6 +949,7 @@ fn walk_c_statement<S: VariableSubstitution + ?Sized>(statement: &CStatement, s:
             pointer,
             value,
             value_type,
+            access_class,
             volatile,
             pointee_constant,
             source,
@@ -956,6 +957,7 @@ fn walk_c_statement<S: VariableSubstitution + ?Sized>(statement: &CStatement, s:
             pointer: s.c_expression(pointer),
             value: s.c_expression(value),
             value_type: *value_type,
+            access_class: access_class.clone(),
             volatile: *volatile,
             pointee_constant: *pointee_constant,
             source: source.clone(),
@@ -4274,7 +4276,7 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_c_expression(
             value_type: *value_type,
             volatile: *volatile,
             pointee_constant: *pointee_constant,
-            access_class: *access_class,
+            access_class: access_class.clone(),
             source: source.clone(),
         },
         CExpression::LessThan(left, right) => CExpression::LessThan(
@@ -5836,7 +5838,7 @@ fn substitute_pointer_variable_in_c_expression(
             value_type: *value_type,
             volatile: *volatile,
             pointee_constant: *pointee_constant,
-            access_class: *access_class,
+            access_class: access_class.clone(),
             source: source.clone(),
         },
         CExpression::Not(body) | CExpression::BitwiseNot(body) => {

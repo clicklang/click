@@ -84,6 +84,42 @@ condition graph before filing selected proposition edges; it never rebuilds
 inherited scalar edges only to discard them. Clearing a model-free proposition
 fragment retains its existing scalar graph.
 
+## Ordinary integer expression congruence
+
+Mathematical `Integer` equalities enter the shared classes. Congruence follows
+negation, addition, subtraction, multiplication, truncating quotient/remainder,
+typed machine observations, and pure calls. Integer arguments and constructor
+fields register those same terms. Thus model equality reaches a C-valued getter,
+its `to_integer` observation, an enclosing count expression, and an admitted
+Integer comparison without an explicit rewrite.
+
+Machine expressions reuse the common unary/binary operator decomposition.
+Integer arithmetic, bitwise operations, shifts, integral conversions, and
+`IntegerToMachine` applications retain their operator and carrier width;
+conversions also retain source/destination types. Existing specialized addition,
+read, and unsigned 64-bit application nodes remain in use. Pure-call arguments
+cover `_Bool` and every supported signed/unsigned integer type, including 128-bit
+values, with distinct C type tags. Floating-point expressions remain opaque.
+
+A wide shift's independently promoted count has no source-type tag in the term
+representation. Its complete count spelling remains opaque rather than guessing
+a width. Congruence still propagates equalities of the shifted value. Binder-bearing
+matches/folds and legacy untyped pure applications also remain opaque.
+
+Integer constructors fold machine literal observations. Registration therefore
+connects each selected Integer literal to its representable typed machine
+observations, at most ten fixed formats, using checked range conversion. No
+truncation or signed/unsigned identification is inferred. This makes a late
+machine equality to a literal reach the canonical Integer numeral.
+
+Registration visits only selected expressions; shared Integer DAG nodes are
+visited once per registration. Curried applications use the existing indexed
+parent-use propagation for late equalities. There is no ambient-fact scan,
+function unfolding, cancellation, or arithmetic search. Existing branch,
+withdrawal, and snapshot restrictions apply unchanged. Regressions live in
+`integer_tests`, `ordinary_expression_tests`, and their scaling counterparts;
+`mdtests/integer_count_model_congruence.md` exercises source-level count lookup.
+
 ## Predicate and callback pointer matching
 
 Semantic predicate lookup and callback-contract selection query the same
@@ -1613,28 +1649,52 @@ loaded-pointer trial is evidence about dependencies, not the implementation
 plan. Use isolated worktrees and integrate only coherent
 green commits. Preserve the original C regressions.
 
-Delete old mechanisms as their responsibilities migrate:
+The equality service owns both closure and exact admission inputs. There are
+no remaining parallel equality-class engines to retire. `PureFactContext`
+keeps the propositions a proof holds; its equality consumers delegate to
+`EqualityGraph` for Boolean queries, source enumeration, premise paths, and
+constant discovery. The former lazy bitvector index, raw direct-scalar
+adjacency, and `ConstantClasses` union-find are deleted.
 
-| Responsibility | Mechanisms to retire |
-|---|---|
-| Pointer equality and permission lookup | Alias indexes, equality walks, `pointer_spellings`, `resolve_symbolic_pointer_alias` |
-| Load identity/equality | Minted-load scans, recursive load normalizer, comparison-time frame search, spelling retries |
-| Scalar equality | Lazy bitvector graph, 64-bit adjacency map, `ConstantClasses`, exact constant aliases |
-| Algebraic/function congruence | Gap-74 alias retry and duplicated operand-wise equality recursion |
-| Tactic matching | Surface bridges made redundant by checked closure queries |
+`equality_graph/admitted.rs` documents the retained input selectors. Exact
+pointer/offset endpoints, full-width source neighbors, literal-pinning
+premises, algebraic constructor-field projections, typed read definitions,
+alignment premises, and canonical edge support counts belong to this service.
+They retain source spellings and proof premises; they do not maintain a second
+notion of equivalence. Their owning allocation is shared until the first input
+mutation. Its private erased handle also breaks the recursive Rust `Send`/`Sync`
+type path through resource indexes retaining a graph and source propositions
+retaining memory/proof contexts; typed access never changes the stored input
+type. In particular, an exact one-hop source query must not
+silently substitute an inferred congruence equality in a certificate requiring
+a written premise. Scalar premise paths use incrementally filed source edges
+rather than a lazy scan of all conditions. Full-width load-source transport
+selects the exact address/interpretation bucket before comparing snapshots.
 
-Int32 Boolean consumers now share one graph query. Exact alias enumeration,
-premise evidence, constant discovery, and wider scalar theories still retain
-their own indexes. For each further consumer migration,
-identify the remaining fallback cases, cover them with the intended checked
-judgment, and delete the superseded path. Full deletion is an acceptance
-criterion, not optional cleanup.
+Literal values and conditional/load witnesses are annotations of shared term
+roots. Folding uses application dependency hooks and reindexes affected uses
+when a class learns a literal. Ordinary integer operators use those same applications for nonliteral
+congruence, with typed curried applications for the remaining conversions and
+wide operators. Full-width constant discovery first asks the shared class engine;
+contextual folding and implicit-provenance collection retain exact source
+premises. None of these operations grants memory access or snapshot transport.
 
-The first substantial handoff is after the pointer/load representation and
-closure work through real read/fold consumers, with checked evidence, scaling
-regressions, and the full gate passing. That creates bounded consumer migrations
-against stable APIs. Bitvectors, algebraic terms, provenance changes, and
-certificate changes still require design review when reached.
+Withdrawal rebuilds closure from the service's retained inputs. Admission-time
+canonical edge receipts prevent later producer canonicalization from changing
+which support is withdrawn. Branch clones share persistent input roots and
+fork subsequent changes. Pointer-predicate source handles are retained with
+the service so reconstruction cannot import facts from a sibling context.
+Atomic condition matching checks only the selected spellings for full-width
+sources. Parameter-store shortcuts consult selected coordinate dependencies;
+complex deferred load dependencies conservatively use ordinary store reasoning.
+Unrelated ordinary scalar or offset premises no longer disable these paths.
+
+The migration retirement table is empty. Memory authorization, contextual
+snapshot reasoning, and explicit tactic search remain separate judgments with
+their own contracts; they are not alternate stores answering value equality.
+Scaling regressions cover selected source enumeration, long constant chains,
+range-value equality, withdrawal, and unrelated ambient facts. Gate and nightly
+validation remain required evidence for changes to this representation.
 
 Complete pointer comparisons retain their common base rather than becoming
 bare offset comparisons. The pointer disequality dispatcher reads the stated

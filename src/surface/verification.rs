@@ -878,7 +878,9 @@ fn contract_refinement_targets(file: &ClickFile, theorem_name: &str) -> BTreeSet
         if !contract_names.contains(name.as_str()) {
             continue;
         }
-        let [argument] = arguments.as_slice() else {
+        // Contract value parameters follow the function pointer. They do
+        // not change which function's interface the refinement depends on.
+        let Some(argument) = arguments.first() else {
             continue;
         };
         if let Some(target) = contract_expression_function_address(argument) {

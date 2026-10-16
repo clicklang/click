@@ -2,8 +2,9 @@
 //! int32 addition and registered same-snapshot int32 loads, connected by int32
 //! scaling. Unsigned division/remainder and bitwise XOR have congruence only;
 //! UInt64 arithmetic/bitwise applications, pointer addresses and complete
-//! same-snapshot 64-bit reads share those classes. Other scalar operations
-//! stay opaque; congruence supplies no arithmetic definedness.
+//! same-snapshot 64-bit reads share those classes. Other integer operators
+//! and conversions use typed curried applications; congruence supplies no
+//! arithmetic definedness. Floating-point expressions and binders stay opaque.
 //! Application signatures use operand classes; parent-use indexes propagate late
 //! merges. Equal addresses in one block also equate their byte offsets.
 //! No scalar arithmetic solving, cancellation, or general injectivity runs here.
@@ -14,6 +15,8 @@ use crate::persistent::{PersistentMap, PersistentSet};
 use std::sync::Arc;
 
 mod congruence;
+pub(super) mod constants;
+pub(super) use congruence::has_machine_operands;
 
 #[cfg(test)]
 thread_local! {
@@ -55,6 +58,16 @@ enum Int32Binary {
     UnsignedDivide,
     UnsignedRemainder,
     BitwiseXor,
+    Other(crate::kernel::BitvectorBinaryOp),
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+enum Int32Unary {
+    Not,
+    Cast(
+        crate::kernel::MachineIntegerType,
+        crate::kernel::MachineIntegerType,
+    ),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -127,16 +140,41 @@ pub(super) fn uint64_read(
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub(super) enum IntegerOperation {
+    Observe(crate::kernel::MachineIntegerType),
+    Negate,
+    Add,
+    Subtract,
+    Multiply,
+    Quotient,
+    Remainder,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 enum Node {
     Apply(u64, u64),
     TypeName(bool, String, usize),
     TypeC(crate::kernel::CType),
     TypeInteger,
+    IntegerAtom(crate::kernel::SharedIntegerTerm),
+    MachineUnary(crate::kernel::BitvectorUnaryOp, crate::kernel::CarrierWidth),
+    MachineBinary(
+        crate::kernel::BitvectorBinaryOp,
+        crate::kernel::CarrierWidth,
+    ),
+    IntegerToMachine(crate::kernel::MachineIntegerType),
+    Machine128(MachineAtom),
+    IntegerOperation(IntegerOperation),
+    IntegerFunction(crate::kernel::SharedPureApplication, usize),
     AlgebraicVariable(crate::kernel::SharedPureApplication, Variable),
     AlgebraicConstructor(crate::kernel::SharedPureApplication, String, usize),
     AlgebraicFunction(crate::kernel::SharedPureApplication, String, usize),
-    Function(crate::kernel::SharedPureApplication, bool, usize),
+    Function(
+        crate::kernel::SharedPureApplication,
+        crate::kernel::CarrierWidth,
+        usize,
+    ),
     ArgumentTag(congruence::ArgumentTag),
     OpaqueArgument(crate::kernel::SharedPureApplication),
     Condition(congruence::ConditionKind, u64, u64),
@@ -151,6 +189,7 @@ enum Node {
     Int32(MachineAtom),
     Int32Add(u64, u64),
     Int32Binary(Int32Binary, u64, u64),
+    Int32Unary(Int32Unary, u64),
     Constant(i64),
     Variable(Variable),
     Add(u64, u64),
@@ -174,6 +213,7 @@ enum Application {
     Add(u64, u64),
     Int32Add(u64, u64),
     Int32Binary(Int32Binary, u64, u64),
+    Int32Unary(Int32Unary, u64),
     Int32Scaled(u64, i64),
     // Defining snapshot, exact storage block ID, offset node/class ID.
     // Only registered four-byte loads in the int32 interpretation enter here.
@@ -190,7 +230,8 @@ impl Application {
             | Self::Int32Add(left, right)
             | Self::Int32Binary(_, left, right)
             | Self::Footprint(left, right) => [Some(left), Some(right)],
-            Self::Address(_, value)
+            Self::Int32Unary(_, value)
+            | Self::Address(_, value)
             | Self::UInt64Address(value)
             | Self::UInt64Read(_, value)
             | Self::PointerRead(_, value, _)
@@ -234,6 +275,7 @@ impl Application {
             Self::Int32Binary(op, left, right) => {
                 Self::Int32Binary(op, classes.root(left), classes.root(right))
             }
+            Self::Int32Unary(op, value) => Self::Int32Unary(op, classes.root(value)),
             Self::Int32Scaled(value, width) => Self::Int32Scaled(classes.root(value), width),
             Self::Int32Load(snapshot, address) => Self::Int32Load(snapshot, classes.root(address)),
         }
@@ -265,6 +307,8 @@ impl Clone for RootLookupCache {
 
 #[derive(Clone, Default)]
 pub(super) struct TermClasses {
+    scalar_witnesses: constants::ScalarWitnesses,
+    scalar_conflicts: PersistentSet<u64>,
     /// Source propositions follow address classes. Only the moved class is
     /// visited on union; queries select one key and never enumerate aliases.
     pointer_facts: PersistentMap<u64, PersistentMap<PointerFactKey, PointerFactBucket>>,
@@ -435,7 +479,7 @@ impl TermClasses {
         &mut self,
         address: u64,
         key: PointerFactKey,
-        source: &Arc<crate::kernel::ExecutionPureFact>,
+        source: &Arc<dyn PointerFactSource>,
         insert: bool,
     ) {
         crate::instrumentation::record_deterministic_work(1);
@@ -456,14 +500,14 @@ impl TermClasses {
         let bucket = groups.get(&group).cloned().unwrap_or_default();
         // The retained Arc prevents allocation-identity reuse. Payload keys
         // stay shallow even when a proposition contains a large C state.
-        let identity = Arc::as_ptr(source) as usize;
+        let identity = Arc::as_ptr(source) as *const () as usize;
         if insert && !bucket.contains_key(&identity) {
             // Payloads participate in union weighting, so a large class of
             // witnesses cannot be moved repeatedly by fresh singleton terms.
             self.weights.insert(root, self.weight(root) + 1);
         }
         let bucket = if insert {
-            bucket.with_inserted(identity, source.clone() as Arc<dyn PointerFactSource>)
+            bucket.with_inserted(identity, source.clone())
         } else {
             bucket.without_key(&identity)
         };
@@ -1223,6 +1267,7 @@ impl TermClasses {
             Node::Int32Binary(op, left, right) => {
                 Some(Application::Int32Binary(*op, *left, *right))
             }
+            Node::Int32Unary(op, value) => Some(Application::Int32Unary(*op, *value)),
             Node::Int32Scaled(value, width) => Some(Application::Int32Scaled(*value, *width)),
             Node::Int32(value) => {
                 if let Some(value) = value.value().as_const() {
@@ -1294,6 +1339,16 @@ impl TermClasses {
         self.intern_machine(term, true)
     }
 
+    pub(super) fn uint64_constant(&mut self, term: &crate::kernel::Bitvector32Term) -> Option<u64> {
+        let id = self.intern_uint64(term);
+        self.register_pending_loads();
+        let root = self.root(id);
+        if self.scalar_conflicts.contains(&root) {
+            return None;
+        }
+        self.uint64_constants.get(&root).copied()
+    }
+
     pub(super) fn are_uint64_equal(
         &mut self,
         left: &crate::kernel::Bitvector32Term,
@@ -1316,6 +1371,10 @@ impl TermClasses {
         left != right && self.close(vec![(left, right)])
     }
 
+    pub(super) fn scalar_class_root(&self, id: u64) -> u64 {
+        self.root(id)
+    }
+
     fn intern_int32(&mut self, term: &crate::kernel::Bitvector32Term) -> u64 {
         // This interner runs under the graph mutex. Memory canonicalization
         // can re-enter this graph through a cell-epoch walk; callers perform
@@ -1327,6 +1386,18 @@ impl TermClasses {
         let node = self.intern_int32(term);
         self.register_pending_loads();
         self.root(node)
+    }
+
+    pub(super) fn existing_scalar_atom(
+        &self,
+        term: &crate::kernel::Bitvector32Term,
+    ) -> Option<Option<u64>> {
+        let application = has_machine_operands(term);
+        (!application).then(|| {
+            self.nodes
+                .get(&Node::Int32(MachineAtom::int32(term.clone())))
+                .copied()
+        })
     }
 
     pub(super) fn signed_int32_interval(&self, node: u64) -> Option<(i64, i64)> {
@@ -1355,6 +1426,53 @@ impl TermClasses {
         crate::instrumentation::record_deterministic_work(1);
     }
 
+    /// Without scalar equality inputs, an unknown folding-only application cannot
+    /// create a new interval. Reuse its existing node when present;
+    /// avoid registering fresh arithmetic just to discover that it is unbound.
+    pub(super) fn existing_scalar_interval_node(
+        &self,
+        term: &crate::kernel::Bitvector32Term,
+    ) -> Option<Option<u64>> {
+        use crate::kernel::Bitvector32Term as T;
+        if term.as_const().is_none() {
+            let unary = if let T::BitwiseNot(value) = term {
+                Some((Int32Unary::Not, value.as_ref()))
+            } else {
+                constants::word_cast_operand(term).map(|(value, source, destination)| {
+                    (Int32Unary::Cast(source, destination), value)
+                })
+            };
+            if let Some((op, operand)) = unary {
+                return self.existing_scalar_atom(operand).map(|operand| {
+                    operand
+                        .and_then(|operand| self.nodes.get(&Node::Int32Unary(op, operand)).copied())
+                });
+            }
+        }
+        if term.as_const().is_none()
+            && let Some((op, left, right)) = term.as_binary()
+            && op.is_bitvector32()
+            && !matches!(
+                op,
+                crate::kernel::BitvectorBinaryOp::Add
+                    | crate::kernel::BitvectorBinaryOp::UnsignedDivide
+                    | crate::kernel::BitvectorBinaryOp::UnsignedRemainder
+                    | crate::kernel::BitvectorBinaryOp::BitwiseXor
+            )
+            && let (Some(left), Some(right)) = (
+                self.existing_scalar_atom(left),
+                self.existing_scalar_atom(right),
+            )
+        {
+            return Some(left.zip(right).and_then(|(left, right)| {
+                self.nodes
+                    .get(&Node::Int32Binary(Int32Binary::Other(op), left, right))
+                    .copied()
+            }));
+        }
+        None
+    }
+
     pub(super) fn are_int32_equal(
         &mut self,
         left: &crate::kernel::Bitvector32Term,
@@ -1369,21 +1487,11 @@ impl TermClasses {
         // order endpoints and unsupported expressions. Loads and addition
         // still need registration because their definitions can join classes.
         let opaque = |term: &Bitvector32Term| {
-            let supported = |term: &Bitvector32Term| match term {
-                Bitvector32Term::ClickFunctionApplication { .. }
-                | Bitvector32Term::Add(..)
-                | Bitvector32Term::MemoryLoad(..)
-                | Bitvector32Term::UnsignedDivide(..)
-                | Bitvector32Term::UnsignedRemainder(..)
-                | Bitvector32Term::BitwiseXor(..) => true,
-                Bitvector32Term::Variable(variable) => crate::kernel::is_load_variable(variable),
-                _ => false,
-            };
-            if supported(term) {
+            if has_machine_operands(term) {
                 return None;
             }
             let term = term.clone();
-            (!supported(&term)).then(|| Node::Int32(MachineAtom::int32(term)))
+            (!has_machine_operands(&term)).then(|| Node::Int32(MachineAtom::int32(term)))
         };
         let left_atom = opaque(left);
         let right_atom = opaque(right);
@@ -1503,7 +1611,11 @@ impl TermClasses {
             let root = self.root(operand);
             if matches!(
                 application,
-                Application::Int32Add(..) | Application::Int32Scaled(..)
+                Application::UInt64Binary(..)
+                    | Application::Int32Add(..)
+                    | Application::Int32Binary(..)
+                    | Application::Int32Unary(..)
+                    | Application::Int32Scaled(..)
             ) {
                 let uses = self.constant_uses.get(&root).cloned().unwrap_or_default();
                 self.constant_uses.insert(root, uses.with_value(id));
@@ -1569,6 +1681,69 @@ impl TermClasses {
                 crate::kernel::Bitvector32Term::Constant(value),
             )));
             pending.push((id, constant));
+        }
+        if let Application::Int32Binary(op, left, right) = signature
+            && let (Some(a), Some(b)) = (
+                self.int32_constants.get(&left).copied(),
+                self.int32_constants.get(&right).copied(),
+            )
+        {
+            use crate::kernel::BitvectorBinaryOp as O;
+            let op = match op {
+                Int32Binary::UnsignedDivide => O::UnsignedDivide,
+                Int32Binary::UnsignedRemainder => O::UnsignedRemainder,
+                Int32Binary::BitwiseXor => O::BitwiseXor,
+                Int32Binary::Other(op) => op,
+            };
+            let term = op.build(
+                crate::kernel::Bitvector32Term::Constant(a as u32),
+                crate::kernel::Bitvector32Term::Constant(b as u32),
+            );
+            if let Some(value) = term.as_const() {
+                let literal = self.intern_node(Node::Int32(MachineAtom::int32(
+                    crate::kernel::Bitvector32Term::Constant(value),
+                )));
+                pending.push((id, literal));
+            }
+        }
+        if let Application::Int32Unary(op, value) = signature
+            && let Some(value) = self.int32_constants.get(&value).copied()
+        {
+            use crate::kernel::Bitvector32Term as T;
+            let value = T::Constant(value as u32);
+            let term = match op {
+                Int32Unary::Not => T::BitwiseNot(Box::new(value)),
+                Int32Unary::Cast(source, destination) => {
+                    T::machine_integer_cast(source, destination, value)
+                }
+            };
+            if let Some(value) = term.as_const() {
+                let literal = self.intern_node(Node::Int32(MachineAtom::int32(T::Constant(value))));
+                pending.push((id, literal));
+            }
+        }
+        if let Application::UInt64Binary(op, left, right) = signature
+            && let (Some(a), Some(b)) = (
+                self.uint64_constants.get(&left).copied(),
+                self.uint64_constants.get(&right).copied(),
+            )
+        {
+            let value = match op {
+                UInt64Binary::Add => Some(a.wrapping_add(b)),
+                UInt64Binary::Subtract => Some(a.wrapping_sub(b)),
+                UInt64Binary::Multiply => Some(a.wrapping_mul(b)),
+                UInt64Binary::Divide => a.checked_div(b),
+                UInt64Binary::Remainder => a.checked_rem(b),
+                UInt64Binary::And => Some(a & b),
+                UInt64Binary::Or => Some(a | b),
+                UInt64Binary::Xor => Some(a ^ b),
+            };
+            if let Some(value) = value {
+                let literal = self.intern_node(Node::UInt64(MachineAtom::uint64(
+                    crate::kernel::Bitvector32Term::UInt64Constant(value),
+                )));
+                pending.push((id, literal));
+            }
         }
         if let Some(other) = self.signatures.get(&signature) {
             if *other != id {
@@ -1670,6 +1845,7 @@ impl TermClasses {
             }));
             self.weights.remove(&moved);
             self.weights.insert(kept, weight);
+            let kept_was_settled = self.int32_constants.contains_key(&kept);
             let moved_uses = self.uses.get(&moved).cloned().unwrap_or_default();
             let mut kept_uses = self.uses.get(&kept).cloned().unwrap_or_default();
             // Equality and congruence have already justified this union.
@@ -1680,12 +1856,26 @@ impl TermClasses {
                 self.int32_constants.get(&moved),
             ) {
                 self.scalar_constant_conflict |= left != right;
+                if left != right {
+                    self.mark_scalar_conflict(kept);
+                    let uses = self.constant_uses.get(&moved).cloned().unwrap_or_default();
+                    for id in uses.iter() {
+                        self.mark_scalar_conflict(*id);
+                    }
+                }
             }
             if let Some(value) = self.uint64_constants.get(&moved).copied() {
                 if let Some(previous) = self.uint64_constants.get(&kept) {
                     self.scalar_constant_conflict |= *previous != value;
+                    if *previous != value {
+                        self.mark_scalar_conflict(kept);
+                    }
                 } else {
                     self.uint64_constants.insert(kept, value);
+                    let uses = self.constant_uses.get(&kept).cloned().unwrap_or_default();
+                    for id in uses.iter() {
+                        self.reindex_application(*id, &mut pending);
+                    }
                 }
                 self.uint64_constants.remove(&moved);
             }
@@ -1701,6 +1891,7 @@ impl TermClasses {
                 }
             }
             self.int32_constants.remove(&moved);
+            self.merge_scalar_witnesses(moved, kept, kept_was_settled, &mut pending);
             if let Some(moved_literal_uses) = self.constant_uses.get(&moved).cloned() {
                 self.constant_uses.remove(&moved);
                 let mut kept_literal_uses =

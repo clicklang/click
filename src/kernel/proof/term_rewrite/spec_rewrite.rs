@@ -1719,7 +1719,7 @@ impl<'a> TermRewrite<'a> {
                 value_type: *value_type,
                 volatile: *volatile,
                 pointee_constant: *pointee_constant,
-                access_class: *access_class,
+                access_class: access_class.clone(),
                 source: source.clone(),
             },
             CExpression::Index(left, right) => CExpression::Index(

@@ -90,7 +90,7 @@ impl<'a> Proof<'a> {
         {
             return Ok(false);
         }
-        let Ok((_, _, CStatement::If { condition, .. }, _)) =
+        let Ok((_, current_state, CStatement::If { condition, .. }, _)) =
             next_top_level_statement_from_frontier_position(
                 execution.view(context),
                 &execution.core.state,
@@ -107,7 +107,10 @@ impl<'a> Proof<'a> {
             region: CodeRegionRef::Statement(statement_index),
             kind: ProgramPointKind::Entry,
         };
-        let checked = surface_at_snapshot(&surface_c_condition(&condition), &entry_point)?;
+        let checked = surface_at_snapshot(
+            &surface_c_condition(&condition, &current_state),
+            &entry_point,
+        )?;
         if checked == *surface_condition {
             return Ok(true);
         }
@@ -182,7 +185,7 @@ impl<'a> Proof<'a> {
             else_branch: else_branch.clone(),
         };
         let surface_condition = surface_at_snapshot(
-            &surface_c_condition(&condition),
+            &surface_c_condition(&condition, &current_state),
             &ProgramPointRef {
                 region: CodeRegionRef::Statement(statement_index),
                 kind: ProgramPointKind::Entry,
@@ -215,7 +218,7 @@ impl<'a> Proof<'a> {
                 .count()
                 > 1
         });
-        let source_condition = surface_c_condition(&condition);
+        let source_condition = surface_c_condition(&condition, &current_state);
         let mut operand_condition = &source_condition;
         while let ClickProposition::Not(inner) = operand_condition {
             operand_condition = inner;
@@ -644,7 +647,7 @@ impl<'a> Proof<'a> {
         let ProofContext::Execution(context) = self.context.as_ref() else {
             unreachable!("execution branch retained a non-execution context")
         };
-        let (_, _, statement, _) = next_top_level_statement_from_frontier_position(
+        let (_, current_state, statement, _) = next_top_level_statement_from_frontier_position(
             parent_execution.view(context),
             &parent_execution.core.state,
             context.function,
@@ -664,7 +667,7 @@ impl<'a> Proof<'a> {
             );
         };
         let surface_condition = surface_at_snapshot(
-            &surface_c_condition(&condition),
+            &surface_c_condition(&condition, &current_state),
             &ProgramPointRef {
                 region: CodeRegionRef::Statement(statement_index),
                 kind: ProgramPointKind::Entry,
@@ -1574,7 +1577,7 @@ impl<'a> Proof<'a> {
         } else if let Some(condition) = proof_case_condition {
             (condition, [false, false])
         } else {
-            let (_, _, statement, _) = next_top_level_statement_from_frontier_position(
+            let (_, current_state, statement, _) = next_top_level_statement_from_frontier_position(
                 parent_execution.view(context),
                 &parent_execution.core.state,
                 context.function,
@@ -1595,7 +1598,7 @@ impl<'a> Proof<'a> {
             };
             (
                 surface_at_snapshot(
-                    &surface_c_condition(&condition),
+                    &surface_c_condition(&condition, &current_state),
                     &ProgramPointRef {
                         region: CodeRegionRef::Statement(statement_index),
                         kind: ProgramPointKind::Entry,
@@ -3497,7 +3500,7 @@ impl<'a> Proof<'a> {
         let ProofContext::Execution(context) = self.context.as_ref() else {
             unreachable!("execution branch retained a non-execution context")
         };
-        let (_, _, statement, _) = next_top_level_statement_from_frontier_position(
+        let (_, current_state, statement, _) = next_top_level_statement_from_frontier_position(
             record.parent_execution.view(context),
             &record.parent_execution.core.state,
             context.function,
@@ -3515,7 +3518,7 @@ impl<'a> Proof<'a> {
             return Err(self.step_error("expanded execution branch root is not a C `if`"));
         };
         let checked_condition = surface_at_snapshot(
-            &surface_c_condition(&condition),
+            &surface_c_condition(&condition, &current_state),
             &ProgramPointRef {
                 region: CodeRegionRef::Statement(record.statement_index),
                 kind: ProgramPointKind::Entry,

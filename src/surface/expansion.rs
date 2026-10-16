@@ -2202,7 +2202,7 @@ fn splice_source(
             spliced.push_str(&source[span.end..]);
         }
     }
-    with_cited_library_imports(spliced, replacement)
+    with_cited_library_imports(spliced, replacement, source)
 }
 
 /// `replacement` with each library theorem a tactic cited by its qualified
@@ -2308,11 +2308,11 @@ fn selectively_imports(source: &str, path: &str) -> bool {
 /// whose theorem `replacement` cites but `source` does not yet see. A
 /// tactic's expansion writes out the library theorems the tactic applied,
 /// and the expanded sidecar must still name their modules.
-fn with_cited_library_imports(source: String, replacement: &str) -> String {
+fn with_cited_library_imports(source: String, replacement: &str, original: &str) -> String {
     let cited = replacement
         .split(|character: char| !(character.is_alphanumeric() || character == '_'))
         .filter(|word| !word.is_empty());
-    let imported = source
+    let mut imported = source
         .match_indices("import click::")
         .filter_map(|(start, prefix)| {
             let path = &source[start + prefix.len()..];
@@ -2321,7 +2321,21 @@ fn with_cited_library_imports(source: String, replacement: &str) -> String {
             Some(format!("library/{}.click", path.trim().replace("::", "/")))
         })
         .collect::<Vec<_>>();
-    let missing = validation::library_modules_to_import(&imported, cited);
+    imported.extend(
+        parser::library_path_modules(&source)
+            .unwrap_or_default()
+            .into_iter()
+            .map(str::to_owned),
+    );
+    let mut missing = validation::library_modules_to_import(&imported, cited);
+    // A resource's checked identity may have a bare spelling (cstr_at),
+    // even when its only source occurrence used a full library path. Keep
+    // that module visible after replacing the occurrence with its proof.
+    for module in parser::library_path_modules(original).unwrap_or_default() {
+        if !imported.iter().any(|import| import == module) && !missing.contains(&module) {
+            missing.push(module);
+        }
+    }
     if missing.is_empty() {
         return source;
     }

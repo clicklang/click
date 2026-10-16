@@ -24,6 +24,14 @@ pub(super) fn has_valid_source_tokens(source: &str) -> bool {
 use super::*;
 use claim_labels::{ClaimClauseKind, flattened_claim_ids};
 
+/// Modules brought into scope by full library paths, before declaration
+/// parsing. Expansion can replace a qualified resource with its bare name,
+/// so it must preserve this part of the original file's library context.
+pub(super) fn library_path_modules(source: &str) -> Result<BTreeSet<&'static str>, ClickError> {
+    let (tokens, positions) = tokenizer::tokenize(source, None)?;
+    library_paths::resolve_library_paths(tokens, positions, None).map(|(_, _, modules)| modules)
+}
+
 #[derive(Clone, Debug)]
 pub(super) struct QualifiedCObject {
     pub expression: CExpression,
@@ -11581,6 +11589,7 @@ impl Parser {
                         function_pointer_signature: None,
                         array_shape: None,
                         source: None,
+                        access_class: None,
                     }
                 }
             } else {
@@ -11592,6 +11601,7 @@ impl Parser {
                     function_pointer_signature: field.function_pointer_signature.clone(),
                     array_shape: field.array_shape,
                     source: None,
+                    access_class: None,
                 }
             }));
         }
@@ -12079,12 +12089,16 @@ impl Parser {
                 // Address the typed field lvalue without evaluating its load.
                 // This preserves the field's pointee type and qualifiers even
                 // when the aggregate itself uses byte-addressed storage.
+                // The member is its own subobject, as the C frontend narrows
+                // `&p->f` (`design/pointer-subobject-extents.md`), so a
+                // contract's `&pair->second` is the program's pointer value
+                // and is not equal to `&pair->first + 1`.
                 if let CExpression::TypedLoad { value_type, .. } = lowered
                     && value_type.pointer_to().is_some()
                 {
                     return Ok(crate::surface::lowering::contract_c_unary(
                         expression.clone(),
-                        CExpression::AddressOf(Box::new(lowered.clone())),
+                        CExpression::AddressOf(Box::new(contract_member_lvalue(lowered))),
                     ));
                 }
                 let source_base = (**base).clone();
@@ -14222,6 +14236,30 @@ fn row_major_index_path(flat_index: u32, shape: &[u32]) -> String {
         .into_iter()
         .map(|index| format!("[{index}]"))
         .collect()
+}
+
+/// A scalar member load whose place is narrowed to the member, for a
+/// contract's `&p->f`: the address keeps the member's extent as the C
+/// frontend's member address does. The specification lowers the address as
+/// one C fragment, so the kernel evaluates the narrowing.
+fn contract_member_lvalue(load: &CExpression) -> CExpression {
+    let mut load = load.clone();
+    if let CExpression::TypedLoad {
+        pointer,
+        value_type,
+        ..
+    } = &mut load
+    {
+        let width = value_type.byte_width();
+        if width != 0 {
+            let member = std::mem::replace(pointer.as_mut(), CExpression::Variable(String::new()));
+            **pointer = CExpression::Subobject {
+                pointer: Box::new(member),
+                width,
+            };
+        }
+    }
+    load
 }
 
 fn lowered_field_expression(pointer: CExpression, field: &ResolvedField) -> CExpression {

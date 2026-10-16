@@ -20,9 +20,18 @@ parsing, and round-trip validation must agree on the resulting proof. An expansi
 failure, a rewrite that doesn't verify, or disagreement with profile or audit
 is a tooling defect to investigate.
 
+Generated C branch conditions retain the C operation's meaning. In particular,
+a comparison of two data pointers compares their addresses; it does not become
+a contract equality of pointer values. When one execution step produces terminal
+outcomes needing different closing proofs, expansion can separate them with an
+explicit proof case whose condition each checked outcome decides.
+
 Library references in the output must resolve in the rewritten file. Expansion
 preserves explicit full paths and uses short module paths only when their
-modules are in scope. A theorem application with no declared prerequisites
+modules are in scope. If a rewritten full path supplied a library module,
+expansion retains that module with an explicit import when the certificate
+uses a bare declaration name, including resource names such as `cstr_at`.
+A theorem application with no declared prerequisites
 and value arguments is already a simple operation and is not an automation
 site for audit or profile. Produced application certificates retain their
 explicit `using` block, including an empty block: an empty list alone does not

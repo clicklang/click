@@ -2585,7 +2585,7 @@ impl CMemory {
         pointer: &Pointer,
     ) -> Option<crate::kernel::effective_type::CAccessClass> {
         crate::instrumentation::record_deterministic_work(1);
-        self.blocks.get(&pointer.block)?.declared_class
+        self.blocks.get(&pointer.block)?.declared_class.clone()
     }
 
     /// A fresh block whose object, or every element of it, has
@@ -5121,7 +5121,7 @@ impl CMemory {
     ) -> Self {
         crate::kernel::debug_assert_widths(
             "a stored value",
-            || crate::kernel::value_width_mismatch(&value),
+            || crate::kernel::value_mismatch(&value),
             &value,
         );
         // Most scalar stores have no union views to displace. When one is

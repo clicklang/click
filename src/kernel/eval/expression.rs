@@ -1674,7 +1674,7 @@ pub(in crate::kernel) fn evaluate_c_expression_paths(
         if let CExpressionOutcome::Value(value) = &path.outcome {
             crate::kernel::debug_assert_widths(
                 "an evaluated expression",
-                || crate::kernel::value_width_mismatch(value),
+                || crate::kernel::value_mismatch(value),
                 value,
             );
         }
@@ -2087,7 +2087,9 @@ pub(in crate::kernel) fn evaluate_c_lvalue_paths(
             access_class,
             ..
         } => {
-            let access_class = access_class.or_else(|| CAccessClass::of_kernel_type(*value_type));
+            let access_class = access_class
+                .clone()
+                .or_else(|| CAccessClass::of_kernel_type(*value_type));
             let mut paths = Vec::new();
             for pointer_path in
                 evaluate_c_expression_paths(state, pointer_expression, assumptions, budget)?
@@ -2104,7 +2106,7 @@ pub(in crate::kernel) fn evaluate_c_lvalue_paths(
                             .with_local_reference(pointer.local_reference().copied())
                             .with_pointee_constant(*pointee_constant)
                             .with_extent_of(&pointer)
-                            .with_access_class(access_class),
+                            .with_access_class(access_class.clone()),
                         ),
                         facts: pointer_path.facts,
                         obligations: pointer_path.obligations,
@@ -2501,12 +2503,14 @@ fn read_c_lvalue_paths_without_ranges(
                 // A pointer read from memory designates an object of the
                 // class its lvalue's type points to, unless it carries the
                 // class of the declaration that formed it.
-                if let Some(pointee) = lvalue.access_class().and_then(CAccessClass::pointee) {
+                if let Some(pointee) = lvalue.access_class().and_then(|class| class.pointee()) {
                     for path in &mut paths {
                         if let CExpressionOutcome::Value(value) = &mut path.outcome
                             && matches!(value, CValue::Pointer(_))
                         {
-                            *value = value.clone().with_pointer_object_class(Some(pointee));
+                            *value = value
+                                .clone()
+                                .with_pointer_object_class(Some(pointee.clone()));
                         }
                     }
                 }

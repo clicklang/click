@@ -161,8 +161,7 @@ Known limits, each refused or unchanged rather than accepted unsoundly:
   function entry (including a static pointer's initial value), have no
   extent. A caller that formed such a pointer checks it against the callee's
   clauses at the call (step 3).
-- Contracts observe member addresses without narrowing, and a C pointer
-  comparison still states pointer equality until Phase B.
+- A C pointer comparison still states pointer equality until Phase B.
 
 ### Status after step 3
 
@@ -172,6 +171,16 @@ composite body when it is expanded, folded or unfolded, and loop effect
 clauses. The kernel checks it where a clause's base value becomes a range
 (`segment_extent_refusal`); fold lowering refuses constant ranges by name
 first. A pointer without an extent is unaffected.
+
+A contract `==` between two pointers that both carry an extent also requires
+the extents to be equal (D2), so a call cannot satisfy `requires q == p` with
+`&pair->first + 1` and `&pair->second`. When either value has none, the
+comparison stays an address equality: that value's designation may be
+unknown, and assuming the equality must not refute a reachable path. A
+contract's scalar member address `&p->f` is narrowed to the member as the C
+frontend narrows it, so `ensures result == &p->second` does not hold for
+`&p->first + 1`. Member loads and other contract spellings of member places
+are not narrowed.
 
 ## Phase B: C `==` states address equality (modular defect)
 

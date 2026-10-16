@@ -507,7 +507,7 @@ fn reordered_sum_matches_graph_equal_load_addends_in_one_snapshot() {
 }
 
 #[test]
-fn int32_classes_are_typed_and_only_supported_operators_have_congruence() {
+fn int32_classes_are_typed_and_integer_operators_have_congruence() {
     let (a, b) = (var(1), var(2));
     let mut graph = EqualityGraph::default();
     graph.add_int32_equality(&a, &b);
@@ -528,7 +528,8 @@ fn int32_classes_are_typed_and_only_supported_operators_have_congruence() {
     assert!(graph.are_int32_equal(&plus_one(a.clone()), &plus_one(b.clone())));
     let minus_one =
         |value| Bitvector32Term::Subtract(Box::new(value), Box::new(Bitvector32Term::Constant(1)));
-    assert!(!graph.are_int32_equal(&minus_one(a), &minus_one(b)));
+    assert!(graph.are_int32_equal(&minus_one(a.clone()), &minus_one(b.clone())));
+    assert!(!graph.are_int32_equal(&plus_one(a), &minus_one(b)));
     graph.add_offset_equality(
         &PointerOffsetTerm::Variable(Variable(3)),
         &PointerOffsetTerm::Variable(Variable(4)),
@@ -693,4 +694,39 @@ fn offset_premises_support_scalar_graph_edges_and_withdrawal() {
 #[cfg(test)]
 mod scaling_tests {
     include!("../../scaling_tests/kernel/equality_graph/int32_tests.rs");
+}
+
+#[test]
+fn parameter_shortcuts_notice_byte_coordinates_inside_an_alias_expression() {
+    let _session = VerificationSession::enter();
+    let offset = |i: u64| PointerOffsetTerm::Variable(Variable(995_000 + i));
+    let input = ConditionTerm::PointerOffsetEqual(
+        Box::new(PointerOffsetTerm::Add(
+            Box::new(offset(0)),
+            Box::new(offset(1)),
+        )),
+        Box::new(offset(2)),
+    );
+    let facts = PureFactContext::new().assume_condition(input.clone(), true);
+    assert!(
+        facts
+            .equality_graph
+            .offset_has_source_dependencies(&offset(1))
+    );
+    assert!(
+        !facts
+            .equality_graph
+            .offset_has_source_dependencies(&offset(3))
+    );
+    let removed = facts.without_exact_fact(&Proposition::ConditionIs(input, true));
+    assert!(
+        !removed
+            .equality_graph
+            .offset_has_source_dependencies(&offset(1))
+    );
+    assert!(
+        facts
+            .equality_graph
+            .offset_has_source_dependencies(&offset(1))
+    );
 }

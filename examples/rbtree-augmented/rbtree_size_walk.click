@@ -44,7 +44,7 @@ resource sized_walk_at(rb: struct rb_node*, stop: struct rb_node*) {
             owns focus: sized_recompute_at(rb);
             owns path: sized_path_at(rb, stop, previous);
             fact rb != 0;
-            fact rb != stop;
+            fact address(rb) != address(stop);
             fact focus.model == sub_model;
             fact path.model == path_model;
             fact sized_value(sub_model) == previous;

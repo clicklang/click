@@ -9,11 +9,9 @@ impl EqualityGraph {
     }
 
     pub(in crate::kernel) fn clear_pointer_predicates(&self) {
-        self.state
-            .lock()
-            .expect("equality graph")
-            .terms
-            .clear_pointer_facts();
+        let mut state = self.state.lock().expect("equality graph");
+        state.pointer_predicate_inputs = Default::default();
+        state.terms.clear_pointer_facts();
     }
     fn pointer_predicate_key(
         proposition: &crate::kernel::Proposition,
@@ -53,6 +51,15 @@ impl EqualityGraph {
         source: &std::sync::Arc<crate::kernel::ExecutionPureFact>,
         insert: bool,
     ) {
+        let source = source.clone() as std::sync::Arc<dyn terms::PointerFactSource>;
+        self.adjust_pointer_predicate_source(&source, insert);
+    }
+
+    pub(super) fn adjust_pointer_predicate_source(
+        &self,
+        source: &std::sync::Arc<dyn terms::PointerFactSource>,
+        insert: bool,
+    ) {
         use crate::kernel::{CFunctionContract, CValue, Proposition, Term};
         let proposition = source.proposition();
         let Some((pointer, key)) = Self::pointer_predicate_key(proposition) else {
@@ -60,6 +67,14 @@ impl EqualityGraph {
         };
         self.address_class(&pointer);
         let mut state = self.state.lock().expect("equality graph");
+        let identity = std::sync::Arc::as_ptr(source) as *const () as usize;
+        if insert {
+            state
+                .pointer_predicate_inputs
+                .insert(identity, source.clone());
+        } else {
+            state.pointer_predicate_inputs.remove(&identity);
+        }
         let address = state.register_pointer_address(&pointer);
         state
             .terms

@@ -39,7 +39,8 @@ void sized_propagate(struct rb_node* rb, struct rb_node* stop) {
                             rb == stop => { assumption(); }
                         }
                     }
-                    contradiction(rb == stop);
+                    have address(rb) == address(stop) by { rewrite(rb == stop); simp(); }
+                    contradiction(address(rb) == address(stop));
                 },
                 SizedWalk::Active(previous, sub_model, path_model) => {
                     have sized_walk_tree(walk.model) == sized_plug(sized_path_context(path_model), sub_model) by {
@@ -134,9 +135,11 @@ void sized_propagate(struct rb_node* rb, struct rb_node* stop) {
             }
             let { focus: focus, path: path } = unfold(walk);
             have sized_walk_pending(at(joined, walk.model)) == 0 by {
-                extract(rb == stop or sized_walk_pending(at(joined, walk.model)) == 0);
+                extract(address(rb) == address(stop) or sized_walk_pending(at(joined, walk.model)) == 0);
                 cases {
-                    rb == stop => { contradiction(rb == stop); }
+                    address(rb) == address(stop) => {
+                        contradiction(address(rb) == address(stop));
+                    }
                     sized_walk_pending(at(joined, walk.model)) == 0 => { assumption(); }
                 }
             }

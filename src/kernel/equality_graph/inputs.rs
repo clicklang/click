@@ -13,6 +13,10 @@ pub(super) enum Input {
     Int32(Bitvector32Term, Bitvector32Term),
     Algebraic(AlgebraicTerm, AlgebraicTerm),
     UInt64(Bitvector32Term, Bitvector32Term),
+    Integer(
+        crate::kernel::SharedIntegerTerm,
+        crate::kernel::SharedIntegerTerm,
+    ),
     CheckedRead(Pointer, Pointer),
 }
 
@@ -106,6 +110,7 @@ impl EqualityGraph {
             .merge_origin
             .clone();
         Self {
+            admitted: Default::default(),
             state: std::sync::Mutex::new(EqualityGraphState {
                 merge_origin: origin,
                 ..EqualityGraphState::default()
@@ -169,6 +174,9 @@ impl EqualityGraph {
                 }
                 Input::UInt64(left, right) => {
                     self.add_uint64_equality(left, right);
+                }
+                Input::Integer(left, right) => {
+                    self.add_integer_equality(left, right);
                 }
                 Input::Algebraic(left, right) => {
                     self.add_algebraic_equality(left, right);
