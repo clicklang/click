@@ -2351,9 +2351,9 @@ fn charon_adler2_general_compute_rejects_invalid_contracts() {
 fn charon_adler2_general_compute_tools_recheck_original_contract() {
     let p = compute_project(GENERAL_COMPUTE);
     let claim = "adler2::Adler32::compute.contract";
-    for command in ["verify", "profile"] {
-        assert_cli(&p, &[command]);
-    }
+    // Profile verifies the complete original input. The final full CLI verify
+    // below checks every proof again after expanding the computation.
+    assert_cli(&p, &["profile"]);
     assert_cli(&p, &["audit", "--claim", claim]);
     assert_cli(&p, &["expand", "--claim", claim, "--in-place"]);
     assert_cli(&p, &["verify"]);
