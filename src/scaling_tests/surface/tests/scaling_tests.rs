@@ -8499,3 +8499,56 @@ fn pointer_field_call_branch_join_scales_with_unrelated_caller_facts() {
     }
     assert_near_linear_scaling("pointer-field call branch join", &samples);
 }
+
+/// A proof `if` at an execution frontier lowers its condition against the
+/// branch's indexed fact context, so the split costs its condition and not
+/// the proof facts written before it.
+///
+/// Each arm used to copy the branch's facts into a list and lower the
+/// condition against a context rebuilt from that whole list, so every split
+/// assumed every earlier fact again: the loop body of
+/// `examples/rbtree-erase/rbtree_erase_color_flips_red_all.click` paid about
+/// 185,000 control units for it. The test holds one loop-body split fixed
+/// beside 1 to 8 earlier `have` facts and pins the context entries the split
+/// adds
+/// (`context_rebuild_entries` with the split minus without it).
+#[test]
+fn proof_if_split_ignores_earlier_unrelated_facts() {
+    fn rebuild_entries(size: usize, split: bool) -> usize {
+        let haves = (1..=size)
+            .map(|k| format!("            have i >= 0 - {k} by simp();\n"))
+            .collect::<String>();
+        // Arms that each close the iteration have no continuation to rejoin,
+        // so the split is taken rather than tried as a straight-line join.
+        let close = if split {
+            "            if flag == i {\n                have flag == i by assumption();\n                \
+             close_invariants();\n            } else {\n                have not (flag == i) by assumption();\n                \
+             close_invariants();\n            }\n"
+        } else {
+            "            close_invariants();\n"
+        };
+        let click_source = format!(
+            "verifying \"split.c\";\n\n\
+             int32 count_once(int32 flag) {{\n    ensures result == 1;\n}} by {{\n    \
+             step();\n    step();\n    loop {{\n        decreases 1 - i;\n        invariant i >= 0;\n        \
+             invariant i <= 1;\n        initialize by simp;\n        preserve by {{\n            \
+             step();\n{haves}{close}        }}\n    }}\n    step();\n    simp();\n}}\n"
+        );
+        let c_source = "int32 count_once(int32 flag) {\n    int32 i;\n    i = 0;\n    \
+                        while (i < 1) { i = i + 1; }\n    return i;\n}\n";
+        let before = crate::kernel::reasoning::path_facts::context_rebuild_entries();
+        verify_c0_sources(&click_source, &[("split.c", c_source)]).unwrap_or_else(|error| {
+            panic!("size {size} split={split} failed: {}", error.message())
+        });
+        crate::kernel::reasoning::path_facts::context_rebuild_entries() - before
+    }
+    let added = [1, 2, 4, 8]
+        .map(|size| rebuild_entries(size, true).saturating_sub(rebuild_entries(size, false)));
+    eprintln!("context entries a proof `if` adds beside 1/2/4/8 facts: {added:?}");
+    // The split's own entries do not depend on the earlier facts. Rebuilding
+    // the branch's facts per arm added at least two entries per fact.
+    assert!(
+        added.iter().all(|entries| *entries == added[0]),
+        "a proof `if` rebuilds context entries for earlier unrelated facts: {added:?}"
+    );
+}
