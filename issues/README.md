@@ -125,7 +125,6 @@ Specification and proof:
 - [Verify the Linux rbtree example on the recursive structure models](rbtree-example.md)
 - [Make simple tactics fast: exact requirements, expandable `auto` for the rest](simplify-step.md)
 - [Scaling: stamp out quadratic work in simple checking](scaling.md)
-- [Difference logic: the fast path for arithmetic requirements and conditions](difference-logic.md)
 - [Launch design review: open critiques, each to be fixed or ruled wontfix](design-review.md) (depends on simplify-step.md)
 - [Finish place-based resource clauses](resource-place-syntax.md)
 

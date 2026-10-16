@@ -292,7 +292,7 @@ impl PureFactContext {
         }
         // The difference graph is read first: what it decides follows from
         // these facts, including a fact it showed implied and so was never
-        // added (`issues/difference-logic.md`). Only a graph already built
+        // added (`docs/internals/verification-efficiency.md`). Only a graph already built
         // is read, so a context that withdrew a fact does not rebuild one.
         if let Some(value) = self
             .difference_graph

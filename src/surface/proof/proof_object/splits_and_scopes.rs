@@ -452,6 +452,7 @@ impl<'a> Proof<'a> {
             &[ProofTactic::Both(both.clone())],
             std::slice::from_ref(self.site()),
             &mut None,
+            None,
         )?
         .ok_or_else(|| self.step_error("`both` requires complete proofs of both conjuncts"))
     }

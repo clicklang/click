@@ -125,6 +125,32 @@ access, not an equality about the current memory contents.
 
 Only the new facts at each checked step are printed, not the accumulated set.
 
+A failure trace also ends with a separately labelled `failed check`. It retains
+the refusal, checking stage, proof context, up to sixteen available premises,
+and up to twelve resources from the retained C state, even when the first operation fails before a checked step can
+be recorded. For postcondition failures, current-state names and resources come from the
+selected outcome; permissions consumed by a call are not shown as still held.
+The failed check is not an accepted execution step. A proposition
+proof has a fixed execution state; an execution tactic refused there names that
+restriction rather than implying that the tactic is unavailable everywhere.
+When an explicit script ends with a goal still open, its failure retains the
+checked prefix and the remaining goal and premises after those steps, rather
+than the state at script entry. This includes execution `have` bodies and pure
+theorem scripts.
+
+Written `simp` failures retain a bounded sample of the read-value queries and
+cell walks actually performed during that attempt. Ordinary errors summarize
+up to two observations of each kind and eight available premises; traces show
+up to sixteen observations of each kind, with shared
+snapshot and address labels, access widths, stopping reasons and query modes.
+These records include speculative search queries and are not additional proof
+facts or a claim that one observed stop explains the entire search failure.
+A check with no instrumented memory query says so in its trace. The capture
+limit bounds diagnostic storage and does not stop or change verification.
+Supplemental memory-history explanations are labelled separately: their walk
+does not use the failing check's equality or ownership context. Actual query
+observations retain the context's result without rerunning it while printing.
+
 A loop-closure search error names its unresolved obligation from the member
 planner or the retained focused goal, including when that search exhausted its work budget.
 If no individual obligation was retained, the diagnostic says that the failure
@@ -221,7 +247,10 @@ counter->value == completed`. "Resource transfer failed" names neither
 obligation and is not an adequate primary explanation.
 
 Show a bounded, relevant selection of available evidence and explain the
-specific mismatch. Include the C and contract/proof locations when known;
+specific mismatch. A write refused while a directly held view covers its range
+names that view and explains that it permits reading only. Range-bound misses
+keep their compared endpoints and the exact false or unestablished inequality.
+Include the C and contract/proof locations when known;
 do not invent missing locations or provenance. A refusal of a C step follows
 its `C operation` line, which spells the operation as Click checked it, with
 a `C statement at file:line:column` line quoting the statement as written.

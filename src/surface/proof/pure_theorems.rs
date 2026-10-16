@@ -1236,12 +1236,19 @@ fn check_pure_structural_induction(
             .map(|earlier| super::source_tactic_count(&earlier.tactics))
             .sum::<usize>();
         let sites = claim_script_sites(&root, &prepared, first_source_index);
-        let attempted = match root.try_addressed_linear_script(&prepared, &sites, &mut None) {
+        let mut unfinished = None;
+        let attempted = match root.try_addressed_linear_script(
+            &prepared,
+            &sites,
+            &mut None,
+            Some(&mut unfinished),
+        ) {
             Ok(attempted) => attempted,
             Err(error) => return Err(error.with_search_failures(search.finish())),
         };
         let Some(proof) = attempted else {
-            let error = root.step_error(format!(
+            check_verification_deadline()?;
+            let error = unfinished.as_ref().unwrap_or(&root).step_error(format!(
                 "`{claim_label}` structural induction arm `{}::{}` did not close its goal",
                 arm.type_name, arm.variant
             ));
@@ -2368,17 +2375,26 @@ fn check_direct_pure_goal_with_proof(
             TacticTiming::new(claim_label, 0, 0, &ProofTactic::Simp, 0),
         )
     };
-    let result = if auto {
-        root.try_auto_proof_closure()
-    } else {
-        root.try_simp_closure()
-    };
+    let (result, checks) = crate::surface::proof_diagnostics::capture_check_observations(|| {
+        if auto {
+            root.try_auto_proof_closure()
+        } else {
+            root.try_simp_closure()
+        }
+    });
     let result = match result {
         Ok(result) => result,
-        Err(error) => return Err(error.with_search_failures(search.finish())),
+        Err(error) => {
+            return Err(error
+                .with_check_observations(checks)
+                .with_search_failures(search.finish()));
+        }
     };
     let Some(proof) = result else {
-        return Err(root.simp_failure().with_search_failures(search.finish()));
+        return Err(root
+            .simp_failure()
+            .with_check_observations(checks)
+            .with_search_failures(search.finish()));
     };
     search.succeed();
     // A traced theorem keeps its accepted path, as a traced function does.
@@ -3139,11 +3155,18 @@ fn check_pure_script_with_proof(
     let mut search = super::attempt::search_scope("pure theorem script");
     let mut declined = None;
     let sites = claim_script_sites(&root, tactics, 0);
-    let checked = match root.try_addressed_linear_script(tactics, &sites, &mut declined) {
+    let mut unfinished = None;
+    let checked = match root.try_addressed_linear_script(
+        tactics,
+        &sites,
+        &mut declined,
+        Some(&mut unfinished),
+    ) {
         Ok(checked) => checked,
         Err(error) => return Err(error.with_search_failures(search.finish())),
     };
     let Some(proof) = checked else {
+        check_verification_deadline()?;
         let detail = match declined {
             Some(super::smart_closures::LinearScriptDecline::Shape) => {
                 "contains an unsupported operation or control-flow shape".to_string()
@@ -3155,7 +3178,9 @@ fn check_pure_script_with_proof(
             ),
             None => "ended with its goal still open".to_string(),
         };
-        return Err(root
+        return Err(unfinished
+            .as_ref()
+            .unwrap_or(&root)
             .step_error(format!("checked pure script for `{claim_label}` {detail}"))
             .with_search_failures(search.finish()));
     };

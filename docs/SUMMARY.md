@@ -60,6 +60,7 @@
 - [Contributing](internals/contributing.md)
 - [Testing](internals/testing.md)
 - [Feature playbook](internals/feature-playbook.md)
+- [Polish mode workflow](internals/polish-mode.md)
 - [Rbtree launch roadmap](internals/roadmap.md)
 - [Architecture](internals/architecture.md)
 - [The verification pipeline](concepts/verification-pipeline.md)
