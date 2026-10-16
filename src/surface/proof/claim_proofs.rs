@@ -1205,9 +1205,10 @@ fn close_claim_directly_from_outcome<'a>(
     execution_paths: &[crate::kernel::CFunctionExecutionCandidate],
     parameter_binding: ParameterBinding<'_>,
     spec_definitions: SpecDefinitions<'_>,
-    // The implicit closer is `auto`; a diagnostic for an explicit `simp`
-    // miss runs only what `simp` would.
-    auto_search: bool,
+    // An implicit closer searches with `auto`. An explicit closer has
+    // already searched: its failure explanation must not search again.
+    attempt_closure: bool,
+    failed_attempt: Option<&Proof<'a>>,
 ) -> Result<Result<Proof<'a>, ClickError>, ClickError> {
     let surface = describe_click_proposition(surface_goal);
     let failure = |reason: String| {
@@ -1218,68 +1219,83 @@ fn close_claim_directly_from_outcome<'a>(
     if !claim.applies_to(outcome) {
         return failure(describe_function_outcome(outcome, parameter_binding));
     }
-    let root = outcome_root.clone();
-    let kernel_goal = kernel_claim_goal(
-        function,
-        claim,
-        pre_state,
-        parameter_binding.arguments,
-        outcome,
-        root.facts().assumptions(),
-        &[],
-        &mut None,
-    );
-    let listed_goal = kernel_goal.clone();
-    let mut proof = match focus_claim_goal(&root, kernel_goal, surface_goal) {
-        Ok(proof) => proof,
-        Err(error) => {
-            check_verification_deadline()?;
-            return failure(format!(
-                "could not lower the claim goal: {}",
-                error.raw_summary()
-            ));
-        }
-    };
-    for equality in rewrite_equalities {
-        proof = match proof.apply_step(ProofStep::Rewrite(equality.clone())) {
-            Ok(next) => next,
+    let root = failed_attempt.unwrap_or(outcome_root).clone();
+    let kernel_goal = failed_attempt
+        .is_none()
+        .then(|| {
+            kernel_claim_goal(
+                function,
+                claim,
+                pre_state,
+                parameter_binding.arguments,
+                outcome,
+                root.facts().assumptions(),
+                &[],
+                &mut None,
+            )
+        })
+        .flatten();
+    let listed_goal = failed_attempt
+        .and_then(Proof::goal)
+        .cloned()
+        .or_else(|| kernel_goal.as_ref().map(|goal| goal.proposition().clone()));
+    let mut proof = if let Some(failed) = failed_attempt {
+        failed.clone()
+    } else {
+        match focus_claim_goal(&root, kernel_goal, surface_goal) {
+            Ok(proof) => proof,
             Err(error) => {
                 check_verification_deadline()?;
                 return failure(format!(
-                    "rewrite `{}` did not apply: {}",
-                    describe_click_proposition(equality),
+                    "could not lower the claim goal: {}",
                     error.raw_summary()
                 ));
             }
-        };
-    }
-    for name in unfolded_predicates {
-        match proof.apply_step(ProofStep::UnfoldPredicate(name.clone())) {
-            Ok(next) => proof = next,
-            Err(_) => check_verification_deadline()?,
+        }
+    };
+    if failed_attempt.is_none() {
+        for equality in rewrite_equalities {
+            proof = match proof.apply_step(ProofStep::Rewrite(equality.clone())) {
+                Ok(next) => next,
+                Err(error) => {
+                    check_verification_deadline()?;
+                    return failure(format!(
+                        "rewrite `{}` did not apply: {}",
+                        describe_click_proposition(equality),
+                        error.raw_summary()
+                    ));
+                }
+            };
+        }
+        for name in unfolded_predicates {
+            match proof.apply_step(ProofStep::UnfoldPredicate(name.clone())) {
+                Ok(next) => proof = next,
+                Err(_) => check_verification_deadline()?,
+            }
         }
     }
     let mut search = super::attempt::search_scope("claim outcome closure");
-    if let Some(completed) = proof.try_direct_logical_closure()?
-        && completed.is_complete()
-    {
-        search.succeed();
-        return Ok(Ok(completed));
-    }
-    if let Some(completed) = proof.try_simp_closure()?
-        && completed.is_complete()
-    {
-        search.succeed();
-        return Ok(Ok(completed));
-    }
-    check_verification_deadline()?;
-    // An omitted closer is `auto`: after `simp`, the rest of its search.
-    if auto_search
-        && let Some(completed) = proof.try_auto_closure_after_simp()?
-        && completed.is_complete()
-    {
-        search.succeed();
-        return Ok(Ok(completed));
+    if attempt_closure {
+        if let Some(completed) = proof.try_direct_logical_closure()?
+            && completed.is_complete()
+        {
+            search.succeed();
+            return Ok(Ok(completed));
+        }
+        if let Some(completed) = proof.try_simp_closure()?
+            && completed.is_complete()
+        {
+            search.succeed();
+            return Ok(Ok(completed));
+        }
+        check_verification_deadline()?;
+        // An omitted closer is `auto`: after `simp`, the rest of its search.
+        if let Some(completed) = proof.try_auto_closure_after_simp()?
+            && completed.is_complete()
+        {
+            search.succeed();
+            return Ok(Ok(completed));
+        }
     }
     check_verification_deadline()?;
     // One label set for the whole report: a read of the outcome state is
@@ -1462,9 +1478,7 @@ fn close_claim_directly_from_outcome<'a>(
     // closure lacked is not pushed past the item limit by unrelated ones.
     let path_facts = root.facts().propositions().cloned().collect::<Vec<_>>();
     let context = describe_goal_proof_context(
-        listed_goal
-            .as_ref()
-            .map(crate::kernel::CClaimGoal::proposition),
+        listed_goal.as_ref(),
         &path_facts,
         &path_case_facts(entry_facts, execution_paths, path_index),
         resource_facts,
@@ -4348,6 +4362,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                                         parameter_binding,
                                                         spec_definitions,
                                                         false,
+                                                        Some(scope.body()),
                                                     )?
                                                     .err()
                                                     .map(|reason| format!("\n{}", reason.raw_summary()))
@@ -4600,6 +4615,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                         ),
                                         spec_definitions,
                                         false,
+                                        None,
                                     )? {
                                         reasons.push(reason.raw_summary().to_owned());
                                     }
@@ -4816,6 +4832,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                     parameter_binding,
                                     spec_definitions,
                                     true,
+                                    None,
                                 )? {
                                     Ok(completed) => {
                                         closures[claim_index] =

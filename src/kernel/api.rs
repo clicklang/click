@@ -395,7 +395,11 @@ pub(crate) fn c_condition_fact_target_reaches_in_context(
     {
         return false;
     }
-    let with_source = assumptions.clone().assume_proposition(source.clone());
+    let with_source = if super::proposition_holds_without_facts(source) {
+        assumptions.clone()
+    } else {
+        assumptions.clone().assume_proposition(source.clone())
+    };
     condition_target_reaches(&with_source, target)
 }
 
