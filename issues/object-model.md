@@ -731,3 +731,20 @@ the loop passes recovery. This isolates the loop boundary without changing
 the original program or expanding the accepted model. The native carrier
 compatibility fixture passes current upstream `ea081fe39`. Both commits pushed
 to merged PR #1160 are verified as upstream ancestors.
+
+
+Recovery checkpoint `281a5ff36` repairs iterated `give` by consuming the owned
+element in the coordinates of the already-selected clause. It reuses the
+checked base and exact element shape rather than rediscovering the supplier
+through a later descriptor read. Hole, guard, width and ownership checks remain
+in place. The complete descriptor-loop reduction passes fresh, expanded,
+rewritten and retained checks on recovery; the original arena-free proof now
+gets past `give` and its loop window fold. Its final state fold remains under
+investigation, and the last complete audit remains **51/52**.
+
+The upstream increment carries the selected-coordinate repair, the complete
+loop fixture, pointer-read and repeated-return controls, and a four-size `give`
+scaling control (71 deterministic work units at every size). Focused iterated
+controls pass (eight passed, one nightly control skipped); all 738 selected
+scaling tests pass. No C source or contracts change, and no new model design
+decision is needed.
