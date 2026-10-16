@@ -1099,10 +1099,29 @@ struct CPointerQualifiers {
 /// pointer's address through a proven alias leaves it alone; a substitution
 /// of the variables the address mentions maps `start` the same way. A value
 /// without an extent is bounded only by its complete object, as before.
+///
+/// The width is a term: a member's is its constant size, and a pointer of
+/// unseen formation will carry an unknown one (`design/pointer-subobject-extents.md`,
+/// Phase C).
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct SubobjectExtent {
     pub(crate) start: Pointer,
-    pub(crate) width: u64,
+    pub(crate) width: Bitvector32Term,
+}
+
+impl SubobjectExtent {
+    /// The `width` bytes at `start`: a member's extent.
+    pub(crate) fn constant(start: Pointer, width: u32) -> Self {
+        Self {
+            start,
+            width: Bitvector32Term::Constant(width),
+        }
+    }
+
+    /// The width in bytes when it is a constant.
+    pub(crate) fn constant_width(&self) -> Option<u32> {
+        self.width.as_const()
+    }
 }
 
 impl CPointerValue {
@@ -1227,7 +1246,7 @@ impl CPointerValue {
         if let Some(extent) = self.extent() {
             result = result.with_extent(Some(SubobjectExtent {
                 start: map(&extent.start),
-                width: extent.width,
+                width: extent.width.clone(),
             }));
         }
         result

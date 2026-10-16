@@ -3782,10 +3782,10 @@ impl C0Function {
             }
             C0Expression::Subobject { pointer, width } => {
                 let mut address = self.static_address_expression(pointer)?;
-                address.extent = Some(crate::kernel::SubobjectExtent {
-                    start: address.pointer.clone(),
-                    width: u64::from(*width),
-                });
+                address.extent = Some(crate::kernel::SubobjectExtent::constant(
+                    address.pointer.clone(),
+                    *width,
+                ));
                 Some(address)
             }
             C0Expression::Add(pointer, offset) => {
