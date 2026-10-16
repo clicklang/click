@@ -94,6 +94,17 @@ impl PopulationAccess {
     }
 }
 impl CState {
+    /// The population whose function-entry count is `variable`, if any.
+    pub(crate) fn population_with_entry_count(
+        &self,
+        variable: crate::kernel::Variable,
+    ) -> Option<crate::kernel::ResourceDescription> {
+        self.population_effects
+            .creation
+            .as_ref()?
+            .entry_count_population(variable)
+            .cloned()
+    }
     pub(crate) fn population_body_is_open(
         &self,
         name: &str,

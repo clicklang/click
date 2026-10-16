@@ -1362,6 +1362,26 @@ impl CreationEvents {
         !self.0.opaque_imports.is_empty()
     }
 
+    /// The imported population whose function-entry count is `variable`, so
+    /// a fact about that count can be spelled `old(count(...))`. One visit
+    /// per imported population, which is bounded by the contract's clauses.
+    pub(in crate::kernel) fn entry_count_population(
+        &self,
+        variable: crate::kernel::Variable,
+    ) -> Option<&ResourceDescription> {
+        self.0
+            .opaque_imports
+            .iter()
+            .find_map(|(description, import)| {
+                crate::instrumentation::record_deterministic_work(1);
+                matches!(
+                    &import.entry_count,
+                    Some(Bitvector32Term::Variable(entry)) if *entry == variable
+                )
+                .then_some(description)
+            })
+    }
+
     /// The description includes the exact pointer; another family or offset
     /// cannot observe this imported count.
     pub(in crate::kernel) fn observe_symbolic(

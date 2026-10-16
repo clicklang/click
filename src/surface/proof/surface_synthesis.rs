@@ -2533,6 +2533,49 @@ fn synthesize_uint32_operand(expression: ContractExpression) -> Option<ContractE
     }
 }
 
+/// A population's count at function entry, which the kernel holds as an
+/// opaque symbol, is spelled `old(count(R(anchor, _, ...)))`. A fact the
+/// kernel records about it, such as the bound a consumed member places on
+/// it, then has a source spelling and can be cited.
+fn synthesize_population_entry_count(
+    term: &Bitvector32Term,
+    parameter_binding: ParameterBinding<'_>,
+    state: &CState,
+) -> Option<ContractExpression> {
+    let Bitvector32Term::Variable(variable) = term else {
+        return None;
+    };
+    let population = state.population_with_entry_count(*variable)?;
+    let [AlgebraicValue::C(CValue::Pointer(anchor))] = population.arguments() else {
+        return None;
+    };
+    let anchor = synthesize_surface_pointer_expression(
+        anchor.pointer(),
+        parameter_binding,
+        state,
+        &BTreeMap::new(),
+    )?;
+    let wildcards = population.population_arity().map_or(0, |arity| arity - 1);
+    let arguments = std::iter::once(anchor)
+        .chain(std::iter::repeat_n(
+            ContractExpression::ResourceWildcard,
+            wildcards,
+        ))
+        .collect();
+    Some(ContractExpression::Old(Box::new(
+        ContractExpression::ResourceCount(Box::new(ResourceClause::Declared {
+            type_schema: None,
+            resource_type_arguments: Vec::new(),
+            resource_arguments: Vec::new(),
+            access: ResourceAccessMode::Own,
+            kind: ResourceKind::Token,
+            name: population.family().to_string(),
+            arguments,
+            parameter_types: Vec::new(),
+        })),
+    )))
+}
+
 fn synthesize_surface_bitvector(
     term: &Bitvector32Term,
     parameter_binding: ParameterBinding<'_>,
@@ -2624,6 +2667,9 @@ fn synthesize_surface_bitvector(
     }
     if let Some(snapshot) = synthesize_snapshot_local(term) {
         return Some(snapshot);
+    }
+    if let Some(count) = synthesize_population_entry_count(term, parameter_binding, state) {
+        return Some(count);
     }
     let binary = |left: &Bitvector32Term, right: &Bitvector32Term| {
         Some((
