@@ -5204,7 +5204,10 @@ fn symbolic_read_refold_and_refusal_do_not_enumerate_range_elements() {
         let least = samples.iter().map(|(_, work, _)| *work).min().unwrap();
         let most = samples.iter().map(|(_, work, _)| *work).max().unwrap();
         assert!(least > 0);
-        assert!(most < 30_000, "old={old_value}: {samples:?}");
+        assert!(
+            most < 30_000,
+            "old={old_value}, distinct={distinct_index}: {samples:?}"
+        );
         assert!(samples[0].2 > 0, "fold must be measured: {samples:?}");
         for pair in samples.windows(2) {
             assert_eq!(pair[0].2, pair[1].2, "fold enumerated slots: {samples:?}");

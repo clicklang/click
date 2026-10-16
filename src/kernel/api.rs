@@ -400,7 +400,17 @@ pub(crate) fn c_condition_fact_target_reaches_in_context(
     } else {
         assumptions.clone().assume_proposition(source.clone())
     };
-    condition_target_reaches(&with_source, target)
+    // The source is fully represented by this context (or is a tautology).
+    // Different reflexive source spellings must not repeat the same failed
+    // target question. Successes still run and record their own provenance.
+    super::closure_memoized_fact_check(
+        super::ClosureFactCheck::ConditionTarget,
+        &[target],
+        None,
+        &with_source,
+        &[],
+        || condition_target_reaches(&with_source, target),
+    )
 }
 
 /// Exports target-directed transport only when every contextual dependency
