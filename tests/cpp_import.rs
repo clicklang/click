@@ -7877,11 +7877,7 @@ fn class_template_instances_preserve_nominal_identity_and_verify_offline() {
     let mut identities = std::collections::BTreeSet::new();
     for (selected, record, spelling) in [
         ("call", "Box__int__bool_false", "Box<int>"),
-        (
-            "wide",
-            "Box__long_long__bool_false",
-            "Box<long long>",
-        ),
+        ("wide", "Box__long_long__bool_false", "Box<long long>"),
         ("long_type", "Box__long__bool_false", "Box<long>"),
         (
             "tagged",
