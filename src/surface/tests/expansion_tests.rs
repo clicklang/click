@@ -18359,6 +18359,11 @@ fn callback_reads_keep_the_initialized_target_contract_in_all_proof_modes() {
 fn packed_pointer_cast_contracts_survive_expansion_and_retained_verification() {
     for (fixture, claim, postcondition) in [
         (
+            "mdtests/a_saved_pointer_link_keeps_its_bounds_through_an_outer_alias_update.md",
+            "caller.contract",
+            "ensures p->left == old(root->left->left);",
+        ),
+        (
             "mdtests/a_bounded_native_word_tag_can_precede_its_pointer.md",
             "stamp.ensures_0",
             "ensures ((int32*)(slot->word & ~3)) == p;",

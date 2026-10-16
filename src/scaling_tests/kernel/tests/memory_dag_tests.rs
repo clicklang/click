@@ -585,11 +585,14 @@ fn seeded_scalar_slots_preserve_overlapping_wide_reads() {
     let pointer = Pointer::symbolic(Variable(98_490));
     let assumptions = PureFactContext::new();
     let mut previous_work = None;
-    for count in [2, 16, 256, 4096] {
+    for (count, stride) in [2, 16, 256, 4096]
+        .into_iter()
+        .flat_map(|count| [4, 8].map(|stride| (count, stride)))
+    {
         let original = intern_c_memory(CMemory::new());
         let current = intern_c_memory(original.memory().clone().with_seeded_cells(
             pointer.clone(),
-            4,
+            stride,
             CType::Int32,
             0,
             count,
@@ -628,7 +631,7 @@ fn seeded_scalar_slots_preserve_overlapping_wide_reads() {
         );
         let cached = intern_c_memory(changed.memory().clone().with_seeded_cells(
             pointer.clone(),
-            4,
+            stride,
             CType::Int32,
             0,
             count,
