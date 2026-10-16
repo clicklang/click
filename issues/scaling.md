@@ -155,8 +155,18 @@ instead of from what the step changed.
    time now share one lowering state, and a frame's locals are persistent
    maps, so binding a local copies a search path rather than every binding
    (`binding_a_local_copies_a_search_path_not_the_frame`); `objects_and_calls`
-   at N = 128, 9.90 to 9.58 billion instructions. Still open: each resource
-   clause's lowering rebuilds the parameter values and array references.
+   at N = 128, 9.90 to 9.58 billion instructions. Also fixed: the entry's
+   resource clauses are lowered over one shared parameter environment
+   (`ClauseParameters`) instead of each rebuilding the parameter values and
+   array references (`entry_resource_clauses_do_not_rebuild_every_parameter`:
+   560, 8,384 and 131,840 units at 16, 64 and 256 parameters before; 80,
+   320 and 1,280 after). Still open: other entry passes rebuild them per
+   requirement. From N = 32 to 128 in `objects_and_calls`,
+   `resource_clause_memory_ranges_at_state`,
+   `requirement_proposition_and_facts_with_assumptions`,
+   `materialize_access_segment_cells` and `evaluate_requirement_segment`
+   each grow x13 to x15. The deterministic work counter does not yet see
+   most of this, so an end-to-end entry test cannot gate it.
 9. **Fixed: comparing equal resource contexts walked every fact.** A call
    that takes the caller's ownership and returns it rebuilds a context with
    the same facts in fresh storage. Contexts order by content hash first, so
