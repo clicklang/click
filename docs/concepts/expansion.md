@@ -22,7 +22,10 @@ is a tooling defect to investigate.
 
 Library references in the output must resolve in the rewritten file. Expansion
 preserves explicit full paths and uses short module paths only when their
-modules are in scope. A theorem application with no declared prerequisites
+modules are in scope. If a rewritten full path supplied a library module,
+expansion retains that module with an explicit import when the certificate
+uses a bare declaration name, including resource names such as `cstr_at`.
+A theorem application with no declared prerequisites
 and value arguments is already a simple operation and is not an automation
 site for audit or profile. Produced application certificates retain their
 explicit `using` block, including an empty block: an empty list alone does not

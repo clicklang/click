@@ -18410,6 +18410,31 @@ theorem untouched() { ensures 1 == 1 by { normalize(); } }
 }
 
 #[test]
+#[ignore = "nightly: string resource expansion and retained rechecking"]
+fn expanded_string_witness_preserves_its_qualified_resource_module() {
+    let (source, sources) = mdtest_sources("mdtests/cstr_readable_witness_stated_before_call.md");
+    let sources = sources
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    let expanded = expand_c0_claim_source(
+        &source,
+        &sources,
+        "fixed_string_length",
+        CProofClaim::Grouped,
+    )
+    .unwrap();
+    assert!(expanded.contains("import click::cstr;"), "{expanded}");
+    parse(&expanded).expect("the written resource must resolve without implicit C call imports");
+    verify_c0_sources(&expanded, &sources).unwrap();
+    let at = expansion::position_at_offset(&expanded, expanded.find("ensures result").unwrap());
+    let (session, _) = C0VerificationSession::new(&source, &sources).unwrap();
+    session.verify_at(&expanded, at.line, at.column).unwrap();
+    let changed = expanded.replace("ensures result == 2u64", "ensures result == 1u64");
+    assert!(session.verify_at(&changed, at.line, at.column).is_err());
+}
+
+#[test]
 #[ignore = "nightly: signed byte conditions across fresh, expanded, and retained proofs"]
 fn known_unsigned_byte_decides_signed_comparison_in_all_proof_modes() {
     for (fixture, function) in [
