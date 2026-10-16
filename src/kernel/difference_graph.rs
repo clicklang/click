@@ -17,7 +17,8 @@
 //! difference logic; a contradictory graph answers only that an overflow is
 //! absent, which holds vacuously on a dead path.
 //!
-//! See `issues/difference-logic.md`.
+//! See "Condition decisions in simple checking" in
+//! `docs/internals/verification-efficiency.md`.
 
 use crate::kernel::{Bitvector32Term, ConditionTerm, Pointer, PointerOffsetTerm};
 use crate::persistent::PersistentMap;
@@ -1297,7 +1298,7 @@ impl DifferenceGraph {
         // Only the absence of overflow is answered. Proof terms that are
         // not C (an arithmetic certificate's intermediate sums) are lowered
         // through the C evaluator and read an undecided overflow as a value;
-        // see `issues/difference-logic.md`.
+        // see `docs/internals/verification-efficiency.md`.
         (low >= min && high <= max).then_some(false)
     }
 }

@@ -966,7 +966,16 @@ equality `this == &other` makes `this->size` and `other.size` one cell
 `work_is_independent_of_unrelated_bounded_values` pins insertion and query
 work beside 16 to 1,024 unrelated values, and
 `decisions_hold_in_every_model_and_are_complete` checks each answer against
-every model of generated fact sets. See `issues/difference-logic.md`.
+every model of generated fact sets.
+
+The graph decides difference constraints only. Non-linear arithmetic and
+relations between sums of variables are out of its reach, and so is an
+overflow bound that rests on a guard over a sum: `a <= INT_MAX - b` is not a
+difference constraint. Simple checking does not rediscover such a bound; a
+proof states it with a lemma, as
+`explicit_nonnegative_add_definedness_certifies_the_whole_contract` does with
+`int32_nonnegative_add_within_max_is_defined`. Implicit `auto` is not
+promised to close what the fast path leaves open.
 
 ## Termination heights and local descent
 

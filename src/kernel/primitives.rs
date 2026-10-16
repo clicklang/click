@@ -10853,7 +10853,7 @@ pub struct PureFactContext {
     /// the condition-match indexes.
     pub(super) order_condition_facts: crate::persistent::PersistentMap<ConditionTerm, bool>,
     /// Difference logic over `condition_facts`
-    /// (`issues/difference-logic.md`), the fast path condition evaluation
+    /// (`docs/internals/verification-efficiency.md`), the fast path condition evaluation
     /// asks before the general decision.
     pub(super) difference_graph: super::difference_graph::ContextDifferenceGraph,
     /// True `Bitvector32Equal` and `Bitvector64Equal` facts that pin a term

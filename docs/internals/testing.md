@@ -925,7 +925,7 @@ the same events per step through `collect_planning_statement_transitions`,
 which records the claim and step of each hidden derivation. The kernel's own
 condition evaluation asks only the difference graph and its keyed rules, so
 it derives nothing hidden
-([`issues/difference-logic.md`](https://github.com/clicklang/click/blob/master/issues/difference-logic.md)).
+([verification efficiency](verification-efficiency.md#condition-decisions-in-simple-checking)).
 The `TacticSearch` route counts a resource, separation or
 loadable-memory obligation a step proves by searching the proof context
 outside its fast path, under a smart tactic's policy. A simple tactic never
