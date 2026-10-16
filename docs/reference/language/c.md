@@ -408,17 +408,23 @@ restate a `long`. A pointer alias, `typedef struct node *node_ptr;` or
 written before it qualifies the pointer itself, as in C: `const node_ptr` is
 `struct node *const`. A parameter of a function-pointer alias is written
 with the alias, `int apply(unary f, int x)` for `typedef int (*unary)(int);`,
-and has the alias's exact signature. A head writes the C type of an array,
-union, volatile or aligned alias, of a function-pointer alias anywhere but
-as a parameter's whole type, and of a name two verified sources alias to
-different types. A standard spelling such as `size_t` or `uint32_t` keeps its
+and has the alias's exact signature. A parameter of a scalar array alias is
+written with the alias, `int first(triple values)` for `typedef int
+triple[3];`, and means `int values[3]`: C passes it as a pointer to its
+first element, and the alias's length bounds the bytes the head declares.
+The C front end adjusts such a parameter to a pointer whether the source
+writes the alias or the array declarator, so either head spelling restates
+it. A head writes the C type of a union, volatile or aligned alias, of an
+array or function-pointer alias anywhere but as a parameter's whole type,
+and of a name two verified sources alias to different types. A standard spelling such as `size_t` or `uint32_t` keeps its
 meaning even when a source typedefs it. A specification position writes
 Click's type, not a typedef name. See
 `mdtests/a_function_head_writes_the_source_typedef_names.md`,
 `mdtests/a_head_typedef_keeps_its_long_long_rank.md`,
 `mdtests/a_function_head_writes_pointer_typedef_names.md`,
 `mdtests/a_function_head_writes_function_pointer_typedef_names.md`,
-`mdtests/an_array_typedef_is_written_as_its_type_in_a_head.md` and
+`mdtests/a_function_head_writes_array_typedef_names.md`,
+`mdtests/c_typedef_array_parameter_is_adjusted_to_a_pointer.md` and
 `mdtests/a_specification_writes_click_types_not_typedef_names.md`.
 
 The GNU `__extension__` marker before a file-scope declaration suppresses a

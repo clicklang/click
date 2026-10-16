@@ -4783,6 +4783,27 @@ impl C0Parameter {
 }
 
 impl C0Type {
+    /// The length of an array type; `None` for any other type.
+    pub fn array_length(self) -> Option<u32> {
+        match self {
+            Self::CharArray(_, length)
+            | Self::Int32Array(length)
+            | Self::UInt8Array(length)
+            | Self::Int8Array(length)
+            | Self::Int16Array(length)
+            | Self::UInt16Array(length)
+            | Self::UInt32Array(length)
+            | Self::Int64Array(_, length)
+            | Self::Int128Array(length)
+            | Self::UInt64Array(_, length)
+            | Self::UInt128Array(length)
+            | Self::Float32Array(length)
+            | Self::Float64Array(length)
+            | Self::PointerArray(_, _, length) => Some(length),
+            _ => None,
+        }
+    }
+
     pub fn is_pointer(self) -> bool {
         matches!(
             self,
@@ -5675,9 +5696,16 @@ pub(crate) enum C0HeadTypedef {
         c_type: C0Type,
         signature: C0FunctionPointerSignature,
     },
-    /// An alias of an array, union, or a volatile, aligned or
-    /// extended-precision type, which a head writes as its type, or one that
-    /// two verified sources give different types.
+    /// A scalar array, `typedef int triple[3];`: its element type, possibly
+    /// `const`, and length.
+    Array {
+        element: C0Type,
+        length: u32,
+        constant: bool,
+    },
+    /// An alias of a union, or a volatile, aligned or extended-precision
+    /// type, which a head writes as its type, or one that two verified
+    /// sources give different types.
     Other,
 }
 
@@ -5696,6 +5724,22 @@ impl C0HeadTypedef {
             return Some(Self::FunctionPointer {
                 c_type: parsed.c_type,
                 signature: signature.clone(),
+            });
+        }
+        if let Some(length) = parsed.c_type.array_length()
+            && let Some(element) = parsed.c_type.pointee_type()
+            && !parsed.is_volatile
+            && parsed.volatile_levels == 0
+            && !parsed.long_double
+            && !parsed.aligned_typedef
+            && !parsed.opaque_builtin
+            && parsed.struct_name.is_none()
+            && parsed.union_name.is_none()
+        {
+            return Some(Self::Array {
+                element,
+                length,
+                constant: parsed.is_constant,
             });
         }
         if parsed.long_double
@@ -10452,11 +10496,23 @@ impl Parser {
             } else {
                 None
             };
-            let array_parameter = self.peek() == Some(&Token::LBracket);
-            let c_type = struct_value_layout
-                .as_ref()
-                .map(struct_value_type)
-                .unwrap_or(self.parse_parameter_array_suffix(parsed_type.c_type)?);
+            // A parameter of array type, written `int values[3]` or through
+            // a typedef, `triple values`, is adjusted to a pointer to its
+            // element (C11 6.7.6.3p7).
+            let typedef_array = parsed_type.c_type.array_length().is_some();
+            let array_parameter = self.peek() == Some(&Token::LBracket) || typedef_array;
+            let c_type = if typedef_array {
+                let element = parsed_type
+                    .c_type
+                    .pointee_type()
+                    .expect("an array type has an element type");
+                self.array_parameter_pointer(element)?
+            } else {
+                struct_value_layout
+                    .as_ref()
+                    .map(struct_value_type)
+                    .unwrap_or(self.parse_parameter_array_suffix(parsed_type.c_type)?)
+            };
             if parsed_type.union_name.is_some() && array_parameter {
                 return Err(self.error_here("arrays of union parameters are not supported yet"));
             }
@@ -11283,7 +11339,18 @@ impl Parser {
         if self.peek() != Some(&Token::LBracket) {
             return Ok(c_type);
         }
-        let pointer_type = match c_type {
+        let pointer_type = self.array_parameter_pointer(c_type)?;
+        self.position += 1;
+        if matches!(self.peek(), Some(Token::Number(_))) {
+            self.position += 1;
+        }
+        self.expect(Token::RBracket)?;
+        Ok(pointer_type)
+    }
+
+    /// The pointer type an array parameter of `element`s is adjusted to.
+    fn array_parameter_pointer(&self, element: C0Type) -> Result<C0Type, C0SyntaxError> {
+        Ok(match element {
             C0Type::Int8 => C0Type::Int8Pointer,
             C0Type::Int16 => C0Type::Int16Pointer,
             C0Type::UInt16 => C0Type::UInt16Pointer,
@@ -11313,14 +11380,7 @@ impl Parser {
                     self.error_here("only scalar and pointer array parameters are supported")
                 );
             }
-        };
-
-        self.position += 1;
-        if matches!(self.peek(), Some(Token::Number(_))) {
-            self.position += 1;
-        }
-        self.expect(Token::RBracket)?;
-        Ok(pointer_type)
+        })
     }
 
     fn parse_local_array_shape(
