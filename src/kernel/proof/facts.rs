@@ -2031,7 +2031,7 @@ fn index_snapshot_fact(
     fact: &Arc<Proposition>,
 ) -> PersistentMap<SnapshotBlindPropositionKey, PersistentSequence<Arc<Proposition>>> {
     for key in [snapshot_blind_proposition_key(fact)] {
-        if !key.forgets_a_snapshot() {
+        if !key.requires_checked_match() {
             continue;
         }
         let mut bucket = by_snapshot_blind.get(&key).cloned().unwrap_or_default();

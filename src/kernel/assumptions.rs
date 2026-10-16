@@ -111,6 +111,11 @@ fn terms_equal_with_load_atoms(
     right: &Bitvector32Term,
     loads_match: LoadAtomsMatch<'_>,
 ) -> bool {
+    // Original object classes guide decoding, not numeric address equality.
+    // Compare the addresses through the same pointer/load-atom rule.
+    if let (Some(left), Some(right)) = (left.address_pointer(), right.address_pointer()) {
+        return pointers_equal_with_load_atoms(left, right, loads_match);
+    }
     match (left, right) {
         (Bitvector32Term::MemoryLoad(_, _, _), Bitvector32Term::MemoryLoad(_, _, _)) => {
             loads_match(left, right)

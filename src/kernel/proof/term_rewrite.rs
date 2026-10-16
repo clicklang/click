@@ -1222,6 +1222,7 @@ pub(crate) struct TermRewrite<'a> {
     pointer_exact: Option<(&'a Pointer, &'a Pointer)>,
     pointer_offset_exact: Option<(&'a PointerOffsetTerm, &'a PointerOffsetTerm)>,
     conditions: Option<&'a HashMap<ConditionTerm, bool>>,
+    cited_conditions: Option<&'a crate::kernel::equality_graph::EqualityGraph>,
     bounded_uint64_indices: Option<std::collections::HashSet<Bitvector32Term>>,
     equality_graph: Option<&'a crate::kernel::equality_graph::EqualityGraph>,
     collected_conditions: Option<Vec<ConditionTerm>>,
@@ -1350,6 +1351,7 @@ impl<'a> TermRewrite<'a> {
     fn empty() -> Self {
         Self {
             conditions: None,
+            cited_conditions: None,
             bounded_uint64_indices: None,
             equality_graph: None,
             collected_conditions: None,
@@ -1421,6 +1423,7 @@ impl<'a> TermRewrite<'a> {
             .max();
         let mut rewrite = Self {
             conditions: None,
+            cited_conditions: None,
             bounded_uint64_indices: None,
             equality_graph: None,
             collected_conditions: None,
@@ -1553,6 +1556,7 @@ impl<'a> TermRewrite<'a> {
             bitvector: None,
             integer_exact: None,
             conditions: Some(conditions),
+            cited_conditions: None,
             bounded_uint64_indices: None,
             equality_graph: None,
             collected_conditions: None,
@@ -1605,6 +1609,18 @@ impl<'a> TermRewrite<'a> {
         rewrite
     }
 
+    /// The explicitly selected premises may decide either polarity. Their
+    /// graph is built once by the selecting operation, never by a lookup.
+    pub(in crate::kernel) fn for_cited_conditions_with_graph(
+        conditions: &'a HashMap<ConditionTerm, bool>,
+        selected: &'a crate::kernel::equality_graph::EqualityGraph,
+        ambient: &'a crate::kernel::equality_graph::EqualityGraph,
+    ) -> Self {
+        let mut rewrite = Self::for_conditions_with_graph(conditions, ambient);
+        rewrite.cited_conditions = Some(selected);
+        rewrite
+    }
+
     pub(crate) fn for_pointer_offset_exact(
         from: &'a PointerOffsetTerm,
         to: &'a PointerOffsetTerm,
@@ -1631,6 +1647,7 @@ impl<'a> TermRewrite<'a> {
             pointer_exact: None,
             pointer_offset_exact: None,
             conditions: None,
+            cited_conditions: None,
             bounded_uint64_indices: None,
             equality_graph: None,
             collected_conditions: None,
@@ -1715,6 +1732,7 @@ impl<'a> TermRewrite<'a> {
             pointer_exact: None,
             pointer_offset_exact: None,
             conditions: None,
+            cited_conditions: None,
             bounded_uint64_indices: None,
             equality_graph: None,
             collected_conditions: None,
@@ -1893,6 +1911,7 @@ impl<'a> TermRewrite<'a> {
             pointer_exact: None,
             pointer_offset_exact: None,
             conditions: None,
+            cited_conditions: None,
             bounded_uint64_indices: None,
             equality_graph: None,
             collected_conditions: None,
@@ -3822,6 +3841,15 @@ impl<'a> TermRewrite<'a> {
             && let Some(value) = conditions.get(v)
         {
             return ConditionTerm::Constant(*value);
+        }
+        // Only the explicitly cited facts can refute a condition here. The
+        // shared graph makes address-origin annotations numerically transparent.
+        if let Some(graph) = self.cited_conditions {
+            for value in [true, false] {
+                if graph.knows_condition(v, value) {
+                    return ConditionTerm::Constant(value);
+                }
+            }
         }
         let result = match v {
             ConditionTerm::Constant(_) | ConditionTerm::Variable(_) => v.clone(),

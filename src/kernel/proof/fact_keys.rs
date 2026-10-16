@@ -95,6 +95,7 @@ pub(crate) enum SnapshotBlindFloatConditionKey {
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
 pub(crate) enum SnapshotBlindBitvectorKey {
     Load(Box<SnapshotBlindPointerKey>, LoadKind),
+    Address(Box<SnapshotBlindPointerKey>),
     Binary(BitvectorBinaryOp, Box<Self>, Box<Self>),
     Unary(BitvectorUnaryOp, Box<Self>),
     If(Box<SnapshotBlindConditionKey>, Box<Self>, Box<Self>),
@@ -129,18 +130,21 @@ pub(crate) enum SnapshotBlindPointerOffsetKey {
 }
 
 impl SnapshotBlindPropositionKey {
-    pub(crate) fn forgets_a_snapshot(&self) -> bool {
+    /// Index facts whose keys erase read snapshots or address-origin
+    /// annotations. Sharing a key selects candidates; the checked matcher
+    /// still establishes their semantic identity.
+    pub(crate) fn requires_checked_match(&self) -> bool {
         match self {
-            Self::Condition(condition, _) => condition.forgets_a_snapshot(),
+            Self::Condition(condition, _) => condition.requires_checked_match(),
             Self::Implies(left, right) | Self::And(left, right) | Self::Or(left, right) => {
-                left.forgets_a_snapshot() || right.forgets_a_snapshot()
+                left.requires_checked_match() || right.requires_checked_match()
             }
-            Self::Not(body) => body.forgets_a_snapshot(),
+            Self::Not(body) => body.requires_checked_match(),
             Self::MemorySeparate(left, right) => {
                 let side = |key: &SnapshotBlindMemoryRangeKey| {
-                    key.offset.forgets_a_snapshot()
-                        || key.start.forgets_a_snapshot()
-                        || key.end.forgets_a_snapshot()
+                    key.offset.requires_checked_match()
+                        || key.start.requires_checked_match()
+                        || key.end.requires_checked_match()
                 };
                 side(left) || side(right)
             }
@@ -150,18 +154,20 @@ impl SnapshotBlindPropositionKey {
 }
 
 impl SnapshotBlindConditionKey {
-    fn forgets_a_snapshot(&self) -> bool {
+    fn requires_checked_match(&self) -> bool {
         match self {
             Self::AlgebraicEqual(_, _) => false,
             Self::Comparison(_, left, right) => {
-                left.forgets_a_snapshot() || right.forgets_a_snapshot()
+                left.requires_checked_match() || right.requires_checked_match()
             }
-            Self::Float32(condition) | Self::Float64(condition) => condition.forgets_a_snapshot(),
+            Self::Float32(condition) | Self::Float64(condition) => {
+                condition.requires_checked_match()
+            }
             Self::PointerOffsetEqual(left, right) => {
-                left.forgets_a_snapshot() || right.forgets_a_snapshot()
+                left.requires_checked_match() || right.requires_checked_match()
             }
             Self::PointerEqual(left, right) => {
-                left.forgets_a_snapshot() || right.forgets_a_snapshot()
+                left.requires_checked_match() || right.requires_checked_match()
             }
             Self::Constant(_) | Self::Variable(_) => false,
         }
@@ -169,26 +175,29 @@ impl SnapshotBlindConditionKey {
 }
 
 impl SnapshotBlindFloatConditionKey {
-    fn forgets_a_snapshot(&self) -> bool {
+    fn requires_checked_match(&self) -> bool {
         match self {
             Self::Comparison { left, right, .. } => {
-                left.forgets_a_snapshot() || right.forgets_a_snapshot()
+                left.requires_checked_match() || right.requires_checked_match()
             }
-            Self::Classification { value, .. } => value.forgets_a_snapshot(),
+            Self::Classification { value, .. } => value.requires_checked_match(),
         }
     }
 }
 
 impl SnapshotBlindBitvectorKey {
-    fn forgets_a_snapshot(&self) -> bool {
+    fn requires_checked_match(&self) -> bool {
         match self {
             Self::Load(_, _) => true,
-            Self::Binary(_, left, right) => left.forgets_a_snapshot() || right.forgets_a_snapshot(),
-            Self::Unary(_, value) => value.forgets_a_snapshot(),
+            Self::Address(_) => true,
+            Self::Binary(_, left, right) => {
+                left.requires_checked_match() || right.requires_checked_match()
+            }
+            Self::Unary(_, value) => value.requires_checked_match(),
             Self::If(condition, then_key, else_key) => {
-                condition.forgets_a_snapshot()
-                    || then_key.forgets_a_snapshot()
-                    || else_key.forgets_a_snapshot()
+                condition.requires_checked_match()
+                    || then_key.requires_checked_match()
+                    || else_key.requires_checked_match()
             }
             Self::Exact(_) => false,
         }
@@ -196,18 +205,20 @@ impl SnapshotBlindBitvectorKey {
 }
 
 impl SnapshotBlindPointerKey {
-    fn forgets_a_snapshot(&self) -> bool {
+    fn requires_checked_match(&self) -> bool {
         matches!(self.block, SnapshotBlindPointerBlockKey::Read(_))
-            || self.offset.forgets_a_snapshot()
+            || self.offset.requires_checked_match()
     }
 }
 
 impl SnapshotBlindPointerOffsetKey {
-    fn forgets_a_snapshot(&self) -> bool {
+    fn requires_checked_match(&self) -> bool {
         match self {
-            Self::Add(left, right) => left.forgets_a_snapshot() || right.forgets_a_snapshot(),
+            Self::Add(left, right) => {
+                left.requires_checked_match() || right.requires_checked_match()
+            }
             Self::Int32Scaled { value, .. } | Self::Int64Scaled { value, .. } => {
-                value.forgets_a_snapshot()
+                value.requires_checked_match()
             }
             Self::Exact(_) => false,
         }
@@ -406,6 +417,10 @@ fn snapshot_blind_float_condition_key(
 
 fn snapshot_blind_bitvector_key(term: &Bitvector32Term) -> SnapshotBlindBitvectorKey {
     match term {
+        Bitvector32Term::PointerAddress(pointer)
+        | Bitvector32Term::ObjectPointerAddress(pointer, _) => {
+            SnapshotBlindBitvectorKey::Address(Box::new(snapshot_blind_pointer_key(pointer)))
+        }
         Bitvector32Term::MemoryLoad(_, pointer, kind) => {
             SnapshotBlindBitvectorKey::Load(Box::new(snapshot_blind_pointer_key(pointer)), *kind)
         }

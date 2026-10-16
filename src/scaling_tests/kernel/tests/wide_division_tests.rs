@@ -8,10 +8,13 @@ use super::*;
 fn wide_division_guard_queries_do_not_scan_unrelated_ambient_facts() {
     for remainder in [false, true] {
         for inequalities in [false, true] {
-            let (zero, _, _, safe) = guards(MachineIntegerType::Int128);
-            let (nonzero, inequality_safe) = inequality_guards(MachineIntegerType::Int128);
             let mut samples = Vec::new();
             for size in [16, 64, 256, 1024] {
+                // Each size measures a cold verification session. Otherwise
+                // later samples can inherit the first sample's term caches.
+                let _session = crate::kernel::VerificationSession::enter();
+                let (zero, _, _, safe) = guards(MachineIntegerType::Int128);
+                let (nonzero, inequality_safe) = inequality_guards(MachineIntegerType::Int128);
                 let mut context = PureFactContext::new();
                 for i in 0..size {
                     context = context
