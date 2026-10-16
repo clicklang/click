@@ -1684,6 +1684,13 @@ full non-root insertion still needs callback composition and context restoration
 
 The sized left-left insertion rotation now composes the parent-update helper
 with its writable callback under an arbitrary owned outer context, and both
-augmented insertion wrappers verify. The result retains the repaired subtree
-and exact ancestor context. Its sixteen-site expansion audit passes; the next
-step is whole-root restoration, followed by the other non-root rotation shapes.
+augmented insertion wrappers verify. The result refolds the repaired subtree
+through its preserved ancestor context and owns the whole root tree, with its
+model identified by `sized_plug`. Its eighteen-site expansion audit passes; the
+other non-root rotation shapes remain.
+
+
+The mirrored sized right-right context rotation also verifies through both
+wrappers and restores the whole root model. Its eighteen-site audit passes.
+Both context cases use the shared black-parent-word lemma; non-root double
+rotations remain.

@@ -575,8 +575,21 @@ fn rbtree_insert_whole_claim_expansion_verifies() {
 #[test]
 #[ignore = "nightly: verifies and expands the sized context rotation in a retained session"]
 fn rbtree_sized_context_rotation_retained_session_expansion_rechecks() {
+    check_sized_context_rotation_retained_expansion("rbtree_size_insert_context_rotation.click");
+}
+
+#[test]
+#[ignore = "nightly: verifies and expands the mirrored sized context rotation in a retained session"]
+fn rbtree_sized_mirrored_context_rotation_retained_session_expansion_rechecks() {
+    check_sized_context_rotation_retained_expansion(
+        "rbtree_size_insert_mirrored_context_rotation.click",
+    );
+}
+
+fn check_sized_context_rotation_retained_expansion(sidecar: &str) {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("examples/rbtree-augmented/rbtree_size_insert_context_rotation.click");
+        .join("examples/rbtree-augmented")
+        .join(sidecar);
     limits::spawn(
         "sized context rotation retained expansion",
         "click-sized-context-expansion".to_string(),
