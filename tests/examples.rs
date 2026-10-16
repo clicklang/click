@@ -2456,6 +2456,48 @@ fn c_buffer_resource_modular_output_expands_and_rechecks() {
     .unwrap();
 }
 
+#[test]
+#[ignore = "nightly: CLI expansion and audit of a value-parameter refinement"]
+fn expanded_value_parameter_refinement_resolves_and_audits() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let path = root.join("mdtests/named_contract_value_parameter_refinement_theorem.md");
+    for operation in ["expand", "audit"] {
+        let output = Command::new(env!("CARGO_BIN_EXE_click"))
+            .args([operation, "--claim", "add3_adds_three.ensures_0"])
+            .arg(&path)
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{operation}: {}\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+    let original = fs::read_to_string(&path).unwrap();
+    let incorrect = original.replace("amount: 3", "amount: 4");
+    assert_ne!(original, incorrect);
+    let changed =
+        std::env::temp_dir().join(format!("click-false-refinement-{}.md", std::process::id()));
+    fs::write(&changed, incorrect).unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_click"))
+        .args(["expand", "--claim", "add3_adds_three.ensures_0"])
+        .arg(&changed)
+        .output()
+        .unwrap();
+    fs::remove_file(changed).unwrap();
+    assert!(
+        !output.status.success(),
+        "a different contract value must fail"
+    );
+    assert!(
+        String::from_utf8_lossy(&output.stderr)
+            .contains("contract-refinement proof does not establish"),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
 /// Keep both reported library-path failures on the real expansion/audit path.
 #[test]
 #[ignore = "nightly: CLI expansion and audit of library-name regressions"]

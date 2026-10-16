@@ -23,6 +23,14 @@ pub(super) fn has_valid_source_tokens(source: &str) -> bool {
 use super::*;
 use claim_labels::{ClaimClauseKind, flattened_claim_ids};
 
+/// Modules brought into scope by full library paths, before declaration
+/// parsing. Expansion can replace a qualified resource with its bare name,
+/// so it must preserve this part of the original file's library context.
+pub(super) fn library_path_modules(source: &str) -> Result<BTreeSet<&'static str>, ClickError> {
+    let (tokens, positions) = tokenizer::tokenize(source, None)?;
+    library_paths::resolve_library_paths(tokens, positions, None).map(|(_, _, modules)| modules)
+}
+
 #[derive(Clone, Debug)]
 pub(super) struct QualifiedCObject {
     pub expression: CExpression,
