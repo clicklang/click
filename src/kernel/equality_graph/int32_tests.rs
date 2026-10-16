@@ -694,3 +694,38 @@ fn offset_premises_support_scalar_graph_edges_and_withdrawal() {
 mod scaling_tests {
     include!("../../scaling_tests/kernel/equality_graph/int32_tests.rs");
 }
+
+#[test]
+fn parameter_shortcuts_notice_byte_coordinates_inside_an_alias_expression() {
+    let _session = VerificationSession::enter();
+    let offset = |i: u64| PointerOffsetTerm::Variable(Variable(995_000 + i));
+    let input = ConditionTerm::PointerOffsetEqual(
+        Box::new(PointerOffsetTerm::Add(
+            Box::new(offset(0)),
+            Box::new(offset(1)),
+        )),
+        Box::new(offset(2)),
+    );
+    let facts = PureFactContext::new().assume_condition(input.clone(), true);
+    assert!(
+        facts
+            .equality_graph
+            .offset_has_source_dependencies(&offset(1))
+    );
+    assert!(
+        !facts
+            .equality_graph
+            .offset_has_source_dependencies(&offset(3))
+    );
+    let removed = facts.without_exact_fact(&Proposition::ConditionIs(input, true));
+    assert!(
+        !removed
+            .equality_graph
+            .offset_has_source_dependencies(&offset(1))
+    );
+    assert!(
+        facts
+            .equality_graph
+            .offset_has_source_dependencies(&offset(1))
+    );
+}

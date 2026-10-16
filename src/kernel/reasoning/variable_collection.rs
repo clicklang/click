@@ -1497,6 +1497,26 @@ fn defer_condition_snapshot() -> bool {
     })
 }
 
+thread_local! {
+    static COORDINATE_VARIABLES: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Equality-source dependencies include byte-offset variables as well as
+/// machine-value variables. Preserve the ordinary snapshot deferral policy.
+pub(in crate::kernel) fn collect_condition_coordinate_index_variables(
+    condition: &ConditionTerm,
+    variables: &mut BTreeSet<Variable>,
+) -> bool {
+    struct Scope(bool);
+    impl Drop for Scope {
+        fn drop(&mut self) {
+            COORDINATE_VARIABLES.with(|flag| flag.set(self.0));
+        }
+    }
+    let _scope = Scope(COORDINATE_VARIABLES.with(|flag| flag.replace(true)));
+    collect_condition_index_variables(condition, variables)
+}
+
 /// Collect the ordinary condition variables, stopping at each snapshot.
 /// Returns whether a snapshot was encountered. If so, the caller must defer
 /// the whole fact to the complete collector to preserve its connections.
@@ -4242,7 +4262,8 @@ pub(in crate::kernel) fn collect_pointer_offset_bitvector_variables(
     match offset {
         PointerOffsetTerm::Constant(_) => {}
         PointerOffsetTerm::Variable(variable) => {
-            if collecting_connection_variables() {
+            if collecting_connection_variables() || COORDINATE_VARIABLES.with(std::cell::Cell::get)
+            {
                 variables.insert(*variable);
             }
         }

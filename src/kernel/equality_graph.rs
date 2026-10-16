@@ -52,10 +52,14 @@
 
 use super::prelude::*;
 
+mod admitted;
 #[cfg(test)]
 mod algebraic_tests;
+mod constant_queries;
+mod evidence;
 #[cfg(test)]
 mod fact_congruence_tests;
+mod input_queries;
 mod inputs;
 #[cfg(test)]
 mod int32_addition_tests;
@@ -73,6 +77,7 @@ pub(in crate::kernel) use inputs::InputKey;
 pub(crate) use inputs::{ReadEqualityCheckpoint, ReadEqualityDelta};
 mod pointer_facts;
 mod terms;
+pub(in crate::kernel) use terms::constants::{fold_arithmetic, load_key};
 pub(in crate::kernel) use terms::{Int32AtomClass, Int32MergeToken};
 
 /// A retained, interned machine atom. Equality and ordering use the stable
@@ -354,6 +359,7 @@ pub(in crate::kernel) struct CanonicalPointer {
 /// never shared mutably. Only unconditional term definitions share the session
 /// interner. The locks preserve `PureFactContext`'s Send/Sync contract.
 pub(in crate::kernel) struct EqualityGraph {
+    pub(in crate::kernel) admitted: admitted::AdmittedInputs,
     state: std::sync::Mutex<EqualityGraphState>,
     // Definitional term annotations, supplied by typed logical-load producers
     // or retained from certified reads after checked expression evaluation.
@@ -473,6 +479,7 @@ impl Default for EqualityGraph {
     fn default() -> Self {
         Self {
             state: Default::default(),
+            admitted: Default::default(),
             logical_reads: LOGICAL_POINTER_READS.with(|reads| reads.borrow().clone()),
         }
     }
@@ -482,6 +489,7 @@ impl Clone for EqualityGraph {
     fn clone(&self) -> Self {
         Self {
             logical_reads: self.logical_reads.clone(),
+            admitted: self.admitted.clone(),
             state: std::sync::Mutex::new(self.state.lock().expect("equality graph").clone()),
         }
     }
@@ -526,6 +534,11 @@ enum OffsetPart {
 
 #[derive(Clone, Default)]
 struct EqualityGraphState {
+    /// Exact source handles survive closure reconstruction and branch cloning.
+    pointer_predicate_inputs:
+        crate::persistent::PersistentMap<usize, std::sync::Arc<dyn terms::PointerFactSource>>,
+    /// Pointer definitions alone must not activate scalar constant discovery.
+    has_scalar_inputs: bool,
     terms: terms::TermClasses,
     input_history: Option<std::sync::Arc<inputs::History>>,
     logical_values: crate::persistent::PersistentSet<Pointer>,
@@ -1441,6 +1454,30 @@ impl EqualityGraph {
         let left = crate::kernel::canonical_term(left);
         let right = crate::kernel::canonical_term(right);
         let mut state = self.state.lock().expect("equality graph");
+        if left == right {
+            return true;
+        }
+        // Folding-only syntax cannot learn an equality from registration.
+        // With no scalar premises, leave unknown expressions opaque instead
+        // of building arithmetic dependencies for an unrelated pointer query.
+        let folding_only_unknown = |term: &Bitvector32Term| {
+            let folding_only = term.as_binary().is_some_and(|(op, _, _)| {
+                op.is_bitvector32()
+                    && !matches!(
+                        op,
+                        crate::kernel::BitvectorBinaryOp::Add
+                            | crate::kernel::BitvectorBinaryOp::UnsignedDivide
+                            | crate::kernel::BitvectorBinaryOp::UnsignedRemainder
+                            | crate::kernel::BitvectorBinaryOp::BitwiseXor
+                    )
+            }) || matches!(term, Bitvector32Term::BitwiseNot(_))
+                || terms::is_word_cast(term);
+            folding_only && term.as_const().is_none()
+        };
+        if !state.has_scalar_inputs && (folding_only_unknown(&left) || folding_only_unknown(&right))
+        {
+            return false;
+        }
         self.register_int32_operands(&mut state, &left, &right);
         let equal = state.terms.are_int32_equal(&left, &right);
         state.close(Vec::new());
@@ -1582,6 +1619,13 @@ impl EqualityGraph {
         state.terms.are_uint64_equal(&left, &right)
     }
 
+    pub(in crate::kernel) fn uint64_constant(&self, term: &Bitvector32Term) -> Option<u64> {
+        let term = crate::kernel::canonical_term(term);
+        let mut state = self.state.lock().expect("equality graph");
+        self.register_machine_operands(&mut state, &term, &term);
+        state.terms.uint64_constant(&term)
+    }
+
     pub(in crate::kernel) fn add_uint64_equality(
         &mut self,
         left: &Bitvector32Term,
@@ -1608,7 +1652,14 @@ impl EqualityGraph {
         // See `are_int32_equal`: canonicalize outside the lock.
         let term = crate::kernel::canonical_term(term);
         let mut state = self.state.lock().expect("equality graph");
-        let node = state.terms.int32_class(&term);
+        let node = if !state.has_scalar_inputs {
+            match state.terms.existing_scalar_interval_node(&term) {
+                Some(existing) => existing?,
+                None => state.terms.int32_class(&term),
+            }
+        } else {
+            state.terms.int32_class(&term)
+        };
         state.close(Vec::new());
         state.terms.signed_int32_interval(node)
     }
@@ -1624,6 +1675,7 @@ impl EqualityGraph {
         let right = &crate::kernel::canonical_term(right);
         let mut state = self.state.lock().expect("equality graph");
         self.register_int32_operands(&mut state, left, right);
+        state.has_scalar_inputs = true;
         let changed = state.terms.add_int32_equality(left, right);
         state.close(Vec::new());
         if changed {
@@ -2281,6 +2333,65 @@ impl EqualityGraphState {
             self.reindex_load(&load, equalities);
         }
         true
+    }
+}
+
+impl EqualityGraph {
+    pub(in crate::kernel) fn scalar_constant_class(
+        &self,
+        term: &Bitvector32Term,
+    ) -> Option<(u64, crate::kernel::assumptions::SignedConstantResolution)> {
+        if !self.state.lock().expect("equality graph").has_scalar_inputs {
+            return None;
+        }
+        let term = crate::kernel::canonical_term(term);
+        let mut state = self.state.lock().expect("equality graph");
+        let node = match state.terms.existing_scalar_atom(&term) {
+            Some(existing) => existing?,
+            None => state.terms.int32_class(&term),
+        };
+        state.close(Vec::new());
+        Some((
+            state.terms.scalar_class_root(node),
+            state.terms.scalar_constant_of_class(node),
+        ))
+    }
+    pub(in crate::kernel) fn scalar_constant_of_class(
+        &self,
+        id: u64,
+    ) -> crate::kernel::assumptions::SignedConstantResolution {
+        self.state
+            .lock()
+            .expect("equality graph")
+            .terms
+            .scalar_constant_of_class(id)
+    }
+    pub(in crate::kernel) fn scalar_conditional_members(&self, id: u64) -> Vec<Bitvector32Term> {
+        self.state
+            .lock()
+            .expect("equality graph")
+            .terms
+            .scalar_conditional_members(id)
+    }
+    pub(in crate::kernel) fn scalar_bridgeable_loads(
+        &self,
+        id: u64,
+    ) -> Vec<(Bitvector32Term, Bitvector32Term, u64)> {
+        self.state
+            .lock()
+            .expect("equality graph")
+            .terms
+            .scalar_bridgeable_loads(id)
+    }
+    pub(in crate::kernel) fn scalar_settled_loads_at(
+        &self,
+        key: u64,
+    ) -> Vec<(Bitvector32Term, u64)> {
+        self.state
+            .lock()
+            .expect("equality graph")
+            .terms
+            .scalar_settled_loads_at(key)
     }
 }
 

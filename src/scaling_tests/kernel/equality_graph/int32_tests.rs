@@ -417,3 +417,83 @@ fn offset_premise_shallow_decision_and_forks_scale() {
         );
     }
 }
+
+#[test]
+fn shared_constant_discovery_scales_with_the_admitted_chain() {
+    for size in [16u64, 64, 256, 1024] {
+        let _session = VerificationSession::enter();
+        let mut context = PureFactContext::new();
+        let ((), work) = crate::instrumentation::measure_deterministic_work(|| {
+            for i in 0..size {
+                context = context.clone().assume_condition(eq(&var(i), &var(i + 1)), true);
+            }
+            context = context.clone().assume_condition(eq(&var(size), &Bitvector32Term::Constant(37)), true);
+            assert_eq!(context.known_signed_constant_after_normalization(&var(0)), Some(37));
+        });
+        assert!(work < 300 * size as usize, "size={size}, work={work}");
+    }
+}
+
+#[test]
+fn exact_alias_enumeration_ignores_unrelated_sources() {
+    let mut previous = None;
+    for size in [16u64, 64, 256, 1024] {
+        let _session = VerificationSession::enter();
+        let a = Pointer::symbolic(Variable(960_000));
+        let b = Pointer::symbolic(Variable(960_001));
+        let mut context = PureFactContext::new().assume_condition(ConditionTerm::pointer_equal(a.clone(), b.clone()), true);
+        for i in 0..size {
+            context = context.assume_condition(ConditionTerm::pointer_equal(Pointer::symbolic(Variable(970_000 + 2*i)), Pointer::symbolic(Variable(970_001 + 2*i))), true);
+        }
+        let (aliases, work) = crate::instrumentation::measure_deterministic_work(|| {
+            context.exact_pointer_aliases(&a).cloned().collect::<Vec<_>>()
+        });
+        assert_eq!(aliases, vec![b]);
+        if let Some(previous) = previous { assert_eq!(work, previous); }
+        previous = Some(work);
+    }
+}
+
+#[test]
+fn unrelated_wide_inputs_do_not_disable_selected_atomic_matching() {
+    let mut baseline = None;
+    for size in [16u64, 64, 256, 1024] {
+        let _session = VerificationSession::enter();
+        let mut context = PureFactContext::new()
+            .assume_condition(eq(&var(980_000), &var(980_001)), true)
+            .assume_condition(ConditionTerm::signed_less_than(var(980_001), var(980_002)), true);
+        for i in 0..size {
+            context = context.assume_condition(ConditionTerm::uint64_equal(var(i), var(i + 10_000)), true);
+        }
+        let (found, work) = crate::instrumentation::measure_deterministic_work(|| {
+            context.has_matching_condition_fact_for_memory_resolution(&ConditionTerm::signed_less_than(var(980_000), var(980_002)), true)
+        });
+        assert!(found);
+        if let Some(baseline) = baseline { assert_eq!(work, baseline, "size={size}"); }
+        baseline = Some(work);
+    }
+}
+
+#[test]
+fn unrelated_offset_inputs_preserve_the_selected_parameter_partition() {
+    use crate::kernel::{CMemoryRange, CResourceFact, ResourceContext};
+    let mut baseline = None;
+    for size in [4u64, 16, 64, 256] {
+        let _session = VerificationSession::enter();
+        let parameter = |i| Pointer { block: PointerBlock::ExternalArgument, offset: PointerOffsetTerm::scale_int32(var(i), 4) };
+        let write = parameter(990_000);
+        let resources = ResourceContext::new().unchecked_with_fact(CResourceFact::own_memory(CMemoryRange::new(write.clone(), 0u32.into(), 1u32.into())));
+        let mut context = PureFactContext::new().assume_proposition(Proposition::CResourceComposition(resources));
+        for i in 0..size {
+            context = context.assume_condition(ConditionTerm::pointer_offset_equal(PointerOffsetTerm::scale_int32(var(i), 4), PointerOffsetTerm::scale_int32(var(i + 10_000), 4)), true);
+        }
+        let (found, work) = crate::instrumentation::measure_deterministic_work(|| {
+            context.parameter_store_partition(&write, 4).is_some()
+        });
+        assert!(found);
+        if let Some(baseline) = baseline { assert_eq!(work, baseline, "size={size}"); }
+        baseline = Some(work);
+        let relevant = context.assume_condition(eq(&var(990_000), &var(990_001)), true);
+        assert!(relevant.parameter_store_partition(&write, 4).is_none());
+    }
+}

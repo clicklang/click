@@ -10791,13 +10791,6 @@ pub struct PureFactContext {
     pub(super) atomic_ground_facts: crate::persistent::PersistentSet<SharedIndexFact<Proposition>>,
     pub(super) atomic_quantified_facts:
         crate::persistent::PersistentSet<SharedIndexFact<Proposition>>,
-    /// True 64-bit equalities as an undirected adjacency map, derived
-    /// incrementally from `condition_facts`. Unchanged branches share it;
-    /// inserting an equality updates only its two endpoints.
-    pub(super) bitvector64_equality_facts: crate::persistent::PersistentMap<
-        Bitvector32Term,
-        crate::persistent::PersistentMap<Bitvector32Term, ConditionTerm>,
-    >,
     pub(super) condition_facts: crate::persistent::PersistentMap<ConditionTerm, bool>,
     pub(super) signed_variable_chains: super::assumptions::variable_chains::VariableChains,
     /// Incremental adjacency for conditions whose variables can be read
@@ -10856,28 +10849,6 @@ pub struct PureFactContext {
     /// (`docs/internals/verification-efficiency.md`), the fast path condition evaluation
     /// asks before the general decision.
     pub(super) difference_graph: super::difference_graph::ContextDifferenceGraph,
-    /// True `Bitvector32Equal` and `Bitvector64Equal` facts that pin a term
-    /// to a constant, keyed by that term and carrying, per fact, the constant
-    /// it names. Derived incrementally from `condition_facts`; ordered by
-    /// fact so the first entry is the one a scan of `condition_facts` in its
-    /// own order would find (`exact_signed_constant`).
-    /// The equality classes of the true `Bitvector32Equal` facts, each with
-    /// the constant its members are proved to denote. Derived incrementally
-    /// from `condition_facts`, so a term's constant after equality
-    /// normalization is a class lookup rather than a walk over every fact
-    /// the term is connected to.
-    pub(super) constant_classes: super::assumptions::ConstantClasses,
-    /// True int32 equalities filed under their exact written endpoints.
-    /// Fact order preserves the direct constant walk's deterministic choice;
-    /// no memory canonicalization, pointer-offset edges, or arithmetic folding.
-    pub(super) direct_bitvector_equalities: crate::persistent::PersistentMap<
-        Bitvector32Term,
-        crate::persistent::PersistentMap<ConditionTerm, Bitvector32Term>,
-    >,
-    pub(super) exact_constant_equalities: crate::persistent::PersistentMap<
-        Bitvector32Term,
-        crate::persistent::PersistentMap<ConditionTerm, i64>,
-    >,
     /// What an exact fact says about the null-ness of a pointer, keyed by
     /// that pointer's offset term and carrying the block the fact named
     /// together with the fact itself. Derived incrementally from
@@ -10892,81 +10863,10 @@ pub struct PureFactContext {
         PointerOffsetTerm,
         crate::persistent::PersistentMap<(PointerBlock, bool), ConditionTerm>,
     >,
-    /// Exact equalities between two pointers of *different* blocks, indexed
-    /// under each side and carrying the fact that states them. An equality
-    /// inside one block is a `PointerOffsetEqual` that never reaches this
-    /// index (`ConditionTerm::pointer_equal`), so an entry here always says
-    /// that two block spellings name one address. Derived incrementally from
-    /// `condition_facts`, like every other index above, so asking what one
-    /// pointer is proved equal to is a keyed lookup rather than a scan of
-    /// every pointer comparison the path happens to hold.
-    /// Original alignment premises, retained for graph reconstruction only.
-    pub(super) pointer_alignment_facts: crate::persistent::PersistentMap<(Pointer, u64), ()>,
-    pub(super) pointer_block_aliases: crate::persistent::PersistentMap<
-        Pointer,
-        crate::persistent::PersistentMap<Pointer, ConditionTerm>,
-    >,
-    /// The keys of `pointer_block_aliases` again, filed under each
-    /// pointer's offset term. A same-block comparison names only its two
-    /// offsets, so this is what recovers, by one keyed lookup, the block
-    /// spellings an offset was proved equal to across blocks.
-    pub(super) pointer_block_aliases_by_offset: crate::persistent::PersistentMap<
-        PointerOffsetTerm,
-        crate::persistent::PersistentSet<Pointer>,
-    >,
-    /// Cross-block alias endpoints grouped by object. External arguments
-    /// use their offset stem, since all parameters share one block; other
-    /// blocks use one bucket. Derived incrementally from exact aliases.
-    pub(super) pointer_alias_endpoints_by_object:
-        crate::persistent::PersistentMap<Pointer, crate::persistent::PersistentSet<Pointer>>,
-    /// Pointer-address endpoints of full-width equalities, by object.
-    /// Lets store framing follow address copies without scanning size facts.
-    pub(super) wide_pointer_alias_endpoints_by_object: crate::persistent::PersistentMap<
-        Pointer,
-        crate::persistent::PersistentSet<Bitvector32Term>,
-    >,
     /// Trusted persistent equality closure for pointers, offsets, and int32
     /// terms. Appended on insertion; withdrawal rebuilds from exact equality
     /// indexes, preserving the remaining support in every fragment.
     pub(super) equality_graph: super::equality_graph::EqualityGraph,
-    pub(super) algebraic_graph_equalities:
-        crate::persistent::PersistentMap<(SharedPureApplication, SharedPureApplication), usize>,
-    pub(super) congruence_conditions: crate::persistent::PersistentMap<ConditionTerm, bool>,
-    /// Exact defining equations for pointer-typed reads issued on this path,
-    /// indexed by their load variable. Producer metadata certifies the C
-    /// value's type; the equation supplies its snapshot and address. Both
-    /// are required before a graph query may use the read as a bridge.
-    pub(super) typed_pointer_read_definitions: crate::persistent::PersistentMap<
-        Variable,
-        crate::persistent::PersistentMap<((u32, u32), Pointer), (Pointer, SharedCMemory)>,
-    >,
-    pub(super) uint64_graph_equalities: crate::persistent::PersistentMap<
-        (
-            super::equality_graph::MachineAtom,
-            super::equality_graph::MachineAtom,
-        ),
-        usize,
-    >,
-    /// Counts exact int32 premises supporting each canonical oriented edge.
-    /// Several spellings can support one edge; withdrawal removes one support.
-    pub(super) int32_graph_equalities: crate::persistent::PersistentMap<
-        (
-            super::equality_graph::MachineAtom,
-            super::equality_graph::MachineAtom,
-        ),
-        usize,
-    >,
-    /// Normalized same-block pointer equalities, indexed under each offset.
-    pub(super) pointer_offset_aliases: crate::persistent::PersistentMap<
-        PointerOffsetTerm,
-        crate::persistent::PersistentSet<PointerOffsetTerm>,
-    >,
-    /// `pointer_offset_aliases` again, keyed by the alias offset's root atom
-    /// (`resource_algebra::offset_root_atom`).
-    pub(super) pointer_offset_aliases_by_root: crate::persistent::PersistentMap<
-        Option<PointerOffsetTerm>,
-        crate::persistent::PersistentSet<(PointerOffsetTerm, PointerOffsetTerm)>,
-    >,
     /// Addresses of the first elements of two separated memory ranges of
     /// one block, keyed by the unordered pair and carrying the separation
     /// facts that state it. Mirrors `memory_separation_facts` under a key a
@@ -11027,14 +10927,6 @@ pub struct PureFactContext {
     /// without deciding them.
     pub(super) memory_load_condition_facts:
         std::sync::Arc<std::sync::OnceLock<BTreeMap<(PointerBlock, u64), BTreeSet<ConditionTerm>>>>,
-    /// True bitvector and int32-scaled pointer-offset equalities, indexed as
-    /// an undirected adjacency graph whose edges retain one exact source
-    /// proposition. Memory-load vertices use their
-    /// assumption-free canonical memory-load term. Derived lazily from
-    /// `condition_facts` and shared by unchanged clones.
-    pub(super) bitvector_equality_facts: std::sync::Arc<
-        std::sync::OnceLock<BTreeMap<Bitvector32Term, BTreeMap<Bitvector32Term, Proposition>>>,
-    >,
     /// A persistent set: a context is cloned and extended by one fact at
     /// each lowering path and planning probe, so an extension must copy
     /// only a search path, not the whole set.
@@ -11045,14 +10937,6 @@ pub struct PureFactContext {
     /// A context built in bulk from a fact list defers the keys until the
     /// index is first asked for (see `StatedPropositionIndex`).
     pub(super) stated_proposition_index: super::assumptions::StatedPropositionIndex,
-    /// Exact equalities between two applications of one algebraic
-    /// constructor, indexed by each field equality they entail. Both levels
-    /// are persistent so adding one proof fact changes logarithmically many
-    /// nodes instead of cloning an ambient fact table.
-    pub(super) algebraic_constructor_field_equalities: crate::persistent::PersistentMap<
-        Proposition,
-        crate::persistent::PersistentMap<(Proposition, usize), ()>,
-    >,
     /// Exact equalities between distinct checked constructors. Any such fact
     /// makes the context inconsistent by constructor disjointness.
     pub(super) algebraic_constructor_conflicts: crate::persistent::PersistentMap<Proposition, ()>,
@@ -11125,7 +11009,8 @@ impl PartialEq for PureFactContext {
     fn eq(&self, other: &Self) -> bool {
         self.content_fingerprint == other.content_fingerprint
             && self.condition_facts == other.condition_facts
-            && self.typed_pointer_read_definitions == other.typed_pointer_read_definitions
+            && self.equality_graph.admitted.typed_pointer_read_definitions
+                == other.equality_graph.admitted.typed_pointer_read_definitions
             && self.prop_facts == other.prop_facts
             && self.resource_compositions == other.resource_compositions
             && self.store_owners == other.store_owners

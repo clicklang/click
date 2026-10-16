@@ -66,6 +66,7 @@ impl TermClasses {
             Wrap(ArgumentTag),
             Call(u64, usize),
             Binary(Binary),
+            Unary(Int32Unary, bool),
         }
         let mut pending = if let Some((term, wide)) = machine {
             vec![Work::Machine(term, wide)]
@@ -82,6 +83,14 @@ impl TermClasses {
             ) {
                 crate::instrumentation::record_deterministic_work(1);
             }
+            let scalar_source = match &work {
+                Work::Machine(term, false)
+                    if matches!(term, T::If { .. }) || constants::load_key(term).is_some() =>
+                {
+                    Some(*term)
+                }
+                _ => None,
+            };
             let node = match work {
                 Work::Algebraic(term) => {
                     use crate::kernel::AlgebraicTermNode as N;
@@ -148,9 +157,32 @@ impl TermClasses {
                                 a.as_ref(),
                                 b.as_ref(),
                             )),
-                            _ => None,
+                            _ => term
+                                .as_binary()
+                                .filter(|(op, _, _)| op.is_bitvector32())
+                                .map(|(op, a, b)| (Binary::Int32(Int32Binary::Other(op)), a, b)),
                         }
                     };
+                    if !wide {
+                        let unary = if let T::BitwiseNot(value) = term {
+                            Some((Int32Unary::Not, value.as_ref(), false))
+                        } else {
+                            constants::word_cast_operand(term).map(
+                                |(value, source, destination)| {
+                                    (
+                                        Int32Unary::Cast(source, destination),
+                                        value,
+                                        constants::signed_byte_load_operand(term).is_some(),
+                                    )
+                                },
+                            )
+                        };
+                        if let Some((op, value, inverse)) = unary {
+                            pending.push(Work::Unary(op, inverse));
+                            pending.push(Work::Machine(value, false));
+                            continue;
+                        }
+                    }
                     if let Some((op, a, b)) = binary {
                         if !wide {
                             crate::instrumentation::record_deterministic_work(1);
@@ -266,6 +298,15 @@ impl TermClasses {
                     values.push(head);
                     continue;
                 }
+                Work::Unary(op, inverse) => {
+                    let value = values.pop().expect("unary operand");
+                    let node = self.intern_node(Node::Int32Unary(op, value));
+                    if inverse {
+                        self.register_byte_inverse(node, value);
+                    }
+                    values.push(node);
+                    continue;
+                }
                 Work::Binary(op) => {
                     let b = values.pop().expect("right operand");
                     let a = values.pop().expect("left operand");
@@ -276,7 +317,11 @@ impl TermClasses {
                     }
                 }
             };
-            values.push(self.intern_node(node));
+            let id = self.intern_node(node);
+            if let Some(term) = scalar_source {
+                self.register_scalar_witness(term, id);
+            }
+            values.push(id);
         }
         values.pop().expect("machine term")
     }
