@@ -788,3 +788,71 @@ fn kept_frame_class_lookup_adds_only_selected_physical_coverage() {
         );
     }
 }
+
+#[test]
+fn rechecked_kept_frame_checks_selected_equality_without_rebuilding_foreign_inputs() {
+    let pointer = |id| Pointer::symbolic(Variable(id));
+    let queried = pointer(954_001);
+    let middle = pointer(954_002);
+    let owner = pointer(954_003);
+    for size in [16u64, 64, 256, 1024] {
+        let inputs = || {
+            let mut facts = PureFactContext::new()
+                .assume_condition(
+                    ConditionTerm::pointer_equal(queried.clone(), middle.clone()),
+                    true,
+                )
+                .assume_condition(
+                    ConditionTerm::pointer_equal(middle.clone(), owner.clone()),
+                    true,
+                );
+            for index in 0..size {
+                facts = facts.assume_condition(
+                    ConditionTerm::pointer_equal(
+                        pointer(955_000 + index),
+                        pointer(957_000 + index),
+                    ),
+                    true,
+                );
+            }
+            facts
+        };
+        let first = inputs();
+        let recheck = inputs();
+        let control = inputs();
+        let mut ranges = ResourceContext::new_with_equalities(&first).unchecked_with_fact(
+            CResourceFact::own_memory(CMemoryRange::new(owner.clone(), 2u32.into(), 4u32.into())),
+        );
+        for index in 0..size {
+            ranges = ranges.unchecked_with_fact(CResourceFact::own_memory(CMemoryRange::new(
+                pointer(955_000 + index),
+                0u32.into(),
+                1u32.into(),
+            )));
+        }
+        let kept = crate::kernel::primitives::CallKeptRanges::new(ranges, Vec::new(), None);
+        let access = queried.offset_by_bytes(8);
+        let ((expected, expected_work), expected_maps) =
+            crate::persistent::measure_persistent_work(|| {
+                crate::instrumentation::measure_deterministic_work(|| {
+                    kept.holds_access(&access, 8, &first)
+                        && control.pointers_known_equal(&access, &owner.offset_by_bytes(8))
+                })
+            });
+        assert!(expected);
+        let ((found, work), maps) = crate::persistent::measure_persistent_work(|| {
+            crate::instrumentation::measure_deterministic_work(|| {
+                kept.holds_access(&access, 8, &recheck)
+            })
+        });
+        assert!(found);
+        assert!(
+            work <= expected_work,
+            "recheck rebuilds unrelated inputs at size {size}: {work} > {expected_work}"
+        );
+        assert!(
+            maps <= expected_maps,
+            "recheck traverses unrelated inputs at size {size}: {maps} > {expected_maps}"
+        );
+    }
+}

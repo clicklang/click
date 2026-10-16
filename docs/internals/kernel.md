@@ -7,7 +7,10 @@ Click specs.
 
 - `src/kernel/`: proof terms, C semantics, assumptions, symbolic execution,
   and theorem-producing functions.
-- `src/languages/c/syntax.rs`: C parser and lowering to kernel C terms.
+- `src/languages/c/syntax.rs`: C parser and lowering to kernel C terms. The
+  parser's global declarations, type declarations and initializers are in
+  `syntax/global_declarations.rs`, `syntax/type_declarations.rs` and
+  `syntax/initializers.rs`.
 - `src/surface.rs` and `src/surface/`: Click parser (`parser.rs`, `parser/`),
   validation (`validation/`), lowering (`lowering/`), tactics, and proof
   orchestration.
@@ -101,8 +104,13 @@ Kernel files:
   Its children hold self-contained parts: `authority_contracts.rs` (calls
   whose contracts touch populations, mutexes and authority resources),
   `contract_refinement.rs` (whether an interface refines a named contract),
-  `globals_and_aggregates.rs` (entry storage and aggregate values) and
-  `resource_clause_worklist.rs` (the indexes that order resource clauses).
+  `named_contract_refinement.rs` and `refinement_side_conditions.rs` (checking
+  a function against a named contract), `call_arguments.rs` (binding and
+  coercing a call's arguments and result), `globals_and_aggregates.rs` (entry
+  storage and aggregate values), `composite_expansion.rs` (composite resources
+  and their member facts), `instance_case_selection.rs` (which case of a
+  matched resource instance applies) and `resource_clause_worklist.rs` (the
+  indexes that order resource clauses).
 - `tests.rs`: kernel unit tests.
 
 ## Trusted shape

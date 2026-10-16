@@ -571,6 +571,57 @@ fn rbtree_insert_whole_claim_expansion_verifies() {
     .expect("the expanded insert claim must cold verify");
 }
 
+/// A recorded call frame must remain usable in a new proof-input lineage.
+#[test]
+#[ignore = "nightly: verifies and expands the sized context rotation in a retained session"]
+fn rbtree_sized_context_rotation_retained_session_expansion_rechecks() {
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("examples/rbtree-augmented/rbtree_size_insert_context_rotation.click");
+    limits::spawn(
+        "sized context rotation retained expansion",
+        "click-sized-context-expansion".to_string(),
+        move || {
+            let project_root = path.parent().unwrap().parent().unwrap();
+            let loaded = click::cli::load_target_inputs(&path, Some(project_root)).unwrap();
+            let (session, verified) = match &loaded.inputs {
+                CInput::Bundle(sources) => click::surface::C0VerificationSession::new_project(
+                    &loaded.project,
+                    &source_refs(sources),
+                ),
+                CInput::Prepared(imports) => {
+                    click::surface::C0VerificationSession::new_prepared_project(
+                        &loaded.project,
+                        imports,
+                    )
+                }
+                CInput::PreparedProgram(import) => {
+                    click::surface::C0VerificationSession::new_program_prepared_project(
+                        &loaded.project,
+                        import,
+                    )
+                }
+            }?;
+            let claim = "insert::__rb_insert.contract";
+            let expanded = click::surface::expand_verified_function_claim_source_by_label(
+                &loaded.click_source,
+                &verified,
+                claim,
+            )?
+            .expect("the insertion claim has a retained certificate");
+            let rewritten = loaded.project.with_entry_source(expanded.clone());
+            let position = project_tactic_source_position(
+                &rewritten,
+                &loaded.inputs.program_inputs(),
+                claim,
+                0,
+            )?;
+            session.verify_at_project(&expanded, position.line, position.column)
+        },
+    )
+    .unwrap()
+    .expect("the expanded rotation must recheck against the retained function environment");
+}
+
 /// The insert proof against a copy of the C whose root case skips its
 /// recolour, `rb_set_parent_color(node, NULL, RB_BLACK)`. The proof claims the
 /// root's colour bit is black at that `break`, which the C no longer makes

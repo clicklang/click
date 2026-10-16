@@ -52,6 +52,12 @@ pub(crate) trait ProofDiagnosticState: Send + Sync {
         None
     }
 
+    /// The instance a refused `fold` proposed, when its resource declares no
+    /// field and keeps its children's fields in a hidden record.
+    fn proposed_hidden_record(&self) -> Option<&crate::kernel::ResourceInstance> {
+        None
+    }
+
     fn memory_history(&self) -> Option<&MemoryHistoryDiagnostic> {
         None
     }
@@ -154,6 +160,20 @@ pub(crate) fn render_failed_requirement(
             "{label}: {}",
             render::render_proposition_labeled(proposition, labels)
         );
+        // The body fact of a resource without fields reads its hidden
+        // record; show the record the fold proposed, in the same labels.
+        if let Some(instance) = state.proposed_hidden_record()
+            && let Some(record) = render::render_hidden_record_instance_labeled(
+                instance.name(),
+                instance.arguments(),
+                instance.schema().fields(),
+                instance.fields(),
+                labels,
+            )
+        {
+            result.push_str("\nproposed fold: ");
+            result.push_str(&record);
+        }
     }
     if let Some(refusal) = state.rejected_resource_fact() {
         if !result.is_empty() {

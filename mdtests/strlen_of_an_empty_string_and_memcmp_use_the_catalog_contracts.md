@@ -4,8 +4,8 @@ The standard library's libc catalog supplies `strlen` and `memcmp`
 contracts without declarations in the sidecar. `strlen` on the empty string
 `cstr_at(text, 0u64)` the caller views returns zero through the catalog's
 `result == s.len` postcondition, and `memcmp`
-over a viewable two-byte range discharges its range and per-byte `defined`
-preconditions from the caller's `viewable` requirement. This catches a catalog contract whose
+of a viewed two-byte range with itself lends that view as both operands and
+discharges its per-byte `defined` precondition from it. This catches a catalog contract whose
 precondition or postcondition is not lowered and checked at a call.
 
 ```c filename=strlen_of_an_empty_string_and_memcmp_use_the_catalog_contracts.c
@@ -29,7 +29,7 @@ uint64 empty_length(uint8 text[]) {
 }
 
 int32 compare_self(uint8 bytes[]) {
-    requires viewable(bytes[0..2]);
+    views bytes[0..2];
     ensures 1 == 1 by { execute(); simp(); }
 }
 ```

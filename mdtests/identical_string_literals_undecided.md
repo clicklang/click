@@ -15,7 +15,8 @@ int32 identical_string_literals_undecided() {
 ```
 
 ```click
-target "x86_64-linux-kernel";
+target "x86_64-unknown-linux-gnu";
+mode "kernel";
 verifying "identical_string_literals_undecided.c";
 
 int32 identical_string_literals_undecided() {

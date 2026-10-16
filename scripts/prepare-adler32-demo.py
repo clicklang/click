@@ -63,10 +63,9 @@ def prepare(destination):
 
     c = trial / "zlib"
     for name in ["canonical", "incremental", "reset"]:
+        # The demo sidecar selects the zlib unit's sources through the copied
+        # project file and lock, as the original sidecar does.
         (c / f"{name}-demo.click").write_text(inline(c / f"{name}.click"))
-        # The copied, unchanged legacy C fixture still selects its lock by name.
-        for suffix in ["import.json", "import.lock.json"]:
-            shutil.copy2(c / f"{name}.click.{suffix}", c / f"{name}-demo.click.{suffix}")
     return trial
 
 

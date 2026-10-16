@@ -17,7 +17,7 @@ int32_t is_null(int32_t* p) {
 ```
 
 ```click
-target "x86_64-linux-userspace";
+target "x86_64-unknown-linux-gnu";
 verifying "null_pointer.c";
 
 int32 is_null(int32* p) {

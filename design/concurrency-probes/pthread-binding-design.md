@@ -94,7 +94,7 @@ Use the existing worker declaration and proof byte for byte, changing only
 its `verifying` source to `fork_join.c`. The candidate sidecar starts with:
 
 ```click
-target "x86_64-linux-userspace";
+target "x86_64-unknown-linux-gnu";
 verifying "fork_join.c";
 ```
 
@@ -296,7 +296,7 @@ possible without making it a prerequisite for the pthread probe.
 The modeled header provides declarations only. A trusted create/join
 specification is bound to the exact built-in header and resolved
 declarations. This path runs on any host while retaining the
-`x86_64-linux-userspace` source target. It proves the unchanged C client under
+`x86_64-unknown-linux-gnu` user-space source target. It proves the unchanged C client under
 the stated create/join assumptions, for any C library that implements them.
 
 The modeled record contains the target and ABI, exact built-in header

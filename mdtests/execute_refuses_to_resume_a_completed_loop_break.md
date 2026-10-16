@@ -15,7 +15,7 @@ unsigned long drain(unsigned long n) {
 ```
 
 ```click
-target "x86_64-linux-userspace";
+target "x86_64-unknown-linux-gnu";
 verifying "drain.c";
 uint64 drain(uint64 n) {
  requires n <= 15u64;

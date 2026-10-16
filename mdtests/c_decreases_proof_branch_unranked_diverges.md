@@ -13,7 +13,7 @@ int32 f(int32 n) {
 ```
 
 ```click
-target "x86_64-linux-userspace";
+target "x86_64-unknown-linux-gnu";
 verifying "termination-branch-probe.c";
 int32 f(int32 n) diverges {
     ensures result == 0;

@@ -61,13 +61,13 @@ requires no layout or file names in it, and never writes into it.
 
 ```json
 {
-  "target": "x86_64-linux-userspace",
+  "target": "x86_64-unknown-linux-gnu",
   "units": {
     "label": {
       "language": "c",
       "root": "../vendor/label-1.0",
       "compiler": "/usr/bin/gcc",
-      "environment": {"PATH": "/usr/bin:/bin", "LC_ALL": "C"},
+      "env": {"PATH": "/usr/bin:/bin", "LC_ALL": "C"},
       "args": ["-Isrc/include", "-DLABEL_CAPACITY=32"],
       "sources": {
         "src/label_fit.c": {},
@@ -85,17 +85,23 @@ requires no layout or file names in it, and never writes into it.
   it. Source keys are relative paths inside the root, without `..`.
 - `compiler` is required, relative to the project directory or absolute. Plain
   C that Click preprocesses itself needs no unit.
-- `environment` holds the only variables the compiler runs with; every other
+- `env` holds the only variables the compiler runs with; every other
   variable is cleared. `option_profile` names an
   [option profile](#option-profile-linux-68-x86_64-kbuild) that admits more
   than the preprocessor flags, and a source's `projection` selects the
   [dependency-closure projection](#dependency-closure-projection).
 - Unit `args` precede each source's own `args`; together they are validated
   as [Validation and supported profile](#validation-and-supported-profile)
-  describes. The target is the project's `target`, or the default target.
+  describes.
+- The project's top-level `target` and `mode` select the C target for
+  every C unit: `x86_64-unknown-linux-gnu`, the only target, in the
+  `userspace` (default) or `kernel` mode; see
+  [Selecting a target](../language/c.md#selecting-a-target). A unit that still names its variables `environment` is refused with the
+  new name, `env`. A retired single-name target such as `x86_64-linux-kernel` is
+  refused with its replacement.
 
 A Rust unit is one crate or one single-file program; it takes no `compiler`,
-`environment`, `option_profile` or `args`, and `sources` lists exactly one
+`env`, `option_profile` or `args`, and `sources` lists exactly one
 source with no arguments. Without a `crate` object the source is a lone Rust
 2024 file read from its own directory, as `examples/basic-rust` does. With
 one, the source is the crate root and `crate` gives the crate description (see
@@ -122,7 +128,7 @@ Verification needs neither Charon nor `CLICK_CHARON`.
 A C++ unit gives `exceptions` and `rtti` (both default `false`) and `args`, the
 Clang arguments of its build, which Click writes into a compilation database of
 its own at lock time; the standard is C++20 and the target
-`x86_64-unknown-linux-gnu`. It takes no `compiler`, `environment` or
+`x86_64-unknown-linux-gnu`. It takes no `compiler`, `env` or
 `option_profile`. Each source is a logical source, a `.cpp` file or a header,
 and lists the `functions` its sidecars verify; it may also give the
 `translation_unit` that includes a header (by default the source itself), its
@@ -805,8 +811,11 @@ qualification. This restricts writes through that parameter without
 forbidding an alias through a mutable parameter. Diagnostics, claim labels and proof steps name the function as the head
 does: `FeeFrac::IsEmpty`, `FeeFrac::operator+=`, `Restore::Restore`,
 `choose<true>`. A member of a class template instance is written with the
-instance as Clang prints it, every argument spelled:
-`Stored<long long>::Stored(int64 next)`, `int32 Box<SizeTag, true>::Read() const`;
+instance as Clang prints it against its template's parameters, which
+leaves out trailing arguments equal to their defaults and integer
+suffixes: `Stored<long long>::Stored(int64 next)`,
+`int32 Box<SizeTag, true>::Read() const`, `std::span<int>::size`,
+`std::span<int, 4>::size`;
 so are `extern` and named-contract heads, a proof step's callee,
 `step(FeeFrac::IsEmpty(&this->m_feerate.base), { })`, the target of an
 `executes` theorem, and a function's address, `&FeeFrac::EvaluateFeeDown`.
@@ -1136,12 +1145,13 @@ remain distinct. Callable name collisions use the existing injective
 Clang-declaration identity names.
 
 Concrete class-template instances reached through ordinary selected callers
-are written as Clang prints them, every argument spelled, including
+are written as Clang prints them, including
 named empty trivial tag types declared in the locked import root:
-`Box<int, false>` and `Box<SizeTag, true>`. A struct type in a head or
-clause still names the instance's layout as the importer records it,
+`Box<int, false>` and `Box<SizeTag, true>`. A type in a head or clause
+writes a record by its C++ path, `Box<int, false>&`, `ns::Rec*` or
+`std::span<int>&`, or by the layout name the importer records,
 `struct Box__int__bool_false`, from ordered builtin/Boolean argument tokens
-and `__tag_Name` for a tag type.
+and `__tag_Name` for a tag type. Diagnostics still print the layout name.
 Qualified tag names include their namespace components. Clang's canonical USR
 keeps each record, field and method nominally distinct even when layouts match;
 aliases share the canonical instance. Method, constructor and destructor names
@@ -1548,14 +1558,17 @@ toolchain and header changes require a new explicit refresh to produce a proof
 about that new environment. A supplied digest alone does not authenticate who
 prepared a native-platform artifact.
 
-Compiler-backed C imports accept two explicit targets. A C unit is prepared for
-the project's `target`, which a sidecar's `target` directive must match;
-without one the project uses the default `x86_64-linux-userspace`. Prepared imports retain their target through verification and expansion.
+Compiler-backed C imports accept the target `x86_64-unknown-linux-gnu` in two
+modes. A C unit is prepared for the project's `target` and
+`mode`, which a sidecar's `target` and `mode` directives must
+match; without them the project uses the default mode, `userspace`. A
+lock records both, so changing either requires `click import lock` again.
+Prepared imports retain their target through verification and expansion.
 
-| Target | Fixed compiler profile |
+| Mode | Fixed compiler profile |
 | --- | --- |
-| `x86_64-linux-kernel` | GCC, `-x c`, `-std=gnu11`, `-m64`, `-funsigned-char`, `-nostdinc`. |
-| `x86_64-linux-userspace` | GCC, `-x c`, `-std=c11`, `-m64`, `-fsigned-char`, `-nostdinc`, `-pthread`, `-D_POSIX_C_SOURCE=200809L`. |
+| `kernel` | GCC, `-x c`, `-std=gnu11`, `-m64`, `-funsigned-char`, `-nostdinc`. |
+| `userspace` | GCC, `-x c`, `-std=c11`, `-m64`, `-fsigned-char`, `-nostdinc`, `-pthread`, `-D_POSIX_C_SOURCE=200809L`. |
 
 The user-space profile checks C11, POSIX and pthread feature macros as well as
 the LP64, eight-bit-byte, signed-char ABI: the probe requires that `__CHAR_UNSIGNED__` is not defined. It does not define `__KERNEL__`.
@@ -1666,7 +1679,7 @@ from the unit's.
 
 The one profile, `linux-6.8-x86_64-kbuild`, is the option set of the recorded
 Linux v6.8.12 `x86_64_defconfig` Kbuild compilation of `lib/rbtree.c` with
-GCC 13, for the `x86_64-linux-kernel` target. It exists for that in-repository
+GCC 13, for the `kernel` mode. It exists for that in-repository
 import. An option is accepted only where ignoring it cannot make Click accept
 a program the compiler treats differently: the option affects only
 preprocessing, whose result is the locked artifact, or only diagnostics, or
@@ -1853,6 +1866,9 @@ contract:
 - A standard function must be `noexcept`; throwing contracts are not modeled.
   One returning a record by value constructs it in the caller's destination.
 
+A sidecar writes a standard type as C++ does,
+`int32 probe(std::span<int>& s)`, `uint64 probe(std::span<const unsigned char, 32>& s)`
+or `std::array<int, 4>& a`.
 Contracts state a standard type's state through model accessors, never
 through a library's private fields. `std_span_data(s)` and `std_span_size(s)`
 name the data pointer and size of a `std::span`, the view of

@@ -7,7 +7,7 @@ unsigned int read_counter(struct counter *counter) { return counter->value; }
 ```
 
 ```click
-target "x86_64-linux-userspace";
+target "x86_64-unknown-linux-gnu";
 runtime "modeled-pthread";
 resource counter_state(counter: struct counter*) {
     field value: uint32;

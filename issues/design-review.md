@@ -3,8 +3,8 @@
 Priority: P1.
 
 Soundness: soundness-adjacent. This file is a tracker. Items M1 (no
-independent checker), M2 (no written semantics) and M3 (`memcpy` reading under
-`viewable`) are trust questions without a known false acceptance. Each item that becomes a reproduced false acceptance is filed in
+independent checker) and M2 (no written semantics) are trust questions
+without a known false acceptance. Each item that becomes a reproduced false acceptance is filed in
 `bugs/` with its own label.
 
 Items P1–P4, W4 and W5 waited on the SMT-backed `auto`
@@ -75,15 +75,16 @@ lines; `examples/modeled-binary-tree` proves the 12-line `tree_contains` in
 about 100. `examples/arena/arena_cells.click` is 5,537 lines for 279 lines
 of C.
 
-Proposed fix: items P2 and P6, plus a published proof-to-code budget per
-example that the gate reports.
+Proposed fix: item P2 and the landed P6 (loop facts carry across steps
+and the back edge closes implicitly), plus a published proof-to-code budget
+per example that the gate reports.
 
 Done when: the examples meet a stated budget, or the budget and the reason
 for exceeding it are published.
 
 Decision: fix (maintainer, 2026-10-15). The gate reports each example's
-proof-to-code ratio against the 20x budget, report-only at first; P2 and P6
-are the main levers for meeting it.
+proof-to-code ratio against the 20x budget, report-only at first; P2 is the
+main remaining lever for meeting it.
 
 ### P2. Spec arithmetic is machine arithmetic
 
@@ -159,20 +160,6 @@ R2 is done (2026-10-14): general `__rb_erase_augmented` and `rb_erase`
 contracts replace 16 per-case sidecars of `examples/rbtree-erase`; see
 [design/proof-reuse.md](../design/proof-reuse.md#r2-one-general-contract-per-function).
 R3, R4 and R5 remain.
-
-### P6. Loop proofs restate facts
-
-Today: invariants restate immutable facts and held views
-(`examples/rust-byte-sum/sum.click`), iterations end with explicit
-`step(); step(); step(); close_invariants();`, and identical facts are
-re-`have`d after steps (the deeper-successor arms of
-`examples/rbtree-erase/rbtree_erase_augmented.click`).
-
-Proposed fix: facts about values a step cannot change carry across steps
-automatically; the back edge closes implicitly.
-
-Decision: fix (maintainer, 2026-10-14), after the SMT-backed `auto`, which has
-landed.
 
 ## W. Proof workflow and tooling
 
@@ -289,37 +276,6 @@ Decision: fix, after performance and completeness (maintainer,
 it would slow the priorities, which are performance at the scale of large
 real-world projects and then completeness, both measured in practice. A
 false acceptance, once found, is still fixed first, as a bug.
-
-### M3. Several read-permission notions and no fractions
-
-Today: `views` (call-scoped loans), `viewable` (bounds only), reads granted
-by a folded composite, and reads from match-arm selection. The trusted
-`memcpy` contract reads its source under `viewable` alone
-(`docs/internals/byte-representation.md`), against "external loads require a
-covering viewed or owned memory resource". No fractional permissions, so no
-reader-writer pattern.
-
-Proposed fix: fractional or counted read permissions; fold `viewable` into
-them; reconcile `memcpy`.
-
-Decision: split (maintainer, 2026-10-14). Fix now: the trusted `memcpy`
-contract reads its source under `views`, as every other external load does.
-Fractional and counted read permissions are deferred until a program needs a
-reader-writer pattern.
-
-### M4. Field-less resources hide a record
-
-Today: a field-less `pair(p)` keeps its child's fields "in a record the
-author does not write" (`docs/reference/language/index.md`); the alternative
-was dropped because the kernel treats a field-less body as a function of its
-arguments in about thirty places (`design/proof-language-rulings.md`).
-
-Proposed fix: require explicit fields, or show the record in diagnostics and
-expansion. This revisits a recorded ruling.
-
-Decision: fix (maintainer, 2026-10-14): show the record in diagnostics and
-expansion output. Explicit fields are not required; the recorded ruling
-stands.
 
 ## Strengths the review credited
 

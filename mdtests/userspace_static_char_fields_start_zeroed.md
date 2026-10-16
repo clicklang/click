@@ -19,7 +19,7 @@ int zero_fields(void) {
 ```
 
 ```click
-target "x86_64-linux-userspace";
+target "x86_64-unknown-linux-gnu";
 verifying "zeroed_char_fields.c";
 
 int32 zero_fields() {

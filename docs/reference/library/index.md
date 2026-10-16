@@ -2930,16 +2930,22 @@ about the result beyond its being 0 or 1, and a proof covers both.
 
 ```click
 extern uint8* memcpy(uint8 destination[], const uint8 source[], uint64 bytes) {
-    requires viewable(source[0..bytes]);
+    views source[0..bytes];
     owns destination[0..bytes];
-    requires separate(memory(destination[0..bytes]), memory(source[0..bytes]));
     ensures result == destination;
     ensures bytes::equal(destination, 0u64, old(source), 0u64, bytes);
 }
 ```
 
-**Meaning:** Copies `bytes` bytes, a `size_t` count as in C, from a readable, non-overlapping source to
-an owned destination and returns the destination pointer. This exact
+**Meaning:** Copies `bytes` bytes, a `size_t` count as in C, from a viewed source to
+an owned destination and returns the destination pointer. The caller lends
+the source for the call from bytes it views or owns. The `owns` and `views`
+clauses of one contract are disjoint, so a call whose source overlaps its
+destination is refused
+([`mdtests/byte_representation_overlapping_copy_rejected.md`](https://github.com/clicklang/click/blob/master/mdtests/byte_representation_overlapping_copy_rejected.md)),
+and `viewable` alone, which grants no read authority, does not lend the
+source
+([`mdtests/memcpy_source_needs_a_covering_resource.md`](https://github.com/clicklang/click/blob/master/mdtests/memcpy_source_needs_a_covering_resource.md)). This exact
 standard-library declaration also carries the checked representation-copy
 effect: after the call, each initialized typed cell whose complete byte
 representation lies in the copied range is established at the mapped
@@ -2949,26 +2955,27 @@ effect is bound to this declaration, not to the name `memcpy`.
 
 **Kind:** external C contract. The declaration is an explicit verification assumption.
 
-**Verified use:** [`mdtests/byte_representation_scalar_copy.md`](https://github.com/clicklang/click/blob/master/mdtests/byte_representation_scalar_copy.md) checks its typed-copy effect.
+**Verified use:** [`mdtests/byte_representation_scalar_copy.md`](https://github.com/clicklang/click/blob/master/mdtests/byte_representation_scalar_copy.md) checks its typed-copy effect, and [`mdtests/memcpy_reads_a_viewed_or_borrowed_source.md`](https://github.com/clicklang/click/blob/master/mdtests/memcpy_reads_a_viewed_or_borrowed_source.md) copies from a viewed source and from an owned one lent for the call.
 
 ### `memcmp`
 
 ```click
 extern int32 memcmp(const uint8 left[], const uint8 right[], uint64 bytes) {
-    requires viewable(left[0..bytes]);
-    requires viewable(right[0..bytes]);
+    views left[0..bytes];
+    views right[0..bytes];
     requires forall (k: uint64) { k < bytes implies defined(left[k]) and defined(right[k]) };
     ensures result == 0 implies bytes::equal(left, 0u64, right, 0u64, bytes);
     ensures result != 0 implies not bytes::equal(left, 0u64, right, 0u64, bytes);
 }
 ```
 
-**Meaning:** Reads both `bytes`-long byte ranges (a `size_t` count, as in C) without mutation and distinguishes equal
-from unequal prefixes by whether the result is zero.
+**Meaning:** Reads both `bytes`-long byte ranges (a `size_t` count, as in C) under views, without mutation, and distinguishes equal
+from unequal prefixes by whether the result is zero. Views are shared, so
+one viewed or owned range can be both operands.
 
 **Kind:** external C contract. The declaration is an explicit verification assumption.
 
-**Verified use:** [`mdtests/strlen_of_an_empty_string_and_memcmp_use_the_catalog_contracts.md`](https://github.com/clicklang/click/blob/master/mdtests/strlen_of_an_empty_string_and_memcmp_use_the_catalog_contracts.md) checks its range and definedness preconditions at a call.
+**Verified use:** [`mdtests/strlen_of_an_empty_string_and_memcmp_use_the_catalog_contracts.md`](https://github.com/clicklang/click/blob/master/mdtests/strlen_of_an_empty_string_and_memcmp_use_the_catalog_contracts.md) checks its range and definedness preconditions at a call, and [`mdtests/memcmp_reads_two_viewed_buffers.md`](https://github.com/clicklang/click/blob/master/mdtests/memcmp_reads_two_viewed_buffers.md) compares two viewed buffers and one buffer with itself.
 
 ### `memset`
 

@@ -19,7 +19,7 @@ int run(void) {
 ```
 
 ```click
-target "x86_64-linux-userspace";
+target "x86_64-unknown-linux-gnu";
 runtime "modeled-pthread";
 verifying "mutex_storage_free_symbolic_alias.c";
 struct holder* identity(struct holder* p) {

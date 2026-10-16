@@ -133,7 +133,8 @@ impl PreparedCImport {
 #[serde(deny_unknown_fields)]
 struct Config {
     schema: u32,
-    target: String,
+    #[serde(skip, default = "default_target")]
+    target: CTarget,
     compiler: PathBuf,
     working_directory: String,
     environment: Environment,
@@ -168,10 +169,13 @@ enum ConfigOrigin {
     ProjectUnit(String),
 }
 
+fn default_target() -> CTarget {
+    CTarget::SUPPORTED
+}
+
 impl Config {
-    // Configs enter the compiler path only after validate_config.
     fn c_target(&self) -> CTarget {
-        CTarget::from_name(&self.target).expect("validated compiler target")
+        self.target
     }
 
     // Likewise, a configured profile name was resolved by validate_config.
@@ -208,6 +212,10 @@ struct Lock {
     schema: u32,
     config_sha256: String,
     target: String,
+    /// The target's mode; absent from a lock prepared before targets were
+    /// spelled as a triple and a mode.
+    #[serde(default)]
+    mode: String,
     compiler_path: String,
     working_directory: String,
     config_directory: String,
@@ -333,7 +341,7 @@ pub(crate) struct UnitConfig {
     pub unit_name: String,
     /// The digest of the unit's description, which its lock records.
     pub unit_digest: String,
-    pub target: String,
+    pub target: CTarget,
     pub compiler: PathBuf,
     /// The unit's source root, relative to the project root.
     pub root: String,
@@ -380,7 +388,7 @@ fn unit_config(unit: &UnitConfig, use_for: ConfigUse) -> Result<Config, String> 
         .to_path_buf();
     let mut config = Config {
         schema: SCHEMA,
-        target: unit.target.clone(),
+        target: unit.target,
         compiler: unit.compiler.clone(),
         working_directory: unit.root.clone(),
         environment: Environment {
@@ -439,7 +447,7 @@ fn load_locked(config: &Config, lock: &Lock) -> Result<Vec<PreparedCImport>, Str
     }
     if lock.invocation_sha256
         != invocation_digest_parts(
-            &config.target,
+            config.target,
             &lock.compiler_path,
             &lock.working_directory,
             &config.environment.allow,
@@ -453,7 +461,7 @@ fn load_locked(config: &Config, lock: &Lock) -> Result<Vec<PreparedCImport>, Str
     {
         return Err(format!(
             "Click's system headers for {} changed since this import lock was prepared; run `click import lock` to prepare the import against them",
-            config.target
+            config.target.name()
         ));
     }
     let locked_by_name = lock
@@ -543,7 +551,8 @@ fn build_lock(config: &Config) -> Result<(Lock, Vec<(PathBuf, Vec<u8>)>), String
     let lock = Lock {
         schema: LOCK_SCHEMA,
         config_sha256: config.config_bytes_sha256.clone(),
-        target: config.target.clone(),
+        target: CTarget::TRIPLE.to_string(),
+        mode: config.target.mode().to_string(),
         compiler_path: config.compiler.to_string_lossy().into_owned(),
         working_directory: config.working_directory.clone(),
         config_directory: fs::canonicalize(&config.config_directory)
@@ -841,7 +850,7 @@ fn validate_locked_source(
     }
     let identity = source_identity_parts(
         lock.schema,
-        &config.target,
+        config.target.name(),
         &lock.invocation_sha256,
         source,
         &SourceDigests {
@@ -870,7 +879,7 @@ fn source_identity(
 ) -> String {
     source_identity_parts(
         LOCK_SCHEMA,
-        &config.target,
+        config.target.name(),
         &context.invocation_sha256,
         source,
         &SourceDigests {
@@ -1220,9 +1229,6 @@ fn dep_tokens(text: &str) -> Result<Vec<String>, String> {
 fn validate_config(config: &Config, use_for: ConfigUse) -> Result<(), String> {
     if config.schema != SCHEMA {
         return Err(format!("unsupported import schema {}", config.schema));
-    }
-    if CTarget::from_name(&config.target).is_none() {
-        return Err(format!("unsupported compiler target `{}`", config.target));
     }
     if matches!(use_for, ConfigUse::Prepare) {
         let meta = fs::metadata(&config.compiler)
@@ -1896,7 +1902,7 @@ fn limits() -> CompilerLimits {
 }
 fn invocation_digest(config: &Config, toolchain: &ToolchainIdentity) -> String {
     invocation_digest_parts(
-        &config.target,
+        config.target,
         &config.compiler.to_string_lossy(),
         &config.working_directory,
         &config.environment.allow,
@@ -1905,21 +1911,20 @@ fn invocation_digest(config: &Config, toolchain: &ToolchainIdentity) -> String {
 }
 
 fn invocation_digest_parts(
-    target: &str,
+    target: CTarget,
     compiler_path: &str,
     working_directory: &str,
     environment: &BTreeMap<String, String>,
     toolchain: &ToolchainIdentity,
 ) -> String {
     let mut bytes = serde_json::to_vec(&(
-        target,
+        target.name(),
         compiler_path,
         working_directory,
         environment,
         toolchain,
     ))
     .expect("identity serializes");
-    let target = CTarget::from_name(target).expect("validated compiler target");
     bytes.extend_from_slice(fixed_args(target).join("\0").as_bytes());
     hex_digest(&bytes)
 }
@@ -1985,8 +1990,11 @@ fn metadata_signature(metadata: &fs::Metadata) -> (u64, u128, u128, u64) {
     }
 }
 fn validate_lock_shape(lock: &Lock, config: &Config) -> Result<(), String> {
-    if lock.target != config.target {
-        return Err("import lock schema or target does not match config".into());
+    if lock.target != CTarget::TRIPLE || lock.mode != config.target.mode() {
+        return Err(format!(
+            "the import lock was not prepared for target {}; run `click import lock` to prepare it again",
+            config.target.name()
+        ));
     }
     let current = lock.schema == LOCK_SCHEMA && lock.click_header_catalog_sha256.is_some();
     let legacy = lock.schema == LEGACY_LOCK_SCHEMA
@@ -2146,11 +2154,12 @@ mod tests {
         fs::write(upstream.join("local.h"), header).unwrap();
         fs::write(proofs.join(".click/up/main.c.i"), artifact).unwrap();
         let sidecar = proofs.join("checks/main.click");
-        let proof = "target \"x86_64-linux-kernel\"; verifying \"../../upstream/main.c\"; int answer() { ensures result == 42; } by { execute(); simp(); }";
+        let proof = "target \"x86_64-unknown-linux-gnu\"; mode \"kernel\"; verifying \"../../upstream/main.c\"; int answer() { ensures result == 42; } by { execute(); simp(); }";
         fs::write(&sidecar, proof).unwrap();
         let describe = |args: &[&str]| {
             serde_json::json!({
-                "target": "x86_64-linux-kernel",
+                "target": "x86_64-unknown-linux-gnu",
+                "mode": "kernel",
                 "units": {"up": {
                     "language": "c",
                     "root": "../upstream",
@@ -2181,7 +2190,7 @@ mod tests {
         };
         let compiler_path = "/toolchain/not-installed/gcc".to_string();
         let invocation_sha256 = invocation_digest_parts(
-            &config.target,
+            config.target,
             &compiler_path,
             &config.working_directory,
             &config.environment.allow,
@@ -2208,7 +2217,7 @@ mod tests {
             click_headers: BTreeMap::new(),
             identity: source_identity_parts(
                 LOCK_SCHEMA,
-                &config.target,
+                config.target.name(),
                 &invocation_sha256,
                 source_config,
                 &SourceDigests {
@@ -2224,7 +2233,8 @@ mod tests {
         let lock = Lock {
             schema: LOCK_SCHEMA,
             config_sha256: config.config_bytes_sha256.clone(),
-            target: config.target.clone(),
+            target: CTarget::TRIPLE.to_string(),
+            mode: config.target.mode().to_string(),
             compiler_path,
             working_directory: config.working_directory.clone(),
             config_directory: proofs.to_string_lossy().into_owned(),
@@ -2757,10 +2767,10 @@ mod tests {
         let project_file = root.join(crate::project::FILE_NAME);
         fs::write(
             &project_file,
-            serde_json::json!({"target": "x86_64-linux-kernel", "units": {"x": {
+            serde_json::json!({"target": "x86_64-unknown-linux-gnu", "mode": "kernel", "units": {"x": {
                 "language": "c",
                 "compiler": "/usr/bin/gcc",
-                "environment": {"PATH": std::env::var("PATH").unwrap_or_default()},
+                "env": {"PATH": std::env::var("PATH").unwrap_or_default()},
                 "sources": {"x.c": {}}
             }}})
             .to_string(),

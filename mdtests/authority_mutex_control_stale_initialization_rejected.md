@@ -21,7 +21,7 @@ int run(void) {
 ```
 
 ```click
-target "x86_64-linux-userspace";
+target "x86_64-unknown-linux-gnu";
 runtime "modeled-pthread";
 verifying "authority_mutex_control_stale_initialization_rejected.c";
 authorized resource reference(obj: struct object*) {}

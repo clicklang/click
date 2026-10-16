@@ -2,7 +2,7 @@
 
 The Linux kernel defines `s64` and `u64`, and with them `int64_t` and
 `uint64_t`, as `long long` and `unsigned long long`, while `size_t` stays
-`unsigned long`. On the `x86_64-linux-kernel` target, a pointer to `int64_t`
+`unsigned long`. In `kernel` mode, a pointer to `int64_t`
 therefore converts to and from `long long *` without a cast, and
 `__builtin_types_compatible_p` reports the kernel's identities.
 
@@ -25,7 +25,8 @@ int identities(void) {
 ```
 
 ```click
-target "x86_64-linux-kernel";
+target "x86_64-unknown-linux-gnu";
+mode "kernel";
 verifying "main.c";
 
 long long *values(int64_t *p) {

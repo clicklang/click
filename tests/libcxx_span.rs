@@ -21,7 +21,7 @@ mod pinned_clang;
 use pinned_clang::{output, pinned_clang, sha256};
 
 const ARCHIVE: &[u8] = include_bytes!("fixtures/libcxx-span/input-closure.tar.gz");
-const SPAN: &str = "struct span__int__value_unsigned_long_18446744073709551615";
+const SPAN: &str = "std::span<int>";
 
 /// Imports `probe` from `harness`, compiled against the pinned libc++.
 fn libcxx_fixture(
@@ -136,7 +136,7 @@ fn libcxx_span_binds_the_model_accessors_and_catalog() {
         .export()
         .records
         .iter()
-        .find(|record| format!("struct {}", record.name) == SPAN)
+        .find(|record| record.path.join("::") == SPAN)
         .unwrap();
     assert_eq!(
         span.fields

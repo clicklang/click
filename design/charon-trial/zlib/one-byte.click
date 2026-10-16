@@ -1,6 +1,6 @@
 import click::integer;
 
-target "x86_64-linux-userspace";
+target "x86_64-unknown-linux-gnu";
 verifying "adler32.c";
 import "../../adler32-spec.click";
 theorem zlib_pack_order(value: Integer) {

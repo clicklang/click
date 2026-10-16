@@ -23,13 +23,18 @@ library (`library/c/string.click`):
 
 ```text
 extern uint8* memcpy(uint8 destination[], const uint8 source[], uint64 bytes) {
-    requires viewable(source[0..bytes]);
+    views source[0..bytes];
     owns destination[0..bytes];
-    requires separate(memory(destination[0..bytes]), memory(source[0..bytes]));
     ensures result == destination;
     ensures click::bytes::equal(destination, 0u64, old(source), 0u64, bytes);
 }
 ```
+
+The source is read under `views`, as every external load needs a covering
+viewed or owned resource; the caller lends it for the call from bytes it
+views or owns. The destination is owned, and the `owns` and `views` clauses
+of one contract are disjoint, so an overlapping copy is refused when the call
+lends its ranges (`mdtests/byte_representation_overlapping_copy_rejected.md`).
 
 The contract is a trusted specification of the client's view of `memcpy`,
 not a proof of libc. Every sidecar that calls it reports
@@ -100,9 +105,10 @@ keeps its post-havoc state, which has no cell there:
    (`mdtests/byte_representation_untyped_source_frontier.md`).
 
 The contract's own checks come first. An out-of-bounds copy
-(`mdtests/byte_representation_out_of_bounds_copy_rejected.md`) and an
-overlapping one (`mdtests/byte_representation_overlapping_copy_rejected.md`)
-fail its preconditions. A destination held only by a `views` clause
+(`mdtests/byte_representation_out_of_bounds_copy_rejected.md`) fails its
+preconditions, and an overlapping one
+(`mdtests/byte_representation_overlapping_copy_rejected.md`) cannot lend
+its source as a view while lending the overlapping destination as owned. A destination held only by a `views` clause
 (`mdtests/byte_representation_readonly_copy_rejected.md`) or lent to a live
 reader (`mdtests/byte_representation_borrowed_destination_rejected.md`, a
 modeled-pthread worker viewing heap bytes, with the after-join control

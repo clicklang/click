@@ -436,6 +436,11 @@ owner selector. A transitive equality between native model pointers can select
 a retained field even when the pointer spellings have different symbolic
 blocks. Coverage still checks the complete byte extent; borrowed views do not
 become owned frames, and withdrawing an alias removes its lookup support.
+Recorded call snapshots can outlive the equality-input lineage that first
+prepared their frame index. During recheck that index may identify a candidate
+owner, but the current equality graph must establish the candidate's address;
+the earlier graph supplies no equality evidence. This uses only the selected
+owner, without republishing the frame or rechecking unrelated equality inputs.
 
 A function's write footprint is the memory its contract owns:
 

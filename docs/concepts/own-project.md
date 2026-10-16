@@ -121,7 +121,7 @@ uint64 label_fit(uint64 length) {
 ```
 
 `unsigned long` is `uint64` under Click's default target,
-`x86_64-linux-userspace`; see
+`x86_64-unknown-linux-gnu` in `userspace` mode; see
 [Supported types](../reference/language/c.md#supported-types). The proof
 `execute(); simp();` runs the C symbolically along every path and then closes
 each postcondition from what execution established.
@@ -159,7 +159,7 @@ from the compile command: `-I`, `-iquote`, `-isystem`, `-D`, `-U`, and
     "label": {
       "language": "c",
       "compiler": "/usr/bin/gcc",
-      "environment": {"PATH": "/usr/bin:/bin", "LC_ALL": "C"},
+      "env": {"PATH": "/usr/bin:/bin", "LC_ALL": "C"},
       "args": ["-std=c11", "-O2", "-Iinclude", "-DLABEL_CAPACITY=32"],
       "sources": {
         "label_fit.c": {}
@@ -184,7 +184,7 @@ preprocessor flags:
     "label": {
       "language": "c",
       "compiler": "/usr/bin/gcc",
-      "environment": {"PATH": "/usr/bin:/bin", "LC_ALL": "C"},
+      "env": {"PATH": "/usr/bin:/bin", "LC_ALL": "C"},
       "args": ["-Iinclude", "-DLABEL_CAPACITY=32"],
       "sources": {
         "label_fit.c": {}
@@ -220,9 +220,10 @@ Some details of the configuration:
   default the project directory; a unit may instead read an external tree,
   such as a git submodule, in place.
 - The target is the project's: without a `"target"` the project uses
-  `x86_64-linux-userspace`. Linux kernel code uses `x86_64-linux-kernel`,
-  selected by `"target": "x86_64-linux-kernel"` in `click.project.json`,
-  which also selects the modeled pthread runtime; see
+  `x86_64-unknown-linux-gnu`, and without a `"mode"` it uses
+  `userspace`. Linux kernel code uses `kernel` mode, selected by
+  `"mode": "kernel"` in `click.project.json`, the same file whose
+  `"runtime"` selects the modeled pthread runtime; see
   [Selecting a target](../reference/language/c.md#selecting-a-target).
 - Click does not read a `Makefile` or a C `compile_commands.json`. Copy the
   flags by hand from `make -n` output or from the entry's `arguments` or
@@ -348,7 +349,7 @@ add it to the unit as a second source; the unit's `args` apply to both:
     "label": {
       "language": "c",
       "compiler": "/usr/bin/gcc",
-      "environment": {"PATH": "/usr/bin:/bin", "LC_ALL": "C"},
+      "env": {"PATH": "/usr/bin:/bin", "LC_ALL": "C"},
       "args": ["-Iinclude", "-DLABEL_CAPACITY=32"],
       "sources": {
         "label_fit.c": {},
@@ -410,8 +411,8 @@ with `#include <stdio.h>`, the lock would fail with:
 
 ```text
 click: unit `label`: preprocess label_copy.c: compiler exited with exit status: 1: In file included from label_copy.c:1:
-<click>/stdio.h:2:2: error: #error "<stdio.h> is not one of Click's modeled system headers for x86_64-linux-userspace; see docs/reference/language/c.md#system-headers"
-    2 | #error "<stdio.h> is not one of Click's modeled system headers for x86_64-linux-userspace; see docs/reference/language/c.md#system-headers"
+<click>/stdio.h:2:2: error: #error "<stdio.h> is not one of Click's modeled system headers for x86_64-unknown-linux-gnu (userspace); see docs/reference/language/c.md#system-headers"
+    2 | #error "<stdio.h> is not one of Click's modeled system headers for x86_64-unknown-linux-gnu (userspace); see docs/reference/language/c.md#system-headers"
       |  ^~~~~
 ```
 
@@ -445,7 +446,6 @@ Try the remaining function, `label_copy`:
 
 ```click filename=label.click
 import click::cstr;
-import click::machine_integer;
 
 verifying "label_fit.c";
 verifying "label_copy.c";
@@ -455,25 +455,7 @@ uint64 label_fit(uint64 length) {
     ensures result <= length;
     ensures length < 32u64 implies result == length;
     ensures 32u64 <= length implies result == 31u64;
-} by {
-    if length < 32u64 {
-        execute();
-        have 32u64 <= length implies result == 31u64 by {
-            intro();
-            apply(uint64_less_equal_less_than_transitive(32u64, length, 32u64));
-            contradiction(32u64 < 32u64);
-        }
-        simp();
-    } else {
-        execute();
-        have result <= length by auto;
-        have length < 32u64 implies result == length by {
-            intro();
-            contradiction(length < 32u64);
-        }
-        simp();
-    }
-}
+} by auto;
 
 uint64 label_measure(const char* src) {
     views s: cstr_at(src, _);
@@ -500,13 +482,15 @@ uint64 label_copy(char* dst, const char* src) {
 
 `label_fit` now states exactly what it returns, and `label_measure` and
 `label_copy` state exactly which length they keep: the whole string when it
-fits, 31 bytes otherwise. `label_fit`'s proof splits on the length and cites
-a `uint64` ordering theorem from the `click::machine_integer` library module,
-so the sidecar imports it, and `click::cstr` for `cstr_at`; see
-[Click library imports](sidecars.md#click-library-imports).
+fits, 31 bytes otherwise. `by auto` proves the two new `label_fit` claims:
+on each path of the C branch it refutes the claim's other hypothesis, such as
+`length < 32u64` where `length >= 32`. The sidecar imports `click::cstr` for
+`cstr_at`; see [Click library imports](sidecars.md#click-library-imports).
 `label_copy` opens the string it views to lend a prefix of its bytes to
-`memcpy`. The copy needs a separate destination and source, because `memcpy`
-requires its accessed ranges not to overlap; the separation names the
+`memcpy`. `memcpy` owns its destination and views its source, and a call
+cannot lend overlapping bytes both ways, so the copy needs a separate
+destination and source. `label_copy` owns `dst` and views the string, which
+keeps them apart, and its contract also states the separation over the
 string's own bytes, `src[0u64..s.len + 1u64]`. Its source may be `const`, as
 in the existing C. The destination's 32-byte ownership and `label_fit`'s bound
 also cover the terminator store. Verify this complete sidecar with

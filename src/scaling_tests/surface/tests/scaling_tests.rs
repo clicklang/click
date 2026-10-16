@@ -912,7 +912,7 @@ fn call_with_unrelated_facts(fact_count: usize) -> (String, String) {
         "int32 call_target(uint8 bytes[], int32 n) {\n    return memcmp(bytes, bytes, 2);\n}\n"
             .to_string();
     let mut click_source = String::from(
-        "verifying \"call_target.c\";\n\nint32 call_target(uint8 bytes[], int32 n) {\n    requires viewable(bytes[0..2]);\n",
+        "verifying \"call_target.c\";\n\nint32 call_target(uint8 bytes[], int32 n) {\n    views bytes[0..2];\n",
     );
     for index in 0..fact_count {
         click_source.push_str(&format!("    requires n != {};\n", index + 100));
@@ -920,28 +920,6 @@ fn call_with_unrelated_facts(fact_count: usize) -> (String, String) {
     click_source.push_str(
         "    ensures 1 == 1 by {
         step() by {
-            have defined(bytes[0]) and defined(bytes[0]) by {
-                both {
-                    transport(at(function.entry, viewable(bytes[0..2])), defined(bytes[0])) using {
-                        at(function.entry, viewable(bytes[0..2]));
-                    }
-                } and {
-                    transport(at(function.entry, viewable(bytes[0..2])), defined(bytes[0])) using {
-                        at(function.entry, viewable(bytes[0..2]));
-                    }
-                }
-            }
-            have defined(bytes[1]) and defined(bytes[1]) by {
-                both {
-                    transport(at(function.entry, viewable(bytes[0..2])), defined(bytes[1])) using {
-                        at(function.entry, viewable(bytes[0..2]));
-                    }
-                } and {
-                    transport(at(function.entry, viewable(bytes[0..2])), defined(bytes[1])) using {
-                        at(function.entry, viewable(bytes[0..2]));
-                    }
-                }
-            }
             enumerate();
         }
         step();

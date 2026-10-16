@@ -16,7 +16,7 @@ void start(struct channel *channel) {
 ```
 
 ```click
-target "x86_64-linux-userspace";
+target "x86_64-unknown-linux-gnu";
 runtime "modeled-pthread";
 verifying "publication_flag_is_not_a_plain_int.c";
 resource ready_payload(channel: struct channel*) {

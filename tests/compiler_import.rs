@@ -35,7 +35,7 @@ fn describe_project(description: &Path) -> Result<PathBuf, String> {
     let mut unit = json!({
         "language": "c",
         "compiler": config["compiler"],
-        "environment": config["environment"]["allow"],
+        "env": config["environment"]["allow"],
         "sources": sources,
     });
     if let Some(root) = config["working_directory"]
@@ -50,6 +50,9 @@ fn describe_project(description: &Path) -> Result<PathBuf, String> {
     let mut project = json!({"units": {"main": unit}});
     if let Some(target) = config.get("target") {
         project["target"] = target.clone();
+    }
+    if let Some(mode) = config.get("mode") {
+        project["mode"] = mode.clone();
     }
     let project_file = directory.join(click::project::FILE_NAME);
     fs::write(&project_file, serde_json::to_vec_pretty(&project).unwrap()).unwrap();
@@ -147,7 +150,8 @@ impl Project {
         args.extend(extra.iter().map(|arg| (*arg).to_string()));
         let config = json!({
             "schema": 1,
-            "target": "x86_64-linux-kernel",
+            "target": "x86_64-unknown-linux-gnu",
+            "mode": "kernel",
             "compiler": "/usr/bin/gcc",
             "working_directory": ".",
             "environment": {"allow": {"PATH": "/usr/bin:/bin", "LC_ALL": "C", "SOURCE_DATE_EPOCH": "0"}},
@@ -444,7 +448,7 @@ fn compiler_import_preserves_explicit_external_assumption_reporting() {
         "int external_identity(int x);\nint caller(int x) { return external_identity(x); }\n",
     )
     .unwrap();
-    let proof = "target \"x86_64-linux-kernel\";\nverifying \"main.c\";\nextern int32 external_identity(int32 x) { requires x >= 0; ensures result == x; }\nint32 caller(int32 x) { requires x >= 0; ensures result == x; }\n";
+    let proof = "target \"x86_64-unknown-linux-gnu\";\nmode \"kernel\";\nverifying \"main.c\";\nextern int32 external_identity(int32 x) { requires x >= 0; ensures result == x; }\nint32 caller(int32 x) { requires x >= 0; ensures result == x; }\n";
     create_lock(&project.config()).unwrap();
     let imports = load_imports(&project.config()).unwrap();
     let assumptions = click::surface::c0_prepared_external_dependencies(proof, &imports).unwrap();
@@ -458,7 +462,8 @@ fn compiler_import_preserves_explicit_external_assumption_reporting() {
 fn configure_userspace(project: &Project) {
     let mut config: serde_json::Value =
         serde_json::from_slice(&fs::read(project.config()).unwrap()).unwrap();
-    config["target"] = json!("x86_64-linux-userspace");
+    config["target"] = json!("x86_64-unknown-linux-gnu");
+    config.as_object_mut().unwrap().remove("mode");
     fs::write(
         project.config(),
         serde_json::to_vec_pretty(&config).unwrap(),
@@ -489,7 +494,7 @@ int answer(void) { return ANSWER; }
 "#,
     )
     .unwrap();
-    let proof = "target \"x86_64-linux-userspace\"; verifying \"main.c\"; int answer() { ensures result == 42; } by { execute(); simp(); }";
+    let proof = "target \"x86_64-unknown-linux-gnu\"; verifying \"main.c\"; int answer() { ensures result == 42; } by { execute(); simp(); }";
     create_lock(&project.config()).unwrap();
     let imports = load_imports(&project.config()).unwrap();
     let verified = verify_c0_prepared_sources(proof, &imports).unwrap();
@@ -501,7 +506,7 @@ int answer(void) { return ANSWER; }
     let expanded = expand_c0_prepared_tactic_source_at(proof, &imports, 1, column).unwrap();
     verify_c0_prepared_sources(&expanded, &imports).unwrap();
     // Both whole-file and selected-site checking must reject a target mismatch.
-    let wrong = proof.replace("x86_64-linux-userspace", "x86_64-linux-kernel");
+    let wrong = proof.replace("verifying", "mode \"kernel\"; verifying");
     let error = verify_c0_prepared_sources(&wrong, &imports).unwrap_err();
     assert!(
         error.message().contains("but the sidecar selects"),
@@ -537,7 +542,7 @@ fn userspace_and_kernel_imports_have_distinct_identity_for_identical_c() {
         fs::read(project.0.join(".click/main/main.c.i")).unwrap()
     );
     assert_ne!(kernel[0].identity(), userspace[0].identity());
-    let proof = "target \"x86_64-linux-userspace\"; verifying \"main.c\"; int answer() { ensures result == 42; } by { execute(); simp(); }";
+    let proof = "target \"x86_64-unknown-linux-gnu\"; verifying \"main.c\"; int answer() { ensures result == 42; } by { execute(); simp(); }";
     assert!(verify_c0_prepared_sources(proof, &kernel).is_err());
     verify_c0_prepared_sources(proof, &userspace).unwrap();
 }
@@ -1307,7 +1312,7 @@ fn userspace_import(files: &[(&str, &str)], args: &[&str]) -> tempfile::TempDir 
 fn write_userspace_config(root: &Path, args: &[&str]) {
     let config = json!({
         "schema": 1,
-        "target": "x86_64-linux-userspace",
+        "target": "x86_64-unknown-linux-gnu",
         "compiler": "/usr/bin/gcc",
         "working_directory": ".",
         "environment": {"allow": {"PATH": "/usr/bin:/bin", "LC_ALL": "C"}},
@@ -1334,7 +1339,7 @@ int32_t label_fits(const char *label) {
 }
 "#;
 
-const LABEL_PROOF: &str = r#"target "x86_64-linux-userspace";
+const LABEL_PROOF: &str = r#"target "x86_64-unknown-linux-gnu";
 verifying "main.c";
 
 int32 label_fits(const char* label) {
@@ -1431,7 +1436,7 @@ fn compiler_import_refuses_unmodeled_system_headers_by_name() {
     let error = create_lock(&config).unwrap_err();
     assert!(
         error.contains("openssl/ssl.h: No such file or directory")
-            && error.contains("the system headers Click supplies for x86_64-linux-userspace are <inttypes.h>, <limits.h>"),
+            && error.contains("the system headers Click supplies for x86_64-unknown-linux-gnu (userspace) are <inttypes.h>, <limits.h>"),
         "{error}"
     );
 
@@ -1446,7 +1451,7 @@ fn compiler_import_refuses_unmodeled_system_headers_by_name() {
     // The kernel target has only the freestanding headers Click models.
     let mut kernel: serde_json::Value =
         serde_json::from_slice(&fs::read(&config).unwrap()).unwrap();
-    kernel["target"] = json!("x86_64-linux-kernel");
+    kernel["mode"] = json!("kernel");
     fs::write(&config, serde_json::to_vec_pretty(&kernel).unwrap()).unwrap();
     fs::write(
         project.path().join("main.c"),
@@ -1457,7 +1462,7 @@ fn compiler_import_refuses_unmodeled_system_headers_by_name() {
     assert!(
         error.contains("string.h: No such file or directory")
             && error.contains(
-                "for x86_64-linux-kernel are <inttypes.h>, <limits.h>, <stdbool.h>, <stdint.h>;"
+                "for x86_64-unknown-linux-gnu (kernel) are <inttypes.h>, <limits.h>, <stdbool.h>, <stdint.h>;"
             ),
         "{error}"
     );
@@ -1546,7 +1551,7 @@ fn compiler_import_lock_binds_clicks_header_text_and_catalog() {
     fs::write(&lock_path, serde_json::to_vec_pretty(&lock).unwrap()).unwrap();
     let error = load_imports(&config).unwrap_err();
     assert!(
-        error.contains("Click's system headers for x86_64-linux-userspace changed"),
+        error.contains("Click's system headers for x86_64-unknown-linux-gnu (userspace) changed"),
         "{error}"
     );
     // Dropping the record does not turn the lock into a legacy one.
@@ -2195,12 +2200,12 @@ fn project_unit_verifies_an_external_tree_in_place() {
     let project_file = root.join("proofs/click.project.json");
     let describe = |capacity: u32| {
         json!({
-            "target": "x86_64-linux-userspace",
+            "target": "x86_64-unknown-linux-gnu",
             "units": {"label": {
                 "language": "c",
                 "root": "../vendor/label-1.0",
                 "compiler": "/usr/bin/gcc",
-                "environment": {"PATH": "/usr/bin:/bin", "LC_ALL": "C"},
+                "env": {"PATH": "/usr/bin:/bin", "LC_ALL": "C"},
                 "args": ["-Isrc/include", format!("-DLABEL_CAPACITY={capacity}")],
                 "sources": {"src/label_fit.c": {}, "src/label_copy.c": {}}
             }}

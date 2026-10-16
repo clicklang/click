@@ -7876,13 +7876,9 @@ fn class_template_instances_preserve_nominal_identity_and_verify_offline() {
     let mut alias_identity = None;
     let mut identities = std::collections::BTreeSet::new();
     for (selected, record, spelling) in [
-        ("call", "Box__int__bool_false", "Box<int, false>"),
-        (
-            "wide",
-            "Box__long_long__bool_false",
-            "Box<long long, false>",
-        ),
-        ("long_type", "Box__long__bool_false", "Box<long, false>"),
+        ("call", "Box__int__bool_false", "Box<int>"),
+        ("wide", "Box__long_long__bool_false", "Box<long long>"),
+        ("long_type", "Box__long__bool_false", "Box<long>"),
         (
             "tagged",
             "Box__tag_SizeTag__bool_true",
@@ -7910,11 +7906,11 @@ fn class_template_instances_preserve_nominal_identity_and_verify_offline() {
             import.export().reachable_functions[0].name,
             format!("{record}_Read")
         );
-        // The member is written as C++ names it, by the instance Clang
-        // prints, every argument spelled.
+        // The member and the record type are written as C++ names them, by
+        // the instance Clang prints, a defaulted argument left out.
         assert_eq!(instance.path, [spelling]);
         let sidecar = format!(
-            "verifying \"instances.cpp\"; int32 {spelling}::Read() const {{ views this->value; ensures result == this->value; }} by {{ execute(); simp(); }} int32 {selected}(const struct {record}& box) {{ views box.value; ensures result == box.value; }} by {{ execute(); simp(); }}"
+            "verifying \"instances.cpp\"; int32 {spelling}::Read() const {{ views this->value; ensures result == this->value; }} by {{ execute(); simp(); }} int32 {selected}(const {spelling}& box) {{ views box.value; ensures result == box.value; }} by {{ execute(); simp(); }}"
         );
         fs::remove_file(&project.exporter).unwrap();
         check_return_call_sidecar(&project, &load_import(&project.config()).unwrap(), &sidecar);
@@ -8018,7 +8014,7 @@ fn class_template_instances_reject_cross_instance_bindings_even_with_equal_layou
         int32 Box<SizeTag, true>::Read() const {
             views this->value; ensures result == this->value;
         } by { execute(); simp(); }
-        int32 both(const struct Box__tag_SizeTag__bool_true& left,
+        int32 both(const Box<SizeTag, true>& left,
                    const struct Box__tag_WeightTag__bool_true& right) {
             views left.value; views right.value;
             ensures result == left.value;
@@ -8058,7 +8054,7 @@ fn class_template_instances_complete_unused_parameter_types_without_source_edits
         &import,
         r#"
         verifying "unused.cpp";
-        int32 call(const struct Box__int& box) { ensures result == 7; }
+        int32 call(const Box<int>& box) { ensures result == 7; }
         by { execute(); simp(); }
     "#,
     );

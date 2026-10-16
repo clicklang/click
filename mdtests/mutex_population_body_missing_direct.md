@@ -8,7 +8,7 @@ unsigned int read_without_lock(struct counter *p) { return read_value(p); }
 ```
 
 ```click
-target "x86_64-linux-userspace";
+target "x86_64-unknown-linux-gnu";
 runtime "modeled-pthread";
 verifying "mutex_population_body_missing.c";
 abstract resource contribution(p: struct counter*);

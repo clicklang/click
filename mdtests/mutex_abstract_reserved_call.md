@@ -15,7 +15,7 @@ void write_value(struct holder *holder, int *data) { touch(holder, data); }
 ```
 
 ```click
-target "x86_64-linux-userspace";
+target "x86_64-unknown-linux-gnu";
 runtime "modeled-pthread";
 resource lifetime(holder: struct holder*) {
     field tag: int32;

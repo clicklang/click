@@ -905,7 +905,7 @@ fn parse_c0_click_file_context(
         && super::selected_c_target(click_source)? != CTarget::X86_64LinuxUserspace
     {
         return Err(ClickError::new(
-            "modeled-pthread runtime requires target `x86_64-linux-userspace`",
+            "modeled-pthread runtime requires mode `userspace`",
         ));
     }
     let layouts = parse_c_layouts(click_source, sources)?;
@@ -944,7 +944,11 @@ fn with_tactic_procedures(
         }
         let mut block = tactic.function_block().clone();
         block.tactic_procedure = true;
-        let Some(SourceProof::Script(mut script)) = block.grouped_proof.take() else {
+        let Some(SourceProof::Script(mut script)) = block
+            .grouped_proof
+            .take()
+            .map(std::sync::Arc::unwrap_or_clone)
+        else {
             return Err(ClickError::new(format!(
                 "tactic `{name}` must be proved by an explicit `by {{ ... }}` script"
             )));
@@ -961,7 +965,7 @@ fn with_tactic_procedures(
             block.ensures.len(),
         ));
         append_on_every_path(&mut script, &suffix);
-        block.grouped_proof = Some(SourceProof::Script(script));
+        block.grouped_proof = Some(std::sync::Arc::new(SourceProof::Script(script)));
         let procedure = external_c0_function(&block).with_proof_body(syntax::C0Statement::Return(
             syntax::C0Expression::Void,
             syntax::C0Site::NONE,
@@ -2147,7 +2151,7 @@ fn verify_c0_sources_in_context(
         && preselected_target != CTarget::X86_64LinuxUserspace
     {
         return Err(ClickError::new(
-            "modeled-pthread runtime requires target `x86_64-linux-userspace`",
+            "modeled-pthread runtime requires mode `userspace`",
         ));
     }
     // A verification that continues from an earlier one's environment shares
@@ -5471,7 +5475,7 @@ pub(in crate::surface) fn parse_verified_sources_context_with_entry(
     {
         if file.selected_c_target() != CTarget::X86_64LinuxUserspace {
             return Err(ClickError::new(
-                "modeled-pthread runtime requires target `x86_64-linux-userspace`",
+                "modeled-pthread runtime requires mode `userspace`",
             ));
         }
         // The runtime's declarations are Click's interface, never a
@@ -7691,7 +7695,7 @@ mod prepared_scaling_tests {
 mod modeled_pthread_binding_tests {
     use super::*;
 
-    const CLICK: &str = "target \"x86_64-linux-userspace\";\nruntime \"modeled-pthread\";\nverifying \"fork_join.c\";\n";
+    const CLICK: &str = "target \"x86_64-unknown-linux-gnu\";\nruntime \"modeled-pthread\";\nverifying \"fork_join.c\";\n";
     const FROZEN: &str = include_str!("../../examples/concurrency-fork-join/fork_join.c");
 
     fn parse_binding(click: &str, source: &str) -> Result<(), ClickError> {
@@ -7786,7 +7790,7 @@ mod modeled_pthread_binding_tests {
     #[test]
     fn source_create_status_can_be_copied_and_tested_later() {
         let c = "#include <pthread.h>\n#include <stddef.h>\nstruct cell { int value; };\nvoid *worker(void *p) { struct cell *q = p; q->value = 77; return NULL; }\nint run(struct cell *p) { pthread_t h; int rc = pthread_create(&h, NULL, worker, p); int saved = rc; int unrelated = 7; if (saved != 0) return 0; pthread_join(h, NULL); return unrelated; }\n";
-        let click = "target \"x86_64-linux-userspace\";\nruntime \"modeled-pthread\";\nverifying \"fork_join.c\";\nvoid *worker(void *p) { owns ((struct cell *)p)->value; } by { execute(); simp(); }\nint32 run(struct cell *p) { owns p->value; ensures result == 0 or result == 7; } by { step(); step(); step(); step(); step(); step(); step(); branch then { step(); simp(); } else {} step(); step(); simp(); }\n";
+        let click = "target \"x86_64-unknown-linux-gnu\";\nruntime \"modeled-pthread\";\nverifying \"fork_join.c\";\nvoid *worker(void *p) { owns ((struct cell *)p)->value; } by { execute(); simp(); }\nint32 run(struct cell *p) { owns p->value; ensures result == 0 or result == 7; } by { step(); step(); step(); step(); step(); step(); step(); branch then { step(); simp(); } else {} step(); step(); simp(); }\n";
         verify_c0_sources(click, &[("fork_join.c", c)])
             .expect("a saved status should choose the checked create outcome");
         let expanded =
@@ -7799,7 +7803,7 @@ mod modeled_pthread_binding_tests {
     #[test]
     fn source_cannot_read_transferred_memory_before_status_and_join() {
         let c = "#include <pthread.h>\n#include <stddef.h>\nstruct cell { int value; };\nvoid *worker(void *p) { struct cell *q = p; q->value = 77; return NULL; }\nint run(struct cell *p) { pthread_t h; int rc = pthread_create(&h, NULL, worker, p); int early = p->value; if (rc != 0) return 0; pthread_join(h, NULL); return early; }\n";
-        let click = "target \"x86_64-linux-userspace\";\nruntime \"modeled-pthread\";\nverifying \"fork_join.c\";\nvoid *worker(void *p) { owns ((struct cell *)p)->value; } by { execute(); simp(); }\nint32 run(struct cell *p) { owns p->value; } by { step(); step(); step(); step(); step(); }\n";
+        let click = "target \"x86_64-unknown-linux-gnu\";\nruntime \"modeled-pthread\";\nverifying \"fork_join.c\";\nvoid *worker(void *p) { owns ((struct cell *)p)->value; } by { execute(); simp(); }\nint32 run(struct cell *p) { owns p->value; } by { step(); step(); step(); step(); step(); }\n";
         let error = verify_c0_sources(click, &[("fork_join.c", c)])
             .expect_err("the task memory cannot be read while creation is pending");
         assert!(
@@ -7814,7 +7818,7 @@ mod modeled_pthread_binding_tests {
     #[test]
     fn a_session_cannot_drop_the_modeled_runtime() {
         let c = "#include <pthread.h>\nint answer(void) { return 1; }\n";
-        let click = "target \"x86_64-linux-userspace\";\nruntime \"modeled-pthread\";\nverifying \"fork_join.c\";\nint32 answer() { ensures result == 1; } by { execute(); simp(); }\n";
+        let click = "target \"x86_64-unknown-linux-gnu\";\nruntime \"modeled-pthread\";\nverifying \"fork_join.c\";\nint32 answer() { ensures result == 1; } by { execute(); simp(); }\n";
         let (session, _) = C0VerificationSession::new(click, &[("fork_join.c", c)])
             .expect("baseline modeled proof");
         let changed = click.replace("runtime \"modeled-pthread\";\n", "");
@@ -7881,12 +7885,12 @@ mod modeled_pthread_binding_tests {
     fn changed_declaration_and_wrong_target_are_refused() {
         let source = "#include <pthread.h>\nint pthread_join(int handle, void **result);\n";
         assert!(parse_binding(CLICK, source).is_err());
-        let kernel = CLICK.replace("x86_64-linux-userspace", "x86_64-linux-kernel");
+        let kernel = CLICK.replace("verifying", "mode \"kernel\";\nverifying");
         assert!(
             parse_binding(&kernel, FROZEN)
                 .unwrap_err()
                 .message()
-                .contains("requires target")
+                .contains("requires mode")
         );
     }
 
@@ -8054,8 +8058,11 @@ int32 answer() {
 
         let c_digest = [1; 32];
         let click_digest = [2; 32];
-        let first_target =
-            CProofArtifactIdentity::for_components(c_digest, click_digest, "x86_64-linux-kernel");
+        let first_target = CProofArtifactIdentity::for_components(
+            c_digest,
+            click_digest,
+            CTarget::X86_64LinuxKernel.name(),
+        );
         let second_target =
             CProofArtifactIdentity::for_components(c_digest, click_digest, "other-target-profile");
         assert_ne!(first_target, second_target);
@@ -8080,7 +8087,8 @@ int32 answer() {
     #[test]
     fn a_target_directive_changes_the_verified_artifact_identity() {
         const KERNEL_CLICK: &str = r#"
-target "x86_64-linux-kernel";
+target "x86_64-unknown-linux-gnu";
+mode "kernel";
 verifying "answer.c";
 int32 answer() {
     ensures result == 1;

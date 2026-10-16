@@ -235,6 +235,39 @@ impl<K: Ord, V: PartialEq> SnapshotMap<K, V> {
 }
 
 impl<K: Ord + Clone + Hash, V: Clone + Hash> SnapshotMap<K, V> {
+    /// Sets each key of `other` to its value there and keeps this map's
+    /// other keys, as extending it by `other`'s entries would. Walks only the
+    /// paths the two maps do not share, charging one unit per difference, so
+    /// a map that already agrees with `other` keeps its root and compares
+    /// equal to its earlier self in constant time.
+    pub(crate) fn overwrite_with(&mut self, other: &Self)
+    where
+        V: PartialEq,
+    {
+        if self.map.ptr_eq(&other.map) {
+            return;
+        }
+        let mut differences = 0usize;
+        let changed = self
+            .map
+            .diff(&other.map)
+            .filter_map(|change| {
+                differences += 1;
+                match change {
+                    imbl::ordmap::DiffItem::Add(key, value)
+                    | imbl::ordmap::DiffItem::Update {
+                        new: (key, value), ..
+                    } => Some((key.clone(), value.clone())),
+                    imbl::ordmap::DiffItem::Remove(..) => None,
+                }
+            })
+            .collect::<Vec<_>>();
+        crate::instrumentation::record_deterministic_work(differences);
+        for (key, value) in changed {
+            self.insert(key, value);
+        }
+    }
+
     /// Inserts or replaces one entry. O(log n) plus hashing the entry.
     pub(crate) fn insert(&mut self, key: K, value: V) -> Option<V> {
         let added = map_entry_hash(&key, &value);
@@ -690,6 +723,44 @@ mod tests {
         let set_backward = (0..40).rev().collect::<SnapshotSet<_>>();
         assert_eq!(set_forward.content_hash(), set_backward.content_hash());
         assert_eq!(set_forward, set_backward);
+    }
+
+    /// Restoring a loop's entry blocks over its havocked head writes only the
+    /// blocks that differ. Extending by every entry gave the head a new root
+    /// even when nothing changed, so the next comparison walked every block
+    /// the path had declared, a cost that grew with each earlier loop.
+    #[test]
+    fn overwrite_costs_the_differences_and_keeps_an_agreeing_root() {
+        for size in [16, 64, 256, 1024] {
+            let entry = (0..size)
+                .map(|key| (key, key))
+                .collect::<SnapshotMap<_, _>>();
+            let mut havocked = entry.clone();
+            havocked.insert(size, 0);
+            havocked.insert(3, 99);
+
+            let mut agreeing = entry.clone();
+            let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+                agreeing.overwrite_with(&entry)
+            });
+            assert_eq!(work, 0);
+            assert!(agreeing.ptr_eq(&entry));
+
+            let mut restored = havocked.clone();
+            let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+                restored.overwrite_with(&entry)
+            });
+            assert_eq!(work, 2, "{size} entries: one changed block and one added");
+            let mut expected = havocked.clone();
+            expected.extend(entry.iter().map(|(key, value)| (*key, *value)));
+            assert_eq!(restored, expected);
+
+            let mut unchanged = entry.clone();
+            unchanged.insert(size, 0);
+            let before = unchanged.clone();
+            unchanged.overwrite_with(&entry);
+            assert!(unchanged.ptr_eq(&before), "{size} entries");
+        }
     }
 
     #[test]

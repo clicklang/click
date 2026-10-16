@@ -124,20 +124,40 @@ and 1,359, which the gate holds flat
 (`sequential_loop_clauses_cost_the_same_at_every_position`). N = 64 verifies
 in 1.0 s instead of 1.6 s, and N = 192 in 5.6 s instead of 15.2 s.
 
-What remains, all linear in the earlier loops at each loop:
+The last charged growth is gone. Preparing a loop head restored the entry
+state's block table over the havocked one by re-inserting every block,
+which gave the table a new root even when nothing changed, so the
+comparison with the head state that follows walked every block the path
+had declared. It now writes only the blocks that differ
+(`SnapshotMap::overwrite_with`, which walks the paths the two tables do not
+share), and the comparison is constant. Clause work at N = 64 now runs
+1,347, 1,351, 1,353, 1,355, 1,355, 1,355 and 1,357 across the loops: what
+remains is the logarithmic depth of the head's memory-history comparison
+(`record_c_memory_derivation`). The largest clause, 2,266 at N = 64, is the
+first: it pays once for claim-wide setup proportional to the function, and
+no later clause pays it again. `sequential_loops_build_the_same_context_entries_each`
+now also holds the last of twelve clauses to the second's work; the old
+restore made it 1,375 against 1,351.
 
-- About 2 to 7 units per earlier loop, charged where the loop head's state
-  is prepared (`prepare_loop_top_state`): comparing and havocking a memory
-  whose history holds every earlier loop's stores
-  (`record_c_memory_derivation`).
-- Uncharged time, so each loop clause still takes about twice as long at
-  N = 192 as at N = 24: applying the loop's verified rule checks its whole
-  required context, which is the path's context at the loop
-  (`applicable_verified_loop_rule`); a statement that needs a fresh variable
-  collects the variables of the whole context (`statement_kernel_variables`);
-  the loop step copies the path's facts into a list
-  (`PureFactList::from_proof_facts`) and every earlier rule into its
-  environment; and it re-annotates the whole function
+Each loop step also copied the whole grouped proof: binding the loop's
+clause copied the function block, and the block held the claim's whole
+proof script, two tactics per loop. The block now shares it. N = 192
+verifies in 5.3 s instead of 5.7 s.
+
+What remains is uncharged time linear in the earlier loops at each loop, so
+the 192nd loop clause takes about 40 ms where the second takes 14 ms:
+
+- Collecting the variables of the whole path context, for fresh-variable
+  reservations: once when a loop's rule first joins an environment
+  (`collect_verified_loop_rule_variables`), at the loop head's fresh locals
+  (`statement_kernel_variables`), and for the preservation contexts
+  (`c_loop_preservation_contexts_with_mode`); about 8% of N = 192. An exact
+  fix keeps a variable index beside the context's facts.
+- Applying the loop's verified rule checks its whole required context,
+  which is the path's context at the loop (`applicable_verified_loop_rule`).
+- The loop step copies the path's facts into flat lists
+  (`PureFactList::from_proof_facts` and its clones) and every earlier rule
+  into its environment, and re-annotates the whole function
   (`annotated_function_with_assumptions`, about 0.5 ms at every N).
 
 Acceptance: a multi-size regression over `loops` shows each loop clause's

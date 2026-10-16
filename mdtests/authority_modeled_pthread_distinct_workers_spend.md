@@ -23,7 +23,7 @@ int run(void *p, void *q) {
 ```
 
 ```click
-target "x86_64-linux-userspace";
+target "x86_64-unknown-linux-gnu";
 runtime "modeled-pthread";
 verifying "authority_modeled_pthread_distinct_workers_spend.c";
 authorized resource ticket(p: void*) {}

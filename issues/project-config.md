@@ -239,6 +239,15 @@ C++ items were chosen explicitly; the rest are the recommended defaults.
   shape and translate them into project units through shared test helpers;
   `make-fixture.py` reads the project lock and checks the unit's arguments
   against the CMake command.
+- **One target spelling.** C targets are spelled like C++ and Rust: the
+  triple `x86_64-unknown-linux-gnu`, with `"mode": "userspace"` (default) or
+  `"kernel"` in `click.project.json` and `mode "kernel";` in a sidecar. A
+  unit's compiler variables are its `env`; the old unit `environment` field
+  is refused with the new name. The retired single-name targets are refused
+  with their replacement, every C lock records the triple and mode, and the
+  committed C locks were re-locked with byte-identical artifacts. C++ and Rust
+  unit digests do not bind the C target or mode, so their locks are
+  unchanged.
 - **Remaining:** the module root still comes
   from imports rather than the project file; the shared lock envelope; the
   optimization level and flag policy.

@@ -221,7 +221,7 @@ fn pthread_projection_is_not_a_kernel_header() {
     assert!(
         error
             .to_string()
-            .contains("not supported for x86_64-linux-kernel")
+            .contains("not supported for x86_64-unknown-linux-gnu (kernel)")
     );
 }
 
@@ -888,7 +888,8 @@ fn c0_plain_char_qualified_pointee_casts_preserve_read_only_views() {
 
     crate::surface::verify_c0_sources(
         r#"
-        target "x86_64-linux-kernel";
+        target "x86_64-unknown-linux-gnu";
+        mode "kernel";
         verifying "cast.c";
         const char *view(char *p) { ensures result == p; }
         int read(char *p) {
@@ -953,7 +954,8 @@ fn c0_function_declarations_reject_conflicting_pointee_const_parameters() {
 fn c0_plain_char_unsigned_promotion_verifies() {
     crate::surface::verify_c0_sources(
         r#"
-        target "x86_64-linux-kernel";
+        target "x86_64-unknown-linux-gnu";
+        mode "kernel";
         verifying "char.c";
         int promote() { ensures result == 256 by auto; }
         int compare() { ensures result == 1 by auto; }
@@ -979,7 +981,8 @@ fn c0_plain_char_explicit_byte_pointer_casts_preserve_source_identity() {
     }
     crate::surface::verify_c0_sources(
         r#"
-        target "x86_64-linux-kernel";
+        target "x86_64-unknown-linux-gnu";
+        mode "kernel";
         verifying "cast.c";
         int to_char() { ensures result == 255 by auto; }
         int to_byte() { ensures result == 255 by auto; }

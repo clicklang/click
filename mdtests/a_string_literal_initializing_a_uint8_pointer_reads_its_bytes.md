@@ -1,6 +1,6 @@
 # A string literal initializing a `uint8 *` reads its bytes
 
-Under the default x86_64-linux-userspace target plain `char` is signed, so
+Under the default user-space target plain `char` is signed, so
 initializing a `uint8 *` local from a string literal without a cast converts
 between pointers to character types of different signedness. GCC and Clang
 accept it with only a `-Wpointer-sign` warning, and Click lowers it as the

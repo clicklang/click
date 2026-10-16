@@ -63,7 +63,7 @@ for configuration B without validating the new import identity.
 ## Scope and expected design impact
 
 MVR targets one pinned Linux revision, compiler/toolchain, configuration, and
-`x86_64-linux-kernel` target. This is a faithful source-import boundary for that
+`kernel` mode of the `x86_64-unknown-linux-gnu` target. This is a faithful source-import boundary for that
 single configuration. Supporting a compiler/ABI matrix belongs to
 [multiple-compilers.md](multiple-compilers.md).
 

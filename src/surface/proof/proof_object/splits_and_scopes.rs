@@ -1265,10 +1265,13 @@ impl<'a> Proof<'a> {
             // across a call is proved only by the explicit preservation equality a
             // callee's postcondition states. The indexed load-variable chain is
             // the checked bridge for that; integer goals keep the exact rule above.
+            // A same-block pointer equality is that offset equality under its
+            // complete addresses (`ConditionTerm::pointer_offset_sides`).
             if at_frontier
                 && matches!(
                     &body_kernel,
-                    Proposition::ConditionIs(ConditionTerm::PointerOffsetEqual(_, _), true)
+                    Proposition::ConditionIs(condition, true)
+                        if condition.pointer_offset_sides().is_some()
                 )
             {
                 body_facts = body_facts.with_selected_load_equality_bridge(&body_kernel);
