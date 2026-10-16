@@ -785,7 +785,7 @@ fn written_range_fold(form: &StatedForm<'_>) -> Option<WrittenRangeFold> {
 ///
 /// Every variant is listed, so a new one is a compile error here rather than
 /// a subterm a diagnostic silently walks past.
-fn walk_written_expressions(
+pub(in crate::surface) fn walk_written_expressions(
     expression: &ContractExpression,
     visit: &mut impl FnMut(&ContractExpression),
 ) {
