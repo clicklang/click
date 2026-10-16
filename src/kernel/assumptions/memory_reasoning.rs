@@ -1658,7 +1658,10 @@ impl PureFactContext {
         write: &Pointer,
         bytes: u32,
     ) -> Option<(&ResourceContext, Pointer)> {
-        if !self.pointer_offset_aliases.is_empty() || !self.int32_graph_equalities.is_empty() {
+        if self
+            .equality_graph
+            .offset_has_source_dependencies(&write.offset)
+        {
             return None;
         }
         let footprint = self.owned_store_footprint(write, bytes);
@@ -1677,53 +1680,7 @@ impl PureFactContext {
         &self,
         base: &Pointer,
     ) -> Option<BTreeSet<Pointer>> {
-        let mut pending = vec![base.clone()];
-        let mut seen = BTreeSet::new();
-        let mut bases = BTreeSet::new();
-        let mut visited_terms = BTreeSet::new();
-        while let Some(pointer) = pending.pop() {
-            let pointer = parameter_alias_bucket(&pointer);
-            if !seen.insert(pointer.clone()) {
-                continue;
-            }
-            crate::instrumentation::record_deterministic_work(1);
-            if let Some(variable) = parameter_partition_variable(&pointer) {
-                if self
-                    .bitvector64_equality_facts
-                    .contains_key(&Bitvector32Term::Variable(*variable))
-                {
-                    return None;
-                }
-                bases.insert(pointer.clone());
-            }
-            let mut terms: Vec<_> = self
-                .wide_pointer_alias_endpoints_by_object
-                .get(&pointer)
-                .into_iter()
-                .flat_map(|endpoints| endpoints.iter().cloned())
-                .collect();
-            while let Some(term) = terms.pop() {
-                if !visited_terms.insert(term.clone()) {
-                    continue;
-                }
-                crate::instrumentation::record_deterministic_work(1);
-                if let Bitvector32Term::PointerAddress(address) = &term {
-                    pending.push(address.as_ref().clone());
-                }
-                if let Some(neighbors) = self.bitvector64_equality_facts.get(&term) {
-                    terms.extend(neighbors.keys().cloned());
-                }
-            }
-            if let Some(endpoints) = self.pointer_alias_endpoints_by_object.get(&pointer) {
-                for endpoint in endpoints.iter() {
-                    crate::instrumentation::record_deterministic_work(1);
-                    if let Some(aliases) = self.pointer_block_aliases.get(endpoint) {
-                        pending.extend(aliases.keys().cloned());
-                    }
-                }
-            }
-        }
-        Some(bases)
+        self.equality_graph.parameter_store_alias_bases(base)
     }
 
     /// The objects whose addresses known 64-bit equalities connect with the
@@ -1737,40 +1694,7 @@ impl PureFactContext {
         &self,
         pointer: &Pointer,
     ) -> BTreeSet<Pointer> {
-        let mut reached_objects = BTreeSet::new();
-        if self.wide_pointer_alias_endpoints_by_object.is_empty() {
-            return reached_objects;
-        }
-        let mut pending = vec![parameter_alias_bucket(pointer)];
-        let mut seen = BTreeSet::new();
-        let mut visited_terms = BTreeSet::new();
-        while let Some(bucket) = pending.pop() {
-            if !seen.insert(bucket.clone()) {
-                continue;
-            }
-            crate::instrumentation::record_deterministic_work(1);
-            let mut terms: Vec<_> = self
-                .wide_pointer_alias_endpoints_by_object
-                .get(&bucket)
-                .into_iter()
-                .flat_map(|endpoints| endpoints.iter().cloned())
-                .collect();
-            while let Some(term) = terms.pop() {
-                if !visited_terms.insert(term.clone()) {
-                    continue;
-                }
-                crate::instrumentation::record_deterministic_work(1);
-                if let Bitvector32Term::PointerAddress(address) = &term {
-                    let reached = parameter_alias_bucket(address);
-                    reached_objects.insert(reached.clone());
-                    pending.push(reached);
-                }
-                if let Some(neighbors) = self.bitvector64_equality_facts.get(&term) {
-                    terms.extend(neighbors.keys().cloned());
-                }
-            }
-        }
-        reached_objects
+        self.equality_graph.address_connected_objects(pointer)
     }
 
     pub(in crate::kernel) fn parameter_partition_cell_base(
@@ -2859,7 +2783,7 @@ impl PureFactContext {
         // states exactly that (`c_pointer_comparison_condition`). Such a
         // fact files its address endpoints by object, so a context with none
         // filed asks nothing.
-        if !self.wide_pointer_alias_endpoints_by_object.is_empty()
+        if self.equality_graph.has_wide_pointer_sources()
             && self.uint64_values_known_equal(
                 &Bitvector32Term::pointer_address(left.clone()),
                 &Bitvector32Term::pointer_address(right.clone()),
@@ -2883,7 +2807,7 @@ impl PureFactContext {
         right: &Pointer,
         right_bytes: u32,
     ) -> Option<crate::kernel::reasoning::AccessByteOverlap> {
-        if self.wide_pointer_alias_endpoints_by_object.is_empty() {
+        if !self.equality_graph.has_wide_pointer_sources() {
             return None;
         }
         let (left, right) = self.equality_graph.numeric_address_spellings(left, right);
@@ -4817,7 +4741,7 @@ pub(in crate::kernel) struct OwnedStoreFootprint<'a> {
     members: Vec<(&'a ResourceContext, u64, &'a CMemoryRange)>,
 }
 
-fn parameter_partition_variable(base: &Pointer) -> Option<&Variable> {
+pub(in crate::kernel) fn parameter_partition_variable(base: &Pointer) -> Option<&Variable> {
     if base.block != crate::kernel::PointerBlock::ExternalArgument {
         return None;
     }

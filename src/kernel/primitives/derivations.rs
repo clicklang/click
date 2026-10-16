@@ -1229,13 +1229,16 @@ impl PureFactContext {
                 &self.memory_load_condition_facts,
                 &other.memory_load_condition_facts,
             )
-            && std::sync::Arc::ptr_eq(
-                &self.bitvector_equality_facts,
-                &other.bitvector_equality_facts,
-            )
             && self
+                .equality_graph
+                .admitted
+                .scalar_evidence_inputs
+                .shares_root_with(&other.equality_graph.admitted.scalar_evidence_inputs)
+            && self
+                .equality_graph
+                .admitted
                 .bitvector64_equality_facts
-                .shares_root_with(&other.bitvector64_equality_facts)
+                .shares_root_with(&other.equality_graph.admitted.bitvector64_equality_facts)
             && self.prop_facts.ptr_eq(&other.prop_facts)
             && self
                 .resource_compositions

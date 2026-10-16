@@ -7530,7 +7530,9 @@ fn restricted_simp_retains_equal_one_predecessor_zero_path() {
     let position = expansion::position_at_offset(click_source, offset);
     let expanded = expand_c0_tactic_source_at(click_source, &[], position.line, position.column)
         .expect("equal-one predecessor-zero proof should expand");
-    assert!(expanded.contains("rewrite(value == 1)"), "{expanded}");
+    // Shared class folding closes this with the selected premise directly;
+    // an intermediate rewrite is no longer required.
+    assert!(expanded.contains("normalize() using"), "{expanded}");
     assert!(expanded.contains("normalize()"), "{expanded}");
     assert!(!expanded.contains("simp() using"), "{expanded}");
     assert!(!expanded.contains("derive using"), "{expanded}");

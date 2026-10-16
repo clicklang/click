@@ -921,8 +921,14 @@ impl PureFactContext {
         };
         let pinned_constant_equality_evidence = match proposition {
             Proposition::ConditionIs(ConditionTerm::Bitvector32Equal(left, right), true)
-                if self.exact_constant_equalities.get(left.as_ref()).is_some()
-                    || self.exact_constant_equalities.get(right.as_ref()).is_some() =>
+                if self
+                    .equality_graph
+                    .exact_literal_sources(left.as_ref())
+                    .is_some()
+                    || self
+                        .equality_graph
+                        .exact_literal_sources(right.as_ref())
+                        .is_some() =>
             {
                 self.direct_bitvector_equality_evidence(left, right)
                     .map(Box::new)
@@ -3682,7 +3688,7 @@ impl PureFactContext {
         /// the add rule.
         fn order_endpoint_is_theory_sensitive(
             term: &Bitvector32Term,
-            equality_index: &BTreeMap<Bitvector32Term, BTreeMap<Bitvector32Term, Proposition>>,
+            equality_graph: &crate::kernel::equality_graph::EqualityGraph,
         ) -> bool {
             let mut pending = vec![term.clone()];
             while let Some(term) = pending.pop() {
@@ -3695,7 +3701,7 @@ impl PureFactContext {
                         let mut constant = 0u32;
                         collect_order_index_add_terms(&term, &mut addends, &mut constant);
                         for addend in addends {
-                            if equality_index.contains_key(&equality_graph_term_key(&addend)) {
+                            if equality_graph.has_scalar_evidence(&addend) {
                                 return true;
                             }
                             pending.push(addend);
@@ -3803,7 +3809,7 @@ impl PureFactContext {
         /// walked.
         fn key_component(
             key: Bitvector32Term,
-            equality_index: &BTreeMap<Bitvector32Term, BTreeMap<Bitvector32Term, Proposition>>,
+            equality_graph: &crate::kernel::equality_graph::EqualityGraph,
             class_of_key: &mut BTreeMap<Bitvector32Term, usize>,
             next_class: &mut usize,
         ) -> usize {
@@ -3812,20 +3818,15 @@ impl PureFactContext {
             }
             let class = *next_class;
             *next_class += 1;
-            let mut stack = vec![key];
-            while let Some(term) = stack.pop() {
+            let members = equality_graph.scalar_evidence_class(&key);
+            for term in std::iter::once(key).chain(members) {
                 crate::instrumentation::record_deterministic_work(1);
-                if class_of_key.insert(term.clone(), class).is_some() {
-                    continue;
-                }
-                if let Some(neighbors) = equality_index.get(&term) {
-                    stack.extend(neighbors.keys().cloned());
-                }
+                class_of_key.insert(term, class);
             }
             class
         }
 
-        let equality_index = self.bitvector_equality_index();
+        let equality_index = &self.equality_graph;
         let mut class_of_key = BTreeMap::<Bitvector32Term, usize>::new();
         let mut next_class = 0usize;
         let mut merged = ClassMerge(Vec::new());
