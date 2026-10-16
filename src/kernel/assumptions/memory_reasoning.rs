@@ -1726,23 +1726,22 @@ impl PureFactContext {
         Some(bases)
     }
 
-    /// Whether known 64-bit equalities connect the address of an object
-    /// `left` points into with the address of one `right` points into. A C
-    /// pointer comparison states such an equality and not a pointer
-    /// equality, and memory is addressed, so a store through one may write
-    /// the other's bytes: a cached cell of the other object is not kept by
-    /// separation once they are connected. The walk follows only the
-    /// equalities filed under the objects it reaches.
-    pub(in crate::kernel) fn address_equalities_connect(
+    /// The objects whose addresses known 64-bit equalities connect with the
+    /// address of the object `pointer` points into. A C pointer comparison
+    /// states such an equality and not a pointer equality, and memory is
+    /// addressed, so a store through `pointer` may write the bytes of any
+    /// object returned here: separation keeps none of their cached cells.
+    /// Computed once per store; the walk follows only the equalities filed
+    /// under the objects it reaches.
+    pub(in crate::kernel) fn address_connected_objects(
         &self,
-        left: &Pointer,
-        right: &Pointer,
-    ) -> bool {
+        pointer: &Pointer,
+    ) -> BTreeSet<Pointer> {
+        let mut reached_objects = BTreeSet::new();
         if self.wide_pointer_alias_endpoints_by_object.is_empty() {
-            return false;
+            return reached_objects;
         }
-        let target = parameter_alias_bucket(right);
-        let mut pending = vec![parameter_alias_bucket(left)];
+        let mut pending = vec![parameter_alias_bucket(pointer)];
         let mut seen = BTreeSet::new();
         let mut visited_terms = BTreeSet::new();
         while let Some(bucket) = pending.pop() {
@@ -1763,9 +1762,7 @@ impl PureFactContext {
                 crate::instrumentation::record_deterministic_work(1);
                 if let Bitvector32Term::PointerAddress(address) = &term {
                     let reached = parameter_alias_bucket(address);
-                    if reached == target {
-                        return true;
-                    }
+                    reached_objects.insert(reached.clone());
                     pending.push(reached);
                 }
                 if let Some(neighbors) = self.bitvector64_equality_facts.get(&term) {
@@ -1773,7 +1770,7 @@ impl PureFactContext {
                 }
             }
         }
-        false
+        reached_objects
     }
 
     pub(in crate::kernel) fn parameter_partition_cell_base(
@@ -2851,11 +2848,15 @@ impl PureFactContext {
         }
         // Memory is addressed: two pointers with equal addresses name the
         // same bytes, whatever objects they designate. A C pointer comparison
-        // states exactly that (`c_pointer_comparison_condition`).
-        if self.uint64_values_known_equal(
-            &Bitvector32Term::pointer_address(left.clone()),
-            &Bitvector32Term::pointer_address(right.clone()),
-        ) {
+        // states exactly that (`c_pointer_comparison_condition`). Such a
+        // fact files its address endpoints by object, so a context with none
+        // filed asks nothing.
+        if !self.wide_pointer_alias_endpoints_by_object.is_empty()
+            && self.uint64_values_known_equal(
+                &Bitvector32Term::pointer_address(left.clone()),
+                &Bitvector32Term::pointer_address(right.clone()),
+            )
+        {
             return true;
         }
         if left.blocks_proven_distinct(right) {
@@ -4807,7 +4808,7 @@ fn parameter_partition_variable(base: &Pointer) -> Option<&Variable> {
     .then_some(variable)
 }
 
-pub(super) fn parameter_alias_bucket(pointer: &Pointer) -> Pointer {
+pub(in crate::kernel) fn parameter_alias_bucket(pointer: &Pointer) -> Pointer {
     let mut stem = &pointer.offset;
     if pointer.block != crate::kernel::PointerBlock::ExternalArgument {
         return Pointer {
