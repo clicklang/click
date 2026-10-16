@@ -170,10 +170,10 @@ pub(crate) fn normalize_using_conditions(
     > = std::collections::HashMap::new();
     for (index, premise) in premises.iter().enumerate() {
         if !crate::kernel::proposition_holds_without_facts(premise)
-            && !facts.contains(premise)
+            && !facts.available(premise)
             && !condition_polarity_forms(premise)
                 .iter()
-                .any(|form| facts.contains(form))
+                .any(|form| facts.available(form))
         {
             return Err(ConditionalNormalizationError::UnavailablePremise(index));
         }
@@ -267,68 +267,50 @@ pub(crate) fn normalize_using_conditions(
             }
         }
     }
+    // Build the index for the explicit premise selection once. Ordinary
+    // condition rewrites retain their direct indexed lookup and never build
+    // a graph from an ambient map.
+    let mut selected = PureFactContext::new();
+    for (condition, value) in &conditions {
+        crate::instrumentation::record_deterministic_work(1);
+        selected = selected.assume_condition(condition.clone(), *value);
+    }
     if let Some((ConditionTerm::Bitvector64Equal(left, right), true)) =
         crate::kernel::spec::proposition_as_single_condition(goal)
+        && crate::kernel::memory_provenance::wide_read_has_recorded_value(&left, &right, &selected)
     {
-        let mut selected = PureFactContext::new();
-        for (condition, value) in &conditions {
-            crate::instrumentation::record_deterministic_work(1);
-            selected = selected.assume_condition(condition.clone(), *value);
-        }
-        if crate::kernel::memory_provenance::wide_read_has_recorded_value(&left, &right, &selected)
-        {
-            return Ok(());
-        }
+        return Ok(());
     }
     if let Some((ConditionTerm::PointerEqual(left, right), true)) =
         crate::kernel::spec::proposition_as_single_condition(goal)
-    {
-        let mut selected = PureFactContext::new();
-        for (condition, value) in &conditions {
-            crate::instrumentation::record_deterministic_work(1);
-            selected = selected.assume_condition(condition.clone(), *value);
-        }
-        if crate::kernel::memory_provenance::pointer_read_has_recorded_value(
+        && crate::kernel::memory_provenance::pointer_read_has_recorded_value(
             &left, &right, &selected,
-        ) {
-            return Ok(());
-        }
+        )
+    {
+        return Ok(());
     }
     if let Some((condition, true)) = crate::kernel::spec::proposition_as_single_condition(goal)
         && let Some((left, right)) = condition.pointer_offset_sides()
-    {
-        let mut selected = PureFactContext::new();
-        for (condition, value) in &conditions {
-            crate::instrumentation::record_deterministic_work(1);
-            selected = selected.assume_condition(condition.clone(), *value);
-        }
-        if crate::kernel::memory_provenance::pointer_offset_read_has_recorded_value(
+        && (crate::kernel::memory_provenance::pointer_offset_read_has_recorded_value(
             left, right, &selected,
         ) || crate::kernel::reasoning::memory_resolution::pointer_offsets_proven_equal_for_memory_resolution(
             left, right, &selected,
-        ) {
-            return Ok(());
-        }
+        ))
+    {
+        return Ok(());
     }
-    let reduced = super::term_rewrite::TermRewrite::for_conditions_with_graph(
+    let reduced = super::term_rewrite::TermRewrite::for_cited_conditions_with_graph(
         &conditions,
+        &selected.equality_graph,
         &facts.assumptions().equality_graph,
     )
     .proposition(goal);
-    // Check constant uint64 upper bounds from the cited order edges only.
-    // Construct this index once for this atomic query; no ambient scan or
-    // per-expression reconstruction is involved.
+    // Check constant uint64 upper bounds from the same cited order edges.
     if let Some((condition, true)) = crate::kernel::spec::proposition_as_single_condition(&reduced)
         && matches!(&condition, ConditionTerm::Bitvector64UnsignedLessEqual(_, right) if right.uint64_as_const().is_some())
+        && selected.decide(&condition) == Some(true)
     {
-        let mut selected = PureFactContext::new();
-        for (condition, value) in &conditions {
-            crate::instrumentation::record_deterministic_work(1);
-            selected = selected.assume_condition(condition.clone(), *value);
-        }
-        if selected.decide(&condition) == Some(true) {
-            return Ok(());
-        }
+        return Ok(());
     }
     normalizes_context_free_leaf(&reduced)
         .then_some(())
@@ -2870,5 +2852,192 @@ mod range_width_snapshot_tests {
             &separation(4),
             &PureFactContext::new()
         ));
+    }
+}
+
+#[cfg(test)]
+mod annotated_address_condition_tests {
+    use super::*;
+
+    fn comparison(annotated: bool) -> ConditionTerm {
+        use crate::kernel::effective_type::{CAccessClass, CScalarClass};
+        let address = |id| {
+            Bitvector32Term::object_pointer_address(
+                Pointer::symbolic(Variable(id)),
+                annotated.then_some(CAccessClass::Scalar(CScalarClass::Int)),
+            )
+        };
+        ConditionTerm::uint64_equal(address(981_020), address(981_021))
+    }
+
+    fn choice(condition: ConditionTerm, value: bool) -> Proposition {
+        Proposition::ConditionIs(
+            ConditionTerm::equal(
+                Bitvector32Term::If {
+                    condition: Box::new(condition),
+                    then_term: Box::new(Bitvector32Term::Constant(1)),
+                    else_term: Box::new(Bitvector32Term::Constant(0)),
+                },
+                Bitvector32Term::Constant(u32::from(value)),
+            ),
+            true,
+        )
+    }
+
+    #[test]
+    fn annotated_address_truth_uses_the_shared_index_and_stays_scoped() {
+        let _session = VerificationSession::enter();
+        for annotated in [false, true] {
+            for value in [false, true] {
+                let source = Proposition::ConditionIs(comparison(annotated), value);
+                let parent = PureFactContext::new();
+                let branch = parent.clone().assume_proposition(source.clone());
+                let queried = comparison(!annotated);
+                assert_eq!(branch.decide(&queried), Some(value));
+                assert_eq!(branch.decide_condition_for_simp(&queried), Some(value));
+                for context in [
+                    parent,
+                    branch.without_exact_fact(&source),
+                    branch.restricted_to_facts(&[], &[]),
+                ] {
+                    assert_eq!(context.decide(&queried), None);
+                    assert_eq!(context.decide_condition_for_simp(&queried), None);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn compound_address_facts_keep_the_same_candidate_and_checked_match() {
+        let _session = VerificationSession::enter();
+        let wrapped = |annotated, value| {
+            Proposition::Implies(
+                Box::new(Proposition::ConditionIs(
+                    ConditionTerm::Constant(true),
+                    true,
+                )),
+                Box::new(Proposition::ConditionIs(comparison(annotated), value)),
+            )
+        };
+        for annotated in [false, true] {
+            for value in [false, true] {
+                let source = wrapped(annotated, value);
+                let target = wrapped(!annotated, value);
+                let facts =
+                    crate::kernel::proof::ProofFacts::from_ordered(std::slice::from_ref(&source));
+                assert_eq!(
+                    super::super::fact_keys::snapshot_blind_proposition_key(&source),
+                    super::super::fact_keys::snapshot_blind_proposition_key(&target),
+                );
+                assert!(condition_bridged_fact_is_available(
+                    &target,
+                    std::slice::from_ref(&source),
+                    facts.assumptions(),
+                ));
+                assert!(facts.available_across_effects(&target, &ExecutionFacts::new()));
+                assert!(!facts.available_across_effects(
+                    &wrapped(!annotated, !value),
+                    &ExecutionFacts::new()
+                ));
+                assert!(
+                    !crate::kernel::proof::ProofFacts::default()
+                        .available_across_effects(&target, &ExecutionFacts::new(),)
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn annotated_address_candidates_do_not_erase_changed_index_reads() {
+        let _session = VerificationSession::enter();
+        let cell = Pointer {
+            block: "annotated-address-index".into(),
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        let before = intern_c_memory(
+            CMemory::new()
+                .with_block("annotated-address-index", 4)
+                .store(cell.clone(), CValue::Int32(Bitvector32Term::Constant(0))),
+        );
+        let after = intern_c_memory(
+            before
+                .memory()
+                .clone()
+                .store(cell.clone(), CValue::Int32(Bitvector32Term::Constant(1))),
+        );
+        let fact = |memory: SharedCMemory, annotated: bool| {
+            use crate::kernel::effective_type::{CAccessClass, CScalarClass};
+            let pointer = Pointer {
+                block: "annotated-address-target".into(),
+                offset: PointerOffsetTerm::scale_int32(
+                    Bitvector32Term::MemoryLoad(memory, Box::new(cell.clone()), LoadKind::Bits32),
+                    1,
+                ),
+            };
+            Proposition::Implies(
+                Box::new(Proposition::ConditionIs(
+                    ConditionTerm::Constant(true),
+                    true,
+                )),
+                Box::new(Proposition::ConditionIs(
+                    ConditionTerm::uint64_equal(
+                        Bitvector32Term::object_pointer_address(
+                            pointer,
+                            annotated.then_some(CAccessClass::Scalar(CScalarClass::Int)),
+                        ),
+                        Bitvector32Term::pointer_address(Pointer {
+                            block: "annotated-address-target".into(),
+                            offset: PointerOffsetTerm::Constant(0),
+                        }),
+                    ),
+                    true,
+                )),
+            )
+        };
+        let source = fact(before, false);
+        let target = fact(after, true);
+        let key = super::super::fact_keys::snapshot_blind_proposition_key(&target);
+        assert_eq!(
+            key,
+            super::super::fact_keys::snapshot_blind_proposition_key(&source)
+        );
+        assert!(key.requires_checked_match());
+        let facts = crate::kernel::proof::ProofFacts::from_ordered(&[source]);
+        assert!(!facts.available_across_effects(&target, &ExecutionFacts::new()));
+    }
+
+    #[test]
+    fn normalize_cites_either_address_spelling_without_importing_ambient_negations() {
+        let _session = VerificationSession::enter();
+        for annotated in [false, true] {
+            for value in [false, true] {
+                let source = Proposition::ConditionIs(comparison(annotated), value);
+                let cited = Proposition::ConditionIs(comparison(!annotated), value);
+                let facts = crate::kernel::proof::ProofFacts::from_ordered(&[source]);
+                let goal = choice(comparison(annotated), value);
+                normalize_using_conditions(&goal, std::slice::from_ref(&cited), &facts).unwrap();
+                assert!(matches!(
+                    normalize_using_conditions(
+                        &goal,
+                        &[cited],
+                        &crate::kernel::proof::ProofFacts::from_ordered(&[])
+                    ),
+                    Err(ConditionalNormalizationError::UnavailablePremise(0))
+                ));
+                if !value {
+                    assert!(
+                        normalize_using_conditions(&goal, &[], &facts).is_err(),
+                        "an uncited negative condition is not an equality"
+                    );
+                }
+            }
+        }
+    }
+
+    #[cfg(test)]
+    mod scaling_tests {
+        include!(
+            "../../scaling_tests/kernel/proof/fact_reasoning/annotated_address_condition_tests.rs"
+        );
     }
 }

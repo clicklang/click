@@ -232,6 +232,16 @@ expressions use the complete pointer address class. No cancellation,
 injectivity, arithmetic definedness, or memory access permission follows.
 Unsupported constructors remain opaque.
 
+Pointer-to-word casts also retain the source pointer's checked object class
+when one is known. This annotation is part of the stored address term, so
+memory storage and substitution preserve it without a global address-to-class
+registry. Annotated and unannotated addresses register the same numeric
+application in equality closure. The supported tag operations carry the
+annotation to decoding; an integer-to-pointer cast restores the original
+class, never the destination type's class. A bare address remains unclassified,
+and unavailable or withdrawn origin evidence cannot supply a class. Loop
+object-class joins and incompatible-access checks remain in force.
+
 A `Bits64` read uses its registered defining snapshot and complete address,
 with an eight-byte producer-width check for named scalar reads. It is a
 separate application sort from pointer reads and int32 values. Equal addresses

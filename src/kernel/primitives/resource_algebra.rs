@@ -489,9 +489,9 @@ impl ResourceContextIndex {
                     insert_resource_index_entry(&result.iterated_by_block, second.clone(), entry);
             }
         }
-        result.fact_hash = result
-            .fact_hash
-            .wrapping_add(resource_fact_content_hash(fact));
+        let hash = resource_fact_content_hash(fact);
+        result.fact_hash = result.fact_hash.wrapping_add(hash);
+        result.canonical = result.canonical.with_inserted(fact, hash);
         result.exact = insert_resource_index_entry(&result.exact, fact.clone(), entry);
         result.by_resource =
             insert_resource_index_entry(&result.by_resource, fact.resource().clone(), entry);
@@ -750,9 +750,9 @@ impl ResourceContextIndex {
                     remove_resource_index_entry(&result.iterated_by_block, second, entry);
             }
         }
-        result.fact_hash = result
-            .fact_hash
-            .wrapping_sub(resource_fact_content_hash(fact));
+        let hash = resource_fact_content_hash(fact);
+        result.fact_hash = result.fact_hash.wrapping_sub(hash);
+        result.canonical = result.canonical.without_one(fact, hash);
         result.exact = remove_resource_index_entry(&result.exact, fact, entry);
         result.by_resource =
             remove_resource_index_entry(&result.by_resource, fact.resource(), entry);
@@ -1188,7 +1188,8 @@ fn collect_memory_load_work<'a>(
                         ));
                         work.push(MemoryLoadFootprintWork::Offset(&pointer.offset, depth + 1));
                     }
-                    Bitvector32Term::PointerAddress(pointer) => {
+                    Bitvector32Term::PointerAddress(pointer)
+                    | Bitvector32Term::ObjectPointerAddress(pointer, _) => {
                         work.push(MemoryLoadFootprintWork::Offset(&pointer.offset, depth + 1));
                     }
                     crate::kernel::binary_machine_term!(left, right)

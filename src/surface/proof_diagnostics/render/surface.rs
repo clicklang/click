@@ -1377,7 +1377,7 @@ impl Printer<'_> {
                     spelled_arms.join(", ")
                 )))
             }
-            B::PointerAddress(pointer) => {
+            B::PointerAddress(pointer) | B::ObjectPointerAddress(pointer, _) => {
                 let pointer = self.pointer(pointer, depth)?;
                 Some(cast("uint64", pointer))
             }

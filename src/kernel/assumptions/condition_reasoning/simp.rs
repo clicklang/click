@@ -2,7 +2,7 @@ use super::*;
 
 impl PureFactContext {
     pub(crate) fn decide_condition_for_simp(&self, condition: &ConditionTerm) -> Option<bool> {
-        if let Some(value) = self.exact_condition_value(condition) {
+        if let Some(value) = self.known_condition_value(condition) {
             return Some(value);
         }
         if let Some(value) = self
@@ -234,7 +234,7 @@ impl PureFactContext {
         &self,
         condition: &ConditionTerm,
     ) -> Option<bool> {
-        if let Some(value) = self.exact_condition_value(condition) {
+        if let Some(value) = self.known_condition_value(condition) {
             return Some(value);
         }
         if let Some(value) = self

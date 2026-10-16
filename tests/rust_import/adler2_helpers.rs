@@ -219,7 +219,13 @@ fn charon_adler2_helpers_prove_all_lanes_and_lock_original_modules() {
     C0VerificationSession::new_program_prepared(helper_library(), &prepared).unwrap();
     // Module identity is checked even when all the proved helpers are unchanged.
     fs::write(p.root.join("src/lib.rs"), "// changed crate root\n").unwrap();
-    assert!(p.prepared().unwrap_err().contains("lock differs"));
+    let error = p.prepared().unwrap_err();
+    assert!(
+        error.contains("Rust source")
+            && error.contains("src/lib.rs")
+            && error.contains("differs from its import lock"),
+        "{error}"
+    );
 }
 
 #[test]
@@ -2887,7 +2893,12 @@ fn charon_adler2_resumed_client_live_refresh_checks_the_input_closure() {
     .unwrap();
     fs::write(p.root.join("resumed.rs"), "pub fn different() {}\n").unwrap();
     let error = p.prepared().unwrap_err();
-    assert!(error.contains("lock differs from its inputs"), "{error}");
+    assert!(
+        error.contains("Rust source")
+            && error.contains("resumed.rs")
+            && error.contains("differs from its import lock"),
+        "{error}"
+    );
 }
 
 #[test]
@@ -2976,7 +2987,12 @@ fn charon_adler2_incremental_client_live_refresh_checks_the_input_closure() {
     .unwrap();
     fs::write(p.root.join("incremental.rs"), "pub fn different() {}\n").unwrap();
     let error = p.prepared().unwrap_err();
-    assert!(error.contains("lock differs from its inputs"), "{error}");
+    assert!(
+        error.contains("Rust source")
+            && error.contains("incremental.rs")
+            && error.contains("differs from its import lock"),
+        "{error}"
+    );
 }
 
 #[test]
