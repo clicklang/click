@@ -3425,7 +3425,11 @@ under the LP64 profile. It is the spec spelling of the C cast
 `(unsigned long) pointer` and denotes the same kernel term: the address keeps
 the exact source pointer. `address(p) == address(q)` holds when `p == q`
 does, but not conversely: it is what a C comparison between pointers states,
-and it carries no permission from one pointer to the other.
+and it carries no permission from one pointer to the other. A contract
+`p == q` also compares the subobjects that pointers formed by C member
+access designate: a call cannot satisfy `requires q == p` with the arguments
+`&pair->first + 1` and `&pair->second`, though their addresses are equal.
+Member addresses written in a contract carry no subobject yet.
 `address(p) == 0` is decided as `p == 0`, and a comparison with an integer
 that has no pointer origin stays undecided. Rewriting the pointer to null reduces
 its address to `uint64` zero, also inside arithmetic with symbolic operands.
