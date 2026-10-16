@@ -3,6 +3,7 @@
 # Using Click
 
 - [Start here](index.md)
+- [Frequently asked questions](faq.md)
 - [What Click proves](concepts/what-click-proves.md)
 - [What Click trusts](concepts/trust.md)
 - [Language coverage](reference/coverage.md)

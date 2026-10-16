@@ -20,7 +20,7 @@ use click::cli::{
 use click::instrumentation::VerificationPhase;
 use click::languages::c::source as c_source;
 use click::languages::c::target::CTarget;
-use click::surface::rust_display_name;
+use click::surface::source_display_name;
 #[cfg(test)]
 use click::surface::verify_c0_sources;
 use click::surface::{
@@ -834,12 +834,12 @@ fn trace_unit(
 ) -> Result<TraceUnit, String> {
     let names =
         project_selected_proof_names(project, &inputs.program_inputs()).map_err(click_message)?;
-    // A Rust item is named by its path, `quad::walk`, or by the name the
-    // importer gives it.
+    // A Rust item or a C++ declaration is named by its path, `quad::walk` or
+    // `Square::area`, or by the name the importer gives it.
     let selects = |kind: &str, name: &str| {
         names.iter().find_map(|selected| {
             let selected = selected.strip_prefix(kind)?.strip_prefix(':')?;
-            (selected == name || rust_display_name(selected).as_deref() == Some(name))
+            (selected == name || source_display_name(selected).as_deref() == Some(name))
                 .then(|| selected.to_owned())
         })
     };

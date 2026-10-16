@@ -1612,3 +1612,15 @@ closure work through real read/fold consumers, with checked evidence, scaling
 regressions, and the full gate passing. That creates bounded consumer migrations
 against stable APIs. Bitvectors, algebraic terms, provenance changes, and
 certificate changes still require design review when reached.
+
+Complete pointer comparisons retain their common base rather than becoming
+bare offset comparisons. The pointer disequality dispatcher reads the stated
+nonempty-range separation index for that form too. Common-block anchors use
+the existing offset-pair key; different symbolic blocks use a complete-pointer
+pair key, since separating different objects does not distinguish their
+numerical offsets. Both indexes retain the exact source proposition and track
+its insertion, withdrawal, restriction, and test rebuild. Empty or unresolved
+ranges add no anchor evidence. C condition decisions and proof-side known-fact
+lookup (including `assumption()`) share this indexed rule. The latter also
+handles negated pointer equality and retains the exact separation premise;
+it performs no owned-composition scan, alias search, or unfolding.

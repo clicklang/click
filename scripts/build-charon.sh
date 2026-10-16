@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Pinned compiler dependency for the required live Charon gate.
+# Build the pinned Rust frontend for live extraction and release packaging.
+# Live extraction tests run in the nightly suite or with check.sh --charon-live.
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 # Keep this usable by the system Bash 3.2 on macOS.

@@ -1,6 +1,38 @@
 use super::*;
 
 #[test]
+fn callback_sources_keep_field_names_through_subobject_lowering() {
+    let functions = syntax::parse_functions_for_source(
+        r#"
+        struct callbacks {
+            void (*propagate)(int32* p);
+            void (*copy)(int32* p);
+        };
+        struct owner { struct callbacks* callbacks; };
+        void first(struct callbacks* cb, int32* p) { cb->propagate(p); }
+        void later(struct callbacks* cb, int32* p) { cb->copy(p); }
+        void nested(struct owner* owner, int32* p) { owner->callbacks->copy(p); }
+        "#,
+        "callback-names.c",
+    )
+    .unwrap();
+    for (function, expected) in
+        functions
+            .iter()
+            .zip(["cb->propagate", "cb->copy", "owner->callbacks->copy"])
+    {
+        let sources = function.callback_statement_sources();
+        assert_eq!(sources.len(), 1, "{}", function.name());
+        let source = sources.values().next().unwrap();
+        assert_eq!(
+            crate::surface::diagnostics::describe_callback_source(source),
+            expected
+        );
+    }
+    assert_eq!(functions.len(), 3);
+}
+
+#[test]
 fn implicit_loop_closure_is_smart_while_written_closure_is_simple() {
     use crate::instrumentation::{VerificationEvent, collect};
     let c = "int f(int n) { while (n > 0) { n = n - 1; } return n; }";
@@ -3469,5 +3501,47 @@ fn auto_have_failure_trace_retains_checked_call_prefix() {
         );
         assert!(!trace.contains("adds: x == 2"), "{trace}");
         assert!(!trace.contains("<no checked simple steps"), "{trace}");
+    });
+}
+
+#[test]
+fn budget_stopped_transport_retains_its_checked_loop_prefix() {
+    use crate::instrumentation::{TacticWorkLimits, with_tactic_work_limits};
+    let source = r#"verifying "f.c";
+        void f(int32 *p) { owns p[0]; requires p[0] == 7; ensures true; } by {
+            loop {
+                owns p[0];
+                invariant p[0] == 7;
+                decreases 0;
+                initialize by { assumption(); }
+                preserve by {
+                    mark before;
+                    step();
+                    transport(at(before, p[0] == 7), p[0] == 7);
+                    step();
+                }
+            }
+            execute(); normalize();
+        }
+    "#;
+    with_proof_trace("f", || {
+        let error = with_tactic_work_limits(
+            TacticWorkLimits {
+                smart: 0,
+                ..TacticWorkLimits::default()
+            },
+            || {
+                verify_c0_sources(
+                    source,
+                    &[("f.c", "void f(int32 *p) { while (1) { *p = 9; break; } }")],
+                )
+            },
+        )
+        .expect_err("the written smart transport has no work allowance");
+        assert!(error.message().contains("budget"), "{}", error.message());
+        let trace = error
+            .trace_context_report()
+            .expect("attach the checked predecessor even on a budget error");
+        assert!(trace.contains("steps through: *p = 9"), "{trace}");
     });
 }

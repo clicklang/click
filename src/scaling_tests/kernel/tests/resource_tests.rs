@@ -2853,8 +2853,7 @@ fn observable_projection_with_one_owner_and_borrow_does_not_scan_views() {
 /// A base with N stated aliases (`q_i == b`, as a function requiring N
 /// parameters equal to one it owns) must not cost N² to validate: every
 /// alias's related roots are the same recorded-equality class, so walking
-/// it once per alias re-walked one N-member class N times
-/// (`bugs/call-step-grows-with-stated-pointer-aliases.md`).
+/// it once per alias re-walked one N-member class N times.
 #[test]
 fn owned_range_validity_is_linear_in_stated_aliases_of_its_base() {
     let parameter = |id: u64| Pointer {

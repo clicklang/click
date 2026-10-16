@@ -2204,6 +2204,7 @@ fn verify_c0_sources_in_context(
                 Some(VerificationTarget::Function(function_name)) => {
                     verification_required_functions(&file, &parsed_sources, function_name)?;
                     Some(with_modeled_pthread_workers(
+                        &file,
                         BTreeSet::from([function_name.clone()]),
                         &parsed_sources,
                         file.selected_thread_runtime(),
@@ -2214,6 +2215,7 @@ fn verify_c0_sources_in_context(
                         verification_required_functions(&file, &parsed_sources, function_name)?;
                     }
                     Some(with_modeled_pthread_workers(
+                        &file,
                         function_names.clone(),
                         &parsed_sources,
                         file.selected_thread_runtime(),
@@ -2256,7 +2258,7 @@ fn verify_c0_sources_in_context(
     // function has. Every termination table the kernel reads is keyed by that
     // executing name, so a helper's own ranked loop is planned where its body
     // runs instead of under a spelling no call graph mentions.
-    let termination_kernel_names = executing_function_names(&parsed_sources);
+    let termination_kernel_names = executing_function_names(&parsed_sources, &file)?;
     let (mut termination_plans, mut requested_termination) = c_function_termination_plans(
         &file,
         selected_functions.as_ref(),
@@ -2502,11 +2504,13 @@ fn verify_c0_sources_in_context(
             if function_block.is_external() {
                 continue;
             }
-            if let Some((_, _, parsed)) =
-                parsed_function_for_source_name(&parsed_sources, function_block.signature().name())?
-                && c0_statement_calls(parsed)
-                    .iter()
-                    .any(|calls| calls.contains("pthread_create"))
+            if let Some((_, _, parsed)) = parsed_function_for_source_name(
+                &parsed_sources,
+                function_block.signature().name(),
+                Some(function_block.signature()),
+            )? && c0_statement_calls(parsed)
+                .iter()
+                .any(|calls| calls.contains("pthread_create"))
             {
                 create_callers.insert(function_block.signature().name().to_string());
             }
@@ -2536,9 +2540,12 @@ fn verify_c0_sources_in_context(
             == crate::languages::c::thread_runtime::CThreadRuntime::ModeledPthread
             && !early_thread_termination_published
         {
-            let (_, _, parsed) =
-                parsed_function_for_source_name(&parsed_sources, function_block.signature.name())?
-                    .ok_or_else(|| ClickError::new("modeled pthread caller has no C definition"))?;
+            let (_, _, parsed) = parsed_function_for_source_name(
+                &parsed_sources,
+                function_block.signature.name(),
+                Some(function_block.signature()),
+            )?
+            .ok_or_else(|| ClickError::new("modeled pthread caller has no C definition"))?;
             if c0_statement_calls(parsed)
                 .iter()
                 .any(|calls| calls.contains("pthread_create"))
@@ -2602,14 +2609,17 @@ fn verify_c0_sources_in_context(
         // of each binder this function declares.
         crate::surface::lowering::register_entry_model_fields(&function_block);
         let function_timing_start = std::time::Instant::now();
-        let (_, source_path, parsed_function) =
-            parsed_function_for_source_name(&parsed_sources, function_block.signature.name())?
-                .ok_or_else(|| {
-                    ClickError::new(format!(
-                        "`{}` is not defined by any `verifying` source",
-                        function_block.signature.name()
-                    ))
-                })?;
+        let (_, source_path, parsed_function) = parsed_function_for_source_name(
+            &parsed_sources,
+            function_block.signature.name(),
+            Some(function_block.signature()),
+        )?
+        .ok_or_else(|| {
+            ClickError::new(format!(
+                "`{}` is not defined by any `verifying` source",
+                function_block.signature.name()
+            ))
+        })?;
         check_signature(
             &function_block.signature,
             function_block.witness_count(),
@@ -3774,8 +3784,11 @@ pub(in crate::surface) fn tactic_expansion_required_functions(
             claim.describe()
         ))
     })?;
-    let Some((kernel_name, _, parsed)) =
-        parsed_function_for_source_name(parsed_sources, &function_name)?
+    let Some((kernel_name, _, parsed)) = parsed_function_for_source_name(
+        parsed_sources,
+        &function_name,
+        Some(function_block.signature()),
+    )?
     else {
         return Err(ClickError::new(format!(
             "no C source defines `{function_name}`"
@@ -3815,9 +3828,16 @@ pub(in crate::surface) fn tactic_expansion_dependency_context(
         return Ok(None);
     }
 
-    let root_kernel_name = parsed_function_for_source_name(&parsed_sources, function_name)?
-        .map(|(kernel_name, _, _)| kernel_name.clone())
-        .ok_or_else(|| ClickError::new(format!("no C source defines `{function_name}`")))?;
+    let root_kernel_name = parsed_function_for_source_name(
+        &parsed_sources,
+        function_name,
+        file.function_blocks()
+            .iter()
+            .find(|block| block.signature().name() == function_name)
+            .map(FunctionBlock::signature),
+    )?
+    .map(|(kernel_name, _, _)| kernel_name.clone())
+    .ok_or_else(|| ClickError::new(format!("no C source defines `{function_name}`")))?;
     let mut paths = BTreeMap::from([(root_kernel_name.clone(), vec![function_name.clone()])]);
     let mut pending = vec![root_kernel_name];
     let mut cursor = 0;
@@ -3882,9 +3902,14 @@ fn verification_required_functions_with_blocks(
         )));
     }
     let mut required = BTreeSet::new();
-    let mut pending = if let Some((kernel_name, _, _)) =
-        parsed_function_for_source_name(parsed_sources, function_name)?
-    {
+    let mut pending = if let Some((kernel_name, _, _)) = parsed_function_for_source_name(
+        parsed_sources,
+        function_name,
+        function_blocks
+            .iter()
+            .find(|block| block.signature().name() == function_name)
+            .map(FunctionBlock::signature),
+    )? {
         vec![kernel_name.clone()]
     } else if function_blocks
         .iter()
@@ -4193,6 +4218,7 @@ fn modeled_pthread_create_workers(function: &syntax::C0Function) -> BTreeSet<Str
 }
 
 fn with_modeled_pthread_workers(
+    file: &ClickFile,
     mut selected: BTreeSet<String>,
     parsed_sources: &BTreeMap<String, (String, syntax::C0Function)>,
     runtime: crate::languages::c::thread_runtime::CThreadRuntime,
@@ -4200,7 +4226,14 @@ fn with_modeled_pthread_workers(
     if runtime == crate::languages::c::thread_runtime::CThreadRuntime::ModeledPthread {
         let mut workers = BTreeSet::new();
         for name in &selected {
-            if let Some((_, _, parsed)) = parsed_function_for_source_name(parsed_sources, name)? {
+            if let Some((_, _, parsed)) = parsed_function_for_source_name(
+                parsed_sources,
+                name,
+                file.function_blocks()
+                    .iter()
+                    .find(|block| block.signature().name() == name)
+                    .map(FunctionBlock::signature),
+            )? {
                 workers.extend(modeled_pthread_create_workers(parsed));
             }
         }
@@ -4879,10 +4912,13 @@ pub(in crate::surface) fn loop_termination_measure(
 /// function maps to itself and is left out of the map.
 pub(in crate::surface) fn executing_function_names(
     parsed_sources: &BTreeMap<String, (String, syntax::C0Function)>,
-) -> BTreeMap<String, String> {
+    file: &ClickFile,
+) -> Result<BTreeMap<String, String>, ClickError> {
     let mut names = BTreeMap::new();
     let mut ambiguous = BTreeSet::new();
-    for (kernel_name, (_, function)) in parsed_sources {
+    let mut qualified = BTreeMap::new();
+    for (kernel_name, (source_path, function)) in parsed_sources {
+        qualified.insert((source_path.as_str(), function.source_name()), kernel_name);
         if function.source_name() == kernel_name.as_str() {
             continue;
         }
@@ -4893,14 +4929,48 @@ pub(in crate::surface) fn executing_function_names(
             ambiguous.insert(function.source_name().to_string());
         }
     }
-    // Two translation units defining the same helper make the spelling
-    // ambiguous, and `parsed_function_for_source_name` refuses a contract that
-    // names it. Leave such a name unmapped rather than binding a plan to one
-    // unit's body.
+    // Keep ambiguous bare spellings unmapped: later contract lookup reports
+    // the ambiguity, rather than guessing one translation unit's body.
     for name in ambiguous {
         names.remove(&name);
     }
-    names
+    let mut selected_definitions = BTreeMap::new();
+    for block in file
+        .function_blocks()
+        .iter()
+        .filter(|block| !block.is_external())
+    {
+        let signature = block.signature();
+        let kernel_name = if let Some(source) = &signature.c_source {
+            let (_, name) = signature
+                .name()
+                .rsplit_once("::")
+                .expect("qualified C head");
+            qualified
+                .get(&(source.as_str(), name))
+                .map(|name| (*name).clone())
+        } else {
+            names.get(signature.name()).cloned().or_else(|| {
+                parsed_sources
+                    .get_key_value(signature.name())
+                    .map(|(name, _)| name.clone())
+            })
+        };
+        if let Some(kernel_name) = kernel_name {
+            if let Some(previous) =
+                selected_definitions.insert(kernel_name.clone(), signature.name())
+            {
+                return Err(ClickError::new(format!(
+                    "contracts `{previous}` and `{}` select the same C definition; use one ordinary contract per definition",
+                    signature.name()
+                )));
+            }
+            if signature.c_source.is_some() {
+                names.insert(signature.name().to_string(), kernel_name);
+            }
+        }
+    }
+    Ok(names)
 }
 
 /// The name `source_name`'s body executes under, which is its own spelling
@@ -5170,10 +5240,16 @@ fn reject_pure_bodies_reading_c_objects(
 fn parsed_function_for_source_name<'a>(
     parsed_sources: &'a BTreeMap<String, (String, syntax::C0Function)>,
     source_name: &str,
+    signature: Option<&FunctionSignature>,
 ) -> Result<Option<(&'a String, &'a String, &'a syntax::C0Function)>, ClickError> {
     let mut matches = parsed_sources
         .iter()
-        .filter(|(_, (_, function))| function.source_name() == source_name)
+        .filter(|(_, (path, function))| {
+            signature.map_or_else(
+                || function.source_name() == source_name,
+                |signature| signature.matches_c_definition(path, function),
+            )
+        })
         .map(|(kernel_name, (source_path, function))| (kernel_name, source_path, function));
     let Some(first) = matches.next() else {
         return Ok(None);
@@ -5230,6 +5306,7 @@ impl parser::ProgramLayouts {
     fn of_execution(execution: &crate::languages::PreparedExecution) -> Self {
         let mut tables = parser::ProgramLayouts {
             struct_layouts: execution.layouts.clone(),
+            record_spellings: execution.record_spellings.clone(),
             ..Default::default()
         };
         let source_names = execution
@@ -5647,9 +5724,11 @@ pub(in crate::surface) fn build_function_environment(
     }
     for (source_path, function) in parsed_sources.values() {
         let closure_captures = function.closure_captures().len();
-        let mut function_block = function_blocks
-            .iter()
-            .find(|block| block.signature().name() == function.source_name());
+        let mut function_block = function_blocks.iter().find(|block| {
+            block
+                .signature()
+                .matches_c_definition(source_path, function)
+        });
         // A program's internal-linkage function is never the C library's
         // function of the same name, whose contract the standard library
         // declares. The C parser refuses an external-linkage definition of

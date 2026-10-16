@@ -83,7 +83,6 @@ void sized_propagate(struct rb_node* rb, struct rb_node* stop) {
                 }
                 have metadata.value == 1 by { assumption(); }
                 have metadata.value == 1 or rb == old(rb) by { assumption(); }
-                close_invariants();
             }
         }
     }

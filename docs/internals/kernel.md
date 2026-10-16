@@ -98,6 +98,11 @@ Kernel files:
   `facts.rs` owns that persistent store, its indexes, and its output-sensitive
   ancestry/delta operations.
 - `functions.rs`: C function execution, argument binding, and call results.
+  Its children hold self-contained parts: `authority_contracts.rs` (calls
+  whose contracts touch populations, mutexes and authority resources),
+  `contract_refinement.rs` (whether an interface refines a named contract),
+  `globals_and_aggregates.rs` (entry storage and aggregate values) and
+  `resource_clause_worklist.rs` (the indexes that order resource clauses).
 - `tests.rs`: kernel unit tests.
 
 ## Trusted shape
@@ -570,6 +575,13 @@ conditional, which no order fact is ever written about, gets the bounds its
 arms already state. The hull is a bound, not a case split: a claim that holds
 on one arm and fails on the other stays undecided.
 
+Scalar specification guards containing `and`, `or`, and `not` are encoded with
+existing 0/1 conditional terms, visiting each guard node once. The selected
+value's arms occur once around that guard, rather than being duplicated
+through the logical tree. Lowering remains context independent; explicit
+normalization uses the stated premises to select an arm. Unknown guards keep
+both possibilities (`mdtests/pure_conditional_compound_guards*.md`).
+
 ## C ABI and memory layout
 
 The C front end models one explicit ABI: LP64. In that ABI, `int8` has size and alignment 1, `int16` and
@@ -617,8 +629,12 @@ Copyable by-value structs are the first exception to that address-first
 boundary. Click retains each leaf field name, byte offset, and kernel type in a
 flattened `CAggregateLayout`; embedded fields use qualified names such as
 `inner.value`. The kernel binds a value to an `AggregateObject` with its own
-local block. Parameter binding, local assignment, and aggregate return
-materialization allocate fresh blocks and recursively copy the modeled scalar,
+local block. Each automatic aggregate declaration owns its complete byte range,
+including ordinary C record locals as well as construction destinations. This
+lets a modular pointer result use the existing address equality and resource
+coverage rules to access the caller's record; ownership alone does not
+initialize its fields or establish an alias. Parameter binding, local
+assignment, and aggregate return materialization allocate fresh blocks and recursively copy the modeled scalar,
 array, fixed-dimensional embedded-struct-array leaf, and data-pointer fields.
 Multidimensional embedded-struct arrays are expanded in declared row-major
 order, so each nested leaf retains its complete element stride. Pointer fields are

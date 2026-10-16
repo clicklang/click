@@ -2636,6 +2636,11 @@ parameter, the call is refused with the parameter named
 `mdtests/cstr_at_binder_refuses_an_ambiguous_choice.md`); equal values are
 not searched for.
 
+A C library contract's value binders are named the same way: the library's
+`strlen` views `s: cstr_at(bytes, _)`, so a sidecar writes
+`step(strlen(bytes), { s: cstr_at(bytes, 2u64) })`
+(`mdtests/cstr_readable_witness_stated_before_call.md`).
+
 The selected `modeled-pthread` runtime declares named mutex binders too.
 Initialization takes `state` and produces `lifetime`; destruction takes
 `lifetime`. For example, initialization can be written
@@ -3379,9 +3384,14 @@ held as `int32` cells, so a struct whose size is not a multiple of four bytes
 has no `*p` form and is refused by name
 (`mdtests/whole_struct_needs_a_whole_number_of_int32_cells.md`); own its
 fields one by one. A struct with a flexible array member is outside the
-supported C subset. Holding every field separately does not yet stand in for
-`*p` at a call when a field is narrower than an `int32` cell
-(`bugs/whole-struct-ownership-does-not-reassemble-from-a-byte-field.md`).
+supported C subset. A call can assemble `owns *p` from adjacent owned fields,
+including byte fields, when their combined footprint covers every byte of
+the object and the required alignment is established. A scalar field clause
+covers its ABI slot up to the next field or the end of the struct, including
+tail padding after the final field. Viewed fields cannot complete an owned
+footprint; explicit byte fragments must cover padding too. See the
+[byte-field regression](https://github.com/clicklang/click/blob/master/mdtests/whole_struct_reassembles_from_byte_fields.md)
+and [tail-padding regression](https://github.com/clicklang/click/blob/master/mdtests/whole_struct_reassembles_from_padded_byte_field.md).
 A file-scope struct named in `owns g` or `views g` covers that complete
 object, with the same extent and declared field types as `*p` when `p == &g`.
 The same rule applies to a qualified name such as `unit::g`; a pointer-valued
@@ -3403,9 +3413,11 @@ Both require the corresponding read permission and initialized storage.
 `address(pointer)` is the `uint64` integer representation of an object pointer
 under the LP64 profile. It is the spec spelling of the C cast
 `(unsigned long) pointer` and denotes the same kernel term: the address keeps
-the exact source pointer, so `address(p) == address(q)` is decided exactly as
-`p == q`, `address(p) == 0` as `p == 0`, and a comparison with an integer that
-has no pointer origin stays undecided. Rewriting the pointer to null reduces
+the exact source pointer. `address(p) == address(q)` holds when `p == q`
+does, but not conversely: it is what a C comparison between pointers states,
+and it carries no permission from one pointer to the other.
+`address(p) == 0` is decided as `p == 0`, and a comparison with an integer
+that has no pointer origin stays undecided. Rewriting the pointer to null reduces
 its address to `uint64` zero, also inside arithmetic with symbolic operands.
 Contracts use it to describe words that hold a pointer in integer form,
 such as `ensures node->word == address(next)`

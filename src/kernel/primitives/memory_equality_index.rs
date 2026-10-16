@@ -1202,6 +1202,44 @@ impl ResourceContext {
             && self.memory_write_range(&pointer, range.element_width(), assumptions) == Some(range)
     }
 
+    /// Select a retained call-frame member through already published address
+    /// classes. Permission selection supplies candidates and coordinates;
+    /// physical framing still checks the complete original byte interval.
+    /// Raw inputs have no class payload and must not bootstrap a graph while
+    /// an assumption-free memory walk is only trying to name its read.
+    pub(in crate::kernel) fn kept_range_via_address_class(
+        &self,
+        pointer: &Pointer,
+        bytes: u32,
+        assumptions: &PureFactContext,
+    ) -> Option<&CMemoryRange> {
+        self.memory_equalities
+            .lock()
+            .expect("memory equality index")
+            .published
+            .as_ref()?;
+        let mut entries = self.write_access_entries(pointer, bytes, assumptions)?;
+        while let Some(entry) = entries.next() {
+            crate::instrumentation::record_deterministic_work(1);
+            let fact = self.storage.facts.get(&entry)?;
+            let Some(range) = fact.memory_own_range() else {
+                continue;
+            };
+            let Some(quantity) = fact.owned_quantity_term() else {
+                continue;
+            };
+            let Some(address) = entries.address(entry) else {
+                continue;
+            };
+            if super::resource_algebra::resource_quantity_is_positive(quantity, assumptions)
+                && assumptions.kept_range_holds_access(range, &address, bytes)
+            {
+                return Some(range);
+            }
+        }
+        None
+    }
+
     /// Pair at proof boundaries, then apply only resource and class deltas.
     /// Forks share the registered input and apply only their admitted delta.
     /// Independent lineages start from raw roots; no sibling premise leaks.

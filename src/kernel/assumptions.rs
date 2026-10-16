@@ -36,6 +36,7 @@ mod memory_reasoning;
 pub(in crate::kernel) use memory_reasoning::additive_base_spellings;
 pub(crate) use memory_reasoning::arm_frame_composite_definitions;
 pub(crate) use memory_reasoning::clear_frame_expansion_memo;
+pub(in crate::kernel) use memory_reasoning::parameter_alias_bucket;
 pub(in crate::kernel) use memory_reasoning::parameter_partition_root;
 pub(in crate::kernel) use memory_reasoning::read_candidate_byte_width;
 pub(in crate::kernel) use memory_reasoning::signed_byte_sum_is_nonwrapping;
@@ -3506,10 +3507,17 @@ impl PureFactContext {
         }
     }
 
-    /// Files or withdraws one separation under its two anchor offsets.
-    ///
-    /// Both ranges must share a block and have a first element: only then
-    /// does the separation say the two anchors are different addresses.
+    pub(super) fn separated_pointer_key(left: Pointer, right: Pointer) -> (Pointer, Pointer) {
+        if left <= right {
+            (left, right)
+        } else {
+            (right, left)
+        }
+    }
+
+    /// Index one stated separation by its nonempty anchors. Common-block
+    /// anchors also distinguish offsets; different blocks distinguish only
+    /// complete pointers. Updates touch just this fact's selected key.
     fn adjust_separated_anchor_offsets(
         &mut self,
         proposition: &Proposition,
@@ -3517,14 +3525,39 @@ impl PureFactContext {
         right: &CMemoryRange,
         insert: bool,
     ) {
-        if left.base().block != right.base().block {
-            return;
-        }
         let (Some(left_anchor), Some(right_anchor)) =
             (memory_range_anchor(left), memory_range_anchor(right))
         else {
             return;
         };
+        if left.base().block != right.base().block {
+            let key = Self::separated_pointer_key(
+                Pointer {
+                    block: left.base().block.clone(),
+                    offset: left_anchor,
+                },
+                Pointer {
+                    block: right.base().block.clone(),
+                    offset: right_anchor,
+                },
+            );
+            let facts = self
+                .separated_anchor_pointers
+                .get(&key)
+                .cloned()
+                .unwrap_or_default();
+            let facts = if insert {
+                facts.with_value(proposition.clone())
+            } else {
+                facts.without_value(proposition)
+            };
+            self.separated_anchor_pointers = if facts.is_empty() {
+                self.separated_anchor_pointers.without_key(&key)
+            } else {
+                self.separated_anchor_pointers.with_inserted(key, facts)
+            };
+            return;
+        }
         let key = Self::separated_anchor_key(left_anchor, right_anchor);
         let facts = self
             .separated_anchor_offsets
@@ -3548,6 +3581,7 @@ impl PureFactContext {
     #[cfg(test)]
     pub(super) fn rebuild_separated_anchor_offsets(&mut self) {
         self.separated_anchor_offsets = crate::persistent::PersistentMap::default();
+        self.separated_anchor_pointers = crate::persistent::PersistentMap::default();
         let stated = self
             .prop_facts
             .iter()
@@ -4258,6 +4292,7 @@ impl PureFactContext {
         self.memory_separation_facts = std::sync::Arc::new(BTreeMap::new());
         self.nonmemory_separation_facts = std::sync::Arc::new(Vec::new());
         self.separated_anchor_offsets = crate::persistent::PersistentMap::default();
+        self.separated_anchor_pointers = crate::persistent::PersistentMap::default();
         self.recompute_content_fingerprint();
         // No model support can change in a model-free context. Rebuilding
         // the complete scalar graph here would touch unrelated facts before
@@ -5398,8 +5433,9 @@ impl PureFactContext {
         }
     }
 
-    /// Semantic availability through the shared scoped equality graph. Exact
-    /// membership remains separate for provenance, admission, and withdrawal.
+    /// Semantic availability through the shared scoped equality graph and
+    /// indexed stated separation. Exact membership remains separate for
+    /// provenance, admission, and withdrawal.
     /// This performs no unfolding, implication search, or snapshot transport.
     pub(crate) fn contains_known(&self, proposition: &Proposition) -> bool {
         // An indexed conflict among checked scalar equalities makes this
@@ -5424,16 +5460,21 @@ impl PureFactContext {
                 self.equality_graph.knows_pointer_predicate(proposition)
             }
             Proposition::ConditionIs(condition, value) => {
-                self.equality_graph.knows_condition(condition, *value)
+                self.knows_condition_or_stated_separation(condition, *value)
             }
             Proposition::Not(body) => match body.as_ref() {
                 Proposition::ConditionIs(condition, value) => {
-                    self.equality_graph.knows_condition(condition, !*value)
+                    self.knows_condition_or_stated_separation(condition, !*value)
                 }
                 _ => false,
             },
             _ => false,
         }
+    }
+
+    fn knows_condition_or_stated_separation(&self, condition: &ConditionTerm, value: bool) -> bool {
+        self.equality_graph.knows_condition(condition, value)
+            || (!value && self.stated_pointer_disequality(condition) == Some(false))
     }
 
     /// This context extended by `condition == value`, charged one unit of

@@ -15,18 +15,20 @@ The C is written as a C programmer would write it and is not adapted to Click.
 | `click.project.json` | The project: one C unit for both files, with the build's flags |
 | `click.project.lock.json`, `.click/label/` | The lock and preprocessed sources `click import lock` wrote |
 
-`label.click` proves that `label_fit`'s result is below the build's capacity
-of 32 and never exceeds the input length, and that `label_measure` returns
-less than 32 for any readable C string. The unit passes the `Makefile`'s
-`-Iinclude -DLABEL_CAPACITY=32` for both files; `<string.h>` in
-`label_copy.c` resolves to Click's modeled header, so the `strlen` call is
-checked against Click's library contract. The call to `label_fit` applies
-`label_fit`'s verified contract.
+`label.click` proves that `label_fit` returns its input when it is below the
+build's capacity of 32 and 31 otherwise, and that `label_measure` returns
+that kept length for the C string it views, `views s: cstr_at(src, _)`: the
+whole length `s.len` when it is below 32, and 31 otherwise. The unit passes
+the `Makefile`'s `-Iinclude -DLABEL_CAPACITY=32` for both files; `<string.h>`
+in `label_copy.c` resolves to Click's modeled header, so the `strlen` call is
+checked against Click's library contract, which views the same string and
+returns `s.len`. The call to `label_fit` applies `label_fit`'s verified
+contract.
 
-`label_copy` also verifies: for a readable source string and a separate
-32-byte destination buffer, it copies the bounded prefix, appends a terminator,
-and returns an index below 32. The standard library model accepts its
-`const char *` source without changing the C.
+`label_copy` also verifies: for a viewed source string and a separate 32-byte
+destination buffer, it returns the same kept length and terminates the
+destination at it. The standard library model
+accepts its `const char *` source without changing the C.
 
 From this directory:
 

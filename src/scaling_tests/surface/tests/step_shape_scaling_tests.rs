@@ -547,9 +547,16 @@ fn run(shape: fn(usize) -> (String, String), n: usize) -> Run {
         .map(str::trim)
         .filter(|line| line.ends_with(';'))
         .map(|line| {
-            line.chars()
-                .map(|ch| if ch.is_ascii_digit() { '#' } else { ch })
-                .collect::<String>()
+            // Each number becomes one `#`, so `x9` and `x10` share a role.
+            let mut role = String::new();
+            for ch in line.chars() {
+                if !ch.is_ascii_digit() {
+                    role.push(ch);
+                } else if !role.ends_with('#') {
+                    role.push('#');
+                }
+            }
+            role
         })
         .collect::<Vec<_>>();
     let in_order = |name: &str| {
@@ -596,6 +603,9 @@ fn drifts(work: &[usize]) -> bool {
     if work.len() < 3 {
         return false;
     }
+    if rises_steadily(work) {
+        return true;
+    }
     let tail = &work[work.len() - work.len().min(4)..];
     let changes = tail
         .windows(2)
@@ -610,6 +620,25 @@ fn drifts(work: &[usize]) -> bool {
             .iter()
             .zip(&tail[1..])
             .all(|(change, at)| *change < 0 && large(*change, *at))
+}
+
+/// Whether work rises slowly but steadily: over the last half of its
+/// positions (at least five), it never falls and rises at three in four of
+/// them. A cost of even one unit per earlier statement rises at every
+/// position; a logarithmic index rises only where the count doubles, and a
+/// warm-up holds once it has jumped. `drifts`' band cannot see the first,
+/// which grows by less than the band at each step.
+fn rises_steadily(work: &[usize]) -> bool {
+    let tail = &work[work.len() - work.len().div_ceil(2)..];
+    if tail.len() < 5 {
+        return false;
+    }
+    let changes = tail
+        .windows(2)
+        .map(|pair| pair[1] as i64 - pair[0] as i64)
+        .collect::<Vec<_>>();
+    changes.iter().all(|change| *change >= 0)
+        && changes.iter().filter(|change| **change > 0).count() * 4 >= changes.len() * 3
 }
 
 /// The roles of `run` whose steps or resource tactics drift, with their
@@ -667,37 +696,40 @@ fn assert_flat_across(
 
 #[test]
 fn repeated_calls_cost_the_same_at_every_position() {
-    assert_no_drift("many_calls", many_calls, 5);
+    assert_no_drift("many_calls", many_calls, 12);
 }
 
 #[test]
 fn calls_beside_owned_objects_cost_the_same_at_every_position() {
-    assert_no_drift("objects_and_calls", objects_and_calls, 4);
+    assert_no_drift("objects_and_calls", objects_and_calls, 12);
 }
 
 #[test]
 fn ordered_index_stores_cost_the_same_at_every_position() {
-    assert_no_drift("order_chain", order_chain, 8);
+    // A store's cost climbs with the stores within about 32 positions of it
+    // and then holds: a bounded window, run past so the steady-rise rule
+    // sees it level.
+    assert_no_drift("order_chain", order_chain, 48);
 }
 
 #[test]
 fn pointer_field_links_cost_the_same_at_every_position() {
-    assert_no_drift("deep_chain", deep_chain, 5);
+    assert_no_drift("deep_chain", deep_chain, 12);
 }
 
 #[test]
 fn straight_line_assignments_cost_the_same_at_every_position() {
-    assert_no_drift("straight_line", straight_line, 8);
+    assert_no_drift("straight_line", straight_line, 12);
 }
 
 #[test]
 fn constant_index_stores_cost_the_same_at_every_position() {
-    assert_no_drift("const_array", const_array, 8);
+    assert_no_drift("const_array", const_array, 12);
 }
 
 #[test]
 fn calls_to_distinct_callees_cost_the_same_at_every_position() {
-    assert_no_drift("many_callees", many_callees, 5);
+    assert_no_drift("many_callees", many_callees, 12);
 }
 
 #[test]
@@ -740,22 +772,55 @@ fn a_branch_arm_step_ignores_earlier_branches() {
 
 #[test]
 fn heap_object_stores_and_releases_cost_the_same_at_every_position() {
-    assert_no_drift("heap_objects", heap_objects, 4);
+    assert_no_drift("heap_objects", heap_objects, 12);
 }
 
-/// Known growth, recorded so that it is measured on every change and a fix
-/// is noticed: when one of these stops drifting, make it an ordinary
-/// no-drift test here and delete the cause from `issues/scaling.md` or the
-/// bug it names.
-/// `bugs/sequential-loop-clause-grows-with-earlier-loops.md`.
+/// A `loop` clause's work does not depend on the loops before it: it reads
+/// the contexts and indexes the proof keeps rather than rebuilding them from
+/// every earlier loop's facts. Five loops, because the first clause's own
+/// warm-up hides a drift among only three.
 #[test]
-fn known_drift_sequential_loop_clauses() {
-    // Five loops: the remaining growth is about 44 units per earlier loop,
-    // and the first clause's own warm-up hides it among only three.
+fn sequential_loop_clauses_cost_the_same_at_every_position() {
     let loops = run(loops, 5).loops;
     assert!(
-        drifts(&loops),
-        "sequential loop clauses stopped drifting ({loops:?}); delete this test and the bug \
-         `sequential-loop-clause-grows-with-earlier-loops.md`"
+        !drifts(&loops),
+        "sequential loop clauses drift with the loops before them: {loops:?}"
     );
+}
+
+/// The contexts a `loop` tactic builds, charged or not, do not grow with
+/// the loops before it. Its executions copy the path's facts, and their
+/// direct-transport context and the initialization proof's indexed facts
+/// are the ones the proof keeps, extended by the loop's own facts. Building
+/// either from every path fact at each loop (both once did) assumes a further
+/// context entry per earlier fact at every loop; the transport context's
+/// build is charged nothing, so clause work alone does not show it.
+#[test]
+fn sequential_loops_build_the_same_context_entries_each() {
+    let entries = [3, 6, 12].map(|n| {
+        let (c, click) = loops(n);
+        let before = crate::kernel::reasoning::path_facts::context_rebuild_entries();
+        verify_c0_sources(&click, &[("hunt.c", c.as_str())])
+            .unwrap_or_else(|error| panic!("loops at {n}: {}", error.message()));
+        crate::kernel::reasoning::path_facts::context_rebuild_entries() - before
+    });
+    let per_loop = [(entries[1] - entries[0]) / 3, (entries[2] - entries[1]) / 6];
+    assert!(
+        per_loop[1] <= per_loop[0] + band(per_loop[0]),
+        "each further loop builds {} context entries at 3 to 6 loops and {} at 6 to 12 \
+         ({entries:?})",
+        per_loop[0],
+        per_loop[1]
+    );
+}
+
+#[test]
+fn drift_rules_separate_slow_drift_from_warm_up() {
+    // One unit per earlier statement, too small for the band at any position.
+    assert!(drifts(&(300..312).collect::<Vec<_>>()));
+    // A warm-up jump, then level.
+    assert!(!drifts(&[44, 300, 306, 306, 306, 306, 306, 306, 306, 306]));
+    // A bounded window: climbs, then holds over the last half.
+    let window = (0..48).map(|i| 300 + 2 * i.min(16)).collect::<Vec<_>>();
+    assert!(!drifts(&window));
 }

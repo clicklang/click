@@ -51,5 +51,5 @@ int caller(const Square& square, int scale) {
 ```
 
 ```expect
-fail: `Square_area` does not refine the virtual method `Shape_area` it overrides
+fail: `Square::area` does not refine the virtual method `Shape::area` it overrides
 ```

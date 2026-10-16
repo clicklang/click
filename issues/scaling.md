@@ -145,8 +145,8 @@ must not grow with unrelated facts, aliases or owned objects; `unfold` and
 `fold` tactics are held to the same no-drift rule as steps. Step work does not
 capture the uncharged costs of cause 4; the hunt script's mean step time does.
 `heap_object_stores_and_releases_cost_the_same_at_every_position` holds
-`heap_objects` flat; `known_drift_sequential_loop_clauses` records the loop
-bug's drift and fails when it stops.
+`heap_objects` flat; `sequential_loop_clauses_cost_the_same_at_every_position`
+holds the loop bug's clause work flat at five loops.
 
 ## Acceptance
 

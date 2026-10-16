@@ -46,7 +46,7 @@ fn main() {
 
 fn report_error(message: String) -> ! {
     // A Rust item prints as the path its sidecar writes.
-    let message = click::surface::display_rust_names(&message);
+    let message = click::surface::display_source_names(&message);
     if message.starts_with("proof error:")
         || message.starts_with("proof error in `")
         || message.starts_with("syntax error:")

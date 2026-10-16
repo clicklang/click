@@ -1,5 +1,10 @@
 # An intervening write invalidates a dynamic viewability transport
 
+The caller holds the readable-string predicate, its length, and the owned
+bytes, but no `cstr_at` instance. `strlen` views a `cstr_at`, so the
+predicate and a witness transported to the call no longer reach it: the call
+is refused for want of the string, whatever the write does to the facts.
+
 ```c filename=cstr_dynamic_invalidated_transport.c
 uint64 read_terminator(uint8 bytes[], uint64 known_len) {
     uint64 length;
@@ -58,5 +63,5 @@ uint64 read_terminator(uint8 bytes[], uint64 known_len) {
 ```
 
 ```expect
-fail: missing prerequisite (precondition clause 1 of `strlen`)
+fail: call to `strlen` needs a held `cstr_at` instance to give `s.len` its value
 ```

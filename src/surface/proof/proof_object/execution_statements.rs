@@ -1254,8 +1254,16 @@ impl<'a> Proof<'a> {
             } else {
                 transport.arguments().len()
             };
+            let execution_callee = if transport.is_named_contract() {
+                callee
+            } else {
+                context
+                    .spec_definitions
+                    .predicates
+                    .function_execution_name(callee)
+            };
             selected_environment = environment.with_selected_call_binders_and_types(
-                callee,
+                execution_callee,
                 arity,
                 bindings,
                 type_arguments,
@@ -2683,8 +2691,9 @@ impl<'a> Proof<'a> {
         tactic_index: usize,
     ) -> Result<Self, ClickError> {
         self.apply_planned_fact_transport_inner(surface_source, surface_target, tactic_index)
-            .inspect_err(|_| {
+            .map_err(|error| {
                 self.record_certification_failure_trace(self.claim_label(), 0);
+                self.attach_step_diagnostic(error)
             })
     }
 
@@ -2765,15 +2774,29 @@ impl<'a> Proof<'a> {
                 context.spec_definitions,
             )
             .map_err(|error| {
-                ClickError::new(format!(
-                    "`{claim_label}` tactic {tactic_index}: {}",
-                    fact_transport_planning_failure(
-                        surface_source,
-                        surface_target,
-                        view.unfolded_predicates,
-                        &error,
-                    )
-                ))
+                let mut reason = fact_transport_planning_failure(
+                    surface_source,
+                    surface_target,
+                    view.unfolded_predicates,
+                    &error,
+                );
+                if crate::instrumentation::deadline_exceeded() {
+                    // Lowering already produced these checked identities.
+                    // A stopped planner may print them without rechecking or
+                    // trying further proof routes after its budget expired.
+                    use crate::surface::proof_diagnostics::render;
+                    let _typed = render::TypedNotationScope::enter();
+                    let mut labels = render::SnapshotLabels::with_state(
+                        context.parameter_binding(), state,
+                    );
+                    let source = render::render_proposition_labeled(&source, &mut labels);
+                    let target = render::render_proposition_labeled(&target, &mut labels);
+                    reason.push_str(&format!(
+                        "\n  checked source (holds): {source}\n  checked target (wanted): {target}{}",
+                        labels.trace_legend(),
+                    ));
+                }
+                ClickError::new(format!("`{claim_label}` tactic {tactic_index}: {reason}"))
             })?
         };
         self.apply_step(ProofStep::TransportUsing {
@@ -2860,7 +2883,11 @@ impl<'a> Proof<'a> {
             .execution()
             .cloned()
             .ok_or_else(|| self.step_error("execution-frontier proof lost its semantic state"))?;
-        let mut facts = PureFactList::from_source(self.facts());
+        // The loop's executions copy these facts and transport them; the
+        // proof keeps their transport context from here on, so a later loop
+        // extends it by the facts added since instead of rebuilding it.
+        let source_facts = self.facts().with_direct_transport_assumptions();
+        let mut facts = PureFactList::from_proof_facts(&source_facts);
         let base_facts = facts.len();
         let capture_this_tactic = begin_tactic_expansion_capture(
             expansion_capture.as_deref_mut(),
@@ -2908,7 +2935,7 @@ impl<'a> Proof<'a> {
         }
         debug_assert!(facts.len() >= base_facts);
         let added = facts[base_facts..].to_vec();
-        let mut proof_facts = self.facts().clone();
+        let mut proof_facts = source_facts;
         for fact in &added {
             proof_facts = proof_facts.with_kernel_checked_fact(fact.clone());
         }

@@ -1,5 +1,5 @@
 //! Refresh runs the pinned exporter; ordinary loading only checks locked inputs.
-use super::schema::{RustExport, TARGET};
+use super::schema::RustExport;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::fs;
@@ -103,19 +103,9 @@ pub(super) fn prepared_for_test(export: RustExport) -> Result<PreparedRustImport
         }),
     })
 }
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
+/// A unit's extraction: its source and, for a crate, the crate description.
 struct Config {
-    schema: u32,
-    language: String,
-    target: String,
     source: String,
-    #[serde(default)]
-    exporter: String,
-    artifact: String,
-    #[serde(default)]
-    backend: Option<String>,
-    #[serde(default, rename = "crate")]
     crate_config: Option<super::crate_inputs::CrateConfig>,
 }
 #[derive(Deserialize, Serialize)]
@@ -261,65 +251,6 @@ fn local_file(root: &Path, name: &str) -> Result<PathBuf, String> {
     }
     Ok(root.join(path))
 }
-fn config(path: &Path) -> Result<(Config, Vec<u8>, PathBuf), String> {
-    let bytes = read(path, 1 << 20)?;
-    let c: Config =
-        serde_json::from_slice(&bytes).map_err(|e| format!("Rust import config: {e}"))?;
-    // Configuration version is independent of the typed artifact schema.
-    if !matches!(
-        (c.schema, c.backend.as_deref()),
-        (3 | 4, None | Some("charon") | Some("charon-trial"))
-    ) || c.language != "rust"
-        || c.target != TARGET
-    {
-        return Err("unsupported Rust import schema/language/target; use schema 3 and native Charon .ullbc artifacts (legacy extraction is retired)".into());
-    }
-    let absolute = fs::canonicalize(path).map_err(|e| e.to_string())?;
-    let root = absolute
-        .parent()
-        .ok_or("Rust config needs a directory")?
-        .to_path_buf();
-    match (c.schema, &c.crate_config) {
-        (3, None) => {
-            local_file(&root, &c.source)?;
-        }
-        (4, Some(config)) => {
-            config.validate(&c.source)?;
-            for name in &config.files {
-                super::crate_inputs::file(&root, name)?;
-                if name == &c.artifact
-                    || name == absolute.file_name().unwrap().to_string_lossy().as_ref()
-                    || name == &format!("{}.lock", absolute.file_name().unwrap().to_string_lossy())
-                {
-                    return Err(
-                        "Rust crate inputs must differ from config/artifact/lock outputs".into(),
-                    );
-                }
-            }
-        }
-        _ => {
-            return Err(
-                "Rust schema 4 requires a crate configuration; schema 3 is single-file".into(),
-            );
-        }
-    }
-    local_file(&root, &c.artifact)?;
-    if !c.source.ends_with(".rs")
-        || c.source == c.artifact
-        || c.artifact == absolute.file_name().unwrap().to_string_lossy()
-        || c.artifact == format!("{}.lock", absolute.file_name().unwrap().to_string_lossy())
-    {
-        return Err("Rust artifact output must differ from source/config/lock".into());
-    }
-    Ok((c, bytes, root))
-}
-fn lock_path(path: &Path) -> Result<PathBuf, String> {
-    let name = path
-        .file_name()
-        .and_then(|n| n.to_str())
-        .ok_or("invalid Rust config name")?;
-    Ok(path.with_file_name(format!("{name}.lock")))
-}
 fn sources(c: &Config, root: &Path) -> Result<super::crate_inputs::SourceFiles, String> {
     let names = c
         .crate_config
@@ -378,51 +309,6 @@ fn decode(
     super::lowering::lower(&export)?;
     Ok(export)
 }
-fn write_atomic(path: &Path, bytes: &[u8]) -> Result<(), String> {
-    match fs::symlink_metadata(path) {
-        Ok(m) if !m.file_type().is_file() => {
-            return Err("Rust output must be a regular file".into());
-        }
-        Err(e) if e.kind() != std::io::ErrorKind::NotFound => return Err(e.to_string()),
-        _ => {}
-    }
-    crate::cli::write_file_atomically(path, bytes)
-}
-pub fn refresh_import(path: &Path) -> Result<(), String> {
-    let (c, bytes, root) = config(path)?;
-    let source = if c.crate_config.is_some() {
-        super::crate_inputs::file(&root, &c.source)?
-    } else {
-        local_file(&root, &c.source)?
-    };
-    let legacy = (!c.exporter.is_empty()).then(|| root.join(&c.exporter));
-    let runtime = super::runtime::resolve(legacy.as_deref())?;
-    let exporter = &runtime.executable;
-    let artifact_path = local_file(&root, &c.artifact)?;
-    let lock_name = lock_path(path)?;
-    let lock_output = root.join(lock_name.file_name().ok_or("invalid Rust lock filename")?);
-    if exporter == &artifact_path
-        || exporter == &lock_output
-        || exporter == &source
-        || exporter == &fs::canonicalize(path).map_err(|e| e.to_string())?
-    {
-        return Err("Rust exporter must differ from source/config/artifact/lock".into());
-    }
-    let inputs = Inputs {
-        config: &c,
-        config_digest: digest(&bytes),
-        root: &root,
-        source: &source,
-        outputs: [artifact_path.clone(), lock_output],
-    };
-    let (lock, output_bytes) = extract(&inputs, &runtime, &|| Ok(digest(&read(path, 1 << 20)?)))?;
-    write_atomic(&artifact_path, &output_bytes)?;
-    write_atomic(
-        &lock_path(path)?,
-        &serde_json::to_vec_pretty(&lock).map_err(|e| e.to_string())?,
-    )
-}
-
 /// A Rust import's inputs, from a per-sidecar config or a project unit.
 struct Inputs<'a> {
     config: &'a Config,
@@ -486,19 +372,6 @@ fn extract(
         source_files: Default::default(),
     };
     Ok((lock, output_bytes))
-}
-
-pub fn load_import(path: &Path) -> Result<PreparedRustImport, String> {
-    let (c, bytes, root) = config(path)?;
-    let lock: Lock =
-        serde_json::from_slice(&read(&lock_path(path)?, 1 << 20)?).map_err(|e| e.to_string())?;
-    load_locked(
-        &c,
-        &digest(&bytes),
-        &root,
-        &local_file(&root, &c.artifact)?,
-        lock,
-    )
 }
 
 fn load_locked(
@@ -580,13 +453,7 @@ impl UnitConfig {
                 .to_string();
             let source = local_file(&root, &name)?;
             let config = Config {
-                schema: 3,
-                language: "rust".into(),
-                target: TARGET.into(),
                 source: name,
-                exporter: String::new(),
-                artifact: String::new(),
-                backend: None,
                 crate_config: None,
             };
             return Ok((config, root, source));
@@ -597,13 +464,7 @@ impl UnitConfig {
         }
         let source = super::crate_inputs::file(&unit_root, &self.source)?;
         let config = Config {
-            schema: 4,
-            language: "rust".into(),
-            target: TARGET.into(),
             source: self.source.clone(),
-            exporter: String::new(),
-            artifact: String::new(),
-            backend: None,
             crate_config: Some(crate_config.clone()),
         };
         Ok((config, unit_root, source))

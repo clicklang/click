@@ -121,25 +121,25 @@ archive digest, and source, package, and originating Clang executable hashes.
 The gate does not rerun Bitcoin's whole CMake configuration; that remains the
 opt-in full-checkout workflow above. It also does not build or run Bitcoin.
 
-`make-fixture.py` still reads the lock of the original full-checkout import,
-which used a per-sidecar `MoneyRange.click.import.json` over that compilation
-database; it must be ported to the project lock before per-sidecar imports are
-retired. To regenerate the hermetic fixture from such a lock, put
-the five downloaded `.deb` archives in `inputs/packages` under the short names
-shown in the table (for example `libc6-dev.deb`), then run:
+To regenerate the hermetic fixture, put the full checkout at `bitcoin-src/` and
+the extracted packages at `sysroot/` beside the sidecars, in place of the
+closure, and lock the project as above. Put the five downloaded `.deb`
+archives in `inputs/packages` under the short names shown in the table (for
+example `libc6-dev.deb`), then run:
 
 ```sh
 python3 integrations/bitcoin-core-money-range/make-fixture.py \
-  --bitcoin-src integrations/bitcoin-core-money-range/inputs/bitcoin-src \
-  --sysroot integrations/bitcoin-core-money-range/inputs/sysroot \
+  --bitcoin-src integrations/bitcoin-core-money-range/bitcoin-src \
+  --sysroot integrations/bitcoin-core-money-range/sysroot \
   --packages integrations/bitcoin-core-money-range/inputs/packages \
-  --lock integrations/bitcoin-core-money-range/MoneyRange.click.import.json.lock \
+  --lock integrations/bitcoin-core-money-range/click.project.lock.json \
   --compilation-database integrations/bitcoin-core-money-range/inputs/bitcoin-build/compile_commands.json
 ```
 
 Regeneration checks the Git tree, local source bytes, Debian archives and
-extracted header bytes, originating Clang executable, and selected compile
-flags before changing the checked-in closure. A changed archive also requires
+extracted header bytes, originating Clang executable, the selected compile
+flags, and that the `bitcoin` unit states exactly that command, before
+changing the checked-in closure. A changed archive also requires
 deliberately updating the pinned digest in the gate test after review.
 
 The sidecar also contains four one-call, modular `executes MoneyRange`

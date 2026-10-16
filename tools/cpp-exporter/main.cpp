@@ -641,6 +641,7 @@ private:
                          ? (destructor == nullptr ? function_name(declaration)
                                                   : destructor_name(destructor))
                          : constructor_name(constructor);
+    result["path"] = function_path(declaration);
     result["function_kind"] = std::move(function_kind);
     result["return_type"] = std::move(*return_type);
     result["parameters"] = std::move(parameters);
@@ -3521,6 +3522,89 @@ private:
            std::to_string(found - collector.closures.begin());
   }
 
+  // A declaration's C++ path, segment by segment, as a sidecar writes it:
+  // `Square::area` is ["Square", "area"], a constructor `Rec::Rec`, a
+  // destructor `Rec::~Rec`, an operator `Rec::operator+=`, a template
+  // instance `Stored<long long>::Read` or `choose<true>`, and the first
+  // lambda in `caller` `caller::(lambda#0)`. The importer names each
+  // declaration by its path.
+  llvm::json::Array function_path(const clang::FunctionDecl *function) {
+    std::vector<std::string> segments;
+    const auto *method = llvm::dyn_cast<clang::CXXMethodDecl>(function);
+    if (method != nullptr && method->getParent()->isLambda()) {
+      const auto *enclosing = llvm::dyn_cast_or_null<clang::FunctionDecl>(
+          method->getParent()->getDeclContext());
+      const auto name = lambda_name(method);
+      if (enclosing == nullptr || !name)
+        return {};
+      llvm::json::Array path = function_path(enclosing);
+      const std::string marker = "__lambda_";
+      path.push_back("(lambda#" + name->substr(name->rfind(marker) + marker.size()) + ")");
+      return path;
+    }
+    context_segments(function->getDeclContext(), segments);
+    std::string own;
+    if (const auto *constructor = llvm::dyn_cast<clang::CXXConstructorDecl>(function))
+      own = constructor->getParent()->getNameAsString();
+    else if (const auto *destructor = llvm::dyn_cast<clang::CXXDestructorDecl>(function))
+      own = "~" + destructor->getParent()->getNameAsString();
+    else
+      own = function->getNameAsString();
+    if (const auto *arguments = function->getTemplateSpecializationArgs())
+      own += printed_template_arguments(arguments->asArray());
+    segments.push_back(own);
+    llvm::json::Array path;
+    for (const std::string &segment : segments)
+      path.push_back(segment);
+    return path;
+  }
+
+  llvm::json::Array record_path(const clang::CXXRecordDecl *record) {
+    std::vector<std::string> segments;
+    context_segments(record->getDeclContext(), segments);
+    segments.push_back(record_segment(record));
+    llvm::json::Array path;
+    for (const std::string &segment : segments)
+      path.push_back(segment);
+    return path;
+  }
+
+  // The enclosing namespaces and classes of a declaration, outermost first.
+  void context_segments(const clang::DeclContext *context,
+                        std::vector<std::string> &segments) {
+    std::vector<std::string> inner;
+    for (; context != nullptr && !context->isTranslationUnit();
+         context = context->getParent()) {
+      if (const auto *space = llvm::dyn_cast<clang::NamespaceDecl>(context)) {
+        if (space->isInline())
+          continue;
+        inner.push_back(space->isAnonymousNamespace() ? "(anonymous namespace)"
+                                                      : space->getNameAsString());
+      } else if (const auto *record = llvm::dyn_cast<clang::CXXRecordDecl>(context)) {
+        inner.push_back(record_segment(record));
+      }
+    }
+    segments.insert(segments.end(), inner.rbegin(), inner.rend());
+  }
+
+  std::string record_segment(const clang::CXXRecordDecl *record) {
+    std::string segment = record->getNameAsString();
+    if (const auto *instance =
+            llvm::dyn_cast<clang::ClassTemplateSpecializationDecl>(record))
+      segment += printed_template_arguments(instance->getTemplateArgs().asArray());
+    return segment;
+  }
+
+  // Template arguments as Clang prints them, `<long long, true>`.
+  std::string printed_template_arguments(llvm::ArrayRef<clang::TemplateArgument> arguments) {
+    std::string printed;
+    llvm::raw_string_ostream stream(printed);
+    clang::PrintingPolicy policy = context_.getPrintingPolicy();
+    policy.SuppressTagKeyword = true;
+    clang::printTemplateArgumentList(stream, arguments, policy);
+    return stream.str();
+  }
+
   // A lambda that captures nothing, converted to a function pointer, is the
   // address of its call operator, which is exported as a free function.
   std::optional<Json> lower_lambda_address(const clang::Expr *expression,
@@ -4448,6 +4532,7 @@ private:
     llvm::json::Object result;
     result["declaration_id"] = declaration_id(record);
     result["name"] = record_name(record);
+    result["path"] = record_path(record);
     result["size_bytes"] = static_cast<std::int64_t>(size);
     result["alignment_bytes"] = static_cast<std::int64_t>(alignment);
     result["fields"] = std::move(fields);
@@ -5039,6 +5124,7 @@ private:
                          ? (destructor == nullptr ? function_name(declaration)
                                                   : destructor_name(destructor))
                          : constructor_name(constructor);
+    result["path"] = function_path(declaration);
     result["function_kind"] = std::move(function_kind);
     result["return_type"] = std::move(*return_type);
     result["parameters"] = std::move(parameters);

@@ -133,6 +133,8 @@ pub(in crate::surface) struct FunctionLocals {
 /// that are memory-backed.
 #[derive(Clone, Default)]
 pub(in crate::surface) struct ProgramLayouts {
+    /// A C definition's execution name, indexed by translation unit and source spelling.
+    pub(in crate::surface) qualified_functions: BTreeMap<(String, String), String>,
     pub(in crate::surface) c_object_names: BTreeMap<String, std::sync::Arc<BTreeSet<String>>>,
     /// The other members of each function's recursive C component, for the
     /// functions in a component of two or more. An expression `decreases`
@@ -174,6 +176,9 @@ pub(in crate::surface) struct ProgramLayouts {
     /// Each C++ override with the virtual method it overrides, by their
     /// sidecar names: the override inherits that method's interface.
     pub(in crate::surface) virtual_overrides: Vec<(String, String)>,
+    /// The layout name of each C++ record a head spells otherwise, by that
+    /// spelling: `Stored<long long>` is `Stored__long_long`.
+    pub(in crate::surface) record_spellings: BTreeMap<String, String>,
 }
 
 /// Whether the library declaration `name` of module `identity` is known by
@@ -623,10 +628,14 @@ struct Parser {
     recursion_peers_by_function: BTreeMap<String, Vec<String>>,
     /// Click library modules the program's C declarations bring.
     implied_library_modules: BTreeSet<&'static str>,
+    /// Whether this parser reads a Click library module, which never looks
+    /// up the library's own declarations while the library is loading.
+    library_module: bool,
     /// The theorems the file declares, which a citation by bare name names
     /// before any library theorem of that name. Empty in a library module.
     local_theorems: BTreeSet<String>,
     source_aliases: BTreeMap<String, String>,
+    qualified_functions: BTreeMap<(String, String), String>,
     qualified_objects: Option<BTreeMap<String, BTreeMap<String, parser::QualifiedCObject>>>,
     /// Set while a `tactic` declaration's signature is parsed: the name
     /// follows directly, the parameters use Click's `name: type` spelling,
@@ -704,6 +713,8 @@ struct Parser {
     /// The importer names of the methods of C++ classes whose objects carry
     /// state: an override of one is stated on its own memory.
     cpp_object_methods: cpp_class_objects::ObjectMethods,
+    /// See [`ProgramLayouts::record_spellings`].
+    record_spellings: BTreeMap<String, String>,
     match_nesting: usize,
     proposition_nesting: usize,
     proof_nesting: usize,
@@ -1083,6 +1094,7 @@ impl Parser {
             .implied_library_modules
             .extend(layouts.library_modules);
         parser.qualified_objects = Some(layouts.qualified_objects);
+        parser.qualified_functions = layouts.qualified_functions;
         parser.local_struct_pointers_by_function = layouts.local_struct_pointers;
         parser.closure_captures = layouts.closure_captures;
         parser.plain_char = layouts.plain_char;
@@ -1092,10 +1104,12 @@ impl Parser {
             // its `verifying` path does not say: its class object state is
             // rewritten here.
             if parser.language != SourceLanguage::Cpp {
-                let (tokens, positions, methods) = cpp_class_objects::rewrite_class_objects(
+                let (tokens, positions) = cpp_syntax::rewrite_function_references(
                     std::mem::take(&mut parser.tokens),
                     std::mem::take(&mut parser.positions),
-                )?;
+                );
+                let (tokens, positions, methods) =
+                    cpp_class_objects::rewrite_class_objects(tokens, positions)?;
                 parser.matching_parentheses = validate_parenthesis_nesting(&tokens, &positions)?;
                 parser.tokens = tokens;
                 parser.positions = positions;
@@ -1103,6 +1117,7 @@ impl Parser {
             }
             parser.language = SourceLanguage::Cpp;
             parser.rust_trait_implementations = layouts.virtual_overrides;
+            parser.record_spellings = layouts.record_spellings;
         }
         Ok(parser)
     }
@@ -1157,6 +1172,7 @@ impl Parser {
         };
         // So is a C++ sidecar's class object state.
         let (tokens, positions, cpp_object_methods) = if language == SourceLanguage::Cpp {
+            let (tokens, positions) = cpp_syntax::rewrite_function_references(tokens, positions);
             cpp_class_objects::rewrite_class_objects(tokens, positions)?
         } else {
             (
@@ -1169,7 +1185,9 @@ impl Parser {
         Ok(Self {
             rust_object_traits,
             cpp_object_methods,
+            record_spellings: BTreeMap::new(),
             source_aliases: BTreeMap::new(),
+            qualified_functions: BTreeMap::new(),
             qualified_objects: None,
             pending_tactic_signature: false,
             tactic_names: BTreeSet::new(),
@@ -1214,6 +1232,7 @@ impl Parser {
             c_object_names_by_function: BTreeMap::new(),
             recursion_peers_by_function: BTreeMap::new(),
             implied_library_modules: path_library_modules,
+            library_module,
             local_theorems,
             current_c_parameter_types: BTreeMap::new(),
             current_parameter_struct_casts: BTreeMap::new(),
@@ -1534,7 +1553,7 @@ impl Parser {
                         };
                         ClickError::new(format!(
                             "`{}` cannot inherit {what}: {message}",
-                            crate::languages::rust::names::display_rust_names(&implementation)
+                            crate::languages::display_source_names(&implementation)
                         ))
                         .at_declaration(&implementation)
                     })?;
@@ -1546,17 +1565,32 @@ impl Parser {
             theorem_definitions.push(self.parse_theorem_definition()?);
         }
         self.position = end;
+        let mut c_function_names = self
+            .local_struct_pointers_by_function
+            .iter()
+            .filter_map(|(source, info)| {
+                info.execution_name
+                    .as_ref()
+                    .map(|target| (source.clone(), target.clone()))
+            })
+            .collect::<BTreeMap<_, _>>();
+        for block in &function_blocks {
+            let signature = block.signature();
+            if let Some(source) = &signature.c_source {
+                let (_, name) = signature
+                    .name()
+                    .rsplit_once("::")
+                    .expect("qualified C head");
+                if let Some(target) = self
+                    .qualified_functions
+                    .get(&(source.clone(), name.to_string()))
+                {
+                    c_function_names.insert(signature.name().to_string(), target.clone());
+                }
+            }
+        }
         let file = ClickFile {
-            c_function_names: std::sync::Arc::new(
-                self.local_struct_pointers_by_function
-                    .iter()
-                    .filter_map(|(source, info)| {
-                        info.execution_name
-                            .as_ref()
-                            .map(|target| (source.clone(), target.clone()))
-                    })
-                    .collect(),
-            ),
+            c_function_names: std::sync::Arc::new(c_function_names),
             imports,
             library_imports,
             verifying_sources,
@@ -3286,6 +3320,17 @@ impl Parser {
             self.exact_long_rank = previous;
             signature?
         };
+        let table_name = signature
+            .c_source
+            .as_ref()
+            .and_then(|path| {
+                let (_, name) = signature.name().rsplit_once("::")?;
+                self.qualified_functions
+                    .get(&(path.clone(), name.to_string()))
+            })
+            .map(String::as_str)
+            .unwrap_or_else(|| signature.name())
+            .to_string();
         if let Some(struct_name) = return_struct_name {
             struct_params.insert("result".to_string(), struct_name);
         }
@@ -3295,7 +3340,7 @@ impl Parser {
         // its own reading.
         for name in self
             .local_struct_pointers_by_function
-            .get(signature.name())
+            .get(&table_name)
             .into_iter()
             .flat_map(|locals| &locals.references)
         {
@@ -3337,7 +3382,7 @@ impl Parser {
         // proof just as a parameter is. The signature wins a shared spelling.
         for (name, struct_name) in self
             .local_struct_pointers_by_function
-            .get(signature.name())
+            .get(&table_name)
             .into_iter()
             .flat_map(|locals| &locals.struct_pointers)
         {
@@ -3358,9 +3403,7 @@ impl Parser {
         );
         let previous_c_object_names = std::mem::replace(
             &mut self.current_c_object_names,
-            self.c_object_names_by_function
-                .get(signature.name())
-                .cloned(),
+            self.c_object_names_by_function.get(&table_name).cloned(),
         );
         let previous_c_parameter_types = std::mem::replace(
             &mut self.current_c_parameter_types,
@@ -3374,7 +3417,7 @@ impl Parser {
             std::mem::take(&mut self.current_parameter_struct_casts);
         let aggregate_objects = self
             .aggregate_objects_by_function
-            .get(signature.name())
+            .get(&table_name)
             .cloned()
             .unwrap_or_default();
         let previous_aggregate_objects =
@@ -3383,7 +3426,7 @@ impl Parser {
         // function, for indexing shapes and element widths alike.
         let global_array_shapes = self
             .global_array_shapes_by_function
-            .get(signature.name())
+            .get(&table_name)
             .cloned()
             .unwrap_or_default()
             .into_iter()
@@ -3392,9 +3435,8 @@ impl Parser {
         let previous_global_array_shapes =
             std::mem::replace(&mut self.current_global_array_shapes, global_array_shapes);
         let mut visible_struct_array_params = struct_array_params;
-        if let Some(aggregate_array_objects) = self
-            .aggregate_array_objects_by_function
-            .get(signature.name())
+        if let Some(aggregate_array_objects) =
+            self.aggregate_array_objects_by_function.get(&table_name)
         {
             visible_struct_array_params.extend(
                 aggregate_array_objects
@@ -3846,7 +3888,7 @@ impl Parser {
         }
         let c_object_names = self
             .c_object_names_by_function
-            .get(signature.name())
+            .get(&table_name)
             .cloned()
             .unwrap_or_else(|| {
                 std::sync::Arc::new(
@@ -3944,7 +3986,7 @@ impl Parser {
         // signature wins a shared spelling.
         for (name, struct_name) in self
             .local_struct_pointers_by_function
-            .get(signature.name())
+            .get(&table_name)
             .into_iter()
             .flat_map(|locals| &locals.struct_pointers)
         {
@@ -3964,7 +4006,7 @@ impl Parser {
             super::pointee_field_places(parameter_field_places.values(), &self.struct_layouts);
         let recursion_peers = self
             .recursion_peers_by_function
-            .get(signature.name())
+            .get(&table_name)
             .cloned()
             .unwrap_or_default();
         // A named contract's value parameters follow its C parameters, so its
@@ -3976,7 +4018,7 @@ impl Parser {
                 .extend(self.contract_value_parameters.iter().cloned());
         }
         // A closure's captures lead its signature, as they lead its function.
-        if !external && let Some(captures) = self.closure_captures.get(signature.name()) {
+        if !external && let Some(captures) = self.closure_captures.get(&table_name) {
             let mut parameters = captures.clone();
             parameters.append(&mut signature.parameters);
             signature.parameters = parameters;
@@ -4079,6 +4121,7 @@ impl Parser {
             }
             return Ok(ParsedFunctionSignature {
                 signature: FunctionSignature {
+                    c_source: None,
                     return_type: C0Type::Void,
                     return_pointee_constant: false,
                     return_reference: false,
@@ -4132,6 +4175,7 @@ impl Parser {
         } else {
             parsed_return_type.c_type
         };
+        let mut c_source = None;
         let (name, receiver) = if self.verifies_cpp() {
             let declarator = self.parse_cpp_declarator(is_static)?;
             if declarator.returnless != returnless {
@@ -4143,7 +4187,20 @@ impl Parser {
             }
             (declarator.name, declarator.receiver)
         } else {
-            (self.expect_ident("function name")?, None)
+            let alias = self.expect_ident("function name")?;
+            let name =
+                if self.peek() == Some(&Token::ColonColon) {
+                    self.position += 1;
+                    let name = self.expect_ident("C function name")?;
+                    c_source =
+                        Some(self.source_aliases.get(&alias).cloned().ok_or_else(|| {
+                            self.error(format!("unknown C source alias `{alias}`"))
+                        })?);
+                    format!("{alias}::{name}")
+                } else {
+                    alias
+                };
+            (name, None)
         };
         self.expect(Token::LParen)?;
         let mut parsed_parameters = self.parse_parameters()?;
@@ -4221,6 +4278,7 @@ impl Parser {
 
         let parsed = ParsedFunctionSignature {
             signature: FunctionSignature {
+                c_source,
                 return_type,
                 return_pointee_constant: parsed_return_type.pointee_constant,
                 return_reference: parsed_return_type.reference,
@@ -5134,16 +5192,21 @@ impl Parser {
     /// The closing parenthesis comes from the precomputed nesting table, so
     /// the decision costs one lookup rather than a scan.
     fn call_binder_transport_follows(&self) -> bool {
-        if !matches!(self.peek(), Some(Token::Ident(_))) || self.peek_next() != Some(&Token::LParen)
-        {
+        if !matches!(self.peek(), Some(Token::Ident(_))) {
             return false;
         }
-        let Some(close) = self
-            .matching_parentheses
-            .get(self.position + 1)
-            .cloned()
-            .flatten()
-        else {
+        let open = if self.peek_next() == Some(&Token::ColonColon) {
+            if !matches!(self.tokens.get(self.position + 2), Some(Token::Ident(_))) {
+                return false;
+            }
+            self.position + 3
+        } else {
+            self.position + 1
+        };
+        if self.tokens.get(open) != Some(&Token::LParen) {
+            return false;
+        }
+        let Some(close) = self.matching_parentheses.get(open).cloned().flatten() else {
             return false;
         };
         self.tokens.get(close + 1) == Some(&Token::Comma)
@@ -5157,11 +5220,16 @@ impl Parser {
         output: Option<CallOutputPattern>,
         tactic: bool,
     ) -> Result<CallBinderTransport, ClickError> {
-        let callee = self.expect_ident(if tactic {
+        let mut callee = self.expect_ident(if tactic {
             "tactic name"
         } else {
             "call step callee"
         })?;
+        if !tactic && self.peek() == Some(&Token::ColonColon) {
+            self.position += 1;
+            callee.push_str("::");
+            callee.push_str(&self.expect_ident("C function name")?);
+        }
         // The binder map is the last argument in both forms, as a fold's
         // field map is: a call step writes `step(callee(...), { ... })` and a
         // tactic application writes `name(..., { ... })`, where the map is
@@ -5201,6 +5269,9 @@ impl Parser {
         .get(&callee)
         .cloned()
         .unwrap_or_default();
+        if has_map && !named_contract && declared.is_empty() {
+            declared = self.library_callee_value_binders(&callee)?;
+        }
         if has_map {
             self.expect(Token::LBrace)?;
         }
@@ -5650,6 +5721,38 @@ impl Parser {
             );
     }
 
+    /// The value binders of the C library function `callee`, such as
+    /// `strlen`'s `s`, for a call map in a program's sidecar. The library's
+    /// declarations are parsed apart from the sidecar, so its binders are
+    /// not in the sidecar's registry. A library module itself never asks:
+    /// the library is not loaded while it is being parsed.
+    fn library_callee_value_binders(
+        &self,
+        callee: &str,
+    ) -> Result<BTreeMap<String, CalleeResourceBinder>, ClickError> {
+        if self.library_module
+            || crate::languages::c::syntax::library_contract_module_named(callee).is_none()
+        {
+            return Ok(BTreeMap::new());
+        }
+        crate::instrumentation::record_deterministic_work(1);
+        Ok(super::validation::library_c_function_value_binders(callee)?
+            .into_iter()
+            .map(|(name, family)| (name, Self::value_callee_binder(family)))
+            .collect())
+    }
+
+    /// A call map's entry for a value binder of family `family`.
+    fn value_callee_binder(family: String) -> CalleeResourceBinder {
+        CalleeResourceBinder {
+            identity: Variable(0),
+            family: Some(family),
+            resource: None,
+            parameter_names: Vec::new(),
+            kind: CalleeResourceBinderKind::Value,
+        }
+    }
+
     /// Records an instance binder in the selected function/interface registry.
     /// Call maps name those declarations, including produced identities.
     /// Whether a value binder follows: `name: R(...)` where the clause is a
@@ -5747,16 +5850,7 @@ impl Parser {
         self.callee_resource_binders
             .entry(function.to_string())
             .or_default()
-            .insert(
-                name,
-                CalleeResourceBinder {
-                    identity: Variable(0),
-                    family: Some(resource.clone()),
-                    resource: None,
-                    parameter_names: Vec::new(),
-                    kind: CalleeResourceBinderKind::Value,
-                },
-            );
+            .insert(name, Self::value_callee_binder(resource.clone()));
         Ok(ResourceClause::Declared {
             type_schema: None,
             resource_type_arguments: Vec::new(),

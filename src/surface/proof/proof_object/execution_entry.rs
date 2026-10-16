@@ -30,7 +30,7 @@ impl<'a> Proof<'a> {
             .core
             .entry_facts_at_entry()
             .cloned()
-            .unwrap_or_else(|| ProofFacts::from_source(&pure_facts));
+            .unwrap_or_else(|| pure_facts.indexed_proof_facts());
         // A fresh premise lineage cannot reuse contexts checked under the
         // previous root. Compatible derived roots retain the original base
         // so newly added ambient facts remain visible as a suffix.

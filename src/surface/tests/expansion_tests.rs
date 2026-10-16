@@ -1,6 +1,71 @@
 use super::*;
 
 #[test]
+fn record_pointer_identity_preserves_local_storage_in_all_proof_modes() {
+    let (source, sources) =
+        mdtest_sources("mdtests/c_record_pointer_identity_preserves_local_storage.md");
+    let sources = sources
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    verify_c0_sources(&source, &sources).unwrap();
+    let expanded =
+        expand_c0_claim_source(&source, &sources, "caller", CProofClaim::Grouped).unwrap();
+    verify_c0_sources(&expanded, &sources).unwrap();
+    let caller = source.find("int32 caller()").unwrap();
+    let step = caller + source[caller..].find("execute();").unwrap();
+    let at = expansion::position_at_offset(&source, step);
+    let rewritten = expand_c0_tactic_source_at(&source, &sources, at.line, at.column).unwrap();
+    verify_c0_sources(&rewritten, &sources).unwrap();
+    let (session, _) = C0VerificationSession::new(&source, &sources).unwrap();
+    for checked in [&expanded, &rewritten] {
+        let caller = checked.find("int32 caller()").unwrap();
+        let proof = caller + checked[caller..].find("by").unwrap();
+        let body = proof + checked[proof..].find('{').unwrap() + 1;
+        let first_step = body + checked[body..].find(|c: char| !c.is_whitespace()).unwrap();
+        let at = expansion::position_at_offset(checked, first_step);
+        session.verify_at(checked, at.line, at.column).unwrap();
+    }
+}
+
+#[test]
+fn record_pointer_identity_local_storage_keeps_values_and_alias_requirements() {
+    let (source, sources) =
+        mdtest_sources("mdtests/c_record_pointer_identity_preserves_local_storage.md");
+    let c = &sources[0].1;
+    let original = [("identity.c", c.as_str())];
+    assert!(
+        verify_c0_sources(
+            &source.replace("ensures result == 7;", "ensures result == 8;"),
+            &original
+        )
+        .is_err()
+    );
+    // A checked helper body does not export address equality unless its
+    // contract states it. Mere existence of a local record grants no alias.
+    assert!(verify_c0_sources(&source.replace("ensures result == pair;", ""), &original).is_err());
+    // Ownership grants storage access, not initialization of an unwritten field.
+    let uninitialized = c.replace(
+        "struct Pair pair = { 7, 9 };",
+        "struct Pair pair; pair.second = 9;",
+    );
+    assert!(verify_c0_sources(&source, &[("identity.c", uninitialized.as_str())]).is_err());
+    // Nonzero member offsets use the same complete-object owner.
+    let second = c.replace("return q->first;", "return q->second;");
+    verify_c0_sources(
+        &source.replace("ensures result == 7;", "ensures result == 9;"),
+        &[("identity.c", second.as_str())],
+    )
+    .unwrap();
+    let written = c.replace("return q->first;", "q->second = 11; return q->second;");
+    verify_c0_sources(
+        &source.replace("ensures result == 7;", "ensures result == 11;"),
+        &[("identity.c", written.as_str())],
+    )
+    .unwrap();
+}
+
+#[test]
 #[ignore = "nightly: pointer equality expansion and retained checks took 0.95s in parallel"]
 fn shifted_pointer_equality_rewrites_expand_and_recheck() {
     let sources = [(
@@ -690,7 +755,7 @@ fn reordered_cstr_requirement_expands_without_planning_and_reverifies() {
             requires known_len < 18446744073709551615u64;
             requires defined(known_len + 1u64);
             requires viewable(haystack[0..known_len + 1u64]);
-            requires cstr::readable(haystack);
+            views str: cstr_at(haystack, _);
             views haystack[0..known_len + 1u64];
             ensures result < 18446744073709551615u64;
         } by {
@@ -702,7 +767,7 @@ fn reordered_cstr_requirement_expands_without_planning_and_reverifies() {
 
     let (verified, planning_transitions) =
         count_planning_statement_transitions(|| verify_c0_sources(click_source, &sources));
-    let verified = verified.expect("the exact reordered caller requirement should verify");
+    let verified = verified.expect("the reordered borrowed string should verify");
     assert_eq!(
         planning_transitions, 0,
         "the source-identity retry must not enter hidden statement planning"
@@ -726,12 +791,8 @@ fn reordered_cstr_requirement_expands_without_planning_and_reverifies() {
     )
     .expect("the source-identity retry should expand into source");
     assert!(
-        expanded_source.contains("obtain (len: uint64) { at(function.entry,"),
-        "the expansion should state the established entry existential: {expanded_source}"
-    );
-    assert!(
-        expanded_source.contains("extract(at(function.entry, viewable(haystack[0.."),
-        "the expansion should consume a retained source projection: {expanded_source}"
+        expanded_source.contains("views str: cstr_at(haystack, _);"),
+        "the expansion should keep the reordered string clause: {expanded_source}"
     );
     assert!(!expanded_source.contains("execute();"));
     assert!(!expanded_source.contains("simp();"));

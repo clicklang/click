@@ -514,7 +514,7 @@ pub fn expand_project_claim_source_by_label(
     let sources = CSourceContext::of(inputs)?.with_click_project(project);
     let file = resolve_click_project_context(project, &sources)?;
     let compiler_imported = matches!(inputs, ProgramInputs::Program(_));
-    let claim_label = &*resolve_rust_claim_label(&file, claim_label);
+    let claim_label = &*resolve_source_claim_label(&file, claim_label);
     for theorem in file.theorem_definitions() {
         if !file.theorem_is_selected(theorem.name()) {
             continue;
@@ -614,7 +614,7 @@ fn expand_program_prepared_claim_source_by_label_context(
     let import = import.into();
     let sources = CSourceContext::program(&import)?;
     let file = parse_source_with_c_layouts_context(click_source, &sources)?;
-    let claim_label = &*resolve_rust_claim_label(&file, claim_label);
+    let claim_label = &*resolve_source_claim_label(&file, claim_label);
     for theorem in file.theorem_definitions() {
         if let Some(index) = theorem.ensure_index_by_label(claim_label) {
             let verified = verify_click_theorems_with_context(click_source, &sources)?;
@@ -792,7 +792,7 @@ fn expand_loop_phase_claim(
     claim_label: &str,
     at: Option<usize>,
 ) -> Result<Option<ClaimExpansion>, ClickError> {
-    let claim_label = &*resolve_rust_claim_label(file, claim_label);
+    let claim_label = &*resolve_source_claim_label(file, claim_label);
     let Some((function_block, loop_index, phase)) = proof_function_blocks(file).find_map(|block| {
         let (loop_index, phase) =
             claim_labels::parse_loop_phase_claim_label(block.signature().name(), claim_label)?;
@@ -2494,72 +2494,97 @@ fn rust_inherent_method_in_its_type_module(name: &str) -> Option<String> {
 
 /// The segments of the Rust path that ends at token `end`, `a::b::name`.
 /// The name the parser gives a C++ head's declarator whose last token is at
-/// `end`, the token before its `(`: `Rec::m` is `Rec_m`, `Rec::Rec` is
-/// `Rec_constructor`, `Rec::~Rec` is `Rec_destructor`, `Rec::operator+=` is
-/// `Rec_operator_add_assign`, and `f<true>` is `f__bool_true`.
+/// `end`, the token before its `(`: the importer name of its C++ path,
+/// `Rec::m`, `Rec::~Rec`, `Rec::operator+=`, `Stored<long long>::Read` or
+/// `choose<true>`.
 fn cpp_declarator_name_ending_at(tokens: &[SourceToken], end: usize) -> String {
     let text = |at: usize| tokens[at].text.as_str();
+    let mut segments = Vec::new();
     let mut at = end;
-    let mut suffix = String::new();
-    if text(at) == ">" {
-        let mut arguments = Vec::new();
-        while at > 0 && text(at) != "<" {
-            at -= 1;
-            if matches!(text(at), "true" | "false") {
-                arguments.push(text(at));
+    loop {
+        let mut arguments = String::new();
+        if text(at) == ">" {
+            let close = at;
+            let mut depth = 0usize;
+            while at > 0 {
+                match text(at) {
+                    ">" => depth += 1,
+                    "<" => {
+                        depth -= 1;
+                        if depth == 0 {
+                            break;
+                        }
+                    }
+                    _ => {}
+                }
+                at -= 1;
+            }
+            arguments = printed_template_arguments(&tokens[at + 1..close]);
+            at = at.saturating_sub(1);
+        }
+        let segment = match text(at) {
+            "]" if at >= 2 && text(at - 2) == "operator" => {
+                at -= 2;
+                "operator[]".to_string()
+            }
+            "=" if at >= 2 && text(at - 2) == "operator" => {
+                let operator = format!("operator{}=", text(at - 1));
+                at -= 2;
+                operator
+            }
+            name if at >= 1 && text(at - 1) == "~" => {
+                at -= 1;
+                format!("~{name}")
+            }
+            name => name.to_string(),
+        };
+        segments.insert(0, format!("{segment}{arguments}"));
+        if at >= 3 && text(at - 1) == ":" && text(at - 2) == ":" {
+            at -= 3;
+            continue;
+        }
+        break;
+    }
+    crate::languages::cpp::names::path_name(&segments)
+}
+
+/// Template argument tokens as Clang prints them, `<long long, true>`.
+fn printed_template_arguments(tokens: &[SourceToken]) -> String {
+    let mut printed = String::from("<");
+    let mut word_before = false;
+    let mut index = 0;
+    while index < tokens.len() {
+        let text = tokens[index].text.as_str();
+        match text {
+            ":" if tokens.get(index + 1).is_some_and(|next| next.text == ":") => {
+                printed.push_str("::");
+                index += 1;
+                word_before = false;
+            }
+            "," => {
+                printed.push_str(", ");
+                word_before = false;
+            }
+            "*" => {
+                printed.push_str(" *");
+                word_before = false;
+            }
+            "<" | ">" | "-" => {
+                printed.push_str(text);
+                word_before = false;
+            }
+            word => {
+                if word_before {
+                    printed.push(' ');
+                }
+                printed.push_str(word);
+                word_before = true;
             }
         }
-        for argument in arguments.iter().rev() {
-            suffix.push_str(&format!("__bool_{argument}"));
-        }
-        at = at.saturating_sub(1);
+        index += 1;
     }
-    let operator = match text(at) {
-        "]" if at >= 2 && text(at - 2) == "operator" => Some("operator_index"),
-        "=" if at >= 2 && text(at - 2) == "operator" && text(at - 1) == "+" => {
-            Some("operator_add_assign")
-        }
-        "=" if at >= 2 && text(at - 2) == "operator" && text(at - 1) == "-" => {
-            Some("operator_subtract_assign")
-        }
-        _ => None,
-    };
-    let mut segments = Vec::new();
-    let mut destructor = false;
-    if operator.is_some() {
-        at -= 2;
-        segments.push(text(at));
-    } else {
-        segments.push(text(at));
-        if at >= 1 && text(at - 1) == "~" {
-            destructor = true;
-            at -= 1;
-        }
-    }
-    while at >= 3 && text(at - 1) == ":" && text(at - 2) == ":" {
-        segments.insert(0, text(at - 3));
-        at -= 3;
-    }
-    let qualifier = segments.len().checked_sub(2).map(|index| segments[index]);
-    let last = segments[segments.len() - 1];
-    // `caller::(lambda#0)` is the importer's `caller__lambda_0`.
-    if let Some(index) = last
-        .strip_prefix("(lambda#")
-        .and_then(|rest| rest.strip_suffix(')'))
-    {
-        return format!(
-            "{}__lambda_{index}",
-            segments[..segments.len() - 1].join("_")
-        );
-    }
-    match (operator, qualifier) {
-        (Some(operator), Some(_)) => {
-            format!("{}_{operator}", segments[..segments.len() - 1].join("_"))
-        }
-        (None, Some(record)) if destructor => format!("{record}_destructor"),
-        (None, Some(record)) if record == last => format!("{record}_constructor"),
-        _ => segments.join("_") + &suffix,
-    }
+    printed.push('>');
+    printed
 }
 
 /// The `>` closing the generic list opened at `open`. The scanner reads
@@ -4445,6 +4470,17 @@ fn declaration_source_index(
                 .iter()
                 .any(|extension| pair[1].text.ends_with(extension))
     });
+    let c_aliases = tokens
+        .windows(4)
+        .filter_map(|items| {
+            (items[0].text == "verifying"
+                && items[2].text == "as"
+                && crate::languages::SourceLanguage::of_source_path(
+                    items[1].text.trim_matches('"'),
+                ) == crate::languages::SourceLanguage::C)
+                .then_some(items[3].text.as_str())
+        })
+        .collect::<BTreeSet<_>>();
     // Inside a Rust `impl` block a method `name` is the function `Type_name`.
     // The block's type, its module when it is an inherent block for a type
     // named by a path, its trait argument's suffix, and where it closes.
@@ -4544,6 +4580,9 @@ fn declaration_source_index(
                             return cpp_declarator_name_ending_at(tokens, before);
                         }
                         let path = rust_path_ending_at(tokens, before);
+                        if path.len() == 2 && c_aliases.contains(path[0]) {
+                            return path.join("::");
+                        }
                         match &impl_block {
                             // A method's own name, and an item inside it.
                             Some(_) => crate::languages::rust::names::method_path_name(&path),
@@ -5225,7 +5264,12 @@ pub fn click_declaration_source_position(click_source: &str, name: &str) -> Opti
         match token.text.as_str() {
             "{" => depth += 1,
             "}" => depth = depth.saturating_sub(1),
-            text if depth == 0 && text == name => {
+            text if depth == 0
+                && (text == name
+                    || (name.contains("::")
+                        && name.rsplit("::").next() == Some(text)
+                        && rust_path_ending_at(&tokens, index).join("::") == name)) =>
+            {
                 // A generic declaration lists its type parameters between
                 // the name and the parameter list.
                 let mut next = index + 1;
@@ -5360,17 +5404,20 @@ fn positions_at_offsets(
     positions
 }
 
-/// A Rust function is named by its path, `quad::walk.contract`, or by the
-/// name the importer gives it; this is the label under the importer's name.
-fn resolve_rust_claim_label<'a>(
+/// A Rust function or C++ declaration is named by its path,
+/// `quad::walk.contract`, `Square::area.contract` or `fee<true>.contract`,
+/// or by the name the importer gives it; this is the label under the
+/// importer's name.
+fn resolve_source_claim_label<'a>(
     file: &ClickFile,
     claim_label: &'a str,
 ) -> std::borrow::Cow<'a, str> {
-    if file.source_language() == crate::languages::SourceLanguage::Rust
-        && let Some((function, rest)) = claim_label.split_once('.')
-        && function.contains("::")
+    if let Some((function, rest)) = claim_label.split_once('.')
+        && !function
+            .chars()
+            .all(|character| character.is_ascii_alphanumeric() || character == '_')
         && let Some(block) = file.function_blocks().iter().find(|block| {
-            crate::languages::rust::names::rust_display_name(block.signature().name()).as_deref()
+            crate::languages::source_display_name(block.signature().name()).as_deref()
                 == Some(function)
         })
     {
@@ -5404,7 +5451,7 @@ fn c0_tactic_source_offsets_with_tokens(
     claim_label: &str,
     tokens: &[SourceToken],
 ) -> Result<Vec<usize>, ClickError> {
-    let claim_label = &*resolve_rust_claim_label(file, claim_label);
+    let claim_label = &*resolve_source_claim_label(file, claim_label);
     for theorem in file.theorem_definitions() {
         if !file.theorem_is_selected(theorem.name()) {
             continue;

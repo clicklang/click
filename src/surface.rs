@@ -1,8 +1,8 @@
-//! Surface Click proof-language syntax, checking, and proof orchestration.
+//! Surface Click specification syntax, checking, and proof orchestration.
 //!
-//! Surface Click is the single proof language. Its current program-language
-//! binding targets C0; additional program languages belong under
-//! `crate::languages` rather than beside this module.
+//! Surface Click is the shared specification language for C, C++, and Rust.
+//! Target-language frontends belong under `crate::languages`; proof checking
+//! uses the shared kernel.
 
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
@@ -102,9 +102,7 @@ mod integer_truncation;
 mod lowering;
 mod modules;
 mod parser;
-pub use crate::languages::rust::names::{
-    claim_label_matches, display_rust_names, rust_display_name,
-};
+pub use crate::languages::{claim_label_matches, display_source_names, source_display_name};
 pub(crate) mod planning;
 pub(crate) mod proof_diagnostics;
 mod source_registry;
@@ -1433,6 +1431,8 @@ pub struct FunctionSignature {
     return_pointee_constant: bool,
     return_reference: bool,
     name: String,
+    /// Translation unit selected by a file-qualified C contract head.
+    c_source: Option<String>,
     parameters: Vec<FunctionParameter>,
     /// The payload type of the function's declared exceptional outcome.
     /// This surface slice currently accepts only `throws int32`.
@@ -2703,7 +2703,7 @@ pub enum ContractExpression {
     /// Persistent sequence concatenation. This is specification syntax only;
     /// it does not denote C pointer arithmetic or allocate C memory.
     SequenceConcat(Box<ContractExpression>, Box<ContractExpression>),
-    /// A C0 expression fragment appearing inside Surface Click.
+    /// A C expression fragment appearing inside Surface Click.
     CFragment(CExpression),
     /// A C unary operation whose operand retains explicit binding syntax.
     /// Scalar casts and typed loads may also wrap a pure or historical expression. `operand` is authoritative;
@@ -6865,6 +6865,34 @@ fn contract_expression_reads_memory(
         | ContractExpression::Binding(_)
         | ContractExpression::CBinding(_)
         | ContractExpression::CFragment(CExpression::Variable(_) | CExpression::Value(_)) => false,
+        // `address(p)` of a name is that pointer value's integer
+        // representation: it reads nothing its operand does not.
+        ContractExpression::CUnary {
+            operand,
+            lowered:
+                CExpression::Cast {
+                    expression,
+                    target_type: CType::UInt64,
+                    ..
+                },
+        } if matches!(
+            expression.as_ref(),
+            CExpression::Variable(_) | CExpression::Value(_)
+        ) =>
+        {
+            contract_expression_reads_memory(operand, callees)
+        }
+        ContractExpression::CFragment(CExpression::Cast {
+            expression,
+            target_type: CType::UInt64,
+            ..
+        }) if matches!(
+            expression.as_ref(),
+            CExpression::Variable(_) | CExpression::Value(_)
+        ) =>
+        {
+            false
+        }
         // A memory read, a snapshot selector, a resource observation, or any
         // C fragment richer than a name is conservatively memory-dependent.
         ContractExpression::QualifiedC { .. }
@@ -8128,6 +8156,20 @@ impl FunctionBlock {
 }
 
 impl FunctionSignature {
+    fn matches_c_definition(&self, source_path: &str, function: &syntax::C0Function) -> bool {
+        let name = if let Some(source) = &self.c_source {
+            if source != source_path {
+                return false;
+            }
+            self.name
+                .rsplit_once("::")
+                .map_or(self.name.as_str(), |(_, name)| name)
+        } else {
+            &self.name
+        };
+        name == function.source_name()
+    }
+
     pub fn new(
         return_type: C0Type,
         name: impl Into<String>,
@@ -8138,6 +8180,7 @@ impl FunctionSignature {
             return_pointee_constant: false,
             return_reference: false,
             name: name.into(),
+            c_source: None,
             parameters,
             exceptional_type: None,
             diverges: false,

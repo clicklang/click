@@ -169,9 +169,14 @@ that writes `int32` for such a source already writes the source's spelling.
 2. **Native C++ heads.** Done for verified functions: qualified members with
    implicit `this`, constructors, destructors, `operator` names, `const` and
    `static` members, and `bool` function template arguments, with the corpus
-   migrated. Remaining: class template arguments in heads (`Stored<long long>`,
-   `std::span<int>`), and C++ names in diagnostics and in proof references to
-   functions.
+   migrated. Done: class template arguments in heads
+   (`Stored<long long>::Read`), as Clang prints the instance, and C++ names
+   in diagnostics, claim labels and proof references to functions
+   (`step(FeeFrac::IsEmpty(...))`, `&FeeFrac::EvaluateFeeDown`, `executes`
+   targets). As the Rust importer does, the C++ importer names each
+   function by an injective encoding of its path, which every diagnostic
+   decodes. Remaining: standard-library instances in heads
+   (`std::span<int>`), whose contracts the catalog supplies.
 3. **`extern` and `contract` for C++ and Rust.** Done: native C++ `extern`
    heads, members included, and calls through C++ function-pointer
    parameters under a named contract, and Rust `contract fn` with calls

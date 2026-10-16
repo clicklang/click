@@ -10,13 +10,13 @@ mod import;
 mod interface;
 mod lifetime;
 mod lowering;
-pub(crate) mod names;
+pub mod names;
 mod scalar;
 mod schema;
 pub(crate) mod standard_library;
 mod validity;
 
-pub use import::{PreparedCppImport, load_import, refresh_import};
+pub use import::PreparedCppImport;
 pub(crate) use import::{UnitConfig, UnitSource, load_unit, prepare_unit};
 pub use lowering::{LoweredCppFunction, lower_import};
 pub use schema::{

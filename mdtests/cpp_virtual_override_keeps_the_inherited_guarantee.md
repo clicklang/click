@@ -50,5 +50,5 @@ int caller(const Square& square, int scale) {
 ```
 
 ```expect
-fail: Tile_area.interface_ensures_0
+fail: Tile::area.interface_ensures_0
 ```
