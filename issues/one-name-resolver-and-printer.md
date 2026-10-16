@@ -42,6 +42,11 @@ rule: a result hides an earlier proof binding of its name
 (`mdtests/a_step_result_name_can_be_bound_again.md`). Contract and theorem
 `let` names stay reserved.
 
+The parser's plain name sets are now one `NameTable` indexed by kind. The
+sets that carry data per name (resource instances, arm binder types, C
+parameter types and objects, struct, reference and aggregate parameters,
+facts) still have their own maps.
+
 The complete scoped table for parameters, fields, binders, constructors,
 resources, program points and project modules remains open. Proof inventories
 still interpret shared parser tokens; parser-produced AST spans and integration
