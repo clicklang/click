@@ -766,3 +766,28 @@ not repair it. The upstream compatibility fixture preserves the descriptor,
 subrange, occupancy resource and local pointer alias; it does not activate the
 archive or grant native place evidence from C layout. Investigate complete-read
 designation resolution next, retaining bounds, origin and lifetime controls.
+
+
+The next recovery checkpoint preserves exact original symbolic C input-pointer
+reads without treating them as native object declarations. Its 34 pointer-domain
+controls and 160 selected read/store/native controls pass. The original arena
+write now executes; explicit descriptor and separation transport also checks
+its two final resource folds. The occupancy postcondition remains open, and
+the last full audit remains **51/52**.
+
+That investigation exposed an independent simple-checker defect: quantified
+equality matching tried every target scalar as an array index, exhausting the
+750,000-unit work allowance. This increment selects equality candidates from
+matching bound occurrences, while retaining scalar candidates for intermediate
+order bounds. Matching cells remain eligible and mismatched read kinds do not.
+A three-size candidate-count control checks that unrelated target scalars do
+not trigger speculative memory equality queries. Recovery's 91 selected
+quantifier/transport controls pass; the reduced occupancy transport now gives
+a bounded missing-frame refusal. This delivery does not activate the archived
+object model or complete the arena proof.
+
+Current-master validation for this equality-matching increment passes all 834
+selected tests, including the complete scaling suite, quantifier/transport
+controls and the matching-cell/read-kind controls. Formatting, documentation
+lint and diff checks pass; advisory Vale lint is unavailable. The full local
+gate and nightly suite were not run.
