@@ -2799,6 +2799,15 @@ impl PureFactContext {
         if left == right {
             return true;
         }
+        // Memory is addressed: two pointers with equal addresses name the
+        // same bytes, whatever objects they designate. A C pointer comparison
+        // states exactly that (`c_pointer_comparison_condition`).
+        if self.uint64_values_known_equal(
+            &Bitvector32Term::pointer_address(left.clone()),
+            &Bitvector32Term::pointer_address(right.clone()),
+        ) {
+            return true;
+        }
         if left.blocks_proven_distinct(right) {
             return false;
         }

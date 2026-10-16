@@ -1719,7 +1719,9 @@ fn symbolic_pointer_equality_reports_branch_facts() {
         block: "array".into(),
         offset: PointerOffsetTerm::Variable(offset),
     };
-    let condition = ConditionTerm::pointer_equal(left.clone(), right.clone());
+    // A C comparison states that the addresses are equal, not the pointers.
+    let condition =
+        crate::kernel::eval::c_pointer_comparison_condition(left.clone(), right.clone());
     let state = CState::new()
         .with_local("p", CValue::pointer(left))
         .with_local("q", CValue::pointer(right));
