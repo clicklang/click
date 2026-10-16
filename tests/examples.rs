@@ -2224,7 +2224,7 @@ fn rbtree_augmented_wrappers_reject_missing_or_wrong_calls() {
             "rb_insert_augmented.c",
             "\t__rb_insert(node, root, augment_rotate);",
             "",
-            "requires a call to `__rb_insert` at the current frontier",
+            "requires a call to `__rb_insert#inline:rb_insert_augmented.c` at the current frontier",
         ),
         (
             "rbtree_insert_augmented.click",
@@ -2238,7 +2238,7 @@ fn rbtree_augmented_wrappers_reject_missing_or_wrong_calls() {
             "rb_erase_augmented.c",
             "\t____rb_erase_color(parent, root, augment_rotate);",
             "",
-            "requires a call to `____rb_erase_color` at the current frontier",
+            "requires a call to `____rb_erase_color#inline:rb_erase_augmented.c` at the current frontier",
         ),
         (
             "rbtree_erase_leaf.click",
