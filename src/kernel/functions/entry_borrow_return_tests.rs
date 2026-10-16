@@ -12,6 +12,7 @@ fn returned_borrows_keep_checked_entry_arguments_when_clauses_are_reordered() {
             value_type: CType::Int32Pointer,
             volatile: false,
             pointee_constant: false,
+            access_class: None,
             source: Default::default(),
         }
     };

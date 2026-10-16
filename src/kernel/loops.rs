@@ -2116,6 +2116,15 @@ fn c_loop_state_components_match_at_back_edge_inner(
     }) {
         changed.push("pointer subobject extents");
     }
+    // Likewise the class of the object a pointer local designates
+    // (`design/effective-types.md`).
+    if top_state.locals().object_values().any(|(name, value)| {
+        c_value_object_class(value).is_some()
+            && next_state.locals().get(name).map(c_value_object_class)
+                != Some(c_value_object_class(value))
+    }) {
+        changed.push("pointer object classes");
+    }
     if top_state.loan_participant != next_state.loan_participant {
         changed.push("stable-view loan participant");
     }
@@ -2746,7 +2755,13 @@ fn abstract_loop_exit_states(
         }
     }
     discard_loop_exit_partial_value_bindings(&head.top, body, &mut rebound);
-    retain_proven_loop_exit_cells(&mut rebound, exit_facts, assumptions, binders.is_empty())?;
+    retain_proven_loop_exit_cells(
+        &mut rebound,
+        exit_facts,
+        &contexts,
+        assumptions,
+        binders.is_empty(),
+    )?;
     let mut successor = rebound[0].clone();
     let mut restatements = vec![LoopExitRestatement::default(); rebound.len()];
     let uninitialized = abstract_loop_exit_initialization(&mut successor, &rebound);
@@ -2829,9 +2844,14 @@ fn loop_exit_argument_contexts(
 /// Fill only changed concrete cache entries whose exact typed value every
 /// exit already proves. A load equation is evidence for a cache entry, never
 /// for a C store, initialization, or additional memory authority.
+///
+/// `built` holds the exit contexts the join already indexed for its binders
+/// (empty when the loop has none); an exit's context is built here only when
+/// it is missing, so no exit's facts are assumed twice.
 fn retain_proven_loop_exit_cells(
     states: &mut [CState],
     facts: &[&ExecutionFacts],
+    built: &[PureFactContext],
     assumptions: &PureFactContext,
     no_binders: bool,
 ) -> Result<(), String> {
@@ -2875,9 +2895,12 @@ fn retain_proven_loop_exit_cells(
                 agrees = false;
                 continue;
             };
-            let context = contexts[index].get_or_insert_with(|| {
-                assumptions_with_path_context(assumptions, facts[index], &[])
-            });
+            let context = match built.get(index) {
+                Some(context) => context,
+                None => contexts[index].get_or_insert_with(|| {
+                    assumptions_with_path_context(assumptions, facts[index], &[])
+                }),
+            };
             let equality = indexed_loop_exit_load_equality(context, &load, &value);
             if equality != Some(true) {
                 agrees = false;
@@ -3602,6 +3625,13 @@ fn abstract_loop_exit_locals(
         {
             extents if extents[1..].iter().all(|extent| *extent == extents[0]) => {
                 with_retained_extent(fresh, held.first())
+            }
+            _ => fresh,
+        };
+        // So do exits that agree on the class of the object it designates.
+        let fresh = match held.iter().map(c_value_object_class).collect::<Vec<_>>() {
+            classes if classes[1..].iter().all(|class| *class == classes[0]) => {
+                with_retained_object_class(fresh, held.first())
             }
             _ => fresh,
         };
@@ -8349,6 +8379,7 @@ pub(super) fn havoc_loop_modified_locals(
         // abstract iteration; the back edge checks that the body returns
         // it to the same one (`c_loop_state_components_match_at_back_edge`).
         let value = with_retained_extent(value, state.locals.get(&name));
+        let value = with_retained_object_class(value, state.locals.get(&name));
         sync_stack_local(&mut state, &name, &value);
         state.locals.set_typed(name, value, c_type);
     }
@@ -8861,6 +8892,19 @@ fn c_value_subobject_extent(value: &CValue) -> Option<&SubobjectExtent> {
         CValue::Pointer(pointer) => pointer.extent(),
         _ => None,
     }
+}
+
+fn c_value_object_class(value: &CValue) -> Option<crate::kernel::effective_type::CAccessClass> {
+    match value {
+        CValue::Pointer(pointer) => pointer.object_class(),
+        _ => None,
+    }
+}
+
+/// `fresh` with the class of the object the pointer value it abstracts
+/// designates.
+fn with_retained_object_class(fresh: CValue, previous: Option<&CValue>) -> CValue {
+    fresh.with_pointer_object_class(previous.and_then(c_value_object_class))
 }
 
 /// `fresh` with the subobject extent of the pointer value it abstracts.

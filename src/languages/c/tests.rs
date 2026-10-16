@@ -2607,7 +2607,7 @@ fn c0_accepts_incomplete_outer_dimension_extern_scalar_arrays() {
     assert_eq!(values.incomplete_shape(), Some(&[3][..]));
     assert!(matches!(
         function.body(),
-        syntax::C0Statement::Return(syntax::C0Expression::Index(base, index), _)
+        syntax::C0Statement::Return(syntax::C0Expression::Index(base, index, _), _)
             if matches!(base.as_ref(), syntax::C0Expression::Variable(name) if name == "values")
                 && matches!(index.as_ref(), syntax::C0Expression::Add(left, right)
                     if matches!(left.as_ref(), syntax::C0Expression::Multiply(multiplier, stride)
@@ -4773,7 +4773,7 @@ fn c0_syntax_accepts_memory_lvalue_updates() {
     let mut targets = Vec::new();
     update_targets(function.body(), &mut targets);
     assert_eq!(targets.len(), 3);
-    assert!(matches!(targets[0], syntax::C0Expression::Index(_, _)));
+    assert!(matches!(targets[0], syntax::C0Expression::Index(_, _, _)));
     assert!(matches!(
         targets[1],
         syntax::C0Expression::Field {
@@ -9267,7 +9267,7 @@ fn c0_struct_scalar_array_element_address_preserves_row_major_offset() {
     else {
         panic!("array element address should remain an address-of lvalue")
     };
-    let syntax::C0Expression::Index(base, index) = target.as_ref() else {
+    let syntax::C0Expression::Index(base, index, _) = target.as_ref() else {
         panic!("array element address should target an indexed lvalue")
     };
     assert!(matches!(

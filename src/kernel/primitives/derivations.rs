@@ -1639,6 +1639,13 @@ impl ExecutionBudget {
     /// A budget built by [`Self::beside_live_state`] cannot issue one at all:
     /// its counter would start over identities the live state already holds,
     /// and nothing it evaluates needs an execution identity.
+    /// Moves the counter past `variable`, so nothing it hands out from now
+    /// on is `variable` or below it. Identities it skips are never handed
+    /// out; the counter only advances.
+    pub(in crate::kernel) fn skip_kernel_variables_through(&mut self, variable: Variable) {
+        self.next_kernel_variable = self.next_kernel_variable.max(variable.0 + 1);
+    }
+
     pub(in crate::kernel) fn allocate_kernel_variable(&mut self) -> ExecutionResult<Variable> {
         if self.refuses_execution_identities {
             return Err(ExecutionLimit::ExecutionIdentityBesideLiveState);

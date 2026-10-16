@@ -3,6 +3,8 @@ use super::prelude::*;
 
 #[cfg(test)]
 thread_local! {
+    /// Facts whose whole execution-variable ceiling was taken.
+    static WHOLE_CEILING_FACTS: Cell<usize> = const { Cell::new(0) };
     static CONDITION_IMPLICATION_ANTECEDENT_CHECKS: Cell<usize> = const { Cell::new(0) };
     static MEMORY_SEPARATION_CANDIDATE_CHECKS: Cell<usize> = const { Cell::new(0) };
     static MEMORY_SEPARATION_RECURSIVE_CANDIDATE_CHECKS: Cell<usize> = const { Cell::new(0) };
@@ -5031,6 +5033,8 @@ impl PureFactContext {
     }
 
     pub(super) fn insert_proposition_fact(&mut self, proposition: Proposition) {
+        self.execution_variable_ceiling
+            .file_proposition(&proposition);
         if let Proposition::CResourceComposition(resources) = proposition {
             if !self.resource_compositions.contains(&resources) {
                 self.resource_compositions =
@@ -5637,6 +5641,7 @@ impl PureFactContext {
             self = self.assume_condition_uncharged(native, truth);
         }
         let old = self.condition_facts.get(&condition).copied();
+        self.execution_variable_ceiling.file_condition(&condition);
         self.condition_facts = self.condition_facts.with_inserted(condition.clone(), value);
         self.execution_fact_projection.insert(
             ContextFactKey::Condition(condition.clone()),
@@ -5756,6 +5761,12 @@ impl PureFactContext {
 
     /// This context extended by `proposition`, charged one unit of
     /// deterministic work (see [`Self::assume_condition`]).
+    /// At least the greatest execution-range variable any of these facts
+    /// mentions; see `ExecutionVariableCeiling`.
+    pub(in crate::kernel) fn execution_variable_ceiling(&self) -> Option<Variable> {
+        self.execution_variable_ceiling.get()
+    }
+
     pub fn assume_proposition(self, proposition: Proposition) -> Self {
         crate::instrumentation::record_deterministic_work(1);
         self.assume_proposition_uncharged(proposition)
@@ -6102,6 +6113,11 @@ impl PureFactContext {
         propositions: &[Proposition],
     ) -> Self {
         let mut restricted = self.clone();
+        for (condition, _) in conditions {
+            restricted
+                .execution_variable_ceiling
+                .file_condition(condition);
+        }
         restricted.condition_facts = conditions.iter().fold(
             crate::persistent::PersistentMap::default(),
             |facts, (condition, value)| facts.with_inserted(condition.clone(), *value),
@@ -8894,5 +8910,162 @@ mod integer_observation_tests {
             native_comparison_of_integer_observation(&condition, true),
             None
         );
+    }
+}
+
+/// An upper bound on the execution-range variables a context's facts
+/// mention, kept as facts are filed without reading a snapshot's contents.
+/// Filing a fact takes the ceiling of its written syntax into `base`; a fact
+/// that names a snapshot is also queued in `pending`. The first execution
+/// that asks takes each queued fact's whole ceiling, snapshots included,
+/// and caches the result for this context version; the next fact filed
+/// rebases on that result, so each queued fact is taken whole once along a
+/// path. Forks share `pending` and the cache until one of them files a fact.
+#[derive(Clone, Default)]
+pub(super) struct ExecutionVariableCeiling {
+    base: Option<Variable>,
+    pending: crate::kernel::proof::PersistentSequence<ExecutionVariableCeilingFact>,
+    cached: std::sync::Arc<std::sync::OnceLock<Option<Variable>>>,
+}
+
+#[derive(Clone)]
+pub(super) enum ExecutionVariableCeilingFact {
+    Condition(ConditionTerm),
+    Proposition(Proposition),
+}
+
+impl std::fmt::Debug for ExecutionVariableCeiling {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("ExecutionVariableCeiling")
+            .field("base", &self.base)
+            .field("pending", &self.pending.len())
+            .finish()
+    }
+}
+
+impl ExecutionVariableCeiling {
+    fn file_condition(&mut self, condition: &ConditionTerm) {
+        let (syntax, names_snapshot) =
+            crate::kernel::reasoning::variable_collection::condition_syntax_execution_variable_ceiling(
+                condition,
+            );
+        self.file(
+            syntax,
+            names_snapshot.then(|| ExecutionVariableCeilingFact::Condition(condition.clone())),
+        );
+    }
+
+    fn file_proposition(&mut self, proposition: &Proposition) {
+        let (syntax, names_snapshot) =
+            crate::kernel::reasoning::variable_collection::proposition_syntax_execution_variable_ceiling(
+                proposition,
+            );
+        self.file(
+            syntax,
+            names_snapshot.then(|| ExecutionVariableCeilingFact::Proposition(proposition.clone())),
+        );
+    }
+
+    fn file(&mut self, syntax: Option<Variable>, deferred: Option<ExecutionVariableCeilingFact>) {
+        if let Some(ceiling) = self.cached.get() {
+            self.base = self.base.max(*ceiling);
+            self.pending = Default::default();
+        }
+        self.base = self.base.max(syntax);
+        if let Some(fact) = deferred {
+            self.pending.push(fact);
+        }
+        self.cached = std::sync::Arc::new(std::sync::OnceLock::new());
+    }
+
+    fn get(&self) -> Option<Variable> {
+        use crate::kernel::reasoning::variable_collection::{
+            condition_execution_variable_ceiling, proposition_execution_variable_ceiling,
+        };
+        *self.cached.get_or_init(|| {
+            self.pending
+                .iter()
+                .map(|fact| {
+                    #[cfg(test)]
+                    WHOLE_CEILING_FACTS.with(|count| count.set(count.get() + 1));
+                    match fact {
+                        ExecutionVariableCeilingFact::Condition(condition) => {
+                            condition_execution_variable_ceiling(condition)
+                        }
+                        ExecutionVariableCeilingFact::Proposition(proposition) => {
+                            proposition_execution_variable_ceiling(proposition)
+                        }
+                    }
+                })
+                .fold(self.base, Option::max)
+        })
+    }
+}
+
+#[cfg(test)]
+mod execution_variable_ceiling_tests {
+    use super::*;
+
+    fn word(offset: i64) -> Pointer {
+        Pointer {
+            block: PointerBlock::Concrete("a".into()),
+            offset: PointerOffsetTerm::Constant(offset),
+        }
+    }
+
+    fn execution_variable(offset: u64) -> Variable {
+        Variable(ExecutionBudget::KERNEL_VARIABLE_BASE + offset)
+    }
+
+    /// A fact naming a snapshot whose stored value holds `variable`, though
+    /// the fact's own syntax names no variable.
+    fn fact_over_snapshot_holding(variable: Variable) -> ConditionTerm {
+        let memory = CMemory::new()
+            .with_block("a", 8)
+            .store(word(0), CValue::Int32(Bitvector32Term::Variable(variable)));
+        ConditionTerm::Bitvector32Equal(
+            Box::new(Bitvector32Term::MemoryLoad(
+                crate::kernel::intern_c_memory_ref(&memory),
+                Box::new(word(4)),
+                crate::kernel::LoadKind::Bits32,
+            )),
+            Box::new(Bitvector32Term::Constant(0)),
+        )
+    }
+
+    #[test]
+    fn the_ceiling_covers_variables_only_a_named_snapshot_holds() {
+        let context = PureFactContext::new();
+        assert_eq!(context.execution_variable_ceiling(), None);
+        let context = context
+            .assume_condition(fact_over_snapshot_holding(execution_variable(7)), true)
+            .assume_proposition(Proposition::ConditionIs(
+                ConditionTerm::Bitvector32Equal(
+                    Box::new(Bitvector32Term::Variable(execution_variable(3))),
+                    Box::new(Bitvector32Term::Constant(1)),
+                ),
+                true,
+            ));
+        assert!(context.execution_variable_ceiling() >= Some(execution_variable(7)));
+    }
+
+    #[test]
+    fn asking_after_every_fact_takes_each_snapshot_fact_whole_once() {
+        for size in [8, 32] {
+            WHOLE_CEILING_FACTS.with(|count| count.set(0));
+            let mut context = PureFactContext::new();
+            for index in 0..size {
+                context = context.assume_condition(
+                    fact_over_snapshot_holding(execution_variable(index as u64)),
+                    true,
+                );
+                assert_eq!(
+                    context.execution_variable_ceiling(),
+                    Some(execution_variable(index as u64))
+                );
+            }
+            assert_eq!(WHOLE_CEILING_FACTS.with(Cell::get), size, "size {size}");
+        }
     }
 }

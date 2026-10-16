@@ -959,6 +959,7 @@ fn qualified_scalar_read(
         value_type,
         volatile: false,
         pointee_constant,
+        access_class: None,
         source: Default::default(),
     };
     if value_type.is_object_pointer() && pointee_volatile {

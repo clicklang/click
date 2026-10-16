@@ -1068,6 +1068,17 @@ allocation. The reserved ranges are:
 | `1 << 42 .. 1 << 43` | universal-introduction witnesses (`UNIVERSAL_WITNESS_VARIABLE_BASE`) |
 | `1 << 43 .. 1 << 44` | spec fold binders (`spec_fold_bound_variable`, base plus hash) |
 
+An execution allocates in its range (`KERNEL_VARIABLE_BASE` up to
+`KERNEL_VARIABLE_CEILING`) from its budget's counter and must not hand out a
+number its inputs already name. It reserves the variables of the state, the
+statement or call and the environment by collecting them. Its fact context's
+variables are reserved by a bound instead: `PureFactContext` keeps an upper
+bound on the execution-range variables its facts mention
+(`ExecutionVariableCeiling`), and the counter skips past it. Filing a fact
+reads only its syntax; a fact that names a memory snapshot is queued and taken
+whole, the snapshot's variables included, the first time an execution asks,
+so asking at every call costs what was filed since the last call.
+
 Direct contract `forall` certification now introduces its witness through
 `Variable::allocate_fresh`. This kernel allocator uses a private identity
 origin and a process-wide counter, so `Variable(n)` cannot forge its result

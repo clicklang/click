@@ -439,6 +439,7 @@ fn stored_child_arguments_require_owned_memory() {
         value_type: CType::Int32Pointer,
         volatile: false,
         pointee_constant: false,
+        access_class: None,
         source: Default::default(),
     })];
     let children = vec![
@@ -505,6 +506,7 @@ fn stored_child_arguments_require_owned_memory() {
             value_type: CType::Int32Pointer,
             volatile: false,
             pointee_constant: false,
+            access_class: None,
             source: Default::default(),
         })];
     // A materialized C block is not authority to read a link outside the
@@ -2049,6 +2051,7 @@ fn dependent_resource_clause_work_scales_with_dependency_nodes() {
         value_type: CType::Int32Pointer,
         volatile: false,
         pointee_constant: false,
+        access_class: None,
         source: Default::default(),
     };
     let samples = [4_usize, 8, 16, 32]
