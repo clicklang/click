@@ -23,7 +23,7 @@ int32 make_and_free() {
 verifying "heap_malloc_struct_null_check_free.c";
 
 int32 make_and_free() {
-    ensures result >= 0 by auto;
+    ensures result >= 0 by auto();
 }
 ```
 

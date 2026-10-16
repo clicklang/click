@@ -8,7 +8,7 @@ theorem integer_equality_recovers_int32(left: int32, right: int32) {
     ensures left == right by {
         apply(int32_to_integer_equal_implies_equal(left, right)) using {
             to_integer(left) == to_integer(right);
-        }
+        };
         assumption();
     }
 }

@@ -16,7 +16,7 @@ theorem add_after_countdown_returns_extra(n: int32, extra: int32) {
         induct(n) as ih;
         if n <= 0 {
             unfold(add_after_countdown(n, extra));
-            normalize() using { n <= 0; }
+            normalize() using { n <= 0; };
         } else {
             apply(ih(n - 1));
             unfold(add_after_countdown(n, extra));

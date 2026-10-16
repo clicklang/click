@@ -9,7 +9,7 @@ theorem equal_arguments(a: Integer, b: Integer) {
 theorem unequal_arguments(a: Integer, b: Integer) {
     requires b != a;
     ensures a == b by {
-        apply(equal_arguments(a, b)) using { b != a; }
+        apply(equal_arguments(a, b)) using { b != a; };
     }
 }
 ```

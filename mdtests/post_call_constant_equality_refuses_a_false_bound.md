@@ -13,8 +13,8 @@ verifying "global.c";
 int bumpg() {
     requires g < 1000;
     owns g;
-    ensures result == 0 by auto;
-    ensures g == old(g) + 1 by auto;
+    ensures result == 0 by auto();
+    ensures g == old(g) + 1 by auto();
 }
 int h() {
     requires g == 10;

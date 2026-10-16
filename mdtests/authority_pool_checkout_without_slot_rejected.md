@@ -47,7 +47,7 @@ void pool_checkout(struct pool* pool, struct object* object) {
     ensures valid_pool(pool);
 } by {
     open(pool_control(pool)) {
-        have 1 <= count(pool_slot(pool)) by simp;
+        have 1 <= count(pool_slot(pool)) by simp();
     }
     execute(); unfold(valid_pool); simp();
 }

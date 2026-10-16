@@ -35,25 +35,25 @@ int store_caller(void) {
 ```click
 verifying "signed_byte_flow.c";
 
-int minus_one() { ensures result == -1 by auto; }
+int minus_one() { ensures result == -1 by auto(); }
 int read_globals() {
     requires low == -128;
     requires table[1] == 127;
-    ensures result == -1 by auto;
+    ensures result == -1 by auto();
 }
-signed char pass(signed char value) { ensures result == value by auto; }
-int call_ends() { ensures result == -1 by auto; }
+signed char pass(signed char value) { ensures result == value by auto(); }
+int call_ends() { ensures result == -1 by auto(); }
 int sum_view(const signed char *p) {
     views p[0..2];
-    ensures result == p[0] + p[1] by auto;
+    ensures result == p[0] + p[1] by auto();
 }
-int view_caller() { ensures result == -3 by auto; }
+int view_caller() { ensures result == -3 by auto(); }
 void store(signed char *p, signed char value) {
     requires viewable(p[0..1]);
     owns p[0..1];
-    ensures p[0] == value by auto;
+    ensures p[0] == value by auto();
 }
-int store_caller() { ensures result == -100 by auto; }
+int store_caller() { ensures result == -100 by auto(); }
 ```
 
 ```expect

@@ -13,7 +13,7 @@ uint8 uint8_literal() {
 verifying "uint8_literals.c";
 
 uint8 uint8_literal() {
-    ensures returns_literal: result == 'n' by auto;
+    ensures returns_literal: result == 'n' by auto();
 }
 ```
 

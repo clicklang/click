@@ -26,7 +26,7 @@ int32 bounded_increment(int32 x) {
     let expected = x + 1;
 
     requires x < max;
-    ensures result_value: result == expected by auto;
+    ensures result_value: result == expected by auto();
     ensures function_value: result == inc_with_let(x) by { execute(); simp(); }
 }
 
@@ -35,7 +35,7 @@ int32 read_first(int32 p[]) {
     let first = len - 1;
 
     views p[0..len];
-    ensures result_value: result == p[first] by auto;
+    ensures result_value: result == p[first] by auto();
 }
 ```
 

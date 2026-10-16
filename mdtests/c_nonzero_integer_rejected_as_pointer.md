@@ -13,7 +13,7 @@ int32* invalid_pointer() {
 verifying "c_nonzero_integer_rejected_as_pointer.c";
 
 int32* invalid_pointer() {
-    ensures result != 0 by auto;
+    ensures result != 0 by auto();
 }
 ```
 

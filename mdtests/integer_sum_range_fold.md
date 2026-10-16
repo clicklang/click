@@ -48,12 +48,12 @@ int32 sum(int32 a[], int32 n) {
     have (0..0).fold(0, |acc, k| { (acc + to_integer(a[k])) }) == 0 by {
         apply(integer_range_fold_empty((0..0).fold(0, |acc, k| { (acc + to_integer(a[k])) }))) using {
             0 <= 0;
-        }
+        };
     }
     have 0 == (0..0).fold(0, |acc, k| { (acc + to_integer(a[k])) }) by {
         normalize() using {
             (0..0).fold(0, |acc, k| { (acc + to_integer(a[k])) }) == 0;
-        }
+        };
     }
     have 0 <= (0..0).fold(0, |acc, k| { (acc + to_integer(a[k])) }) by {
         arithmetic_certificate {
@@ -85,7 +85,7 @@ int32 sum(int32 a[], int32 n) {
                     have n != 1073741823 by {
                         apply(int32_less_than_implies_not_equal(n, 1073741823)) using {
                             n < 1073741823;
-                        }
+                        };
                     }
                     assumption();
                 } else {
@@ -96,7 +96,7 @@ int32 sum(int32 a[], int32 n) {
                         apply(int32_less_equal_and_not_less_than_implies_equal(n, 1073741823)) using {
                             n <= 1073741823;
                             not n < 1073741823;
-                        }
+                        };
                     }
                     rewrite(n == 1073741823);
                     normalize();
@@ -120,28 +120,28 @@ int32 sum(int32 a[], int32 n) {
             have -1000 <= to_integer(a[i]) by {
                 apply(int32_less_equal_to_integer(-1000, a[i])) using {
                     -1000 <= a[i];
-                }
+                };
             }
             have to_integer(a[i]) <= 1000 by {
                 apply(int32_less_equal_to_integer(a[i], 1000)) using {
                     a[i] <= 1000;
-                }
+                };
             }
             have 0 <= to_integer(i) by {
                 apply(int32_less_equal_to_integer(0, i)) using {
                     0 <= i;
-                }
+                };
             }
             have to_integer(i) <= 1000 by {
                 have to_integer(i) <= to_integer(n) by {
                     apply(int32_less_equal_to_integer(i, n)) using {
                         i <= n;
-                    }
+                    };
                 }
                 have to_integer(n) <= 1000 by {
                     apply(int32_less_equal_to_integer(n, 1000)) using {
                         n <= 1000;
-                    }
+                    };
                 }
                 arithmetic_certificate {
                     premise 0: to_integer(i) <= to_integer(n) => to_integer(i) <= to_integer(n);
@@ -213,13 +213,13 @@ int32 sum(int32 a[], int32 n) {
                     n <= 1073741823;
                     0 <= i;
                     i < n;
-                }
+                };
             }
             have defined((total + a[i])) by {
                 apply(int32_add_defined_by_integer_bounds(total, a[i])) using {
                     (to_integer(total) + to_integer(a[i])) >= -2147483648;
                     (to_integer(total) + to_integer(a[i])) <= 2147483647;
-                }
+                };
                 both {
                     assumption();
                 } and {
@@ -229,7 +229,7 @@ int32 sum(int32 a[], int32 n) {
             have to_integer((total + a[i])) == (to_integer(total) + to_integer(a[i])) by {
                 apply(int32_add_to_integer(total, a[i])) using {
                     defined((total + a[i]));
-                }
+                };
             }
             have to_integer((total + a[i])) == ((0..i).fold(0, |acc, k| { (acc + to_integer(a[k])) }) + to_integer(a[i])) by {
                 arithmetic_certificate {
@@ -244,7 +244,7 @@ int32 sum(int32 a[], int32 n) {
                     apply(int32_less_than_less_equal_transitive(i, n, 1000)) using {
                         i < n;
                         n <= 1000;
-                    }
+                    };
                 }
                 have 1000 < 2147483647 by {
                     normalize();
@@ -252,17 +252,17 @@ int32 sum(int32 a[], int32 n) {
                 apply(int32_less_than_transitive(i, 1000, 2147483647)) using {
                     i < 1000;
                     1000 < 2147483647;
-                }
+                };
             }
             have defined((i + 1)) by {
                 apply(int32_increment_below_max_is_defined(i)) using {
                     i < 2147483647;
-                }
+                };
             }
             have to_integer((i + 1)) == (to_integer(i) + to_integer(1)) by {
                 apply(int32_add_to_integer(i, 1)) using {
                     defined((i + 1));
-                }
+                };
             }
             have (-1000 * to_integer((i + 1))) <= (to_integer(total) + to_integer(a[i])) by {
                 arithmetic_certificate {
@@ -316,18 +316,18 @@ int32 sum(int32 a[], int32 n) {
                     0 <= n;
                     n <= 1073741823;
                     forall (k: int32) { 0 <= k and k < n implies -1000 <= a[k] and a[k] <= 1000 };
-                }
+                };
             }
             have 0 <= i by {
                 apply(int32_increment_lower_bound(at(statement(6).entry, i), at(statement(5).entry, 0), at(statement(6).entry, 2147483647))) using {
                     at(statement(5).entry, 0) <= at(statement(5).entry, i);
                     at(statement(6).entry, i) < at(statement(6).entry, 2147483647);
-                }
+                };
             }
             have i <= n by {
                 apply(int32_increment_upper_bound(at(statement(5).entry, i), at(statement(5).entry, n))) using {
                     at(statement(5).entry, i) < at(statement(5).entry, n);
-                }
+                };
             }
             have to_integer(total) == (0..(at(statement(5).entry, i) + 1)).fold(0, |acc, k| { (acc + to_integer(a[k])) }) by {
                 arithmetic_certificate {
@@ -367,7 +367,7 @@ int32 sum(int32 a[], int32 n) {
                     apply(int32_less_than_less_equal_transitive(k, i, n)) using {
                         k < i;
                         i <= n;
-                    }
+                    };
                 }
                 transport(viewable(a[0..n]), defined(a[k])) using {
                     viewable(a[0..n]);
@@ -375,9 +375,9 @@ int32 sum(int32 a[], int32 n) {
                     n <= 1073741823;
                     k >= 0;
                     k < n;
-                }
+                };
             }
-            close_invariants by {
+            close_invariants() by {
                 both {
                     assumption();
                 } and {
@@ -441,7 +441,7 @@ int32 sum(int32 a[], int32 n) {
         apply(int32_less_equal_and_not_less_than_implies_equal(i, n)) using {
             i <= n;
             not i < n;
-        }
+        };
     }
     have n == i by {
         rewrite(n == i);

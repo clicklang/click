@@ -33,7 +33,7 @@ function after_let(n: int32) -> int32
 }
 
 int32 identity(int32 x) {
-    ensures result == x by auto;
+    ensures result == x by auto();
 }
 ```
 

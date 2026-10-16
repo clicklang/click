@@ -75,7 +75,7 @@ void release_run(struct arena* arena, int32 start, int32 end) {
             end <= k and k < arena->capacity implies
                 arena->occupied[k] == at(clear_occupied.entry, arena->occupied[k])
         };
-        initialize by simp;
+        initialize by simp();
         preserve by {
             let { next: m } = unfold(w);
             have m == i;
@@ -86,10 +86,10 @@ void release_run(struct arena* arena, int32 start, int32 end) {
                 apply(int32_less_equal_transitive(0, start, i)) using {
                     0 <= start;
                     start <= i;
-                }
+                };
             }
             have end <= arena->capacity;
-            have i < arena->capacity by auto;
+            have i < arena->capacity by auto();
             mark opened;
             step();
             give(arena->data[i..i + 1]);
@@ -98,7 +98,7 @@ void release_run(struct arena* arena, int32 start, int32 end) {
                 apply(int32_increment_lower_bound(at(opened, i), start, end)) using {
                     start <= at(opened, i);
                     at(opened, i) < end;
-                }
+                };
             }
             have forall (k: int32) {
                 start <= k and k < at(opened, i) + 1 implies arena->occupied[k] == 0
@@ -117,14 +117,14 @@ void release_run(struct arena* arena, int32 start, int32 end) {
                         }, k) using {
                             start <= k;
                             k < m;
-                        }
+                        };
                         assumption();
                     }
                     have 0 <= k by {
                         apply(int32_less_equal_transitive(0, start, k)) using {
                             0 <= start;
                             start <= k;
-                        }
+                        };
                     }
                     transport(at(opened, arena->occupied[k]) == 0, arena->occupied[k] == 0) using {
                         at(opened, arena->occupied[k]) == 0;
@@ -132,18 +132,18 @@ void release_run(struct arena* arena, int32 start, int32 end) {
                         0 <= k;
                         0 <= at(opened, i);
                         at(opened, i) < arena->capacity;
-                    }
+                    };
                 } else {
                     have k <= at(opened, i) by {
                         apply(int32_less_than_increment_implies_less_equal(k, at(opened, i))) using {
                             k < at(opened, i) + 1;
-                        }
+                        };
                     }
                     have k == at(opened, i) by {
                         apply(int32_less_equal_and_not_less_than_implies_equal(k, at(opened, i))) using {
                             k <= at(opened, i);
                             not (k < at(opened, i));
-                        }
+                        };
                     }
                     rewrite(k == at(opened, i));
                     normalize();
@@ -167,10 +167,10 @@ void release_run(struct arena* arena, int32 start, int32 end) {
                     }, k) using {
                         0 <= k;
                         k < start;
-                    }
+                    };
                     assumption();
                 }
-                have k < at(opened, i) by auto;
+                have k < at(opened, i) by auto();
                 transport(
                     at(opened, arena->occupied[k]) ==
                         at(clear_occupied.entry, arena->occupied[k]),
@@ -182,7 +182,7 @@ void release_run(struct arena* arena, int32 start, int32 end) {
                     0 <= k;
                     0 <= at(opened, i);
                     at(opened, i) < arena->capacity;
-                }
+                };
             }
             have forall (k: int32) {
                 end <= k and k < arena->capacity implies
@@ -202,20 +202,20 @@ void release_run(struct arena* arena, int32 start, int32 end) {
                     }, k) using {
                         end <= k;
                         k < arena->capacity;
-                    }
+                    };
                     assumption();
                 }
-                have at(opened, i) < k by auto;
+                have at(opened, i) < k by auto();
                 have at(opened, i) <= k by {
                     apply(int32_less_than_implies_less_equal(at(opened, i), k)) using {
                         at(opened, i) < k;
-                    }
+                    };
                 }
                 have 0 <= k by {
                     apply(int32_less_equal_transitive(0, at(opened, i), k)) using {
                         0 <= at(opened, i);
                         at(opened, i) <= k;
-                    }
+                    };
                 }
                 transport(
                     at(opened, arena->occupied[k]) ==
@@ -229,11 +229,11 @@ void release_run(struct arena* arena, int32 start, int32 end) {
                     at(opened, i) < arena->capacity;
                     0 <= k;
                     k < arena->capacity;
-                }
+                };
             }
-            have arena->data == old(arena->data) by auto;
-            have arena->occupied == old(arena->occupied) by auto;
-            have arena->capacity == old(arena->capacity) by auto;
+            have arena->data == old(arena->data) by auto();
+            have arena->occupied == old(arena->occupied) by auto();
+            have arena->capacity == old(arena->capacity) by auto();
             have separate(memory(arena->occupied[0..arena->capacity]), memory(arena->data[0..arena->capacity])) by {
                 rewrite(arena->data == old(arena->data));
                 rewrite(arena->occupied == old(arena->occupied));
@@ -247,9 +247,9 @@ void release_run(struct arena* arena, int32 start, int32 end) {
                 apply(int32_less_equal_transitive(start, at(opened, i) + 1, end)) using {
                     start <= at(opened, i) + 1;
                     at(opened, i) + 1 <= end;
-                }
+                };
             }
-            close_invariants by {
+            close_invariants() by {
                 both { normalize(); } and {
                     both { simp(); } and {
                         both { simp(); } and {
@@ -258,12 +258,12 @@ void release_run(struct arena* arena, int32 start, int32 end) {
                                 0 <= at(opened, i);
                                 end <= arena->capacity;
                                 arena->capacity <= 536870911;
-                            } } and { arithmetic() using {
+                            }; } and { arithmetic() using {
                                 at(opened, i) < end;
                                 0 <= at(opened, i);
                                 end <= arena->capacity;
                                 arena->capacity <= 536870911;
-                            } }
+                            }; }
                         }
                     }
                 }
@@ -275,12 +275,12 @@ void release_run(struct arena* arena, int32 start, int32 end) {
     have n == i;
     have not (n < end) by { rewrite(n == i); assumption(); }
     have n == end by {
-        apply(int32_less_equal_and_not_less_than_implies_equal(n, end)) using { n <= end; not (n < end); }
+        apply(int32_less_equal_and_not_less_than_implies_equal(n, end)) using { n <= end; not (n < end); };
     }
     execute();
-    have arena->data == old(arena->data) by auto;
-    have arena->occupied == old(arena->occupied) by auto;
-    have arena->capacity == old(arena->capacity) by auto;
+    have arena->data == old(arena->data) by auto();
+    have arena->occupied == old(arena->occupied) by auto();
+    have arena->capacity == old(arena->capacity) by auto();
     fold(arena_cells(arena->data, arena->occupied, arena->capacity));
     simp();
 }

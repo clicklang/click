@@ -71,7 +71,7 @@ theorem zlib_general_raw_seeded_batch_concat(bytes: uint8[], prefix: int32, leng
    };
   }
   apply(adler_spec_a_concat(bytes, prefix, length, initial_a));
-  arithmetic() using { to_integer(a % 65521u64) == adler_spec_a(bytes + prefix, length, adler_spec_a(bytes, prefix, initial_a)); adler_spec_a(bytes, prefix + length, initial_a) == adler_spec_a(bytes + prefix, length, adler_spec_a(bytes, prefix, initial_a)); }
+  arithmetic() using { to_integer(a % 65521u64) == adler_spec_a(bytes + prefix, length, adler_spec_a(bytes, prefix, initial_a)); adler_spec_a(bytes, prefix + length, initial_a) == adler_spec_a(bytes + prefix, length, adler_spec_a(bytes, prefix, initial_a)); };
  }
  ensures to_integer(b % 65521u64) == adler_spec_b(bytes, prefix + length, initial_a, initial_b) by {
   apply(zlib_seeded_reduced_components(bytes + prefix, length, a, b, a0, b0));
@@ -101,7 +101,7 @@ theorem zlib_general_raw_seeded_batch_concat(bytes: uint8[], prefix: int32, leng
    };
   }
   apply(adler_spec_b_concat(bytes, prefix, length, initial_a, initial_b));
-  arithmetic() using { to_integer(b % 65521u64) == adler_spec_b(bytes + prefix, length, adler_spec_a(bytes, prefix, initial_a), adler_spec_b(bytes, prefix, initial_a, initial_b)); adler_spec_b(bytes, prefix + length, initial_a, initial_b) == adler_spec_b(bytes + prefix, length, adler_spec_a(bytes, prefix, initial_a), adler_spec_b(bytes, prefix, initial_a, initial_b)); }
+  arithmetic() using { to_integer(b % 65521u64) == adler_spec_b(bytes + prefix, length, adler_spec_a(bytes, prefix, initial_a), adler_spec_b(bytes, prefix, initial_a, initial_b)); adler_spec_b(bytes, prefix + length, initial_a, initial_b) == adler_spec_b(bytes + prefix, length, adler_spec_a(bytes, prefix, initial_a), adler_spec_b(bytes, prefix, initial_a, initial_b)); };
  }
 }
 
@@ -217,7 +217,7 @@ theorem zlib_one_seeded_components(bytes: uint8[], initial_a: Integer, initial_b
 // A scalar short-path prefix fits the existing checked NMAX recurrence.
 theorem zlib_short_count_limit(n: int32) {
  requires n <= 14;
- ensures n < 5552 by { arithmetic() using { n <= 14; } }
+ ensures n < 5552 by { arithmetic() using { n <= 14; }; }
 }
 
 // The actual C return word can seed another native call with the same state.
@@ -258,8 +258,8 @@ theorem zlib_packed_integer_seed(word: uint64, a: Integer, b: Integer) {
   apply(uint64_to_integer_less_equal_implies_less_equal(to_uint64(a), 65520u64)) using { to_integer(to_uint64(a)) <= to_integer(65520u64); a >= 0; a <= 18446744073709551615; };
   apply(uint64_to_integer_less_equal_implies_less_equal(to_uint64(b), 65520u64)) using { to_integer(to_uint64(b)) <= to_integer(65520u64); b >= 0; b <= 18446744073709551615; };
   apply(zlib_canonical_pack(to_uint64(a), to_uint64(b))) using { to_uint64(a) <= 65520u64; to_uint64(b) <= 65520u64; a >= 0; a <= 18446744073709551615; b >= 0; b <= 18446744073709551615; };
-  apply(uint64_less_equal_transitive(to_uint64(a), 65520u64, 65535u64)) using { to_uint64(a) <= 65520u64; 65520u64 <= 65535u64; a >= 0; a <= 18446744073709551615; }
-  apply(uint64_less_equal_transitive(to_uint64(b), 65520u64, 65535u64)) using { to_uint64(b) <= 65520u64; 65520u64 <= 65535u64; b >= 0; b <= 18446744073709551615; }
+  apply(uint64_less_equal_transitive(to_uint64(a), 65520u64, 65535u64)) using { to_uint64(a) <= 65520u64; 65520u64 <= 65535u64; a >= 0; a <= 18446744073709551615; };
+  apply(uint64_less_equal_transitive(to_uint64(b), 65520u64, 65535u64)) using { to_uint64(b) <= 65520u64; 65520u64 <= 65535u64; b >= 0; b <= 18446744073709551615; };
   apply(uint64_pack_uint16_to_integer(to_uint64(a), to_uint64(b))) using { to_uint64(a) <= 65535u64; to_uint64(b) <= 65535u64; a >= 0; a <= 18446744073709551615; b >= 0; b <= 18446744073709551615; };
   have to_integer(word) == to_integer((to_uint64(a) | (to_uint64(b) << 16))) by {
    arithmetic() using {

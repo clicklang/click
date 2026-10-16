@@ -43,7 +43,7 @@ int32 parent(int32 *a, int32 *b, int32 n, int32 i) {
 } by {
     mark before_call;
     let { result: r } = step(child(a, b, n, a[i]), {});
-    branch then {
+    branch {
         have r != 0 implies exists (path: Path) {
             pick(at(before_call, a[i]), path) == r
         } by { assumption(); }

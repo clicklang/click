@@ -26,7 +26,7 @@ int32 keep(int32 value) {
 verifying "c_variadic_prototype_declared.c";
 
 int32 keep(int32 value) {
-    ensures result == value by auto;
+    ensures result == value by auto();
 }
 ```
 

@@ -8,7 +8,7 @@ imported by a quoted path instead.
 import std::list;
 
 theorem unused(x: int32) {
-    ensures x == x by simp;
+    ensures x == x by simp();
 }
 ```
 

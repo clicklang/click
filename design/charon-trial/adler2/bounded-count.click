@@ -60,7 +60,7 @@ theorem adler_bounded_pointer_index(base: const uint8*, count: uint64) {
  requires count <= 2147483647u64;
  ensures base + count == base + (int32)(uint32)count by {
   apply(adler_bounded_count(count));
-  simp() using { to_integer((int32)(uint32)count) == to_integer(count); (uint64)(int32)(uint32)count == count; 0 <= (int32)(uint32)count; count <= 2147483647u64; }
+  simp() using { to_integer((int32)(uint32)count) == to_integer(count); (uint64)(int32)(uint32)count == count; 0 <= (int32)(uint32)count; count <= 2147483647u64; };
  }
 }
 
@@ -156,16 +156,16 @@ theorem adler_bounded_previous_byte_observation(bytes: uint8[], total: uint64, r
  ensures to_integer((int32)(bytes + (total - remaining - 1u64))[0]) == to_integer((int32)bytes[((int32)(uint32)total - (int32)(uint32)remaining) - 1]) by {
   have remaining <= 2147483647u64 by arithmetic() using { remaining <= total; total <= 2147483647u64; };
   have total - remaining - 1u64 <= 2147483647u64 by arithmetic() using { remaining <= total; 1u64 <= total - remaining; total <= 2147483647u64; };
-  apply(adler_bounded_count(total)) using { total <= 2147483647u64; }
-  apply(adler_bounded_count(remaining)) using { remaining <= 2147483647u64; }
-  apply(adler_bounded_count(total - remaining - 1u64)) using { total - remaining - 1u64 <= 2147483647u64; }
-  apply(uint64_less_equal_to_integer(remaining, total)) using { remaining <= total; }
-  apply(uint64_less_equal_to_integer(1u64, total - remaining)) using { 1u64 <= total - remaining; }
-  apply(uint64_subtract_to_integer(total, remaining)) using { remaining <= total; to_integer(remaining) <= to_integer(total); }
-  apply(uint64_subtract_to_integer(total - remaining, 1u64)) using { 1u64 <= total - remaining; to_integer(1u64) <= to_integer(total - remaining); }
-  apply(int32_nonnegative_subtract_within_value_is_defined((int32)(uint32)total, (int32)(uint32)remaining)) using { 0 <= (int32)(uint32)remaining; (int32)(uint32)remaining <= (int32)(uint32)total; }
-  apply(int32_subtract_to_integer((int32)(uint32)total, (int32)(uint32)remaining)) using { defined((int32)(uint32)total - (int32)(uint32)remaining); }
-  apply(int32_subtract_to_integer((int32)(uint32)total - (int32)(uint32)remaining, 1)) using { defined(((int32)(uint32)total - (int32)(uint32)remaining) - 1); }
+  apply(adler_bounded_count(total)) using { total <= 2147483647u64; };
+  apply(adler_bounded_count(remaining)) using { remaining <= 2147483647u64; };
+  apply(adler_bounded_count(total - remaining - 1u64)) using { total - remaining - 1u64 <= 2147483647u64; };
+  apply(uint64_less_equal_to_integer(remaining, total)) using { remaining <= total; };
+  apply(uint64_less_equal_to_integer(1u64, total - remaining)) using { 1u64 <= total - remaining; };
+  apply(uint64_subtract_to_integer(total, remaining)) using { remaining <= total; to_integer(remaining) <= to_integer(total); };
+  apply(uint64_subtract_to_integer(total - remaining, 1u64)) using { 1u64 <= total - remaining; to_integer(1u64) <= to_integer(total - remaining); };
+  apply(int32_nonnegative_subtract_within_value_is_defined((int32)(uint32)total, (int32)(uint32)remaining)) using { 0 <= (int32)(uint32)remaining; (int32)(uint32)remaining <= (int32)(uint32)total; };
+  apply(int32_subtract_to_integer((int32)(uint32)total, (int32)(uint32)remaining)) using { defined((int32)(uint32)total - (int32)(uint32)remaining); };
+  apply(int32_subtract_to_integer((int32)(uint32)total - (int32)(uint32)remaining, 1)) using { defined(((int32)(uint32)total - (int32)(uint32)remaining) - 1); };
   have to_integer((int32)(uint32)(total - remaining - 1u64)) == to_integer(((int32)(uint32)total - (int32)(uint32)remaining) - 1) by arithmetic() using {
    to_integer((int32)(uint32)(total - remaining - 1u64)) == to_integer(total - remaining - 1u64);
    to_integer(total - remaining - 1u64) == to_integer(total - remaining) - to_integer(1u64);
@@ -175,8 +175,8 @@ theorem adler_bounded_previous_byte_observation(bytes: uint8[], total: uint64, r
    to_integer(((int32)(uint32)total - (int32)(uint32)remaining) - 1) == to_integer((int32)(uint32)total - (int32)(uint32)remaining) - to_integer(1);
    to_integer((int32)(uint32)total - (int32)(uint32)remaining) == to_integer((int32)(uint32)total) - to_integer((int32)(uint32)remaining);
   };
-  apply(int32_to_integer_equal_implies_equal((int32)(uint32)(total - remaining - 1u64), ((int32)(uint32)total - (int32)(uint32)remaining) - 1)) using { to_integer((int32)(uint32)(total - remaining - 1u64)) == to_integer(((int32)(uint32)total - (int32)(uint32)remaining) - 1); }
-  apply(adler_bounded_pointer_index(bytes, total - remaining - 1u64)) using { total - remaining - 1u64 <= 2147483647u64; }
+  apply(int32_to_integer_equal_implies_equal((int32)(uint32)(total - remaining - 1u64), ((int32)(uint32)total - (int32)(uint32)remaining) - 1)) using { to_integer((int32)(uint32)(total - remaining - 1u64)) == to_integer(((int32)(uint32)total - (int32)(uint32)remaining) - 1); };
+  apply(adler_bounded_pointer_index(bytes, total - remaining - 1u64)) using { total - remaining - 1u64 <= 2147483647u64; };
   have bytes + (total - remaining - 1u64) == bytes + (((int32)(uint32)total - (int32)(uint32)remaining) - 1) by {
    rewrite(bytes + (total - remaining - 1u64) == bytes + (int32)(uint32)(total - remaining - 1u64));
    rewrite((int32)(uint32)(total - remaining - 1u64) == ((int32)(uint32)total - (int32)(uint32)remaining) - 1); normalize();
@@ -210,7 +210,7 @@ theorem adler_bounded_signed_index(count: uint64, index: int32) {
     to_integer((uint64)index) == to_integer(index);
     to_integer(index) < to_integer((int32)(uint32)count);
     to_integer((int32)(uint32)count) == to_integer(count);
-   }
+   };
   }
   apply(uint64_to_integer_less_than_implies_less_than((uint64)index, count));
   assumption();

@@ -74,10 +74,10 @@ void probe(struct node *p, struct root *root) {
   have cursor->right == rid;
   step();
   have near == rid;
-  have near->tag == rid->tag by { normalize() using { near == rid; } }
+  have near->tag == rid->tag by { normalize() using { near == rid; }; }
   step();
-  have near->tag == rid->tag by { normalize() using { near == rid; } }
-  have rid->tag == 0u64 by { normalize() using { near == rid; } }
+  have near->tag == rid->tag by { normalize() using { near == rid; }; }
+  have rid->tag == 0u64 by { normalize() using { near == rid; }; }
   execute(); simp();
  } }
  } }

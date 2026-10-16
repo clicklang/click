@@ -42,17 +42,17 @@ verifying "definitions.c";
 
 int32 read_incomplete() {
     requires table[1][2] == 11;
-    ensures result == 11 by auto;
+    ensures result == 11 by auto();
 }
 
 int32 run() {
     requires table[1][2] == 11;
-    ensures result == 11 by auto;
+    ensures result == 11 by auto();
 }
 
 int32 definition_anchor() {
     requires table[0][0] == 2;
-    ensures result == 2 by auto;
+    ensures result == 2 by auto();
 }
 ```
 

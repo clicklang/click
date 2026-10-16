@@ -35,7 +35,7 @@ int32 raise_head(int32 box[1]) {
         execute();
         apply(head_below_one_is_below_two(old(box), 7)) using {
             old(box[0]) == 7;
-        }
+        };
         assumption();
     }
 }

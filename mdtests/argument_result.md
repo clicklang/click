@@ -13,7 +13,7 @@ int32 identity(int32 x) {
 verifying "identity.c";
 
 int32 identity(int32 x) {
-    ensures returns_argument: result == x by auto;
+    ensures returns_argument: result == x by auto();
 }
 ```
 

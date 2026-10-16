@@ -37,13 +37,13 @@ theorem unmarked_nonnegative(v: int32[], lo: int32, n: int32, hi: int32) {
         if hi <= lo {
             peel(unmarked(v, lo, hi)) using {
                 hi <= lo;
-            }
+            };
             simp();
         } else {
             have lo < hi;
-            have 0 <= hi - 1 by { arithmetic() using { 0 <= lo; lo < hi; } }
-            have hi - 1 < hi by { arithmetic() using { 0 <= lo; lo < hi; } }
-            have hi - 1 <= n by { arithmetic() using { 0 <= lo; lo < hi; hi <= n; } }
+            have 0 <= hi - 1 by { arithmetic() using { 0 <= lo; lo < hi; }; }
+            have hi - 1 < hi by { arithmetic() using { 0 <= lo; lo < hi; }; }
+            have hi - 1 <= n by { arithmetic() using { 0 <= lo; lo < hi; hi <= n; }; }
             apply(ih(hi - 1)) using {
                 0 <= hi - 1;
                 hi - 1 < hi;
@@ -52,18 +52,18 @@ theorem unmarked_nonnegative(v: int32[], lo: int32, n: int32, hi: int32) {
                 n >= 0 and viewable(v[lo..n]);
                 0 <= n - lo;
                 n - lo <= 1073741823;
-            }
-            have lo <= hi - 1 by { arithmetic() using { 0 <= lo; lo < hi; } }
-            have hi - 1 < n by { arithmetic() using { 0 <= lo; lo < hi; hi <= n; } }
-            have hi - 1 < 2147483647 by { arithmetic() using { 0 <= lo; lo < hi; } }
+            };
+            have lo <= hi - 1 by { arithmetic() using { 0 <= lo; lo < hi; }; }
+            have hi - 1 < n by { arithmetic() using { 0 <= lo; lo < hi; hi <= n; }; }
+            have hi - 1 < 2147483647 by { arithmetic() using { 0 <= lo; lo < hi; }; }
             peel(unmarked(v, lo, hi)) using {
                 lo <= hi - 1;
                 hi - 1 < 2147483647;
-            }
+            };
             have 0 <= (if v[hi - 1] == 0 { 1 } else { 0 });
             apply(int32_less_equal_to_integer(0, if v[hi - 1] == 0 { 1 } else { 0 })) using {
                 0 <= (if v[hi - 1] == 0 { 1 } else { 0 });
-            }
+            };
             arithmetic_certificate {
                 premise 0: 0 <= unmarked(v, lo, hi - 1) => 0 <= unmarked(v, lo, hi - 1);
                 premise 1: to_integer(0) <= to_integer(if v[hi - 1] == 0 { 1 } else { 0 }) =>

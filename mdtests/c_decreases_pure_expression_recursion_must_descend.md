@@ -32,7 +32,7 @@ int32 drain(int32 n) {
     ensures result == 0;
 } by {
     step();
-    branch then {
+    branch {
         have 0 <= level(n) by { unfold(level(n)); simp(); }
         step();
         step();

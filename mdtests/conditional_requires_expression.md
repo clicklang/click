@@ -37,24 +37,24 @@ verifying "conditional_requires_load_caller.c";
 int32 conditional_requires_expression(int32 condition, int32 left, int32 right) {
     requires (if condition != 0 { left } else { right }) == 7;
     ensures result == 0;
-} by auto;
+} by auto();
 
 int32 conditional_requires_expression_caller(int32 condition, int32 left, int32 right) {
     requires (if condition != 0 { left } else { right }) == 7;
     ensures result == 0;
-} by auto;
+} by auto();
 
 int32 conditional_requires_load(int32 condition, int32 values[]) {
     requires (if condition != 0 { values[0] } else { 0 }) == 7;
     views values[0..1];
     ensures result == 0;
-} by auto;
+} by auto();
 
 int32 conditional_requires_load_caller(int32 condition, int32 values[]) {
     requires (if condition != 0 { values[0] } else { 0 }) == 7;
     views values[0..1];
     ensures result == 0;
-} by auto;
+} by auto();
 ```
 
 ```expect

@@ -32,7 +32,7 @@ void set_end(int32 *v, int32 i, int32 n) {
             weighted(at(entry, v), 0, i) == weighted(v, 0, i)
         ) using {
             weighted(at(entry, v), 0, i) == weighted(at(entry, v), 0, i);
-        }
+        };
         assumption();
     }
     execute();

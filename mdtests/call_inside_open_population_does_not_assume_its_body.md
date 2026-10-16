@@ -34,7 +34,7 @@ verifying "call_inside_open_population.c";
 
 int32 three() {
     ensures result == 3;
-} by auto;
+} by auto();
 
 int32 broken(struct object* obj) {
     owns control(obj);

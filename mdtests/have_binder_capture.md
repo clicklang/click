@@ -36,11 +36,11 @@ int32 bad(int32 x) {
                         u == 5 implies forall (z: int32) { z == 5 }
                     },
                     5
-                ) using { }
+                ) using { };
                 instantiate(
                     forall (z: int32) { z == 5 },
                     x
-                ) using { }
+                ) using { };
                 assumption();
             }
             assumption();
@@ -63,11 +63,11 @@ int32 bad(int32 x) {
                         u == 5 implies forall (z: int32) { z == 5 }
                     },
                     5
-                ) using { }
+                ) using { };
                 instantiate(
                     forall (z: int32) { z == 5 },
                     x
-                ) using { }
+                ) using { };
                 assumption();
             }
             assumption();

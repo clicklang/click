@@ -31,7 +31,7 @@ int32 sequential_accesses() {
 verifying "sequential_kernel_access_primitives.c";
 
 int32 sequential_accesses() {
-    ensures result == 2 by auto;
+    ensures result == 2 by auto();
 }
 ```
 

@@ -36,12 +36,12 @@ int32 caller(int32 *next, int32 *visited, int32 n, int32 cur) {
         transport(old(next[cur]) == old(next[cur]), at(entry, next[cur]) == old(next[cur])) using {
             old(next[cur]) == old(next[cur]); 0 <= cur; cur < n;
             separate(memory(next[0..n]), memory(visited[0..n]));
-        }
+        };
         assumption();
     }
     let { result: r } = step(visit(next, visited, n, next[cur]), {});
     have r == 0 implies visited[at(entry, next[cur])] != 0 by { rewrite(at(entry, next[cur]) == old(next[cur])); assumption(); }
-    branch then { step(); simp(); } else {}
+    branch { step(); simp(); } else {}
     step(); simp();
 }
 ```

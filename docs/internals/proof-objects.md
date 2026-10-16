@@ -187,7 +187,7 @@ apply one admission rule: `from_proof_tactics` classifies source tactics and
 `from_steps` classifies serialized provenance, so a leaf that no explicit
 proof could spell is rejected from either direction. A smart tactic therefore
 has no step of its own. `close_invariants()`, for example, plans the
-back-edge bundle body, and the step retained for it is `close_invariants by`
+back-edge bundle body, and the step retained for it is `close_invariants() by`
 carrying that planned body; the bare closure request is a semantic-core
 update with no certificate leaf. Nested certificates are admitted where they
 are built, so validating one certificate costs a single pass over its own

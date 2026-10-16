@@ -75,7 +75,7 @@ void checkout(struct pool* pool, struct payload* p) {
             0 <= pool->checked_out;
             1 <= count(slot(pool));
             pool->capacity == pool->checked_out + count(slot(pool));
-        }
+        };
         unfold(slot(pool));
         step();
         fold(item(pool, p));
@@ -111,24 +111,24 @@ void give_back(struct pool* pool, struct payload* p) {
             0 <= count(slot(pool));
             1 <= pool->checked_out;
             pool->capacity == count(slot(pool)) + pool->checked_out;
-        }
+        };
         have 0 < pool->checked_out;
         have 0 < pool->checked_out;
         have defined(pool->checked_out + count(slot(pool)));
         apply(int32_add_to_integer(pool->checked_out, count(slot(pool)))) using {
             defined(pool->checked_out + count(slot(pool)));
-        }
+        };
         have to_integer(pool->capacity) == to_integer(pool->checked_out) + to_integer(count(slot(pool))) by {
             rewrite(pool->capacity == pool->checked_out + count(slot(pool)));
             assumption();
         }
         have pool->capacity <= 2147483647;
         have to_integer(pool->capacity) <= 2147483647 by {
-            apply(int32_less_equal_to_integer(pool->capacity, 2147483647)) using { pool->capacity <= 2147483647; }
+            apply(int32_less_equal_to_integer(pool->capacity, 2147483647)) using { pool->capacity <= 2147483647; };
             simp();
         }
         have 1 <= to_integer(pool->checked_out) by {
-            apply(int32_less_equal_to_integer(1, pool->checked_out)) using { 1 <= pool->checked_out; }
+            apply(int32_less_equal_to_integer(1, pool->checked_out)) using { 1 <= pool->checked_out; };
             simp();
         }
         have to_integer(count(slot(pool))) + 1 <= 2147483647 by {
@@ -144,17 +144,17 @@ void give_back(struct pool* pool, struct payload* p) {
             }
         }
         have 0 <= to_integer(count(slot(pool))) by {
-            apply(int32_less_equal_to_integer(0, count(slot(pool)))) using { 0 <= count(slot(pool)); }
+            apply(int32_less_equal_to_integer(0, count(slot(pool)))) using { 0 <= count(slot(pool)); };
             simp();
         }
         have to_integer(count(slot(pool))) + 1 >= -2147483648 by {
-            arithmetic() using { 0 <= to_integer(count(slot(pool))); }
+            arithmetic() using { 0 <= to_integer(count(slot(pool))); };
         }
         have defined(count(slot(pool)) + 1) by {
             apply(int32_add_defined_by_integer_bounds(count(slot(pool)), 1)) using {
                 to_integer(count(slot(pool))) + 1 >= -2147483648;
                 to_integer(count(slot(pool))) + 1 <= 2147483647;
-            }
+            };
             simp();
         }
         unfold(item(pool, p));
@@ -165,13 +165,13 @@ void give_back(struct pool* pool, struct payload* p) {
         have count(slot(pool)) == old(count(slot(pool))) + 1;
         have 0 <= pool->checked_out by {
             rewrite(pool->checked_out == old(pool->checked_out) - 1);
-            apply(int32_positive_predecessor_is_nonnegative(old(pool->checked_out))) using { 0 < old(pool->checked_out); }
+            apply(int32_positive_predecessor_is_nonnegative(old(pool->checked_out))) using { 0 < old(pool->checked_out); };
             assumption();
         }
         have pool->checked_out == count(item(pool, _));
         have 0 <= pool->checked_out by {
             rewrite(pool->checked_out == old(pool->checked_out) - 1);
-            apply(int32_positive_predecessor_is_nonnegative(old(pool->checked_out))) using { 0 < old(pool->checked_out); }
+            apply(int32_positive_predecessor_is_nonnegative(old(pool->checked_out))) using { 0 < old(pool->checked_out); };
             assumption();
         }
         have pool->checked_out == count(item(pool, _));

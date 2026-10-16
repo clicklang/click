@@ -33,7 +33,7 @@ int32 local_struct_array_initializer() {
 verifying "local_struct_array_initializer.c";
 
 int32 local_struct_array_initializer() {
-    ensures result == 43 by auto;
+    ensures result == 43 by auto();
 }
 ```
 

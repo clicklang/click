@@ -7,8 +7,8 @@ theorem zlib_remaining_step(total: uint64, remaining: uint64, amount: uint64) {
  requires remaining <= total;
  requires total <= 5551u64;
  requires amount <= remaining;
- ensures remaining - amount <= total by arithmetic() using { remaining <= total; total <= 5551u64; amount <= remaining; }
- ensures total - (remaining - amount) <= 5551u64 by arithmetic() using { remaining <= total; total <= 5551u64; amount <= remaining; }
+ ensures remaining - amount <= total by arithmetic() using { remaining <= total; total <= 5551u64; amount <= remaining; };
+ ensures total - (remaining - amount) <= 5551u64 by arithmetic() using { remaining <= total; total <= 5551u64; amount <= remaining; };
  ensures to_integer(remaining - amount) == to_integer(remaining) - to_integer(amount) by {
   apply(uint64_less_equal_to_integer(amount, remaining));
   apply(uint64_subtract_to_integer(remaining, amount)); assumption();
@@ -88,6 +88,6 @@ theorem zlib_block_read_bound(total: uint64, remaining: uint64, lane: uint64) {
  requires total <= 5551u64;
  requires 16u64 <= remaining;
  requires lane <= 15u64;
- ensures total - remaining <= 5535u64 by arithmetic() using { remaining <= total; total <= 5551u64; 16u64 <= remaining; }
- ensures total - remaining + lane < total by arithmetic() using { remaining <= total; total <= 5551u64; 16u64 <= remaining; lane <= 15u64; }
+ ensures total - remaining <= 5535u64 by arithmetic() using { remaining <= total; total <= 5551u64; 16u64 <= remaining; };
+ ensures total - remaining + lane < total by arithmetic() using { remaining <= total; total <= 5551u64; 16u64 <= remaining; lane <= 15u64; };
 }

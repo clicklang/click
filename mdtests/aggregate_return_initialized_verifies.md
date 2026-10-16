@@ -31,7 +31,7 @@ struct point make_point() {
     ensures result.x == 3;
     ensures result.y == 4;
 } by {
-    auto;
+    auto();
 }
 
 int32 read_point() {

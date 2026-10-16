@@ -19,7 +19,7 @@ theorem positive_is_not_an_exact_premise(x: int32) {
     requires x > 0;
 
     ensures x >= 0 by {
-        apply(needs_nonnegative(x)) using { x >= 0; }
+        apply(needs_nonnegative(x)) using { x >= 0; };
         assumption();
     }
 }

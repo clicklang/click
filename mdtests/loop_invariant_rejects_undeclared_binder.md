@@ -36,7 +36,7 @@ int32 spin(int32 n) {
         invariant i <= n;
         invariant b.mark == old(b.mark);
 
-        initialize by simp;
+        initialize by simp();
         preserve by {
             step();
             close_invariants();

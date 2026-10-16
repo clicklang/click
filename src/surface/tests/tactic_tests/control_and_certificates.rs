@@ -53,8 +53,8 @@ fn both_and_outcome_expands_and_rechecks() {
 #[test]
 fn parses_frontier_branch_tactic() {
     let source = FILL3_CLICK.replace(
-        "by auto;",
-        "by { branch then { step(); } else { execute(); } }",
+        "by auto();",
+        "by { branch { step(); } else { execute(); } }",
     );
     let file = parse(&source).expect("frontier branch tactic should parse");
     let tactics = file.function_blocks()[0].ensures()[0]
@@ -76,7 +76,7 @@ fn parses_frontier_branch_tactic() {
 #[test]
 fn parses_frontier_branch_ensuring_interface() {
     let source = FILL3_CLICK.replace(
-        "by auto;",
+        "by auto();",
         "by { branch ensuring { fact i >= 0; owns p[0..3]; } then { step(); } else { execute(); } }",
     );
     let file = parse(&source).expect("frontier branch ensuring interface should parse");
@@ -120,7 +120,7 @@ fn linear_frontier_branch_uses_the_checked_structural_join() {
             requires selected(x);
             ensures returns_one: result == 1;
         } by {
-            branch then {
+            branch {
                 unfold(selected);
                 step();
             } else {
@@ -179,7 +179,7 @@ fn terminal_frontier_branch_seals_without_a_body_rerun() {
         int32 choose_sign(int32 x) {
             ensures result == 1 or result == 2;
         } by {
-            branch then { step(); } else { step(); }
+            branch { step(); } else { step(); }
             simp();
         }
     "#;
@@ -217,8 +217,8 @@ fn successive_shared_continuation_branches_seal_without_path_multiplication() {
         int32 two_branches(int32 x, int32 y) {
             ensures result == x;
         } by {
-            branch then {} else {}
-            branch then {} else {}
+            branch {} else {}
+            branch {} else {}
             step();
             simp();
         }
@@ -256,7 +256,7 @@ fn decided_frontier_branch_retains_the_only_feasible_checked_arm() {
         int32 constant_negative(int32 x) {
             requires x < 0;
             ensures returns_one: result == 1 by {
-                branch then { step(); } else { step(); }
+                branch { step(); } else { step(); }
                 step();
                 simp();
             }
@@ -314,7 +314,7 @@ fn decided_frontier_branch_retains_the_only_feasible_checked_arm() {
 #[test]
 fn rejects_removed_reach_tactic() {
     let source = FILL3_CLICK.replace(
-        "by auto;",
+        "by auto();",
         "by { reach(statement(1).exit) ensuring { fact i >= 0; } by { step(); } }",
     );
     let error = parse(&source).expect_err("removed reach tactic should not parse");
@@ -359,7 +359,7 @@ fn empty_proof_if_branches_contribute_only_their_case_split() {
 #[test]
 fn parses_execute_until_proof_tactic() {
     let source = FILL3_CLICK.replace(
-        "by auto;",
+        "by auto();",
         "by { execute_until(statement(1)); execute(); simp(); }",
     );
     let file = parse(&source).expect("execute_until explicit proof script should parse");
@@ -380,7 +380,7 @@ fn parses_execute_until_proof_tactic() {
 
 #[test]
 fn parses_unfold_proof_tactic() {
-    let source = FILL3_CLICK.replace("by auto;", "by { execute(); unfold(sorted); simp(); }");
+    let source = FILL3_CLICK.replace("by auto();", "by { execute(); unfold(sorted); simp(); }");
     let file = parse(&source).expect("unfold explicit proof script should parse");
     let ensure = &file.function_blocks()[0].ensures()[0];
 
@@ -400,7 +400,7 @@ fn parses_unfold_proof_tactic() {
 #[test]
 fn parses_apply_theorem_proof_tactic() {
     let source = FILL3_CLICK.replace(
-        "by auto;",
+        "by auto();",
         "by { execute(); apply(nonnegative(result)); simp(); }",
     );
     let file = parse(&source).expect("apply explicit proof script should parse");
@@ -425,7 +425,7 @@ fn parses_apply_theorem_proof_tactic() {
 #[test]
 fn parses_apply_theorem_with_explicit_premises() {
     let source = FILL3_CLICK.replace(
-        "by auto;",
+        "by auto();",
         "by {
             execute();
             apply(nonnegative(result)) using {
@@ -446,7 +446,7 @@ fn parses_apply_theorem_with_explicit_premises() {
 #[test]
 fn parses_transport_with_explicit_premises() {
     let source = FILL3_CLICK.replace(
-        "by auto;",
+        "by auto();",
         "by {
             step();
             transport(old(p[0]) == 0, p[0] == 0) using {
@@ -853,7 +853,7 @@ fn tactic_certificate_treats_an_omitted_nested_proof_as_auto() {
 }
 
 /// `close_invariants()` plans the back-edge bundle body, so it is smart and
-/// no certificate can hold it. The retained step is `close_invariants by`,
+/// no certificate can hold it. The retained step is `close_invariants() by`,
 /// which carries that planned body explicitly.
 #[test]
 fn tactic_certificate_rejects_a_bare_invariant_closure() {
@@ -1000,7 +1000,7 @@ fn fixed_state_have_certifies_a_post_call_fact_across_a_later_store() {
         } by {
             step();
             step();
-            have pair->low == 0 by simp;
+            have pair->low == 0 by simp();
             step();
             simp();
         }
@@ -1075,7 +1075,7 @@ fn parses_execute_until_assignment_and_preserves_same_spelled_labels() {
         ("assignment", CodeRegionRef::Label("assignment".into())),
     ] {
         let source = FILL3_CLICK.replace(
-            "by auto;",
+            "by auto();",
             &format!("by {{ execute_until({spelling}); execute(); simp(); }}"),
         );
         let file = parse(&source).unwrap();
@@ -1088,8 +1088,10 @@ fn parses_execute_until_assignment_and_preserves_same_spelled_labels() {
         );
     }
     for spelling in ["assignment(i, -1)", "assignment(i)", "assignment(, 0)"] {
-        let source =
-            FILL3_CLICK.replace("by auto;", &format!("by {{ execute_until({spelling}); }}"));
+        let source = FILL3_CLICK.replace(
+            "by auto();",
+            &format!("by {{ execute_until({spelling}); }}"),
+        );
         assert!(parse(&source).is_err());
     }
 }
@@ -1101,7 +1103,7 @@ fn parses_execute_until_read_and_preserves_read_labels() {
         ("read", CodeRegionRef::Label("read".into())),
     ] {
         let source = FILL3_CLICK.replace(
-            "by auto;",
+            "by auto();",
             &format!("by {{execute_until({spelling}); execute(); simp();}}"),
         );
         let file = parse(&source).unwrap();

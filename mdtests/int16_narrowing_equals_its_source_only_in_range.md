@@ -14,7 +14,7 @@ short narrow_return_missing_range(int32 value) {
 verifying "int16_narrowing_equals_its_source_only_in_range.c";
 
 short narrow_return_missing_range(int32 value) {
-    ensures narrowed_return: result == value by auto;
+    ensures narrowed_return: result == value by auto();
 }
 ```
 

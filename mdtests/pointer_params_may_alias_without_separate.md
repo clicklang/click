@@ -28,7 +28,7 @@ int32 clobber_dst(int32* dst, int32* src) {
     consumes dst[0..1];
     requires viewable(src[0..1]);
 
-    ensures source_unchanged: src[0] == old(src[0]) by auto;
+    ensures source_unchanged: src[0] == old(src[0]) by auto();
 }
 ```
 

@@ -36,11 +36,11 @@ void write_other(int32 p[], int32 n, int32 i, int32 j, int32 k) {
         transport(
             at(entry, p[i]) == at(entry, p[i]),
             p[i] == at(entry, p[i])
-        ) using { i != k; }
+        ) using { i != k; };
         assumption();
     }
     have p[j] == at(entry, p[i]) by {
-        normalize() using { }
+        normalize() using { };
     }
     execute();
     simp();

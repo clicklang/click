@@ -20,7 +20,7 @@ verifying "conditional_resource_guard_must_be_load_free.c";
 
 int32 guarded_value(int32* p) {
     owns guarded_cell(p);
-    ensures result == 0 by auto;
+    ensures result == 0 by auto();
 }
 ```
 

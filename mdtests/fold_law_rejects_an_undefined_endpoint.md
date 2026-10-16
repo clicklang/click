@@ -17,7 +17,7 @@ theorem fold_rejects_an_undefined_endpoint(lo: int32, hi: int32) {
         )) using {
             lo <= hi - 1;
             hi - 1 < 2147483647;
-        }
+        };
     }
 }
 ```

@@ -11,7 +11,7 @@ int32 c_double_rejected() {
 verifying "c_double_rejected.c";
 
 int32 c_double_rejected() {
-    ensures result == 0 by auto;
+    ensures result == 0 by auto();
 }
 ```
 

@@ -20,7 +20,7 @@ int32 read() {
 verifying "reader.c";
 
 int32 read() {
-    ensures result == 0 by auto;
+    ensures result == 0 by auto();
 }
 ```
 

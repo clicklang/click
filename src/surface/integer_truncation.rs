@@ -40,7 +40,7 @@ mod tests {
             ),
         ] {
             let source =
-                format!("theorem truncation() {{ ensures {term} == {expected} by simp; }}");
+                format!("theorem truncation() {{ ensures {term} == {expected} by simp(); }}");
             verify(&source);
             let expanded =
                 expand_c0_claim_source_by_label(&source, &[], "truncation.ensures_0").unwrap();
@@ -65,7 +65,7 @@ mod tests {
                 format!("{function}(a, b) - {function}(a, b)"),
             ] {
                 let source = format!(
-                    "theorem truncation(a: Integer, b: Integer) {{ requires b != 0; ensures {expression} == {expression} by simp; }}"
+                    "theorem truncation(a: Integer, b: Integer) {{ requires b != 0; ensures {expression} == {expression} by simp(); }}"
                 );
                 verify(&source);
                 let expanded =
@@ -93,7 +93,7 @@ mod tests {
             "truncating_remainder(true, 3)",
         ] {
             let source = format!(
-                "theorem bad(x: int32) {{ ensures {expression} == {expression} by simp; }}"
+                "theorem bad(x: int32) {{ ensures {expression} == {expression} by simp(); }}"
             );
             assert!(verify_c0_sources(&source, &[]).is_err(), "{source}");
         }
@@ -108,7 +108,7 @@ mod tests {
         for function in ["truncating_quotient", "truncating_remainder"] {
             let expression = format!("{function}(to_integer(x + 1), 3)");
             let source = format!(
-                "theorem truncation(x: int32) {{ requires defined(x + 1); ensures {expression} == {expression} by simp; }}"
+                "theorem truncation(x: int32) {{ requires defined(x + 1); ensures {expression} == {expression} by simp(); }}"
             );
             verify(&source);
             let expanded =
@@ -124,7 +124,7 @@ mod tests {
         for helper in ["truncating_quotient", "truncating_remainder"] {
             let expression = format!("identity({helper}(a, b))");
             let source = format!(
-                "function identity(x: Integer) -> Integer {{ x }} theorem client(a: Integer, b: Integer) {{ requires b != 0; ensures {expression} == {expression} by simp; }}"
+                "function identity(x: Integer) -> Integer {{ x }} theorem client(a: Integer, b: Integer) {{ requires b != 0; ensures {expression} == {expression} by simp(); }}"
             );
             verify(&source);
             let expanded =
@@ -132,7 +132,7 @@ mod tests {
             verify(&expanded);
             assert!(verify_c0_sources(&source.replace("requires b != 0;", ""), &[]).is_err());
         }
-        let too_wide = "theorem bad() { ensures to_int128(truncating_quotient(-170141183460469231731687303715884105728, -1)) == to_int128(truncating_quotient(-170141183460469231731687303715884105728, -1)) by simp; }";
+        let too_wide = "theorem bad() { ensures to_int128(truncating_quotient(-170141183460469231731687303715884105728, -1)) == to_int128(truncating_quotient(-170141183460469231731687303715884105728, -1)) by simp(); }";
         assert!(verify_c0_sources(too_wide, &[]).is_err());
     }
 

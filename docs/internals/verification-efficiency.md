@@ -52,6 +52,13 @@ line ambiguity, and target containment. Matching delimiters skip nested bodies,
 and direct tactic ranges are cached by body rather than rebuilt per child.
 Regressions cover siblings, long lines, deep nesting, and unrelated source text.
 
+Loop-frame reconstruction checks each retained fact as it is composed, then
+normalizes the completed resource context once. Re-normalizing the growing
+frame after each insertion revisits all earlier scalar and view endpoints.
+The kernel regression rebuilds frames of 4, 8, 16, 32 and 64 views, checks near
+linear work growth, and retains the rule hiding undeclared views behind an
+explicit loop view interface.
+
 ## Construction, not re-validation
 
 Efficiency outranks the size of the trusted base. A proof-object operation
@@ -1314,6 +1321,14 @@ a program whose final arithmetic value would match its input but whose
 intermediate addition overflows.
 
 ### Bounded reduction of selected simp premises
+
+A native prefix view first selects its indexed source view and the exact
+unsigned-order path proving that the requested count fits. It tries the view
+query with only those premises before considering the connected component.
+Snapshot transport and retirement use the same kernel query; unsupported
+prefix shapes fall back to ordinary selection. Unrelated bounds on the source
+length therefore do not consume the source-spelling budget. Scaling coverage
+includes 32, 64, 128 and 256 redundant bounds and a required two-edge order path.
 
 A compatibility atomic simplification can retain an entire connected component
 although its kernel decision needs only a few facts. Before presenting source

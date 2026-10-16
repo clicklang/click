@@ -14,7 +14,7 @@ int32 initialized_array() {
 verifying "initialized_array.c";
 
 int32 initialized_array() {
-    ensures omitted_element_is_zero: result == 0 by auto;
+    ensures omitted_element_is_zero: result == 0 by auto();
 }
 ```
 

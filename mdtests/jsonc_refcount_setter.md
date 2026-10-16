@@ -19,9 +19,9 @@ int32 json_object_set_ref_count(struct json_object* obj, int32 count) {
 verifying "json_object_set_ref_count.c";
 
 int32 json_object_set_ref_count(struct json_object* obj, int32 count) {
-    owns obj->ref_count by auto;
-    ensures returns_count: result == count by auto;
-    ensures stores_count: obj->ref_count == count by auto;
+    owns obj->ref_count by auto();
+    ensures returns_count: result == count by auto();
+    ensures stores_count: obj->ref_count == count by auto();
 }
 ```
 

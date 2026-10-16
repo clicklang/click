@@ -59,11 +59,11 @@ int32 copy_n_segment_invariant(int32 dst[], int32 src[], int32 n) {
     )) using {
         at(loop(0).exit, i) <= at(loop(0).exit, n);
         at(loop(0).exit, n) <= at(loop(0).exit, i);
-    }
+    };
     have result == n by {
         simp() using {
             at(loop(0).exit, i) == at(loop(0).exit, n);
-        }
+        };
     }
     have forall (k: int32) { 0 <= k and k < n implies src[k] == old(src[k]) } by {
         have forall (k: int32) {
@@ -91,7 +91,7 @@ int32 copy_n_segment_invariant(int32 dst[], int32 src[], int32 n) {
                     old(src[k]) == at(statement(0).entry, src[k])
             };
             separate(memory(dst[0..n]), memory(src[0..n]));
-        }
+        };
         simp();
     }
     have forall (k: int32) { 0 <= k and k < n implies dst[k] == old(src[k]) } by {
@@ -118,7 +118,7 @@ int32 copy_n_segment_invariant(int32 dst[], int32 src[], int32 n) {
                     at(loop(0).exit, k) < at(loop(0).exit, n) implies
                     at(loop(0).exit, dst[k]) == old(src[k])
             };
-        }
+        };
         assumption();
     }
     assumption();

@@ -969,7 +969,7 @@ fn parses_pure_theorem_definition() {
     let source = r#"
             theorem preserves_nonnegative(x: int32) {
                 requires x >= 0;
-                ensures output_nonnegative: x >= 0 by auto;
+                ensures output_nonnegative: x >= 0 by auto();
             }
         "#;
 
@@ -1026,7 +1026,7 @@ fn parses_c_function_pointer_type_in_pure_theorem_parameter() {
             theorem callback_identity(
                 callback: int32 (*)(int32, struct item*)
             ) {
-                ensures callback == callback by simp;
+                ensures callback == callback by simp();
             }
         "#;
 
@@ -2136,7 +2136,7 @@ fn verifies_pure_theorem_definition() {
     let source = r#"
             theorem preserves_nonnegative(x: int32) {
                 requires x >= 0;
-                ensures x >= 0 by auto;
+                ensures x >= 0 by auto();
             }
         "#;
 
@@ -2157,7 +2157,7 @@ fn pure_bare_apply_builds_a_checked_proof_object_certificate() {
     let source = r#"
         theorem equality_symmetric(first: int32, second: int32) {
             requires first == second;
-            ensures second == first by simp;
+            ensures second == first by simp();
         }
 
         theorem use_equality_symmetric(first: int32, second: int32) {
@@ -2212,7 +2212,7 @@ fn pure_simp_exposes_an_explicit_theorem_certificate() {
     let source = r#"
         theorem positive_is_nonnegative(x: int32) {
             requires 0 < x;
-            ensures 0 <= x by simp;
+            ensures 0 <= x by simp();
         }
     "#;
 
@@ -3060,7 +3060,7 @@ fn rejects_byte_counting_loadable_syntax() {
 
             int32 fill(int32* p, int32 n) {
                 requires viewable(p, n * 4);
-                ensures result == n by auto;
+                ensures result == n by auto();
             }
         "#;
     let error = parse(source).expect_err("byte-counting viewable syntax should be retired");
@@ -3074,7 +3074,7 @@ fn parses_loadable_segment_syntax() {
 
             int32 fill(int32* p, int32 n) {
                 requires viewable(p[0..n]);
-                ensures result == n by auto;
+                ensures result == n by auto();
             }
         "#;
     let file = parse(source).expect("segment viewable should parse");
@@ -3105,7 +3105,7 @@ fn parses_parenthesized_loaded_pointer_segment_base() {
 
             int32 read(int32* owner) {
                 requires at(function.entry, viewable((load_int32_pointer((owner + 2)) + 0)[0..1]));
-                ensures result == 0 by auto;
+                ensures result == 0 by auto();
             }
         "#;
 
@@ -3124,7 +3124,7 @@ fn parses_loadable_segment_proposition() {
             int32 read(int32* p, int32 n) {
                 requires viewable((p + 1)[0..n]);
                 requires shifted_loadable(p, n);
-                ensures result == 0 by auto;
+                ensures result == 0 by auto();
             }
         "#;
     let file = parse(source).expect("viewable proposition should parse");
@@ -3183,7 +3183,7 @@ fn parses_resource_relation_propositions() {
             int32 read(int32* p, int32* q, int32 n) {
                 requires contains(backing(p, n), memory(p[0..n]));
                 requires separated_backing(p, q, n);
-                ensures result == 0 by auto;
+                ensures result == 0 by auto();
             }
         "#;
     let file = parse(source).expect("resource relation propositions should parse");
@@ -3219,7 +3219,7 @@ fn parses_memory_separate_requirement() {
 
             int32 copy(int32* dst, int32* src, int32 n) {
                 requires separate(memory(dst[0..n]), memory(src[0..n]));
-                ensures result == n by auto;
+                ensures result == n by auto();
             }
         "#;
     let file = parse(source).expect("memory separation requirement should parse");
@@ -3330,7 +3330,7 @@ fn rejects_reversed_constant_loadable_segment() {
 
             int32 read_second(int32* p) {
                 requires viewable(p[3..1]);
-                ensures reads: result == p[1] by auto;
+                ensures reads: result == p[1] by auto();
             }
         "#;
 
@@ -3373,7 +3373,7 @@ fn parses_pilot_struct_pointer_signature_and_field_load() {
 
             int32 json_object_get_ref_count(struct json_object* obj) {
                 requires viewable(obj->ref_count);
-                ensures returns_ref_count: result == obj->ref_count by auto;
+                ensures returns_ref_count: result == obj->ref_count by auto();
             }
         "#;
     let file = parse(source).expect("pilot struct pointer signature should parse");
@@ -3427,7 +3427,7 @@ fn parses_struct_pointer_callback_signature() {
             verifying "struct_callback.c";
 
             int32 apply(struct node* (*callback)(struct node*), struct node* node) {
-                ensures result == result by auto;
+                ensures result == result by auto();
             }
         "#;
     let file = parse(source).expect("struct-pointer callback signature should parse");
@@ -3624,7 +3624,7 @@ fn parses_pilot_struct_field_owned_segment() {
             int32 json_object_set_ref_count(struct json_object* obj, int32 count) {
                 requires viewable(obj->ref_count);
                 owns obj->ref_count;
-                ensures returns_count: result == count by auto;
+                ensures returns_count: result == count by auto();
             }
         "#;
     let file = parse(source).expect("pilot struct field ownership should parse");
@@ -3659,7 +3659,7 @@ fn rejects_legacy_mutable_field_effect_spelling() {
 
             int32 json_object_set_ref_count(struct json_object* obj, int32 count) {
                 mutable_field(obj->ref_count);
-                ensures returns_count: result == count by auto;
+                ensures returns_count: result == count by auto();
             }
         "#;
     let error = parse(source).expect_err("legacy mutable-field syntax should be retired");
@@ -3693,7 +3693,7 @@ fn rejects_legacy_read_write_resource_spelling() {
 
 #[test]
 fn parses_block_by_clause() {
-    let source = FILL3_CLICK.replace("by auto;", "by { auto; }");
+    let source = FILL3_CLICK.replace("by auto();", "by { auto(); }");
     let file = parse(&source).expect("sidecar should parse");
     let ensure = &file.function_blocks()[0].ensures()[0];
 
@@ -3927,7 +3927,7 @@ fn diverges_stays_an_ordinary_identifier_elsewhere() {
             verifying "diverges.c";
 
             int32 diverges(int32 diverges) {
-                ensures result == diverges by auto;
+                ensures result == diverges by auto();
             }
         "#;
     verify_c0_sources(click_source, &[("diverges.c", c_source)])
@@ -3943,7 +3943,7 @@ fn diverges_must_follow_throws_in_a_signature() {
             verifying "f.c";
 
             int32 f(int32 x) diverges throws int32 {
-                ensures result == x by auto;
+                ensures result == x by auto();
             }
         "#;
     let error = verify_c0_sources(click_source, &[("f.c", c_source)])
@@ -3987,7 +3987,7 @@ fn external_contracts_accept_diverges_and_still_reject_decreases() {
             }
 
             int32 caller(int32 fd) diverges {
-                ensures result == 0 by auto;
+                ensures result == 0 by auto();
             }
         "#;
     verify_c0_sources(marked, &[("wait.c", c_source)])
@@ -4019,7 +4019,7 @@ fn loop_diverges_round_trips_through_expansion() {
                 return 0;
             }
         "#;
-    let body = "loop diverges { invariant 0 == 0; initialize by simp; preserve by { step(); close_invariants(); } } simp();";
+    let body = "loop diverges { invariant 0 == 0; initialize by simp(); preserve by { step(); close_invariants(); } } simp();";
     let click_source = format!(
         r#"verifying "spin.c";
 
@@ -4090,13 +4090,13 @@ fn a_diverges_function_never_yields_termination_evidence() {
                 loop {
                     decreases n;
                     invariant n >= 0;
-                    initialize by simp;
+                    initialize by simp();
                     preserve by {
                         have 0 <= n - 1 by {
                             apply(int32_positive_predecessor_is_nonnegative(n)) using { n > 0; }
                         }
                         step();
-                        close_invariants by {
+                        close_invariants() by {
                             both { arithmetic() using { 0 <= n; } }
                             and {
                                 both { arithmetic() using { 0 <= n; } }
@@ -4107,10 +4107,10 @@ fn a_diverges_function_never_yields_termination_evidence() {
                 }
                 loop diverges {
                     invariant n == 0;
-                    initialize by simp;
+                    initialize by simp();
                     preserve by {
                         step();
-                        close_invariants by { simp(); }
+                        close_invariants() by { simp(); }
                     }
                 }
                 step();
@@ -5095,7 +5095,7 @@ fn a_rust_sidecar_writes_click_types_in_rust() {
             ensures b by simp();
         }
         theorem an_index_is_a_usize(n: usize) {
-            ensures forall (k: usize) { k < n implies k < n } by auto;
+            ensures forall (k: usize) { k < n implies k < n } by auto();
         }";
     verify_c0_sources(accepted, &rust_source).expect("the Rust spellings verify");
     let error = verify_c0_sources(

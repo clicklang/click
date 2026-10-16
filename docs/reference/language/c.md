@@ -1713,7 +1713,7 @@ int32 apply(int32 (*callback)(int32, int32), int32 left, int32 right) {
     requires Comparator(callback);
     requires 0 <= right;
     requires right <= left;
-    ensures result == left - right by auto;
+    ensures result == left - right by auto();
 }
 ```
 

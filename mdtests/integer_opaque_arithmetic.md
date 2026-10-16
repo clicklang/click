@@ -6,7 +6,7 @@ import click::integer;
 theorem reconstruction_bound(n: Integer, q: Integer, d: Integer, r: Integer) {
     requires n == q * d + r;
     requires 0 <= r;
-    ensures q * d <= n by { arithmetic() using { n == q * d + r; 0 <= r; } }
+    ensures q * d <= n by { arithmetic() using { n == q * d + r; 0 <= r; }; }
 }
 theorem quotient_remainder_order(n: Integer, d: Integer) {
     requires d != 0;
@@ -17,7 +17,7 @@ theorem quotient_remainder_order(n: Integer, d: Integer) {
         arithmetic() using {
             n == truncating_quotient(n, d) * d + truncating_remainder(n, d);
             0 <= truncating_remainder(n, d);
-        }
+        };
     }
 }
 theorem distribute(a: Integer, b: Integer, c: Integer) {

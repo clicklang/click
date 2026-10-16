@@ -47,7 +47,7 @@ int32 struct_aggregate_load_copy() {
 verifying "struct_aggregate_load_copy.c";
 
 int32 struct_aggregate_load_copy() {
-    ensures result == 0 or result == 14 by auto;
+    ensures result == 0 or result == 14 by auto();
 }
 ```
 

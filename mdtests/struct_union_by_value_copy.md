@@ -33,13 +33,13 @@ struct packet copy_packet(struct packet value) {
     ensures result.tag == value.tag;
     ensures result.payload.number == value.payload.number;
 } by {
-    auto;
+    auto();
 }
 
 struct packet copy_packet_pointer(struct packet value) {
     ensures result.payload.pointer == value.payload.pointer;
 } by {
-    auto;
+    auto();
 }
 ```
 

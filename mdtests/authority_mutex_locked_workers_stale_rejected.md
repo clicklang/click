@@ -74,7 +74,7 @@ int32 run() {
     step();
     step();
     step();
-    branch then { step(); simp(); } else {}
+    branch { step(); simp(); } else {}
     step();
     fold(authority(reference(obj)));
     fold(reference(obj));
@@ -82,24 +82,24 @@ int32 run() {
     let control = fold(control(obj), { refs: 2 });
     let { lifetime: lifetime } = step(pthread_mutex_init(&obj->mu, 0), { state: control });
     step();
-    branch then {
+    branch {
         step(pthread_mutex_destroy(&obj->mu), { lifetime: lifetime });
         unfold(control);
         unfold(reference(obj));
         unfold(reference(obj));
-        have count(reference(obj)) == 0 by simp;
+        have count(reference(obj)) == 0 by simp();
         unfold(authority(reference(obj)));
         step();
         step();
         simp();
     } else {}
     step();
-    branch then {
+    branch {
         step();
         step(pthread_mutex_destroy(&obj->mu), { lifetime: lifetime });
         unfold(control);
         unfold(reference(obj));
-        have count(reference(obj)) == 0 by simp;
+        have count(reference(obj)) == 0 by simp();
         unfold(authority(reference(obj)));
         step();
         step();
@@ -109,7 +109,7 @@ int32 run() {
     step();
     step(pthread_mutex_destroy(&obj->mu), { lifetime: lifetime });
     unfold(control);
-    have count(reference(obj)) == 2 by simp;
+    have count(reference(obj)) == 2 by simp();
     unfold(authority(reference(obj)));
     step();
     step();

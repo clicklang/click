@@ -59,7 +59,7 @@ struct wide_value replace_wide_value(struct wide_value value) {
     ensures result.total == -9;
     ensures result.mask == 11u64;
 } by {
-    auto;
+    auto();
 }
 ```
 

@@ -17,9 +17,9 @@ int32 c_fragments(int32 x, int32 p[], int32 n, int32 k) {
     requires n >= 1;
     requires 0 <= k and k < n;
     requires viewable(p[0..n]);
-    ensures result == x + 1 by auto;
-    ensures p[k] == old(p[k]) by auto;
-    ensures p[0] == old(p[0]) by auto;
+    ensures result == x + 1 by auto();
+    ensures p[k] == old(p[k]) by auto();
+    ensures p[0] == old(p[0]) by auto();
 }
 ```
 

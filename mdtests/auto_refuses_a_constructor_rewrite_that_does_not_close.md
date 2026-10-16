@@ -29,7 +29,7 @@ void touch(int32 n) {
 } by {
     match c.model {
         Walk::At(wd, rest) => {
-            have black(Walk::At(wd, rest)) == 0 by auto;
+            have black(Walk::At(wd, rest)) == 0 by auto();
             step();
             step();
             simp();

@@ -157,7 +157,7 @@ fn failed_written_have_keeps_its_goal_and_actual_queries_for_simp_and_auto() {
         let source = format!(
             r#"verifying "f.c"; void f(int32* p, int32 i) {{
             owns p[0..2]; requires 0 <= i; requires i < 2;
-        }} by {{ step(); have p[0] == old(p[0]) by {closer}; execute(); }}"#
+        }} by {{ step(); have p[0] == old(p[0]) by {closer}(); execute(); }}"#
         );
         let ordinary = verify_c0_sources(&source, &[("f.c", c)])
             .unwrap_err()
@@ -243,7 +243,7 @@ fn implicit_loop_closure_is_smart_while_written_closure_is_simple() {
         ("invariant n == 2;", "", "simp", "smart"),
         (
             "decreases n; invariant 0 <= n;",
-            "close_invariants by simp();",
+            "close_invariants() by simp();",
             "close_invariants",
             "simple",
         ),
@@ -336,7 +336,7 @@ fn auto_have_budget_failure_keeps_the_exhaustion_reason() {
     let source = r#"
         verifying "bound.c";
         uint64 bound(uint64 a, uint64 b) { ensures result == a; } by {
-            have a <= b - b % 4u64 by auto;
+            have a <= b - b % 4u64 by auto();
             execute(); simp();
         }
     "#;
@@ -607,7 +607,7 @@ fn resource_neutral_callee_preserves_callers_allocation_resource() {
             fold(storage(owner));
             execute_until(statement(2));
             unfold(storage(owner));
-            have 1 <= owner->cap by simp;
+            have 1 <= owner->cap by simp();
             fold(allocated(owner));
             execute();
             simp();
@@ -1031,7 +1031,7 @@ fn failed_algebraic_simp_reports_claim_without_internal_schema_dump() {
             ensures match value {
                 Maybe::None => Maybe<int32>::Some(0),
                 Maybe::Some(x) => Maybe<int32>::Some(x),
-            } == value by simp;
+            } == value by simp();
         }
     "#;
     let error = verify_c0_sources(source, &[]).unwrap_err();
@@ -1362,7 +1362,7 @@ fn identical_load_renders_name_distinct_snapshot_loads() {
             int32 sym_index_clobber(int32* p, int32 i) {
                 owns p[0..2];
                 requires 0 <= i and i < 2;
-                ensures result == old(p[0]) by auto;
+                ensures result == old(p[0]) by auto();
             }
         "#;
 
@@ -2389,7 +2389,7 @@ void run(int32 total) {{ requires 0 <= total; requires total <= 1000; ensures 0 
   invariant 0 <= remaining;
   invariant remaining <= total;
   {invariants}
-  preserve by {{ step(); close_invariants by {{ simp(); }} }}
+  preserve by {{ step(); close_invariants() by {{ simp(); }} }}
  }}
  execute(); simp();
 }}
@@ -3017,7 +3017,7 @@ uint64 drain(uint64 len) {
    step();
    have len == 0u64 by simp();
    have to_integer(len) == 0 by simp() using { len == 0u64; };
-   close_invariants by assumption();
+   close_invariants() by assumption();
   }
  }
  execute(); simp();
@@ -3096,8 +3096,8 @@ fn failed_invariant_closure_trace_prefix_is_lazy_and_scales() {
     for size in [16, 32, 64] {
         let repeated = "   have len == len by normalize();\n".repeat(size);
         let source = CLOSURE_TRACE_CLICK.replace(
-            "   close_invariants by assumption();",
-            &format!("{repeated}   close_invariants by assumption();"),
+            "   close_invariants() by assumption();",
+            &format!("{repeated}   close_invariants() by assumption();"),
         );
         with_proof_trace("drain", || {
             let error = verify_c0_sources(&source, &[("loop.c", CLOSURE_TRACE_C)])
@@ -3132,13 +3132,13 @@ fn failed_invariant_closure_trace_keeps_its_branch_guard() {
                 invariant len == 16u64;
                 initialize by assumption();
                 preserve by {
-                    branch then {
+                    branch {
                         step();
                         have len == 0u64 by simp();
-                        close_invariants by assumption();
+                        close_invariants() by assumption();
                     } else {
                         step();
-                        close_invariants by assumption();
+                        close_invariants() by assumption();
                     }
                 }
             }
@@ -3156,13 +3156,15 @@ fn failed_invariant_closure_trace_keeps_its_branch_guard() {
     });
 }
 
-/// A positive kernel view query must not be reported as a missing extent.
-/// Exercise the presentation boundary and retain its exact stage and counts
-/// in both ordinary CLI reports and traces, including a nested written simp.
+/// Native prefix proofs retain the source view and its coverage bound even
+/// when unrelated bounds exceed the general premise-reduction budget.
 #[test]
-#[ignore = "nightly: 0.8s in the parallel gate"]
-fn native_view_simp_reports_the_actual_premise_spelling_limit() {
-    let source = |extra_bounds: usize, body: &str| {
+fn native_view_simp_selects_only_coverage_premises() {
+    let extra_bounds = 63;
+    for body in [
+        "simp();",
+        "have viewable(p[0u64..1u64]) by { simp(); } assumption();",
+    ] {
         let mut source = String::from(
             "target \"x86_64-unknown-linux-gnu\"; theorem broad_view(p: uint8[], n: uint64) { views p[0u64..n]; requires 1u64 <= n;",
         );
@@ -3172,56 +3174,9 @@ fn native_view_simp_reports_the_actual_premise_spelling_limit() {
         source.push_str(&format!(
             " ensures viewable(p[0u64..1u64]) by {{ {body} }} }}"
         ));
-        source
-    };
-    // Connected bounds within the bounded reduction now retain just the
-    // source view and its coverage bound, even beyond the spelling limit.
-    for extra_bounds in [29, 30, 31, 62] {
-        verify_c0_sources(&source(extra_bounds, "simp();"), &[])
-            .expect("a derivation within the 64-premise spelling budget should check");
+        verify_c0_sources(&source, &[])
+            .expect("a prefix uses only its source view and coverage bound");
     }
-    for body in [
-        "simp();",
-        "have viewable(p[0u64..1u64]) by { simp(); } assumption();",
-    ] {
-        // A selection outside the bounded reduction still obeys the same
-        // 64-premise source-spelling limit and must report it accurately.
-        let source = source(63, body);
-        let check = |error: &ClickError| {
-            for report in [error.message().to_owned(), error.concise_report()] {
-                assert!(
-                    report.contains("accepted by the kernel native view checker"),
-                    "{report}"
-                );
-                assert!(report.contains("simp view premise spelling"), "{report}");
-                assert!(
-                    report.contains("contains 130 premises; source spelling permits at most 64"),
-                    "{report}"
-                );
-                assert!(!report.contains("what is left"), "{report}");
-                assert!(!report.contains("valid 32-bit byte extent"), "{report}");
-                assert!(report.len() <= 16 * 1024, "ordinary report is bounded");
-            }
-        };
-        let error =
-            verify_c0_sources(&source, &[]).expect_err("the existing budget must remain in force");
-        check(&error);
-        with_proof_trace("broad_view", || {
-            let error = verify_c0_sources(&source, &[]).unwrap_err();
-            check(&error);
-            let trace = error.trace_context_report().expect("requested proof trace");
-            assert!(
-                trace.contains("contains 130 premises; source spelling permits at most 64"),
-                "{trace}"
-            );
-            assert!(trace.contains("bytes:uint64=1u64"), "{trace}");
-        });
-    }
-    verify_c0_sources(
-        &source(63, "simp() using { 1u64 <= n; viewable(p[0u64..n]); };"),
-        &[],
-    )
-    .expect("the same view checks with its two relevant explicit premises");
 }
 
 #[test]
@@ -3687,7 +3642,7 @@ fn a_failed_retain_names_the_population_count_requirement() {
 fn auto_have_failure_trace_retains_checked_call_prefix() {
     let c = "int helper(void) { return 1; } int f(void) { int x; x = helper(); return x; }";
     let source = "verifying \"f.c\"; int32 helper() { ensures result == 1; } by { execute(); simp(); } \
-                  int32 f() { ensures result == 1; } by { step(); step(); have x == 2 by auto; execute(); simp(); }";
+                  int32 f() { ensures result == 1; } by { step(); step(); have x == 2 by auto(); execute(); simp(); }";
     with_proof_trace("f", || {
         let error =
             verify_c0_sources(source, &[("f.c", c)]).expect_err("the false have must still fail");

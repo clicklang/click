@@ -21,7 +21,7 @@ theorem pool_checkout_increment_bound(capacity: int32, used: int32, available: i
     requires 1 <= available;
     requires capacity == used + available;
     requires defined(used + available);
-    ensures to_integer(used) + 1 <= 2147483647 by auto;
+    ensures to_integer(used) + 1 <= 2147483647 by auto();
 }
 theorem pool_shrink_sum_defined(capacity: int32, used: int32, available: int32, amount: int32) {
     requires 0 <= used;
@@ -29,7 +29,7 @@ theorem pool_shrink_sum_defined(capacity: int32, used: int32, available: int32, 
     requires amount <= available;
     requires capacity == used + available;
     requires defined(used + available);
-    ensures defined(used + (available - amount)) by auto;
+    ensures defined(used + (available - amount)) by auto();
 }
 theorem pool_shrink_conservation(capacity: int32, used: int32, available: int32, amount: int32) {
     requires 0 <= used;
@@ -38,7 +38,7 @@ theorem pool_shrink_conservation(capacity: int32, used: int32, available: int32,
     requires capacity == used + available;
     requires defined(used + available);
     requires defined(capacity - amount);
-    ensures capacity - amount == used + (available - amount) by auto;
+    ensures capacity - amount == used + (available - amount) by auto();
 }
 theorem pool_grow_slots_defined(capacity: int32, used: int32, available: int32, amount: int32) {
     requires 0 <= used;
@@ -47,7 +47,7 @@ theorem pool_grow_slots_defined(capacity: int32, used: int32, available: int32, 
     requires capacity == used + available;
     requires defined(used + available);
     requires defined(capacity + amount);
-    ensures defined(available + amount) by auto;
+    ensures defined(available + amount) by auto();
 }
 theorem pool_grow_conservation(capacity: int32, used: int32, available: int32, amount: int32) {
     requires 0 <= used;
@@ -57,7 +57,7 @@ theorem pool_grow_conservation(capacity: int32, used: int32, available: int32, a
     requires defined(used + available);
     requires defined(capacity + amount);
     ensures defined(used + (available + amount)) and
-        capacity + amount == used + (available + amount) by auto;
+        capacity + amount == used + (available + amount) by auto();
 }
 predicate valid_pool(pool: struct pool*) {
     0 <= pool->checked_out and
@@ -149,20 +149,20 @@ void pool_checkout(struct pool* pool, struct object* object) {
             0 <= pool->checked_out;
             1 <= count(pool_slot(pool));
             pool->capacity == pool->checked_out + count(pool_slot(pool));
-        }
+        };
         have defined(pool->checked_out + count(pool_slot(pool)));
         apply(pool_checkout_increment_bound(pool->capacity, pool->checked_out, count(pool_slot(pool)))) using {
             1 <= count(pool_slot(pool));
             0 <= pool->checked_out;
             pool->capacity == pool->checked_out + count(pool_slot(pool));
             defined(pool->checked_out + count(pool_slot(pool)));
-        }
-        have to_integer(pool->checked_out) + 1 >= -2147483648 by auto;
+        };
+        have to_integer(pool->checked_out) + 1 >= -2147483648 by auto();
         apply(int32_add_defined_by_integer_bounds(pool->checked_out, 1)) using {
             to_integer(pool->checked_out) + 1 <= 2147483647;
             to_integer(pool->checked_out) + 1 >= -2147483648;
-        }
-        have defined(count(pool_object(pool, _)) + 1) by auto;
+        };
+        have defined(count(pool_object(pool, _)) + 1) by auto();
         unfold(pool_slot(pool));
         step();
         fold(pool_object(pool, object));
@@ -186,7 +186,7 @@ void pool_return(struct pool* pool, struct object* object) {
     ensures object->value == old(object->value);
 } by {
     open(pool_control(pool)) {
-        have 1 <= pool->checked_out by auto;
+        have 1 <= pool->checked_out by auto();
         have pool->capacity == count(pool_slot(pool)) + pool->checked_out;
         apply(int32_move_one_from_right_to_left_preserves_sum(
             pool->capacity, count(pool_slot(pool)), pool->checked_out
@@ -194,17 +194,17 @@ void pool_return(struct pool* pool, struct object* object) {
             0 <= count(pool_slot(pool));
             1 <= pool->checked_out;
             pool->capacity == count(pool_slot(pool)) + pool->checked_out;
-        }
+        };
         have defined(pool->checked_out + count(pool_slot(pool)));
         apply(int32_add_to_integer(pool->checked_out, count(pool_slot(pool)))) using {
             defined(pool->checked_out + count(pool_slot(pool)));
-        }
-        have to_integer(pool->capacity) == to_integer(pool->checked_out) + to_integer(count(pool_slot(pool))) by auto;
+        };
+        have to_integer(pool->capacity) == to_integer(pool->checked_out) + to_integer(count(pool_slot(pool))) by auto();
         have 0 <= to_integer(count(pool_slot(pool))) by {
-            apply(int32_less_equal_to_integer(0, count(pool_slot(pool)))) using { 0 <= count(pool_slot(pool)); }
+            apply(int32_less_equal_to_integer(0, count(pool_slot(pool)))) using { 0 <= count(pool_slot(pool)); };
             simp();
         }
-        have defined(count(pool_slot(pool)) + 1) by auto;
+        have defined(count(pool_slot(pool)) + 1) by auto();
         unfold(pool_object(pool, object));
         step();
         fold(pool_slot(pool));
@@ -262,7 +262,7 @@ void pool_shrink(struct pool* pool, int32 amount) {
             amount <= count(pool_slot(pool));
             pool->capacity == pool->checked_out + count(pool_slot(pool));
             defined(pool->checked_out + count(pool_slot(pool)));
-        }
+        };
         apply(pool_shrink_conservation(pool->capacity, pool->checked_out, count(pool_slot(pool)), amount)) using {
             0 <= pool->checked_out;
             0 <= amount;
@@ -270,7 +270,7 @@ void pool_shrink(struct pool* pool, int32 amount) {
             pool->capacity == pool->checked_out + count(pool_slot(pool));
             defined(pool->checked_out + count(pool_slot(pool)));
             defined(pool->capacity - amount);
-        }
+        };
         unfold(amount of pool_slot(pool));
         step();
     }
@@ -313,12 +313,12 @@ void pool_grow(struct pool* pool, int32 amount) {
             0 <= pool->checked_out; 0 <= count(pool_slot(pool)); 0 <= amount;
             pool->capacity == pool->checked_out + count(pool_slot(pool));
             defined(pool->checked_out + count(pool_slot(pool))); defined(pool->capacity + amount);
-        }
+        };
         apply(pool_grow_conservation(pool->capacity, pool->checked_out, count(pool_slot(pool)), amount)) using {
             0 <= pool->checked_out; 0 <= count(pool_slot(pool)); 0 <= amount;
             pool->capacity == pool->checked_out + count(pool_slot(pool));
             defined(pool->checked_out + count(pool_slot(pool))); defined(pool->capacity + amount);
-        }
+        };
         step();
         fold(amount of pool_slot(pool));
     }
@@ -349,7 +349,7 @@ void pool_transfer(struct pool* source, struct pool* destination, struct object*
 } by {
     open(pool_control(source)) {
         open(pool_control(destination)) {
-            have 1 <= source->checked_out by auto;
+            have 1 <= source->checked_out by auto();
             have source->capacity == count(pool_slot(source)) + source->checked_out;
             apply(int32_move_one_from_right_to_left_preserves_sum(
                 source->capacity, count(pool_slot(source)), source->checked_out
@@ -357,36 +357,36 @@ void pool_transfer(struct pool* source, struct pool* destination, struct object*
                 0 <= count(pool_slot(source));
                 1 <= source->checked_out;
                 source->capacity == count(pool_slot(source)) + source->checked_out;
-            }
+            };
             have defined(source->checked_out + count(pool_slot(source)));
             apply(int32_add_to_integer(source->checked_out, count(pool_slot(source)))) using {
                 defined(source->checked_out + count(pool_slot(source)));
-            }
+            };
             have 0 <= to_integer(count(pool_slot(source))) by {
-                apply(int32_less_equal_to_integer(0, count(pool_slot(source)))) using { 0 <= count(pool_slot(source)); }
+                apply(int32_less_equal_to_integer(0, count(pool_slot(source)))) using { 0 <= count(pool_slot(source)); };
                 simp();
             }
-            have defined(count(pool_slot(source)) + 1) by auto;
+            have defined(count(pool_slot(source)) + 1) by auto();
             apply(int32_move_one_from_right_to_left_preserves_sum(
                 destination->capacity, destination->checked_out, count(pool_slot(destination))
             )) using {
                 0 <= destination->checked_out;
                 1 <= count(pool_slot(destination));
                 destination->capacity == destination->checked_out + count(pool_slot(destination));
-            }
+            };
             have defined(destination->checked_out + count(pool_slot(destination)));
             apply(pool_checkout_increment_bound(destination->capacity, destination->checked_out, count(pool_slot(destination)))) using {
                 1 <= count(pool_slot(destination));
                 0 <= destination->checked_out;
                 destination->capacity == destination->checked_out + count(pool_slot(destination));
                 defined(destination->checked_out + count(pool_slot(destination)));
-            }
-            have to_integer(destination->checked_out) + 1 >= -2147483648 by auto;
+            };
+            have to_integer(destination->checked_out) + 1 >= -2147483648 by auto();
             apply(int32_add_defined_by_integer_bounds(destination->checked_out, 1)) using {
                 to_integer(destination->checked_out) + 1 <= 2147483647;
                 to_integer(destination->checked_out) + 1 >= -2147483648;
-            }
-            have defined(count(pool_object(destination, _)) + 1) by auto;
+            };
+            have defined(count(pool_object(destination, _)) + 1) by auto();
             unfold(pool_object(source, object));
             unfold(pool_slot(destination));
             step();

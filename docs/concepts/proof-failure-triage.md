@@ -466,6 +466,6 @@ worktree. If reduction changes the source pattern that caused the failure, it
 is not yet an adequate regression.
 
 An explicit `apply(...)` inside `open(...)` reports an unavailable theorem
-premise through the same checker used outside the scope. A `have f by simp`
+premise through the same checker used outside the scope. A `have f by simp()`
 that cannot establish its fact reports `Requires f`; neither refusal means
 that resource scopes themselves are unsupported.

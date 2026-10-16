@@ -90,7 +90,7 @@ For an external read, `views` is normally enough:
 int32 first(int32 p[]) {
     views p[0..1];
 
-    ensures result == p[0] by auto;
+    ensures result == p[0] by auto();
 }
 ```
 
@@ -168,8 +168,8 @@ changes it again.
 <!-- verified-example: mdtests/resource_summary_splits_write_range.md -->
 ```click
 int32 write_first(int32 p[]) {
-    owns p[0..1] by auto;
-    ensures writes_first: p[0] == 1 by auto;
+    owns p[0..1] by auto();
+    ensures writes_first: p[0] == 1 by auto();
 }
 ```
 
@@ -188,12 +188,12 @@ Function calls use the callee's verified contract as an opaque summary:
 <!-- verified-example: mdtests/permission_call_returns_write.md -->
 ```click
 int32 write_and_return_permission(int32 p[]) {
-    owns p[0..1] by auto;
+    owns p[0..1] by auto();
     ...
 }
 
 int32 call_write_and_keep_permission(int32 p[]) {
-    owns p[0..1] by auto;
+    owns p[0..1] by auto();
 }
 ```
 
@@ -336,7 +336,7 @@ Then a contract can require and return instances of that resource:
 <!-- verified-example: mdtests/token_resource_borrow_return.md -->
 ```click
 int32 borrow_fd(int32 fd) {
-    owns open_fd(fd) by auto;
+    owns open_fd(fd) by auto();
 }
 ```
 
@@ -946,7 +946,7 @@ non-consuming view step:
 <!-- verified-example: mdtests/composite_resource_observe_nested_fact.md -->
 ```click
 int32 return_fd(int32 fd) {
-    owns live_fd(fd) by auto;
+    owns live_fd(fd) by auto();
 
     ensures result >= 0 by {
         observe(live_fd(fd));
@@ -1720,12 +1720,12 @@ A caller can pass a subrange of a larger owned memory resource:
 <!-- verified-example: mdtests/resource_summary_splits_write_range.md -->
 ```click
 int32 write_first(int32 p[]) {
-    owns p[0..1] by auto;
+    owns p[0..1] by auto();
     ...
 }
 
 int32 write_first_then_second(int32 p[]) {
-    owns p[0..2] by auto;
+    owns p[0..2] by auto();
     ...
 }
 ```

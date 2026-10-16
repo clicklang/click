@@ -13,11 +13,11 @@ int32 record_alpha() {
     owns counters[0].value;
     owns calls;
     owns batches[0..2];
-    ensures counters[0].value == old(counters[0].value) + 1 by auto;
-    ensures calls == old(calls) + 1 by auto;
-    ensures batches[0][0] == old(batches[0][0]) + 1 by auto;
-    ensures batches[0][1] == old(batches[0][1]) by auto;
-    ensures result == old(calls) + old(batches[0][0]) + 2 by auto;
+    ensures counters[0].value == old(counters[0].value) + 1 by auto();
+    ensures calls == old(calls) + 1 by auto();
+    ensures batches[0][0] == old(batches[0][0]) + 1 by auto();
+    ensures batches[0][1] == old(batches[0][1]) by auto();
+    ensures result == old(calls) + old(batches[0][0]) + 2 by auto();
 }
 
 int32 record_beta() {
@@ -30,18 +30,18 @@ int32 record_beta() {
     owns counters[1].value;
     owns calls;
     owns batches[0].value;
-    ensures counters[1].value == old(counters[1].value) + 1 by auto;
-    ensures calls == old(calls) + 1 by auto;
-    ensures batches[0].value == old(batches[0].value) + 1 by auto;
-    ensures result == old(calls) + old(batches[0].value) + 2 by auto;
+    ensures counters[1].value == old(counters[1].value) + 1 by auto();
+    ensures calls == old(calls) + 1 by auto();
+    ensures batches[0].value == old(batches[0].value) + 1 by auto();
+    ensures result == old(calls) + old(batches[0].value) + 2 by auto();
 }
 
 int32 alpha_calls() {
-    ensures result == old(calls) by auto;
+    ensures result == old(calls) by auto();
 }
 
 int32 beta_calls() {
-    ensures result == old(calls) by auto;
+    ensures result == old(calls) by auto();
 }
 
 int32 registry_run() {
@@ -110,10 +110,10 @@ int32 registry_run() {
         execute();
         simp();
     }
-    ensures counters[0].value == 12 by auto;
-    ensures counters[1].value == 21 by auto;
-    ensures counters[2].value == 99 by auto;
-    ensures counters[0].name == 97 by auto;
-    ensures counters[1].name == 98 by auto;
-    ensures counters[2].name == 122 by auto;
+    ensures counters[0].value == 12 by auto();
+    ensures counters[1].value == 21 by auto();
+    ensures counters[2].value == 99 by auto();
+    ensures counters[0].name == 97 by auto();
+    ensures counters[1].name == 98 by auto();
+    ensures counters[2].name == 122 by auto();
 }

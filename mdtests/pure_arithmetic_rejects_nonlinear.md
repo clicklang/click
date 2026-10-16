@@ -11,7 +11,7 @@ theorem nonlinear_product_is_outside_arithmetic(x: int32, y: int32) {
     ensures x * y == y * y by {
         arithmetic() using {
             x == y;
-        }
+        };
     }
 }
 ```

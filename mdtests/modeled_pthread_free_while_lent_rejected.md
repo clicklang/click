@@ -37,11 +37,11 @@ int32 run() {
 } by {
     step();
     step();
-    branch then { step(); simp(); } else {}
+    branch { step(); simp(); } else {}
     fold(authority(reference(obj)));
     step();
     step();
-    branch then {
+    branch {
         unfold(authority(reference(obj)));
         step();
         step();

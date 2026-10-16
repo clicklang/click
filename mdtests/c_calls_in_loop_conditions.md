@@ -35,15 +35,15 @@ verifying "call_in_for_condition.c";
 verifying "stop_now.c";
 
 int32 call_in_while_condition() {
-    ensures result == 0 by auto;
+    ensures result == 0 by auto();
 }
 
 int32 call_in_for_condition() {
-    ensures result == 0 by auto;
+    ensures result == 0 by auto();
 }
 
 int32 stop_now() {
-    ensures result == 0 by auto;
+    ensures result == 0 by auto();
 }
 ```
 

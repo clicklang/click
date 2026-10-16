@@ -22,10 +22,10 @@ int32 drain(int32 n) diverges {
     loop diverges {
         decreases n;
         invariant n >= 0;
-        initialize by simp;
+        initialize by simp();
         preserve by {
             step();
-            close_invariants by { simp(); }
+            close_invariants() by { simp(); }
         }
     }
     step();

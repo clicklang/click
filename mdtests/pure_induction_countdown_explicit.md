@@ -20,25 +20,25 @@ theorem countdown_explicit_is_zero(n: int32) {
         induct(n) as ih;
         if n <= 0 {
             unfold(countdown_explicit(n));
-            normalize() using { n <= 0; }
+            normalize() using { n <= 0; };
         } else {
             have 0 <= n - 1 by {
                 apply(int32_positive_predecessor_is_nonnegative(n)) using {
                     0 < n;
-                }
+                };
                 assumption();
             }
             have n - 1 < n by {
                 apply(int32_positive_predecessor_strictly_decreases(n)) using {
                     0 < n;
-                }
+                };
                 assumption();
             }
             apply(ih(n - 1)) using {
                 0 <= n - 1;
                 n - 1 < n;
                 n - 1 >= 0;
-            }
+            };
             unfold(countdown_explicit(n));
             rewrite(countdown_explicit(n - 1) == 0);
             normalize();

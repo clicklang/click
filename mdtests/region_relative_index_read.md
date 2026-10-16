@@ -39,13 +39,13 @@ int32 region_read(struct region* region, int32 index) {
         simp() using {
             defined(region->start + index) and
                 region->start + index < region->end;
-        }
+        };
     }
     have region->start + index < region->end by {
         simp() using {
             defined(region->start + index) and
                 region->start + index < region->end;
-        }
+        };
     }
     have 0 <= index by {
         assumption();
@@ -57,7 +57,7 @@ int32 region_read(struct region* region, int32 index) {
         )) using {
             0 <= index;
             defined(region->start + index);
-        }
+        };
     }
     have region->start + index + 1 <= region->end by {
         apply(int32_increment_upper_bound(
@@ -65,7 +65,7 @@ int32 region_read(struct region* region, int32 index) {
             region->end
         )) using {
             region->start + index < region->end;
-        }
+        };
     }
     step();
     simp();

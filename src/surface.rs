@@ -3832,7 +3832,7 @@ pub enum ProofTactic {
     Simp,
     /// The closer `auto` ends a proof with: each pending claim is tried by
     /// `simp`, then by the rest of `auto`'s search. It has no source
-    /// spelling; `by auto;`, an omitted proof, and a script that ends with
+    /// spelling; `by auto();`, an omitted proof, and a script that ends with
     /// claims still open use it.
     AutoClose,
     SimpUsing(ProofSimpUsing),
@@ -4296,7 +4296,7 @@ pub const PUBLIC_TACTIC_FORMS: &[PublicTacticForm] = &[
     },
     PublicTacticForm {
         id: "close-invariants-by",
-        syntax: "close_invariants by",
+        syntax: "close_invariants() by",
         class: "control",
     },
     PublicTacticForm {

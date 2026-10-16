@@ -26,12 +26,12 @@ verifying "c_const_cast_owned_write.c";
 
 int32 set(const struct node* view) {
     owns view->value;
-    ensures result == 7 by auto;
-    ensures view->value == 7 by auto;
+    ensures result == 7 by auto();
+    ensures view->value == 7 by auto();
 }
 
 struct node* same(const struct node* view) {
-    ensures result == view by auto;
+    ensures result == view by auto();
 }
 ```
 

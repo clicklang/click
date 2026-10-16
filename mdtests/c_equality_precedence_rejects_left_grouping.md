@@ -13,7 +13,7 @@ int32 mixed(int32 a, int32 b, int32 c) {
     requires a == 5;
     requires b == 5;
     requires c == 9;
-    ensures result == 1 by auto;
+    ensures result == 1 by auto();
 }
 ```
 

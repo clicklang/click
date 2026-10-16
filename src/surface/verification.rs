@@ -2737,7 +2737,7 @@ fn verify_c0_sources_in_context(
                 })?,
                 SourceProof::Default | SourceProof::Tactic(SmartTactic::Simp) => {
                     return Err(ClickError::new(format!(
-                        "grouped proof for `{}` must use `by auto;` or an explicit `by {{ ... }}` proof script",
+                        "grouped proof for `{}` must use `by auto();` or an explicit `by {{ ... }}` proof script",
                         function_block.signature().name()
                     )));
                 }
@@ -7793,7 +7793,7 @@ mod modeled_pthread_binding_tests {
     #[test]
     fn source_create_status_can_be_copied_and_tested_later() {
         let c = "#include <pthread.h>\n#include <stddef.h>\nstruct cell { int value; };\nvoid *worker(void *p) { struct cell *q = p; q->value = 77; return NULL; }\nint run(struct cell *p) { pthread_t h; int rc = pthread_create(&h, NULL, worker, p); int saved = rc; int unrelated = 7; if (saved != 0) return 0; pthread_join(h, NULL); return unrelated; }\n";
-        let click = "target \"x86_64-unknown-linux-gnu\";\nruntime \"modeled-pthread\";\nverifying \"fork_join.c\";\nvoid *worker(void *p) { owns ((struct cell *)p)->value; } by { execute(); simp(); }\nint32 run(struct cell *p) { owns p->value; ensures result == 0 or result == 7; } by { step(); step(); step(); step(); step(); step(); step(); branch then { step(); simp(); } else {} step(); step(); simp(); }\n";
+        let click = "target \"x86_64-unknown-linux-gnu\";\nruntime \"modeled-pthread\";\nverifying \"fork_join.c\";\nvoid *worker(void *p) { owns ((struct cell *)p)->value; } by { execute(); simp(); }\nint32 run(struct cell *p) { owns p->value; ensures result == 0 or result == 7; } by { step(); step(); step(); step(); step(); step(); step(); branch { step(); simp(); } else {} step(); step(); simp(); }\n";
         verify_c0_sources(click, &[("fork_join.c", c)])
             .expect("a saved status should choose the checked create outcome");
         let expanded =
@@ -8426,8 +8426,8 @@ verifying "reader.c";
 
 int32 reader(int32 p[]) {
     views p[0..1];
-    ensures exact_value: result == p[0] by auto;
-    ensures lower_bound: result >= p[0] by auto;
+    ensures exact_value: result == p[0] by auto();
+    ensures lower_bound: result >= p[0] by auto();
 }
 "#;
         let source = "int reader(int *p) { return p[0]; }";
@@ -8818,7 +8818,7 @@ mod retained_caller_tests {
             .map(|(name, source)| (name.as_str(), source.as_str()))
             .collect::<Vec<_>>();
         let (session, _) = C0VerificationSession::new(&click, &sources).unwrap();
-        let position = expansion::position_at_offset(&click, click.rfind("auto;").unwrap());
+        let position = expansion::position_at_offset(&click, click.rfind("auto();").unwrap());
         for _ in 0..2 {
             session
                 .verify_at(&click, position.line, position.column)
@@ -8846,7 +8846,7 @@ mod retained_caller_tests {
             .iter()
             .map(|(name, source)| (name.as_str(), source.as_str()))
             .collect::<Vec<_>>();
-        let position = expansion::position_at_offset(&click, click.rfind("auto;").unwrap());
+        let position = expansion::position_at_offset(&click, click.rfind("auto();").unwrap());
         verify_c0_sources(&click, &sources).unwrap();
         let _tables = crate::kernel::VerificationSession::resume();
         for _ in 0..2 {

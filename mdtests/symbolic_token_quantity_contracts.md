@@ -31,7 +31,7 @@ verifying "symbolic_token_pipeline.c";
 void forward(int32 amount) {
     requires 0 <= amount;
     owns amount of permit();
-} by auto;
+} by auto();
 
 void spend(int32 amount) {
     requires 0 <= amount;
@@ -41,7 +41,7 @@ void spend(int32 amount) {
 void quantity_pipeline(int32 amount) {
     requires 0 <= amount;
     consumes amount of permit();
-} by auto;
+} by auto();
 ```
 
 ```expect

@@ -52,7 +52,7 @@ void clear_data(struct region* region) {
         owns arena->data[0..arena->capacity];
         invariant 0 <= i and i <= arena->capacity;
         invariant forall (k: int32) { 0 <= k and k < arena->capacity implies region->arena->occupied[k] == old(region->arena->occupied[k]) };
-        initialize by simp;
+        initialize by simp();
         preserve by {
             mark opened;
             step();
@@ -66,7 +66,7 @@ void clear_data(struct region* region) {
                 }
                 transport(at(opened, region->arena->occupied[k]) == old(region->arena->occupied[k]), region->arena->occupied[k] == old(region->arena->occupied[k])) using {
                     at(opened, region->arena->occupied[k]) == old(region->arena->occupied[k]);
-                }
+                };
             }
             simp();
         }

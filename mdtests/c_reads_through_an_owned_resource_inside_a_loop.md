@@ -43,7 +43,7 @@ int32 count(struct cell* p) {
         invariant i >= 0;
         owns flat(p);
 
-        initialize by simp;
+        initialize by simp();
         preserve by {
             step();
             close_invariants();

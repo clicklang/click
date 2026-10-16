@@ -23,9 +23,9 @@ verifying "a.c";
 verifying "b.c";
 int32 a() {
     requires zero[1][1] == 0;
-    ensures result == 33 by auto;
+    ensures result == 33 by auto();
 }
-int32 b() { ensures result == 9 by auto; }
+int32 b() { ensures result == 9 by auto(); }
 ```
 
 ```expect

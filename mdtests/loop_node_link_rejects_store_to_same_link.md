@@ -55,7 +55,7 @@ void rotate(struct node* parent) {
         invariant parent->right != 0;
         invariant parent->right->left != 0;
         decreases 0;
-        initialize by simp;
+        initialize by simp();
         preserve by {
             match t.model {
                 Tree::Empty => { contradiction(t.model == Tree::Empty); },

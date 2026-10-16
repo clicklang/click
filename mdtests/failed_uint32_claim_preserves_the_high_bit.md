@@ -10,7 +10,7 @@ uint32_t big(void) { return 1u; }
 
 ```click
 verifying "big.c";
-uint32 big() { ensures result == 2147483648u32 by auto; }
+uint32 big() { ensures result == 2147483648u32 by auto(); }
 ```
 
 ```expect

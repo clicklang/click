@@ -42,7 +42,7 @@ int32 loop_preserve_branch(int32 n) {
             if i < 0 {
                 step();
                 step();
-                close_invariants by {
+                close_invariants() by {
                     both { simp(); }
                     and {
                         both { simp(); }
@@ -51,11 +51,11 @@ int32 loop_preserve_branch(int32 n) {
                 }
             } else {
                 have i + 1 >= 0 by {
-                    apply(int32_increment_greater_equal_lower_bound(i, 0, n)) using { i >= 0; i < n; }
+                    apply(int32_increment_greater_equal_lower_bound(i, 0, n)) using { i >= 0; i < n; };
                 }
                 step();
                 step();
-                close_invariants by simp;
+                close_invariants() by simp();
             }
         }
     }

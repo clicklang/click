@@ -16,8 +16,8 @@ int32 caller(int32 x) {
 verifying "outcomes_threw_arm_refuses_a_false_exceptional_claim.c";
 
 int32 helper(int32 x) throws int32 {
-    ensures result == x by auto;
-    exceptional ensures exception == 7 by auto;
+    ensures result == x by auto();
+    exceptional ensures exception == 7 by auto();
 }
 
 int32 caller(int32 x) throws int32 {

@@ -17,7 +17,7 @@ void probe(struct node *p, struct node *q) {
     ensures p == q;
 } by {
     have identity(q) == q by { unfold(identity(q)); normalize(); }
-    have p == q by { normalize() using { } }
+    have p == q by { normalize() using { }; }
     execute(); simp();
 }
 ```

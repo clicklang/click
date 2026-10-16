@@ -64,12 +64,12 @@ int32 loop_sorted_range_invariant(int32 p[3]) {
                     forall (j: int32) {
                         0 <= i and 0 <= j and 0 <= i and i < j and j < 3 implies p[i] <= p[j]
                     }
-                }, i) using {}
+                }, i) using {};
                 instantiate(forall (j: int32) {
                     0 <= i and 0 <= j and 0 <= i and i < j and j < 3 implies p[i] <= p[j]
                 }, j) using {
                     0 <= i and 0 <= j and 0 <= i and i < j and j < 3;
-                }
+                };
                 assumption();
             }
         }

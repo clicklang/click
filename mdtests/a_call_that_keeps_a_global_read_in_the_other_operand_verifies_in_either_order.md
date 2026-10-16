@@ -18,10 +18,10 @@ verifying "keeps_operand.c";
 
 int same() {
     owns g;
-    ensures result == 0 by auto;
-    ensures g == old(g) by auto;
+    ensures result == 0 by auto();
+    ensures g == old(g) by auto();
 }
-int one() { ensures result == 1 by auto; }
+int one() { ensures result == 1 by auto(); }
 int call_first() {
     requires g == 5;
     owns g;

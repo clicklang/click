@@ -18,7 +18,7 @@ int32 forall_array_segment_rejects_overwritten_cell(int32 p[]) {
     consumes p[0..1];
     ensures segment_unchanged: forall (k: int32) {
         0 <= k and k < 1 implies p[k] == old(p[k])
-    } by auto;
+    } by auto();
 }
 ```
 

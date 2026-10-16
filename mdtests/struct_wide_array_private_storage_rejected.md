@@ -9,7 +9,7 @@ unsigned long read(struct words value) { return value.data[1]; }
 verifying "wide.c";
 unsigned long read(struct words value) {
     views value.data;
-    ensures result == value.data[1] by auto;
+    ensures result == value.data[1] by auto();
 }
 ```
 

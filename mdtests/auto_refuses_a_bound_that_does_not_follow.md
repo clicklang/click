@@ -9,7 +9,7 @@ theorem does_not_follow(i: uint64, n: uint64) {
     requires i < n;
     requires n <= 1000u64;
     ensures to_integer(i) <= 998 by {
-        have to_integer(i) <= 998 by auto;
+        have to_integer(i) <= 998 by auto();
         assumption();
     }
 }

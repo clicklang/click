@@ -23,12 +23,12 @@ theorem ctx_depth_is_nonnegative(ctx: Context) {
             Context::Left(identity, grandparent, color, sibling_model, up_model) => {
                 apply(ih(up_model));
                 unfold(ctx_depth(Context::Left(identity, grandparent, color, sibling_model, up_model)));
-                arithmetic() using { 0 <= ctx_depth(up_model); }
+                arithmetic() using { 0 <= ctx_depth(up_model); };
             }
             Context::Right(identity, grandparent, color, sibling_model, up_model) => {
                 apply(ih(up_model));
                 unfold(ctx_depth(Context::Right(identity, grandparent, color, sibling_model, up_model)));
-                arithmetic() using { 0 <= ctx_depth(up_model); }
+                arithmetic() using { 0 <= ctx_depth(up_model); };
             }
         }
     }

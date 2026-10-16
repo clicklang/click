@@ -12,7 +12,7 @@ verifying "bytes.c";
 void set_pointer(struct bytes* p) {
     owns p->data[1..2];
     views p->data[2..3];
-    ensures p->data[2] == 7 by auto;
+    ensures p->data[2] == 7 by auto();
 }
 ```
 

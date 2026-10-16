@@ -36,12 +36,12 @@ verifying "fit.c";
 uint64 fit(uint64 x) {
     ensures x < 32u64 implies result == x;
     ensures 32u64 <= x implies result == 31u64;
-} by auto;
+} by auto();
 
 int32 fit32(int32 x) {
     ensures x < 32 implies result == x;
     ensures 32 <= x implies result == 31;
-} by auto;
+} by auto();
 
 uint64 fit_explicit(uint64 x) {
     requires x >= 32u64;

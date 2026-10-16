@@ -33,7 +33,7 @@ void set_end(int32 *v, int32 i, int32 n) {
             peek(at(entry, v), 0, i) == peek(v, 0, i)
         ) using {
             peek(at(entry, v), 0, i) == peek(at(entry, v), 0, i);
-        }
+        };
         assumption();
     }
     execute();

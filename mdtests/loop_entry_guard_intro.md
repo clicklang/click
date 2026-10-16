@@ -43,7 +43,7 @@ int32 loop_entry_guard_intro(int32 p[3]) {
                 enumerate();
             }
         }
-        preserve by simp;
+        preserve by simp();
     }
     step();
     simp();

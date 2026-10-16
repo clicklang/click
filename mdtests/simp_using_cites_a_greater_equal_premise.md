@@ -8,7 +8,7 @@ conditional normalizer that drops the mirrored form of a cited `>=` condition.
 theorem greater_equal_premise_closes_mirrored_goal(x: int32) {
     requires x >= 0;
     ensures 0 <= x by {
-        simp() using { x >= 0; }
+        simp() using { x >= 0; };
     }
 }
 ```

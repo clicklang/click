@@ -48,7 +48,7 @@ int32 unchanged(int32* occupied, int32 capacity) {
                 }, i) using {
                     0 <= i;
                     i < prefix;
-                }
+                };
                 assumption();
             }
             unfold(part);

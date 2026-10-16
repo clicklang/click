@@ -30,7 +30,7 @@ void probe(int32 amount, int32 n) {
 }
 int32 caller() {
     ensures 1 == 0;
-} by auto;
+} by auto();
 ```
 
 ```expect

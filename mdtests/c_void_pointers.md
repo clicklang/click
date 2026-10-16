@@ -36,24 +36,24 @@ verifying "c_void_pointers.c";
 
 int32 compare_keys(const void *left, const void *right) {
     requires left == right;
-    ensures result == 1 by auto;
+    ensures result == 1 by auto();
 }
 
 void *erase_type(int32 *value) {
-    ensures result == value by auto;
+    ensures result == value by auto();
 }
 
 int32 *restore_type(void *value) {
-    ensures result == value by auto;
+    ensures result == value by auto();
 }
 
 int32 round_trip(int32 *value) {
-    ensures result == 1 by auto;
+    ensures result == 1 by auto();
 }
 
 int32 null_key(const void *key) {
     requires key == 0;
-    ensures result == 1 by auto;
+    ensures result == 1 by auto();
 }
 ```
 

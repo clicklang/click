@@ -19,8 +19,8 @@ int32 caller(int32 x) {
 verifying "outcomes_routes_a_throw_that_leaves_the_function.c";
 
 int32 helper(int32 x) throws int32 {
-    ensures result == x by auto;
-    exceptional ensures exception == 7 by auto;
+    ensures result == x by auto();
+    exceptional ensures exception == 7 by auto();
 }
 
 int32 caller(int32 x) throws int32 {

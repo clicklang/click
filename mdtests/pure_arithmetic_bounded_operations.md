@@ -17,7 +17,7 @@ theorem bounded_product(x: int32, y: int32) {
             x <= 10;
             0 <= y;
             y <= 10;
-        }
+        };
     }
 }
 
@@ -27,12 +27,12 @@ theorem bounded_remainder(x: int32) {
     ensures 0 <= x % 4 by {
         arithmetic() using {
             0 <= x;
-        }
+        };
     }
     ensures x % 4 < 4 by {
         arithmetic() using {
             0 <= x;
-        }
+        };
     }
 }
 
@@ -48,7 +48,7 @@ theorem nonnegative_right_shift(x: int32) {
     ensures (x >> 1) <= x by {
         arithmetic() using {
             0 <= x;
-        }
+        };
     }
 }
 
@@ -60,7 +60,7 @@ theorem bounded_left_shift(x: int32) {
         arithmetic() using {
             0 <= x;
             x <= 10;
-        }
+        };
     }
 }
 ```

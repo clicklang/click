@@ -15,7 +15,7 @@ int32 floating_environment_rejected() {
 verifying "floating_environment_rejected.c";
 
 int32 floating_environment_rejected() {
-    ensures result == 0 by auto;
+    ensures result == 0 by auto();
 }
 ```
 

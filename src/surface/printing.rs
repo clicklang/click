@@ -326,7 +326,7 @@ fn write_tactic(output: &mut String, tactic: &ProofTactic, indent: usize) {
                 ),
             );
             write_premise_list(output, premises, indent + 1);
-            line(output, &prefix, "}");
+            line(output, &prefix, "};");
         }
         ProofTactic::UnfoldResource(resource @ ResourceClause::Named { binding, .. })
             if binding.child_bindings.is_some() =>
@@ -551,14 +551,8 @@ fn write_tactic(output: &mut String, tactic: &ProofTactic, indent: usize) {
                     describe_induction_arguments(arguments)
                 ),
             );
-            for premise in premises {
-                line(
-                    output,
-                    &format!("{prefix}    "),
-                    &format!("{};", source_click_proposition(premise)),
-                );
-            }
-            line(output, &prefix, "}");
+            write_premise_list(output, premises, indent + 1);
+            line(output, &prefix, "};");
         }
         ProofTactic::ApplyTheorem(application) => line(
             output,
@@ -578,7 +572,7 @@ fn write_tactic(output: &mut String, tactic: &ProofTactic, indent: usize) {
                 ),
             );
             write_premise_list(output, premises, indent + 1);
-            line(output, &prefix, "}");
+            line(output, &prefix, "};");
         }
         ProofTactic::Have(have) => {
             output.push_str(&prefix);
@@ -647,7 +641,7 @@ fn write_tactic(output: &mut String, tactic: &ProofTactic, indent: usize) {
                 write_join_interface(output, assertions, indent + 1);
                 line(output, &prefix, "} then {");
             } else {
-                line(output, &prefix, "branch then {");
+                line(output, &prefix, "branch {");
             }
             write_tactics(output, &proof_branch.then_tactics, indent + 1);
             line(output, &prefix, "} else {");
@@ -832,7 +826,7 @@ fn write_tactic(output: &mut String, tactic: &ProofTactic, indent: usize) {
         }
         ProofTactic::CloseInvariants => line(output, &prefix, "close_invariants();"),
         ProofTactic::CloseInvariantsBy(body) => {
-            line(output, &prefix, "close_invariants by {");
+            line(output, &prefix, "close_invariants() by {");
             write_tactics(output, body, indent + 1);
             line(output, &prefix, "}");
         }
@@ -865,7 +859,7 @@ fn write_tactic(output: &mut String, tactic: &ProofTactic, indent: usize) {
                 ),
             );
             write_premise_list(output, premises, indent + 1);
-            line(output, &prefix, "}");
+            line(output, &prefix, "};");
         }
         ProofTactic::InstantiateUsing {
             quantified,
@@ -881,7 +875,7 @@ fn write_tactic(output: &mut String, tactic: &ProofTactic, indent: usize) {
                 Some(premises) => {
                     line(output, &prefix, &format!("{instantiate} using {{"));
                     write_premise_list(output, premises, indent + 1);
-                    line(output, &prefix, "}");
+                    line(output, &prefix, "};");
                 }
                 None => line(output, &prefix, &format!("{instantiate};")),
             }
@@ -912,7 +906,7 @@ fn write_arithmetic_certificate(
         unreachable!("signed_int32 certificates are printed above")
     };
     let prefix = "    ".repeat(indent);
-    line(output, &prefix, "arithmetic_certificate {");
+    wrapped_line(output, &prefix, "arithmetic_certificate {");
     let body = "    ".repeat(indent + 1);
     for node in &certificate.nodes {
         let text = match node {
@@ -975,14 +969,14 @@ fn write_arithmetic_certificate(
                 source_click_proposition(result)
             ),
         };
-        line(output, &body, &text);
+        wrapped_line(output, &body, &text);
     }
-    line(
+    wrapped_line(
         output,
         &body,
         &format!("conclusion {};", certificate.conclusion),
     );
-    line(output, &prefix, "}");
+    wrapped_line(output, &prefix, "}");
 }
 
 fn write_special_arithmetic_certificate(
@@ -991,10 +985,10 @@ fn write_special_arithmetic_certificate(
     indent: usize,
 ) {
     let prefix = "    ".repeat(indent);
-    line(output, &prefix, "arithmetic_certificate rules {");
+    wrapped_line(output, &prefix, "arithmetic_certificate rules {");
     let body = "    ".repeat(indent + 1);
     for (index, premise) in certificate.premises.iter().enumerate() {
-        line(
+        wrapped_line(
             output,
             &body,
             &format!(
@@ -1155,14 +1149,14 @@ fn write_special_arithmetic_certificate(
                 source_click_proposition(result)
             ),
         };
-        line(output, &body, &text);
+        wrapped_line(output, &body, &text);
     }
-    line(
+    wrapped_line(
         output,
         &body,
         &format!("conclusion {};", certificate.conclusion),
     );
-    line(output, &prefix, "}");
+    wrapped_line(output, &prefix, "}");
 }
 
 fn write_signed_int32_certificate(
@@ -1171,7 +1165,7 @@ fn write_signed_int32_certificate(
     indent: usize,
 ) {
     let prefix = "    ".repeat(indent);
-    line(output, &prefix, "arithmetic_certificate signed_int32 {");
+    wrapped_line(output, &prefix, "arithmetic_certificate signed_int32 {");
     let body = "    ".repeat(indent + 1);
     for node in &certificate.nodes {
         let text = match node {
@@ -1397,14 +1391,14 @@ fn write_signed_int32_certificate(
                 source_click_proposition(result)
             ),
         };
-        line(output, &body, &text);
+        wrapped_line(output, &body, &text);
     }
-    line(
+    wrapped_line(
         output,
         &body,
         &format!("conclusion {};", certificate.conclusion),
     );
-    line(output, &prefix, "}");
+    wrapped_line(output, &prefix, "}");
 }
 
 /// The Click spelling of an integer type in certificate text.
@@ -1498,13 +1492,13 @@ fn write_using_premises(
     let prefix = "    ".repeat(indent);
     line(output, &prefix, &format!("{name} using {{"));
     write_premise_list(output, premises, indent + 1);
-    line(output, &prefix, "}");
+    line(output, &prefix, "};");
 }
 
 fn write_premise_list(output: &mut String, facts: &[ClickProposition], indent: usize) {
     let prefix = "    ".repeat(indent);
     for fact in facts {
-        line(
+        wrapped_line(
             output,
             &prefix,
             &format!("{};", source_click_proposition(fact)),
@@ -1664,6 +1658,58 @@ fn format_fact_source(source: &ProofFactSource) -> String {
     }
 }
 
+/// Wrap certificate entries and premises without splitting tokens or literals.
+fn wrapped_line(output: &mut String, prefix: &str, text: &str) {
+    const WIDTH: usize = 100;
+    if prefix.len() + text.len() <= WIDTH {
+        line(output, prefix, text);
+        return;
+    }
+    let mut quote = None;
+    let mut escaped = false;
+    let mut start = 0;
+    let mut words = Vec::new();
+    for (offset, ch) in text.char_indices() {
+        if escaped {
+            escaped = false;
+        } else if let Some(delimiter) = quote {
+            if ch == '\\' {
+                escaped = true;
+            } else if ch == delimiter {
+                quote = None;
+            }
+        } else if ch == '\'' || ch == '"' {
+            quote = Some(ch);
+        } else if ch.is_whitespace() {
+            if start < offset {
+                words.push(&text[start..offset]);
+            }
+            start = offset + ch.len_utf8();
+        }
+    }
+    if start < text.len() {
+        words.push(&text[start..]);
+    }
+    output.push_str(prefix);
+    let mut column = prefix.len();
+    let mut has_word = false;
+    for word in words {
+        if has_word && column + 1 + word.len() > WIDTH {
+            output.push('\n');
+            output.push_str(prefix);
+            output.push_str("    ");
+            column = prefix.len() + 4;
+        } else if has_word {
+            output.push(' ');
+            column += 1;
+        }
+        output.push_str(word);
+        column += word.len();
+        has_word = true;
+    }
+    output.push('\n');
+}
+
 fn line(output: &mut String, prefix: &str, text: &str) {
     output.push_str(prefix);
     output.push_str(text);
@@ -1724,6 +1770,22 @@ mod tests {
     use super::*;
 
     #[test]
+    fn wrapping_keeps_quoted_literals_and_long_tokens_intact() {
+        let literal = r#""spaces, \"quoted\" text and é stay together""#;
+        let text = format!("{} == {literal} and ' ' == ' ';", "expression ".repeat(12));
+        let mut output = String::new();
+        wrapped_line(&mut output, "    ", &text);
+        assert!(output.lines().count() > 1);
+        assert!(output.contains(literal));
+        assert!(output.contains("' ' == ' ';"));
+        assert!(output.lines().all(|line| line.len() <= 100));
+        let long_name = "identifier".repeat(20);
+        output.clear();
+        wrapped_line(&mut output, "", &format!("{long_name} == 0;"));
+        assert!(output.contains(&long_name));
+    }
+
+    #[test]
     fn source_propositions_ignore_refusal_mode_even_when_nested() {
         let expression =
             |text: &str| ContractExpression::CFragment(CExpression::Variable(text.into()));
@@ -1769,7 +1831,7 @@ mod tests {
         assert!(refusal.contains("(unsigned)"), "{refusal}");
         assert!(parser::has_valid_source_tokens(&source));
         let file = format!(
-            "theorem rendered(x: int32, y: int32) {{ requires {source}; ensures 0 == 0 by simp; }}"
+            "theorem rendered(x: int32, y: int32) {{ requires {source}; ensures 0 == 0 by simp(); }}"
         );
         parser::parse(&file).unwrap();
     }

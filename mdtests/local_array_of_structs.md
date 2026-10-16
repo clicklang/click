@@ -22,7 +22,7 @@ int32 local_array_of_structs() {
 verifying "local_array_of_structs.c";
 
 int32 local_array_of_structs() {
-    ensures result == 10 by auto;
+    ensures result == 10 by auto();
 }
 ```
 

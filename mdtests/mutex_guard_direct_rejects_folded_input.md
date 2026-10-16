@@ -42,7 +42,7 @@ int32 read_locked(struct counter *counter) {
     owns state: counter_state(counter);
     ensures result == state.value;
 } by {
-    have held(&counter->mu) by simp;
+    have held(&counter->mu) by simp();
     unfold(state);
     execute();
     fold(state);

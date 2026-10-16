@@ -6542,28 +6542,16 @@ fn with_owner_read_authority_rederived(
     resources
 }
 
-fn loop_body_resource_context(
-    entry_state: &CState,
+/// Rebuild the permitted loop frame with per-fact validity checks, then
+/// normalize the accumulated frame once. Normalizing after every insertion
+/// repeatedly visits all previously retained scalar and view endpoints.
+fn with_loop_frame_resources(
+    mut body_resources: ResourceContext,
+    withheld: &ResourceContext,
+    allow_frame_views: bool,
     top_state: &CState,
-    resource_specs: &[CResourceSpec],
-    definitions: &[CCompositeResourceDefinition],
     assumptions: &PureFactContext,
-    budget: &mut ExecutionBudget,
-) -> ExecutionResult<(CState, Vec<CLoopResourceFailure>)> {
-    if resource_specs.is_empty() {
-        return Ok((top_state.clone(), Vec::new()));
-    }
-    let (declared, withheld) = match loop_declared_and_withheld_resources(
-        entry_state,
-        resource_specs,
-        assumptions,
-        budget,
-    )? {
-        Ok(split) => split,
-        Err(failure) => return Ok((top_state.clone(), vec![failure])),
-    };
-    let mut body_resources = declared.clone();
-    let allow_frame_views = !resource_specs.iter().any(resource_spec_is_view);
+) -> ResourceContext {
     for fact in withheld.facts() {
         let allocation_owner = fact.is_own()
             && matches!(fact.resource(),
@@ -6584,12 +6572,42 @@ fn loop_body_resource_context(
         };
         match body_resources
             .clone()
-            .try_compose_with_fact(supplied, assumptions)
+            .try_compose_with_facts_delaying_normalization(std::iter::once(supplied), assumptions)
         {
             Ok(composed) => body_resources = composed,
             Err(_) => continue,
         }
     }
+    body_resources.normalized(assumptions)
+}
+
+fn loop_body_resource_context(
+    entry_state: &CState,
+    top_state: &CState,
+    resource_specs: &[CResourceSpec],
+    definitions: &[CCompositeResourceDefinition],
+    assumptions: &PureFactContext,
+    budget: &mut ExecutionBudget,
+) -> ExecutionResult<(CState, Vec<CLoopResourceFailure>)> {
+    if resource_specs.is_empty() {
+        return Ok((top_state.clone(), Vec::new()));
+    }
+    let (declared, withheld) = match loop_declared_and_withheld_resources(
+        entry_state,
+        resource_specs,
+        assumptions,
+        budget,
+    )? {
+        Ok(split) => split,
+        Err(failure) => return Ok((top_state.clone(), vec![failure])),
+    };
+    let mut body_resources = with_loop_frame_resources(
+        declared.clone(),
+        &withheld,
+        !resource_specs.iter().any(resource_spec_is_view),
+        top_state,
+        assumptions,
+    );
     body_resources = with_owner_read_authority_rederived(
         body_resources,
         declared.facts(),
@@ -9045,5 +9063,13 @@ fn range_extent_refusal(
             ));
             (!inside).then(refusal).flatten()
         }
+    }
+}
+
+#[cfg(test)]
+mod frame_resource_tests {
+    use super::*;
+    mod scaling_tests {
+        include!("../scaling_tests/kernel/loops/frame_resource_tests.rs");
     }
 }

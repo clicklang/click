@@ -39,7 +39,7 @@ int32 loop_heap_lifetime_join(int32* data) {
     step();
     loop {
         invariant 0 <= i;
-        initialize by simp;
+        initialize by simp();
         preserve by {
             step();
             step();

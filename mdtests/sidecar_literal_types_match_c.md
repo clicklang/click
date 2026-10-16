@@ -31,19 +31,19 @@ uint64 all_ones() {
 verifying "sidecar_literal_types_match_c.c";
 
 int32 minus_one() {
-    ensures result == -1 by auto;
+    ensures result == -1 by auto();
 }
 
 int32 int_minimum() {
-    ensures result == -2147483648 by auto;
+    ensures result == -2147483648 by auto();
 }
 
 int64 above_uint32() {
-    ensures result == 4294967296 by auto;
+    ensures result == 4294967296 by auto();
 }
 
 uint64 all_ones() {
-    ensures result == 18446744073709551615 by auto;
+    ensures result == 18446744073709551615 by auto();
 }
 ```
 

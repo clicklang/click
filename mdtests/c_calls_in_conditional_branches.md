@@ -22,11 +22,11 @@ verifying "increment.c";
 
 int32 call_in_conditional_branch(int32 condition) {
     requires condition != 0;
-    ensures result == 1 by auto;
+    ensures result == 1 by auto();
 }
 
 int32 increment() {
-    ensures result == 1 by auto;
+    ensures result == 1 by auto();
 }
 ```
 

@@ -59,7 +59,7 @@ int32 count_up(int32 *a, int32 n) {
                 extract(k <= n);
                 simp();
             }
-            close_invariants by {
+            close_invariants() by {
                 both { simp(); } and {
                     both { simp(); } and {
                         both {
@@ -67,7 +67,7 @@ int32 count_up(int32 *a, int32 n) {
                             intro();
                             extract(0 <= k);
                             extract(k <= n);
-                            arithmetic() using { 0 <= k; k <= n; n <= 1073741823; }
+                            arithmetic() using { 0 <= k; k <= n; n <= 1073741823; };
                         } and {
                             both {
                                 intro();
@@ -79,12 +79,12 @@ int32 count_up(int32 *a, int32 n) {
                                     arithmetic() using {
                                         at(statement(5).entry, 0) <= at(statement(5).entry, i);
                                         at(statement(5).entry, i) < at(statement(5).entry, n);
-                                    }
+                                    };
                                 } and {
                                     arithmetic() using {
                                         at(statement(5).entry, 0) <= at(statement(5).entry, i);
                                         at(statement(5).entry, i) < at(statement(5).entry, n);
-                                    }
+                                    };
                                 }
                             }
                         }

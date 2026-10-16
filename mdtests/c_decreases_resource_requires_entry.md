@@ -24,7 +24,7 @@ verifying "c_decreases_resource_requires_entry.c";
 
 int32 unmeasured_walk(struct node* node) {
     decreases zero_list(node);
-    ensures result == 0 by auto;
+    ensures result == 0 by auto();
 }
 ```
 

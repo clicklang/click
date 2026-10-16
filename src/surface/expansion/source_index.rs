@@ -277,11 +277,9 @@ impl ProofSourceIndex {
                             arm += 1;
                         }
                     }
-                } else if (kind == "if"
+                } else if (matches!(kind, "if" | "branch")
                     && (self.tokens.get(close + 1).is_some_and(|t| t.text == "else")
                         || self.tokens[cursor - 1].text == "else"))
-                    || (kind == "branch"
-                        && matches!(self.tokens[cursor - 1].text.as_str(), "then" | "else"))
                     || kind == "both"
                 {
                     result.arms.push(block);

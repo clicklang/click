@@ -32,7 +32,7 @@ int32 ack(int32 m, int32 n) {
     requires n >= 0;
     ensures result >= 0;
 } by {
-    branch then {
+    branch {
         step();
         simp();
     } else {}
@@ -40,19 +40,19 @@ int32 ack(int32 m, int32 n) {
         arithmetic() using {
             m >= 0;
             m != 0;
-        }
+        };
     }
     have 0 <= m - 1 by {
         apply(int32_positive_predecessor_is_nonnegative(m)) using {
             m > 0;
-        }
+        };
     }
     have m - 1 < m by {
         apply(int32_positive_predecessor_strictly_decreases(m)) using {
             m > 0;
-        }
+        };
     }
-    branch then {
+    branch {
         step();
         step();
         simp();
@@ -61,17 +61,17 @@ int32 ack(int32 m, int32 n) {
         arithmetic() using {
             n >= 0;
             n != 0;
-        }
+        };
     }
     have 0 <= n - 1 by {
         apply(int32_positive_predecessor_is_nonnegative(n)) using {
             n > 0;
-        }
+        };
     }
     have n - 1 < n by {
         apply(int32_positive_predecessor_strictly_decreases(n)) using {
             n > 0;
-        }
+        };
     }
     execute();
     simp();

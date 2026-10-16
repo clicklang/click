@@ -35,12 +35,12 @@ void issue(int32* pool, int32* p) {
 }
 int32 lifecycle() { ensures result == 0 or result == 9; } by {
     step(); step(); step(); step();
-    branch then { execute(); simp(); } else {}
+    branch { execute(); simp(); } else {}
     step(); step();
     fold(authority(slot(&pool, _)));
     fold(slot(&pool, p + 1));
     step();
-    have count(slot(&pool, _)) == 2 by simp;
+    have count(slot(&pool, _)) == 2 by simp();
     open(slot(&pool, p)) {
         open(slot(&pool, p + 1)) { step(); step(); }
     }

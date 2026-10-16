@@ -58,21 +58,21 @@ unsigned int wide(void) {
 ```click
 verifying "an_out_of_range_integer_constant_converts_modulo_its_destination_width.c";
 
-int initialize() { ensures result == 200 by auto; }
-int assign() { ensures result == 44 by auto; }
-int narrow_signed() { ensures result == -56 + -25536 + -56 by auto; }
-int read_table() { ensures result == -56 + 127 by auto; }
-int array() { ensures result == 255 by auto; }
+int initialize() { ensures result == 200 by auto(); }
+int assign() { ensures result == 44 by auto(); }
+int narrow_signed() { ensures result == -56 + -25536 + -56 by auto(); }
+int read_table() { ensures result == -56 + 127 by auto(); }
+int array() { ensures result == 255 by auto(); }
 void store(uint8 *p) {
     requires viewable(p[0..1]);
     owns p[0..1];
-    ensures p[0] == 200 by auto;
+    ensures p[0] == 200 by auto();
 }
-uint8 cast() { ensures result == 254 by auto; }
-uint16 returned() { ensures result == 65535 by auto; }
-uint32 widen(uint8 c) { ensures result == c by auto; }
-uint32 argument() { ensures result == 200 by auto; }
-uint32 wide() { ensures result == 4294967294 by auto; }
+uint8 cast() { ensures result == 254 by auto(); }
+uint16 returned() { ensures result == 65535 by auto(); }
+uint32 widen(uint8 c) { ensures result == c by auto(); }
+uint32 argument() { ensures result == 200 by auto(); }
+uint32 wide() { ensures result == 4294967294 by auto(); }
 ```
 
 ```expect

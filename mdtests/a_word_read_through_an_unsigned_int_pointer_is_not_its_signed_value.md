@@ -14,7 +14,7 @@ long long read_unsigned_word(void) {
 ```click
 verifying "a_word_read_through_an_unsigned_int_pointer_is_not_its_signed_value.c";
 
-long long read_unsigned_word() { ensures result == -1 by auto; }
+long long read_unsigned_word() { ensures result == -1 by auto(); }
 ```
 
 ```expect

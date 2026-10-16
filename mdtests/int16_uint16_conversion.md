@@ -98,90 +98,90 @@ int32_t read_width_fields(struct width_fields* packet) {
 verifying "int16_uint16_conversion.c";
 
 int32 signed_short_promotes(short value) {
-    ensures promoted: result == value + 1 by auto;
+    ensures promoted: result == value + 1 by auto();
 }
 
 int32 unsigned_short_promotes(uint16_t value) {
-    ensures promoted: result == value + 1 by auto;
+    ensures promoted: result == value + 1 by auto();
 }
 
 int32 signed_short_operators(short value) {
     requires value == 5;
-    ensures arithmetic: result == value - 2 by auto;
+    ensures arithmetic: result == value - 2 by auto();
 }
 
 int32 signed_short_multiply(short value) {
     requires value == 5;
-    ensures multiplication: result == value * 3 by auto;
+    ensures multiplication: result == value * 3 by auto();
 }
 
 int32 signed_short_divide(short value) {
     requires value == 5;
-    ensures division: result == value / 2 by auto;
+    ensures division: result == value / 2 by auto();
 }
 
 int32 signed_short_remainder(short value) {
     requires value == 5;
-    ensures remainder: result == value % 2 by auto;
+    ensures remainder: result == value % 2 by auto();
 }
 
 int32 unsigned_short_bitwise(uint16_t value) {
-    ensures bitwise: result == ((value & 255) | (value ^ 1023)) by auto;
+    ensures bitwise: result == ((value & 255) | (value ^ 1023)) by auto();
 }
 
 int32 unsigned_short_shift(uint16_t value) {
-    ensures shifted: result == value << 1 by auto;
+    ensures shifted: result == value << 1 by auto();
 }
 
 int32 unsigned_short_right_shift(uint16_t value) {
-    ensures shifted: result == value >> 1 by auto;
+    ensures shifted: result == value >> 1 by auto();
 }
 
 int32 unsigned_short_not(uint16_t value) {
-    ensures complement: result == ~value by auto;
+    ensures complement: result == ~value by auto();
 }
 
 int32 signed_short_compare(short value) {
     requires value == 5;
-    ensures comparison: result == 1 by auto;
+    ensures comparison: result == 1 by auto();
 }
 
 short signed_short_compound(short value) {
-    ensures compound: result == 0 by auto;
+    ensures compound: result == 0 by auto();
 }
 
 int32 width_sizes() {
-    ensures two_byte_scalars: result == 4 by auto;
+    ensures two_byte_scalars: result == 4 by auto();
 }
 
 short signed_short_identity(signed short value) {
-    ensures identity: result == value by auto;
+    ensures identity: result == value by auto();
 }
 
 uint16_t unsigned_short_identity(uint16_t value) {
-    ensures identity: result == value by auto;
+    ensures identity: result == value by auto();
 }
 
 int16_t int16_t_identity(int16_t value) {
-    ensures identity: result == value by auto;
+    ensures identity: result == value by auto();
 }
 
 short checked_signed_narrow(int32 value) {
     requires value >= -32768;
     requires value <= 32767;
-    ensures narrowed: result == value by auto;
+    ensures narrowed: result == value by auto();
 }
 
 uint16_t checked_unsigned_narrow(int32 value) {
     requires value >= 0;
     requires value <= 65535;
-    ensures narrowed: result == value by auto;
+    ensures narrowed: result == value by auto();
 }
 
 int32 read_width_fields(struct width_fields* packet) {
     owns packet->signed_value;
     owns packet->unsigned_value;
-    ensures fields_promote: result == packet->signed_value + packet->unsigned_value by auto;
+    ensures fields_promote: result == packet->signed_value + packet->unsigned_value by auto();
 }
 ```
 

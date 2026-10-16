@@ -21,11 +21,11 @@ verifying "global_struct_pointer_return.c";
 
 struct node* get_current() {
     ensures result == current;
-} by auto;
+} by auto();
 
 struct node* relay_current() {
     ensures result == current;
-} by auto;
+} by auto();
 ```
 
 ```expect

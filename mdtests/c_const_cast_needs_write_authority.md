@@ -16,7 +16,7 @@ verifying "c_const_cast_needs_write_authority.c";
 
 int32 set(const int32* view) {
     views view[0..1];
-    ensures result == 7 by auto;
+    ensures result == 7 by auto();
 }
 ```
 

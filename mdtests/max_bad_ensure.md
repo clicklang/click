@@ -17,7 +17,7 @@ int32 max_bad(int32 a, int32 b) {
 verifying "max_bad.c";
 
 int32 max_bad(int32 a, int32 b) {
-    ensures result == a by auto;
+    ensures result == a by auto();
 }
 ```
 

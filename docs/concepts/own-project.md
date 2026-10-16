@@ -315,7 +315,7 @@ To get a trace:
 This claim is true: on that path `length >= 32`, so `31 <= length`. The miss
 is `simp()`'s, a bounded search whose arithmetic step handles `int32` goals,
 while this one is a 64-bit `unsigned long` comparison. State the fact with
-`have ... by auto`, which carries machine comparisons to integer arithmetic and
+`have ... by auto()`, which carries machine comparisons to integer arithmetic and
 solves them:
 
 ```click filename=label.click
@@ -326,7 +326,7 @@ uint64 label_fit(uint64 length) {
     ensures result <= length;
 } by {
     execute();
-    have result <= length by auto;
+    have result <= length by auto();
     simp();
 }
 ```
@@ -375,7 +375,7 @@ uint64 label_fit(uint64 length) {
     ensures result <= length;
 } by {
     execute();
-    have result <= length by auto;
+    have result <= length by auto();
     simp();
 }
 
@@ -460,13 +460,13 @@ uint64 label_fit(uint64 length) {
     ensures result <= length;
     ensures length < 32u64 implies result == length;
     ensures 32u64 <= length implies result == 31u64;
-} by auto;
+} by auto();
 
 uint64 label_measure(const char* src) {
     views s: cstr_at(src, _);
     ensures s.len < 32u64 implies result == s.len;
     ensures 32u64 <= s.len implies result == 31u64;
-} by auto;
+} by auto();
 
 uint64 label_copy(char* dst, const char* src) {
     views s: cstr_at(src, _);
@@ -500,7 +500,7 @@ uint64 label_copy(char* dst, const char* src) {
 
 `label_fit` now states exactly what it returns, and `label_measure` and
 `label_copy` state exactly which length they keep: the whole string when it
-fits, 31 bytes otherwise. `by auto` proves the two new `label_fit` claims:
+fits, 31 bytes otherwise. `by auto()` proves the two new `label_fit` claims:
 on each path of the C branch it refutes the claim's other hypothesis, such as
 `length < 32u64` where `length >= 32`. The sidecar imports `click::cstr` for
 `cstr_at`; see [Click library imports](sidecars.md#click-library-imports).

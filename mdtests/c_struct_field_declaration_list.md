@@ -23,7 +23,7 @@ int32 struct_field_declaration_list(struct pair* value) {
     requires value->first <= 100;
     requires value->second >= 0;
     requires value->second <= 100;
-    ensures result == value->first + value->second by auto;
+    ensures result == value->first + value->second by auto();
 }
 ```
 

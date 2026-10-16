@@ -57,7 +57,7 @@ predicate same_maybe(left: Maybe<int32>, right: Maybe<int32>) {
 }
 
 theorem maybe_reflexive(m: Maybe<int32>) {
-    ensures m == m by simp;
+    ensures m == m by simp();
 }
 
 theorem maybe_match_is_total(m: Maybe<int32>) {
@@ -67,14 +67,14 @@ theorem maybe_match_is_total(m: Maybe<int32>) {
     } == match m {
         Maybe::None => 0,
         Maybe::Some(value) => value,
-    } by simp;
+    } by simp();
 }
 
 theorem maybe_match_rebuilds(m: Maybe<int32>) {
     ensures match m {
         Maybe::None => Maybe<int32>::None,
         Maybe::Some(value) => Maybe<int32>::Some(value),
-    } == m by simp;
+    } == m by simp();
 }
 
 theorem algebraic_function_result(value: int32) {
@@ -82,7 +82,7 @@ theorem algebraic_function_result(value: int32) {
         unfold(wrap(value));
         simp();
     }
-    ensures wrap(value) == wrap(value) by simp;
+    ensures wrap(value) == wrap(value) by simp();
 }
 
 theorem algebraic_lets_are_first_class(value: int32, fallback: int32) {
@@ -108,7 +108,7 @@ theorem algebraic_lets_are_first_class(value: int32, fallback: int32) {
 }
 
 theorem algebraic_function_parameter(m: Maybe<int32>, fallback: int32) {
-    ensures value_or(m, fallback) == value_or(m, fallback) by simp;
+    ensures value_or(m, fallback) == value_or(m, fallback) by simp();
     ensures rebuild(m) == m by {
         unfold(rebuild(m));
         simp();
@@ -116,7 +116,7 @@ theorem algebraic_function_parameter(m: Maybe<int32>, fallback: int32) {
 }
 
 theorem algebraic_predicate_parameter(m: Maybe<int32>) {
-    ensures same_maybe(m, m) by simp;
+    ensures same_maybe(m, m) by simp();
 }
 
 theorem algebraic_identity_is_stable(left: Maybe<int32>, right: Maybe<int32>) {
@@ -146,27 +146,27 @@ theorem apply_algebraic_function_result(value: int32) {
 
 theorem maybe_constructor_congruence(left: int32, right: int32) {
     requires left == right;
-    ensures Maybe<int32>::Some(left) == Maybe<int32>::Some(right) by simp;
+    ensures Maybe<int32>::Some(left) == Maybe<int32>::Some(right) by simp();
 }
 
 theorem maybe_constructor_injectivity(left: int32, right: int32) {
     requires Maybe<int32>::Some(left) == Maybe<int32>::Some(right);
-    ensures left == right by simp;
+    ensures left == right by simp();
 }
 
 theorem maybe_pointer_constructor_rules(left: int32*, right: int32*) {
     requires left == right;
-    ensures Maybe<int32*>::Some(left) == Maybe<int32*>::Some(right) by simp;
+    ensures Maybe<int32*>::Some(left) == Maybe<int32*>::Some(right) by simp();
 }
 
 theorem maybe_pointer_constructor_injectivity(left: int32*, right: int32*) {
     requires Maybe<int32*>::Some(left) == Maybe<int32*>::Some(right);
-    ensures left == right by simp;
+    ensures left == right by simp();
 }
 
 theorem maybe_constructor_disjointness_is_checked(value: int32) {
     requires Maybe<int32>::None == Maybe<int32>::Some(value);
-    ensures 0 == 1 by simp;
+    ensures 0 == 1 by simp();
 }
 ```
 

@@ -51,26 +51,26 @@ verifying "call_havoc_keeps_union_views.c";
 void set_number(int32* p) {
     owns p[0..1];
     ensures p[0] == 7;
-} by auto;
+} by auto();
 
 int32 read_sibling() {
     owns g.first.number;
     owns g.second.number;
     requires g.second.number == 3;
     ensures result == 3;
-} by auto;
+} by auto();
 
 int32 read_other_object() {
     owns g.first.number;
     owns h.payload.number;
     requires h.payload.number == 3;
     ensures result == 3;
-} by auto;
+} by auto();
 
 int32 read_written() {
     owns g.first.number;
     ensures result == 7;
-} by auto;
+} by auto();
 ```
 
 ```expect

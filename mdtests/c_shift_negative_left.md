@@ -13,7 +13,7 @@ int32 shift_negative_left() {
 verifying "shift_negative_left.c";
 
 int32 shift_negative_left() {
-    ensures no_result: result == 0 by auto;
+    ensures no_result: result == 0 by auto();
 }
 ```
 

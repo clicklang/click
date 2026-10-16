@@ -35,7 +35,7 @@ void set_end(int32 *v, int32 i, int32 n) {
             through(at(entry, v), 0, i) == through(v, 0, i)
         ) using {
             through(at(entry, v), 0, i) == through(at(entry, v), 0, i);
-        }
+        };
         assumption();
     }
     execute();

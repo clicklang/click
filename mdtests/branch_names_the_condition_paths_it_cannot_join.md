@@ -27,7 +27,7 @@ int32 both_positive(int32 x, int32 y) {
     ensures result == 2 or x > 0;
 } by {
     step();
-    branch then { step(); } else { step(); }
+    branch { step(); } else { step(); }
     step();
     simp();
 }

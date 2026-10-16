@@ -20,7 +20,7 @@ resource packed(node: struct node*) {
 verifying "resource_witness_pointer_type.c";
 
 int32 unused(struct node* node) {
-    ensures result == 0 by auto;
+    ensures result == 0 by auto();
 }
 ```
 

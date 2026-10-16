@@ -40,11 +40,11 @@ void keep(const uint8* p, int32 n, int32 i) {
                     0 <= i;
                     i <= i + 4;
                     i + 4 <= n;
-                }
+                };
             }
             have viewable(q[0..5]) by {
                 rewrite(q == p + i);
-                simp() using { viewable(p[i..i + 4]); }
+                simp() using { viewable(p[i..i + 4]); };
             }
             let h = fold(Cell(p, n, i), { model: Link::Node(q) });
             execute();

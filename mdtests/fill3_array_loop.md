@@ -34,7 +34,7 @@ int32 fill3_array_loop(int32 p[3]) {
             0 <= k and k < i implies p[k] == k
         };
 
-        initialize by simp;
+        initialize by simp();
         preserve by {
             step();
             step();

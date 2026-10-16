@@ -2,7 +2,7 @@ use super::*;
 
 #[test]
 fn omitted_ensure_proof_uses_default_prover() {
-    let source = FILL3_CLICK.replace(" by auto", "");
+    let source = FILL3_CLICK.replace(" by auto()", "");
     let file = parse(&source).expect("sidecar should parse omitted proof clause");
     let ensure = &file.function_blocks()[0].ensures()[0];
 
@@ -42,7 +42,7 @@ fn rejects_a_grouped_proof_that_proves_no_claim() {
             verifying "identity.c";
 
             int32 identity(int32 value) {
-                ensures result == value by auto;
+                ensures result == value by auto();
             } by {
                 execute();
                 simp();
@@ -63,7 +63,7 @@ fn a_grouped_proof_covers_only_claims_without_their_own_proof() {
             verifying "identity.c";
 
             int32 identity(int32 value) {
-                ensures result == value by auto;
+                ensures result == value by auto();
                 ensures result >= value;
                 ensures result <= value;
             }
@@ -160,7 +160,7 @@ fn grouped_auto_completes_the_proof_execution_without_a_body_rerun() {
                 owns p[0..1];
                 ensures result == value;
                 ensures p[0] == value;
-            } by auto;
+            } by auto();
         "#;
     let _ = crate::kernel::take_checked_function_body_execution_count();
     let verified = verify_c0_sources(click_source, &[("set.c", c_source)])
@@ -222,7 +222,7 @@ fn grouped_resource_predicate_proof_completes_without_a_body_rerun() {
 
 #[test]
 fn parses_proof_tactic_script() {
-    let source = FILL3_CLICK.replace("by auto;", "by { execute(); simp(); }");
+    let source = FILL3_CLICK.replace("by auto();", "by { execute(); simp(); }");
     let file = parse(&source).expect("explicit proof script should parse");
     let ensure = &file.function_blocks()[0].ensures()[0];
 
@@ -529,8 +529,8 @@ fn rejects_c_style_click_native_binders_with_migrations() {
     for source in [
         "predicate legacy(int32 x) { x == x }",
         "function legacy(int32 x) -> int32 { x }",
-        "theorem legacy() { ensures forall (int32 k) { k == k } by auto; }",
-        "theorem legacy() { ensures exists (int32 k) { k == k } by auto; }",
+        "theorem legacy() { ensures forall (int32 k) { k == k } by auto(); }",
+        "theorem legacy() { ensures exists (int32 k) { k == k } by auto(); }",
     ] {
         let error = parse(source).expect_err("C-style Click-native binder should be rejected");
         assert!(

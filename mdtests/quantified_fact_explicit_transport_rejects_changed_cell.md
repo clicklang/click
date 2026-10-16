@@ -40,7 +40,7 @@ void clear(int32 *a) {
             at(entry, forall (k: int32) {
                 0 <= k and k < 1 implies 0 <= a[k]
             });
-        }
+        };
         assumption();
     }
     execute();

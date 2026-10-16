@@ -499,7 +499,7 @@ fn rbtree_auto_recolor_expansion_rechecks() {
             (depth == 0).then_some(open + offset + character.len_utf8())
         })
         .expect("the written proof block ends");
-    source.replace_range(start..end, "by auto;");
+    source.replace_range(start..end, "by auto();");
     let c_sources = read_verifying_sources(&path, &source).unwrap();
     let project = read_click_project_at_root(&path, &source, &root.join("examples")).unwrap();
     let line = source[..start]
@@ -782,7 +782,7 @@ fn auto_on_an_arena_cell_read_answers_instead_of_deadlocking() {
             .expect("the written proof closes")
         + "\n                }".len();
     let edited = format!(
-        "{}have first->arena->occupied[k] == at(f1, first->arena->occupied[k]) by auto;{}",
+        "{}have first->arena->occupied[k] == at(f1, first->arena->occupied[k]) by auto();{}",
         &source[..start],
         &source[block_end..]
     );

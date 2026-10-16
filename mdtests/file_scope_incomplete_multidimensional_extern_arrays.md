@@ -35,13 +35,13 @@ verifying "definitions.c";
 
 int32 read_table() {
     requires table[1][2] == 6;
-    ensures result == 6 by auto;
-    ensures table[1][2] == 6 by auto;
+    ensures result == 6 by auto();
+    ensures table[1][2] == 6 by auto();
 }
 
 int32 definition_anchor() {
     requires table[0][0] == 1;
-    ensures result == 1 by auto;
+    ensures result == 1 by auto();
 }
 ```
 

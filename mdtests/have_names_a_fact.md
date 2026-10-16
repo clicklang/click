@@ -12,7 +12,7 @@ theorem cite_in_using(x: int32) {
     requires x == 5;
     ensures x + 1 == 6 by {
         have five: x == 5;
-        normalize() using { five; }
+        normalize() using { five; };
     }
 }
 
@@ -41,9 +41,9 @@ theorem cite_after_its_proof(x: int32) {
     requires x == 5;
     ensures x + x == 10 by {
         have twice: x + x == 10 by {
-            normalize() using { x == 5; }
+            normalize() using { x == 5; };
         }
-        normalize() using { twice; }
+        normalize() using { twice; };
     }
 }
 
@@ -52,10 +52,10 @@ theorem one_name_in_each_arm(x: int32) {
     ensures x == 5 by {
         if x >= 0 {
             have side: x >= 0;
-            normalize() using { x == 5; }
+            normalize() using { x == 5; };
         } else {
             have side: x < 0;
-            normalize() using { x == 5; }
+            normalize() using { x == 5; };
         }
     }
 }

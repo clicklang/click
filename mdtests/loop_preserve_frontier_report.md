@@ -51,7 +51,7 @@ int32 walk(int32 n) {
     loop {
         invariant i >= 0;
 
-        initialize by simp;
+        initialize by simp();
         preserve by {
             if i == 3 {
                 step();

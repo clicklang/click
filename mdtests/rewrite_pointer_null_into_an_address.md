@@ -49,7 +49,7 @@ theorem frame_null_is_null(up: struct cell*) {
         } else {
             have frame_null(Frame::Above(up)) != 1 by {
                 unfold(frame_null(Frame::Above(up)));
-                normalize() using { not(up == 0); }
+                normalize() using { not(up == 0); };
             }
             contradiction(frame_null(Frame::Above(up)) == 1);
         }
@@ -69,7 +69,7 @@ void keep(struct cell* c) {
             have up == 0 by {
                 apply(frame_null_is_null(up)) using {
                     frame_null(Frame::Above(up)) == 1;
-                }
+                };
                 assumption();
             }
             have address(up) + 1 == 1 by {

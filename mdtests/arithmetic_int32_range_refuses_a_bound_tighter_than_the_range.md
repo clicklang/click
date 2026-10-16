@@ -39,7 +39,7 @@ theorem successor_nonnegative(i: int32, n: int32) {
 }
 
 int32 next_index(int32 i, int32 n) {
-    ensures result == 0 by auto;
+    ensures result == 0 by auto();
 }
 ```
 

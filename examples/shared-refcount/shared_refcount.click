@@ -23,14 +23,14 @@ void object_retain(struct object *obj) {
     let { refs: refs, slack: slack } = unfold(state);
     have count(permit(obj)) >= 1;
     have slack == count(permit(obj));
-    have to_integer(1) <= to_integer(slack) by auto;
+    have to_integer(1) <= to_integer(slack) by auto();
     have to_integer(refs) <= to_integer(2) by arithmetic() using {
         to_integer(refs) + to_integer(slack) == 3;
         to_integer(1) <= to_integer(slack);
     };
-    have refs <= 2 by auto;
-    have to_integer(refs + 1) == to_integer(refs) + to_integer(1) by auto;
-    have to_integer(slack - 1) == to_integer(slack) - to_integer(1) by auto;
+    have refs <= 2 by auto();
+    have to_integer(refs + 1) == to_integer(refs) + to_integer(1) by auto();
+    have to_integer(slack - 1) == to_integer(slack) - to_integer(1) by auto();
     have to_integer(refs + 1) + to_integer(slack - 1) == 3 by arithmetic() using {
         to_integer(refs + 1) == to_integer(refs) + to_integer(1);
         to_integer(slack - 1) == to_integer(slack) - to_integer(1);
@@ -53,14 +53,14 @@ void object_release(struct object *obj) {
     let { refs: refs, slack: slack } = unfold(state);
     have count(reference(obj)) >= 1;
     have refs == count(reference(obj));
-    have to_integer(1) <= to_integer(refs) by auto;
+    have to_integer(1) <= to_integer(refs) by auto();
     have to_integer(slack) <= to_integer(2) by arithmetic() using {
         to_integer(refs) + to_integer(slack) == 3;
         to_integer(1) <= to_integer(refs);
     };
-    have slack <= 2 by auto;
-    have to_integer(refs - 1) == to_integer(refs) - to_integer(1) by auto;
-    have to_integer(slack + 1) == to_integer(slack) + to_integer(1) by auto;
+    have slack <= 2 by auto();
+    have to_integer(refs - 1) == to_integer(refs) - to_integer(1) by auto();
+    have to_integer(slack + 1) == to_integer(slack) + to_integer(1) by auto();
     have to_integer(refs - 1) + to_integer(slack + 1) == 3 by arithmetic() using {
         to_integer(refs - 1) == to_integer(refs) - to_integer(1);
         to_integer(slack + 1) == to_integer(slack) + to_integer(1);
@@ -92,7 +92,7 @@ int32 run() {
     step();
     step();
     step();
-    branch then { step(); simp(); } else {}
+    branch { step(); simp(); } else {}
     step();
     fold(authority(reference(obj)));
     fold(authority(permit(obj)));
@@ -103,7 +103,7 @@ int32 run() {
     let { lifetime: lifetime } = step(pthread_mutex_init(&obj->mu, 0), { state: control });
     step(object_retain(obj), { access: lifetime });
     step();
-    branch then {
+    branch {
         step(object_release(obj), { access: lifetime });
         step(object_release(obj), { access: lifetime });
         step(pthread_mutex_destroy(&obj->mu), { lifetime: lifetime });
@@ -119,7 +119,7 @@ int32 run() {
     } else {}
     step(object_retain(obj), { access: lifetime });
     step();
-    branch then {
+    branch {
         step(object_release(obj), { access: lifetime });
         step();
         step(object_release(obj), { access: lifetime });
@@ -156,7 +156,7 @@ int32 run_reverse_join() {
     step();
     step();
     step();
-    branch then { step(); simp(); } else {}
+    branch { step(); simp(); } else {}
     step();
     fold(authority(reference(obj)));
     fold(authority(permit(obj)));
@@ -167,7 +167,7 @@ int32 run_reverse_join() {
     let { lifetime: lifetime } = step(pthread_mutex_init(&obj->mu, 0), { state: control });
     step(object_retain(obj), { access: lifetime });
     step();
-    branch then {
+    branch {
         step(object_release(obj), { access: lifetime });
         step(object_release(obj), { access: lifetime });
         step(pthread_mutex_destroy(&obj->mu), { lifetime: lifetime });
@@ -183,7 +183,7 @@ int32 run_reverse_join() {
     } else {}
     step(object_retain(obj), { access: lifetime });
     step();
-    branch then {
+    branch {
         step(object_release(obj), { access: lifetime });
         step();
         step(object_release(obj), { access: lifetime });

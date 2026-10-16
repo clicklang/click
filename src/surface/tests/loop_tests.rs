@@ -45,7 +45,7 @@ fn expanded_loop_phase_proofs_are_certificates() {
         ("count_to_n_loop_invariant", "count_to_n_loop_invariant"),
         // A source `close_invariants()` inside an explicit `preserve by`.
         ("c_decreases_count_up", "count_to_n"),
-        // An explicit `close_invariants by` body.
+        // An explicit `close_invariants() by` body.
         ("loop_invariant_body", "count"),
         // Guarded entry judgments survive more than two declarations.
         ("loop_three_invariant_initialization", "probe_fill"),
@@ -228,7 +228,7 @@ fn lexicographic_ranking_bundle_prints_its_pivot_arm() {
     let expanded = expand_c0_claim_source(&click, &sources, "phase_count", CProofClaim::Grouped)
         .unwrap_or_else(|error| panic!("lexicographic expansion failed: {}", error.message()));
     let closer = expanded
-        .find("close_invariants by {")
+        .find("close_invariants() by {")
         .expect("the expansion keeps an explicit bundle closer");
     let closers = &expanded[closer..];
     assert!(
@@ -253,20 +253,20 @@ fn ranking_bundle_rejects_a_missing_or_exchanged_member() {
     let sources = borrowed_sources(&sources);
     verify_c0_sources(&click, &sources).expect("the fixture verifies as written");
 
-    let complete = "close_invariants by {
-                both { arithmetic() using { 0 <= n; } }
+    let complete = "close_invariants() by {
+                both { arithmetic() using { 0 <= n; }; }
                 and {
-                    both { arithmetic() using { 0 <= n; } }
-                    and { arithmetic() using { 0 <= n; } }
+                    both { arithmetic() using { 0 <= n; }; }
+                    and { arithmetic() using { 0 <= n; }; }
                 }
             }";
     assert!(click.contains(complete), "fixture closer changed: {click}");
 
     let missing = click.replace(
         complete,
-        "close_invariants by {
-                both { arithmetic() using { 0 <= n; } }
-                and { arithmetic() using { 0 <= n; } }
+        "close_invariants() by {
+                both { arithmetic() using { 0 <= n; }; }
+                and { arithmetic() using { 0 <= n; }; }
             }",
     );
     let error = verify_c0_sources(&missing, &sources)
@@ -279,14 +279,14 @@ fn ranking_bundle_rejects_a_missing_or_exchanged_member() {
 
     let exchanged = click.replace(
         complete,
-        "close_invariants by {
-                both { arithmetic() using { 0 <= n; } }
+        "close_invariants() by {
+                both { arithmetic() using { 0 <= n; }; }
                 and {
                     both {
-                        both { arithmetic() using { 0 <= n; } }
-                        and { arithmetic() using { 0 <= n; } }
+                        both { arithmetic() using { 0 <= n; }; }
+                        and { arithmetic() using { 0 <= n; }; }
                     }
-                    and { arithmetic() using { 0 <= n; } }
+                    and { arithmetic() using { 0 <= n; }; }
                 }
             }",
     );
@@ -304,15 +304,17 @@ fn arithmetic_certificate_premises(region: &str) -> Vec<Vec<String>> {
         let end = rest.find('}').expect("an unterminated premise list");
         blocks.push(
             rest[..end]
-                .lines()
-                .map(str::trim)
+                .split(';')
+                .map(|entry| entry.split_whitespace().collect::<Vec<_>>().join(" "))
                 .filter(|line| line.starts_with("premise "))
-                .filter_map(|line| line.split_once(": "))
-                .map(|(_, proposition)| {
-                    proposition
-                        .split_once(" => ")
-                        .map(|(source, _)| source.trim_end_matches(';').to_string())
-                        .unwrap_or_else(|| proposition.trim_end_matches(';').to_string())
+                .filter_map(|entry| {
+                    let (_, proposition) = entry.split_once(": ")?;
+                    Some(
+                        proposition
+                            .split_once(" => ")
+                            .map_or(proposition, |(source, _)| source)
+                            .to_string(),
+                    )
                 })
                 .collect::<Vec<_>>(),
         );
@@ -337,7 +339,7 @@ fn smart_ranking_closure_expands_to_explicit_bundle_members() {
     let expanded = expand_c0_claim_source(&click, &sources, "count_to_n", CProofClaim::Grouped)
         .unwrap_or_else(|error| panic!("count-up expansion failed: {}", error.message()));
     let closer = expanded
-        .find("close_invariants by {")
+        .find("close_invariants() by {")
         .expect("the expansion spells the bundle closer");
     let closer = &expanded[closer..];
     assert!(
@@ -378,7 +380,7 @@ fn smart_ranking_closure_expands_its_pivot_arm() {
     let (click, sources) = loop_fixture("c_decreases_nested_loop");
     let sources = borrowed_sources(&sources);
     assert!(
-        click.contains("close_invariants by { simp(); }"),
+        click.contains("close_invariants() by { simp(); }"),
         "the fixture must exercise the smart closer: {click}"
     );
     let expanded = expand_c0_claim_source(&click, &sources, "nested_count", CProofClaim::Grouped)
@@ -406,7 +408,7 @@ fn smart_ranking_closure_cites_only_loop_head_and_contract_premises() {
     let expanded = expand_c0_claim_source(&click, &sources, "count_to_n", CProofClaim::Grouped)
         .unwrap_or_else(|error| panic!("count-up expansion failed: {}", error.message()));
     let closer = expanded
-        .find("close_invariants by {")
+        .find("close_invariants() by {")
         .expect("the expansion spells the bundle closer");
     let named = [
         // `invariant i >= 0` and `invariant i <= n` at iteration entry.
@@ -524,7 +526,7 @@ fn remaining_loop_migration_fixtures_expand_and_recheck() {
         let expanded = expand_c0_claim_source(click, &sources, function, CProofClaim::Grouped)
             .unwrap_or_else(|e| panic!("{filename}: {}", e.message()));
         assert!(!expanded.contains("close_invariants();"), "{filename}");
-        assert!(expanded.contains("close_invariants by {"), "{filename}");
+        assert!(expanded.contains("close_invariants() by {"), "{filename}");
         verify_c0_sources(&expanded, &sources)
             .unwrap_or_else(|e| panic!("{filename}: {}", e.message()));
     }
@@ -650,7 +652,7 @@ fn completed_recursive_loop_bodies_skip_legacy_preplanning_and_recheck() {
         let explicit = fixture
             .click_source
             .unwrap()
-            .replace("close_invariants();", "close_invariants by { simp(); }");
+            .replace("close_invariants();", "close_invariants() by { simp(); }");
         verify_c0_sources(&explicit, &sources)
             .unwrap_or_else(|e| panic!("{filename}: {}", e.message()));
         let expanded = expand_c0_claim_source(&explicit, &sources, function, CProofClaim::Grouped)
@@ -718,7 +720,7 @@ fn explicit_swap_loop_fixture(include_transports: bool) -> (&'static str, String
                 invariant j >= 0 and j <= 1;
                 invariant p[0] <= p[2];
                 invariant p[1] <= p[2];
-                initialize by simp;
+                initialize by simp();
                 preserve by {{
                     have j == 0 by {{
                         apply(int32_less_than_increment_implies_less_equal(j, 0)) using {{ j < 1; }}
@@ -729,10 +731,10 @@ fn explicit_swap_loop_fixture(include_transports: bool) -> (&'static str, String
                     if p[j + 1] < p[j] {{
                         step(); step(); step(); step(); step();
                         {transport}
-                        close_invariants by {{ simp(); }}
+                        close_invariants() by {{ simp(); }}
                     }} else {{
                         step(); step(); step();
-                        close_invariants by {{ simp(); }}
+                        close_invariants() by {{ simp(); }}
                     }}
                 }}
             }}
@@ -780,10 +782,10 @@ fn explicit_invariant_body_checks_expands_and_rejects_incomplete_proofs() {
                 decreases 3 - i;
                 invariant i >= 0;
                 invariant i <= 3;
-                initialize by simp;
+                initialize by simp();
                 preserve by {
                     step();
-                    close_invariants by { simp(); }
+                    close_invariants() by { simp(); }
                 }
             }
             step(); simp();
@@ -792,28 +794,28 @@ fn explicit_invariant_body_checks_expands_and_rejects_incomplete_proofs() {
     let sources = [("count.c", c_source)];
     verify_c0_sources(source, &sources).expect("the body must prove the exact closure obligations");
     let position =
-        expansion::position_at_offset(source, source.find("close_invariants by").unwrap());
+        expansion::position_at_offset(source, source.find("close_invariants() by").unwrap());
     let expanded = expand_c0_tactic_source_at(source, &sources, position.line, position.column)
         .expect("the checked body should expand");
-    assert!(expanded.contains("close_invariants by {"), "{expanded}");
+    assert!(expanded.contains("close_invariants() by {"), "{expanded}");
     assert!(expanded.contains("both {"), "{expanded}");
     verify_c0_sources(&expanded, &sources).expect("expanded closure body must recheck");
     for replacement in [
-        "close_invariants by { }",
-        "close_invariants by { assumption(); }",
-        "close_invariants by { both { simp(); } and { } }",
+        "close_invariants() by { }",
+        "close_invariants() by { assumption(); }",
+        "close_invariants() by { both { simp(); } and { } }",
         "close_invariants { simp(); }",
-        "close_invariants by { simp(); } close_invariants by { simp(); }",
+        "close_invariants() by { simp(); } close_invariants() by { simp(); }",
     ] {
-        let invalid = source.replace("close_invariants by { simp(); }", replacement);
+        let invalid = source.replace("close_invariants() by { simp(); }", replacement);
         assert!(
             verify_c0_sources(&invalid, &sources).is_err(),
             "accepted {replacement}"
         );
     }
     let premature = source.replace(
-        "step();\n                    close_invariants by",
-        "close_invariants by",
+        "step();\n                    close_invariants() by",
+        "close_invariants() by",
     );
     assert!(verify_c0_sources(&premature, &sources).is_err());
 }
@@ -848,7 +850,7 @@ fn guarded_member_closure_expands_to_intro_inside_both() {
         .join(" ");
     assert!(
         explicit.starts_with(
-            "close_invariants by { both { intro(); assumption(); } and { assumption(); } }"
+            "close_invariants() by { both { intro(); assumption(); } and { assumption(); } }"
         ),
         "{expanded}"
     );
@@ -871,8 +873,8 @@ fn explicit_invariant_body_quantified_bubble_census() {
     verify_c0_sources(click, &sources).unwrap();
     let expanded =
         expand_c0_claim_source(click, &sources, "bubble_pass3", CProofClaim::Grouped).unwrap();
-    assert!(expanded.contains("close_invariants by {"));
-    let explicit = expanded.replace("close_invariants();", "close_invariants by { simp(); }");
+    assert!(expanded.contains("close_invariants() by {"));
+    let explicit = expanded.replace("close_invariants();", "close_invariants() by { simp(); }");
     verify_c0_sources(&explicit, &sources).unwrap_or_else(|error| panic!("{}", error.message()));
     let expanded =
         expand_c0_claim_source(&explicit, &sources, "bubble_pass3", CProofClaim::Grouped).unwrap();
@@ -894,8 +896,8 @@ fn explicit_invariant_body_copy3_checks_and_expands() {
     let click = fixture.click_source.as_deref().unwrap();
     verify_c0_sources(click, &sources).unwrap();
     let expanded = expand_c0_claim_source(click, &sources, "copy3", CProofClaim::Grouped).unwrap();
-    assert!(expanded.contains("close_invariants by {"));
-    let explicit = expanded.replace("close_invariants();", "close_invariants by { simp(); }");
+    assert!(expanded.contains("close_invariants() by {"));
+    let explicit = expanded.replace("close_invariants();", "close_invariants() by { simp(); }");
     verify_c0_sources(&explicit, &sources).unwrap_or_else(|error| panic!("{}", error.message()));
     let expanded =
         expand_c0_claim_source(&explicit, &sources, "copy3", CProofClaim::Grouped).unwrap();
@@ -927,14 +929,14 @@ fn frontier_local_loop_verifies_and_advances_to_exit() {
                     decreases 3 - i;
                     invariant i >= 0;
                     invariant i <= 3;
-                    initialize by simp;
+                    initialize by simp();
                     preserve by {
                         step();
                         close_invariants();
                     }
                 }
-                have at(count.entry, i) == 0 by simp;
-                have at(count.exit, i) == 3 by simp;
+                have at(count.entry, i) == 0 by simp();
+                have at(count.exit, i) == 3 by simp();
                 step();
                 simp();
             }
@@ -969,14 +971,14 @@ fn individual_loop_proof_has_no_whole_claim_acceptance_check() {
                     decreases 3 - i;
                     invariant i >= 0;
                     invariant i <= 3;
-                    initialize by simp;
+                    initialize by simp();
                     preserve by {
                         step();
                         close_invariants();
                     }
                 }
-                have at(count.entry, i) == 0 by simp;
-                have at(count.exit, i) == 3 by simp;
+                have at(count.entry, i) == 0 by simp();
+                have at(count.exit, i) == 3 by simp();
                 step();
                 simp();
             }
@@ -1109,7 +1111,7 @@ fn loop_initialization_simp_retains_checked_fixed_state_proof() {
             } by {
                 loop diverges {
                     invariant x >= 0;
-                    initialize by simp;
+                    initialize by simp();
                     preserve by {
                         step();
                         close_invariants();
@@ -1124,7 +1126,7 @@ fn loop_initialization_simp_retains_checked_fixed_state_proof() {
     verified.expect("loop initialization simp should verify through Proof");
 
     let offset = click_source
-        .find("initialize by simp")
+        .find("initialize by simp()")
         .expect("initialization proof should contain its smart simp")
         + "initialize by ".len();
     let line = click_source[..offset]
@@ -1145,7 +1147,7 @@ fn loop_initialization_simp_retains_checked_fixed_state_proof() {
         column,
     )
     .expect("the retained initialization closer should expand");
-    assert!(!expanded.contains("initialize by simp"), "{expanded}");
+    assert!(!expanded.contains("initialize by simp()"), "{expanded}");
     assert!(expanded.contains("assumption();"), "{expanded}");
     verify_c0_sources(&expanded, &[("initialize_by_simp.c", c_source)])
         .expect("expanded initialization closer should independently verify");
@@ -1299,7 +1301,7 @@ fn closing_invariants_on_a_break_path_is_refused() {
                 step();
                 loop {
                     invariant i >= 0;
-                    initialize by simp;
+                    initialize by simp();
                     preserve by {
                         step();
                         close_invariants();
@@ -1343,7 +1345,7 @@ fn frontier_local_loop_verifies_a_lowered_c_for_loop() {
                     decreases 3 - i;
                     invariant i >= 0;
                     invariant i <= 3;
-                    initialize by simp;
+                    initialize by simp();
                     preserve by {
                         step();
                         step();
@@ -1390,7 +1392,7 @@ fn frontier_local_loop_verifies_at_a_branch_local_frontier() {
                         decreases 2 - i;
                         invariant i >= 0;
                         invariant i <= 2;
-                        initialize by simp;
+                        initialize by simp();
                         preserve by {
                             step();
                             close_invariants();
@@ -1420,8 +1422,8 @@ fn frontier_loop_binding_replaces_scope_without_merging_declarations() {
             loop {
                 invariant i >= bound;
                 invariant i >= bound;
-                initialize by simp;
-                preserve by simp;
+                initialize by simp();
+                preserve by simp();
             }
         }
     "#,
@@ -1483,14 +1485,14 @@ fn frontier_local_loop_verifies_nested_loops_at_their_respective_frontiers() {
                     decreases 2 - i;
                     invariant i >= 0;
                     invariant i <= 2;
-                    initialize by simp;
+                    initialize by simp();
                     preserve by {
                         step();
                         loop {
                             decreases 2 - j;
                             invariant j >= 0;
                             invariant j <= 2;
-                            initialize by simp;
+                            initialize by simp();
                             preserve by {
                                 step();
                                 close_invariants();
@@ -1545,7 +1547,7 @@ fn frontier_loop_step_expansion_uses_the_current_invariant_lowering() {
                 loop {
                     decreases n - i;
                     invariant i >= 0 and i <= n;
-                    initialize by simp;
+                    initialize by simp();
                     preserve by {
                         step();
                         step();
@@ -1607,17 +1609,17 @@ fn frontier_local_loop_checks_an_optional_decreases_measure() {
                 loop {
                     decreases n;
                     invariant n >= 0;
-                    initialize by simp;
+                    initialize by simp();
                     preserve by {
                         have 0 <= n - 1 by {
                             apply(int32_positive_predecessor_is_nonnegative(n)) using { n > 0; }
                         }
                         step();
-                        close_invariants by {
-                            both { arithmetic() using { 0 <= n; } }
+                        close_invariants() by {
+                            both { arithmetic() using { 0 <= n; }; }
                             and {
-                                both { arithmetic() using { 0 <= n; } }
-                                and { arithmetic() using { 0 <= n; } }
+                                both { arithmetic() using { 0 <= n; }; }
+                                and { arithmetic() using { 0 <= n; }; }
                             }
                         }
                     }
@@ -1843,7 +1845,7 @@ fn frontier_local_loop_expands_an_explicit_nested_tactic_at_its_own_location() {
                     decreases 3 - i;
                     invariant i >= 0;
                     invariant i <= 3;
-                    initialize by simp;
+                    initialize by simp();
                     preserve by {
                         step();
                         close_invariants();
@@ -1854,7 +1856,7 @@ fn frontier_local_loop_expands_an_explicit_nested_tactic_at_its_own_location() {
             }
         "#;
     let initialize_simp = click_source
-        .find("initialize by simp")
+        .find("initialize by simp()")
         .expect("proof should contain explicit initialization")
         + "initialize by ".len();
     let line = click_source[..initialize_simp]
@@ -1893,7 +1895,7 @@ fn frontier_local_loop_expands_an_explicit_nested_tactic_at_its_own_location() {
     )
     .expect("explicit initialization tactic should expand at its own source location");
 
-    assert!(!expanded.contains("initialize by simp"), "{expanded}");
+    assert!(!expanded.contains("initialize by simp()"), "{expanded}");
     assert!(expanded.contains("preserve by {"), "{expanded}");
     verify_c0_sources(&expanded, &[("count_to_three.c", c_source)])
         .expect("expanded explicit initialization tactic should freshly check");
@@ -1920,17 +1922,17 @@ fn frontier_local_loop_at_function_entry_keeps_initialization_capture_separate()
                 loop {
                     decreases n;
                     invariant n >= 0;
-                    initialize by simp;
+                    initialize by simp();
                     preserve by {
                         have 0 <= n - 1 by {
                             apply(int32_positive_predecessor_is_nonnegative(n)) using { n > 0; }
                         }
                         step();
-                        close_invariants by {
-                            both { arithmetic() using { 0 <= n; } }
+                        close_invariants() by {
+                            both { arithmetic() using { 0 <= n; }; }
                             and {
-                                both { arithmetic() using { 0 <= n; } }
-                                and { arithmetic() using { 0 <= n; } }
+                                both { arithmetic() using { 0 <= n; }; }
+                                and { arithmetic() using { 0 <= n; }; }
                             }
                         }
                     }
@@ -1984,7 +1986,7 @@ fn frontier_local_loop_expands_a_tactic_inside_preservation_at_its_own_location(
                     decreases 3 - i;
                     invariant i >= 0;
                     invariant i <= 3;
-                    initialize by simp;
+                    initialize by simp();
                     preserve by {
                         step();
                         close_invariants();
@@ -2025,7 +2027,7 @@ fn frontier_local_loop_expands_a_tactic_inside_preservation_at_its_own_location(
     // A bare `step()` is a simple tactic: expanding it leaves the source as
     // written, and the loop's other phases stay untouched.
     assert_eq!(expanded, click_source);
-    assert!(expanded.contains("initialize by simp"), "{expanded}");
+    assert!(expanded.contains("initialize by simp()"), "{expanded}");
     verify_c0_sources(&expanded, &[("count_to_three.c", c_source)])
         .expect("expanded preservation step should freshly check");
 }
@@ -2053,7 +2055,7 @@ fn explicit_loop_closer_cannot_bypass_proof_owned_bundle_check() {
                 loop {
                     invariant i >= 0;
                     invariant i <= 1;
-                    initialize by simp;
+                    initialize by simp();
                     preserve by {
                         step();
                         close_invariants();
@@ -2114,7 +2116,7 @@ fn body_final_branch_preservation_completes_at_typed_back_edge_boundary() {
                     decreases n - i;
                     invariant i >= 0;
                     invariant parity >= 0 and parity <= 1;
-                    initialize by simp;
+                    initialize by simp();
                     {preserve}
                 }
                 step();
@@ -2193,7 +2195,7 @@ fn frontier_local_loop_exit_bound_weakens_to_a_looser_ensures() {
                     decreases 3 - i;
                     invariant i >= 0;
                     invariant i <= 3;
-                    initialize by simp;
+                    initialize by simp();
                     preserve by {
                         step();
                         close_invariants();
@@ -2239,12 +2241,12 @@ fn whole_claim_expansion_reconstructs_nested_decided_branch_and_loop_match() {
             }
             match marker() {
                 Marker::Active => {
-                    branch then { step(); } else { step(); }
+                    branch { step(); } else { step(); }
                     loop {
                         decreases 2 - x;
                         invariant x >= 1;
                         invariant x <= 2;
-                        initialize by simp;
+                        initialize by simp();
                         preserve by {
                             have marker() != Marker::Inactive by {
                                 unfold(marker());
@@ -2499,7 +2501,7 @@ int32 f(int32 n) {
     loop { decreases 1; invariant n == 5;
         preserve by {
             loop { decreases 1; invariant n == 5;
-                preserve by { step(); have result == 7 by simp; simp(); }
+                preserve by { step(); have result == 7 by simp(); simp(); }
             }
         }
     }
@@ -2569,10 +2571,10 @@ int32 f(int32 n) {
     requires n >= 0;
     ensures result == n or result == 7;
 } by {
-    branch then {
+    branch {
         step(); step();
         loop { decreases n-i; invariant i >= 0; invariant i <= n; }
-        step(); have result == n by simp; simp();
+        step(); have result == n by simp(); simp();
     } else { step(); simp(); }
 }
 "#;

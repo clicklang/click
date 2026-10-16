@@ -16,7 +16,7 @@ int32 first(int32 x, int32 y) {
 } by {
     execute();
     have y > result by {
-        apply(ordered(x, y)) using { x < y; }
+        apply(ordered(x, y)) using { x < y; };
     }
     assumption();
 }

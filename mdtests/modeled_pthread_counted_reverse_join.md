@@ -40,14 +40,14 @@ int32 run(void* p, void* q) {
     step();
     step();
     step();
-    branch then {
+    branch {
         have count(ticket(p)) == 1;
         unfold(ticket(p));
         unfold(ticket(q));
         step(); simp();
     } else {}
     step();
-    branch then {
+    branch {
         step();
         have count(ticket(p)) == 0;
         have count(ticket(q)) == 1;

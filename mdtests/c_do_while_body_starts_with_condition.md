@@ -69,32 +69,32 @@ verifying "c_do_while_body_starts_with_condition.c";
 
 int32 first(int32 v) {
     requires v == 7;
-    ensures result == 3 by auto;
+    ensures result == 3 by auto();
 }
 
 int32 later(int32 v) {
     requires v == 1;
-    ensures result == 1 by auto;
+    ensures result == 1 by auto();
 }
 
 int32 breaks(int32 v) {
     requires v == 7;
-    ensures result == 7 by auto;
+    ensures result == 7 by auto();
 }
 
 int32 continues(int32 v) {
     requires v == 7;
-    ensures result == 7 by auto;
+    ensures result == 7 by auto();
 }
 
 int32 nested(int32 v) {
     requires v == 7;
-    ensures result == 3 by auto;
+    ensures result == 3 by auto();
 }
 
 int32 iterates(int32 v) {
     requires v == 7;
-    ensures result == 3 by auto;
+    ensures result == 3 by auto();
 }
 ```
 

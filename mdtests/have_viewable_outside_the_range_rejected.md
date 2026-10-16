@@ -17,7 +17,7 @@ theorem range_not_inside_a_viewable_range(v: int32[], lo: int32, hi: int32, k: i
         transport(viewable(v[lo..hi]), viewable(v[lo..k])) using {
             viewable(v[lo..hi]);
             lo <= k;
-        }
+        };
     }
 }
 ```

@@ -157,7 +157,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                 invariant state.grand_value == old(state.grand_value);
                 invariant node == sized_mirrored_context_flip_focus(state.phase, old(node));
                 invariant parent == sized_mirrored_context_flip_parent(state.phase, state.outer);
-                initialize by simp;
+                initialize by simp();
                 preserve by {
                     mark iteration;
                     match state.phase {
@@ -359,7 +359,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                 unfold(sized_mirrored_context_flip_running(SizedMirroredContextFlipPhase::After(x, y, z))); normalize();
                             }
                             step();
-                            close_invariants by simp;
+                            close_invariants() by simp();
                         },
                     }
                 }

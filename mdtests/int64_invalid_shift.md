@@ -12,7 +12,7 @@ int64_t int64_invalid_shift() {
 verifying "int64_invalid_shift.c";
 
 int64_t int64_invalid_shift() {
-    ensures no_result: result == 0 by auto;
+    ensures no_result: result == 0 by auto();
 }
 ```
 

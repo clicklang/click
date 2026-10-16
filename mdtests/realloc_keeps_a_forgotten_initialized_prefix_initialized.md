@@ -43,11 +43,11 @@ verifying "realloc_keeps_a_forgotten_initialized_prefix_initialized.c";
 
 void touch(int32* p) {
     owns p[0..2];
-} by auto;
+} by auto();
 
 int32 grow() {
     ensures result == result;
-} by auto;
+} by auto();
 ```
 
 ```expect

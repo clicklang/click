@@ -76,7 +76,7 @@ void probe(struct node *p, struct root *root) {
   have near == rid;
   mark before_write;
   step();
-  have near->tag == at(before_write, rid->tag) by { normalize() using { near == rid; } }
+  have near->tag == at(before_write, rid->tag) by { normalize() using { near == rid; }; }
   execute(); simp();
  } }
  } }

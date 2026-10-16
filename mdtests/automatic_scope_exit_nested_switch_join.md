@@ -32,7 +32,7 @@ int32 nested_switch_join_preserves_scalar(int32 inner) {
 verifying "automatic_scope_exit_nested_switch_join.c";
 
 int32 nested_switch_join_preserves_scalar(int32 inner) {
-    ensures result == 3 by auto;
+    ensures result == 3 by auto();
 }
 ```
 

@@ -68,7 +68,7 @@ void inspect(struct node* parent) {
         owns tree_context: parent_at(root);
         invariant parent == parent_identity(tree_context.model);
         decreases 0;
-        initialize by simp;
+        initialize by simp();
         preserve by {
             match tree_context.model {
                 Parent::At(pid, sm) => {
@@ -89,7 +89,7 @@ void inspect(struct node* parent) {
                     mark rotation;
                     step(copy_tag(parent, sibling), {});
                     have sibling->tag == at(rotation, parent->tag);
-                    have model->tag == sibling->tag by { normalize() using { sibling == model; } }
+                    have model->tag == sibling->tag by { normalize() using { sibling == model; }; }
                     have model->tag == at(rotation, parent->tag) by { rewrite(model->tag == sibling->tag); assumption(); }
                     have model->tag == address(pid) + (model->tag & 1) by { rewrite(model->tag == at(rotation, parent->tag)); assumption(); }
                     have (model->tag & 1) == 1 by { rewrite(model->tag == at(rotation, parent->tag)); assumption(); }

@@ -17,7 +17,7 @@ int32 c_volatile_pointer_accesses() {
 verifying "c_volatile_pointer_accesses.c";
 
 int32 c_volatile_pointer_accesses() {
-    ensures result == 5 by auto;
+    ensures result == 5 by auto();
 }
 ```
 

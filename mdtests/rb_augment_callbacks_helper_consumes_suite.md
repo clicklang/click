@@ -56,7 +56,7 @@ resource callback_suite(augment: struct rb_augment_callbacks*) {
 
 void discard_suite(struct rb_augment_callbacks* augment) {
     consumes callback_suite(augment);
-} by auto;
+} by auto();
 
 void erase_discarded(struct node* node, struct node* parent,
                      struct rb_augment_callbacks* augment) {

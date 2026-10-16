@@ -19,7 +19,7 @@ int32 f(int32* p) {
     owns wrap2(p);
     produces p[0..1];
     produces p[1..2];
-} by auto;
+} by auto();
 ```
 
 ```expect

@@ -28,7 +28,7 @@ uint64 f(uint8 bytes[], uint64 n) {
             ) using {
                 k < n + 2u64;
                 at(function.entry, viewable(bytes[0..n + 1u64]));
-            }
+            };
         }
         execute();
         simp();

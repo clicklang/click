@@ -46,16 +46,16 @@ void join(int32* data, int32 cap) {
         simp() using {
             h <= t;
             t <= cap;
-        }
+        };
     }
     have l < cap by {
         apply(int32_less_than_less_equal_transitive(l, h, cap)) using {
             l < h;
             h <= cap;
-        }
+        };
     }
     have l <= cap by {
-        apply(int32_less_than_implies_less_equal(l, cap)) using { l < cap; }
+        apply(int32_less_than_implies_less_equal(l, cap)) using { l < cap; };
     }
     let c = fold(suffix(data, cap), { start: l });
     execute();

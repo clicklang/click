@@ -11,7 +11,7 @@ int32 c_volatile_rejected() {
 verifying "c_volatile_rejected.c";
 
 int32 c_volatile_rejected() {
-    ensures result == 0 by auto;
+    ensures result == 0 by auto();
 }
 ```
 

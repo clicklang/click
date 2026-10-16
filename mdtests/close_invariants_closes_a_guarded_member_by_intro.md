@@ -52,11 +52,11 @@ int32 count_run(int32 n) {
         invariant 0 <= run and run <= i;
         invariant (i <= 2 and run == 0) or (2 <= i and 2 + run == i);
 
-        initialize by simp;
+        initialize by simp();
         preserve by {
             mark iteration;
             if i < 2 {
-                branch then { step(); } else { contradiction(not (i < 2)); }
+                branch { step(); } else { contradiction(not (i < 2)); }
                 step();
                 have 0 <= i and i <= n;
                 have 0 <= run and run <= i;
@@ -69,18 +69,18 @@ int32 count_run(int32 n) {
                         0 <= at(iteration, i);
                         at(iteration, i) < at(iteration, n);
                         0 <= n;
-                    }
+                    };
                 }
                 have n - at(iteration, i) - 1 < n - at(iteration, i) by {
                     arithmetic() using {
                         0 <= at(iteration, i);
                         at(iteration, i) < at(iteration, n);
                         0 <= n;
-                    }
+                    };
                 }
                 close_invariants();
             } else {
-                have 2 <= i by { arithmetic() using { not (i < 2); } }
+                have 2 <= i by { arithmetic() using { not (i < 2); }; }
                 have 2 + run == i by {
                     cases {
                         (i <= 2 and run == 0) => {
@@ -88,12 +88,12 @@ int32 count_run(int32 n) {
                                 apply(int32_less_equal_and_not_less_than_implies_equal(i, 2)) using {
                                     i <= 2;
                                     not (i < 2);
-                                }
+                                };
                                 assumption();
                             }
                             rewrite(run == 0);
                             rewrite(i == 2);
-                            normalize() using { i <= 2; }
+                            normalize() using { i <= 2; };
                         }
                         (2 <= i and 2 + run == i) => {
                             extract(2 + run == i);
@@ -105,9 +105,9 @@ int32 count_run(int32 n) {
                     arithmetic() using {
                         run <= i;
                         i < n;
-                    }
+                    };
                 }
-                branch then { contradiction(i < 2); } else { step(); }
+                branch { contradiction(i < 2); } else { step(); }
                 step();
                 have 0 <= i and i <= n;
                 have 0 <= run and run <= i;
@@ -120,14 +120,14 @@ int32 count_run(int32 n) {
                         0 <= at(iteration, i);
                         at(iteration, i) < at(iteration, n);
                         0 <= n;
-                    }
+                    };
                 }
                 have n - at(iteration, i) - 1 < n - at(iteration, i) by {
                     arithmetic() using {
                         0 <= at(iteration, i);
                         at(iteration, i) < at(iteration, n);
                         0 <= n;
-                    }
+                    };
                 }
                 close_invariants();
             }

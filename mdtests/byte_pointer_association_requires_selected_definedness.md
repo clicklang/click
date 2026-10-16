@@ -22,9 +22,9 @@ void keep(const uint8* p, int32 i) {
  match h.model {
   Link::Node(q) => {
    unfold(h);
-   have defined(i + 4) by { simp() using { 0 <= i; i <= 22200; } }
-   have defined(i + 3) by { simp() using { 0 <= i; i <= 22200; } }
-   have (q + i) + 4 == q + (i + 4) by { normalize() using { defined(i + 3); } }
+   have defined(i + 4) by { simp() using { 0 <= i; i <= 22200; }; }
+   have defined(i + 3) by { simp() using { 0 <= i; i <= 22200; }; }
+   have (q + i) + 4 == q + (i + 4) by { normalize() using { defined(i + 3); }; }
    let h = fold(Cell(p, i), { model: Link::Node(q) });
    execute(); simp();
   },

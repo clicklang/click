@@ -19,7 +19,7 @@ verifying "signed_arithmetic_requires_both_bounds.c";
 int32 step_both(int32 x) {
     requires x < 2147483647;
     requires x > -2147483648;
-    ensures result == x - 1 by auto;
+    ensures result == x - 1 by auto();
 }
 ```
 

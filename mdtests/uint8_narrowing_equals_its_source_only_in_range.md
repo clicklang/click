@@ -15,7 +15,7 @@ uint8 narrow_return_missing_range(int32 x) {
 verifying "uint8_narrowing_equals_its_source_only_in_range.c";
 
 uint8 narrow_return_missing_range(int32 x) {
-    ensures narrowed_return: result == x by auto;
+    ensures narrowed_return: result == x by auto();
 }
 ```
 

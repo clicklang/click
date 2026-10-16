@@ -30,7 +30,7 @@ verifying "paint.c";
 void repaint(struct node* p) {
     owns p->shade;
     ensures p->shade == 0;
-} by auto;
+} by auto();
 
 void paint(struct node* p, int32 flag) {
     owns p->shade;

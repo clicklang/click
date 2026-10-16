@@ -38,88 +38,88 @@ theorem subtract_from_sum(total: int32, left: int32, right: int32, amount: int32
             apply(int32_nonnegative_subtract_within_value_is_defined(right, amount)) using {
                 0 <= amount;
                 amount <= right;
-            }
+            };
             assumption();
         }
-        apply(int32_add_to_integer(left, right)) using { defined(left + right); }
+        apply(int32_add_to_integer(left, right)) using { defined(left + right); };
         have to_integer(total) == to_integer(left) + to_integer(right) by {
             rewrite(total == left + right);
             assumption();
         }
-        apply(int32_subtract_to_integer(right, amount)) using { defined(right - amount); }
+        apply(int32_subtract_to_integer(right, amount)) using { defined(right - amount); };
         have 0 <= to_integer(left) by {
-            apply(int32_less_equal_to_integer(0, left)) using { 0 <= left; }
+            apply(int32_less_equal_to_integer(0, left)) using { 0 <= left; };
             simp();
         }
         have 0 <= to_integer(amount) by {
-            apply(int32_less_equal_to_integer(0, amount)) using { 0 <= amount; }
+            apply(int32_less_equal_to_integer(0, amount)) using { 0 <= amount; };
             simp();
         }
         have to_integer(amount) <= to_integer(right) by {
-            apply(int32_less_equal_to_integer(amount, right)) using { amount <= right; }
+            apply(int32_less_equal_to_integer(amount, right)) using { amount <= right; };
             assumption();
         }
         have total <= 2147483647;
         have to_integer(total) <= 2147483647 by {
-            apply(int32_less_equal_to_integer(total, 2147483647)) using { total <= 2147483647; }
+            apply(int32_less_equal_to_integer(total, 2147483647)) using { total <= 2147483647; };
             simp();
         }
         have to_integer(0) >= -2147483648;
         have 0 <= right - amount by {
-            arithmetic() using { 0 <= amount; amount <= right; }
+            arithmetic() using { 0 <= amount; amount <= right; };
         }
         have 0 <= to_integer(right - amount) by {
-            apply(int32_less_equal_to_integer(0, right - amount)) using { 0 <= right - amount; }
+            apply(int32_less_equal_to_integer(0, right - amount)) using { 0 <= right - amount; };
             simp();
         }
         have 0 <= to_integer(left) + to_integer(right - amount) by {
             arithmetic() using {
                 0 <= to_integer(left);
                 0 <= to_integer(right - amount);
-            }
+            };
         }
         have to_integer(left) + to_integer(right - amount) >= -2147483648 by {
             arithmetic() using {
                 0 <= to_integer(left) + to_integer(right - amount);
                 to_integer(0) >= -2147483648;
-            }
+            };
         }
         have to_integer(left) + to_integer(right - amount) + to_integer(amount) == to_integer(total) by {
             arithmetic() using {
                 to_integer(total) == to_integer(left) + to_integer(right);
                 to_integer(right - amount) == to_integer(right) - to_integer(amount);
-            }
+            };
         }
         have to_integer(left) + to_integer(right - amount) <= to_integer(total) by {
             arithmetic() using {
                 to_integer(left) + to_integer(right - amount) + to_integer(amount) == to_integer(total);
                 0 <= to_integer(amount);
-            }
+            };
         }
         have to_integer(left) + to_integer(right - amount) <= 2147483647 by {
             arithmetic() using {
                 to_integer(left) + to_integer(right - amount) <= to_integer(total);
                 to_integer(total) <= 2147483647;
-            }
+            };
         }
         apply(int32_add_defined_by_integer_bounds(left, right - amount)) using {
             to_integer(left) + to_integer(right - amount) >= -2147483648;
             to_integer(left) + to_integer(right - amount) <= 2147483647;
-        }
+        };
         have defined(left + (right - amount));
-        apply(int32_subtract_to_integer(total, amount)) using { defined(total - amount); }
-        apply(int32_add_to_integer(left, right - amount)) using { defined(left + (right - amount)); }
+        apply(int32_subtract_to_integer(total, amount)) using { defined(total - amount); };
+        apply(int32_add_to_integer(left, right - amount)) using { defined(left + (right - amount)); };
         have to_integer(total - amount) == to_integer(left + (right - amount)) by {
             arithmetic() using {
                 to_integer(total - amount) == to_integer(total) - to_integer(amount);
                 to_integer(left + (right - amount)) == to_integer(left) + to_integer(right - amount);
                 to_integer(total) == to_integer(left) + to_integer(right);
                 to_integer(right - amount) == to_integer(right) - to_integer(amount);
-            }
+            };
         }
         apply(int32_to_integer_equal_implies_equal(total - amount, left + (right - amount))) using {
             to_integer(total - amount) == to_integer(left + (right - amount));
-        }
+        };
         simp();
     }
 }
@@ -167,7 +167,7 @@ void consume_population(struct owner* owner, int32 amount) {
             owner->capacity == owner->used + count(slot(owner));
             defined(owner->used + count(slot(owner)));
             defined(owner->capacity - amount);
-        }
+        };
         unfold(amount of slot(owner));
         step();
         have owner->capacity == owner->used + count(slot(owner));

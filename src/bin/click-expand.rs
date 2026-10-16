@@ -937,7 +937,7 @@ int32 good(int32 x) {
     ensures result == x by { execute(); simp(); }
 }
 int32 bad(int32 x) {
-    ensures result == x + 1 by simp;
+    ensures result == x + 1 by simp();
 }
 "#;
         let click_path = directory.join("project.click");
@@ -963,7 +963,7 @@ int32 bad(int32 x) {
 
         assert_ne!(expanded, click_source);
         assert!(
-            expanded.ends_with("int32 bad(int32 x) {\n    ensures result == x + 1 by simp;\n}\n")
+            expanded.ends_with("int32 bad(int32 x) {\n    ensures result == x + 1 by simp();\n}\n")
         );
         fs::remove_dir_all(directory).unwrap();
     }
@@ -1119,13 +1119,13 @@ int32 bad(int32 x) {
         }
     }
 
-    /// Loop phases: the smart `initialize by simp` and the smart
+    /// Loop phases: the smart `initialize by simp()` and the smart
     /// `close_invariants()` of a frontier-local loop are selected by line.
     #[test]
     #[ignore = "nightly: 0.6s in the parallel gate"]
     fn lines_in_loop_phases_select_their_smart_tactics() {
         let path = mdtest_path("c_decreases_count_up.md");
-        for (line, text) in [(27, "initialize by simp;"), (30, "close_invariants();")] {
+        for (line, text) in [(27, "initialize by simp();"), (30, "close_invariants();")] {
             assert_eq!(markdown_line(&path, line).trim(), text);
             let expanded = run_location(&path, &line.to_string())
                 .unwrap_or_else(|error| panic!("line {line}: {error}"));
@@ -1189,7 +1189,7 @@ int32 bad(int32 x) {
             \x20       have x == x by { simp(); }\n\
             \x20       simp();\n\
             \x20   }\n\
-            \x20   have x >= x by { have x == x by simp; simp(); }\n\
+            \x20   have x >= x by { have x == x by simp(); simp(); }\n\
             \x20   execute();\n\
             \x20   simp();\n\
             }\n";
@@ -1204,13 +1204,13 @@ int32 bad(int32 x) {
         let path = click_path.display();
         assert!(
             ambiguous.contains(&format!(
-                "{path}:9: 2 smart tactics start on this line; add the column of one of them:\n  {path}:9:22 `have` in `identity.contract`\n  {path}:9:43 `simp` in `identity.contract`"
+                "{path}:9: 2 smart tactics start on this line; add the column of one of them:\n  {path}:9:22 `have` in `identity.contract`\n  {path}:9:45 `simp` in `identity.contract`"
             )),
             "{ambiguous}"
         );
-        let expanded = run_location(&click_path, "9:43").unwrap();
+        let expanded = run_location(&click_path, "9:45").unwrap();
         assert!(
-            expanded.contains("    have x >= x by { have x == x by simp; normalize(); }\n"),
+            expanded.contains("    have x >= x by { have x == x by simp(); normalize(); }\n"),
             "{expanded}"
         );
         let between =
@@ -1318,7 +1318,7 @@ int32 f(int32 a, int32 b) {
     loop {
         decreases a + 1;
         invariant a <= 0;
-        initialize by simp;
+        initialize by simp();
     }
     step();
     simp();
@@ -1337,7 +1337,7 @@ int32 f(int32 a, int32 b) {
             })
         };
 
-        let written = "initialize by simp;";
+        let written = "initialize by simp();";
         let start = click_source.find(written).unwrap();
         let end = start + written.len();
         let by_label = expand("f.loop(0).initialize".to_string())
@@ -1405,7 +1405,7 @@ theorem use_add_one(x: Integer) {
         let c_source = "int32 identity(int32 x) { return x; }";
         let click_source = r#"verifying "identity.c";
 int32 identity(int32 x) {
-    ensures result == x by auto;
+    ensures result == x by auto();
 }
 "#;
         let inputs = CInput::Bundle(vec![("identity.c".to_string(), c_source.to_string())]);

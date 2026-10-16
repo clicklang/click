@@ -17,7 +17,7 @@ int32 for_declaration_init_list() {
 verifying "for_declaration_init_list.c";
 
 int32 for_declaration_init_list() {
-    ensures result == 6 by auto;
+    ensures result == 6 by auto();
 }
 ```
 

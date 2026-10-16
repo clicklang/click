@@ -37,7 +37,7 @@ void copy_n(char* dst, const char* src, uint64 n) {
                 ((uint8*)dst)[0u64 + k] == old(((uint8*)src)[0u64 + k])
             }));
             separate(memory(dst[0u64..n + 1u64]), memory(src[0u64..n]));
-        }
+        };
     }
     execute();
 }

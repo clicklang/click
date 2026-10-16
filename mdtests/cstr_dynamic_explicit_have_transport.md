@@ -32,7 +32,7 @@ int32 read_terminator(uint8 bytes[], uint64 known_len) {
             transport(
                 at(function.entry, viewable(bytes[0..known_len + 1u64])),
                 viewable(bytes[0..known_len + 1u64])
-            ) using { at(function.entry, viewable(bytes[0..known_len + 1u64])); }
+            ) using { at(function.entry, viewable(bytes[0..known_len + 1u64])); };
         }
         have forall (k: uint64) { k < known_len + 1u64 implies defined(bytes[k]) } by {
             extract(at(function.entry, forall (k: uint64) {
@@ -44,11 +44,11 @@ int32 read_terminator(uint8 bytes[], uint64 known_len) {
                 k < known_len + 1u64 implies defined(bytes[k])
             }), k) using {
                 k < known_len + 1u64;
-            }
+            };
             transport(
                 at(function.entry, defined(bytes[k])),
                 defined(bytes[k])
-            ) using { at(function.entry, defined(bytes[k])); }
+            ) using { at(function.entry, defined(bytes[k])); };
         }
         have forall (k: uint64) { k < known_len implies bytes[k] != '\0' } by {
             extract(at(function.entry, forall (k: uint64) {

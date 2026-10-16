@@ -31,7 +31,7 @@ int32 walk(int32 n) {
         initialize by { simp(); }
         preserve by {
             step();
-            have i <= n by { arithmetic() using { at(statement(3).entry, i) < n; } }
+            have i <= n by { arithmetic() using { at(statement(3).entry, i) < n; }; }
             close_invariants();
         }
     }

@@ -28,11 +28,11 @@ verifying "good.c";
 verifying "bad.c";
 
 int32 good(int32 n) {
-    ensures result == 0 by auto;
+    ensures result == 0 by auto();
 }
 
 int32 bad(int32 n) {
-    ensures result == 0 by auto;
+    ensures result == 0 by auto();
 }
 ```
 

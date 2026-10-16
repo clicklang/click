@@ -67,7 +67,7 @@ void object_release_nonfinal(struct object* obj) {
         have obj->refs - 1 >= 1 by {
             apply(int32_above_one_predecessor_is_at_least_one(obj->refs)) using {
                 1 < obj->refs;
-            }
+            };
         }
         step();
     }

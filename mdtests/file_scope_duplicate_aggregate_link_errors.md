@@ -32,11 +32,11 @@ verifying "left.c";
 verifying "right.c";
 
 int32 left() {
-    ensures result == 1 by auto;
+    ensures result == 1 by auto();
 }
 
 int32 right() {
-    ensures result == 2 by auto;
+    ensures result == 2 by auto();
 }
 ```
 

@@ -73,7 +73,7 @@ void arena_write(struct region* region, int32 value, int32 k) {
     let { capacity: c } = unfold(st);
     let { start: s, end: e } = unfold(r);
     have s + 1 <= e by {
-        apply(int32_increment_upper_bound(s, e)) using { s < e; }
+        apply(int32_increment_upper_bound(s, e)) using { s < e; };
     }
     have region->start + 1 <= e by {
         rewrite(region->start == s); assumption();

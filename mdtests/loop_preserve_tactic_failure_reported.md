@@ -35,9 +35,9 @@ int32 count_down(int32 n) {
     loop {
         invariant i >= 0;
 
-        initialize by simp;
+        initialize by simp();
         preserve by {
-            have i < 0 by simp;
+            have i < 0 by simp();
             step();
             close_invariants();
         }

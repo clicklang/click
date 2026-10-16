@@ -17,7 +17,7 @@ void keep(int32 p[], int32 n, int32 i, int32 j) {
     ensures p[i] == p[j];
 } by {
     execute();
-    normalize() using { }
+    normalize() using { };
 }
 
 theorem same_read(p: int32[], n: int32, i: int32, j: int32) {
@@ -28,7 +28,7 @@ theorem same_read(p: int32[], n: int32, i: int32, j: int32) {
     requires j < n;
     requires i == j;
     ensures (if p[i] == p[j] { 7 } else { 0 }) == 7 by {
-        normalize() using { }
+        normalize() using { };
     }
 }
 ```

@@ -398,8 +398,8 @@ pub(in crate::surface::proof) fn verify_execution_proofs_forward(
                 )?;
                 environment.frontier_loop_certificates.borrow_mut().preserve =
                     Some(preservation_certificate.clone());
-                // `preserve by simp;` is one smart tactic standing for the
-                // whole phase, exactly as `initialize by simp;` is: the
+                // `preserve by simp();` is one smart tactic standing for the
+                // whole phase, exactly as `initialize by simp();` is: the
                 // planned preservation certificate is its expansion. The
                 // driver's own tactics are all generated here, so no
                 // source-indexed step claims the occurrence.

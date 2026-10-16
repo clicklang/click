@@ -54,7 +54,7 @@ int32 write_one(struct buffer* buffer) {
                 }, 0) using {
                     0 <= 0;
                     0 < end;
-                }
+                };
                 assumption();
             }
             unfold(prefix);

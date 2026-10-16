@@ -26,11 +26,11 @@ int32 long_double_box_size() {
 verifying "long_double_layout.c";
 
 int32 long_double_size() {
-    ensures result == 16 by auto;
+    ensures result == 16 by auto();
 }
 
 int32 long_double_box_size() {
-    ensures result == 48 by auto;
+    ensures result == 48 by auto();
 }
 ```
 

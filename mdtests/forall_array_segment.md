@@ -17,7 +17,7 @@ int32 forall_array_segment(int32 p[], int32 n) {
     requires viewable(p[0..3]);
     ensures segment_unchanged: forall (k: int32) {
         0 <= k and k < n implies p[k] == old(p[k])
-    } by auto;
+    } by auto();
 }
 ```
 

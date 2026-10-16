@@ -121,7 +121,7 @@ mod tests {
             "Outer::Wrapped(Box::Wrapped(to_integer(x + 1)))",
         ] {
             let source = format!(
-                "spec enum Box {{ Wrapped(Integer) }} spec enum Outer {{ Wrapped(Box) }} theorem wrapped(x: int32) {{ ensures {value} == {value} by simp; }}"
+                "spec enum Box {{ Wrapped(Integer) }} spec enum Outer {{ Wrapped(Box) }} theorem wrapped(x: int32) {{ ensures {value} == {value} by simp(); }}"
             );
             assert!(verify_c0_sources(&source, &[]).is_err(), "{source}");
             let bounded = source.replace("{ ensures", "{ requires defined(x + 1); ensures");
@@ -170,7 +170,7 @@ mod tests {
             "to_integer(x) + to_integer(x + 1)",
         ] {
             let source = format!(
-                "theorem compose(x: int32) {{ ensures {expression} == {expression} by simp; }}"
+                "theorem compose(x: int32) {{ ensures {expression} == {expression} by simp(); }}"
             );
             assert!(verify_c0_sources(&source, &[]).is_err(), "{source}");
             let bounded = source.replace("{ ensures", "{ requires defined(x + 1); ensures");
@@ -182,7 +182,7 @@ mod tests {
     fn forward_conversion_conditionals_preserve_the_argument_domain() {
         let expression = "if c == 0 { x + 1 } else { y + 1 }";
         let source = format!(
-            "theorem branch(c: int32, x: int32, y: int32) {{ requires defined({expression}); ensures to_integer({expression}) == to_integer({expression}) by simp; }}"
+            "theorem branch(c: int32, x: int32, y: int32) {{ requires defined({expression}); ensures to_integer({expression}) == to_integer({expression}) by simp(); }}"
         );
         verify_c0_sources(&source, &[]).unwrap();
         let invalid = source.replace(&format!("requires defined({expression});"), "");
@@ -200,7 +200,7 @@ mod tests {
             "let a: Integer = to_integer(x + 1);",
             "let b: Integer = to_integer(x + 1); let a: Integer = b + 0;",
         ] {
-            let source = format!("theorem alias(x: int32) {{ {alias} ensures a == a by simp; }}");
+            let source = format!("theorem alias(x: int32) {{ {alias} ensures a == a by simp(); }}");
             assert!(verify_c0_sources(&source, &[]).is_err(), "{source}");
             let bounded = source.replace("{ let", "{ requires defined(x + 1); let");
             verify_c0_sources(&bounded, &[]).unwrap();
@@ -223,11 +223,11 @@ mod tests {
 
     #[test]
     fn forward_conversion_keeps_intermediate_overflow_obligations() {
-        let source = "theorem nested(x: int32) { requires defined((x + 1) + 1); ensures to_integer((x + 1) + 1) == to_integer((x + 1) + 1) by simp; }";
+        let source = "theorem nested(x: int32) { requires defined((x + 1) + 1); ensures to_integer((x + 1) + 1) == to_integer((x + 1) + 1) by simp(); }";
         verify_c0_sources(source, &[]).unwrap();
         let missing = source.replace("requires defined((x + 1) + 1);", "requires defined(x + 1);");
         assert!(verify_c0_sources(&missing, &[]).is_err());
-        let cancelled = "theorem cancelled(x: int32) { ensures to_integer((x + 1) - 1) == to_integer((x + 1) - 1) by simp; }";
+        let cancelled = "theorem cancelled(x: int32) { ensures to_integer((x + 1) - 1) == to_integer((x + 1) - 1) by simp(); }";
         assert!(verify_c0_sources(cancelled, &[]).is_err());
         let bounded = cancelled.replace("{ ensures", "{ requires defined((x + 1) - 1); ensures");
         verify_c0_sources(&bounded, &[]).unwrap();
@@ -399,7 +399,7 @@ mod tests {
     #[test]
     fn symbolic_integer_datatype_matches_are_exhaustive_and_checked() {
         let source = "spec enum Box<T> { Empty, Wrapped(T), }\n            function project(value: Box<Integer>) -> Integer { match value { Box::Empty => to_integer(0), Box::Wrapped(inner) => inner, } }\n\
-            theorem symbolic(value: Box<Integer>) { ensures project(value) == project(value) by simp; }";
+            theorem symbolic(value: Box<Integer>) { ensures project(value) == project(value) by simp(); }";
         verify_c0_sources(source, &[]).unwrap();
         let expanded = expand_c0_claim_source_by_label(source, &[], "symbolic.ensures_0").unwrap();
         verify_c0_sources(&expanded, &[]).unwrap();
@@ -410,7 +410,7 @@ mod tests {
         let source = r#"
             spec enum Box { Empty, Wrapped(Integer), }
             function project(value: Box) -> Integer { match value { Box::Empty => to_integer(0), Box::Wrapped(inner) => inner, } }
-            theorem known() { ensures project(Box::Wrapped(to_integer(7))) == to_integer(7) by simp; }
+            theorem known() { ensures project(Box::Wrapped(to_integer(7))) == to_integer(7) by simp(); }
         "#;
         verify_c0_sources(source, &[]).unwrap();
         let expanded = expand_c0_claim_source_by_label(source, &[], "known.ensures_0").unwrap();
@@ -420,7 +420,7 @@ mod tests {
     #[test]
     fn deferred_integer_function_c_arguments_keep_mandatory_definedness() {
         let unguarded = "function f(x: int32) -> Integer { to_integer(x) }\n\
-            theorem call(x: int32) { ensures f(x + 1) == f(x + 1) by simp; }";
+            theorem call(x: int32) { ensures f(x + 1) == f(x + 1) by simp(); }";
         assert!(verify_c0_sources(unguarded, &[]).is_err());
 
         let guarded = unguarded.replace("{ ensures", "{ requires defined(x + 1); ensures");
@@ -429,7 +429,7 @@ mod tests {
         verify_c0_sources(&expanded, &[]).unwrap();
 
         let mixed = "function mix(left: int32, right: int32) -> Integer { to_integer(left) }\n\
-            theorem call(left: int32, right: int32) { requires defined(left + 1); requires defined(right + 1); ensures mix(left + 1, right + 1) == mix(left + 1, right + 1) by simp; }";
+            theorem call(left: int32, right: int32) { requires defined(left + 1); requires defined(right + 1); ensures mix(left + 1, right + 1) == mix(left + 1, right + 1) by simp(); }";
         verify_c0_sources(mixed, &[]).unwrap();
         for missing in [
             "requires defined(left + 1); ",
@@ -475,7 +475,7 @@ mod tests {
         let source = "spec enum Box { Empty, Wrapped(int32), }\n\
             function pack(x: int32) -> Box { Box::Wrapped(x) }\n\
             function f(value: Box) -> Integer { 0 }\n\
-            theorem call(x: int32) { ensures f(pack(x + 1)) == f(pack(x + 1)) by simp; }";
+            theorem call(x: int32) { ensures f(pack(x + 1)) == f(pack(x + 1)) by simp(); }";
         assert!(verify_c0_sources(source, &[]).is_err());
         let guarded = source.replace("{ ensures", "{ requires defined(x + 1); ensures");
         verify_c0_sources(&guarded, &[]).unwrap();
@@ -486,26 +486,26 @@ mod tests {
     #[test]
     fn integer_conversion_proofs_expand_and_recheck() {
         for source in [
-            "theorem conversion(x: int32) { ensures to_integer(x) == to_integer(x) by simp; }",
-            "theorem conversion() { ensures to_integer(to_uint64(18446744073709551615)) == 18446744073709551615 by simp; }",
+            "theorem conversion(x: int32) { ensures to_integer(x) == to_integer(x) by simp(); }",
+            "theorem conversion() { ensures to_integer(to_uint64(18446744073709551615)) == 18446744073709551615 by simp(); }",
         ] {
             verify_c0_sources(source, &[]).unwrap();
             let expanded =
                 expand_c0_claim_source_by_label(source, &[], "conversion.ensures_0").unwrap();
             verify_c0_sources(&expanded, &[])
                 .unwrap_or_else(|error| panic!("{}\n{expanded}", error.message()));
-            assert!(!expanded.contains("by simp"), "{expanded}");
+            assert!(!expanded.contains("by simp()"), "{expanded}");
         }
     }
 
     #[test]
     fn wide_integer_observations_and_checked_conversions_expand_and_recheck() {
         for source in [
-            "theorem observe(x: int128) { ensures to_integer(x) == to_integer(x) by simp; }",
-            "theorem observe(x: uint128) { ensures to_integer(x) == to_integer(x) by simp; }",
-            "theorem observe() { ensures to_integer(to_int128(-170141183460469231731687303715884105728)) == -170141183460469231731687303715884105728 by simp; }",
-            "theorem observe() { ensures to_integer(to_int128(170141183460469231731687303715884105727)) == 170141183460469231731687303715884105727 by simp; }",
-            "theorem observe() { ensures to_integer(to_uint128(340282366920938463463374607431768211455)) == 340282366920938463463374607431768211455 by simp; }",
+            "theorem observe(x: int128) { ensures to_integer(x) == to_integer(x) by simp(); }",
+            "theorem observe(x: uint128) { ensures to_integer(x) == to_integer(x) by simp(); }",
+            "theorem observe() { ensures to_integer(to_int128(-170141183460469231731687303715884105728)) == -170141183460469231731687303715884105728 by simp(); }",
+            "theorem observe() { ensures to_integer(to_int128(170141183460469231731687303715884105727)) == 170141183460469231731687303715884105727 by simp(); }",
+            "theorem observe() { ensures to_integer(to_uint128(340282366920938463463374607431768211455)) == 340282366920938463463374607431768211455 by simp(); }",
         ] {
             verify_c0_sources(source, &[])
                 .unwrap_or_else(|error| panic!("{}\n{source}", error.message()));
@@ -521,7 +521,7 @@ mod tests {
             ("uint128", "340282366920938463463374607431768211456"),
         ] {
             let source = format!(
-                "theorem bad() {{ ensures to_integer(to_{target}({value})) == {value} by simp; }}"
+                "theorem bad() {{ ensures to_integer(to_{target}({value})) == {value} by simp(); }}"
             );
             assert!(verify_c0_sources(&source, &[]).is_err(), "{source}");
         }
@@ -543,7 +543,7 @@ mod tests {
                 (String::new(), false),
             ] {
                 let source = format!(
-                    "theorem observe(z: Integer) {{ {requirements} ensures to_integer(to_{target}(z)) == to_integer(to_{target}(z)) by simp; }}"
+                    "theorem observe(z: Integer) {{ {requirements} ensures to_integer(to_{target}(z)) == to_integer(to_{target}(z)) by simp(); }}"
                 );
                 assert_eq!(verify_c0_sources(&source, &[]).is_ok(), valid, "{source}");
             }
@@ -564,7 +564,7 @@ mod tests {
         ] {
             for value in [lower, upper] {
                 let source = format!(
-                    "theorem bad() {{ ensures to_{target}({value}) == to_{target}({value}) by simp; }}"
+                    "theorem bad() {{ ensures to_{target}({value}) == to_{target}({value}) by simp(); }}"
                 );
                 assert!(
                     verify_c0_sources(&source, &[]).is_err(),
@@ -587,7 +587,7 @@ mod tests {
             ("uint64", "0", "18446744073709551615"),
         ] {
             let source = format!(
-                "theorem conversion(z: Integer) {{ requires z >= {lower}; requires z <= {upper}; ensures to_{target}(z) == to_{target}(z) by simp; }}"
+                "theorem conversion(z: Integer) {{ requires z >= {lower}; requires z <= {upper}; ensures to_{target}(z) == to_{target}(z) by simp(); }}"
             );
             verify_c0_sources(&source, &[]).unwrap_or_else(|error| {
                 panic!(
@@ -620,7 +620,7 @@ mod tests {
                     .map(|requirement| format!(" requires {requirement};"))
                     .collect::<String>();
                 let source = format!(
-                    "theorem conversion(z: Integer) {{{requires} ensures to_{target}(z) == to_{target}(z) by simp; }}"
+                    "theorem conversion(z: Integer) {{{requires} ensures to_{target}(z) == to_{target}(z) by simp(); }}"
                 );
                 assert!(
                     verify_c0_sources(&source, &[]).is_err(),
@@ -632,9 +632,9 @@ mod tests {
 
     #[test]
     fn wrapped_symbolic_conversions_keep_bounds_through_proofs_and_expansion() {
-        let bounded = "theorem wrapped(z: Integer) { requires z >= -2147483648; requires z <= 2147483647; ensures to_int32(z) + 0 == to_int32(z) by simp; }";
+        let bounded = "theorem wrapped(z: Integer) { requires z >= -2147483648; requires z <= 2147483647; ensures to_int32(z) + 0 == to_int32(z) by simp(); }";
         verify_c0_sources(bounded, &[]).unwrap();
-        let normalized = bounded.replace("by simp; }", "by { normalize(); } }");
+        let normalized = bounded.replace("by simp(); }", "by { normalize(); } }");
         verify_c0_sources(&normalized, &[]).unwrap();
         let expanded = expand_c0_claim_source_by_label(bounded, &[], "wrapped.ensures_0").unwrap();
         verify_c0_sources(&expanded, &[]).unwrap();
@@ -644,11 +644,11 @@ mod tests {
             assert!(verify_c0_sources(&invalid, &[]).is_err(), "{invalid}");
         }
 
-        let prior_have = "theorem prior(z: Integer) { requires z >= -2147483648; requires z <= 2147483647; let x: int32 = to_int32(z); ensures x + 0 == x by simp; }";
+        let prior_have = "theorem prior(z: Integer) { requires z >= -2147483648; requires z <= 2147483647; let x: int32 = to_int32(z); ensures x + 0 == x by simp(); }";
         verify_c0_sources(prior_have, &[]).unwrap();
-        let aliases = "theorem aliases(z: Integer) { requires z >= -2147483648; requires z <= 2147483647; let a: int32 = to_int32(z); let b: int32 = a + 0; ensures b == a by simp; }";
+        let aliases = "theorem aliases(z: Integer) { requires z >= -2147483648; requires z <= 2147483647; let a: int32 = to_int32(z); let b: int32 = a + 0; ensures b == a by simp(); }";
         verify_c0_sources(aliases, &[]).unwrap();
-        let no_bounds = "theorem aliases(z: Integer) { let a: int32 = to_int32(z); let b: int32 = a + 0; ensures b == a by simp; }";
+        let no_bounds = "theorem aliases(z: Integer) { let a: int32 = to_int32(z); let b: int32 = a + 0; ensures b == a by simp(); }";
         assert!(verify_c0_sources(no_bounds, &[]).is_err());
     }
 
@@ -669,7 +669,7 @@ mod tests {
                 "to_integer(2147483647 + 1) == to_integer(2147483647 + 1)",
             ),
         ] {
-            let source = format!("theorem bad({parameters}) {{ ensures {claim} by simp; }}");
+            let source = format!("theorem bad({parameters}) {{ ensures {claim} by simp(); }}");
             assert!(
                 verify_c0_sources(&source, &[]).is_err(),
                 "invalid conversion accepted: {source}"
@@ -1138,7 +1138,7 @@ mod tests {
     fn contract_scalar_casts_check_all_supported_widths_and_recheck_expansion() {
         for ty in ["int32", "uint32", "int64", "uint64", "int128", "uint128"] {
             let source = format!(
-                "theorem cast(x: {ty}) {{ ensures ({ty})x == x by {{ have ({ty})x == x by simp; assumption(); }} }}"
+                "theorem cast(x: {ty}) {{ ensures ({ty})x == x by {{ have ({ty})x == x by simp(); assumption(); }} }}"
             );
             verify_c0_sources(&source, &[]).unwrap();
             let expanded = expand_c0_claim_source_by_label(&source, &[], "cast.ensures_0").unwrap();

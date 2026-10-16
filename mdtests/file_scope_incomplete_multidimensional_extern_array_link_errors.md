@@ -31,11 +31,11 @@ verifying "reader.c";
 verifying "definitions.c";
 
 int32 read_table() {
-    ensures result == 2 by auto;
+    ensures result == 2 by auto();
 }
 
 int32 definition_anchor() {
-    ensures result == 1 by auto;
+    ensures result == 1 by auto();
 }
 ```
 

@@ -9,7 +9,7 @@ theorem missing_lower_bound(length: int32) {
     ensures ((uint32)length) <= 1073741823u32 by {
         arithmetic() using {
             length <= 536870911;
-        }
+        };
     }
 }
 ```

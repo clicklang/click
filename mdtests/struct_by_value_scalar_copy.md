@@ -42,7 +42,7 @@ struct pair bump(struct pair value) {
     ensures result.first == 5;
     ensures result.tag == 9;
 } by {
-    auto;
+    auto();
 }
 
 int32 run_struct_by_value() {

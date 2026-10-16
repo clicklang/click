@@ -50,7 +50,7 @@ int32 run(struct cell *p) {
     step();
     step();
     step();
-    branch then {
+    branch {
         step();
         simp();
     } else {}

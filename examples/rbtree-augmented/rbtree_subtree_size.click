@@ -18,7 +18,7 @@ theorem rb_subtree_size_nonnegative(tree: RbTree) {
             RbTree::Node(node, parent, color, left, right) => {
                 apply(ih(left)); apply(ih(right));
                 unfold(rb_subtree_size(RbTree::Node(node, parent, color, left, right)));
-                arithmetic() using { rb_subtree_size(left) >= 0; rb_subtree_size(right) >= 0; }
+                arithmetic() using { rb_subtree_size(left) >= 0; rb_subtree_size(right) >= 0; };
             },
         }
     }
