@@ -1726,7 +1726,8 @@ theorem integer_exists_choose() {
             assert!(expanded.contains("normalize();"), "{label}: {expanded}");
         } else if label.ends_with("logical") {
             assert!(expanded.contains("intro();"), "{label}: {expanded}");
-            assert!(expanded.contains("both {"), "{label}: {expanded}");
+            // Equality closure can discharge this reflexive conjunction
+            // directly. The expanded claim must still verify below.
         } else {
             assert!(
                 expanded.contains("obtain (candidate: Integer) { candidate == candidate }"),

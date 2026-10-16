@@ -10,7 +10,9 @@
 //! same-snapshot pointer loads, whole-offset equality, int32 addition,
 //! unsigned division/remainder, bitwise XOR and same-snapshot int32 loads,
 //! plus uint64 equality with congruence over 64-bit arithmetic, bitwise
-//! operations and same-snapshot 64-bit loads.
+//! operations and same-snapshot 64-bit loads. Mathematical Integer operations,
+//! machine integer unary/binary operators, typed conversions and integer-valued
+//! pure-call arguments use these same classes and indexed parent uses.
 //! Pointer and offset queries are typed separately; the offset fragment only
 //! supports stated equalities, offset addition and int32 scaling congruence. Pointer spelling
 //! helpers serve legacy consumers and are not the general equality interface.
@@ -67,6 +69,10 @@ mod int32_addition_tests;
 mod int32_load_tests;
 #[cfg(test)]
 mod int32_tests;
+#[cfg(test)]
+mod integer_tests;
+#[cfg(test)]
+mod ordinary_expression_tests;
 #[cfg(test)]
 mod scaled_int32_tests;
 #[cfg(test)]
@@ -1371,7 +1377,7 @@ impl EqualityGraph {
         right: &AlgebraicTerm,
     ) -> bool {
         let mut state = self.state.lock().expect("equality graph");
-        self.register_expression_operands(&mut state, [], [left, right]);
+        self.register_expression_operands(&mut state, [], [left, right], []);
         let equal = state.terms.are_algebraic_equal(left, right);
         state.close(Vec::new());
         equal
@@ -1382,7 +1388,7 @@ impl EqualityGraph {
         model: &AlgebraicTerm,
     ) -> Option<AlgebraicTerm> {
         let mut state = self.state.lock().expect("equality graph");
-        self.register_expression_operands(&mut state, [], [model]);
+        self.register_expression_operands(&mut state, [], [model], []);
         let constructor = state.terms.known_algebraic_constructor(model);
         state.close(Vec::new());
         constructor
@@ -1397,7 +1403,7 @@ impl EqualityGraph {
             return false;
         }
         let mut state = self.state.lock().expect("equality graph");
-        self.register_expression_operands(&mut state, [], [left, right]);
+        self.register_expression_operands(&mut state, [], [left, right], []);
         let changed = state.terms.add_algebraic_equality(left, right);
         state.close(Vec::new());
         if changed {
@@ -1407,7 +1413,7 @@ impl EqualityGraph {
     }
 
     /// Query int32 equality, addition and registered same-snapshot load congruence.
-    /// A false answer is unknown. Other scalar operations remain opaque.
+    /// A false answer is unknown. Integer operators use typed operand classes.
     /// The nodes of this graph's merged `int32` classes, with the merge
     /// token they describe; see [`Self::int32_atom_class`].
     pub(in crate::kernel) fn int32_merge_token(&self) -> Int32MergeToken {
@@ -1457,27 +1463,6 @@ impl EqualityGraph {
         if left == right {
             return true;
         }
-        // Folding-only syntax cannot learn an equality from registration.
-        // With no scalar premises, leave unknown expressions opaque instead
-        // of building arithmetic dependencies for an unrelated pointer query.
-        let folding_only_unknown = |term: &Bitvector32Term| {
-            let folding_only = term.as_binary().is_some_and(|(op, _, _)| {
-                op.is_bitvector32()
-                    && !matches!(
-                        op,
-                        crate::kernel::BitvectorBinaryOp::Add
-                            | crate::kernel::BitvectorBinaryOp::UnsignedDivide
-                            | crate::kernel::BitvectorBinaryOp::UnsignedRemainder
-                            | crate::kernel::BitvectorBinaryOp::BitwiseXor
-                    )
-            }) || matches!(term, Bitvector32Term::BitwiseNot(_))
-                || terms::is_word_cast(term);
-            folding_only && term.as_const().is_none()
-        };
-        if !state.has_scalar_inputs && (folding_only_unknown(&left) || folding_only_unknown(&right))
-        {
-            return false;
-        }
         self.register_int32_operands(&mut state, &left, &right);
         let equal = state.terms.are_int32_equal(&left, &right);
         state.close(Vec::new());
@@ -1490,21 +1475,7 @@ impl EqualityGraph {
         left: &Bitvector32Term,
         right: &Bitvector32Term,
     ) {
-        // Existing opaque scalar queries need no traversal or registration.
-        // Only these constructors can contain new pointer-valued arguments.
-        let contains_arguments = |term: &Bitvector32Term| {
-            matches!(
-                term,
-                Bitvector32Term::ClickFunctionApplication { .. }
-                    | Bitvector32Term::Add(..)
-                    | Bitvector32Term::UnsignedDivide(..)
-                    | Bitvector32Term::UnsignedRemainder(..)
-                    | Bitvector32Term::BitwiseXor(..)
-            ) || matches!(term, Bitvector32Term::Variable(variable)
-                if crate::kernel::registered_load_kind_for_variable(variable) == Some(crate::kernel::LoadKind::Bits32)
-                    && crate::kernel::registered_load_bytes_for_variable(variable) == Some(4))
-        };
-        if contains_arguments(left) || contains_arguments(right) {
+        if terms::has_machine_operands(left) || terms::has_machine_operands(right) {
             self.register_machine_operands(state, left, right);
         }
     }
@@ -1518,7 +1489,7 @@ impl EqualityGraph {
         left: &Bitvector32Term,
         right: &Bitvector32Term,
     ) {
-        self.register_expression_operands(state, [left, right], []);
+        self.register_expression_operands(state, [left, right], [], []);
     }
 
     fn register_expression_operands<'a>(
@@ -1526,19 +1497,46 @@ impl EqualityGraph {
         state: &mut EqualityGraphState,
         machine: impl IntoIterator<Item = &'a Bitvector32Term>,
         algebraic: impl IntoIterator<Item = &'a AlgebraicTerm>,
+        integer: impl IntoIterator<Item = &'a crate::kernel::IntegerTerm>,
     ) {
         enum Work<'a> {
             Machine(&'a Bitvector32Term),
             Algebraic(&'a AlgebraicTerm),
+            Integer(&'a crate::kernel::IntegerTerm),
             Value(&'a CValue),
             Argument(&'a PureFunctionArgument),
         }
         let mut pending: Vec<_> = machine.into_iter().map(Work::Machine).collect();
         pending.extend(algebraic.into_iter().map(Work::Algebraic));
+        pending.extend(integer.into_iter().map(Work::Integer));
+        let mut integer_seen = std::collections::BTreeSet::new();
         let mut pointers = Vec::new();
         while let Some(work) = pending.pop() {
             crate::instrumentation::record_deterministic_work(1);
             match work {
+                Work::Integer(term) => {
+                    use crate::kernel::IntegerTerm as I;
+                    if !integer_seen.insert(crate::kernel::SharedIntegerTerm::intern(term.clone()))
+                    {
+                        continue;
+                    }
+                    match term {
+                        I::Machine(value) => pending.push(Work::Machine(value.value())),
+                        I::Negate(value) => pending.push(Work::Integer(value)),
+                        I::Add(a, b)
+                        | I::Subtract(a, b)
+                        | I::Multiply(a, b)
+                        | I::TruncatingQuotient(a, b)
+                        | I::TruncatingRemainder(a, b) => {
+                            pending.extend([Work::Integer(a), Work::Integer(b)])
+                        }
+                        I::PureFunctionApplication(application) => {
+                            pending.extend(application.arguments().iter().map(Work::Argument))
+                        }
+                        // Match/fold bodies have their own binding scope.
+                        _ => {}
+                    }
+                }
                 Work::Algebraic(term) => match &term.node {
                     AlgebraicTermNode::Constructor { fields, .. } => {
                         for field in fields {
@@ -1547,7 +1545,7 @@ impl EqualityGraph {
                                 AlgebraicValue::Algebraic(term) => {
                                     pending.push(Work::Algebraic(term))
                                 }
-                                AlgebraicValue::Integer(_) => {}
+                                AlgebraicValue::Integer(term) => pending.push(Work::Integer(term)),
                             }
                         }
                     }
@@ -1563,26 +1561,40 @@ impl EqualityGraph {
                         pending.push(Work::Value(value))
                     }
                     PureFunctionArgument::Algebraic(term) => pending.push(Work::Algebraic(term)),
-                    PureFunctionArgument::Integer(_) => {}
+                    PureFunctionArgument::Integer(term) => pending.push(Work::Integer(term)),
                 },
                 Work::Value(value) => match value {
                     CValue::Pointer(pointer) => pointers.push(pointer.pointer().clone()),
-                    CValue::Int32(t) | CValue::UInt32(t) | CValue::UInt64(t) => {
-                        pending.push(Work::Machine(t))
-                    }
+                    CValue::Bool(t)
+                    | CValue::Int8(t)
+                    | CValue::UInt8(t)
+                    | CValue::Int16(t)
+                    | CValue::UInt16(t)
+                    | CValue::Int32(t)
+                    | CValue::UInt32(t)
+                    | CValue::Int64(t)
+                    | CValue::UInt64(t)
+                    | CValue::Int128(t)
+                    | CValue::UInt128(t) => pending.push(Work::Machine(t)),
                     _ => {}
                 },
                 Work::Machine(term) => {
                     if let Bitvector32Term::ClickFunctionApplication { arguments, .. } = term {
                         pending.extend(arguments.iter().map(Work::Argument));
-                    } else if let Bitvector32Term::Add(a, b)
-                    | Bitvector32Term::UnsignedDivide(a, b)
-                    | Bitvector32Term::UnsignedRemainder(a, b)
-                    | Bitvector32Term::BitwiseXor(a, b) = term
+                    } else if let Some((op, a, b)) = term.as_binary()
+                        && !op.is_float()
                     {
                         pending.extend([Work::Machine(a), Work::Machine(b)]);
-                    } else if let Some((_, a, b)) = terms::uint64_binary(term) {
-                        pending.extend([Work::Machine(a), Work::Machine(b)]);
+                    } else if let Some((op, value)) = term.as_unary()
+                        && !matches!(
+                            op,
+                            crate::kernel::BitvectorUnaryOp::Float32Negate
+                                | crate::kernel::BitvectorUnaryOp::Float64Negate
+                        )
+                    {
+                        pending.push(Work::Machine(value));
+                    } else if let Bitvector32Term::IntegerToMachine { value, .. } = term {
+                        pending.push(Work::Integer(value));
                     } else if let Some((_, pointer)) =
                         terms::uint64_read(term).or_else(|| terms::int32_read(term))
                     {
@@ -1706,10 +1718,40 @@ impl EqualityGraph {
         changed
     }
 
+    pub(in crate::kernel) fn are_integer_equal(
+        &self,
+        left: &crate::kernel::IntegerTerm,
+        right: &crate::kernel::IntegerTerm,
+    ) -> bool {
+        let mut state = self.state.lock().expect("equality graph");
+        self.register_expression_operands(&mut state, [], [], [left, right]);
+        let equal = state.terms.are_integer_equal(left, right);
+        state.close(Vec::new());
+        equal
+    }
+
+    pub(in crate::kernel) fn add_integer_equality(
+        &mut self,
+        left: &crate::kernel::SharedIntegerTerm,
+        right: &crate::kernel::SharedIntegerTerm,
+    ) -> bool {
+        let mut state = self.state.lock().expect("equality graph");
+        self.register_expression_operands(&mut state, [], [], [left.as_ref(), right.as_ref()]);
+        let changed = state.terms.add_integer_equality(left, right);
+        state.close(Vec::new());
+        if changed {
+            state.remember_input(inputs::Input::Integer(left.clone(), right.clone()));
+        }
+        changed
+    }
+
     fn prepare_condition(&self, state: &mut EqualityGraphState, condition: &ConditionTerm) {
         match condition {
+            crate::kernel::integer_comparison_condition!(a, b) => {
+                self.register_expression_operands(state, [], [], [a.as_ref(), b.as_ref()]);
+            }
             ConditionTerm::AlgebraicEqual(a, b) => {
-                self.register_expression_operands(state, [], [a.as_ref(), b.as_ref()]);
+                self.register_expression_operands(state, [], [a.as_ref(), b.as_ref()], []);
             }
             ConditionTerm::PointerEqual(a, b) => {
                 self.register_logical_read_values(state, [a.as_ref(), b.as_ref()]);
@@ -1731,6 +1773,18 @@ impl EqualityGraph {
         condition: &ConditionTerm,
         value: bool,
     ) -> bool {
+        if let ConditionTerm::IntegerEqual(a, b) = condition
+            && value
+        {
+            self.add_integer_equality(a, b);
+            return true;
+        }
+        if let ConditionTerm::IntegerNotEqual(a, b) = condition
+            && !value
+        {
+            self.add_integer_equality(a, b);
+            return true;
+        }
         // True equations already enter through the typed equality inputs.
         // They need no second truth node or retained support index.
         if value
@@ -1764,6 +1818,7 @@ impl EqualityGraph {
         // nodes. A miss must not register an unrelated condition application.
         if value {
             match condition {
+                ConditionTerm::IntegerEqual(a, b) => return self.are_integer_equal(a, b),
                 ConditionTerm::AlgebraicEqual(a, b) => return self.are_algebraic_equal(a, b),
                 ConditionTerm::Bitvector32Equal(a, b) => return self.are_int32_equal(a, b),
                 ConditionTerm::Bitvector64Equal(a, b) => return self.are_uint64_equal(a, b),
@@ -1771,6 +1826,11 @@ impl EqualityGraph {
                 ConditionTerm::PointerOffsetEqual(a, b) => return self.are_offsets_equal(a, b),
                 _ => {}
             }
+        }
+        if let ConditionTerm::IntegerNotEqual(a, b) = condition
+            && !value
+        {
+            return self.are_integer_equal(a, b);
         }
         let mut state = self.state.lock().expect("equality graph");
         if !state.terms.may_know_condition(condition, value) {
