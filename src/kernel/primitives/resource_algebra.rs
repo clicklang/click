@@ -3464,6 +3464,29 @@ impl ResourceContext {
             })
     }
 
+    /// The live owned support a projected view occurrence was published
+    /// from, when `occurrence` is such a projection. A projection carries no
+    /// loan of its own: its authority is the exact owned occurrence it is
+    /// indexed under, so a read it covers is a read of that owner's memory.
+    /// Answered by the occurrence's own entry, without scanning the frame.
+    pub(crate) fn owned_projection_support(
+        &self,
+        occurrence: ResourceOccurrenceId,
+    ) -> Option<(ResourceOccurrenceId, &CResourceFact)> {
+        let entry = self.storage.entry_by_occurrence.get(&occurrence)?;
+        let support = self.storage.supported_by.get(entry)?;
+        let support_occurrence = *self.storage.support_occurrence_by_projection.get(entry)?;
+        (support.is_own()
+            && self
+                .storage
+                .entry_by_occurrence
+                .get(&support_occurrence)
+                .is_some_and(|support_entry| {
+                    self.storage.facts.get(support_entry) == Some(support)
+                }))
+        .then_some((support_occurrence, support))
+    }
+
     /// Validate every projection indexed under one exact support occurrence.
     /// The reverse index bounds this check by the affected support rather than
     /// scanning unrelated resources in the frame.
