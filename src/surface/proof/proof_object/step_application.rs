@@ -2212,10 +2212,31 @@ impl<'a> Proof<'a> {
                 } => SignedArithmeticNode::EqualityFromBounds {
                     lower: *lower,
                     upper: *upper,
-                    result: claim(
-                        &lower_prop(self, result, "signed_int32 equality")?,
-                        "signed_int32 equality",
-                    )?,
+                    result: {
+                        // The equality its lower bound states. The written
+                        // result may spell it over opaque atoms, or over the
+                        // atoms of its machine operations, as a sum of
+                        // affine bounds is spelled.
+                        let proposition = lower_prop(self, result, "signed_int32 equality")?;
+                        let opaque = claim(&proposition, "signed_int32 equality")?;
+                        let mut expected =
+                            nodes.get(*lower).and_then(&node_claim).ok_or_else(|| {
+                                self.step_error(
+                                    "signed_int32 equality bound must be an earlier affine node",
+                                )
+                            })?;
+                        expected.relation = SignedArithmeticRelation::Equal;
+                        if (crate::kernel::proof::signed_arithmetic::charge_claim_pair_work(
+                            &opaque, &expected,
+                        ) && opaque == expected)
+                            || crate::surface::decomposed_signed_claim(&proposition)
+                                .is_some_and(|decomposed| decomposed == expected)
+                        {
+                            expected
+                        } else {
+                            opaque
+                        }
+                    },
                 },
                 SignedArithmeticStep::StrictFromDisequal {
                     bound,

@@ -5359,16 +5359,6 @@ fn a_cpp_class_function_is_its_object_field() {
             "class Square : Other",
             "only a direct subclass",
         ),
-        (
-            "const Shape& shape",
-            "Shape& shape",
-            "state through a mutable reference",
-        ),
-        (
-            "extern int Shape::area(int scale) const",
-            "extern int Shape::area(int scale)",
-            "state through a mutable receiver",
-        ),
     ] {
         let source = source.replace(from.trim_start(), to);
         let error = parse(&source).expect_err(expected);

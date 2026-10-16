@@ -140,6 +140,18 @@ arguments do not decide, or an end that is not a constant, is a miss. See
 and
 [`auto_does_not_read_an_unforced_condition.md`](https://github.com/clicklang/click/blob/master/mdtests/auto_does_not_read_an_unforced_condition.md).
 
+Signed `int32` arithmetic substitutes equalities: `x == 5` bounds `x` on
+both sides, so it proves `x - 1` defined and closes `x - 1 == 4`; a listed
+`a == b + 1` with `b` bounded converts to `a - b == 1` and bounds `a`, and
+`c == a + 1` converts after it. A bound substitutes through such equalities
+in turn to the listed bounds on what remains. `simp` gathers a goal
+variable's equalities beside its bounds when the bounds alone decide
+nothing, so a callee's `ensures o.size == old(o.size) + delta`, about a
+resource field or a cell, supports arithmetic across calls (see
+[`arithmetic_using_chains_equalities.md`](https://github.com/clicklang/click/blob/master/mdtests/arithmetic_using_chains_equalities.md)
+and
+[`abstract_resource_field_call_facts_support_arithmetic.md`](https://github.com/clicklang/click/blob/master/mdtests/abstract_resource_field_call_facts_support_arithmetic.md)).
+
 For a signed `int32` bound, `simp` can use an indexed equality of a goal
 operand to a literal even when that call-derived equality has no recorded
 source spelling. It first proves the equality in a checked nested `have`
