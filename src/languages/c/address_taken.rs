@@ -301,7 +301,7 @@ fn child_expressions<'a>(
         }
         | C0Expression::Not(expression)
         | C0Expression::BitwiseNot(expression)
-        | C0Expression::Load(expression)
+        | C0Expression::Load(expression, _)
         | C0Expression::SequentialRead {
             target: expression, ..
         }

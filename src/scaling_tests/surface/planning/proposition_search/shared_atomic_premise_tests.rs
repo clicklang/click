@@ -4,6 +4,43 @@
 
 use super::*;
 
+#[test]
+fn simp_retains_recorded_equality_edges_instead_of_connected_aliases() {
+    let mut samples = Vec::new();
+    for count in [8, 16, 32, 64, 128] {
+        let term = |index| Bitvector32Term::Variable(Variable(9_320_000 + index));
+        let equality = |left, right| {
+            Proposition::ConditionIs(
+                ConditionTerm::Bitvector32Equal(Box::new(term(left)), Box::new(term(right))),
+                true,
+            )
+        };
+        let first = equality(0, 1);
+        let second = equality(1, 2);
+        let goal = equality(0, 2);
+        let mut context = PureFactContext::new()
+            .assume_proposition(first.clone())
+            .assume_proposition(second.clone());
+        for index in 2..count {
+            context = context.assume_proposition(equality(1, 10 + index as u64));
+        }
+        let (derivation, work) = crate::instrumentation::measure_deterministic_work(|| {
+            context.derive_simp_proposition(&goal).unwrap()
+        });
+        let premises = derivation.context_premises();
+        assert_eq!(premises.len(), 2, "count {count}");
+        assert!(premises.contains(&first) && premises.contains(&second));
+        assert!(derivation.check(&context));
+        for missing in [&first, &second] {
+            assert!(!derivation.check(&context.without_exact_fact(missing)));
+        }
+        samples.push((count, work));
+    }
+    for pair in samples.windows(2) {
+        assert!(pair[1].1 <= pair[0].1.saturating_mul(3), "{samples:?}");
+    }
+}
+
 // Connected pointer aliases used to make simp spell every historical
 // premise even though the checked equality uses just these two links.
 #[test]
@@ -57,5 +94,52 @@ fn simp_reduces_connected_pointer_premises_before_spelling() {
             pair[1].1 <= pair[0].1.saturating_mul(3),
             "bounded premise reduction grew too quickly: {samples:?}"
         );
+    }
+}
+
+#[test]
+fn simp_retains_recorded_load_address_equality_premises() {
+    let mut samples = Vec::new();
+    for count in [8u64, 16, 32, 64, 128] {
+        let term = |index: u64| Bitvector32Term::Variable(Variable(9_330_000 + index));
+        let memory = intern_c_memory(CMemory::new().with_block("indexed", 8));
+        let load = |offset| {
+            crate::kernel::canonical_term(&Bitvector32Term::MemoryLoad(
+                memory.clone(),
+                Box::new(Pointer {
+                    block: "indexed".into(),
+                    offset,
+                }),
+                LoadKind::Bits32,
+            ))
+        };
+        let indexed = load(PointerOffsetTerm::Int32Scaled {
+            value: Box::new(term(0)),
+            byte_width: 4,
+        });
+        let first = load(PointerOffsetTerm::Constant(0));
+        let equality = |left, right| {
+            Proposition::ConditionIs(
+                ConditionTerm::Bitvector32Equal(Box::new(left), Box::new(right)),
+                true,
+            )
+        };
+        let required = equality(term(0), Bitvector32Term::Constant(0));
+        let mut context = PureFactContext::new().assume_proposition(required.clone());
+        for index in 1..count {
+            context = context.assume_proposition(equality(term(0), term(index)));
+        }
+        let goal = equality(indexed, first);
+        let (derivation, work) = crate::instrumentation::measure_deterministic_work(|| {
+            context.derive_simp_proposition(&goal).unwrap()
+        });
+        assert!(derivation.load_address_congruence_paths().is_some());
+        assert_eq!(derivation.context_premises(), vec![required.clone()]);
+        assert!(derivation.check(&context));
+        assert!(!derivation.check(&context.without_exact_fact(&required)));
+        samples.push((count, work));
+    }
+    for pair in samples.windows(2) {
+        assert!(pair[1].1 <= pair[0].1.saturating_mul(3), "{samples:?}");
     }
 }

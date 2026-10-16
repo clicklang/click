@@ -21,7 +21,7 @@ fn pending_status_resolution_scales_with_explicit_intervening_work() {
         let mut pending = PendingThreadCreate::new(
             status.clone(),
             Pointer::null(),
-            CValue::UInt64(0.into()),
+            CValue::UInt64(Bitvector32Term::UInt64Constant(0)),
             &base,
             &base,
         );

@@ -131,7 +131,6 @@ Specification and proof:
 Architecture:
 
 - [One source-tactic interpreter for every proof context](one-tactic-interpreter.md)
-- [One kernel statement executor for both execution judgments](one-statement-executor.md)
 - [One name resolver and one printer for surface syntax](one-name-resolver-and-printer.md)
 - [One integer term type that carries its width](one-integer-term-type.md)
 

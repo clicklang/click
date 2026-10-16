@@ -491,8 +491,27 @@ overlap. The composite definition supplies the checked `contains` and
 
 In `src/kernel/`:
 
-- `Bitvector32Term`: symbolic 32-bit integer terms, including arithmetic,
-  `If`, `RangeFold`, and memory loads.
+- `Bitvector32Term`: the one term arena for every C integer and float value,
+  including arithmetic, `If`, `RangeFold`, and memory loads. Despite its
+  name it holds every width, and records none: the width is implied by the
+  operator family (`Add` is 32-bit, `Int64Add` and `UInt64Add` 64-bit), the
+  constant's shape (`Constant`, `Int64Constant`, `UInt64Constant`, a 128-bit
+  `MachineIntegerConstant`), a load's kind, or a cast's destination. Values of
+  8 and 16 bits and `_Bool` ride in the 32-bit carrier, and floats in the
+  carrier of their bit width. `term_width.rs` infers that carrier width.
+  Debug builds refuse a condition assumed into a fact context, a value an
+  expression evaluates to, or a value stored to memory whose widths disagree:
+  an operand of the wrong width, arms of different widths, a `CValue` tag
+  whose term has another width, or a comparison whose operands are not the
+  width it names. The one exception is a load equation (a store fact or a
+  load variable's defining fact), written with the 32-bit equality at any
+  width, whose sides need only agree with each other. A variable records no
+  width either, so each fact context remembers the width its facts use each
+  variable at, and debug builds also refuse a condition that uses one at
+  another width. The scope is the context, not the run: variable numbers are
+  assigned per function, and two facts only combine within one context.
+  Making the width part of the term is the open issue
+  `issues/one-integer-term-type.md`.
 - `PointerOffsetTerm`: pointer-offset expressions.
 - `ConditionTerm`: proof-level truth-valued conditions such as signed and
   unsigned order, equality, overflow, pointer-offset equality, and typed
@@ -1049,6 +1068,17 @@ allocation. The reserved ranges are:
 | `1 << 42 .. 1 << 43` | universal-introduction witnesses (`UNIVERSAL_WITNESS_VARIABLE_BASE`) |
 | `1 << 43 .. 1 << 44` | spec fold binders (`spec_fold_bound_variable`, base plus hash) |
 
+An execution allocates in its range (`KERNEL_VARIABLE_BASE` up to
+`KERNEL_VARIABLE_CEILING`) from its budget's counter and must not hand out a
+number its inputs already name. It reserves the variables of the state, the
+statement or call and the environment by collecting them. Its fact context's
+variables are reserved by a bound instead: `PureFactContext` keeps an upper
+bound on the execution-range variables its facts mention
+(`ExecutionVariableCeiling`), and the counter skips past it. Filing a fact
+reads only its syntax; a fact that names a memory snapshot is queued and taken
+whole, the snapshot's variables included, the first time an execution asks,
+so asking at every call costs what was filed since the last call.
+
 Direct contract `forall` certification now introduces its witness through
 `Variable::allocate_fresh`. This kernel allocator uses a private identity
 origin and a process-wide counter, so `Variable(n)` cannot forge its result
@@ -1230,6 +1260,28 @@ summaries. A verification return branch means “if this computation returns,
 this is an allowed post-state”; it is not evidence that the return is
 reachable. Verified contract and loop rules cannot be converted into concrete
 execution or termination theorems.
+
+One driver steps statements and functions for both judgments
+(`execute_statement_paths` in `src/kernel/eval/statements.rs`, and
+`execute_function_body_paths` and `execute_function_paths` in
+`src/kernel/functions.rs`). The judgment is its parameter
+(`StatementJudgment`), and every statement a judgment contains, in a sequence,
+a branch, a loop body, a switch case or a handler, is stepped under the same
+judgment. The judgments differ in exactly two named branches:
+
+- a loop: under verification, an environment's verified loop rule, or the
+  loop's own invariant, effect and termination checks, step it as its checked
+  abstraction (`abstract_loop_paths`); execution, and verification of a loop
+  with neither, unroll it;
+- a function applied as a whole: under verification, a function that declares
+  a measure has its recursion anchor installed before its body runs.
+
+Everything else is shared: each statement is charged one step, every
+statement passes the same pending-thread-create gate, and a sequence whose
+first statement leaves abnormally carries that statement's facts and loan
+evidence out with it. `execute_c_statement_paths` and
+`execute_c_statement_verification_paths` remain only as names for the two
+judgments.
 
 `VerificationDiverges` is an internal outcome marker accepted only inside the
 verification propositions. It records a checked path with no finite successor,

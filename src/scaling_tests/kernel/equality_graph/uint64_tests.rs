@@ -45,11 +45,19 @@ fn range_values_and_constants_resolve_long_wide_equality_chains() {
         let mut facts = PureFactContext::new();
         let ((), work) = crate::instrumentation::measure_deterministic_work(|| {
             for i in 0..size {
-                facts = facts.clone().assume_condition(ConditionTerm::uint64_equal(var(i), var(i + 1)), true);
+                facts = facts
+                    .clone()
+                    .assume_condition(ConditionTerm::uint64_equal(var(i), var(i + 1)), true);
             }
-            facts = facts.clone().assume_condition(ConditionTerm::uint64_equal(var(size), Bitvector32Term::UInt64Constant(37)), true);
+            facts = facts.clone().assume_condition(
+                ConditionTerm::uint64_equal(var(size), Bitvector32Term::UInt64Constant(37)),
+                true,
+            );
             assert_eq!(facts.wide_constant_from_equalities(&var(0)), Some(37));
-            assert!(facts.uint64_values_equal_for_range_resolution(&var(0), &Bitvector32Term::UInt64Constant(37)));
+            assert!(facts.uint64_values_equal_for_range_resolution(
+                &var(0),
+                &Bitvector32Term::UInt64Constant(37)
+            ));
         });
         assert!(work < 300 * size as usize, "size={size}, work={work}");
     }

@@ -241,6 +241,35 @@ pub(crate) fn finite_forall_goal_instances(
 }
 
 impl PureFactContext {
+    /// Narrow a produced equality's selection to its recorded sources,
+    /// without proving it again. The evidence remains valid by construction:
+    /// the supported rule families name every context fact their check uses.
+    pub(crate) fn retained_atomic_equality_context(
+        &self,
+        evidence: &AtomicPropositionDerivationEvidence,
+    ) -> Option<(Self, u64)> {
+        let premises = evidence.equality_premises()?;
+        if premises.len() >= self.condition_facts.len() + self.prop_facts.len() {
+            return None;
+        }
+        let _timing = crate::instrumentation::OperationTiming::new(
+            "kernel",
+            "atomic evidence",
+            "retained equality premises",
+        );
+        let mut conditions = Vec::new();
+        let mut propositions = Vec::new();
+        for premise in premises {
+            match premise {
+                Proposition::ConditionIs(condition, value) => conditions.push((condition, value)),
+                other => propositions.push(other),
+            }
+        }
+        let restricted = self.restricted_to_facts(&conditions, &propositions);
+        let id = PureFactContextIdScope::enter(&restricted).id;
+        Some((restricted, id))
+    }
+
     #[cfg(test)]
     pub(crate) fn reset_context_inconsistency_full_scans() {
         CONTEXT_INCONSISTENCY_FULL_SCANS.with(|scans| scans.set(0));
@@ -2673,7 +2702,7 @@ impl PureFactContext {
 
     /// Guided instantiation candidates for one universal int32 body against a
     /// target condition: bound-variable subterm matches inside the body's
-    /// conclusion plus the variables of the target condition itself.
+    /// conclusion, with scalar candidates retained for intermediate order bounds.
     pub(crate) fn guided_forall_condition_candidates(
         var: Variable,
         body: &Proposition,
@@ -2888,9 +2917,15 @@ impl PureFactContext {
             }
         }
         let mut candidates = BTreeSet::new();
-        let mut variables = BTreeSet::new();
-        collect_condition_bitvector_variables(condition, &mut variables);
-        candidates.extend(variables.into_iter().map(Bitvector32Term::Variable));
+        // Order reasoning also uses intermediate bounds whose other endpoint
+        // need not match the requested condition. Keep its scalar candidates;
+        // equality transport must match a bound occurrence instead of trying
+        // every unrelated scalar as an array index.
+        if !matches!(condition, ConditionTerm::Bitvector32Equal(..)) {
+            let mut variables = BTreeSet::new();
+            collect_condition_bitvector_variables(condition, &mut variables);
+            candidates.extend(variables.into_iter().map(Bitvector32Term::Variable));
+        }
         let conclusion = match body {
             Proposition::Implies(_, conclusion) => conclusion.as_ref(),
             conclusion => conclusion,
@@ -4206,4 +4241,62 @@ pub(crate) fn atomic_derivation_is_memoized(
             .get(&atomic_derivation_memo_key(premises_id, for_simp))
             .is_some_and(|entries| entries.contains_key(proposition))
     })
+}
+
+#[cfg(test)]
+mod guided_condition_instantiation_tests {
+    use super::*;
+
+    fn variable(id: u64) -> Bitvector32Term {
+        Bitvector32Term::Variable(Variable(id))
+    }
+
+    fn array_read(index: Bitvector32Term, kind: LoadKind) -> Bitvector32Term {
+        Bitvector32Term::MemoryLoad(
+            crate::kernel::intern_c_memory(CMemory::new()),
+            Box::new(Pointer {
+                block: "quantified-cells".into(),
+                offset: PointerOffsetTerm::scale_int32(index, 4),
+            }),
+            kind,
+        )
+    }
+
+    fn body() -> Proposition {
+        Proposition::ConditionIs(
+            ConditionTerm::equal(array_read(variable(998_100), LoadKind::Bits32), 0u32.into()),
+            true,
+        )
+    }
+
+    #[test]
+    fn guided_condition_instantiation_keeps_matching_cell_index() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let target =
+            ConditionTerm::equal(array_read(variable(998_101), LoadKind::Bits32), 0u32.into());
+        assert_eq!(
+            PureFactContext::guided_forall_condition_candidates(
+                Variable(998_100),
+                &body(),
+                &target
+            ),
+            BTreeSet::from([variable(998_101)])
+        );
+        let wrong_kind =
+            ConditionTerm::equal(array_read(variable(998_101), LoadKind::UInt8), 0u32.into());
+        assert!(
+            PureFactContext::guided_forall_condition_candidates(
+                Variable(998_100),
+                &body(),
+                &wrong_kind
+            )
+            .is_empty()
+        );
+    }
+
+    mod scaling_tests {
+        include!(
+            "../../scaling_tests/kernel/assumptions/proposition_reasoning/guided_condition_instantiation_tests.rs"
+        );
+    }
 }

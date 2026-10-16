@@ -578,19 +578,78 @@ fn modeled_pthread_create_status_selects_the_checked_c_outcome() {
         };
         delayed = next.clone();
     }
+    let status_branch = c_if(
+        c_not_equal(c_variable("saved"), c_int32_literal(0)),
+        c_skip(),
+        c_skip(),
+    );
     let branches = execute_c_statement_paths(
         &delayed,
-        &c_if(
-            c_not_equal(c_variable("saved"), c_int32_literal(0)),
-            c_skip(),
-            c_skip(),
-        ),
+        &status_branch,
         &PureFactContext::new(),
         CExecutionContext::apply_verified_rules(&environment),
         &mut ExecutionBudget::new(),
     )
     .unwrap();
     assert_eq!(branches.len(), 2, "{branches:?}");
+    // The verification judgment steps the branch with the same driver, so
+    // it passes the same pending-create gate and resolves the create at the
+    // branch, rather than reading the state with the create still pending.
+    let mut variables = KernelVariableGenerator::fresh_for(0, BTreeSet::new());
+    let verified = crate::kernel::loops::execute_c_statement_verification_paths(
+        &delayed,
+        &status_branch,
+        &PureFactContext::new(),
+        CExecutionContext::apply_verified_rules(&environment),
+        &mut ExecutionBudget::new(),
+        &mut variables,
+    )
+    .unwrap();
+    assert_eq!(
+        verified
+            .iter()
+            .map(|path| &path.outcome)
+            .collect::<Vec<_>>(),
+        branches
+            .iter()
+            .map(|path| &path.outcome)
+            .collect::<Vec<_>>(),
+        "both judgments step the status branch alike"
+    );
+    // A branch that reads memory while the create is pending is refused at
+    // the gate under both judgments. Verification once stepped a branch with
+    // its own driver, which evaluated the condition before any gate.
+    let memory_branch = c_if(
+        c_not_equal(
+            c_load(CExpression::Value(CValue::pointer(pointer(1)))),
+            c_int32_literal(0),
+        ),
+        c_skip(),
+        c_skip(),
+    );
+    let refused = |paths: &[CStatementExecutionPath]| {
+        paths.len() == 1 && matches!(paths[0].outcome, CStatementOutcome::RuntimeError(_))
+    };
+    let executes = execute_c_statement_paths(
+        &delayed,
+        &memory_branch,
+        &PureFactContext::new(),
+        CExecutionContext::apply_verified_rules(&environment),
+        &mut ExecutionBudget::new(),
+    )
+    .unwrap();
+    assert!(refused(&executes), "{executes:?}");
+    let mut variables = KernelVariableGenerator::fresh_for(0, BTreeSet::new());
+    let verifies = crate::kernel::loops::execute_c_statement_verification_paths(
+        &delayed,
+        &memory_branch,
+        &PureFactContext::new(),
+        CExecutionContext::apply_verified_rules(&environment),
+        &mut ExecutionBudget::new(),
+        &mut variables,
+    )
+    .unwrap();
+    assert!(refused(&verifies), "{verifies:?}");
     let mut success = None;
     let mut failure = None;
     for branch in branches {

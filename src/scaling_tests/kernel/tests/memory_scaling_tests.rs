@@ -1232,9 +1232,10 @@ fn a_call_rechecks_cached_members_after_ownership_withdrawal_or_width_change() {
     memory.prepare_parameter_store_partition(&ResourceContext::new());
     let assumptions = PureFactContext::new();
     let writes = [external_range(3_000_000, 0, 16)];
-    let changed = memory
-        .clone()
-        .store(pointer.clone(), CValue::Int64(9.into()));
+    let changed = memory.clone().store(
+        pointer.clone(),
+        CValue::Int64(Bitvector32Term::Int64Constant(9)),
+    );
     for (before, residual, retained) in
         [
             (memory.clone(), full.clone(), true),

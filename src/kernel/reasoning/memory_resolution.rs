@@ -4089,7 +4089,10 @@ pub(in crate::kernel) fn access_byte_overlap(
     right_bytes: u32,
     assumptions: &PureFactContext,
 ) -> AccessByteOverlap {
-    if let Some(overlap) = exact_access_byte_overlap(left, left_bytes, right, right_bytes) {
+    if let Some(overlap) = assumptions
+        .numeric_access_byte_overlap(left, left_bytes, right, right_bytes)
+        .or_else(|| exact_access_byte_overlap(left, left_bytes, right, right_bytes))
+    {
         return overlap;
     }
     if one_element_gap_separates_bytes(left, left_bytes, right, right_bytes, assumptions) {
