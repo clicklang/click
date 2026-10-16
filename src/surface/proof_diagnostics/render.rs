@@ -381,6 +381,26 @@ impl SnapshotLabels {
         }
         let edge = match memory.diagnostic_construction() {
             Some(CMemoryConstructionKind::Transition(edge)) => edge.clone(),
+            // A read's projection holds that read's value as its one source
+            // does, so the program event that produced it is the source's.
+            // The source is an earlier memory, so this ends.
+            Some(CMemoryConstructionKind::Transform {
+                operation: "project memory for pointer read",
+                sources,
+                ..
+            }) if sources.len() == 1 => {
+                let source = sources[0].clone();
+                let described = match self
+                    .source_memory_context(&source)
+                    .map(|(point, _)| point.to_owned())
+                {
+                    Some(point) if point == "current" => "this state".into(),
+                    Some(point) if point == ENTRY_POINT => "function entry".into(),
+                    Some(point) => format!("`{point}`"),
+                    None => self.describe_state(&source),
+                };
+                return format!("{described}, projected for one read");
+            }
             Some(CMemoryConstructionKind::Transform { .. }) => {
                 return "a memory derived from another state for one read".into();
             }

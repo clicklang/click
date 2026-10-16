@@ -903,9 +903,14 @@ fn apply_frontier_source_tactic<'a>(
                 ))
             })?
     } else if let ProofTactic::Transport { source, target } = &indexed.tactic {
-        match proof.try_execution_fact_transport(source, target)? {
-            Some(transported) => transported,
-            None => proof.apply_planned_fact_transport(source, target, indexed.index)?,
+        match proof.try_execution_fact_transport_or_refusal(source, target)? {
+            Ok(transported) => transported,
+            Err(source_refusal) => proof.apply_planned_fact_transport(
+                source,
+                target,
+                indexed.index,
+                source_refusal.as_ref(),
+            )?,
         }
     } else if let ProofTactic::Have(have) = &indexed.tactic {
         let nested = proof.begin_source_have(have)?;
