@@ -1726,6 +1726,56 @@ impl PureFactContext {
         Some(bases)
     }
 
+    /// Whether known 64-bit equalities connect the address of an object
+    /// `left` points into with the address of one `right` points into. A C
+    /// pointer comparison states such an equality and not a pointer
+    /// equality, and memory is addressed, so a store through one may write
+    /// the other's bytes: a cached cell of the other object is not kept by
+    /// separation once they are connected. The walk follows only the
+    /// equalities filed under the objects it reaches.
+    pub(in crate::kernel) fn address_equalities_connect(
+        &self,
+        left: &Pointer,
+        right: &Pointer,
+    ) -> bool {
+        if self.wide_pointer_alias_endpoints_by_object.is_empty() {
+            return false;
+        }
+        let target = parameter_alias_bucket(right);
+        let mut pending = vec![parameter_alias_bucket(left)];
+        let mut seen = BTreeSet::new();
+        let mut visited_terms = BTreeSet::new();
+        while let Some(bucket) = pending.pop() {
+            if !seen.insert(bucket.clone()) {
+                continue;
+            }
+            crate::instrumentation::record_deterministic_work(1);
+            let mut terms: Vec<_> = self
+                .wide_pointer_alias_endpoints_by_object
+                .get(&bucket)
+                .into_iter()
+                .flat_map(|endpoints| endpoints.iter().cloned())
+                .collect();
+            while let Some(term) = terms.pop() {
+                if !visited_terms.insert(term.clone()) {
+                    continue;
+                }
+                crate::instrumentation::record_deterministic_work(1);
+                if let Bitvector32Term::PointerAddress(address) = &term {
+                    let reached = parameter_alias_bucket(address);
+                    if reached == target {
+                        return true;
+                    }
+                    pending.push(reached);
+                }
+                if let Some(neighbors) = self.bitvector64_equality_facts.get(&term) {
+                    terms.extend(neighbors.keys().cloned());
+                }
+            }
+        }
+        false
+    }
+
     pub(in crate::kernel) fn parameter_partition_cell_base(
         &self,
         resources: &ResourceContext,

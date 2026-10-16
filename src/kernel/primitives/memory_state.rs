@@ -5891,6 +5891,12 @@ impl CMemory {
                     CachedValueFate::Forgotten
                 };
             }
+            // Another object whose address a known address equality ties to
+            // the written one may share the written bytes.
+            if assumptions.address_equalities_connect(&normalized_pointer, &normalized_cell_pointer)
+            {
+                return CachedValueFate::Forgotten;
+            }
             if assumptions.access_owned_apart_from_store(
                 &owned_footprint,
                 &normalized_pointer,
@@ -5971,6 +5977,10 @@ impl CMemory {
                 } else {
                     CachedValueFate::Forgotten
                 };
+            }
+            if assumptions.address_equalities_connect(&normalized_pointer, &normalized_cell_pointer)
+            {
+                return CachedValueFate::Forgotten;
             }
             if assumptions.access_owned_apart_from_store(
                 &owned_footprint,
