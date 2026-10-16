@@ -147,71 +147,103 @@ fn plan_affine_with_checked_premises(
     let (left, right, _) = comparison_terms(goal)?;
     let compound_goal = !is_affine_planning_atom(left) || !is_affine_planning_atom(right);
     let mut evidence = Planner::new(premises, claims, int32_range_fallback);
-    // Goal operations must be defined from the original facts too. A
-    // converted affine premise is not its own definedness evidence.
-    let (expected, goal_evidence) = if compound_goal {
+    // A goal operation is defined from the original facts where they bound
+    // it. A converted affine premise is not its own definedness evidence,
+    // but once converted from the original facts it may bound the goal's
+    // operands, as `a == b + 1` with `b` bounded bounds `a` in `a - 1`; that
+    // evidence is built after the conversions below.
+    let goal_intervals = |planner: &mut Planner<'_>| -> Option<(Option<usize>, Option<usize>)> {
         let (left, right) = affine_operation_terms(goal)?;
         let left = match left {
-            Some(term) => Some(evidence.build_interval_for_affine(term)?),
+            Some(term) => Some(planner.build_interval_for_affine(term)?),
             None => None,
         };
         let right = match right {
-            Some(term) => Some(evidence.build_interval_for_affine(term)?),
+            Some(term) => Some(planner.build_interval_for_affine(term)?),
             None => None,
         };
-        (decomposed_signed_claim(goal)?, Some((left, right)))
+        Some((left, right))
+    };
+    let (expected, goal_evidence) = if compound_goal {
+        (
+            decomposed_signed_claim(goal)?,
+            Some(goal_intervals(&mut evidence)),
+        )
     } else {
         (expected.clone(), None)
     };
-    let mut decomposed = Vec::with_capacity(claims.len());
-    let mut converted = false;
-    let mut converted_nodes = Vec::new();
-    for (index, claim) in claims {
-        charge_work(1)?;
-        let conversion = (|| {
-            let proposition = &premises[*index];
-            let (left, right) = affine_operation_terms(proposition)?;
-            let result = decomposed_signed_claim(proposition)?;
-            let left_evidence = match left {
-                Some(term) => Some(evidence.build_interval_for_affine(term)?),
-                None => None,
-            };
-            let right_evidence = match right {
-                Some(term) => Some(evidence.build_interval_for_affine(term)?),
-                None => None,
-            };
-            let left_evidence = left_evidence.or(right_evidence)?;
-            let right_evidence = right_evidence.unwrap_or(left_evidence);
-            let source = evidence.premise(*index, claim)?;
-            let node = evidence.push(SignedArithmeticNode::AffinePremise {
-                source,
-                left_evidence,
-                right_evidence,
-                result: result.clone(),
-            })?;
-            Some((result, node))
-        })();
-        if let Some((claim, node)) = conversion {
-            decomposed.push((*index, claim));
-            // Only the subsequent affine phase reads this replacement.
-            // Interval construction still uses the original premise nodes.
-            converted_nodes.push((*index, node));
-            converted = true;
-        } else {
-            decomposed.push((*index, claim.clone()));
+    // Each pass converts the premises whose operations the facts so far
+    // bound: the original ones, and those converted by earlier passes, so
+    // `c == a + 1` converts once `a == b + 1` has bounded `a`. A premise's
+    // own conversion never reads itself converted. At most one pass per
+    // premise, and none after a pass that converts nothing.
+    let mut decomposed = claims.to_vec();
+    let mut converted = vec![false; claims.len()];
+    let (mut nodes, mut intervals, mut premise_cache) =
+        (evidence.nodes, evidence.intervals, evidence.premise_cache);
+    for _ in 0..claims.len() {
+        let mut planner = Planner::new(premises, &decomposed, int32_range_fallback);
+        planner.nodes = nodes;
+        planner.intervals = intervals;
+        planner.premise_cache = premise_cache;
+        let mut conversions = Vec::new();
+        for (position, (index, claim)) in claims.iter().enumerate() {
+            charge_work(1)?;
+            if converted[position] {
+                continue;
+            }
+            let conversion = (|| {
+                let proposition = &premises[*index];
+                let (left, right) = affine_operation_terms(proposition)?;
+                let result = decomposed_signed_claim(proposition)?;
+                let left_evidence = match left {
+                    Some(term) => Some(planner.build_interval_for_affine(term)?),
+                    None => None,
+                };
+                let right_evidence = match right {
+                    Some(term) => Some(planner.build_interval_for_affine(term)?),
+                    None => None,
+                };
+                let left_evidence = left_evidence.or(right_evidence)?;
+                let right_evidence = right_evidence.unwrap_or(left_evidence);
+                let source = planner.premise(*index, claim)?;
+                let node = planner.push(SignedArithmeticNode::AffinePremise {
+                    source,
+                    left_evidence,
+                    right_evidence,
+                    result: result.clone(),
+                })?;
+                Some((result, node))
+            })();
+            if let Some((result, node)) = conversion {
+                conversions.push((position, *index, result, node));
+            }
+        }
+        (nodes, intervals, premise_cache) =
+            (planner.nodes, planner.intervals, planner.premise_cache);
+        if conversions.is_empty() {
+            break;
+        }
+        // The next pass, and the affine phase, read these conversions.
+        for (position, index, result, node) in conversions {
+            decomposed[position] = (index, result);
+            converted[position] = true;
+            premise_cache.insert(index, node);
         }
     }
-    if !converted {
+    if !converted.contains(&true) {
         return None;
     }
     let mut planner = Planner::new(premises, &decomposed, int32_range_fallback);
-    planner.nodes = evidence.nodes;
-    planner.intervals = evidence.intervals;
-    planner.premise_cache = evidence.premise_cache;
-    for (index, node) in converted_nodes {
-        planner.premise_cache.insert(index, node);
-    }
-    let source = planner.affine_claim(&expected, allow_weakening)?;
+    planner.nodes = nodes;
+    planner.intervals = intervals;
+    planner.premise_cache = premise_cache;
+    let goal_evidence = match goal_evidence {
+        Some(Some(evidence)) => Some(evidence),
+        Some(None) => Some(goal_intervals(&mut planner)?),
+        None => None,
+    };
+    let source = planner.affine_claim_or_bounds(&expected, allow_weakening)?;
     let conclusion = match goal_evidence {
         Some((left, right)) => affine_conclusion(&mut planner, goal, source, left, right)?,
         None => source,
@@ -227,25 +259,7 @@ fn plan_affine_from_selected_claims(
     int32_range_fallback: bool,
 ) -> Option<SignedArithmeticCertificate> {
     let mut planner = Planner::new(premises, claims, int32_range_fallback);
-    let conclusion = planner
-        .affine_claim(expected, allow_weakening)
-        .or_else(|| {
-            if expected.relation != SignedArithmeticRelation::Equal {
-                return None;
-            }
-            // Equality needs both signed directions. Plan each from the same
-            // explicitly selected facts, retaining equality substitutions as
-            // checked arithmetic nodes rather than importing a solver verdict.
-            let lower =
-                planner.affine_claim(&equality_direction(expected, false), allow_weakening)?;
-            let upper =
-                planner.affine_claim(&equality_direction(expected, true), allow_weakening)?;
-            planner.push(SignedArithmeticNode::EqualityFromBounds {
-                lower,
-                upper,
-                result: expected.clone(),
-            })
-        })?;
+    let conclusion = planner.affine_claim_or_bounds(expected, allow_weakening)?;
     Some(certificate(planner.nodes, conclusion))
 }
 
@@ -1027,8 +1041,19 @@ fn definedness_parts_from_proposition(
 #[derive(Clone, Copy)]
 struct BoundCandidate {
     position: usize,
-    premise: usize,
     bound: i64,
+    /// For an equality premise, the direction of the `<=` it gives this
+    /// bound (`EqualityToLessEqual`'s `reverse`); `None` for a `<=` premise.
+    equality: Option<bool>,
+}
+
+/// Where a derived bound's other atom gets its own bound.
+#[derive(Clone, Copy)]
+enum OtherBound {
+    Premise(BoundCandidate),
+    /// A node already proving it, itself derived.
+    Derived(usize),
+    Range,
 }
 
 #[derive(Clone, Copy)]
@@ -1054,6 +1079,9 @@ struct Planner<'a> {
     bound_index: Option<HashMap<SignedArithmeticAtom, BoundCandidates>>,
     term_hash_cache: HashMap<usize, u64>,
     premise_cache: HashMap<usize, usize>,
+    /// The atoms whose bounds `derived_bound` is deriving, outermost first:
+    /// a bound reached through another derived bound never revisits one.
+    deriving: Vec<SignedArithmeticAtom>,
     /// Whether `derived_bound` may use an atom's own `int32` range where no
     /// premise bounds it (the planner's second pass only).
     int32_range_fallback: bool,
@@ -1077,6 +1105,7 @@ impl<'a> Planner<'a> {
             bound_index: None,
             term_hash_cache: HashMap::new(),
             premise_cache: HashMap::new(),
+            deriving: Vec::new(),
         }
     }
 
@@ -1116,16 +1145,70 @@ impl<'a> Planner<'a> {
         Some(node)
     }
 
+    /// The node proving an indexed bound's `<=` claim, and that claim: the
+    /// premise itself, or for an equality the premise read in the
+    /// candidate's direction.
+    fn bound_source(
+        &mut self,
+        candidate: BoundCandidate,
+    ) -> Option<(usize, SignedArithmeticClaim)> {
+        let (index, claim) = self.claims.get(candidate.position)?;
+        let (index, claim) = (*index, claim.clone());
+        let node = self.premise(index, &claim)?;
+        let Some(reverse) = candidate.equality else {
+            return Some((node, claim));
+        };
+        let direction = equality_direction(&claim, reverse);
+        let node = self.push(SignedArithmeticNode::EqualityToLessEqual {
+            source: node,
+            reverse,
+            result: direction.clone(),
+        })?;
+        Some((node, direction))
+    }
+
+    /// [`Self::affine_claim`], or for an equality its two signed
+    /// directions, each planned from the same selected facts, retaining
+    /// equality substitutions as checked arithmetic nodes rather than
+    /// importing a solver verdict.
+    fn affine_claim_or_bounds(
+        &mut self,
+        expected: &SignedArithmeticClaim,
+        allow_weakening: bool,
+    ) -> Option<usize> {
+        self.affine_claim(expected, allow_weakening).or_else(|| {
+            if expected.relation != SignedArithmeticRelation::Equal {
+                return None;
+            }
+            let lower = self.affine_claim(&equality_direction(expected, false), allow_weakening)?;
+            let upper = self.affine_claim(&equality_direction(expected, true), allow_weakening)?;
+            self.push(SignedArithmeticNode::EqualityFromBounds {
+                lower,
+                upper,
+                result: expected.clone(),
+            })
+        })
+    }
+
     fn affine_claim(
         &mut self,
         target: &SignedArithmeticClaim,
         allow_weakening: bool,
     ) -> Option<usize> {
+        if let Some(node) = self.affine_claim_direct(target)? {
+            return Some(node);
+        }
+        self.affine_claim_combined(target, allow_weakening)
+    }
+
+    /// `target` from one premise: the premise itself, a positive multiple
+    /// of it, or a weakening of it. `Some(None)` when no premise states it.
+    fn affine_claim_direct(&mut self, target: &SignedArithmeticClaim) -> Option<Option<usize>> {
         for (index, claim) in self.claims {
             charge_work(1)?;
             charge_claim_comparison(claim)?;
             if claim == target {
-                return self.premise(*index, claim);
+                return self.premise(*index, claim).map(Some);
             }
             if claim.relation == target.relation
                 && let Some(coefficient) = scale_factor(claim, target)
@@ -1136,13 +1219,15 @@ impl<'a> Planner<'a> {
             {
                 let source = self.premise(*index, claim)?;
                 if coefficient == BigInt::one() {
-                    return Some(source);
+                    return Some(Some(source));
                 }
-                return self.push(SignedArithmeticNode::Scale {
-                    source,
-                    coefficient,
-                    result: target.clone(),
-                });
+                return self
+                    .push(SignedArithmeticNode::Scale {
+                        source,
+                        coefficient,
+                        result: target.clone(),
+                    })
+                    .map(Some);
             }
             if claim.relation == SignedArithmeticRelation::LessEqual
                 && target.relation == SignedArithmeticRelation::LessEqual
@@ -1152,7 +1237,7 @@ impl<'a> Planner<'a> {
                 let source = self.premise(*index, claim)?;
                 let weakening = &target.constant - &claim.constant;
                 if weakening.is_zero() {
-                    return Some(source);
+                    return Some(Some(source));
                 }
                 let trivial = self.push(SignedArithmeticNode::Trivial {
                     result: SignedArithmeticClaim {
@@ -1162,13 +1247,26 @@ impl<'a> Planner<'a> {
                         constant: weakening,
                     },
                 })?;
-                return self.push(SignedArithmeticNode::Add {
-                    left: source,
-                    right: trivial,
-                    result: target.clone(),
-                });
+                return self
+                    .push(SignedArithmeticNode::Add {
+                        left: source,
+                        right: trivial,
+                        result: target.clone(),
+                    })
+                    .map(Some);
             }
         }
+        Some(None)
+    }
+
+    /// `target` from several premises: pair sums, a strict bound beside a
+    /// disequality, substitution through equalities, and for an explicit
+    /// premise list the sum of every listed bound.
+    fn affine_claim_combined(
+        &mut self,
+        target: &SignedArithmeticClaim,
+        allow_weakening: bool,
+    ) -> Option<usize> {
         // Index claims by a bounded structural fingerprint, then verify only
         // hash-collision candidates with the exact affine operation.  This
         // preserves the useful five-premise bound case without a quadratic
@@ -1235,6 +1333,9 @@ impl<'a> Planner<'a> {
         if let Some(node) = self.affine_pair_through_equality(target) {
             return Some(node);
         }
+        if let Some(node) = self.affine_chain_through_equalities(target) {
+            return Some(node);
+        }
         if allow_weakening {
             return self.affine_sum_of_listed_claims(target);
         }
@@ -1286,6 +1387,144 @@ impl<'a> Planner<'a> {
                 relation: SignedArithmeticRelation::LessEqual,
                 terms: BTreeMap::new(),
                 constant: &target.constant - &sum.constant,
+            },
+        })?;
+        self.push(SignedArithmeticNode::Add {
+            left: node,
+            right: trivial,
+            result: target.clone(),
+        })
+    }
+
+    /// `target` by substituting equal atoms in turn: an equality naming an
+    /// atom of the remaining goal, in the direction whose coefficient there
+    /// matches the goal's, is subtracted from it, until one premise states
+    /// what remains. `a == d + 1`, `d == c + 1` and `c <= 500` give `a <=
+    /// 502` as `(a - d <= 1) + ((d - c <= 1) + (c <= 500))`, each equality
+    /// read as `<=` by the checked `EqualityToLessEqual` step. Each equality
+    /// is used once, the first that names a remaining atom, so the chain is
+    /// at most one step per premise and each step one pass over them.
+    fn affine_chain_through_equalities(&mut self, target: &SignedArithmeticClaim) -> Option<usize> {
+        if target.relation != SignedArithmeticRelation::LessEqual {
+            return None;
+        }
+        let mut used = vec![false; self.claims.len()];
+        // Each substituted equality's direction and the goal it leaves.
+        let mut steps: Vec<(usize, bool, SignedArithmeticClaim)> = Vec::new();
+        let mut remaining = target.clone();
+        let base = loop {
+            if steps.len() == self.claims.len() {
+                return None;
+            }
+            if !steps.is_empty() {
+                if let Some(node) = self.affine_claim_direct(&remaining)? {
+                    break node;
+                }
+                if let Some(node) = self.affine_claim_from_atom_bounds(&remaining) {
+                    break node;
+                }
+            }
+            let mut next = None;
+            for (position, (_, claim)) in self.claims.iter().enumerate() {
+                charge_work(1)?;
+                if used[position] || claim.relation != SignedArithmeticRelation::Equal {
+                    continue;
+                }
+                let found = claim.terms.iter().find_map(|(atom, coefficient)| {
+                    let wanted = remaining.terms.get(atom)?;
+                    let reverse = if coefficient == wanted {
+                        false
+                    } else if -coefficient == *wanted {
+                        true
+                    } else {
+                        return None;
+                    };
+                    Some(reverse)
+                });
+                if let Some(reverse) = found {
+                    next = Some((position, reverse));
+                    break;
+                }
+            }
+            let (position, reverse) = next?;
+            used[position] = true;
+            let direction = equality_direction(&self.claims[position].1, reverse);
+            remaining = subtract_affine_claims(&remaining, &direction)?;
+            steps.push((position, reverse, remaining.clone()));
+        };
+        // Fold back up: each step adds its equality direction to the proof
+        // of the goal it left, giving the goal before it.
+        let mut node = base;
+        let mut goals = std::iter::once(target.clone())
+            .chain(steps.iter().map(|(_, _, left)| left.clone()))
+            .collect::<Vec<_>>();
+        goals.pop();
+        for ((position, reverse, _), goal) in steps.into_iter().zip(goals).rev() {
+            let direction = self.bound_source(BoundCandidate {
+                position,
+                bound: 0,
+                equality: Some(reverse),
+            })?;
+            node = self.push(SignedArithmeticNode::Add {
+                left: direction.0,
+                right: node,
+                result: goal,
+            })?;
+        }
+        Some(node)
+    }
+
+    /// `target` as the sum of one indexed bound per atom, on the side its
+    /// coefficient needs (an upper bound for `+1`, a lower one for `-1`),
+    /// weakened to the target's constant: `0 <= b <= 500` and `0 <= d <=
+    /// 100` give `b + d <= 1000`. One index lookup per atom.
+    fn affine_claim_from_atom_bounds(&mut self, target: &SignedArithmeticClaim) -> Option<usize> {
+        if target.relation != SignedArithmeticRelation::LessEqual || target.terms.is_empty() {
+            return None;
+        }
+        self.ensure_bound_index()?;
+        let mut candidates = Vec::with_capacity(target.terms.len());
+        for (atom, coefficient) in &target.terms {
+            charge_work(1)?;
+            let bounds = self.bound_index.as_ref()?.get(atom)?;
+            let candidate = if coefficient == &BigInt::one() {
+                bounds.upper?
+            } else if coefficient == &BigInt::from(-1) {
+                bounds.lower?
+            } else {
+                return None;
+            };
+            candidates.push(candidate);
+        }
+        let mut sum: Option<(usize, SignedArithmeticClaim)> = None;
+        for candidate in candidates {
+            let (node, claim) = self.bound_source(candidate)?;
+            sum = Some(match sum {
+                None => (node, claim),
+                Some((left, total)) => {
+                    let result = add_affine_claims(&total, &claim)?;
+                    let node = self.push(SignedArithmeticNode::Add {
+                        left,
+                        right: node,
+                        result: result.clone(),
+                    })?;
+                    (node, result)
+                }
+            });
+        }
+        let (node, total) = sum?;
+        if total == *target {
+            return Some(node);
+        }
+        if total.terms != target.terms || total.constant < target.constant {
+            return None;
+        }
+        let trivial = self.push(SignedArithmeticNode::Trivial {
+            result: SignedArithmeticClaim {
+                carrier: target.carrier,
+                relation: SignedArithmeticRelation::LessEqual,
+                terms: BTreeMap::new(),
+                constant: &target.constant - &total.constant,
             },
         })?;
         self.push(SignedArithmeticNode::Add {
@@ -1612,41 +1851,54 @@ impl<'a> Planner<'a> {
             return Some(());
         }
         let mut index: HashMap<SignedArithmeticAtom, BoundCandidates> = HashMap::new();
-        for (position, (premise, claim)) in self.claims.iter().enumerate() {
+        for (position, (_, claim)) in self.claims.iter().enumerate() {
             charge_work(1)?;
-            if claim.relation != SignedArithmeticRelation::LessEqual || claim.terms.len() != 1 {
+            if claim.terms.len() != 1 {
                 continue;
             }
-            let (atom, coefficient) = claim.terms.iter().next()?;
-            charge_work(atom.work().saturating_add(coefficient.bits() as usize + 1))?;
-            let Some(bound) = (if coefficient == &BigInt::from(-1) {
-                claim.constant.to_i64().map(|value| value.max(SIGNED_MIN))
-            } else if coefficient == &BigInt::one() {
-                (-&claim.constant)
-                    .to_i64()
-                    .map(|value| value.min(SIGNED_MAX))
-            } else {
-                None
-            }) else {
-                continue;
+            // An equality of one atom bounds it on both sides: each side is
+            // the premise read as `<=` in one direction.
+            let directions: &[Option<bool>] = match claim.relation {
+                SignedArithmeticRelation::LessEqual => &[None],
+                SignedArithmeticRelation::Equal => &[Some(false), Some(true)],
+                _ => continue,
             };
-            let entry = index.entry(atom.clone()).or_default();
-            if coefficient == &BigInt::from(-1)
-                && entry.lower.is_none_or(|candidate| bound > candidate.bound)
-            {
-                entry.lower = Some(BoundCandidate {
-                    position,
-                    premise: *premise,
-                    bound,
-                });
-            } else if coefficient == &BigInt::one()
-                && entry.upper.is_none_or(|candidate| bound < candidate.bound)
-            {
-                entry.upper = Some(BoundCandidate {
-                    position,
-                    premise: *premise,
-                    bound,
-                });
+            for &equality in directions {
+                let claim = &match equality {
+                    Some(reverse) => equality_direction(claim, reverse),
+                    None => claim.clone(),
+                };
+                let (atom, coefficient) = claim.terms.iter().next()?;
+                charge_work(atom.work().saturating_add(coefficient.bits() as usize + 1))?;
+                let Some(bound) = (if coefficient == &BigInt::from(-1) {
+                    claim.constant.to_i64().map(|value| value.max(SIGNED_MIN))
+                } else if coefficient == &BigInt::one() {
+                    (-&claim.constant)
+                        .to_i64()
+                        .map(|value| value.min(SIGNED_MAX))
+                } else {
+                    None
+                }) else {
+                    continue;
+                };
+                let entry = index.entry(atom.clone()).or_default();
+                if coefficient == &BigInt::from(-1)
+                    && entry.lower.is_none_or(|candidate| bound > candidate.bound)
+                {
+                    entry.lower = Some(BoundCandidate {
+                        position,
+                        bound,
+                        equality,
+                    });
+                } else if coefficient == &BigInt::one()
+                    && entry.upper.is_none_or(|candidate| bound < candidate.bound)
+                {
+                    entry.upper = Some(BoundCandidate {
+                        position,
+                        bound,
+                        equality,
+                    });
+                }
             }
         }
         self.bound_index = Some(index);
@@ -1679,37 +1931,17 @@ impl<'a> Planner<'a> {
         let atom = SignedArithmeticAtom::from_term(term)?;
         self.ensure_bound_index()?;
         let candidates = self.bound_index.as_ref()?.get(&atom);
-        let direct = |candidate: Option<BoundCandidate>,
-                      claims: &[(usize, SignedArithmeticClaim)]| {
-            candidate.and_then(|candidate| {
-                claims
-                    .get(candidate.position)
-                    .map(|(_, claim)| (candidate.premise, claim.clone(), candidate.bound))
-            })
-        };
-        let direct_lower = direct(
-            candidates.and_then(|candidates| candidates.lower),
-            self.claims,
-        );
-        let direct_upper = direct(
-            candidates.and_then(|candidates| candidates.upper),
-            self.claims,
-        );
+        let direct_lower = candidates.and_then(|candidates| candidates.lower);
+        let direct_upper = candidates.and_then(|candidates| candidates.upper);
         // A bound the premises state for this atom alone is one premise
         // node; one they state through another atom is that premise added
         // to the other atom's own bound, which is still one affine node.
         let lower = match direct_lower {
-            Some((index, claim, bound)) => {
-                let node = self.premise(index, &claim)?;
-                Some((node, bound))
-            }
+            Some(candidate) => Some((self.bound_source(candidate)?.0, candidate.bound)),
             None => self.derived_bound(&atom, BoundSide::Lower)?,
         };
         let upper = match direct_upper {
-            Some((index, claim, bound)) => {
-                let node = self.premise(index, &claim)?;
-                Some((node, bound))
-            }
+            Some(candidate) => Some((self.bound_source(candidate)?.0, candidate.bound)),
             None => self.derived_bound(&atom, BoundSide::Upper)?,
         };
         if lower.is_none() && upper.is_none() {
@@ -1827,109 +2059,179 @@ impl<'a> Planner<'a> {
     /// only when the work budget is spent. The scan reads each claim once
     /// and looks the other atom's bound up in the index, so it is linear in
     /// the premises; it never chains through a third atom.
+    /// A bound on `atom` alone from a two-atom premise and a bound on its
+    /// other atom: that atom's own premise bound or, failing one, a bound
+    /// derived the same way, so `c == m + 1`, `m == b + 1` and `b <= 500`
+    /// bound `c`. Each derivation visits an atom once, at most one per
+    /// premise deep.
     fn derived_bound(
         &mut self,
         atom: &SignedArithmeticAtom,
         side: BoundSide,
     ) -> Option<Option<(usize, i64)>> {
-        let (own_coefficient, other_coefficient) = match side {
-            BoundSide::Lower => (BigInt::from(-1), BigInt::one()),
-            BoundSide::Upper => (BigInt::one(), BigInt::from(-1)),
+        if self.deriving.contains(atom) || self.deriving.len() >= self.claims.len() {
+            return Some(None);
+        }
+        self.deriving.push(atom.clone());
+        let bound = self.derived_bound_through(atom, side);
+        self.deriving.pop();
+        bound
+    }
+
+    fn derived_bound_through(
+        &mut self,
+        atom: &SignedArithmeticAtom,
+        side: BoundSide,
+    ) -> Option<Option<(usize, i64)>> {
+        let own_coefficient = match side {
+            BoundSide::Lower => BigInt::from(-1),
+            BoundSide::Upper => BigInt::one(),
         };
         let mut best: Option<(
-            usize,
+            BoundCandidate,
             SignedArithmeticClaim,
-            Option<usize>,
-            SignedArithmeticClaim,
+            Vec<(OtherBound, SignedArithmeticClaim)>,
             i64,
         )> = None;
-        for (premise, claim) in self.claims {
+        for (position, (_, claim)) in self.claims.iter().enumerate() {
             charge_work(1)?;
-            if claim.relation != SignedArithmeticRelation::LessEqual || claim.terms.len() != 2 {
+            if claim.terms.len() < 2 || !claim.terms.contains_key(atom) {
                 continue;
             }
-            let Some(own) = claim.terms.get(atom) else {
-                continue;
+            // An equality relates its atoms on both sides: each is the
+            // premise read as `<=` in one direction.
+            let directions: &[Option<bool>] = match claim.relation {
+                SignedArithmeticRelation::LessEqual => &[None],
+                SignedArithmeticRelation::Equal => &[Some(false), Some(true)],
+                _ => continue,
             };
-            if own != &own_coefficient {
-                continue;
-            }
-            let Some((other, coefficient)) = claim.terms.iter().find(|(term, _)| *term != atom)
-            else {
-                continue;
-            };
-            if coefficient != &other_coefficient {
-                continue;
-            }
-            let candidate =
-                self.bound_index
-                    .as_ref()?
-                    .get(other)
-                    .and_then(|candidates| match side {
-                        BoundSide::Lower => candidates.lower,
-                        BoundSide::Upper => candidates.upper,
-                    });
-            let (other_premise, other_claim) = match candidate {
-                Some(candidate) => {
-                    let Some((other_premise, other_claim)) = self.claims.get(candidate.position)
-                    else {
-                        continue;
-                    };
-                    (Some(*other_premise), other_claim.clone())
+            'direction: for &equality in directions {
+                let claim = &match equality {
+                    Some(reverse) => equality_direction(claim, reverse),
+                    None => claim.clone(),
+                };
+                let source = BoundCandidate {
+                    position,
+                    bound: 0,
+                    equality,
+                };
+                if claim.terms.get(atom) != Some(&own_coefficient) {
+                    continue;
                 }
-                None if !self.int32_range_fallback => continue,
-                None => {
-                    // The other atom's own int32 range is on the side that
-                    // cancels it: an upper bound on `atom` adds the other
-                    // atom's upper bound, a lower one its lower bound.
-                    let Some(range) = crate::kernel::proof::signed_arithmetic::int32_range_bound(
-                        other.clone(),
-                        matches!(side, BoundSide::Upper),
-                    ) else {
+                // Each other atom is cancelled by its bound on the side its
+                // coefficient needs: an upper one for `-1`, a lower one for
+                // `+1`.
+                let mut others = Vec::new();
+                let mut sum = claim.clone();
+                for (other, coefficient) in &claim.terms {
+                    if other == atom {
                         continue;
+                    }
+                    let other_side = if coefficient == &BigInt::from(-1) {
+                        BoundSide::Upper
+                    } else if coefficient == &BigInt::one() {
+                        BoundSide::Lower
+                    } else {
+                        continue 'direction;
                     };
-                    (None, range)
+                    let Some(other_bound) = self.other_bound(other, other_side)? else {
+                        continue 'direction;
+                    };
+                    let Some(next) = add_claim(&sum, &other_bound.1) else {
+                        continue 'direction;
+                    };
+                    sum = next;
+                    others.push(other_bound);
                 }
-            };
-            let Some(sum) = add_claim(claim, &other_claim) else {
-                continue;
-            };
-            // The sum names `atom` alone, with the coefficient of this side.
-            if sum.terms.len() != 1 || sum.terms.get(atom) != Some(&own_coefficient) {
-                continue;
-            }
-            let Some(bound) = (match side {
-                BoundSide::Lower => sum.constant.to_i64().map(|value| value.max(SIGNED_MIN)),
-                BoundSide::Upper => (-&sum.constant).to_i64().map(|value| value.min(SIGNED_MAX)),
-            }) else {
-                continue;
-            };
-            let better = match (&best, side) {
-                (None, _) => true,
-                (Some((_, _, _, _, current)), BoundSide::Lower) => bound > *current,
-                (Some((_, _, _, _, current)), BoundSide::Upper) => bound < *current,
-            };
-            if better {
-                best = Some((*premise, claim.clone(), other_premise, other_claim, bound));
+                // The sum names `atom` alone, with the coefficient of this side.
+                if sum.terms.len() != 1 || sum.terms.get(atom) != Some(&own_coefficient) {
+                    continue;
+                }
+                let Some(bound) = (match side {
+                    BoundSide::Lower => sum.constant.to_i64().map(|value| value.max(SIGNED_MIN)),
+                    BoundSide::Upper => {
+                        (-&sum.constant).to_i64().map(|value| value.min(SIGNED_MAX))
+                    }
+                }) else {
+                    continue;
+                };
+                let better = match (&best, side) {
+                    (None, _) => true,
+                    (Some((_, _, _, current)), BoundSide::Lower) => bound > *current,
+                    (Some((_, _, _, current)), BoundSide::Upper) => bound < *current,
+                };
+                if better {
+                    best = Some((source, claim.clone(), others, bound));
+                }
             }
         }
-        let Some((premise, claim, other_premise, other_claim, bound)) = best else {
+        let Some((source, claim, others, bound)) = best else {
             return Some(None);
         };
-        let left = self.premise(premise, &claim)?;
-        let right = match other_premise {
-            Some(other_premise) => self.premise(other_premise, &other_claim)?,
-            None => self.push(SignedArithmeticNode::Int32Range {
-                result: other_claim.clone(),
-            })?,
-        };
-        let result = add_claim(&claim, &other_claim)?;
-        let node = self.push(SignedArithmeticNode::Add {
-            left,
-            right,
-            result,
-        })?;
+        let mut node = self.bound_source(source)?.0;
+        let mut sum = claim;
+        for (other, other_claim) in others {
+            let right = match other {
+                OtherBound::Premise(candidate) => self.bound_source(candidate)?.0,
+                OtherBound::Derived(node) => node,
+                OtherBound::Range => self.push(SignedArithmeticNode::Int32Range {
+                    result: other_claim.clone(),
+                })?,
+            };
+            sum = add_claim(&sum, &other_claim)?;
+            node = self.push(SignedArithmeticNode::Add {
+                left: node,
+                right,
+                result: sum.clone(),
+            })?;
+        }
         Some(Some((node, bound)))
+    }
+
+    /// A bound on `other` alone on `side`: its own premise bound, one
+    /// derived through another premise, or, in the fallback pass, its int32
+    /// range; with the `<=` claim it states.
+    fn other_bound(
+        &mut self,
+        other: &SignedArithmeticAtom,
+        side: BoundSide,
+    ) -> Option<Option<(OtherBound, SignedArithmeticClaim)>> {
+        let candidate = self
+            .bound_index
+            .as_ref()?
+            .get(other)
+            .and_then(|candidates| match side {
+                BoundSide::Lower => candidates.lower,
+                BoundSide::Upper => candidates.upper,
+            });
+        if let Some(candidate) = candidate {
+            let Some((_, claim)) = self.claims.get(candidate.position) else {
+                return Some(None);
+            };
+            let claim = match candidate.equality {
+                Some(reverse) => equality_direction(claim, reverse),
+                None => claim.clone(),
+            };
+            return Some(Some((OtherBound::Premise(candidate), claim)));
+        }
+        if let Some((node, _)) = self.derived_bound(other, side)? {
+            // The derived node's own `<=` claim on `other`.
+            let Some(SignedArithmeticNode::Add { result, .. }) = self.nodes.get(node) else {
+                return Some(None);
+            };
+            return Some(Some((OtherBound::Derived(node), result.clone())));
+        }
+        if !self.int32_range_fallback {
+            return Some(None);
+        }
+        // The other atom's own int32 range is on the side that cancels it.
+        Some(
+            crate::kernel::proof::signed_arithmetic::int32_range_bound(
+                other.clone(),
+                matches!(side, BoundSide::Upper),
+            )
+            .map(|range| (OtherBound::Range, range)),
+        )
     }
 
     fn is_safe_interval_atom(term: &Bitvector32Term) -> bool {
@@ -2637,6 +2939,126 @@ mod tests {
             overflow[1] = le(var(1), constant(i32::MAX));
             assert!(plan.check(&goal, &overflow).is_err());
         }
+    }
+
+    // An equality of one atom bounds it on both sides, so `x == 5` gives the
+    // interval that proves `x - 1` defined and closes goals over it.
+    #[test]
+    fn equality_premise_bounds_its_atom_on_both_sides() {
+        let eq = |left: Bitvector32Term, right: Bitvector32Term| {
+            proposition(
+                ConditionTerm::Bitvector32Equal(Box::new(left), Box::new(right)),
+                true,
+            )
+        };
+        let decrement = Bitvector32Term::Subtract(Box::new(var(1)), Box::new(constant(1)));
+        let premises = [eq(var(1), constant(5))];
+        for goal in [
+            eq(decrement.clone(), constant(4)),
+            le(decrement.clone(), constant(4)),
+            ge(decrement.clone(), constant(4)),
+        ] {
+            let plan = plan_signed_arithmetic_certificate(&goal, &premises).expect("plan");
+            plan.check(&goal, &premises).unwrap();
+        }
+        assert!(
+            plan_signed_arithmetic_certificate(&eq(decrement, constant(5)), &premises).is_none()
+        );
+    }
+
+    fn equal(left: Bitvector32Term, right: Bitvector32Term) -> Proposition {
+        proposition(
+            ConditionTerm::Bitvector32Equal(Box::new(left), Box::new(right)),
+            true,
+        )
+    }
+
+    fn plus(left: Bitvector32Term, right: Bitvector32Term) -> Bitvector32Term {
+        Bitvector32Term::Add(Box::new(left), Box::new(right))
+    }
+
+    fn checked_plan(goal: &Proposition, premises: &[Proposition]) {
+        for plan in [
+            plan_signed_arithmetic_certificate(goal, premises).expect("automatic plan"),
+            plan_signed_arithmetic_certificate_with_weakening(goal, premises)
+                .expect("explicit plan"),
+        ] {
+            plan.check(goal, premises).unwrap();
+        }
+    }
+
+    // A call's `a == b + 1`, with `b` bounded, bounds `a`: the goal's own
+    // operation `a - 1` is defined from the converted premise.
+    #[test]
+    fn converted_equality_bounds_a_goal_operation() {
+        let premises = [
+            equal(var(1), plus(var(2), constant(1))),
+            le(constant(0), var(2)),
+            le(var(2), constant(500)),
+        ];
+        checked_plan(
+            &equal(
+                Bitvector32Term::Subtract(Box::new(var(1)), Box::new(constant(1))),
+                var(2),
+            ),
+            &premises,
+        );
+    }
+
+    // Two calls: `m == b + 1` converts first and bounds `m`, so `c == m + 1`
+    // converts next; the goal's operands are bounded two equalities deep.
+    #[test]
+    fn equalities_convert_in_turn_and_chain() {
+        let premises = [
+            equal(var(3), plus(var(1), constant(1))),
+            equal(var(1), plus(var(2), constant(1))),
+            le(constant(0), var(2)),
+            le(var(2), constant(500)),
+        ];
+        checked_plan(&equal(var(3), plus(var(2), constant(2))), &premises);
+        checked_plan(
+            &equal(
+                Bitvector32Term::Subtract(Box::new(var(3)), Box::new(constant(2))),
+                var(2),
+            ),
+            &premises,
+        );
+        assert!(
+            plan_signed_arithmetic_certificate(
+                &equal(var(3), plus(var(2), constant(3))),
+                &premises
+            )
+            .is_none()
+        );
+    }
+
+    // A bound through two equalities, and through one equality whose other
+    // side is a sum of bounded atoms.
+    #[test]
+    fn bounds_substitute_through_equalities() {
+        let premises = [
+            equal(var(3), plus(var(1), constant(1))),
+            equal(var(1), plus(var(2), constant(1))),
+            le(constant(0), var(2)),
+            le(var(2), constant(500)),
+            le(constant(0), var(1)),
+            le(var(1), constant(1000)),
+        ];
+        checked_plan(&le(var(3), constant(502)), &premises);
+        assert!(
+            plan_signed_arithmetic_certificate(&le(var(3), constant(501)), &premises).is_none()
+        );
+        let premises = [
+            equal(var(3), plus(var(1), var(2))),
+            le(constant(0), var(1)),
+            le(var(1), constant(500)),
+            le(constant(0), var(2)),
+            le(var(2), constant(100)),
+        ];
+        checked_plan(&le(var(3), constant(1000)), &premises);
+        assert!(
+            plan_signed_arithmetic_certificate(&le(var(3), constant(599)), &premises).is_none()
+        );
     }
 
     fn var(index: u64) -> Bitvector32Term {
