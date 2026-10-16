@@ -9418,3 +9418,72 @@ mod kept_range_identity_tests {
         assert!(empty.memory_input_facts().is_empty());
     }
 }
+
+#[cfg(test)]
+mod address_equality_store_tests {
+    use super::*;
+
+    fn at(block: impl Into<PointerBlock>, offset: PointerOffsetTerm) -> Pointer {
+        Pointer {
+            block: block.into(),
+            offset,
+        }
+    }
+
+    fn int32(value: u32) -> CValue {
+        CValue::Int32(Bitvector32Term::Constant(value))
+    }
+
+    /// A C comparison of the written object's address with another
+    /// object's ties the two by address only. The other object's cells may
+    /// share the written bytes and are forgotten; the written object's own
+    /// cells are still decided by their offsets, which the equality does not
+    /// change. Before, the walk returned the written object too, and a store
+    /// to `p->rb_left` dropped `p->rb_right` in `rb_erase_color`.
+    #[test]
+    fn an_address_equality_forgets_the_other_object_and_keeps_the_written_ones() {
+        // A symbolic block may lie at any address, so its store visits every
+        // block's cells, as a node reached through a pointer does.
+        let written_block = PointerBlock::Symbolic(Variable(925_002));
+        let other_block = "local:other";
+        let index = Bitvector32Term::Variable(Variable(925_001));
+        let written = at(
+            written_block.clone(),
+            PointerOffsetTerm::scale_int32(index.clone(), 4),
+        );
+        let neighbor = at(written_block.clone(), PointerOffsetTerm::Constant(0));
+        let other = at(other_block, PointerOffsetTerm::Constant(0));
+        let memory = CMemory::new()
+            .with_block(written_block.clone(), 8)
+            .with_block(other_block, 4)
+            .store(neighbor.clone(), int32(5))
+            .store(other.clone(), int32(6));
+        let placed = PureFactContext::new().assume_condition(
+            ConditionTerm::equal(index, Bitvector32Term::Constant(1)),
+            true,
+        );
+        let control = memory
+            .clone()
+            .without_possible_aliasing_cells(&written, 4, &placed);
+        assert_eq!(control.known_value(&neighbor), Some(int32(5)));
+
+        let compared = placed.assume_condition(
+            ConditionTerm::uint64_equal(
+                Bitvector32Term::pointer_address(neighbor.clone()),
+                Bitvector32Term::pointer_address(other.clone()),
+            ),
+            true,
+        );
+        let stored = memory.without_possible_aliasing_cells(&written, 4, &compared);
+        assert_eq!(
+            stored.known_value(&neighbor),
+            Some(int32(5)),
+            "the written object's own cell is decided by its offset"
+        );
+        assert_eq!(
+            stored.known_value(&other),
+            None,
+            "a cell of an object tied by address equality may share the written bytes"
+        );
+    }
+}

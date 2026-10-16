@@ -37,6 +37,11 @@ through it. So a C comparison `p == q` between pointers states
 `address(p) == address(q)`, and a pointer equality, which carries read and
 write permission, never follows from it
 (`mdtests/address_equality_does_not_grant_access_to_a_one_past_pointer.md`).
+Memory is addressed, so a store through `p` forgets the cached cells of every
+other object such equalities tie to `p`'s. The cells of `p`'s own object are
+still decided by their offsets, which an address equality does not change
+(`an_address_equality_forgets_the_other_object_and_keeps_the_written_ones` in
+`src/kernel/primitives/memory_state.rs`).
 A comparison with the null pointer constant is exact. An address is zero
 exactly when its pointer is null, and an address compared with an integer
 that has no pointer origin is not decided either way. Integer coincidence therefore never manufactures an
