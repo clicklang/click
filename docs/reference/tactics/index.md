@@ -89,7 +89,10 @@ when the default misses or when a proof must not search.
   followed by the frontier effects and a shared snapshot/value legend. The
   checked propositions may simplify to `true` or `false`; those are the
   terms the checker compared. With `--trace-proof`, a rejected written
-  transport retains the preceding checked path without admitting its target.
+  transport retains the preceding checked path without admitting its target. A planning
+  budget failure retains that prefix too; if source and target were already
+  lowered, it prints their checked identities and snapshot legend without
+  running more proof checks.
 - **Case splits: `if`, `cases`, `match`, `branch`.** `if P` splits on any
   proposition; `cases` uses a disjunction that is already a fact; `match`
   splits on constructors; `branch` follows a C `if`.

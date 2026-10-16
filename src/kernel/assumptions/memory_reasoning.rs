@@ -1887,6 +1887,14 @@ impl PureFactContext {
         pointer: &Pointer,
         bytes: u32,
     ) -> Option<&'a CMemoryRange> {
+        // Checked pointer classes select owned memory for ordinary accesses.
+        // A kept call frame must use that same selection: one-hop aliases
+        // and a block-local fallback miss transitive model-pointer aliases
+        // crossing symbolic blocks. Coverage remains the selected access's
+        // whole byte extent; views never grant kept ownership.
+        if let Some(range) = ranges.kept_range_via_address_class(pointer, bytes, self) {
+            return Some(range);
+        }
         let spellings = additive_base_spellings(pointer);
         let mut spelled = Vec::new();
         let mut seen = BTreeSet::new();

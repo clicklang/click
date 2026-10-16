@@ -732,3 +732,59 @@ fn stated_pointer_separation_lookup_visits_only_its_anchor_index() {
         );
     }
 }
+
+#[test]
+fn kept_frame_class_lookup_adds_only_selected_physical_coverage() {
+    let pointer = |id| Pointer {
+        block: PointerBlock::Symbolic(Variable(id)),
+        offset: PointerOffsetTerm::Constant(0),
+    };
+    let queried = pointer(951_001);
+    let middle = pointer(951_002);
+    let owner = pointer(951_003);
+    let assumptions = PureFactContext::new()
+        .assume_condition(
+            ConditionTerm::pointer_equal(queried.clone(), middle.clone()),
+            true,
+        )
+        .assume_condition(ConditionTerm::pointer_equal(middle, owner.clone()), true);
+    let fact = |base| {
+        CResourceFact::own_memory(CMemoryRange::new_with_element_width(
+            base,
+            0u32.into(),
+            1u32.into(),
+            8,
+        ))
+    };
+    for size in [16u64, 64, 256, 1024] {
+        let mut ranges = ResourceContext::new_with_equalities(&assumptions)
+            .unchecked_with_fact(fact(owner.clone()));
+        for index in 0..size {
+            ranges = ranges.unchecked_with_fact(fact(pointer(952_000 + index)));
+        }
+        let ((ordinary, ordinary_work), ordinary_maps) =
+            crate::persistent::measure_persistent_work(|| {
+                crate::instrumentation::measure_deterministic_work(|| {
+                    ranges
+                        .memory_write_range(&queried, 8, &assumptions)
+                        .is_some_and(|range| assumptions.kept_range_holds_access(range, &owner, 8))
+                })
+            });
+        assert!(ordinary);
+        let kept = crate::kernel::primitives::CallKeptRanges::new(ranges, Vec::new(), None);
+        let ((found, frame_work), frame_maps) = crate::persistent::measure_persistent_work(|| {
+            crate::instrumentation::measure_deterministic_work(|| {
+                kept.holds_access(&queried, 8, &assumptions)
+            })
+        });
+        assert!(found);
+        assert!(
+            frame_work <= ordinary_work,
+            "frame adds no owner scan at size {size}"
+        );
+        assert!(
+            frame_maps <= ordinary_maps,
+            "frame adds no map traversal at size {size}"
+        );
+    }
+}

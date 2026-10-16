@@ -3503,3 +3503,45 @@ fn auto_have_failure_trace_retains_checked_call_prefix() {
         assert!(!trace.contains("<no checked simple steps"), "{trace}");
     });
 }
+
+#[test]
+fn budget_stopped_transport_retains_its_checked_loop_prefix() {
+    use crate::instrumentation::{TacticWorkLimits, with_tactic_work_limits};
+    let source = r#"verifying "f.c";
+        void f(int32 *p) { owns p[0]; requires p[0] == 7; ensures true; } by {
+            loop {
+                owns p[0];
+                invariant p[0] == 7;
+                decreases 0;
+                initialize by { assumption(); }
+                preserve by {
+                    mark before;
+                    step();
+                    transport(at(before, p[0] == 7), p[0] == 7);
+                    step();
+                }
+            }
+            execute(); normalize();
+        }
+    "#;
+    with_proof_trace("f", || {
+        let error = with_tactic_work_limits(
+            TacticWorkLimits {
+                smart: 0,
+                ..TacticWorkLimits::default()
+            },
+            || {
+                verify_c0_sources(
+                    source,
+                    &[("f.c", "void f(int32 *p) { while (1) { *p = 9; break; } }")],
+                )
+            },
+        )
+        .expect_err("the written smart transport has no work allowance");
+        assert!(error.message().contains("budget"), "{}", error.message());
+        let trace = error
+            .trace_context_report()
+            .expect("attach the checked predecessor even on a budget error");
+        assert!(trace.contains("steps through: *p = 9"), "{trace}");
+    });
+}
