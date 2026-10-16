@@ -157,6 +157,16 @@ Report both numbers when delivering an example. As of 2026-10-07,
 `examples/rbtree-insert` is about 2,500 proof lines for 136 lines of C, 19
 times, and verifies in about 5.4 seconds, roughly 470 lines per second.
 
+`scripts/proof-ratio.py` measures the size of every example, and
+`scripts/check.sh` prints the examples over the size target at the end of
+each run, without failing. Lines and tokens both leave out comments and blank
+lines, and code is the sources an example names in `verifying "...";`. The
+report shows the token ratio beside the line ratio: a proof line is often
+several times as long as a line of C, so a proof that puts many steps on one
+line can meet the line target while its token ratio stays far over it. On
+2026-10-16, six examples were over the line target. `rbtree-erase` was 36
+times its C by lines and 119 times by tokens.
+
 ## Simple means locally checkable
 
 A simple tactic checks one selected proof operation deterministically, without
