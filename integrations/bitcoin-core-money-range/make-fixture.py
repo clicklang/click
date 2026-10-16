@@ -50,7 +50,12 @@ def main():
     parser.add_argument("--bitcoin-src", type=Path, required=True)
     parser.add_argument("--sysroot", type=Path, required=True)
     parser.add_argument("--packages", type=Path, required=True)
-    parser.add_argument("--lock", type=Path, required=True)
+    parser.add_argument(
+        "--lock",
+        type=Path,
+        required=True,
+        help="the project's click.project.lock.json, locked over the full checkout",
+    )
     parser.add_argument("--compilation-database", type=Path, required=True)
     args = parser.parse_args()
     source = args.bitcoin_src.resolve(strict=True)
@@ -62,12 +67,11 @@ def main():
     for name, expected in PACKAGES.items():
         checked_bytes(args.packages / f"{name}.deb", expected)
     checked_bytes(Path("/opt/homebrew/opt/llvm@19/bin/clang++"), CLANG_SHA256)
-    lock = json.loads(args.lock.read_text())
+    project_lock = json.loads(args.lock.read_text())
+    lock = project_lock["units"]["bitcoin"]["lock"]["bitcoin-src/src/consensus/amount.h"]
     if lock["source_sha256"] != FEERATE_SHA256 or lock["logical_source_sha256"] != AMOUNT_SHA256:
         raise ValueError("the import lock has different selected source digests")
     database_bytes = args.compilation_database.read_bytes()
-    if lock["compilation_database_sha256"] != digest(database_bytes):
-        raise ValueError("the CMake compilation database differs from the import lock")
     files = {}
     for path_string, entry in lock["preprocessor_files"].items():
         path = Path(path_string).resolve(strict=True)
@@ -146,6 +150,21 @@ def main():
         raise ValueError("unrelocated path in the selected CMake command")
     if "@ROOT@/bitcoin-src/src/policy/feerate.cpp" not in command:
         raise ValueError("selected CMake command lost the source translation unit")
+    # The project's unit must state exactly this command, relocated to its
+    # root, apart from what Click supplies itself.
+    words = command.split()
+    expected, index = [], 1
+    while index < len(words):
+        word = words[index]
+        if word in ("-o", "-c"):
+            index += 2
+            continue
+        if not (word.startswith("--target=") or word == "-std=c++20" or word.startswith("-resource-dir=")):
+            expected.append(word.replace("@ROOT@/", ""))
+        index += 1
+    project = json.loads((Path(__file__).resolve().parent / "click.project.json").read_text())
+    if project["units"]["bitcoin"]["args"] != expected:
+        raise ValueError("click.project.json's bitcoin unit is not the selected CMake command")
     template = {
         "directory": "@ROOT@/bitcoin-build/src",
         "command": command,

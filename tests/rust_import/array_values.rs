@@ -275,16 +275,9 @@ fn charon_external_array_copies_live_refresh() {
 #[test]
 #[ignore = "requires the pinned live Charon/compiler; scripts/check.sh --charon-live"]
 fn charon_whole_array_copy_live_refresh_checks_full_authority() {
-    let p = Project::legacy(include_str!("../../examples/rust-array-values/arrays.rs"));
+    let p = Project::new(include_str!("../../examples/rust-array-values/arrays.rs"));
     let sidecar = include_str!("../../examples/rust-array-values/arrays.click")
         .replace("arrays.rs", "borrow.rs");
-    let config = serde_json::json!({
-        "schema": 3, "backend": "charon-trial", "language": "rust",
-        "target": "x86_64-unknown-linux-gnu", "source": "borrow.rs",
-        "exporter": PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("target/charon/debug/charon"),
-        "artifact": "borrow.ullbc",
-    });
-    fs::write(p.config(), serde_json::to_vec(&config).unwrap()).unwrap();
     p.refresh().unwrap();
     let prepared = p.prepared().unwrap();
     C0VerificationSession::new_program_prepared(&sidecar, &prepared).unwrap();

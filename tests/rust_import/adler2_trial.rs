@@ -4,7 +4,7 @@ use sha2::{Digest, Sha256};
 #[test]
 #[ignore = "requires the pinned live Charon extractor"]
 fn charon_adler2_crate_trial_rejects_unlocked_module_closure() {
-    let p = Project::legacy("");
+    let p = Project::isolated("");
     let manifest: serde_json::Value =
         serde_json::from_str(include_str!("../../design/rust-checksum-sources.json")).unwrap();
     let pin = manifest["sources"]
@@ -33,16 +33,8 @@ fn charon_adler2_crate_trial_rejects_unlocked_module_closure() {
         fs::write(p.root.join(name), bytes).unwrap();
     }
     fs::write(
-        p.config(),
-        serde_json::to_vec(&serde_json::json!({
-            "schema": 3,
-            "language": "rust",
-            "target": "x86_64-unknown-linux-gnu",
-            "source": "lib.rs",
-            "exporter": std::env::var("CLICK_CHARON").unwrap(),
-            "artifact": "adler2.ullbc"
-        }))
-        .unwrap(),
+        p.project_file(),
+        r#"{"units": {"adler2": {"language": "rust", "sources": {"lib.rs": {}}}}}"#,
     )
     .unwrap();
     let error = p.refresh().unwrap_err();
@@ -50,10 +42,6 @@ fn charon_adler2_crate_trial_rejects_unlocked_module_closure() {
         error.contains("requires exactly one locked source file"),
         "{error}"
     );
-    assert!(!p.artifact("adler2.rs").exists());
-    assert!(
-        !p.config()
-            .with_file_name("borrow.click.import.json.lock")
-            .exists()
-    );
+    assert!(!p.artifact("lib.rs").exists());
+    assert!(!p.lock_file().exists());
 }

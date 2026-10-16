@@ -9,7 +9,7 @@ mod profile;
 mod runtime;
 pub mod schema;
 pub(crate) use crate_inputs::CrateConfig;
-pub use import::{PreparedRustImport, load_import, refresh_import};
+pub use import::PreparedRustImport;
 pub(crate) use import::{UnitConfig, load_unit, prepare_unit};
 
 /// Prepare the same contract-facing execution package as the other typed frontend.

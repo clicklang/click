@@ -229,14 +229,17 @@ C++ items were chosen explicitly; the rest are the recommended defaults.
   CMake command (a gate test checks it); the pinned exporter supplies its own
   Clang resource directory, so no unit states a machine path. One lock serves
   all fourteen sidecars. No per-sidecar import config remains in the
-  repository; `make-fixture.py` still reads the original full-checkout
-  per-sidecar lock.
+  repository.
 - **Command-line refusal.** `click verify`, the proof tools and `click import
   lock` refuse a sidecar's own `<sidecar>.import.json` with a diagnostic naming
   the replacement unit. The mdtest C++ fixtures, the example gate and the tests
   that drive the command line build project files.
-- **Remaining:** porting `make-fixture.py` to the project lock, then porting
-  the library-level tests and deleting the per-sidecar loaders; the module root still comes
+- **Per-sidecar imports retired.** The library's per-sidecar loaders and their
+  config and lock formats are deleted. The tests describe fixtures in the old
+  shape and translate them into project units through shared test helpers;
+  `make-fixture.py` reads the project lock and checks the unit's arguments
+  against the CMake command.
+- **Remaining:** the module root still comes
   from imports rather than the project file; the shared lock envelope; the
   optimization level and flag policy.
 
