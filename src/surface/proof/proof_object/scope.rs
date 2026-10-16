@@ -712,6 +712,19 @@ impl<'a> ProofScope<'a> {
         Ok(Some(next))
     }
 
+    /// The solver closure without operation identities, for the bounds and
+    /// goal an identity closure proves inside its own `have`s.
+    pub(in crate::surface::proof) fn try_solver_closure_without_identities(
+        &self,
+    ) -> Result<Option<Self>, ClickError> {
+        let Some(body) = self.body.solver_closure(false, &[])? else {
+            return Ok(None);
+        };
+        let mut next = self.clone();
+        next.body = body;
+        Ok(Some(next))
+    }
+
     pub(in crate::surface::proof) fn try_solver_closure(&self) -> Result<Option<Self>, ClickError> {
         let Some(body) = self.body.try_solver_closure()? else {
             return Ok(None);

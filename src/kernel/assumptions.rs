@@ -8854,6 +8854,110 @@ pub(in crate::kernel) fn native_comparison_of_integer_observation(
     ))
 }
 
+/// The Integer comparisons of exact observations whose native comparison
+/// (`native_comparison_of_integer_observation`) is exactly `proposition`,
+/// a native comparison fact: `1u32 <= x` gives `1 <= to_integer(x)`. Each
+/// candidate is recomputed through the forward map, so only exact converses
+/// are returned. A 32-bit word comparison may read as `int32` and, when its
+/// operands carry the unsigned sign-bit encoding, as `uint32`.
+pub(crate) fn integer_observations_of_native_comparison(
+    proposition: &Proposition,
+) -> Vec<Proposition> {
+    use crate::kernel::primitives::IntegerTerm;
+    let Proposition::ConditionIs(condition, value) = proposition else {
+        return Vec::new();
+    };
+    let (left, right, types): (&Bitvector32Term, &Bitvector32Term, &[MachineIntegerType]) =
+        match condition {
+            ConditionTerm::Bitvector32SignedLessThan(left, right)
+            | ConditionTerm::Bitvector32SignedLessEqual(left, right)
+            | ConditionTerm::Bitvector32SignedGreaterThan(left, right)
+            | ConditionTerm::Bitvector32SignedGreaterEqual(left, right)
+            | ConditionTerm::Bitvector32Equal(left, right) => (
+                left,
+                right,
+                &[MachineIntegerType::Int32, MachineIntegerType::UInt32],
+            ),
+            ConditionTerm::Bitvector64SignedLessThan(left, right)
+            | ConditionTerm::Bitvector64SignedLessEqual(left, right)
+            | ConditionTerm::Bitvector64SignedGreaterThan(left, right)
+            | ConditionTerm::Bitvector64SignedGreaterEqual(left, right) => {
+                (left, right, &[MachineIntegerType::Int64])
+            }
+            ConditionTerm::Bitvector64Equal(left, right) => (
+                left,
+                right,
+                &[MachineIntegerType::Int64, MachineIntegerType::UInt64],
+            ),
+            ConditionTerm::Bitvector64UnsignedLessThan(left, right)
+            | ConditionTerm::Bitvector64UnsignedLessEqual(left, right)
+            | ConditionTerm::Bitvector64UnsignedGreaterThan(left, right)
+            | ConditionTerm::Bitvector64UnsignedGreaterEqual(left, right) => {
+                (left, right, &[MachineIntegerType::UInt64])
+            }
+            _ => return Vec::new(),
+        };
+    let sign_bit = 0x8000_0000u32;
+    // The carrier an unsigned 32-bit order compares, before its sign-bit
+    // encoding; equality compares carriers as they are.
+    let unsigned = |side: &Bitvector32Term| -> Option<Bitvector32Term> {
+        match side {
+            Bitvector32Term::Constant(value) => Some(Bitvector32Term::Constant(value ^ sign_bit)),
+            Bitvector32Term::BitwiseXor(a, b) => match (a.as_ref(), b.as_ref()) {
+                (Bitvector32Term::Constant(bit), other)
+                | (other, Bitvector32Term::Constant(bit))
+                    if *bit == sign_bit =>
+                {
+                    Some(other.clone())
+                }
+                _ => None,
+            },
+            _ => None,
+        }
+    };
+    let mut lifted = Vec::new();
+    for &ty in types {
+        let carriers = if ty == MachineIntegerType::UInt32
+            && !matches!(condition, ConditionTerm::Bitvector32Equal(..))
+        {
+            match (unsigned(left), unsigned(right)) {
+                (Some(left), Some(right)) => (left, right),
+                _ => continue,
+            }
+        } else {
+            (left.clone(), right.clone())
+        };
+        let (Some(left), Some(right)) = (
+            IntegerTerm::from_machine(ty, carriers.0),
+            IntegerTerm::from_machine(ty, carriers.1),
+        ) else {
+            continue;
+        };
+        let (left, right): (SharedIntegerTerm, SharedIntegerTerm) = (left.into(), right.into());
+        let candidates = [
+            ConditionTerm::IntegerLessEqual(left.clone(), right.clone()),
+            ConditionTerm::IntegerLessThan(left.clone(), right.clone()),
+            ConditionTerm::IntegerLessEqual(right.clone(), left.clone()),
+            ConditionTerm::IntegerLessThan(right.clone(), left.clone()),
+            ConditionTerm::IntegerEqual(left.clone(), right.clone()),
+        ];
+        for candidate in candidates {
+            let truth = if matches!(candidate, ConditionTerm::IntegerEqual(..)) {
+                *value
+            } else {
+                true
+            };
+            if native_comparison_of_integer_observation(&candidate, truth).is_some_and(
+                |(native, native_truth)| &native == condition && native_truth == *value,
+            ) {
+                lifted.push(Proposition::ConditionIs(candidate, truth));
+                break;
+            }
+        }
+    }
+    lifted
+}
+
 #[cfg(test)]
 mod integer_observation_tests {
     use super::*;
@@ -8932,6 +9036,61 @@ mod integer_observation_tests {
         assert_eq!(
             context.decide(&ConditionTerm::equal(word(1), word(2))),
             Some(false)
+        );
+    }
+
+    #[test]
+    fn a_native_comparison_reads_back_as_its_integer_observation() {
+        for (condition, truth) in [
+            (
+                ConditionTerm::IntegerLessEqual(
+                    constant(1),
+                    observe(MachineIntegerType::UInt32, 1),
+                ),
+                true,
+            ),
+            (
+                ConditionTerm::IntegerLessThan(
+                    observe(MachineIntegerType::Int32, 1),
+                    observe(MachineIntegerType::Int32, 2),
+                ),
+                true,
+            ),
+            (
+                ConditionTerm::IntegerLessEqual(
+                    observe(MachineIntegerType::UInt64, 1),
+                    constant(7),
+                ),
+                true,
+            ),
+            (
+                ConditionTerm::IntegerEqual(observe(MachineIntegerType::Int64, 1), constant(-3)),
+                false,
+            ),
+        ] {
+            let (native, native_truth) =
+                native_comparison_of_integer_observation(&condition, truth).unwrap();
+            let fact = Proposition::ConditionIs(native.clone(), native_truth);
+            let lifted = integer_observations_of_native_comparison(&fact);
+            assert!(!lifted.is_empty(), "{condition:?}");
+            for reading in lifted {
+                let Proposition::ConditionIs(reading, reading_truth) = reading else {
+                    unreachable!()
+                };
+                // Each reading files exactly the native fact it came from.
+                assert_eq!(
+                    native_comparison_of_integer_observation(&reading, reading_truth),
+                    Some((native.clone(), native_truth))
+                );
+            }
+        }
+        // Facts other than native comparisons read as nothing.
+        assert!(
+            integer_observations_of_native_comparison(&Proposition::ConditionIs(
+                ConditionTerm::IntegerLessEqual(constant(1), observe(MachineIntegerType::Int32, 1)),
+                true,
+            ))
+            .is_empty()
         );
     }
 

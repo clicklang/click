@@ -208,6 +208,12 @@ pub(in crate::surface) fn special_plan_to_surface_certificate(
                     result: goal.clone(),
                 }
             }
+            KernelNode::IntegerOperationIdentity { bounds, .. } => {
+                SpecialArithmeticNode::IntegerOperationIdentity {
+                    bounds: bounds.clone(),
+                    result: goal.clone(),
+                }
+            }
             KernelNode::IntegerProductBounds { bounds, .. } => {
                 SpecialArithmeticNode::IntegerProductBounds {
                     bounds: bounds.clone(),
@@ -285,6 +291,7 @@ fn cited_premise_indices(node: &mut SpecialArithmeticNode) -> Vec<&mut usize> {
         | SpecialArithmeticNode::IntegerPolynomialIdentity { bounds, .. }
         | SpecialArithmeticNode::IntegerQuotientShift { bounds, .. }
         | SpecialArithmeticNode::IntegerCastIdentity { bounds, .. }
+        | SpecialArithmeticNode::IntegerOperationIdentity { bounds, .. }
         | SpecialArithmeticNode::UnsignedSumBound { bounds, .. }
         | SpecialArithmeticNode::SignedDefined { bounds, .. } => bounds.iter_mut().collect(),
         SpecialArithmeticNode::PointerTranslation {

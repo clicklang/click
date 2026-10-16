@@ -4961,6 +4961,10 @@ pub enum SpecialArithmeticNode {
         bounds: Vec<usize>,
         result: ClickProposition,
     },
+    IntegerOperationIdentity {
+        bounds: Vec<usize>,
+        result: ClickProposition,
+    },
     UnsignedSumBound {
         bounds: Vec<usize>,
         result: ClickProposition,
@@ -5033,6 +5037,11 @@ pub enum IntegerCertificateNode {
         result: ClickProposition,
     },
     Trivial {
+        result: ClickProposition,
+    },
+    /// A machine value's type range: `MIN <= to_integer(v)` or
+    /// `to_integer(v) <= MAX`, with the type's exact endpoint.
+    TypeRange {
         result: ClickProposition,
     },
     /// The integer negation of a non-strict or strict goal, assumed for a

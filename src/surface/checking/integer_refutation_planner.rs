@@ -8,11 +8,12 @@
 //! trusted.
 
 use super::simplex::{self, Constraint, FarkasTerm, Rational, Relation, SimplexOutcome};
-use crate::kernel::Proposition;
 use crate::kernel::proof::integer_arithmetic::{
     IntegerAffineAtom, IntegerAffineClaim, IntegerAffineRelation, IntegerArithmeticCertificate,
-    IntegerArithmeticNode, add_claim, integer_affine_claim, negate_claim, scale_claim,
+    IntegerArithmeticNode, add_claim, integer_affine_claim, machine_type_range_claim, negate_claim,
+    scale_claim,
 };
+use crate::kernel::{IntegerTerm, Proposition};
 use num_bigint::BigInt;
 use num_traits::{One, Signed};
 use std::collections::BTreeMap;
@@ -45,6 +46,29 @@ pub(crate) fn plan_integer_refutation(
     goal: &Proposition,
     premises: &[Proposition],
 ) -> IntegerRefutation {
+    plan_integer_refutation_with_ranges(goal, premises, &[])
+}
+
+/// Where one constraint of the refutation comes from.
+#[derive(Clone, Copy)]
+enum Source {
+    NegatedGoal,
+    Premise(usize),
+    /// The type range of `ranges[index]`; `upper` selects its maximum.
+    Range {
+        index: usize,
+        upper: bool,
+    },
+}
+
+/// As [`plan_integer_refutation`], also using the type range of each machine
+/// observation in `ranges` (each an `IntegerTerm::Machine`). A range the
+/// refutation uses becomes a `TypeRange` node, which needs no premise.
+pub(crate) fn plan_integer_refutation_with_ranges(
+    goal: &Proposition,
+    premises: &[Proposition],
+    ranges: &[IntegerTerm],
+) -> IntegerRefutation {
     let Some(goal_claim) = integer_affine_claim(goal) else {
         return IntegerRefutation::Outside;
     };
@@ -56,15 +80,29 @@ pub(crate) fn plan_integer_refutation(
 
     // Constraint 0 is the negated goal; constraint i + 1 is the i-th usable
     // premise.
-    let mut sources: Vec<Option<usize>> = vec![None];
+    let mut sources: Vec<Source> = vec![Source::NegatedGoal];
     let mut claims: Vec<IntegerAffineClaim> = vec![negated.clone()];
     for (index, premise) in premises.iter().enumerate() {
         if crate::instrumentation::deadline_exceeded_with_work(1) {
             return IntegerRefutation::Exhausted;
         }
         if let Some(claim) = integer_affine_claim(premise) {
-            sources.push(Some(index));
+            sources.push(Source::Premise(index));
             claims.push(claim);
+        }
+    }
+    for (index, value) in ranges.iter().enumerate() {
+        let IntegerTerm::Machine(machine) = value else {
+            continue;
+        };
+        for upper in [false, true] {
+            if crate::instrumentation::deadline_exceeded_with_work(1) {
+                return IntegerRefutation::Exhausted;
+            }
+            if let Some(claim) = machine_type_range_claim(machine, upper) {
+                sources.push(Source::Range { index, upper });
+                claims.push(claim);
+            }
         }
     }
 
@@ -110,7 +148,7 @@ pub(crate) fn plan_integer_refutation(
         }
         SimplexOutcome::Exhausted => return IntegerRefutation::Exhausted,
     };
-    match certificate_from_farkas(&terms, &claims, &sources, premises) {
+    match certificate_from_farkas(&terms, &claims, &sources, premises, ranges) {
         Some(proved) => proved,
         None => IntegerRefutation::Outside,
     }
@@ -122,8 +160,9 @@ pub(crate) fn plan_integer_refutation(
 fn certificate_from_farkas(
     terms: &[FarkasTerm],
     claims: &[IntegerAffineClaim],
-    sources: &[Option<usize>],
+    sources: &[Source],
     premises: &[Proposition],
+    ranges: &[IntegerTerm],
 ) -> Option<IntegerRefutation> {
     let mut nodes: Vec<IntegerArithmeticNode> = Vec::new();
     let mut used_premises: Vec<Proposition> = Vec::new();
@@ -132,14 +171,19 @@ fn certificate_from_farkas(
     for term in terms {
         let claim = claims.get(term.constraint)?;
         let base = nodes.len();
-        match sources.get(term.constraint)? {
-            None => nodes.push(IntegerArithmeticNode::NegatedGoal {
+        match *sources.get(term.constraint)? {
+            Source::NegatedGoal => nodes.push(IntegerArithmeticNode::NegatedGoal {
                 result: claim.clone(),
             }),
-            Some(index) => {
+            Source::Range { index, upper } => nodes.push(IntegerArithmeticNode::TypeRange {
+                value: ranges.get(index)?.clone(),
+                upper,
+                result: claim.clone(),
+            }),
+            Source::Premise(index) => {
                 let next = used_premises.len();
-                let slot = *premise_slots.entry(*index).or_insert_with(|| {
-                    used_premises.push(premises[*index].clone());
+                let slot = *premise_slots.entry(index).or_insert_with(|| {
+                    used_premises.push(premises[index].clone());
                     next
                 });
                 nodes.push(IntegerArithmeticNode::Premise {
