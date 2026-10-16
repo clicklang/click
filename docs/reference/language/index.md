@@ -851,6 +851,26 @@ the matched result has one consistent carrier; contextual Integer literals in
 their arms inherit that result type. Mixed C and Integer arithmetic remains
 rejected unless an explicit conversion is present.
 
+### Integer specification arithmetic
+
+`arithmetic "integer";` opts a file into Integer-default specification
+arithmetic, the decided default
+([design-review P2](https://github.com/clicklang/click/blob/master/issues/design-review.md)).
+The directive is a migration switch: files adopt it one by one, and it is
+removed once the default changes. In such a file, a specification comparison
+that does `+`, `-`, `*` or negation, or that compares an Integer with a
+machine value, compares exact Integers: each machine operand of its
+arithmetic is observed with `to_integer`, so `x + 1 > x` reads
+`to_integer(x) + 1 > to_integer(x)` and holds for every `int32` and
+`uint32`. Unsuffixed literals take the Integer type. A comparison with a
+pointer parameter among its arithmetic operands, and a comparison without
+arithmetic between machine values, keep their C meaning; the latter has the
+same truth either way. Expansions and diagnostics print the inserted
+`to_integer`. See
+`mdtests/integer_arithmetic_makes_specification_addition_exact.md` and its
+C-arithmetic twin
+`mdtests/machine_specification_addition_needs_its_overflow_bound.md`.
+
 An Integer comparison of exact observations of one machine type, such as
 `0 <= to_integer(capacity)` or `to_integer(x) != to_integer(y)`, also
 establishes the native comparison it is equivalent to, `0 <= capacity` or
@@ -861,7 +881,8 @@ definedness of a population count, therefore accept the Integer premise
 comparison is exactly as strong as the Integer one
 (`mdtests/an_integer_premise_files_no_stronger_machine_fact.md`); a constant
 outside the type's range, or observations of two different types, establish
-no native fact.
+no native fact. Deciding such an Integer comparison likewise asks the native
+comparison it is equivalent to.
 Resources may declare `field total: Integer;`: folding checks the resource's
 facts, and `old(model.total)` retains the entry value across updates.
 Checked resource pattern bindings retain each field's declared carrier, name,

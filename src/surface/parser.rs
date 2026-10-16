@@ -769,6 +769,9 @@ struct Parser {
     current_arm_binding_types: BTreeMap<String, AlgebraicFieldType>,
     current_integer_params: BTreeSet<String>,
     current_integer_lets: BTreeSet<String>,
+    /// Whether specification comparisons with arithmetic are Integer
+    /// comparisons (`arithmetic "integer";`).
+    integer_arithmetic: bool,
     /// Every parameter of the theorem being parsed, of any type, so a
     /// `have name: P` cannot take a parameter's name.
     current_theorem_param_names: BTreeSet<String>,
@@ -1130,6 +1133,12 @@ impl Parser {
         } else {
             library_paths::top_level_theorem_names(&tokens)
         };
+        // `arithmetic "integer";` decides how every specification comparison
+        // in the file reads, wherever the directive appears.
+        let integer_arithmetic = tokens.windows(2).any(|pair| {
+            matches!(pair, [Token::Ident(keyword), Token::String(value)]
+                if keyword == "arithmetic" && value == "integer")
+        });
         // Source clauses may follow declarations. Choose the spelling for the
         // whole file so moving the clause cannot bypass a Rust syntax check.
         let language =
@@ -1227,6 +1236,7 @@ impl Parser {
             current_arm_binding_types: BTreeMap::new(),
             current_integer_params: BTreeSet::new(),
             current_integer_lets: BTreeSet::new(),
+            integer_arithmetic,
             current_theorem_param_names: BTreeSet::new(),
             current_proof_let_names: BTreeSet::new(),
             proof_let_restores: Vec::new(),
@@ -1339,6 +1349,7 @@ impl Parser {
         let mut imports = Vec::new();
         let mut verifying_sources = Vec::new();
         let mut c_target = None;
+        let mut integer_arithmetic = false;
         let mut thread_runtime = None;
         let mut algebraic_type_definitions = Vec::new();
         let mut predicate_definitions = Vec::new();
@@ -1375,6 +1386,23 @@ impl Parser {
                     return Err(self.error("a Click file declares more than one `target`"));
                 }
                 c_target = Some(target);
+            } else if self.peek_ident() == Some("arithmetic")
+                && matches!(self.peek_next(), Some(Token::String(_)))
+            {
+                self.expect_ident_spelling("arithmetic")?;
+                let at = self.error_context();
+                let name = self.expect_string("specification arithmetic")?;
+                self.expect(Token::Semicolon)?;
+                if name != "integer" {
+                    return Err(self.error_at(
+                        at,
+                        format!("unknown specification arithmetic `{name}`; the accepted value is `integer`"),
+                    ));
+                }
+                if integer_arithmetic {
+                    return Err(self.error("a Click file declares `arithmetic` more than once"));
+                }
+                integer_arithmetic = true;
             } else if self.peek_ident() == Some("runtime")
                 && matches!(self.peek_next(), Some(Token::String(_)))
             {
@@ -1534,6 +1562,7 @@ impl Parser {
             verifying_sources,
             c_target,
             thread_runtime: thread_runtime.unwrap_or_default(),
+            integer_arithmetic,
             algebraic_type_definitions,
             predicate_definitions,
             click_function_definitions,
@@ -6472,11 +6501,11 @@ impl Parser {
                 ) => {
                     let operator = self.parse_comparison_operator("proposition")?;
                     let right = self.parse_comparison_operand()?;
-                    return Ok(ClickProposition::Comparison {
-                        left: ContractExpression::Call { name, arguments },
+                    return Ok(self.specification_comparison(
+                        ContractExpression::Call { name, arguments },
                         operator,
                         right,
-                    });
+                    ));
                 }
                 Some(
                     Token::Plus
@@ -6875,11 +6904,128 @@ impl Parser {
         let operator = self.parse_comparison_operator("proposition")?;
         let right = self.parse_comparison_operand()?;
 
-        Ok(ClickProposition::Comparison {
+        Ok(self.specification_comparison(left, operator, right))
+    }
+
+    /// A comparison as the file's specification arithmetic reads it. Under
+    /// `arithmetic "integer";` a comparison that does arithmetic, or that
+    /// compares an Integer with a machine value, compares exact Integers:
+    /// each machine operand of its arithmetic is observed with
+    /// `to_integer`, so `x + 1 > x` reads
+    /// `to_integer(x) + 1 > to_integer(x)`. A comparison with a pointer
+    /// operand keeps its C meaning.
+    fn specification_comparison(
+        &self,
+        left: ContractExpression,
+        operator: ComparisonOperator,
+        right: ContractExpression,
+    ) -> ClickProposition {
+        if self.integer_arithmetic && operator != ComparisonOperator::In {
+            let left_integer = self.integer_operand(&left);
+            let right_integer = self.integer_operand(&right);
+            let mixed = left_integer != right_integer;
+            let arithmetic = has_arithmetic_spine(&left) || has_arithmetic_spine(&right);
+            if !(left_integer && right_integer)
+                && (mixed || arithmetic)
+                && !self.has_pointer_operand(&left)
+                && !self.has_pointer_operand(&right)
+            {
+                return ClickProposition::Comparison {
+                    left: self.observe_machine_operands(left),
+                    operator,
+                    right: self.observe_machine_operands(right),
+                };
+            }
+        }
+        ClickProposition::Comparison {
             left,
             operator,
             right,
-        })
+        }
+    }
+
+    /// Whether `expression` is already an exact Integer: an Integer
+    /// binding, a `to_integer` observation, or arithmetic over them.
+    fn integer_operand(&self, expression: &ContractExpression) -> bool {
+        match expression {
+            ContractExpression::Add(left, right)
+            | ContractExpression::Subtract(left, right)
+            | ContractExpression::Multiply(left, right) => {
+                self.integer_operand(left) || self.integer_operand(right)
+            }
+            ContractExpression::Negate(inner) | ContractExpression::Old(inner) => {
+                self.integer_operand(inner)
+            }
+            leaf => self.integer_leaf(leaf),
+        }
+    }
+
+    fn integer_leaf(&self, expression: &ContractExpression) -> bool {
+        match expression {
+            ContractExpression::Call { name, .. } => {
+                name == "to_integer"
+                    || crate::surface::integer_truncation::is_integer_truncation(name)
+            }
+            ContractExpression::Binding(name)
+            | ContractExpression::CBinding(name)
+            | ContractExpression::CFragment(CExpression::Variable(name)) => {
+                self.current_integer_params.contains(name)
+                    || self.current_integer_lets.contains(name)
+            }
+            _ => false,
+        }
+    }
+
+    /// Whether an arithmetic operand of `expression` is a pointer parameter.
+    fn has_pointer_operand(&self, expression: &ContractExpression) -> bool {
+        match expression {
+            ContractExpression::Add(left, right)
+            | ContractExpression::Subtract(left, right)
+            | ContractExpression::Multiply(left, right) => {
+                self.has_pointer_operand(left) || self.has_pointer_operand(right)
+            }
+            ContractExpression::Negate(inner) | ContractExpression::Old(inner) => {
+                self.has_pointer_operand(inner)
+            }
+            ContractExpression::CBinding(name)
+            | ContractExpression::CFragment(CExpression::Variable(name)) => self
+                .current_c_parameter_types
+                .get(name)
+                .is_some_and(|c_type| c_type.is_pointer()),
+            _ => false,
+        }
+    }
+
+    /// `expression` with each machine operand of its arithmetic observed
+    /// with `to_integer`. Unsuffixed literals take the Integer type from
+    /// context, and Integer operands are left as they are.
+    fn observe_machine_operands(&self, expression: ContractExpression) -> ContractExpression {
+        match expression {
+            ContractExpression::Add(left, right) => ContractExpression::Add(
+                Box::new(self.observe_machine_operands(*left)),
+                Box::new(self.observe_machine_operands(*right)),
+            ),
+            ContractExpression::Subtract(left, right) => ContractExpression::Subtract(
+                Box::new(self.observe_machine_operands(*left)),
+                Box::new(self.observe_machine_operands(*right)),
+            ),
+            ContractExpression::Multiply(left, right) => ContractExpression::Multiply(
+                Box::new(self.observe_machine_operands(*left)),
+                Box::new(self.observe_machine_operands(*right)),
+            ),
+            ContractExpression::Negate(inner) => {
+                ContractExpression::Negate(Box::new(self.observe_machine_operands(*inner)))
+            }
+            ContractExpression::Old(inner) if has_arithmetic_spine(&inner) => {
+                ContractExpression::Old(Box::new(self.observe_machine_operands(*inner)))
+            }
+            ContractExpression::IntegerLiteral(value) => ContractExpression::IntegerLiteral(value),
+            leaf if self.integer_leaf(&leaf) => leaf,
+            leaf => ContractExpression::Call {
+                name: "to_integer".to_string(),
+                arguments: vec![leaf],
+            },
+        }
     }
 
     /// A comparison operand whose outermost operator is `&`, `|` or `^` must
@@ -14177,4 +14323,17 @@ fn composite_body_child_slots(body: &CompositeResourceBody) -> BTreeSet<String> 
             _ => None,
         })
         .collect()
+}
+
+/// Whether `expression` does `+`, `-`, `*` or negation at its top, looking
+/// through `old`.
+fn has_arithmetic_spine(expression: &ContractExpression) -> bool {
+    match expression {
+        ContractExpression::Add(..)
+        | ContractExpression::Subtract(..)
+        | ContractExpression::Multiply(..)
+        | ContractExpression::Negate(_) => true,
+        ContractExpression::Old(inner) => has_arithmetic_spine(inner),
+        _ => false,
+    }
 }

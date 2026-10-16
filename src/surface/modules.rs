@@ -350,6 +350,7 @@ fn merge_modules(
         verifying_sources: Vec::new(),
         c_target: None,
         thread_runtime: Default::default(),
+        integer_arithmetic: false,
         algebraic_type_definitions: Vec::new(),
         predicate_definitions: Vec::new(),
         click_function_definitions: Vec::new(),

@@ -351,6 +351,16 @@ impl PureFactContext {
         if let Some(value) = condition.reflexive_value() {
             return Some(value);
         }
+        // An Integer comparison of exact observations of one machine type
+        // has the truth of its native comparison, which the machine
+        // reasoning below decides (`native_comparison_of_integer_observation`).
+        if let Some((native, truth)) =
+            crate::kernel::assumptions::native_comparison_of_integer_observation(condition, true)
+            && &native != condition
+            && let Some(value) = self.decide(&native)
+        {
+            return Some(value == truth);
+        }
         if let Some(value) = self.decide_uint64_constant_order_bounds(condition) {
             return Some(value);
         }
