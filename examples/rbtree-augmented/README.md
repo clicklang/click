@@ -345,3 +345,10 @@ that model to `sized_plug` of the original context and repaired subtree. Both
 augmented insertion wrappers preserve the same result. Repeated color flips
 through red ancestors, general insertion subtrees, and writable erase integration
 remain unfinished.
+
+
+`rbtree_size_recolor.click` supplies shared model operations for root recoloring
+and insertion color flips. Its explicit lemmas preserve cached values and
+recursive count validity for arbitrary subtrees and identify their shapes with
+the existing `rb_recolor` and `rb_insert_fix_recolor` operations. The root-only
+insertion proof imports this shared recoloring definition.
