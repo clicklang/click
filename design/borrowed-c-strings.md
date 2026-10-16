@@ -8,7 +8,8 @@ parameters (see [Kernel mechanism for (c)](#kernel-mechanism-for-c)), a
 kernel concept the original proposal assumed already existed. The library's
 `strlen` and the `label-build-flags` example use the binder (migration steps
 3 to 5). Assembly from viewed bytes is deferred (see
-[(d)](#d-call-site-assembly-of-a-viewed-composite)), and M3 is next.
+[(d)](#d-call-site-assembly-of-a-viewed-composite)). M3 landed: `memcpy` and
+`memcmp` read under `views`.
 
 `click::cstr` declares the C string:
 
@@ -336,20 +337,29 @@ step 2 is deferred.
    `separate(memory(dst[0u64..32u64]), memory(src[0u64..s.len + 1u64]))`,
    opens the string to lend `memcpy` its prefix, and keeps
    `dst[result] == '\0'`. The obtain-and-transport proof became
-   `step`s, an `open` and `execute()`. The copied bytes are not yet stated:
-   `memcpy`'s `bytes::equal` postcondition is not carried across the
-   terminator store that follows it, and an explicit `transport` of it is
-   refused.
+   `step`s, an `open` and `execute()`. The copied bytes are not yet stated.
+   With M3 the contract's `owns` and `views` already keep `dst` and the
+   string apart, so the `separate` is implied; it stays, unchanged. Three
+   verifier gaps stand between the proof and a `bytes::equal` postcondition
+   (investigated with M3, 2026-10-16): a bare `transport` in a `have` body
+   is refused (`bugs/bare-transport-in-a-have-body-is-unsupported.md`); a
+   `char *` argument to `bytes::equal`'s `uint8[]` parameters unfolds to
+   converted reads that `memcpy`'s postcondition does not match
+   (`bugs/char-argument-to-a-byte-predicate-unfolds-to-converted-reads.md`);
+   and a quantified frame of `dst[k]` with `k < n` across the store to
+   `dst[n]` is refused even with explicit `transport ... using`, which needs
+   a ruling on whether the frame should derive `k != n` from the guard.
 5. Done: in `src/surface/tests/expansion_tests.rs`, the `read_terminator`
    fixture views `cstr_at(haystack, _)` among the reordered clauses and
    still asserts that no hidden planning transitions occur. It is not an
    assembly fixture, since assembly from viewed bytes is deferred.
-6. The strlen-shaped tests in `src/surface/proof/surface_synthesis/tests.rs`
+6. Open. The strlen-shaped tests in `src/surface/proof/surface_synthesis/tests.rs`
    synthesize the guarded quantified `loadable` carrier of
    `cstr::readable`, which no longer depends on `strlen`. Revisit them with
    M3: rename them to C-string shapes if `memcmp`'s guarded `defined` range
    still produces that carrier, otherwise retire them.
-7. Then M3: `memcpy`/`memcmp` read under `views`.
+7. Done: M3, `memcpy` views its source and `memcmp` both operands, and
+   the explicit `separate` left `memcpy`'s contract.
 
 ## Open questions for the maintainer
 

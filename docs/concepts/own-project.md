@@ -505,8 +505,10 @@ a `uint64` ordering theorem from the `click::machine_integer` library module,
 so the sidecar imports it, and `click::cstr` for `cstr_at`; see
 [Click library imports](sidecars.md#click-library-imports).
 `label_copy` opens the string it views to lend a prefix of its bytes to
-`memcpy`. The copy needs a separate destination and source, because `memcpy`
-requires its accessed ranges not to overlap; the separation names the
+`memcpy`. `memcpy` owns its destination and views its source, and a call
+cannot lend overlapping bytes both ways, so the copy needs a separate
+destination and source. `label_copy` owns `dst` and views the string, which
+keeps them apart, and its contract also states the separation over the
 string's own bytes, `src[0u64..s.len + 1u64]`. Its source may be `const`, as
 in the existing C. The destination's 32-byte ownership and `label_fit`'s bound
 also cover the terminator store. Verify this complete sidecar with

@@ -971,7 +971,7 @@ int32 compare_smart(uint8 bytes[]) {
     let click_source = r#"verifying "compare.c";
 
 int32 compare_self(uint8 bytes[]) {
-    requires viewable(bytes[0..2]);
+    views bytes[0..2];
     ensures 1 == 1 by {
         step();
         step();
@@ -981,7 +981,7 @@ int32 compare_self(uint8 bytes[]) {
 }
 
 int32 compare_smart(uint8 bytes[]) {
-    requires viewable(bytes[0..2]);
+    views bytes[0..2];
     ensures 1 == 1 by {
         step();
         step();
@@ -1887,7 +1887,7 @@ fn partial_claim_audit_keeps_auto_but_whole_claim_requires_its_certificate() {
     let c_source = "int32 compare(uint8 bytes[]) { return memcmp(bytes, bytes, 2); }";
     let click_source = r#"verifying "compare.c";
 int32 compare(uint8 bytes[]) {
-    requires viewable(bytes[0..2]);
+    views bytes[0..2];
     ensures 1 == 1 by {
         step();
         step();
