@@ -1911,11 +1911,14 @@ fn adler_four_byte_recombination_rejects_off_by_one_residues() {
     }
 }
 
-// The original module is checked once by the caller. Each expansion changes
-// one theorem, so its cold check selects that entire owner (including any
-// other ensures clauses), rather than repeating every unchanged proof body.
-fn recheck_expanded_theorem(original: &str, source: &str, claim: &str) {
-    let (owner, _) = claim.split_once(".ensures_").expect("a pure theorem claim");
+// The caller checks the original module once. Each rewrite or mutation changes
+// one theorem, so cold-check its entire owner (including all ensures clauses)
+// rather than repeating every unchanged proof body.
+fn check_isolated_theorem(
+    original: &str,
+    source: &str,
+    owner: &str,
+) -> Result<(), click::surface::ClickError> {
     // These fixtures place each theorem's outer closing brace at column one.
     // Confirm every other declaration/proof is byte-for-byte unchanged before
     // reusing the original module's full positive check.
@@ -1935,12 +1938,12 @@ fn recheck_expanded_theorem(original: &str, source: &str, claim: &str) {
     assert_eq!(
         &original[..before_start],
         &source[..after_start],
-        "{claim}: changed prefix"
+        "{owner}: changed prefix"
     );
     assert_eq!(
         &original[before_end..],
         &source[after_end..],
-        "{claim}: changed suffix"
+        "{owner}: changed suffix"
     );
     let project = click::surface::ClickProject::new(
         "expanded.click",
@@ -1955,7 +1958,13 @@ fn recheck_expanded_theorem(original: &str, source: &str, claim: &str) {
         &click::surface::ProgramInputs::Bundle(vec![]),
         owner,
     )
-    .unwrap_or_else(|error| panic!("{claim}: {}", error.message()));
+    .map(|_| ())
+}
+
+fn recheck_expanded_theorem(original: &str, source: &str, claim: &str) {
+    let (owner, _) = claim.split_once(".ensures_").expect("a pure theorem claim");
+    check_isolated_theorem(original, source, owner)
+        .unwrap_or_else(|error| panic!("{claim}: {}", error.message()));
 }
 
 #[test]
@@ -3470,51 +3479,77 @@ fn adler_deferred_batch_b_tools_expand_and_reverify() {
 #[test]
 #[ignore = "nightly: deferred B position, weighting, overflow and reduction mutations"]
 fn adler_deferred_batch_b_rejects_false_transitions() {
-    for (before, after) in [
-        ("requires pos <= 22204;", "requires pos <= 2147483647;"),
+    let original = batch_prefix_proof(BATCH_PREFIX);
+    click::surface::verify_c0_sources(&original, &[]).unwrap();
+    for (owner, before, after) in [
         (
+            "adler_native_deferred_b_step",
+            "requires pos <= 22204;",
+            "requires pos <= 2147483647;",
+        ),
+        (
+            "adler_native_deferred_b_step",
             "to_integer(pos + 4) * to_integer(a)",
             "to_integer(pos + 3) * to_integer(a)",
         ),
         (
+            "adler_native_deferred_b_step",
             "requires to_integer(a0) + to_integer(v0) <= 4294967295;",
             "",
         ),
         (
+            "adler_native_deferred_b_step",
             "requires to_integer(b0) + (to_integer(a0) + to_integer(v0)) <= 4294967295;",
             "",
         ),
         (
+            "adler_native_deferred_b_step",
             "+ 4 * to_integer(v0) + 3 * to_integer(v1)",
             "+ 3 * to_integer(v0) + 3 * to_integer(v1)",
         ),
-        ("requires 0 <= b;", ""),
-        ("requires a3 <= 65520;", "requires a3 <= 65523;"),
+        ("adler_canonical_lane_b_floor", "requires 0 <= b;", ""),
         (
+            "adler_canonical_lane_b_floor",
+            "requires a3 <= 65520;",
+            "requires a3 <= 65523;",
+        ),
+        (
+            "adler_native_deferred_b_prefix_step",
             "adler_spec_b(bytes, n + 4, a_seed, b_seed) by",
             "adler_spec_b(bytes, n + 4, a_seed, b_seed + 1) by",
         ),
         (
+            "adler_native_deferred_b_prefix_step",
             "adler_spec_b(bytes, n + 4, a_seed, b_seed) by",
             "adler_spec_b(bytes, n + 3, a_seed, b_seed) by",
         ),
         (
+            "adler_native_deferred_b_prefix_step",
             "requires to_integer(v1) == to_integer((int32)bytes[n + 1]);",
             "requires to_integer(v1) == to_integer((int32)bytes[n]);",
         ),
         (
+            "adler_empty_full_batch_position",
             "ensures to_integer(22208 - remaining) == 0 by",
             "ensures to_integer(22208 - remaining) == 1 by",
         ),
         (
+            "adler_complete_full_batch_position",
             "ensures to_integer(22208 - remaining) == 22208 by",
             "ensures to_integer(22208 - remaining) == 22207 by",
         ),
     ] {
         let changed = BATCH_PREFIX.replacen(before, after, 1);
         assert_ne!(changed, BATCH_PREFIX, "{before}");
-        let error = click::surface::verify_c0_sources(&batch_prefix_proof(&changed), &[])
+        let changed = batch_prefix_proof(&changed);
+        let error = check_isolated_theorem(&original, &changed, owner)
             .expect_err("incorrect deferred contribution or native guard must be refused");
+        assert_eq!(
+            error.kind(),
+            click::surface::ClickErrorKind::Proof,
+            "{owner}: {}",
+            error.message()
+        );
         assert!(
             !error.message().contains("budget exhausted"),
             "{}",
@@ -3589,43 +3624,66 @@ fn adler_native_vector_prefix_tools_expand_and_reverify() {
 #[test]
 #[ignore = "nightly: native vector-prefix byte, overflow, residue and cursor mutations"]
 fn adler_native_vector_prefix_rejects_false_transitions() {
-    for (before, after) in [
+    let original = vector_prefix_proof();
+    click::surface::verify_c0_sources(&original, &[]).unwrap();
+    for (owner, before, after) in [
         (
+            "adler_native_four_lane_a_prefix_step",
             "requires to_integer(v0) == to_integer((int32)bytes[n]);",
             "requires to_integer(v0) == to_integer((int32)bytes[n + 1]);",
         ),
         (
+            "adler_native_four_lane_a_prefix_step",
             "requires to_integer(a0) + to_integer(v0) <= 4294967295;",
             "",
         ),
         (
+            "adler_native_four_lane_prefix_step",
             "requires to_integer(b0) + (to_integer(a0) + to_integer(v0)) <= 4294967295;",
             "",
         ),
         (
+            "adler_four_lane_a_prefix_step",
             "requires truncating_remainder(adler_lane_a(a, a0, a1, a2, a3), 65521) == adler_spec_a(bytes, n, a_seed);",
             "",
         ),
         (
+            "adler_four_lane_prefix_step",
             "requires 0 <= adler_lane_b(b, a1, a2, a3, b0, b1, b2, b3);",
             "",
         ),
         (
+            "adler_four_lane_prefix_step",
             "adler_spec_b(bytes, n + 4, a_seed, b_seed) by",
             "adler_spec_b(bytes, n + 4, a_seed, b_seed + 1) by",
         ),
         (
+            "adler_native_iterator_prefix_step",
             "adler_spec_a(bytes, total - (remaining - 4), a_seed) by",
             "adler_spec_a(bytes, total - (remaining - 3), a_seed) by",
         ),
-        ("requires 4 <= remaining;", "requires 3 <= remaining;"),
-        ("requires remaining <= total;", ""),
+        (
+            "adler_native_iterator_prefix_step",
+            "requires 4 <= remaining;",
+            "requires 3 <= remaining;",
+        ),
+        (
+            "adler_native_iterator_prefix_step",
+            "requires remaining <= total;",
+            "",
+        ),
     ] {
         let changed = VECTOR_PREFIX.replacen(before, after, 1);
         assert_ne!(changed, VECTOR_PREFIX, "{before}");
         let source = format!("{COMMON_ADLER_SPEC}\n{LANE_STATE}\n{changed}");
-        let error = click::surface::verify_c0_sources(&source, &[])
+        let error = check_isolated_theorem(&original, &source, owner)
             .expect_err("incorrect vector prefix or missing native guard must be refused");
+        assert_eq!(
+            error.kind(),
+            click::surface::ClickErrorKind::Proof,
+            "{owner}: {}",
+            error.message()
+        );
         assert!(
             !error.message().contains("budget exhausted"),
             "{}",
