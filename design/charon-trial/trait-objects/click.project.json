@@ -11,7 +11,9 @@
         "features": [],
         "roots": [
           "trait_objects::through_bound",
-          "trait_objects::through_dyn"
+          "trait_objects::through_dyn",
+          "trait_objects::reset_square",
+          "trait_objects::reset_dyn_square"
         ],
         "files": [
           "shapes.rs"

@@ -216,13 +216,14 @@ that writes `int32` for such a source already writes the source's spelling.
    2026-10-15, the interface's `ensures` join the implementation's own and
    its proof establishes them, and its `requires` apply when the
    implementation writes none; written `requires` must follow from the
-   interface's. Object state is done for `&self` and shared object
-   references: a trait's `function size(self) -> i32;` is a field of its
+   interface's. Object state is done for `&self` and `&mut self`, shared
+   and mutable object references: a trait's `function size(self) -> i32;` is a field of its
    sealed object resource, each `impl` defines it from its fields and is
    verified on its own memory against an `_iface` contract, and the
    importer packs the struct into the object at generic instantiation and
-   `dyn` coercion. Remaining: `&mut self` object state, implementations of
-   function-free traits that rename the interface's parameters, generic
+   `dyn` coercion; a mutable reference may change the state, which its
+   `ensures` read as new and `old(...)` as at entry. Remaining:
+   implementations of function-free traits that rename the interface's parameters, generic
    traits and default methods, and C++ virtual methods. Done for C++
    virtual methods without object state: a virtual method's contract is the
    interface a call through it assumes, each override in the source
