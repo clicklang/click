@@ -63,7 +63,10 @@ fn unsigned_index_membership_ignores_unrelated_facts_and_stores() {
         });
         assert!(checked);
         // One unit each, at every size (measured 2026-10-16).
-        assert!(find_work <= 2 && check_work <= 2, "size={size}, find={find_work}, check={check_work}");
+        assert!(
+            find_work <= 2 && check_work <= 2,
+            "size={size}, find={find_work}, check={check_work}"
+        );
         samples.push((find_work, check_work));
     }
     assert!(
