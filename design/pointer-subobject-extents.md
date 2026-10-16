@@ -94,7 +94,8 @@ enum PointerExtent {
 | Store to memory, then reload of that exact cell | same extent: cached `CValue::Pointer` cells already return the stored value. The `pointer_read_stored_value` family in `memory_provenance.rs` must return the whole `CPointerValue`, not `Pointer`. |
 | Reload of an unknown cell, havoc, modular result | `Root` (today's behavior; Phase B covers what can still go wrong) |
 | Cast to a non-character object pointer type | same extent (a cast neither narrows nor widens; D3) |
-| Cast to `void*`, `char*`, `unsigned char*` | `Root` (byte view of the enclosing object; keeps `container_of`, D4) |
+| Cast between character-pointer types | same extent, including signedness changes (D4 refinement) |
+| Cast from another pointer type to a character pointer, or any cast to `void*` | `Root` (byte view of the enclosing object; keeps `container_of`, D4) |
 
 The frontend already knows each field's type and size when it forms
 `&p->field` (`resolve_field_access`, `C0StructField.byte_width`). Today it lowers
@@ -260,12 +261,12 @@ none of that.
     (`examples/byte-representation`).
   - The consequence: `*(int32*)((char*)&p->first + 4)` is accepted. An explicit
     character round trip is the standard escape hatch, and compilers honor it.
-  - Identity casts other than `void*` casts and compiler-inserted pointer
-    conversions preserve the existing view. Explicit conversions to a different
-    character pointer type, and every explicit cast to `void*`, select the
-    enclosing view. A refinement that also preserves bounds across character
-    signedness casts is awaiting user approval: without it, the borrowed
-    C-string signedness-cast fixture requires an additional resource adapter.
+  - On 2026-10-16 the user approved a refinement: casts between character-pointer
+    types preserve the existing byte view, including across signedness changes.
+    Compiler-inserted pointer conversions also preserve it. Explicit casts from
+    other pointer types to characters, and every explicit cast to `void*`,
+    still select the enclosing view. This preserves C-string borrowing and
+    prevents character signedness changes from widening byte-member bounds.
   - Recommended: accept, and document it in `docs/`.
 - **D5. Staging.**
   - Recommended: Phase A in three PRs:

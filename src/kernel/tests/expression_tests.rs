@@ -3855,8 +3855,33 @@ fn implicit_byte_pointer_coercion_retains_the_selected_extent() {
     assert_eq!(coerced.designation(), pointer.designation());
     assert_eq!(coerced.opaque_extent(), pointer.opaque_extent());
     assert_eq!(coerced.extent(), pointer.extent());
+    for source in [CType::Int8Pointer, CType::UInt8Pointer] {
+        for target in [CType::Int8Pointer, CType::UInt8Pointer] {
+            let (value, _) = c_evaluate_spec_expression_at_state(
+                &CState::new(),
+                &SpecExpression::Cast(
+                    Box::new(SpecExpression::Value(CValue::Pointer(
+                        pointer.clone().with_type(source),
+                    ))),
+                    target,
+                ),
+                None,
+                &PureFactContext::new(),
+            )
+            .unwrap();
+            let CValue::Pointer(explicit) = value else {
+                panic!("a pointer cast must yield a pointer")
+            };
+            assert_eq!(explicit.c_type(), target);
+            assert_eq!(explicit.designation(), pointer.designation());
+            assert_eq!(explicit.opaque_extent(), pointer.opaque_extent());
+            assert_eq!(explicit.extent(), pointer.extent());
+        }
+    }
     for (source, target) in [
-        (CType::Int8Pointer, CType::UInt8Pointer),
+        (CType::Int32Pointer, CType::UInt8Pointer),
+        (CType::VoidPointer, CType::UInt8Pointer),
+        (CType::Int8Pointer, CType::VoidPointer),
         (CType::VoidPointer, CType::VoidPointer),
     ] {
         let (value, _) = c_evaluate_spec_expression_at_state(
@@ -3877,4 +3902,64 @@ fn implicit_byte_pointer_coercion_retains_the_selected_extent() {
         assert!(explicit.extent_is_known());
         assert!(explicit.extent().is_none());
     }
+}
+
+#[test]
+fn complete_pointer_reads_keep_stored_bounds_across_different_cells() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let a = Pointer::symbolic(Variable(22_111));
+    let b = Pointer::symbolic(Variable(22_112));
+    let stored = subobject_pointer(0, 0, 4);
+    let memory = CMemory::new()
+        .store(a.clone(), CValue::Pointer(stored.clone()))
+        .store(b.clone(), CValue::Pointer(stored.clone()));
+    let read = |memory: &CMemory, address: &Pointer| {
+        CPointerValue::from_read(
+            stored.pointer().clone(),
+            CType::Int32Pointer,
+            &crate::kernel::intern_c_memory_ref(memory),
+            address,
+        )
+    };
+    let context = PureFactContext::new().assume_proposition(Proposition::CResourceSeparate {
+        left: Box::new(CResource::Memory(memory_range(a.clone(), 0, 2))),
+        right: Box::new(CResource::Memory(memory_range(b.clone(), 0, 2))),
+    });
+    let first = read(&memory, &a);
+    let second = read(&memory, &b);
+    assert!(context.pointer_designations_match(&first, &stored));
+    assert!(context.pointer_designations_match(&first, &second));
+    assert!(!context.pointer_designations_match(&first.clone().with_root_extent(), &stored));
+    assert!(!context.pointer_designations_match(
+        &first.clone().with_extent(Some(SubobjectExtent {
+            start: stored.pointer().clone(),
+            width: 2,
+        })),
+        &stored,
+    ));
+    let c = Pointer::symbolic(Variable(22_113));
+    let before = CMemory::new();
+    let original = read(&before, &c);
+    let changed = before.store(b.clone(), int32(1));
+    let later = read(&changed, &c);
+    let copied = changed.store(a.clone(), CValue::Pointer(later));
+    let framed = context
+        .clone()
+        .assume_proposition(Proposition::CResourceSeparate {
+            left: Box::new(CResource::Memory(memory_range(c.clone(), 0, 2))),
+            right: Box::new(CResource::Memory(memory_range(b.clone(), 0, 1))),
+        })
+        .assume_proposition(Proposition::CResourceSeparate {
+            left: Box::new(CResource::Memory(memory_range(c, 0, 2))),
+            right: Box::new(CResource::Memory(memory_range(a.clone(), 0, 2))),
+        });
+    assert!(framed.pointer_designations_match(&read(&copied, &a), &original));
+    assert!(!context.pointer_designations_match(&first, &stored.clone().with_root_extent()));
+    let partial = memory.store(a.clone().offset_by_bytes(4), int32(0));
+    assert!(!context.pointer_designations_match(&read(&partial, &a), &stored));
+    let numeric = CMemory::new().store(
+        a.clone(),
+        CValue::UInt64(Bitvector32Term::pointer_address(stored.pointer().clone())),
+    );
+    assert!(!context.pointer_designations_match(&read(&numeric, &a), &stored));
 }

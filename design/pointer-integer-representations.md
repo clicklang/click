@@ -71,14 +71,32 @@ only a complete stored eight-byte pointer; an upper-half overwrite invalidates
 that recovery. Numeric wide-read observations project a retained integer
 record's bits without copying its pointer authority.
 
+Complete-pointer comparisons also recover one actual whole-pointer store when
+an untouched opaque read denotes a value copied from another cell. They do not
+recursively chase stored records, recover from a stopped walk's scalar-prefix
+cache, or undo explicit byte/void views and member selection. A focused
+regression covers two cells, an intervening separated write, partial overwrite,
+numeric-only stores and changed views. Its scaling test uses 16, 64, 256 and
+1,024 unrelated numeric classes; all 755 scaling tests pass at build 111.
+
 At build 89, all ordinary Markdown fixtures, all 51 ordinary example projects,
 and all 754 scaling tests passed, and Clippy passed with warnings denied.
 That checkpoint used character-to-character casts that preserve their incoming
 bounds. One existing library policy test expects an authored signedness cast
-to widen instead. Approval for refining that policy is pending; the current
-narrower implementation still rejects the borrowed C-string signedness-cast
-fixture. Consequently those earlier corpus results are not a green verdict
-for the current working tree.
+to widen instead. On 2026-10-16 the user approved retaining bounds across
+character-pointer signedness changes. The implementation and policy test now
+reflect that refinement, and all 48 C-string fixtures pass. The build-99
+library run passes all 5,607 ordinary tests, including all 754 scaling tests.
+The build-101 full ordinary Markdown run passes all 4,169 fixtures and the
+ordinary example run passes all 51 projects. With stored-value comparison
+recovery, build 111 passes all 4,854 ordinary non-scaling library tests, all
+755 scaling tests, all 4,171 ordinary Markdown fixtures, and all 51 ordinary
+example projects. The named packed-cast fresh/expanded/retained test passes,
+and eight independent expansions verify again at build 113. Clippy passes
+with warnings denied. These runs include the complete read producer fix and
+the approved character-pointer cast policy. The resource
+semantics version is 71 to invalidate retained artifacts from the earlier
+byte-cast policy.
 
 The earlier arena, vector and Rust integer compatibility failures are resolved.
 Eight independent expansion/verification checks and the named packed-cast

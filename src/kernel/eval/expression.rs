@@ -1120,13 +1120,14 @@ fn cast_c_value_to_type_with_integer_origin(
                 return Ok(CValue::Pointer(pointer.with_type(target_type)));
             }
             CValue::Pointer(pointer) => {
-                // An identity byte cast retains the current view. Other byte
-                // casts and every void-pointer cast select the enclosing view.
-                let identity_cast = pointer.c_type() == target_type
-                    && matches!(target_type, CType::UInt8Pointer | CType::Int8Pointer);
+                // Character-to-character casts retain the selected byte view.
+                // Other casts to bytes, and every void cast, widen that view.
+                let byte_to_byte =
+                    matches!(pointer.c_type(), CType::UInt8Pointer | CType::Int8Pointer)
+                        && matches!(target_type, CType::UInt8Pointer | CType::Int8Pointer);
                 let pointer = pointer.with_type(target_type);
                 return Ok(CValue::Pointer(
-                    if !identity_cast
+                    if !byte_to_byte
                         && matches!(
                             target_type,
                             CType::VoidPointer | CType::UInt8Pointer | CType::Int8Pointer

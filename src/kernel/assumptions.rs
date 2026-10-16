@@ -3078,6 +3078,39 @@ impl PureFactContext {
         left: &CPointerValue,
         right: &CPointerValue,
     ) -> bool {
+        if self.pointer_designations_match_without_stored_values(left, right) {
+            return true;
+        }
+        // A complete read can carry a pointer copied from a different cell.
+        // Compare the producer's entire stored value once; scalar address
+        // aliases and partial stores cannot supply its designation or bounds.
+        let stored_value = |value: &CPointerValue| {
+            // A cast or member selection has already chosen its own view.
+            // Recover only the untouched opaque value of a complete read.
+            if value.extent_is_known()
+                || value.extent().is_some()
+                || value.opaque_extent() != Some(value.designation())
+            {
+                return None;
+            }
+            crate::kernel::memory_provenance::complete_pointer_read_value(value.designation(), self)
+        };
+        let stored_left = stored_value(left);
+        let stored_right = stored_value(right);
+        if stored_left.is_none() && stored_right.is_none() {
+            return false;
+        }
+        self.pointer_designations_match_without_stored_values(
+            stored_left.as_ref().unwrap_or(left),
+            stored_right.as_ref().unwrap_or(right),
+        )
+    }
+
+    fn pointer_designations_match_without_stored_values(
+        &self,
+        left: &CPointerValue,
+        right: &CPointerValue,
+    ) -> bool {
         // Null is one pointer value, with no allocation or selected object.
         // Establishing its zero address therefore does not transfer authority.
         ((left.is_null() || self.pointers_known_equal(left.pointer(), &Pointer::null()))

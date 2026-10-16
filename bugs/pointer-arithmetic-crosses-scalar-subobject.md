@@ -25,9 +25,12 @@ accepted before Phase B: reaching another object through a C address
 comparison inside a callee. Phase B makes a C pointer comparison state only
 address equality, which carries no permission, and refuses that read
 (`mdtests/address_equality_does_not_grant_access_to_a_one_past_pointer.md`).
-Still accepted: a pointer whose formation the verifier never saw, such as a
-static pointer initialized to a scalar member and stepped past in a function
-that loads it at entry. It has the root extent.
+An immutable global pointer initialized to a scalar member now retains that
+member's extent: the valid element-zero read passes and the sibling read is
+rejected (`mdtests/a_const_global_member_pointer_reads_its_member.md` and
+`mdtests/a_const_global_member_pointer_keeps_its_subobject.md`). A mutable global
+pointer is an unknown entry value; its initializer is not a permanent full
+pointer relationship.
 
 The Phase B investigation also reproduced an integer escape: converting
 `&pair->first` to `unsigned long` and back lets an element-one read reach the

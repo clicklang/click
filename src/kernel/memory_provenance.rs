@@ -2888,10 +2888,16 @@ pub(in crate::kernel) fn complete_pointer_read_value(
         assumptions,
         true,
     )?;
-    match cell.resolved_value(&read.defining_address, LoadKind::Bits32)? {
-        CValue::Pointer(value) => Some(value),
-        _ => None,
-    }
+    // A walk stopped by an affecting edge can retain a scalar-prefix cache.
+    // Only a reached whole-pointer store supplies the complete value.
+    let MemoryDagCell::Stored {
+        value: CValue::Pointer(value),
+        ..
+    } = cell
+    else {
+        return None;
+    };
+    Some(value)
 }
 
 /// Explicit pointer read-value normalization follows at most 64 recorded
