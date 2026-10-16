@@ -3026,7 +3026,8 @@ fn collect_bitvector_bound_variables(term: &Bitvector32Term, variables: &mut BTr
             collect_memory_bitvector_variables(memory, variables);
             collect_pointer_offset_bound_variables(&pointer.offset, variables);
         }
-        Bitvector32Term::PointerAddress(pointer) => {
+        Bitvector32Term::PointerAddress(pointer)
+        | Bitvector32Term::ObjectPointerAddress(pointer, _) => {
             collect_pointer_offset_bound_variables(&pointer.offset, variables);
         }
         Bitvector32Term::IntegerToMachine { value, .. } => {
@@ -4993,6 +4994,12 @@ pub(crate) fn substitute_bitvector_variable(
             Box::new(substitute_bitvector_variable_in_pointer(pointer, from, to)),
             *kind,
         ),
+        Bitvector32Term::ObjectPointerAddress(pointer, class) => {
+            Bitvector32Term::object_pointer_address(
+                substitute_bitvector_variable_in_pointer(pointer, from, to),
+                Some(class.clone()),
+            )
+        }
         Bitvector32Term::PointerAddress(pointer) => Bitvector32Term::pointer_address(
             substitute_bitvector_variable_in_pointer(pointer, from, to),
         ),

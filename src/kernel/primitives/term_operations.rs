@@ -176,6 +176,26 @@ impl Bitvector32Term {
         }
     }
 
+    pub(crate) fn object_pointer_address(
+        pointer: Pointer,
+        class: Option<crate::kernel::effective_type::CAccessClass>,
+    ) -> Self {
+        if pointer == Pointer::null() {
+            Self::UInt64Constant(0)
+        } else if let Some(class) = class {
+            Self::ObjectPointerAddress(Box::new(pointer), class)
+        } else {
+            Self::pointer_address(pointer)
+        }
+    }
+
+    pub(crate) fn address_pointer(&self) -> Option<&Pointer> {
+        match self {
+            Self::PointerAddress(pointer) | Self::ObjectPointerAddress(pointer, _) => Some(pointer),
+            _ => None,
+        }
+    }
+
     /// The range an `int64` term has from its own root constructor alone: a
     /// constant is itself, and a value widened from a 32-bit source lies in
     /// that source type's range. This inspects only the root, never
@@ -289,6 +309,7 @@ impl Bitvector32Term {
             Self::Variable(_)
             | Self::MemoryLoad(_, _, _)
             | Self::PointerAddress(_)
+            | Self::ObjectPointerAddress(_, _)
             | Self::IntegerToMachine { .. }
             | Self::PureFunctionApplication { .. }
             | Self::ClickFunctionApplication { .. }
@@ -861,7 +882,12 @@ fn uint64_constant(term: &Bitvector32Term) -> Option<u64> {
         // Null converts to the integer zero, exactly as evaluating the C
         // cast `(uint64)p` yields it. The address term reaches a proof only
         // when a pointer proved null is substituted into `(uint64)p`.
-        Bitvector32Term::PointerAddress(pointer) if **pointer == Pointer::null() => Some(0),
+        Bitvector32Term::PointerAddress(pointer)
+        | Bitvector32Term::ObjectPointerAddress(pointer, _)
+            if **pointer == Pointer::null() =>
+        {
+            Some(0)
+        }
         Bitvector32Term::UInt64From32(value) => match value.as_ref() {
             Bitvector32Term::Constant(value) => Some(u64::from(*value)),
             _ => uint64_constant(value),
@@ -2408,21 +2434,28 @@ impl ConditionTerm {
         right: &Bitvector32Term,
     ) -> Option<Self> {
         match (left, right) {
-            (Bitvector32Term::PointerAddress(left), Bitvector32Term::PointerAddress(right)) => {
-                Some(Self::pointer_equal(
-                    left.as_ref().clone(),
-                    right.as_ref().clone(),
-                ))
-            }
-            (Bitvector32Term::PointerAddress(pointer), other)
-            | (other, Bitvector32Term::PointerAddress(pointer))
-                if other.uint64_as_const() == Some(0) =>
-            {
-                Some(Self::pointer_equal(
-                    pointer.as_ref().clone(),
-                    Pointer::null(),
-                ))
-            }
+            (
+                Bitvector32Term::PointerAddress(left)
+                | Bitvector32Term::ObjectPointerAddress(left, _),
+                Bitvector32Term::PointerAddress(right)
+                | Bitvector32Term::ObjectPointerAddress(right, _),
+            ) => Some(Self::pointer_equal(
+                left.as_ref().clone(),
+                right.as_ref().clone(),
+            )),
+            (
+                Bitvector32Term::PointerAddress(pointer)
+                | Bitvector32Term::ObjectPointerAddress(pointer, _),
+                other,
+            )
+            | (
+                other,
+                Bitvector32Term::PointerAddress(pointer)
+                | Bitvector32Term::ObjectPointerAddress(pointer, _),
+            ) if other.uint64_as_const() == Some(0) => Some(Self::pointer_equal(
+                pointer.as_ref().clone(),
+                Pointer::null(),
+            )),
             _ => None,
         }
     }
@@ -2477,8 +2510,16 @@ impl ConditionTerm {
             return None;
         };
         let (pointer, mask) = match (left.as_ref(), right.as_ref()) {
-            (Bitvector32Term::PointerAddress(pointer), mask)
-            | (mask, Bitvector32Term::PointerAddress(pointer)) => (pointer, mask),
+            (
+                Bitvector32Term::PointerAddress(pointer)
+                | Bitvector32Term::ObjectPointerAddress(pointer, _),
+                mask,
+            )
+            | (
+                mask,
+                Bitvector32Term::PointerAddress(pointer)
+                | Bitvector32Term::ObjectPointerAddress(pointer, _),
+            ) => (pointer, mask),
             _ => return None,
         };
         let mask = mask.uint64_as_const()?;
@@ -2494,8 +2535,16 @@ impl ConditionTerm {
         }
         // An address is zero exactly when its pointer is null. Two addresses
         // stay an address equality: equal addresses are not equal pointers.
-        if let (Bitvector32Term::PointerAddress(pointer), other)
-        | (other, Bitvector32Term::PointerAddress(pointer)) = (&left, &right)
+        if let (
+            Bitvector32Term::PointerAddress(pointer)
+            | Bitvector32Term::ObjectPointerAddress(pointer, _),
+            other,
+        )
+        | (
+            other,
+            Bitvector32Term::PointerAddress(pointer)
+            | Bitvector32Term::ObjectPointerAddress(pointer, _),
+        ) = (&left, &right)
             && other.uint64_as_const() == Some(0)
         {
             return Self::pointer_equal(pointer.as_ref().clone(), Pointer::null());

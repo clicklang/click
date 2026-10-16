@@ -1076,8 +1076,9 @@ pub(in crate::kernel) fn cast_c_value_to_type(
                     &term,
                     assumptions,
                     obligations,
+                    target_type,
                 ) {
-                    Ok(Some(pointer)) => Ok(CValue::typed_pointer(pointer, target_type)),
+                    Ok(Some(pointer)) => Ok(CValue::Pointer(pointer)),
                     Ok(None) => Err(CRuntimeError::PointerConversion(
                         "integer-to-pointer cast requires a value that is a recorded pointer \
                          address or zero; an integer without pointer origin cannot become a \
@@ -1121,7 +1122,10 @@ pub(in crate::kernel) fn cast_c_value_to_type(
                 "function addresses do not convert to integers".to_string(),
             ));
         }
-        let address = Bitvector32Term::pointer_address(pointer.pointer().clone());
+        let address = Bitvector32Term::object_pointer_address(
+            pointer.pointer().clone(),
+            pointer.object_class(),
+        );
         return Ok(match target_type {
             CType::UInt64 => CValue::UInt64(address),
             _ => CValue::Int64(address),

@@ -111,6 +111,11 @@ fn terms_equal_with_load_atoms(
     right: &Bitvector32Term,
     loads_match: LoadAtomsMatch<'_>,
 ) -> bool {
+    // Original object classes guide decoding, not numeric address equality.
+    // Compare the addresses through the same pointer/load-atom rule.
+    if let (Some(left), Some(right)) = (left.address_pointer(), right.address_pointer()) {
+        return pointers_equal_with_load_atoms(left, right, loads_match);
+    }
     match (left, right) {
         (Bitvector32Term::MemoryLoad(_, _, _), Bitvector32Term::MemoryLoad(_, _, _)) => {
             loads_match(left, right)
@@ -1524,7 +1529,8 @@ fn hash_memory_blind_bitvector<H: std::hash::Hasher>(term: &Bitvector32Term, has
             std::hash::Hash::hash(kind, hasher);
             hash_memory_blind_pointer(pointer, hasher)
         }
-        Bitvector32Term::PointerAddress(pointer) => {
+        Bitvector32Term::PointerAddress(pointer)
+        | Bitvector32Term::ObjectPointerAddress(pointer, _) => {
             std::hash::Hash::hash("address", hasher);
             hash_memory_blind_pointer(pointer, hasher)
         }
@@ -1646,7 +1652,8 @@ fn collect_bitvector_memory_load_keys(
             ));
             collect_pointer_offset_memory_load_keys(&pointer.offset, keys);
         }
-        Bitvector32Term::PointerAddress(pointer) => {
+        Bitvector32Term::PointerAddress(pointer)
+        | Bitvector32Term::ObjectPointerAddress(pointer, _) => {
             collect_pointer_offset_memory_load_keys(&pointer.offset, keys);
         }
         Bitvector32Term::If {
@@ -1904,7 +1911,8 @@ fn collect_bitvector_memory_loads_with_width(
                 seen_integers,
             )
         }
-        Bitvector32Term::PointerAddress(pointer) => collect_pointer_offset_memory_loads(
+        Bitvector32Term::PointerAddress(pointer)
+        | Bitvector32Term::ObjectPointerAddress(pointer, _) => collect_pointer_offset_memory_loads(
             &pointer.offset,
             current_memory,
             loads,
@@ -4063,7 +4071,7 @@ impl PureFactContext {
                     neighbors.without_key(other)
                 }
             };
-            if let Bitvector32Term::PointerAddress(pointer) = endpoint {
+            if let Some(pointer) = endpoint.address_pointer() {
                 let bucket = memory_reasoning::parameter_alias_bucket(pointer);
                 let endpoints = self
                     .equality_graph

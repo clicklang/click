@@ -458,7 +458,7 @@ impl TermClasses {
                         if let Some((memory, pointer)) = uint64_read(term) {
                             let address = self.address(pointer.block, pointer.offset).0;
                             Node::UInt64Read(memory.read_identity(), self.read_address(address))
-                        } else if let T::PointerAddress(pointer) = term {
+                        } else if let Some(pointer) = term.address_pointer() {
                             values.push(self.numeric_address(pointer));
                             continue;
                         } else {
