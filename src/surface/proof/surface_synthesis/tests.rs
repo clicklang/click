@@ -2434,6 +2434,7 @@ fn wide_memory_selectors_preserve_width_and_signedness() {
                     value_type,
                     volatile: false,
                     pointee_constant: false,
+                    access_class: None,
                     source: Default::default(),
                 }),
                 operator: ComparisonOperator::LessThan,

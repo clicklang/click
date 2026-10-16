@@ -2229,9 +2229,27 @@ pub(crate) fn c_qualified_typed_load_with_source(
         value_type,
         volatile: false,
         pointee_constant,
+        access_class: None,
         source: source
             .map(crate::kernel::CExpressionLoadSource::new)
             .unwrap_or_default(),
+    }
+}
+
+/// A load of a `value_type` lvalue whose access class the kernel type cannot
+/// give (`design/effective-types.md`).
+pub(crate) fn c_classed_load(
+    pointer: CExpression,
+    value_type: CType,
+    access_class: Option<crate::kernel::effective_type::CAccessClass>,
+) -> CExpression {
+    CExpression::TypedLoad {
+        pointer: Box::new(pointer),
+        value_type,
+        volatile: false,
+        pointee_constant: false,
+        access_class,
+        source: crate::kernel::CExpressionLoadSource::none(),
     }
 }
 
@@ -2245,6 +2263,7 @@ pub(crate) fn c_qualified_volatile_typed_load(
         value_type,
         volatile: true,
         pointee_constant,
+        access_class: None,
         source: crate::kernel::CExpressionLoadSource::none(),
     }
 }
@@ -2338,6 +2357,7 @@ pub fn c_declare_with_all_qualifiers(
         pointee_constant,
         initializer: None,
         zero_fill: None,
+        declared_class: None,
     }
 }
 
@@ -2362,6 +2382,7 @@ pub fn c_declare_with_zero_fill(
         pointee_constant,
         initializer: None,
         zero_fill,
+        declared_class: None,
     }
 }
 
@@ -2384,6 +2405,7 @@ pub fn c_declare_initialized(
         constant,
         pointee_constant,
         zero_fill: None,
+        declared_class: None,
         initializer: Some(expression),
     }
 }

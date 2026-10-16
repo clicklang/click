@@ -2037,6 +2037,27 @@ an assignment, a `return`, or a call argument) is undefined behavior. Reading,
 storing, or reassigning the pointer variable is not a use; `free(p); p = 0;`
 is fine. See [Undefined behavior](../../concepts/undefined-behavior.md).
 
+An object may be read or written only through its own type, up to signedness
+and qualifiers, or through a character type (C11 6.5p7). GCC at `-O2` assumes
+nothing else happens, so Click refuses such an access even when a `void *`
+round trip hides the conversion from the frontend. The object's type comes
+from its declaration: a local or local array, or a pointer parameter's
+pointee type. A pointer read from memory designates an object of its own
+pointee type unless it carries the declaration that formed it. `long` and
+`long long` are distinct, and so are pointer types with different pointees,
+signedness included: `unsigned long **` may not read a `long *` cell. `void *`
+cells may be read through any pointer type and the reverse. The diagnostic
+names both types
+(`mdtests/a_long_read_through_a_long_long_pointer_is_refused.md`,
+`mdtests/a_declared_long_read_through_a_long_long_pointer_is_refused.md`,
+`mdtests/a_byte_buffer_read_through_a_uint32_pointer_is_refused.md`,
+`mdtests/a_pointer_cell_read_through_a_pointer_of_other_signedness_is_refused.md`,
+`mdtests/an_unsigned_read_of_a_signed_object_is_allowed.md`,
+`mdtests/a_character_view_of_an_int_is_allowed.md`). The check does not yet
+cover struct members, `int *` and `int **` pointers, local byte arrays,
+globals, or heap objects;
+the effective-type design (`design/effective-types.md`) stages them next.
+
 Automatic scalar, pointer, and array declarations do not zero-initialize their
 storage. Reading a local before a value has been written is undefined behavior.
 Declaration initializers such as `int32 i = 0;` are lowered as a declaration

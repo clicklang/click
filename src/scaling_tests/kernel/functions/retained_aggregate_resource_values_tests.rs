@@ -25,6 +25,7 @@ fn retained_resource_fields_preserve_lvalues_and_scale_with_expression() {
         value_type: CType::Int32Pointer,
         volatile: false,
         pointee_constant: false,
+        access_class: None,
         source: Default::default(),
     };
     let mut work = Vec::new();
