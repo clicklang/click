@@ -16,7 +16,7 @@ uint8 local_byte_array() {
 verifying "uint8_local_array.c";
 
 uint8 local_byte_array() {
-    ensures returns_second: result == 'y' by auto;
+    ensures returns_second: result == 'y' by auto();
 }
 ```
 

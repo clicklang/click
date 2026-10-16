@@ -69,7 +69,7 @@ void produce_population_pipeline(struct owner* owner, int32 amount) {
     produces amount of slot(owner);
 
     ensures valid_capacity(owner);
-} by auto;
+} by auto();
 ```
 
 ```expect

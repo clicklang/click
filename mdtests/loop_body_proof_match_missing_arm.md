@@ -52,7 +52,7 @@ void spin(struct cell* node, int32 n) {
         invariant i <= n;
         invariant c.model == old(c.model);
 
-        initialize by simp;
+        initialize by simp();
         preserve by {
             match c.model {
                 Sign::Pos(value) => {

@@ -35,7 +35,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
         SizedTree::Node(identity, ancestor, shade, value, left_model, right_model) => {
             let { tree: tree } = unfold(state);
             let { metadata: metadata, left: left, right: right } = unfold(tree);
-            have shade == Color::Red by simp;
+            have shade == Color::Red by simp();
             have (node->__rb_parent_color & 1) == color_bit(Color::Red) by {
                 rewrite(Color::Red == shade); assumption();
             }
@@ -59,7 +59,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                 invariant state.model == SizedTree::Node(identity, ancestor, Color::Red, value, left_model, right_model);
                 invariant state.model == old(state.model);
                 invariant state.parent_tag == old(state.parent_tag);
-                initialize by simp;
+                initialize by simp();
                 preserve by {
                     let { tree: tree } = unfold(state);
                     step(); step();

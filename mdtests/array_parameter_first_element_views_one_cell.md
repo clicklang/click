@@ -14,7 +14,7 @@ verifying "array_parameter_first_element_views_one_cell.c";
 
 int32 first(int32 p[]) {
     views p[0..1];
-    ensures result == p[0] by auto;
+    ensures result == p[0] by auto();
 }
 ```
 

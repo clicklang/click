@@ -51,7 +51,7 @@ void tag_then_count(struct node *p) {
     loop {
         owns c: cell(p);
         decreases 0;
-        initialize by simp;
+        initialize by simp();
         preserve by {
             match c.model {
                 Identity::At(identity) => {

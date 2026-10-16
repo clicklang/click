@@ -26,7 +26,7 @@ long long first(long long *p) {
 }
 
 unsigned long long *same(unsigned long long *p) {
-    ensures result == p by auto;
+    ensures result == p by auto();
 }
 ```
 

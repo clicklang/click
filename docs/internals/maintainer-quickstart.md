@@ -40,7 +40,7 @@ int32 example() {
 verifying "example.c";
 
 int32 example() {
-    ensures result == 0 by auto;
+    ensures result == 0 by auto();
 }
 ```
 
@@ -82,7 +82,7 @@ verifying "increment.c";
 
 int32 increment(int32 x) {
     requires x < 2147483647;
-    ensures increments: result == x + 1 by auto;
+    ensures increments: result == x + 1 by auto();
 }
 ```
 

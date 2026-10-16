@@ -49,35 +49,35 @@ function balanced(tree: Tree) -> int
 
 theorem left_balanced(value: int, left: Tree, right: Tree) {
     requires balanced(Tree::Node(value, left, right)) == 1;
-    ensures balanced(left) == 1 by auto;
+    ensures balanced(left) == 1 by auto();
 }
 
 theorem right_balanced(value: int, left: Tree, right: Tree) {
     requires balanced(Tree::Node(value, left, right)) == 1;
-    ensures balanced(right) == 1 by auto;
+    ensures balanced(right) == 1 by auto();
 }
 
 theorem same_depth(value: int, left: Tree, right: Tree) {
     requires balanced(Tree::Node(value, left, right)) == 1;
-    ensures depth(left) == depth(right) by auto;
+    ensures depth(left) == depth(right) by auto();
 }
 
 theorem positive_value(value: int, left: Tree, right: Tree) {
     requires 1 == balanced(Tree::Node(value, left, right));
-    ensures value > 0 by auto;
+    ensures value > 0 by auto();
 }
 
 theorem through_a_constructor_equation(tree: Tree, value: int, left: Tree, right: Tree) {
     requires tree == Tree::Node(value, left, right);
     requires balanced(tree) == 1;
-    ensures balanced(left) == 1 by auto;
+    ensures balanced(left) == 1 by auto();
 }
 
 theorem in_a_have(value: int, left: Tree, right: Tree) {
     requires balanced(Tree::Node(value, left, right)) == 1;
     ensures balanced(left) + balanced(right) == 2 by {
-        have balanced(left) == 1 by auto;
-        have balanced(right) == 1 by auto;
+        have balanced(left) == 1 by auto();
+        have balanced(right) == 1 by auto();
         normalize() using { balanced(left) == 1; balanced(right) == 1; }
     }
 }

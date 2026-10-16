@@ -402,7 +402,7 @@ fn standard_library_pure_function_names() -> &'static BTreeSet<String> {
 /// Whether `name` is the leading word of a built-in tactic or proof form, which
 /// a user-defined tactic may not shadow.
 fn is_builtin_tactic_spelling(name: &str) -> bool {
-    matches!(name, "let" | "by" | "sorry")
+    matches!(name, "let" | "by" | "sorry" | "auto")
         || crate::surface::PUBLIC_TACTIC_FORMS.iter().any(|form| {
             form.id != "user-tactic"
                 && form
@@ -413,8 +413,8 @@ fn is_builtin_tactic_spelling(name: &str) -> bool {
         })
 }
 
-/// `have P by simp;` as the one-step script `have P by { simp(); }`. Out of
-/// line: its caller's frame is on the recursive proof-parsing path.
+/// Turn the default `have P;` simplification into the same one-step script
+/// as an explicit `have P by simp();`. Out of line to keep recursive frames small.
 #[inline(never)]
 fn have_proof_as_written_in_full(proof: SourceProof) -> SourceProof {
     if proof == SourceProof::Tactic(SmartTactic::Simp) {
@@ -7148,12 +7148,21 @@ impl Parser {
         }
     }
 
+    fn starts_standalone_smart_proof(&self) -> bool {
+        match self.peek_ident() {
+            Some("auto") => true,
+            // Route the old bare spelling through the missing-parentheses diagnostic.
+            Some("simp") => self.peek_next() != Some(&Token::LParen),
+            _ => false,
+        }
+    }
+
     fn parse_by_clause_body(&mut self) -> Result<SourceProof, ClickError> {
         if self.peek() == Some(&Token::LBrace) {
             self.position += 1;
             let proof = match self.peek() {
                 Some(Token::Ident(name))
-                    if is_tactic_name(name) && self.peek_next() == Some(&Token::Semicolon) =>
+                    if is_tactic_name(name) && self.starts_standalone_smart_proof() =>
                 {
                     let tactic = self.parse_tactic()?;
                     self.expect(Token::RBrace)?;
@@ -7175,11 +7184,8 @@ impl Parser {
             return Ok(proof);
         }
 
-        // `by auto;` and `by simp;` are whole proofs with their own spelling;
-        // any other single tactic is the one-step script `by { T(...); }`.
-        if matches!(self.peek(), Some(Token::Ident(name)) if is_tactic_name(name))
-            && self.peek_next() == Some(&Token::Semicolon)
-        {
+        // `auto()` uses whole-proof automation. Other single calls are one-step scripts.
+        if self.starts_standalone_smart_proof() {
             return Ok(SourceProof::Tactic(self.parse_tactic()?));
         }
         match self.peek() {
@@ -7804,7 +7810,7 @@ impl Parser {
         Ok(current.expect("the both tactic chain has a root"))
     }
 
-    /// `have P;`, `have P by simp;` or `have P by { ... }`, after the word
+    /// `have P;`, `have P by simp();` or `have P by { ... }`, after the word
     /// `have`. Out of line: the tactic dispatcher that calls it is on the
     /// recursive proof-parsing path and keeps none of this in its frame.
     #[inline(never)]
@@ -7884,11 +7890,11 @@ impl Parser {
                 proof: have_proof_as_written_in_full(SourceProof::Tactic(SmartTactic::Simp)),
             }));
         }
-        // `have P by auto;` proves the fact where it is stated: with no C
+        // `have P by auto();` proves the fact where it is stated: with no C
         // to run toward the fact, `auto` is the solver.
         let proof = self.parse_by_clause()?;
         self.skip_redundant_semicolon();
-        // `have P;`, `have P by simp;` and `have P by { simp(); }` are
+        // `have P;`, `have P by simp();` and `have P by { simp(); }` are
         // one proof step. They are one syntax tree too, so every
         // consumer proves and reports them the same way.
         Ok(ProofTactic::Have(ProofHave {
@@ -7918,10 +7924,9 @@ impl Parser {
             // closing fold leaves open, as after `fold(r) by`.
             let close_proof = if self.peek_ident() == Some("by") {
                 self.position += 1;
-                if self.peek_ident() == Some("auto") && self.peek_next() == Some(&Token::Semicolon)
-                {
+                if self.peek_ident() == Some("auto") && self.peek_next() == Some(&Token::LParen) {
                     return Err(self.error(
-                        "`open(...) { ... } by auto` is `open(...) { ... }`: its closing fold's open body facts already go to `auto`",
+                        "`open(...) { ... } by auto()` is `open(...) { ... }`: its closing fold's open body facts already go to `auto`",
                     ));
                 }
                 Some(self.parse_step_proof_body()?)
@@ -8655,10 +8660,7 @@ impl Parser {
                 }
             }
             "simp" => {
-                // `simp;` is `simp();`, as it is after `by`.
-                if self.peek() == Some(&Token::LParen) {
-                    self.expect_empty_tactic_args(&name)?;
-                }
+                self.expect_empty_tactic_args(&name)?;
                 if self.peek_ident() == Some("using") {
                     let premises = self.parse_exact_premises()?;
                     self.skip_redundant_semicolon();
@@ -8687,7 +8689,7 @@ impl Parser {
             "induct" => return self.parse_induct_proof_tactic(),
             _ if is_tactic_name(&name) => {
                 return Err(self.error(format!(
-                    "`{name}` is only available as a standalone smart tactic; use `by {name};`"
+                    "`{name}` is only available as a standalone smart tactic; use `by {name}();`"
                 )));
             }
             _ => return Err(self.error(format!("unknown tactic `{name}`"))),
@@ -8876,9 +8878,9 @@ impl Parser {
         };
         if self.peek_ident() == Some("by") {
             self.position += 1;
-            if self.peek_ident() == Some("auto") && self.peek_next() == Some(&Token::Semicolon) {
+            if self.peek_ident() == Some("auto") && self.peek_next() == Some(&Token::LParen) {
                 return Err(self.error(format!(
-                    "`{call} by auto` is `{call}`: its open obligations already go to `auto`",
+                    "`{call} by auto()` is `{call}`: its open obligations already go to `auto`",
                 )));
             }
             let body = self.parse_step_proof_body()?;
@@ -8940,7 +8942,7 @@ impl Parser {
         Ok(step)
     }
 
-    /// The body after a step's `by`: a block, `simp;`, or one tactic call, as
+    /// The body after a step's `by`: a block or one tactic call, as
     /// after `close_invariants by`.
     fn parse_step_proof_body(&mut self) -> Result<Vec<ProofTactic>, ClickError> {
         if self.peek() == Some(&Token::LBrace) {
@@ -8949,10 +8951,6 @@ impl Parser {
                 return Err(self.error("a step's `by` block must contain at least one tactic"));
             }
             return Ok(body);
-        }
-        if self.peek_ident() == Some("simp") && self.peek_next() == Some(&Token::Semicolon) {
-            self.position += 2;
-            return Ok(vec![ProofTactic::Simp]);
         }
         match self.peek() {
             Some(Token::Ident(_)) => Ok(vec![self.parse_proof_tactic()?]),
@@ -8970,16 +8968,11 @@ impl Parser {
         if self.peek() == Some(&Token::LBrace) {
             return self.parse_possibly_empty_tactic_block();
         }
-        // `by simp;` is the step `simp();`, as it is after `have`.
-        if self.peek_ident() == Some("simp") && self.peek_next() == Some(&Token::Semicolon) {
-            self.position += 2;
-            return Ok(vec![ProofTactic::Simp]);
-        }
         // `auto` has no script spelling, and the bare closer is already the
-        // smart one; say so rather than suggest the `by auto;` just written.
+        // smart one; say so rather than suggest the `by auto();` just written.
         if self.peek_ident() == Some("auto") {
             return Err(self.error(
-                "`close_invariants by auto` is not a form: write `close_invariants();`, whose closer is already smart, or end the `preserve` script and let the back edge close implicitly",
+                "`close_invariants by auto()` is not a form: write `close_invariants();`, whose closer is already smart, or end the `preserve` script and let the back edge close implicitly",
             ));
         }
         match self.peek() {
@@ -9149,6 +9142,9 @@ impl Parser {
     }
 
     fn expect_empty_tactic_args(&mut self, name: &str) -> Result<(), ClickError> {
+        if is_tactic_name(name) && self.peek() != Some(&Token::LParen) {
+            return Err(self.error(format!("`{name}` requires parentheses; write `{name}()`")));
+        }
         self.expect(Token::LParen)?;
         if self.peek() != Some(&Token::RParen) {
             return Err(self.error(format!("`{name}` expects no arguments")));
@@ -10050,6 +10046,11 @@ impl Parser {
             }
             None => return Err(self.error("expected tactic, got end of input")),
         };
+        let name = match tactic {
+            SmartTactic::Auto => "auto",
+            SmartTactic::Simp => "simp",
+        };
+        self.expect_empty_tactic_args(name)?;
         self.expect(Token::Semicolon)?;
         Ok(tactic)
     }

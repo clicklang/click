@@ -28,17 +28,17 @@ int32 structural_requirements(int32 p[], int32 n, int32 dst[], int32 src[], int3
     requires separate(memory(dst[0..n]), memory(src[0..n]));
     requires same_object(begin, end);
     requires defined(x + 1);
-    ensures result == 0 by auto;
+    ensures result == 0 by auto();
 }
 
 int32 view_first(int32 p[]) {
     views p[0..1];
-    ensures result == p[0] by auto;
+    ensures result == p[0] by auto();
 }
 
 int32 consume_first(int32 p[]) {
     consumes p[0..1];
-    ensures result == 0 by auto;
+    ensures result == 0 by auto();
 }
 ```
 

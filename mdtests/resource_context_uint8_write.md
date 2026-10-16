@@ -14,7 +14,7 @@ uint8 write_second_byte(uint8 p[]) {
 verifying "write_second_byte.c";
 
 uint8 write_second_byte(uint8 p[]) {
-    owns p[1..2] by auto;
+    owns p[1..2] by auto();
 
 }
 ```

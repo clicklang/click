@@ -28,7 +28,7 @@ verifying "leak.c";
 int32 leak(int32* p) {
     owns wrap(p);
     produces p[0..1];
-} by auto;
+} by auto();
 int32 h(int32* a, int32* b) {
     owns wrap(a);
     owns b[0..1];
@@ -43,7 +43,7 @@ int32 h(int32* a, int32* b) {
 int32 caller(int32* p) {
     owns wrap(p);
     ensures result == 2;
-} by auto;
+} by auto();
 ```
 
 ```expect

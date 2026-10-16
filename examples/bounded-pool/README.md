@@ -45,6 +45,6 @@ and control openings establish the memory separation needed across calls.
 Run `click verify examples/bounded-pool` from the repository root. The sidecar
 contains 16 checked claims: five arithmetic lemmas and all eleven original C
 functions. The arithmetic lemmas and the counter steps inside the functions
-are `by auto`: the solver carries the `int32` facts to `Integer`, proves each
+are `by auto()`: the solver carries the `int32` facts to `Integer`, proves each
 addition or subtraction defined, and closes every bound and conservation
 equation by a checked certificate, which `click expand` prints.

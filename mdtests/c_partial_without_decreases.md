@@ -20,7 +20,7 @@ int32 stuck(int32 n) {
 verifying "c_partial_without_decreases.c";
 
 int32 stuck(int32 n) diverges {
-    ensures result == 0 by auto;
+    ensures result == 0 by auto();
 }
 ```
 

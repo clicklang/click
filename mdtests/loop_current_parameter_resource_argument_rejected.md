@@ -25,7 +25,7 @@ void advance(int32* rb, int32* stop) {
         decreases remaining(rb, stop);
         owns cell: Cell(rb);
         invariant cell.value == old(cell.value);
-        initialize by simp;
+        initialize by simp();
         preserve by {
             step();
             close_invariants();

@@ -975,7 +975,7 @@ int32 example() {
 verifying "example.c";
 
 int32 example() {
-    ensures result == 0 by auto;
+    ensures result == 0 by auto();
 }
 ```
 

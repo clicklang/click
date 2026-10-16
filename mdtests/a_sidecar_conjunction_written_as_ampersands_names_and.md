@@ -13,7 +13,7 @@ verifying "a_sidecar_conjunction_written_as_ampersands_names_and.c";
 
 int32 product(int32 u, int32 v) {
     requires u < 100 && v < 100;
-    ensures result == u * v by auto;
+    ensures result == u * v by auto();
 }
 ```
 

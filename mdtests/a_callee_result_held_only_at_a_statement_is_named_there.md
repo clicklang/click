@@ -13,8 +13,8 @@ int32 caller(void) { int32 r = value(); return r + 1; }
 
 ```click
 verifying "a_callee_result_held_only_at_a_statement_is_named_there.c";
-int32 value() { ensures result == -56 by auto; }
-int32 caller() { ensures result == 200 by auto; }
+int32 value() { ensures result == -56 by auto(); }
+int32 caller() { ensures result == 200 by auto(); }
 ```
 
 ```expect

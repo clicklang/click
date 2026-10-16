@@ -72,7 +72,7 @@ void inspect(struct node* parent) {
         owns tree_context: parent_at(root);
         invariant parent == parent_identity(tree_context.model);
         decreases 0;
-        initialize by simp;
+        initialize by simp();
         preserve by {
             match tree_context.model {
                 Parent::At(pid, sm, fm) => {

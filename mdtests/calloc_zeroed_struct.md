@@ -26,7 +26,7 @@ int32 calloc_zeroed_struct() {
 verifying "calloc_zeroed_struct.c";
 
 int32 calloc_zeroed_struct() {
-    ensures result == 0 or result == 1 by auto;
+    ensures result == 0 or result == 1 by auto();
 }
 ```
 

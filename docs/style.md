@@ -69,11 +69,12 @@ diagnostic.
 ## Proof example conventions
 
 For a function whose proof needs only the default automation, omit the proof
-clause. Use `by auto;` when an example is explaining that automation explicitly.
-When a proof needs written steps, prefer a `by { ... }` block with tactic calls
-such as `execute();` and `simp();`. Show shorthand such as `by simp;` when
-teaching that shorthand or reproducing a fixture that uses it. These are
-example conventions; all documented forms remain supported.
+clause. Use `by auto();` when an example is explaining that automation explicitly.
+For a one-tactic proof, use `by T(args);`, such as `by simp();` or
+`by assumption();`. Braces are optional around that single tactic. Use
+`by { ... }` for a sequence of tactics. Call-style tactics always take
+parentheses, including `simp()` and `auto()`. Structural forms such as `if`,
+`match`, and `have` retain their own grammar.
 
 Use semantic proof marks for states a handwritten proof has already reached.
 Use numeric statement selectors when the example needs to target a source

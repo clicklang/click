@@ -27,7 +27,7 @@ verifying "take.c";
 
 int32 take(int32* p) {
     consumes p[0..1];
-    ensures result == 0 by auto;
+    ensures result == 0 by auto();
 }
 
 int32 loop_resource_lifetime_join(int32* p) {

@@ -17,7 +17,7 @@ mode "kernel";
 verifying "main.c";
 
 int64 *values(int64 *p) {
-    ensures result == p by auto;
+    ensures result == p by auto();
 }
 ```
 

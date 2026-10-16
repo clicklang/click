@@ -39,12 +39,12 @@ int32 lifecycle() { ensures result == 0 or result == 2; } by {
     fold(slot(&pool, p));
     fold(slot(&pool, p + 1));
     step();
-    have count(slot(&pool, _)) == 1 by simp;
+    have count(slot(&pool, _)) == 1 by simp();
     open(slot(&pool, p + 1)) { step(); step(); }
     unfold(slot(&pool, p + 1));
     unfold(authority(slot(&pool, _)));
     step();
-    have p[0] == 0 by simp;
+    have p[0] == 0 by simp();
     execute(); simp();
 }
 ```

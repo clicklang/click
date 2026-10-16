@@ -40,14 +40,14 @@ int32 nested_count(int32 n, int32 m) {
         invariant i >= 0;
         invariant j >= 0;
         invariant j <= m;
-        initialize by simp;
+        initialize by simp();
         preserve by {
             step();
             loop {
                 decreases m - j;
                 invariant j >= 0;
                 invariant j <= m;
-                initialize by simp;
+                initialize by simp();
                 preserve by {
                     step();
                     close_invariants();

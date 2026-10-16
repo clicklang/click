@@ -127,9 +127,9 @@ theorem sized_context_early_stop(ctx: SizedContext, sub: SizedTree, previous: in
             },
             SizedContext::Left(node, parent, color, value, sibling, up) => {
                 unfold(sized_context_valid(SizedContext::Left(node, parent, color, value, sibling, up), to_integer(previous)));
-                have to_integer(value) == 1 + to_integer(previous) + to_integer(sized_value(sibling)) by auto;
-                have sized_counts_valid(sibling) == 1 by auto;
-                have sized_context_valid(up, to_integer(value)) == 1 by auto;
+                have to_integer(value) == 1 + to_integer(previous) + to_integer(sized_value(sibling)) by auto();
+                have sized_counts_valid(sibling) == 1 by auto();
+                have sized_context_valid(up, to_integer(value)) == 1 by auto();
                 have sized_counts_valid(SizedTree::Node(node, parent, color, value, sub, sibling)) == 1 by {
                     unfold(sized_counts_valid(SizedTree::Node(node, parent, color, value, sub, sibling)));
                     rewrite(sized_value(sub) == previous);
@@ -144,9 +144,9 @@ theorem sized_context_early_stop(ctx: SizedContext, sub: SizedTree, previous: in
             },
             SizedContext::Right(node, parent, color, value, sibling, up) => {
                 unfold(sized_context_valid(SizedContext::Right(node, parent, color, value, sibling, up), to_integer(previous)));
-                have to_integer(value) == 1 + to_integer(sized_value(sibling)) + to_integer(previous) by auto;
-                have sized_counts_valid(sibling) == 1 by auto;
-                have sized_context_valid(up, to_integer(value)) == 1 by auto;
+                have to_integer(value) == 1 + to_integer(sized_value(sibling)) + to_integer(previous) by auto();
+                have sized_counts_valid(sibling) == 1 by auto();
+                have sized_context_valid(up, to_integer(value)) == 1 by auto();
                 have sized_counts_valid(SizedTree::Node(node, parent, color, value, sibling, sub)) == 1 by {
                     unfold(sized_counts_valid(SizedTree::Node(node, parent, color, value, sibling, sub)));
                     rewrite(sized_value(sub) == previous);

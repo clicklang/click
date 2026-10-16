@@ -139,12 +139,12 @@ int32 tree_is_leaf(struct node* node) {
         }
     }
     if at(function.entry, node->left) != at(function.entry, 0) {
-        have result == 1 implies node->left == 0 by auto;
-        have result == 1 implies node->right == 0 by auto;
-        have node->left != 0 implies result == 0 by auto;
-        have node->left == 0 implies node->right != 0 implies result == 0 by auto;
-        have node->left == 0 implies node->right == 0 implies result == 1 by auto;
-        have result == 0 or result == 1 by auto;
+        have result == 1 implies node->left == 0 by auto();
+        have result == 1 implies node->right == 0 by auto();
+        have node->left != 0 implies result == 0 by auto();
+        have node->left == 0 implies node->right != 0 implies result == 0 by auto();
+        have node->left == 0 implies node->right == 0 implies result == 1 by auto();
+        have result == 0 or result == 1 by auto();
  assumption();
         assumption();
         assumption();
@@ -153,12 +153,12 @@ int32 tree_is_leaf(struct node* node) {
         assumption();
     } else {
         if at(function.entry, node->right) != at(function.entry, 0) {
-            have result == 1 implies node->left == 0 by auto;
-            have result == 1 implies node->right == 0 by auto;
-            have node->left != 0 implies result == 0 by auto;
-            have node->left == 0 implies node->right != 0 implies result == 0 by auto;
-            have node->left == 0 implies node->right == 0 implies result == 1 by auto;
-            have result == 0 or result == 1 by auto;
+            have result == 1 implies node->left == 0 by auto();
+            have result == 1 implies node->right == 0 by auto();
+            have node->left != 0 implies result == 0 by auto();
+            have node->left == 0 implies node->right != 0 implies result == 0 by auto();
+            have node->left == 0 implies node->right == 0 implies result == 1 by auto();
+            have result == 0 or result == 1 by auto();
      assumption();
             assumption();
             assumption();
@@ -166,12 +166,12 @@ int32 tree_is_leaf(struct node* node) {
             assumption();
             assumption();
         } else {
-            have result == 1 implies node->left == 0 by auto;
-            have result == 1 implies node->right == 0 by auto;
-            have node->left != 0 implies result == 0 by auto;
-            have node->left == 0 implies node->right != 0 implies result == 0 by auto;
-            have node->left == 0 implies node->right == 0 implies result == 1 by auto;
-            have result == 0 or result == 1 by auto;
+            have result == 1 implies node->left == 0 by auto();
+            have result == 1 implies node->right == 0 by auto();
+            have node->left != 0 implies result == 0 by auto();
+            have node->left == 0 implies node->right != 0 implies result == 0 by auto();
+            have node->left == 0 implies node->right == 0 implies result == 1 by auto();
+            have result == 0 or result == 1 by auto();
      assumption();
             assumption();
             assumption();

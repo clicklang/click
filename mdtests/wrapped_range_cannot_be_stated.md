@@ -26,7 +26,7 @@ int32 wrapped_view(int32* p, int32 n) {
     requires n == 1073741824;
     requires 0 < n;
     views p[0..n];
-    ensures result == p[0] by auto;
+    ensures result == p[0] by auto();
 }
 ```
 

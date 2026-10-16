@@ -40,7 +40,7 @@ void round_trip(struct Box* p, int32 n) {
         owns b: box(p);
         decreases n;
         invariant n >= 0;
-        initialize by simp;
+        initialize by simp();
         preserve by {
             match b.model {
                 Shape::Node(identity) => {

@@ -26,7 +26,7 @@ verifying "struct_tagged_union_write.c";
 int32 write_number(struct packet* packet) {
     ensures result == 0;
 } by {
-    auto;
+    auto();
 }
 ```
 

@@ -5,4 +5,4 @@ int32 json_object_inc_ref_count(struct json_object* obj) {
     requires obj->ref_count < 2147483647;
     ensures returns_incremented: result == old(obj->ref_count) + 1;
     ensures stores_incremented: obj->ref_count == old(obj->ref_count) + 1;
-} by auto;
+} by auto();

@@ -22,7 +22,7 @@ verifying "c_pointer_cell_cast_store_needs_ownership.c";
 
 void write_once(struct node* parent, struct node* new) {
     views parent->left;
-    ensures parent->left == new by auto;
+    ensures parent->left == new by auto();
 }
 ```
 

@@ -1960,7 +1960,7 @@ void walk(int32 n) { requires n >= 0; ensures 0 == 0; } by {
     loop {
         decreases n - i;
         invariant 0 <= i and i <= n;
-        initialize by simp;
+        initialize by simp();
         preserve by {
             have i >= 0 by { assumption(); }
             apply(positive(0));
@@ -2015,7 +2015,7 @@ void walk(int32 n) { requires n == 12; ensures 0 == 0; } by {
             source.push_str(&format!("        invariant i >= -{bound};\n"));
         }
         source.push_str(
-            r#"        initialize by simp;
+            r#"        initialize by simp();
         preserve by { step(); close_invariants(); }
     }
     have 0 == 1 by { normalize(); }
@@ -2747,7 +2747,7 @@ void walk(int32 n) { requires n == 12; ensures 0 == 0; } by {
             &click_path,
             "verifying \"realloc.c\";\n\
                 int32 realloc_preserves_calloc_prefix() {\n\
-                    ensures result == 0 or result == -1 by auto;\n\
+                    ensures result == 0 or result == -1 by auto();\n\
                 }\n",
         )
         .expect("Click sidecar should be writable");

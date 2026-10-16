@@ -132,7 +132,7 @@ int32 owned_split_buffer_get_left(
     requires index < owner->split;
     views owned_split_buffer(owner);
 
-    ensures result == owner->data[index] by auto;
+    ensures result == owner->data[index] by auto();
 }
 
 int32 owned_split_buffer_pipeline(
@@ -172,8 +172,8 @@ int32 owned_split_buffer_pipeline(
         at(statement(3).entry, owner->data) == data;
         2 <= length;
     }
-    have 1 < length by auto;
-    have 1 < owner->len by auto;
+    have 1 < length by auto();
+    have 1 < owner->len by auto();
     step();
     transport(at(statement(4).entry, owner->data) == data, owner->data == data) using {
         at(statement(4).entry, owner->data) == data;

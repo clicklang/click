@@ -56,13 +56,13 @@ uint8 realloc_calloc_uint8_pointer_array() {
 verifying "realloc_calloc_int32_pointer_array.c";
 
 int32 realloc_calloc_int32_pointer_array() {
-    ensures result == 1 or result == 37 by auto;
+    ensures result == 1 or result == 37 by auto();
 }
 
 verifying "realloc_calloc_uint8_pointer_array.c";
 
 uint8 realloc_calloc_uint8_pointer_array() {
-    ensures result == 1 or result == 42 by auto;
+    ensures result == 1 or result == 42 by auto();
 }
 ```
 

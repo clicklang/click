@@ -42,7 +42,7 @@ int32 stop_at(int32 n) {
         decreases i;
         invariant i >= 0;
 
-        initialize by simp;
+        initialize by simp();
         preserve by {
             if i == 3 {
                 step();

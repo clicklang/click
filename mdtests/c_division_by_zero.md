@@ -13,7 +13,7 @@ int32 divide_by_zero() {
 verifying "divide_by_zero.c";
 
 int32 divide_by_zero() {
-    ensures no_result: result == 0 by auto;
+    ensures no_result: result == 0 by auto();
 }
 ```
 

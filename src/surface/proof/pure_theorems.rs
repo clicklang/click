@@ -2333,7 +2333,7 @@ fn claim_script_sites(
 #[allow(clippy::too_many_arguments)]
 fn check_direct_pure_goal_with_proof(
     has_written_tactic: bool,
-    // `by auto;` tries the solver before `simp`.
+    // `by auto();` tries the solver before `simp`.
     auto: bool,
     claim_label: &str,
     context: &PureTheoremContext,

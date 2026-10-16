@@ -59,8 +59,8 @@ int32 owned_segmented_buffer_init(
     step();
     step();
     fold(owned_segmented_buffer(owner));
-    have 0 < owner->first_len by auto;
-    have 0 < owner->second_len by auto;
+    have 0 < owner->first_len by auto();
+    have 0 < owner->second_len by auto();
     assumption();
     assumption();
     assumption();
@@ -292,7 +292,7 @@ int32 owned_segmented_buffer_pipeline(
         *first_data == first_value;
     }
     step();
-    have owner->first_data == first_data by auto;
+    have owner->first_data == first_data by auto();
     assumption();
     assumption();
     assumption();

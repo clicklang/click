@@ -24,19 +24,19 @@ spec enum Tree { Empty, Node(Color, Tree) }
 theorem first_field(t: Tree, c: Color, r: Tree) {
     requires t == Tree::Node(c, r);
     requires t == Tree::Node(Color::Black, Tree::Empty);
-    ensures c == Color::Black by auto;
+    ensures c == Color::Black by auto();
 }
 
 theorem second_field(t: Tree, c: Color, r: Tree) {
     requires t == Tree::Node(c, r);
     requires t == Tree::Node(Color::Black, Tree::Empty);
-    ensures r == Tree::Empty by auto;
+    ensures r == Tree::Empty by auto();
 }
 
 theorem different_constructors(t: Tree, c: Color, r: Tree) {
     requires t == Tree::Node(c, r);
     requires t == Tree::Empty;
-    ensures c == Color::Red by auto;
+    ensures c == Color::Red by auto();
 }
 
 resource at(p: struct node*) {
@@ -53,7 +53,7 @@ void touch(struct node *p) {
     match t.model {
         Tree::Empty => { contradiction(t.model == Tree::Empty); },
         Tree::Node(color, rest) => {
-            have color == Color::Black by auto;
+            have color == Color::Black by auto();
             execute();
         }
     }

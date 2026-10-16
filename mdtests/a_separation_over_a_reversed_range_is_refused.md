@@ -30,7 +30,7 @@ int32 separate_over_reversed_range(int32 a[], int32 b[], int32 s, int32 t) {
     requires separate(memory(a[s..t]), memory(b[0..1]));
     owns b[0..1];
 
-    ensures result == b[0] by auto;
+    ensures result == b[0] by auto();
 }
 ```
 

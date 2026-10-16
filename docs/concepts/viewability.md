@@ -36,7 +36,7 @@ the contract needs:
 ```click
 int32 first(int32 p[]) {
     views p[0..1];
-    ensures result == p[0] by auto;
+    ensures result == p[0] by auto();
 }
 ```
 
@@ -149,7 +149,7 @@ theorem cell_of_a_viewed_range(v: int32[], lo: int32, hi: int32, k: int32) {
     views v[lo..hi];
     requires lo <= k;
     requires k < hi;
-    ensures to_integer(v[k]) == to_integer(v[k]) by simp;
+    ensures to_integer(v[k]) == to_integer(v[k]) by simp();
 }
 ```
 
@@ -207,7 +207,7 @@ requires 0 <= k;
 requires k < n;
 requires viewable(p[0..n]);
 views p[0..n];
-ensures result == p[k] by auto;
+ensures result == p[k] by auto();
 ```
 
 Loops usually need invariants to preserve these bounds at every iteration.
@@ -269,7 +269,7 @@ can be applied; see
 
 <!-- verified-example: mdtests/opaque_call_old_entry_state.md -->
 ```click
-ensures result == old(p[0]) by auto;
+ensures result == old(p[0]) by auto();
 ```
 
 This is how postconditions talk about preservation or change. The expression

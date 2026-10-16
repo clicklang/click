@@ -22,9 +22,9 @@ theorem adler_reduction(value: uint32) {
     }
 }
 theorem full_width_reduction() {
-    ensures 4294967295u32 % 65521u32 == 224u32 by simp;
-    ensures 2147483648u32 % 4294967295u32 == 2147483648u32 by simp;
-    ensures 4294967295u32 % 1u32 == 0u32 by simp;
+    ensures 4294967295u32 % 65521u32 == 224u32 by simp();
+    ensures 2147483648u32 % 4294967295u32 == 2147483648u32 by simp();
+    ensures 4294967295u32 % 1u32 == 0u32 by simp();
 }
 ```
 

@@ -32,14 +32,14 @@ long local(void) {
 ```click
 verifying "lengths.c";
 int mask_size() {
-    ensures result == 128 by auto;
+    ensures result == 128 by auto();
 }
 unsigned long update(struct packet *p) {
     owns p->words[1][1];
-    ensures result == 4294967296u64 by auto;
+    ensures result == 4294967296u64 by auto();
 }
 long local() {
-    ensures result == 16 by auto;
+    ensures result == 16 by auto();
 }
 ```
 

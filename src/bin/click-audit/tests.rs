@@ -182,9 +182,9 @@ fn changed_selection_maps_leaf_proof_and_contract_changes_to_callers() {
 verifying "leaf.c";
 verifying "caller.c";
 verifying "unrelated.c";
-int32 leaf(int32 x) { ensures result == x; } by simp;
-int32 caller(int32 x) { ensures result == x; } by auto;
-int32 unrelated(int32 x) { ensures result == x; } by auto;
+int32 leaf(int32 x) { ensures result == x; } by simp();
+int32 caller(int32 x) { ensures result == x; } by auto();
+int32 unrelated(int32 x) { ensures result == x; } by auto();
 "#;
     let site = |claim: &str, line| AuditSite {
         click_path: PathBuf::from("example.click"),
@@ -208,7 +208,7 @@ int32 unrelated(int32 x) { ensures result == x; } by auto;
     ];
 
     for changed in [
-        baseline.replacen("by simp", "by auto", 1),
+        baseline.replacen("by simp()", "by auto()", 1),
         baseline.replacen("result == x", "result >= x", 1),
     ] {
         let selection =
@@ -330,8 +330,8 @@ fn an_expansion_that_does_more_work_fails_the_comparison_deterministically() {
         "by {{\n        step();\n{}        assumption();\n    }}",
         "        have result == 1 by {\n            normalize();\n        }\n".repeat(300)
     );
-    let lean = original.replacen("by auto;", explicit, 1);
-    let heavy = original.replacen("by auto;", &redundant, 1);
+    let lean = original.replacen("by auto();", explicit, 1);
+    let heavy = original.replacen("by auto();", &redundant, 1);
     assert_ne!(lean, original);
     assert_ne!(heavy, original);
     let limits = AuditLimits::default();
@@ -612,7 +612,7 @@ int32 count_to_one() {
     step();
     loop {
         invariant i >= 0 and i <= 1;
-        initialize by simp;
+        initialize by simp();
         preserve by {
             step();
             close_invariants();
@@ -725,9 +725,9 @@ int32 write_selected(int32 p[2], int32 flag) {
 } by {
     execute();
     if result == 0 {
-        have result + 1 == 1 by simp;
+        have result + 1 == 1 by simp();
     } else {
-        have result - 1 == 0 by simp;
+        have result - 1 == 0 by simp();
     }
     simp();
 }
@@ -901,7 +901,7 @@ void object_retain_many(struct object* obj, int32 amount) {
     ensures defined(obj->refs);
 } by {
     open(control(obj)) {
-        have obj->refs == count(reference(obj)) by simp;
+        have obj->refs == count(reference(obj)) by simp();
         step();
         fold(amount of reference(obj));
     }
@@ -927,7 +927,7 @@ void object_retain_many(struct object* obj, int32 amount) {
     };
     let sites = inventory_sites(std::slice::from_ref(&click_path)).unwrap();
     for needle in [
-        "have obj->refs == count(reference(obj)) by simp;",
+        "have obj->refs == count(reference(obj)) by simp();",
         "simp();\n}",
     ] {
         let line = line_of(needle);
@@ -1406,7 +1406,7 @@ fn loop_expansion_preserves_match_pointer_theorem_arguments_and_audits_every_sit
         "theorem ptr_self(p: struct rb_node*) { ensures p == p by { simp(); } }\n\
          theorem ptr_equal(p: struct rb_node*, q: struct rb_node*) { requires p == q; ensures p == q by { assumption(); } }\n\nfunction plug(",
         1,
-    ).replace("initialize by simp;", "");
+    ).replace("initialize by simp();", "");
     let anchor = "                    have identity == parent by {\n                        extract(identity == parent);\n                    }";
     assert!(
         source.contains(anchor),

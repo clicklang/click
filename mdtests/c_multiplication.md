@@ -29,16 +29,16 @@ verifying "multiply_overflow.c";
 
 int32 multiply_known(int32 x) {
     requires x == 3;
-    ensures symbolic_product: result == x * 2 by auto;
-    ensures concrete_product: result == 6 by auto;
+    ensures symbolic_product: result == x * 2 by auto();
+    ensures concrete_product: result == 6 by auto();
 }
 
 int32 multiply_precedence() {
-    ensures precedence: result == 14 by auto;
+    ensures precedence: result == 14 by auto();
 }
 
 int32 multiply_overflow() {
-    ensures no_wrapping_result: result == 0 by auto;
+    ensures no_wrapping_result: result == 0 by auto();
 }
 ```
 

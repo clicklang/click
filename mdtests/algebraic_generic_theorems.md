@@ -44,7 +44,7 @@ theorem append_right_identity<T>(xs: TestList<T>) {
 }
 
 theorem reflexive<T>(value: T) {
-    ensures value == value by simp;
+    ensures value == value by simp();
 }
 
 theorem reflexive_via_generic<T>(value: T) {

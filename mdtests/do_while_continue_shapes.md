@@ -44,15 +44,15 @@ int32 call_condition_without_switch() {
 verifying "do_while_continue_shapes.c";
 
 int32 stop_now() {
-    ensures result == 0 by auto;
+    ensures result == 0 by auto();
 }
 
 int32 switch_continue_plain_condition() {
-    ensures result == 2 by auto;
+    ensures result == 2 by auto();
 }
 
 int32 call_condition_without_switch() {
-    ensures result == 0 by auto;
+    ensures result == 0 by auto();
 }
 ```
 

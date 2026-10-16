@@ -17,7 +17,7 @@ int32 element_at(int32 p[], int32 k, int32 n) {
     requires k < n;
     requires viewable(p[0..n]);
     views p[0..n];
-    ensures result == p[k] by auto;
+    ensures result == p[k] by auto();
 }
 ```
 

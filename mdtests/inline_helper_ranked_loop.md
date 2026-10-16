@@ -41,7 +41,7 @@ int32 drain_to_zero(int32 value) {
     loop {
         decreases value;
         invariant value >= 0;
-        initialize by simp;
+        initialize by simp();
         preserve by {
             have 0 <= value - 1 by {
                 apply(int32_positive_predecessor_is_nonnegative(value)) using { value > 0; }

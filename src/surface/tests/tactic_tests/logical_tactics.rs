@@ -171,7 +171,7 @@ fn apply_using_uses_ambient_loadability_only_to_lower_explicit_premises() {
                 views data[0..1];
                 ensures result == data[0];
             } by {
-                have data[0] == data[0] by simp;
+                have data[0] == data[0] by simp();
                 step();
                 apply(preserve_equal(data[0], data[0])) using {
                     data[0] == data[0];
@@ -359,8 +359,8 @@ fn assumption_reuses_facts_but_does_not_normalize_or_extract_implications() {
 #[test]
 fn parses_local_have_proof_tactic() {
     let source = FILL3_CLICK.replace(
-        "by auto;",
-        "by { have n < 2147483647 by simp; execute(); simp(); }",
+        "by auto();",
+        "by { have n < 2147483647 by simp(); execute(); simp(); }",
     );
     let file = parse(&source).expect("local have tactic should parse");
     let tactics = file.function_blocks()[0].ensures()[0]
@@ -368,7 +368,7 @@ fn parses_local_have_proof_tactic() {
         .tactics()
         .expect("expected tactics");
 
-    // `have P by simp;` is the one-step script `have P by { simp(); }`.
+    // `have P by simp();` is the one-step script `have P by { simp(); }`.
     assert!(matches!(
         &tactics[0],
         ProofTactic::Have(ProofHave {
@@ -429,7 +429,7 @@ fn contract_lets_do_not_capture_later_quantifier_binders() {
         theorem false_range(x: int32) {
             requires x == 0;
             let saved = x;
-            ensures (0..2).all(|x| { saved == x }) by auto;
+            ensures (0..2).all(|x| { saved == x }) by auto();
         }
     "#;
     let error = verify_c0_sources(false_range, &[])
@@ -446,7 +446,7 @@ fn capture_avoiding_contract_lets_preserve_written_proof_names_and_expansion() {
     let source = r#"
         theorem universal(x: Integer) {
             let saved: Integer = x;
-            ensures forall (x: Integer) { saved == saved } by auto;
+            ensures forall (x: Integer) { saved == saved } by auto();
         }
 
         theorem existential(x: Integer) {
@@ -512,7 +512,7 @@ fn fixed_state_proof_intro_places_forall_binder_in_surface_scope() {
 #[test]
 fn parses_proof_if_tactic() {
     let source = FILL3_CLICK.replace(
-        "by auto;",
+        "by auto();",
         "by { if n <= 0 { execute(); simp(); } else { execute(); simp(); } }",
     );
     let file = parse(&source).expect("proof if should parse");
@@ -535,7 +535,7 @@ fn parses_proof_if_tactic() {
 #[test]
 fn parses_existential_proof_tactics() {
     let source = FILL3_CLICK.replace(
-        "by auto;",
+        "by auto();",
         "by { execute(); obtain (k: int32) { k == k }; witness { j: k + 1 }; simp(); }",
     );
     let file = parse(&source).expect("existential explicit proof script should parse");
@@ -565,7 +565,7 @@ fn rejects_named_requirement() {
 
             int32 id(int32 x) {
                 requires has_x: exists (k: int32) { k == x };
-                ensures result == x by auto;
+                ensures result == x by auto();
             }
         "#;
     let error = parse(source).expect_err("a requirement takes no label");
@@ -594,11 +594,13 @@ fn parses_unnamed_ensure_clause() {
 
 #[test]
 fn parses_simp_tactic() {
-    let source = FILL3_CLICK.replace("by auto", "by simp");
+    let source = FILL3_CLICK.replace("by auto()", "by simp()");
     let file = parse(&source).expect("sidecar should parse");
     let ensure = &file.function_blocks()[0].ensures()[0];
 
-    assert!(matches!(ensure.proof().tactic(), Some(SmartTactic::Simp)));
+    assert!(
+        matches!(ensure.proof(), SourceProof::Script(tactics) if matches!(tactics.as_slice(), [ProofTactic::Simp]))
+    );
 }
 
 #[test]
@@ -627,7 +629,7 @@ fn rejects_legacy_structural_region_syntax() {
                     invariant i >= 0;
                 }
 
-                ensures result == 3 by auto;
+                ensures result == 3 by auto();
             }
         "#;
     let error = parse(source).expect_err("legacy loop block syntax should fail");
@@ -641,7 +643,7 @@ fn rejects_legacy_structural_region_syntax() {
 
 #[test]
 fn rejects_legacy_proof_tactic_region_syntax() {
-    let source = FILL3_CLICK.replace("by auto;", "by { execute(); execute_until(loop 0); }");
+    let source = FILL3_CLICK.replace("by auto();", "by { execute(); execute_until(loop 0); }");
     let error = parse(&source).expect_err("legacy proof tactic region syntax should fail");
 
     assert!(
@@ -663,12 +665,12 @@ fn parses_click_proposition_syntax() {
             int32 logic(int32 x) {
                 requires x >= 0 and x < 10;
                 requires nonnegative(x);
-                ensures bounded: result >= 0 and result < 10 by auto;
-                ensures implication: result == x implies result >= 0 by auto;
-                ensures named_predicate: nonnegative(result) by auto;
+                ensures bounded: result >= 0 and result < 10 by auto();
+                ensures implication: result == x implies result >= 0 by auto();
+                ensures named_predicate: nonnegative(result) by auto();
                 ensures quantified: forall (k: int32) {
                     0 <= k implies k >= 0
-                } by auto;
+                } by auto();
             }
         "#;
     let file = parse(source).expect("proposition syntax should parse");
@@ -731,7 +733,7 @@ fn parses_contract_level_let_bindings() {
             int32 identity(int32 x) {
                 let expected: int32 = x;
 
-                ensures result_value: result == expected by auto;
+                ensures result_value: result == expected by auto();
             }
         "#;
     let file = parse(source).expect("contract-level let should parse");
@@ -758,7 +760,7 @@ fn parses_contract_level_let_where_bindings() {
             int32 identity(int32 x) {
                 let k: int32 where k == x;
 
-                ensures result_value: result == k by auto;
+                ensures result_value: result == k by auto();
             }
         "#;
     let file = parse(source).expect("contract-level let-where should parse");
@@ -785,7 +787,7 @@ fn parses_proposition_let_where_bindings() {
                 ensures result_value:
                     let k: int32 where k == x;
                     result == k
-                    by auto;
+                    by auto();
             }
         "#;
     let file = parse(source).expect("proposition let-where should parse");
@@ -809,7 +811,7 @@ fn rejects_contract_let_parameter_name_conflict() {
             int32 identity(int32 x) {
                 let x = 0;
 
-                ensures result_value: result == x by auto;
+                ensures result_value: result == x by auto();
             }
         "#;
     let error = parse(source).expect_err("contract let should not reuse parameter name");
@@ -827,7 +829,7 @@ fn rejects_unknown_predicate_call() {
             verifying "identity.c";
 
             int32 identity(int32 x) {
-                ensures unknown(x) by auto;
+                ensures unknown(x) by auto();
             }
         "#;
 
@@ -852,7 +854,7 @@ fn rejects_same_object_with_non_pointer_arguments() {
 
             int32 identity(int32 x) {
                 requires same_object(x, x);
-                ensures result == x by auto;
+                ensures result == x by auto();
             }
         "#;
 
@@ -897,7 +899,7 @@ fn rejects_predicate_call_with_wrong_arity() {
             }
 
             int32 identity(int32 x) {
-                ensures nonnegative(x, x) by auto;
+                ensures nonnegative(x, x) by auto();
             }
         "#;
 
@@ -932,7 +934,7 @@ fn verifies_opaque_predicate_from_requirement() {
 
             int32 identity_pointer_fact(int32* p) {
                 requires sorted_pair(p);
-                ensures still_sorted: sorted_pair(p) by auto;
+                ensures still_sorted: sorted_pair(p) by auto();
             }
         "#;
 
@@ -961,7 +963,7 @@ fn heap_dependent_ensures_still_owes_its_loads() {
             }
 
             int32 claim_sorted(int32* p) {
-                ensures sorted_pair(p) by auto;
+                ensures sorted_pair(p) by auto();
             }
         "#;
 
@@ -1003,11 +1005,11 @@ fn call_site_owes_the_definedness_of_a_heap_dependent_precondition() {
             int32 needs_sorted(int32* p) {
                 requires sorted_pair(p);
                 ensures result == 0;
-            } by auto;
+            } by auto();
 
             int32 calls_it(int32* q) {
                 ensures result == 0;
-            } by auto;
+            } by auto();
         "#;
 
     verify_c0_sources(
@@ -1175,8 +1177,8 @@ fn verifies_click_proposition_logic() {
             verifying "identity.c";
 
             int32 identity(int32 x) {
-                ensures prop_logic: result == x and not (result != x) by auto;
-                ensures prop_implies: result == x implies result == x by auto;
+                ensures prop_logic: result == x and not (result != x) by auto();
+                ensures prop_implies: result == x implies result == x by auto();
             }
         "#;
 
@@ -1187,9 +1189,9 @@ fn verifies_click_proposition_logic() {
 }
 
 #[test]
-fn proof_sugar_and_bare_smart_tactics_have_the_same_frontier_semantics() {
+fn single_simp_call_and_block_have_the_same_frontier_semantics() {
     let c_source = "int32 identity(int32 x) { return x; }";
-    let simp_errors = ["by simp;", "by { simp; }", "by simp;"].map(|proof| {
+    let simp_errors = ["by simp();", "by { simp(); }"].map(|proof| {
         let source = format!(
             "verifying \"identity.c\"; int32 identity(int32 x) {{ ensures result == x {proof} }}"
         );
@@ -1199,7 +1201,6 @@ fn proof_sugar_and_bare_smart_tactics_have_the_same_frontier_semantics() {
             .to_string()
     });
     assert_eq!(simp_errors[0], simp_errors[1]);
-    assert_eq!(simp_errors[0], simp_errors[2]);
     assert!(simp_errors[0].contains("requires execution to reach function exit first"));
 }
 
@@ -2889,7 +2890,7 @@ fn cases_arms_out_of_the_disjunction_order_are_refused() {
 #[test]
 fn parses_outcomes_arms_in_either_order() {
     let source = FILL3_CLICK.replace(
-        "by auto;",
+        "by auto();",
         "by { outcomes { threw => { simp(); } returned => { execute(); simp(); } } }",
     );
     let file = parse(&source).expect("outcomes arms in either order should parse");
@@ -2907,7 +2908,7 @@ fn parses_outcomes_arms_in_either_order() {
     ));
 
     let duplicate = FILL3_CLICK.replace(
-        "by auto;",
+        "by auto();",
         "by { outcomes { returned => { simp(); } returned => { simp(); } } }",
     );
     let error = parse(&duplicate).expect_err("an arm written twice is refused");

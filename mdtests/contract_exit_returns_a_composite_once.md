@@ -16,7 +16,7 @@ resource wrap(p: int32*) {
 verifying "composite_once.c";
 int32 f(int32* p) {
     owns wrap(p);
-} by auto;
+} by auto();
 ```
 
 ```expect

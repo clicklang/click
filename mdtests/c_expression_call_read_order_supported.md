@@ -58,35 +58,35 @@ int sequenced_conditional(void) {
 verifying "call_read_order_supported.c";
 
 int32 unaffected_operand() {
-    ensures result == 1 by auto;
+    ensures result == 1 by auto();
 }
 
 int32 unaffected_arguments() {
-    ensures result == 1 by auto;
+    ensures result == 1 by auto();
 }
 
 int32 unaffected_const_read() {
-    ensures result == 4 by auto;
+    ensures result == 4 by auto();
 }
 
 int32 unaffected_automatic_read() {
-    ensures result == 5 by auto;
+    ensures result == 5 by auto();
 }
 
 int32 unaffected_array_address() {
-    ensures result == 7 by auto;
+    ensures result == 7 by auto();
 }
 
 int32 sequenced_statement() {
-    ensures result == 2 by auto;
+    ensures result == 2 by auto();
 }
 
 int32 sequenced_or() {
-    ensures result == 1 by auto;
+    ensures result == 1 by auto();
 }
 
 int32 sequenced_conditional() {
-    ensures result == 2 by auto;
+    ensures result == 2 by auto();
 }
 ```
 

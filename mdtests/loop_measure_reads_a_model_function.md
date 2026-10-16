@@ -86,7 +86,7 @@ void countdown(int32 n) {
         decreases chain_len(c.model);
         invariant n >= 0;
 
-        initialize by simp;
+        initialize by simp();
         preserve by {
             match c.model {
                 Chain::Nil => { contradiction(c.model == Chain::Nil); },

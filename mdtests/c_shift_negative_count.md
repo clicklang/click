@@ -12,7 +12,7 @@ int32 shift_negative_count() {
 verifying "shift_negative_count.c";
 
 int32 shift_negative_count() {
-    ensures no_result: result == 0 by auto;
+    ensures no_result: result == 0 by auto();
 }
 ```
 

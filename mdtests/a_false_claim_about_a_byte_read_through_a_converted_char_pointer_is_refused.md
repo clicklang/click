@@ -23,9 +23,9 @@ verifying "a_false_claim_about_a_byte_read_through_a_converted_char_pointer_is_r
 
 int first_char(char *p) {
     views p[0..1];
-    ensures result == p[0] by auto;
+    ensures result == p[0] by auto();
 }
-int pass_pointer() { ensures result == 200 by auto; }
+int pass_pointer() { ensures result == 200 by auto(); }
 ```
 
 ```expect

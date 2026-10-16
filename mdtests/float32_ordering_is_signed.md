@@ -57,23 +57,23 @@ int32 double_mixed_sign_less() {
 verifying "float32_ordering_is_signed.c";
 
 int32 mixed_sign_less() {
-    ensures result == 1 by auto;
+    ensures result == 1 by auto();
 }
 
 int32 mixed_sign_greater() {
-    ensures result == 0 by auto;
+    ensures result == 0 by auto();
 }
 
 int32 same_sign_less() {
-    ensures result == 1 by auto;
+    ensures result == 1 by auto();
 }
 
 int32 signed_zero_equal() {
-    ensures result == 1 by auto;
+    ensures result == 1 by auto();
 }
 
 int32 double_mixed_sign_less() {
-    ensures result == 1 by auto;
+    ensures result == 1 by auto();
 }
 ```
 

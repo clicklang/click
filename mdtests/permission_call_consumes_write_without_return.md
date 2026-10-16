@@ -26,11 +26,11 @@ verifying "needs_write_back.c";
 int32 consume_first_write(int32 p[]) {
     consumes p[0..1];
 
-    ensures returns_written: result == p[0] by auto;
+    ensures returns_written: result == p[0] by auto();
 }
 
 int32 needs_write_back(int32 p[]) {
-    owns p[0..1] by auto;
+    owns p[0..1] by auto();
 
 }
 ```

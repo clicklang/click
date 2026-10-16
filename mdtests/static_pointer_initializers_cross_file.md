@@ -50,13 +50,13 @@ verifying "reader.c";
 int32 read_target_alias() {
     views target_file::target_alias;
     views target_file::target_alias[0..1];
-    ensures result == target_file::target_alias[0] by auto;
+    ensures result == target_file::target_alias[0] by auto();
 }
 
 int32 read_static_alias() {
     views target_file::read_static_alias::local_alias;
     views target_file::read_static_alias::local_alias[0..1];
-    ensures result == target_file::read_static_alias::local_alias[0] by auto;
+    ensures result == target_file::read_static_alias::local_alias[0] by auto();
 }
 
 int32 run() {
@@ -68,8 +68,8 @@ int32 run() {
     requires target_file::read_static_alias::local_alias[0] == 3;
     ensures result == 6;
 } by {
-    have target_file::target_alias[0] == 3 by simp;
-    have target_file::read_static_alias::local_alias[0] == 3 by simp;
+    have target_file::target_alias[0] == 3 by simp();
+    have target_file::read_static_alias::local_alias[0] == 3 by simp();
     execute();
     simp();
 }

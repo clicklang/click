@@ -16,7 +16,7 @@ int32 matrix_value() {
 verifying "multidimensional_local_array.c";
 
 int32 matrix_value() {
-    ensures selected_cell: result == 7 by auto;
+    ensures selected_cell: result == 7 by auto();
 }
 ```
 

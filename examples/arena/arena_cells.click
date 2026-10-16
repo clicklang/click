@@ -218,7 +218,7 @@ int32 arena_init(struct arena* arena, int32 capacity) {
         };
         owns occupied[0..capacity];
 
-        initialize by simp;
+        initialize by simp();
         preserve by {
             mark iteration;
             step();
@@ -234,7 +234,7 @@ int32 arena_init(struct arena* arena, int32 capacity) {
             simp();
         }
     }
-    have i == capacity by auto;
+    have i == capacity by auto();
     have forall (k: int32) {
         0 <= k and k < capacity implies occupied[k] == 0
     } by {
@@ -275,7 +275,7 @@ int32 arena_init(struct arena* arena, int32 capacity) {
         arena->capacity,
         1
     ));
-    have arena->capacity <= 1073741823 by auto;
+    have arena->capacity <= 1073741823 by auto();
     have separate(
         memory(arena->occupied[0..arena->capacity]),
         memory(arena->data[0..arena->capacity])
@@ -439,7 +439,7 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
         have result == 0 implies outcome.model == ArenaAllocOutcome::Failure;
         assumption();
         have result == 1 implies outcome.model ==
-            ArenaAllocOutcome::Success(region->start, region->end) by simp;
+            ArenaAllocOutcome::Success(region->start, region->end) by simp();
         assumption();
         have result == 1 implies region->arena == arena;
         assumption();
@@ -545,7 +545,7 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
         have result == 0 implies outcome.model == ArenaAllocOutcome::Failure;
         assumption();
         have result == 1 implies outcome.model ==
-            ArenaAllocOutcome::Success(region->start, region->end) by simp;
+            ArenaAllocOutcome::Success(region->start, region->end) by simp();
         assumption();
         have result == 1 implies region->arena == arena;
         assumption();
@@ -667,7 +667,7 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                 arena->occupied[k] == at(find_first_free_run.entry, arena->occupied[k])
         };
 
-        initialize by simp;
+        initialize by simp();
         preserve by {
             mark iteration;
             let { lo: lo, hi: hi } = unfold(run);
@@ -677,7 +677,7 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
             have lo + run_length == i by {
                 simp();
             }
-            have lo <= i by auto;
+            have lo <= i by auto();
             have 0 <= i by {
                 apply(int32_less_equal_transitive(0, lo, i)) using {
                     0 <= lo;
@@ -709,7 +709,7 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                     extract(lo <= k);
                     extract(k < i);
                     if k < at(iteration, i) {
-                        have k < hi by auto;
+                        have k < hi by auto();
                         instantiate(forall (j: int32) {
                             lo <= j and j < hi implies arena->occupied[j] == 0
                         }, k) using {
@@ -747,7 +747,7 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                         at(iteration, i) < at(iteration, arena->capacity);
                     }
                 }
-                have at(iteration, i) < i by auto;
+                have at(iteration, i) < i by auto();
                 have at(iteration, i) <= i by {
                     apply(int32_less_than_implies_less_equal(at(iteration, i), i)) using {
                         at(iteration, i) < i;
@@ -864,7 +864,7 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                 let run = fold(arena_scan(arena->data, arena->occupied, arena->capacity), {
                     lo: i, hi: i
                 });
-                have 0 <= at(iteration, i) by auto;
+                have 0 <= at(iteration, i) by auto();
                 have 0 <= 0 - at(iteration, i) + arena->capacity - 1 by {
                     arithmetic() using {
                         0 <= at(iteration, i);
@@ -992,7 +992,7 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
         have result == 0 implies outcome.model == ArenaAllocOutcome::Failure;
         assumption();
         have result == 1 implies outcome.model ==
-            ArenaAllocOutcome::Success(region->start, region->end) by simp;
+            ArenaAllocOutcome::Success(region->start, region->end) by simp();
         assumption();
         have result == 1 implies region->arena == arena;
         assumption();
@@ -1011,7 +1011,7 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
             intro();
             intro();
             extract(result == 1);
-            have not (result == 1) by auto;
+            have not (result == 1) by auto();
             contradiction(result == 1);
         }
         assumption();
@@ -1022,7 +1022,7 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
             intro();
             intro();
             extract(result == 1);
-            have not (result == 1) by auto;
+            have not (result == 1) by auto();
             contradiction(result == 1);
         }
         assumption();
@@ -1033,7 +1033,7 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
             intro();
             intro();
             extract(result == 1);
-            have not (result == 1) by auto;
+            have not (result == 1) by auto();
             contradiction(result == 1);
         }
         assumption();
@@ -1053,13 +1053,13 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
         assumption();
         assumption();
     } else {}
-    have run_length == count by auto;
-    have count == run_length by auto;
+    have run_length == count by auto();
+    have count == run_length by auto();
     have run_lo + count == i by {
         rewrite(count == run_length);
         assumption();
     }
-    have 0 <= count by auto;
+    have 0 <= count by auto();
     have defined(run_lo + count) by {
         simp();
     }
@@ -1076,13 +1076,13 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
         rewrite(i == run_lo + count);
         assumption();
     }
-    have defined(i - count) by auto;
+    have defined(i - count) by auto();
     step();
     have start == run_lo by {
         simp();
     }
     step();
-    have end == i by auto;
+    have end == i by auto();
     have run_lo <= arena->capacity by {
         apply(int32_less_equal_transitive(run_lo, run_hi, arena->capacity)) using {
             run_lo <= run_hi;
@@ -1170,7 +1170,7 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                 start <= k;
             }
         }
-        have k < arena->capacity by auto;
+        have k < arena->capacity by auto();
         instantiate(forall (j: int32) {
             start <= j and j < end implies arena->occupied[j] == 0
         }, k) using {
@@ -1218,7 +1218,7 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                 arena->occupied[k] == at(mark_free_run.entry, arena->occupied[k])
         };
 
-        initialize by simp;
+        initialize by simp();
         preserve by {
             let { next: m } = unfold(w);
             have m == i;
@@ -1369,7 +1369,7 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                     }
                     assumption();
                 }
-                have k < at(opened, i) by auto;
+                have k < at(opened, i) by auto();
                 transport(
                     at(opened, arena->occupied[k]) ==
                         at(mark_free_run.entry, arena->occupied[k]),
@@ -1558,7 +1558,7 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
             end <= k;
             k < arena->capacity;
         }
-        have 0 <= end by auto;
+        have 0 <= end by auto();
         have 0 <= k by {
             apply(int32_less_equal_transitive(0, end, k)) using {
                 0 <= end;
@@ -1584,8 +1584,8 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
     have arena->live_regions == n by {
         simp();
     }
-    have n < 2147483647 by auto;
-    have defined(n + 1) by auto;
+    have n < 2147483647 by auto();
+    have defined(n + 1) by auto();
     step();
     have region->start == start by {
         simp();
@@ -1604,7 +1604,7 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
             rewrite(region->start == start);
             assumption();
         }
-        have k < end by auto;
+        have k < end by auto();
         have 0 <= k by {
             apply(int32_less_equal_transitive(0, start, k)) using {
                 0 <= start;
@@ -1648,8 +1648,8 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
             rewrite(region->start == start);
             assumption();
         }
-        have k < end by auto;
-        have k < arena->capacity by auto;
+        have k < end by auto();
+        have k < arena->capacity by auto();
         instantiate(forall (j: int32) {
             at(marked, 0) <= at(marked, j) and at(marked, j) < at(marked, start) implies
                 at(marked, arena->occupied[j]) == old(arena->occupied[j])
@@ -1681,8 +1681,8 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
             rewrite(region->end == end);
             assumption();
         }
-        have 0 <= end by auto;
-        have 0 <= k by auto;
+        have 0 <= end by auto();
+        have 0 <= k by auto();
         instantiate(forall (j: int32) {
             at(marked, end) <= at(marked, j) and at(marked, j) < at(marked, arena->capacity) implies
                 at(marked, arena->occupied[j]) == old(arena->occupied[j])
@@ -1761,7 +1761,7 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
     have result == 0 implies outcome.model == ArenaAllocOutcome::Failure;
     assumption();
     have result == 1 implies outcome.model ==
-        ArenaAllocOutcome::Success(region->start, region->end) by simp;
+        ArenaAllocOutcome::Success(region->start, region->end) by simp();
     assumption();
     have result == 1 implies region->arena == arena;
     assumption();
@@ -1899,7 +1899,7 @@ void arena_free(struct region* region) {
     have separate(
         memory(*region),
         memory(region->arena->occupied[0..region->arena->capacity])
-    ) by simp;
+    ) by simp();
     mark unfolded;
     step();
     step();
@@ -1968,7 +1968,7 @@ void arena_free(struct region* region) {
             region->end <= k and k < arena->capacity implies
                 arena->occupied[k] == at(clear_occupied.entry, arena->occupied[k])
         };
-        initialize by simp;
+        initialize by simp();
         preserve by {
             let { next: m } = unfold(w);
             have m == i;
@@ -1982,7 +1982,7 @@ void arena_free(struct region* region) {
                 }
             }
             have region->end <= arena->capacity;
-            have i < arena->capacity by auto;
+            have i < arena->capacity by auto();
             mark opened;
             step();
             give(arena->data[i..i + 1]);
@@ -2063,7 +2063,7 @@ void arena_free(struct region* region) {
                     }
                     assumption();
                 }
-                have k < at(opened, i) by auto;
+                have k < at(opened, i) by auto();
                 transport(
                     at(opened, arena->occupied[k]) ==
                         at(clear_occupied.entry, arena->occupied[k]),
@@ -2098,7 +2098,7 @@ void arena_free(struct region* region) {
                     }
                     assumption();
                 }
-                have at(opened, i) < k by auto;
+                have at(opened, i) < k by auto();
                 have at(opened, i) <= k by {
                     apply(int32_less_than_implies_less_equal(at(opened, i), k)) using {
                         at(opened, i) < k;
@@ -2157,15 +2157,15 @@ void arena_free(struct region* region) {
     let { next: m } = unfold(w);
     have m <= region->end;
     have not (i < region->end);
-    have not (m < region->end) by auto;
+    have not (m < region->end) by auto();
     have m == region->end by {
         apply(int32_less_equal_and_not_less_than_implies_equal(m, region->end)) using {
             m <= region->end;
             not (m < region->end);
         }
     }
-    have region->start <= region->end by auto;
-    have 0 <= region->end by auto;
+    have region->start <= region->end by auto();
+    have 0 <= region->end by auto();
     have region->end <= arena->capacity;
     have forall (k: int32) {
         region->start <= k and k < region->end implies arena->occupied[k] == 0
@@ -2174,7 +2174,7 @@ void arena_free(struct region* region) {
         intro();
         extract(region->start <= k);
         extract(k < region->end);
-        have k < m by auto;
+        have k < m by auto();
         instantiate(forall (j: int32) {
             region->start <= j and j < m implies arena->occupied[j] == 0
         }, k) using {
@@ -2266,8 +2266,8 @@ void arena_free(struct region* region) {
         intro();
         extract(region->start <= k);
         extract(k < region->end);
-        have 0 <= k by auto;
-        have k < arena->capacity by auto;
+        have 0 <= k by auto();
+        have k < arena->capacity by auto();
         instantiate(forall (j: int32) {
             at(cleared, region->start) <= at(cleared, j) and at(cleared, j) < at(cleared, region->end) implies
                 at(cleared, arena->occupied[j]) == at(cleared, 0)
@@ -2336,7 +2336,7 @@ void arena_free(struct region* region) {
         intro();
         extract(region->end <= k);
         extract(k < arena->capacity);
-        have 0 <= k by auto;
+        have 0 <= k by auto();
         instantiate(forall (j: int32) {
             at(cleared, region->end) <= at(cleared, j) and at(cleared, j) < at(cleared, arena->capacity) implies
                 at(cleared, arena->occupied[j]) == old(region->arena->occupied[j])
@@ -2410,7 +2410,7 @@ void arena_write(struct region* region, int32 index, int32 value) {
             s + index < e;
         }
     }
-    have region->start == s by auto;
+    have region->start == s by auto();
     have region->start + index + 1 <= e by {
         rewrite(region->start == s);
         assumption();
@@ -2425,7 +2425,7 @@ void arena_write(struct region* region, int32 index, int32 value) {
     have region->arena->capacity == c by {
         simp();
     }
-    have region->start + index < region->arena->capacity by auto;
+    have region->start + index < region->arena->capacity by auto();
     mark w;
     execute();
     have forall (k: int32) {
@@ -2495,7 +2495,7 @@ int32 arena_read(struct region* region, int32 index) {
         rewrite(region->start == s);
         assumption();
     }
-    have s + index < c by auto;
+    have s + index < c by auto();
     have region->start + index < region->arena->capacity by {
         rewrite(region->start == s);
         rewrite(region->arena->capacity == c);
@@ -2698,7 +2698,7 @@ int32 arena_pipeline(
     have r1.start == at(z1, first->start) by {
         simp();
     }
-    have r1.end == at(z1, first->end) by auto;
+    have r1.end == at(z1, first->end) by auto();
     have forall (k: int32) {
         0 <= k and k < arena->capacity and (k < at(z1, first->start) or at(z1, first->end) <= k) implies
             arena->occupied[k] == 0
@@ -2829,10 +2829,10 @@ int32 arena_pipeline(
         have 1 <= s0.live by {
             simp();
         }
-        have first->arena == arena by auto;
+        have first->arena == arena by auto();
         mark f1;
         let { after: g1 } = step(arena_free(first), { r: r1, st: s0 });
-        have first->arena == arena by auto;
+        have first->arena == arena by auto();
         have first->arena->capacity == at(f1, first->arena->capacity) by {
             simp();
         }
@@ -3175,7 +3175,7 @@ int32 arena_pipeline(
         extract(k < arena->capacity);
         extract(k < at(z1, first->start) or at(z1, first->end) <= k);
         extract(k < at(z2, second->start) or at(z2, second->end) <= k);
-        have k < first->arena->capacity by auto;
+        have k < first->arena->capacity by auto();
         have first->arena->occupied[k] == at(w1, first->arena->occupied[k]) by {
             instantiate(forall (j: int32) {
                 0 <= j and j < first->arena->capacity implies
@@ -3264,7 +3264,7 @@ int32 arena_pipeline(
     have at(w2, s0.live) == 2 by {
         simp();
     }
-    have s0.live == 2 by auto;
+    have s0.live == 2 by auto();
     have r2.start == at(w2, r2.start) by {
         simp();
     }
@@ -3322,7 +3322,7 @@ int32 arena_pipeline(
         extract(k < arena->capacity);
         extract(k < at(z1, first->start) or at(z1, first->end) <= k);
         extract(k < at(z2, second->start) or at(z2, second->end) <= k);
-        have k < second->arena->capacity by auto;
+        have k < second->arena->capacity by auto();
         have second->arena->occupied[k] == at(w2, second->arena->occupied[k]) by {
             instantiate(forall (j: int32) {
                 0 <= j and j < second->arena->capacity implies
@@ -3384,8 +3384,8 @@ int32 arena_pipeline(
     have first->start == at(w2, first->start) by {
         simp();
     }
-    have second->arena->data == at(w2, second->arena->data) by auto;
-    have at(w2, second->arena->data) == at(w2, first->arena->data) by auto;
+    have second->arena->data == at(w2, second->arena->data) by auto();
+    have at(w2, second->arena->data) == at(w2, first->arena->data) by auto();
     have first->arena->data == at(w2, first->arena->data) by {
         rewrite(first->arena->data == second->arena->data);
         rewrite(second->arena->data == at(w2, second->arena->data));
@@ -3552,18 +3552,18 @@ int32 arena_pipeline(
             first->arena == arena;
         }
     }
-    have second->arena == arena by auto;
+    have second->arena == arena by auto();
     have second->start == at(m3, second->start) by {
         simp();
     }
     have first->arena->data == at(m3, first->arena->data) by {
         simp();
     }
-    have second->arena->data == first->arena->data by auto;
+    have second->arena->data == first->arena->data by auto();
     have at(m3, first->arena->data) == at(m3, second->arena->data) by {
         simp();
     }
-    have second->arena->data == at(m3, second->arena->data) by auto;
+    have second->arena->data == at(m3, second->arena->data) by auto();
     have second->arena->data[second->start + 0] == 22 by {
         transport(
             at(m3, second->arena->data[second->start + 0]) == 22,
@@ -3852,7 +3852,7 @@ int32 arena_pipeline(
                     arena->capacity == at(f2, arena->capacity);
                 }
             }
-            have k < at(z2, second->start) by auto;
+            have k < at(z2, second->start) by auto();
             have k < at(z2, second->start) or at(z2, second->end) <= k by {
                 assumption();
             }
@@ -3991,7 +3991,7 @@ int32 arena_pipeline(
             at(f2, s0.live) == 2;
         }
     }
-    have 1 <= g2.live by auto;
+    have 1 <= g2.live by auto();
     have g2.capacity == at(f2, s0.capacity) by {
         simp();
     }
@@ -4093,7 +4093,7 @@ int32 arena_pipeline(
                     arena->capacity == at(f3, arena->capacity);
                 }
             }
-            have k < at(z1, first->start) by auto;
+            have k < at(z1, first->start) by auto();
             have k < at(z1, first->start) or at(z1, first->end) <= k by {
                 assumption();
             }
@@ -4159,14 +4159,14 @@ int32 arena_pipeline(
                     at(f3, first->arena) == arena;
                 }
             }
-            have k < at(f3, arena->capacity) by auto;
+            have k < at(f3, arena->capacity) by auto();
             have at(z1, first->end) <= k by {
                 simp() using {
                     first->end <= k;
                     first->end == at(z1, first->end);
                 }
             }
-            have k < at(z1, first->start) or at(z1, first->end) <= k by auto;
+            have k < at(z1, first->start) or at(z1, first->end) <= k by auto();
             have at(f3, arena->occupied[k]) == 0 by {
                 instantiate(forall (j: int32) {
                     0 <= j and
@@ -4557,7 +4557,7 @@ int32 arena_pipeline(
                 at(w3, combined->arena) == arena;
             }
         }
-        have k < at(w3, arena->capacity) by auto;
+        have k < at(w3, arena->capacity) by auto();
         have at(w3, arena->occupied[k]) == 0 by {
             instantiate(forall (j: int32) {
                 0 <= j and
@@ -4715,7 +4715,7 @@ int32 arena_pipeline(
                 at(m5, combined->arena) == arena;
             }
         }
-        have k < at(m5, arena->capacity) by auto;
+        have k < at(m5, arena->capacity) by auto();
         have at(m5, arena->occupied[k]) == 0 by {
             instantiate(forall (j: int32) {
                 0 <= j and
@@ -4866,7 +4866,7 @@ int32 arena_pipeline(
                     combined->start == at(z3, combined->start);
                 }
             }
-            have k < at(z3, combined->start) or at(z3, combined->end) <= k by auto;
+            have k < at(z3, combined->start) or at(z3, combined->end) <= k by auto();
             have at(f4, arena->occupied[k]) == 0 by {
                 instantiate(forall (j: int32) {
                     0 <= j and
@@ -5041,7 +5041,7 @@ int32 arena_reuse(struct region* middle, struct region* reused) {
         extract(k < middle->arena->capacity);
         intro();
         if k < 2 {
-            have k < middle->start by auto;
+            have k < middle->start by auto();
             instantiate(forall (j: int32) {
                 0 <= j and j < middle->start implies
                     middle->arena->occupied[j] == old(middle->arena->occupied[j])
@@ -5049,7 +5049,7 @@ int32 arena_reuse(struct region* middle, struct region* reused) {
                 0 <= k;
                 k < middle->start;
             }
-            have k < old(middle->arena->capacity) by auto;
+            have k < old(middle->arena->capacity) by auto();
             instantiate(forall (j: int32) {
                 0 <= j and j < old(middle->arena->capacity) implies
                     old(middle->arena->occupied[j]) == 1
@@ -5076,7 +5076,7 @@ int32 arena_reuse(struct region* middle, struct region* reused) {
                 }
                 assumption();
             } else {
-                have middle->end <= k by auto;
+                have middle->end <= k by auto();
                 instantiate(forall (j: int32) {
                     middle->end <= j and j < middle->arena->capacity implies
                         middle->arena->occupied[j] == old(middle->arena->occupied[j])
@@ -5084,7 +5084,7 @@ int32 arena_reuse(struct region* middle, struct region* reused) {
                     middle->end <= k;
                     k < middle->arena->capacity;
                 }
-                have k < old(middle->arena->capacity) by auto;
+                have k < old(middle->arena->capacity) by auto();
                 instantiate(forall (j: int32) {
                     0 <= j and j < old(middle->arena->capacity) implies
                         old(middle->arena->occupied[j]) == 1
@@ -5098,7 +5098,7 @@ int32 arena_reuse(struct region* middle, struct region* reused) {
                         old(middle->arena->occupied[k]) == 1;
                     }
                 }
-                have not (middle->arena->occupied[k] == 0) by auto;
+                have not (middle->arena->occupied[k] == 0) by auto();
             contradiction(middle->arena->occupied[k] == 0);
             }
         }
@@ -5165,7 +5165,7 @@ int32 arena_reuse(struct region* middle, struct region* reused) {
             reused->start <= reused->start;
             reused->start < reused->end;
         }
-        have reused->start <= 4 by auto;
+        have reused->start <= 4 by auto();
         have reused->end <= 4 by {
             if 4 < reused->end {
                 instantiate(forall (k: int32) {

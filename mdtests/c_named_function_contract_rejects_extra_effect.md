@@ -47,12 +47,12 @@ int32 apply_store(
 ) {
     requires Store(callback);
     owns output[0..1];
-    ensures result == value by auto;
+    ensures result == value by auto();
 }
 
 int32 extra_effect_caller(int32* output) {
     owns output[0..2];
-    ensures result == 42 by auto;
+    ensures result == 42 by auto();
 }
 ```
 

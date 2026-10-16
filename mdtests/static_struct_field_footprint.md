@@ -38,12 +38,12 @@ verifying "static_struct_field_footprint.c";
 
 int32 write_first() {
     owns shared.first;
-    ensures result == 0 by auto;
+    ensures result == 0 by auto();
 }
 
 int32 write_second() {
     owns shared.second;
-    ensures result == 0 by auto;
+    ensures result == 0 by auto();
 }
 
 int32 keep_second() {

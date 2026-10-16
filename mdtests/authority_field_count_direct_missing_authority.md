@@ -37,10 +37,10 @@ int32 run() { ensures result == 0; } by {
     fold(authority(cell(p)));
     let first = fold(cell(p), { model: List<int32>::Cons(7, List<int32>::Nil) });
     fold(control(p));
-    have count(cell(p)) == 1 by simp;
+    have count(cell(p)) == 1 by simp();
     step(read_cell(p), { member: first });
-    have first.model == List<int32>::Cons(7, List<int32>::Nil) by simp;
-    have count(cell(p)) == 1 by simp;
+    have first.model == List<int32>::Cons(7, List<int32>::Nil) by simp();
+    have count(cell(p)) == 1 by simp();
     unfold(first);
     unfold(authority(cell(p)));
     execute(); simp();

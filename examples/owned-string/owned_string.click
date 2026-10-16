@@ -223,7 +223,7 @@ int32 owned_string_push(struct owned_string* owner, int32 value) {
     step();
     step();
     step();
-    have owner->len == at(statement(4).entry, (index + 1)) by auto;
+    have owner->len == at(statement(4).entry, (index + 1)) by auto();
     step();
     have owner->data == old(owner->data) by {
         simp();
@@ -278,7 +278,7 @@ int32 owned_string_pop(struct owned_string* owner) {
 } by {
     unfold(owned_string(owner));
     have (owner->len - 1) < owner->len by {
-        have 0 < owner->len by auto;
+        have 0 < owner->len by auto();
         apply(int32_positive_predecessor_strictly_decreases(owner->len)) using {
             0 < owner->len;
         }
@@ -296,7 +296,7 @@ int32 owned_string_pop(struct owned_string* owner) {
         normalize();
     }
     fold(owned_string(owner));
-    have owner->data[owner->len] == 0 by auto;
+    have owner->data[owner->len] == 0 by auto();
     assumption();
     assumption();
     assumption();
@@ -332,7 +332,7 @@ int32 owned_string_clear(struct owned_string* owner) {
     step();
     step();
     step();
-    have terminated_at(owner->data, owner->len) by auto;
+    have terminated_at(owner->data, owner->len) by auto();
     have 0 <= owner->len;
     have separate(
         memory(*owner),

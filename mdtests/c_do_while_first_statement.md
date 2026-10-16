@@ -41,12 +41,12 @@ int32 stepped(int32 v) {
 verifying "c_do_while_first_statement.c";
 
 int32 assign(int32 v) {
-    ensures result == v by auto;
+    ensures result == v by auto();
 }
 
 int32 store(int32* p) {
     owns p[0..1];
-    ensures result == 3 by auto;
+    ensures result == 3 by auto();
 }
 
 int32 executed(int32 v) {

@@ -6,7 +6,7 @@ and needs no range guard. A checked conversion is written `to_uint16(...)`.
 
 ```click
 theorem defined_everywhere(x: int32) {
-    ensures defined((uint16)x) by simp;
+    ensures defined((uint16)x) by simp();
 }
 ```
 

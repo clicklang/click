@@ -393,7 +393,7 @@ the current memory.
 
 <!-- verified-example: mdtests/c_fragments_in_contracts.md -->
 ```click
-ensures p[0] == old(p[0]) by auto;
+ensures p[0] == old(p[0]) by auto();
 ```
 
 For quantified old-memory postconditions:
@@ -402,7 +402,7 @@ For quantified old-memory postconditions:
 ```click
 ensures segment_unchanged: forall (k: int32) {
     0 <= k and k < n implies p[k] == old(p[k])
-} by auto;
+} by auto();
 ```
 
 Pointer-writing loops do not implicitly preserve old memory. Use explicit loop

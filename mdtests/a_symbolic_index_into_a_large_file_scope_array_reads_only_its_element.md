@@ -23,7 +23,7 @@ int32 get_word(int32 i, int32 j) {
     requires 0 <= j;
     requires j < 1000;
     requires words[j] == 7;
-    ensures result == 7 by auto;
+    ensures result == 7 by auto();
 }
 ```
 

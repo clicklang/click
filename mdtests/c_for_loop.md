@@ -79,7 +79,7 @@ verifying "for_continue_concrete.c";
 verifying "for_continue_nested.c";
 
 int32 for_sum_concrete() {
-    ensures sum: result == 3 by auto;
+    ensures sum: result == 3 by auto();
 }
 
 int32 for_count_invariant(int32 n) {
@@ -97,11 +97,11 @@ int32 for_count_invariant(int32 n) {
 }
 
 int32 for_continue_concrete() {
-    ensures total: result == 8 by auto;
+    ensures total: result == 8 by auto();
 }
 
 int32 for_continue_nested() {
-    ensures total: result == 6 by auto;
+    ensures total: result == 6 by auto();
 }
 ```
 

@@ -19,7 +19,7 @@ int32 for_loop_rejects_declaration() {
 verifying "for_loop_rejects_declaration.c";
 
 int32 for_loop_rejects_declaration() {
-    ensures result == 3 by auto;
+    ensures result == 3 by auto();
 }
 ```
 

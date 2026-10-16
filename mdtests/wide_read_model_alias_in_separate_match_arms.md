@@ -66,7 +66,7 @@ void inspect(struct node* parent, int32 side) {
         invariant parent == parent_identity(tree_context.model);
         invariant side == direction(tree_context.model);
         decreases 0;
-        initialize by simp;
+        initialize by simp();
         preserve by {
             match tree_context.model {
                 Parent::Left(pid, sm) => {

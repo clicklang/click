@@ -5794,7 +5794,7 @@ mod evidence_tests {
         let source = r#"
             verifying "spin.c";
             int32 spin() diverges { ensures 0 == 1; } by {
-                loop diverges { invariant 0 == 0; initialize by simp;
+                loop diverges { invariant 0 == 0; initialize by simp();
                     preserve by { step(); close_invariants(); }
                 }
                 simp();

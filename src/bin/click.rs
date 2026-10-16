@@ -117,7 +117,7 @@ mod tests {
         .unwrap();
         fs::write(
             &sidecar,
-            "verifying \"viewed_global.c\";\nvoid set_second() {\n    views words[1..2];\n    ensures words[1] == 7 by auto;\n}\n",
+            "verifying \"viewed_global.c\";\nvoid set_second() {\n    views words[1..2];\n    ensures words[1] == 7 by auto();\n}\n",
         )
         .unwrap();
         let error = entry(["verify".to_string(), sidecar.display().to_string()]).unwrap_err();
@@ -153,7 +153,7 @@ mod tests {
         fs::write(directory.join("f.c"), "int32 f() { return 1; }\n").unwrap();
         fs::write(
             directory.join("f.click"),
-            "verifying \"f.c\";\nint32 f() { ensures result == 1 by auto; }\n",
+            "verifying \"f.c\";\nint32 f() { ensures result == 1 by auto(); }\n",
         )
         .unwrap();
         let original = std::env::current_dir().unwrap();
@@ -472,7 +472,7 @@ mod tests {
         let passing = directory.join("passing.md");
         fs::write(
             &passing,
-            mdtest("int32 f() { ensures result == 1 by auto; }", "pass"),
+            mdtest("int32 f() { ensures result == 1 by auto(); }", "pass"),
         )
         .unwrap();
         let failing = directory.join("failing.md");
@@ -630,7 +630,7 @@ mod tests {
             (
                 "if_arm",
                 identity(
-                    "        have x == x by simp;\n        if x > 0 {\n            simp();\n        } else {\n            assumption();\n        }\n",
+                    "        have x == x by simp();\n        if x > 0 {\n            simp();\n        } else {\n            assumption();\n        }\n",
                 ),
                 10,
             ),
@@ -644,27 +644,27 @@ mod tests {
             (
                 "if_continuation",
                 identity(
-                    "        if x > 0 {\n            have x == x by simp;\n            have x == x by simp;\n        } else {\n            have x == x by simp;\n        }\n        assumption();\n",
+                    "        if x > 0 {\n            have x == x by simp();\n            have x == x by simp();\n        } else {\n            have x == x by simp();\n        }\n        assumption();\n",
                 ),
                 12,
             ),
             (
                 "initialize_helper",
                 count_up(
-                    "            have -1 < n by {\n                have n == n by simp;\n                assumption();\n            }\n            simp();\n",
+                    "            have -1 < n by {\n                have n == n by simp();\n                assumption();\n            }\n            simp();\n",
                 ),
                 15,
             ),
             (
                 "initialize_invariant_body",
                 count_up(
-                    "            have i >= 0 by simp;\n            have -1 < n by {\n                have n == n by simp;\n                assumption();\n            }\n",
+                    "            have i >= 0 by simp();\n            have -1 < n by {\n                have n == n by simp();\n                assumption();\n            }\n",
                 ),
                 16,
             ),
             (
                 "initialize_shared_script",
-                count_up("            have n == n by simp;\n            assumption();\n"),
+                count_up("            have n == n by simp();\n            assumption();\n"),
                 14,
             ),
         ];
@@ -1586,7 +1586,7 @@ int32 f() { ensures result == 2; } by { step(); simp(); }
             .collect::<Vec<_>>()
             .join(" implies ");
         format!(
-            "theorem at_limit_implication() {{ requires {implications}; ensures 0 == 0 by auto; }}\n"
+            "theorem at_limit_implication() {{ requires {implications}; ensures 0 == 0 by auto(); }}\n"
         )
     }
 
@@ -1620,7 +1620,7 @@ int32 f() { ensures result == 2; } by { step(); simp(); }
         exercise_supported_boundary(
             "expression",
             format!(
-                "theorem at_limit_expression() {{ requires {additions} == 0; ensures 0 == 0 by auto; }}\n"
+                "theorem at_limit_expression() {{ requires {additions} == 0; ensures 0 == 0 by auto(); }}\n"
             ),
             "at_limit_expression.ensures_0",
         );
@@ -1663,7 +1663,7 @@ int32 f() { ensures result == 2; } by { step(); simp(); }
         exercise_supported_boundary(
             "quantifiers",
             format!(
-                "theorem at_limit_quantifiers() {{ requires {quantifier_body}; ensures 0 == 0 by auto; }}\n"
+                "theorem at_limit_quantifiers() {{ requires {quantifier_body}; ensures 0 == 0 by auto(); }}\n"
             ),
             "at_limit_quantifiers.ensures_0",
         );
@@ -1679,7 +1679,7 @@ int32 f() { ensures result == 2; } by { step(); simp(); }
         exercise_supported_boundary(
             "conditionals",
             format!(
-                "theorem at_limit_conditionals() {{ requires {nested_conditionals} == 0; ensures 0 == 0 by auto; }}\n"
+                "theorem at_limit_conditionals() {{ requires {nested_conditionals} == 0; ensures 0 == 0 by auto(); }}\n"
             ),
             "at_limit_conditionals.ensures_0",
         );
@@ -1711,7 +1711,7 @@ int32 f() { ensures result == 2; } by { step(); simp(); }
             "type",
             format!(
                 "spec enum BoundaryBox<T> {{ Wrapped(T) }}\n\
-                 theorem at_limit_type(value: {nested_type}) {{ ensures 0 == 0 by auto; }}\n"
+                 theorem at_limit_type(value: {nested_type}) {{ ensures 0 == 0 by auto(); }}\n"
             ),
             "at_limit_type.ensures_0",
         );

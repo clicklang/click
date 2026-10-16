@@ -27,7 +27,7 @@ int32 count() { ensures result == 3; } by {
         decreases 3 - i;
         invariant i >= 0;
         invariant i <= 3;
-        initialize by simp;
+        initialize by simp();
         preserve by {
             mark iteration;
             step();

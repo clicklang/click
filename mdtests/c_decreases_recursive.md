@@ -20,7 +20,7 @@ verifying "c_decreases_recursive.c";
 
 int32 countdown(int32 n) {
     decreases n;
-    ensures result == 0 by auto;
+    ensures result == 0 by auto();
 }
 ```
 

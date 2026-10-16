@@ -100,25 +100,25 @@ when the default misses or when a proof must not search.
 
 ## Automation and search
 
-`by simp;` is sugar for `by { simp(); }`, and `by auto;` is the same as
+`by simp();` is sugar for `by { simp(); }`, and `by auto();` is the same as
 omitting the proof clause.
-`by auto;` and an omitted proof clause execute the function, then close its
+`by auto();` and an omitted proof clause execute the function, then close its
 claims with `auto`, per claim or once for a grouped proof. Closing with
 `auto` tries `simp` on each open claim, then the solver and a bounded search
 for a chain of rewrites on a claim `simp` leaves open. A proof script that
 ends with a claim still open closes it the same way, so a script needs no
-final closer. On a stated fact, `have P by auto;`, there is no C to execute,
+final closer. On a stated fact, `have P by auto();`, there is no C to execute,
 and `auto` is the solver, then `simp`, then the rewrite search. Before the
 solver, `auto` tries a goal that restates an available fact through one
 connected equality, such as `f(Node(..)) == 1` beside `f(t) == 1` and
-`t == Node(..)`: one `rewrite` and `assumption`, at most 16 rewrites. `auto` has no
-script-tactic spelling of its own: a written `simp()` is `simp` alone. Successful smart tactics and `auto` retain the checked
+`t == Node(..)`: one `rewrite` and `assumption`, at most 16 rewrites. `auto()` is a whole-proof call, written `by auto();` or `by { auto(); }`,
+and cannot be a step in a mixed script. A written `simp()` invokes `simp` alone. Successful smart tactics and `auto` retain the checked
 surface provenance that `click expand` can render as an explicit proof.
 Source-premise selection skips synthesized candidates whose rendered
 propositions do not tokenize as Click, rather than counting a route through an
 unnamed kernel value as a successful expandable proof.
 
-A failed execution `have P by auto;` names `auto` and the written `P`,
+A failed execution `have P by auto();` names `auto` and the written `P`,
 rather than an internal search step or subgoal. Exhausted verification
 budgets keep their budget diagnostic. See
 [`auto_failure_names_the_written_goal.md`](https://github.com/clicklang/click/blob/master/mdtests/auto_failure_names_the_written_goal.md).
@@ -154,7 +154,7 @@ use the written tactic position in the current block, counting preceding
 [`call_prerequisite_names_the_second_source_clause.md`](https://github.com/clicklang/click/blob/master/mdtests/call_prerequisite_names_the_second_source_clause.md)
 and its first-clause companion.
 
-For ordinary authoring, start with the omitted default, `by auto;`, or the
+For ordinary authoring, start with the omitted default, `by auto();`, or the
 smallest comprehensible smart tactic. Use `click profile` before replacing a
 smart tactic with an exact explicit proof. The simple forms below are public,
 maintained Surface Click, but long `using` blocks are normally expansion output
@@ -484,15 +484,15 @@ fast path leaves open. The fast path checks each requirement against facts that
 state it exactly and local kernel decisions, with no search.
 
 The body proves that obligation at the step's pre-state, as a `have` would, and
-the step then runs with it stated. The body is one tactic call, `simp;`, or a
-block.
+the step then runs with it stated. The body is one tactic call, such as
+`simp();`, or a block.
 
 **Failure, checking, and tools:**
 
 Refused when the fast path leaves no obligation open (superfluous) or more than
 one; the second refusal spells every open obligation as a `requires` entry to
 copy. The default `step()` already invokes implicit `auto` for open obligations, so
-`step() by auto` is rejected; write `step()` instead. Expansion keeps the
+`step() by auto()` is rejected; write `step()` instead. Expansion keeps the
 `by` and prints the body's checked steps. The form is checked in a claim's
 linear script and in a `branch` arm
 ([`step_by_and_requires_in_a_branch_arm.md`](https://github.com/clicklang/click/blob/master/mdtests/step_by_and_requires_in_a_branch_arm.md)).
@@ -610,9 +610,9 @@ closes a conjunction from already-established facts. Empty or unfinished arms fa
 The `both` source location owns expansion and profiling of its nested proof;
 expansion preserves both bodies with their checked steps.
 
-`by simp;` is sugar for a script containing the same `simp()` operation at the
+`by simp();` is sugar for a script containing the same `simp()` operation at the
 same proof state. Neither form implicitly executes a function. Write
-`execute(); simp();` when both operations are intended, or use `by auto;`,
+`execute(); simp();` when both operations are intended, or use `by auto();`,
 or end the script after `execute();` to close with `auto`. A
 `simp()` written before execution has reached the function exit is refused
 with the frontier it stands at; the end of a body is one `step()` of its own
@@ -1592,8 +1592,8 @@ unchanged.
 
 **Core.** Open a nested goal `P`; on success, add `P` to the surrounding context
 without changing its execution frontier. `have P;` without a proof is `have P by
-simp;`, and a one-step proof may drop the braces: `have P by T(args);`. `have P
-by auto;` executes no C: it tries the solver, which refutes the integer negation
+simp();`, and a one-step proof may drop the braces: `have P by T(args);`. `have P
+by auto();` executes no C: it tries the solver, which refutes the integer negation
 of a linear `Integer` bound from the facts connected to `P` and applies the
 result as one `arithmetic_certificate`, then `simp`
 ([`have_by_auto_refutes_a_linear_bound.md`](https://github.com/clicklang/click/blob/master/mdtests/have_by_auto_refutes_a_linear_bound.md)).
@@ -1641,7 +1641,7 @@ connected component fails promptly
 
 The search cites only equalities with a source spelling at that point; a fact
 from an earlier `have` or a proof `if` condition inside a pure theorem has none
-and is not offered. In a pure theorem, `ensures P by auto;` runs the same solver
+and is not offered. In a pure theorem, `ensures P by auto();` runs the same solver
 and search around `simp`. `have name: P` also names the fact: until the end of
 the enclosing block, `name` stands for `P` wherever a proposition is cited
 whole, as in `using { name; }`, `rewrite(name)` or `contradiction(name)`, and is
@@ -1764,12 +1764,12 @@ leaves open, as `fold(...) by { ... }` does, where the block ends, or after
 execution when the block reaches function exit.
 
 A bare `open` proves that fact by the implicit `auto`, which expansion prints as
-this `by`. The body is one tactic call, `simp;`, or a block.
+this `by`. The body is one tactic call, such as `simp();`, or a block.
 
 **Failure, checking, and tools:**
 
 Refused when the close leaves no body fact open (superfluous) or more than one;
-prove the others with `have` in the block. `open(...) { ... } by auto` is a
+prove the others with `have` in the block. `open(...) { ... } by auto()` is a
 syntax error: it means the bare `open`. Expansion keeps the `by` and prints the
 body's checked steps; a smart tactic written in the `by` expands with its claim
 (`click expand --claim`), not as a site of its own.
@@ -2009,7 +2009,7 @@ followed by the proof of the one body fact its fast path leaves open, written as
 the resource's body fact over the fold's arguments and proved at the fold, as a
 `have` would.
 
-The body is one tactic call, `simp;`, or a block.
+The body is one tactic call, such as `simp();`, or a block.
 
 **Failure, checking, and tools:**
 
@@ -2181,7 +2181,7 @@ bound from the guard
 A `preserve` path whose tactics stop inside the body first runs the rest of it
 as an omitted `preserve` would
 ([`preserve_runs_the_rest_of_the_body.md`](https://github.com/clicklang/click/blob/master/mdtests/preserve_runs_the_rest_of_the_body.md)).
-`close_invariants by auto` is refused, naming these forms
+`close_invariants by auto()` is refused, naming these forms
 ([`close_invariants_by_auto_is_refused.md`](https://github.com/clicklang/click/blob/master/mdtests/close_invariants_by_auto_is_refused.md)).
 
 **Failure, checking, and tools:**

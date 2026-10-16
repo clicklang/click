@@ -12,7 +12,7 @@ int64_t int64_signed_overflow() {
 verifying "int64_signed_overflow.c";
 
 int64_t int64_signed_overflow() {
-    ensures no_result: result == 0 by auto;
+    ensures no_result: result == 0 by auto();
 }
 ```
 

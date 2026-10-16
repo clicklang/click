@@ -22,9 +22,9 @@ target "x86_64-unknown-linux-gnu";
 mode "kernel";
 verifying "a_negative_char_constant_is_unsigned_on_the_kernel_target.c";
 
-int initialize() { ensures result == 200 by auto; }
-int widen(char c) { ensures result == c by auto; }
-int argument() { ensures result == 255 by auto; }
+int initialize() { ensures result == 200 by auto(); }
+int widen(char c) { ensures result == c by auto(); }
+int argument() { ensures result == 255 by auto(); }
 ```
 
 ```expect

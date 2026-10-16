@@ -52,7 +52,7 @@ int32 count_zero_run(int32* a, int32 n) {
         decreases n - i;
         invariant 0 <= i and i <= n;
         invariant c == 0;
-        initialize by simp;
+        initialize by simp();
         preserve by {
             mark iteration;
             have a[i] == 1 by {

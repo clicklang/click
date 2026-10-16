@@ -24,7 +24,7 @@ int32 drain(int32 n) {
     loop {
         decreases n;
         invariant n >= 0;
-        initialize by simp;
+        initialize by simp();
         preserve by {
             step();
             have 0 <= n - 1 by {

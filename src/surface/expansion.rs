@@ -6033,7 +6033,12 @@ fn proof_span(tokens: &[SourceToken], by: usize) -> Result<Range<usize>, ClickEr
     let body = by + 1;
     let end_token = match tokens.get(body).map(|token| token.text.as_str()) {
         Some("{") => matching_delimiter(tokens, body, "{", "}")?,
-        Some("auto" | "simp") => body,
+        Some("auto" | "simp") => {
+            if tokens.get(body + 1).map(|token| token.text.as_str()) != Some("(") {
+                return Err(ClickError::new("smart proof calls require parentheses"));
+            }
+            matching_delimiter(tokens, body + 1, "(", ")")?
+        }
         _ => return Err(ClickError::new("unsupported source proof clause")),
     };
     let semicolon = end_token + 1;
@@ -6068,7 +6073,7 @@ struct FlatSourceTactic<'t> {
 #[derive(Clone, Copy)]
 enum FlatTactic<'t> {
     Written(&'t ProofTactic),
-    /// A frontier-local loop phase proved by one smart tactic (`by simp`).
+    /// A frontier-local loop phase proved by one smart tactic (`by simp()`).
     Phase(SmartTactic),
 }
 

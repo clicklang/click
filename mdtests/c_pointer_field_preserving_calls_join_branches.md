@@ -109,7 +109,7 @@ int32 vector_replace_if(
     step();
     branch then {
         step();
-        have replace != 0 implies selected == replacement by auto;
+        have replace != 0 implies selected == replacement by auto();
     } else {
         step();
         have replace != 0 implies selected == replacement by {

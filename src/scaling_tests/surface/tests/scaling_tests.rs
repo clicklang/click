@@ -435,7 +435,7 @@ fn shared_imported_proof_bodies_stay_unselected_across_entry_scaling() {
                     [
                         ClickModuleSource::new(
                             "shared.click",
-                            "theorem shared_false(x: int32) { ensures x == x + 1 by simp; }",
+                            "theorem shared_false(x: int32) { ensures x == x + 1 by simp(); }",
                             [],
                         ),
                         ClickModuleSource::new(
@@ -617,7 +617,7 @@ fn specification_conditional_lowering_ignores_unrelated_ambient_facts() {
              int32 conditional_callee(int32 flag, int32 left, int32 right) {{\n    \
                  requires (if flag != 0 {{ left }} else {{ right }}) == 7;\n    \
                  ensures result == 0;\n\
-             }} by auto;\n\
+             }} by auto();\n\
              \n\
              int32 conditional_caller(int32 flag, int32 left, int32 right) {{\n    \
                  requires (if flag != 0 {{ left }} else {{ right }}) == 7;\n    \
@@ -1391,7 +1391,7 @@ fn symbolic_index_into_a_file_scope_array_scales_near_linearly_with_its_length()
             let c_source =
                 format!("int32 table[{size}];\nint32 get(int32 i) {{ return table[i]; }}\n");
             let click_source = format!(
-                "verifying \"table.c\";\nint32 get(int32 i) {{\n    requires 0 <= i;\n    requires i < {size};\n    requires table[i] == 7;\n    ensures result == 7 by auto;\n}}\n"
+                "verifying \"table.c\";\nint32 get(int32 i) {{\n    requires 0 <= i;\n    requires i < {size};\n    requires table[i] == 7;\n    ensures result == 7 by auto();\n}}\n"
             );
             let (verified, sample) = scaling_sample(size, || {
                 verify_c0_sources(&click_source, &[("table.c", c_source.as_str())])
@@ -2012,7 +2012,7 @@ fn ranked_loop_with_unrelated_inequalities(fact_count: usize) -> (String, String
          \x20   loop {\n\
          \x20       decreases n;\n\
          \x20       invariant n >= 0;\n\
-         \x20       initialize by simp;\n\
+         \x20       initialize by simp();\n\
          \x20       preserve by {\n\
          \x20           have 0 <= n - 1 by {\n\
          \x20               apply(int32_positive_predecessor_is_nonnegative(n)) using { n > 0; }\n\
@@ -2122,7 +2122,7 @@ fn model_ranked_loops(loop_count: usize) -> (String, String) {
              \x20       owns c: chain(n);\n\
              \x20       decreases chain_len(c.model);\n\
              \x20       invariant n >= 0;\n\
-             \x20       initialize by simp;\n\
+             \x20       initialize by simp();\n\
              \x20       preserve by {{\n\
              \x20           match c.model {{\n\
              \x20               Chain::Nil => {{ contradiction(c.model == Chain::Nil); }},\n\
@@ -2261,7 +2261,7 @@ fn smart_ranked_loop_with_unrelated_inequalities(fact_count: usize) -> (String, 
          \x20   loop {\n\
          \x20       decreases n;\n\
          \x20       invariant n >= 0;\n\
-         \x20       initialize by simp;\n\
+         \x20       initialize by simp();\n\
          \x20       preserve by {\n\
          \x20           have 0 <= n - 1 by {\n\
          \x20               apply(int32_positive_predecessor_is_nonnegative(n)) using { n > 0; }\n\
@@ -2328,7 +2328,7 @@ fn guarded_member_bundle(conjuncts: usize) -> (String, String) {
          \x20       decreases n - i;\n\
          \x20       invariant 0 <= i and i <= n;\n\
          \x20       invariant {members};\n\
-         \x20       initialize by simp;\n\
+         \x20       initialize by simp();\n\
          \x20       preserve by {{\n\
          \x20           mark iteration;\n\
          \x20           have 0 <= at(iteration, i) by {{ simp(); }}\n\
@@ -3791,7 +3791,7 @@ fn framed_field_cells_loop(cells: usize) -> (String, String) {
          \x20       invariant start <= i;\n\
          {invariants}\
          \x20       decreases end - i;\n\
-         \x20       initialize by simp;\n\
+         \x20       initialize by simp();\n\
          \x20       preserve by {{\n\
          \x20           have 0 <= i by {{ simp(); }}\n\
          \x20           step();\n\
@@ -3879,7 +3879,7 @@ fn many_clause_loop(clauses: usize) -> (String, String) {
          \x20       invariant 0 <= i;\n\
          {invariants}\
          \x20       decreases n - i;\n\
-         \x20       initialize by simp;\n\
+         \x20       initialize by simp();\n\
          \x20       preserve by {{\n\
          \x20           step();\n\
          \x20           close_invariants();\n\
@@ -5029,7 +5029,7 @@ fn many_viewed_arrays(size: usize, owned: bool) -> (String, String) {
     if owned {
         click_source.push_str("    owns out[0..1];\n");
     }
-    click_source.push_str("    ensures result == n by auto;\n}\n");
+    click_source.push_str("    ensures result == n by auto();\n}\n");
     (c_source, click_source)
 }
 
@@ -5714,7 +5714,7 @@ void fill(int32* p, int32 n) {{
         decreases n - i;
         invariant i >= 0;
 
-        initialize by simp;
+        initialize by simp();
         preserve by {{
 {}        }}
     }}
@@ -6193,7 +6193,7 @@ fn loop_body_reasoning_ifs_project(count: usize) -> (String, String) {
         "int32 spin(int32 n, int32 x) {\n    int32 i;\n    i = 0;\n    while (i < n) {\n        i = i + 1;\n    }\n    return 0;\n}\n",
     );
     let mut click_source = String::from(
-        "verifying \"ifs.c\";\n\nint32 spin(int32 n, int32 x) {\n    requires n >= 0;\n    ensures result == 0;\n} by {\n    step();\n    step();\n    loop {\n        decreases n - i;\n        invariant 0 <= i and i <= n;\n\n        initialize by simp;\n        preserve by {\n            step();\n",
+        "verifying \"ifs.c\";\n\nint32 spin(int32 n, int32 x) {\n    requires n >= 0;\n    ensures result == 0;\n} by {\n    step();\n    step();\n    loop {\n        decreases n - i;\n        invariant 0 <= i and i <= n;\n\n        initialize by simp();\n        preserve by {\n            step();\n",
     );
     for index in 0..count {
         click_source.push_str(&format!(

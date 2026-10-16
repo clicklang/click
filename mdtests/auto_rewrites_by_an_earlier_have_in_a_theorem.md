@@ -28,7 +28,7 @@ theorem black_through_an_earlier_have(v: Walk, d: Integer, rest: Walk) {
             rewrite(same(Walk::At(d, rest)) == Walk::At(d, rest));
             normalize();
         }
-        have black(v) == 1 by auto;
+        have black(v) == 1 by auto();
         assumption();
     }
 }

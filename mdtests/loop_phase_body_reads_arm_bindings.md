@@ -151,7 +151,7 @@ int spin_ranked(struct node* p, int n) {
                 invariant i >= 0;
                 invariant i <= n;
 
-                initialize by simp;
+                initialize by simp();
                 preserve by {
                     have head_value(Tree::Node(id, value, left_model)) == value by {
                         unfold(head_value(Tree::Node(id, value, left_model)));

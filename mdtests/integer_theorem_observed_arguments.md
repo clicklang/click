@@ -12,7 +12,7 @@ int32 unchanged(int32 x) { return x; }
 import click::integer;
 
 theorem integer_reflexive(z: Integer) {
-    ensures z == z by simp;
+    ensures z == z by simp();
 }
 
 theorem observe64(x: int64) {

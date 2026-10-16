@@ -17,7 +17,7 @@ verifying "use_pointer.c";
 int32 use_pointer(int32* p) {
     consumes can_complete(p);
 
-    ensures result == 0 by auto;
+    ensures result == 0 by auto();
 }
 ```
 

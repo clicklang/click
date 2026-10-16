@@ -100,7 +100,7 @@ int32 refcount_pipeline(int32 amount) {
     requires amount <= 2147483646;
     ensures result == -1 or result == 0;
 } by {
-    have defined(1 + amount) by auto;
+    have defined(1 + amount) by auto();
     step();
     step();
     branch then {
@@ -108,7 +108,7 @@ int32 refcount_pipeline(int32 amount) {
         simp();
     } else {}
     step();
-    have defined(obj->refs + amount) by auto;
+    have defined(obj->refs + amount) by auto();
     fold(authority(reference(obj)));
     fold(reference(obj));
     fold(control(obj));

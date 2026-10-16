@@ -50,7 +50,7 @@ void spin(int32 n) {
         decreases chain_len(c.model);
         invariant n >= 0;
 
-        initialize by simp;
+        initialize by simp();
         preserve by {
             step();
             close_invariants();

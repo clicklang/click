@@ -50,11 +50,11 @@ void fill(int32* p) {
 }
 
 int32 written_value() {
-    ensures result == 5 or result == 0 by auto;
+    ensures result == 5 or result == 0 by auto();
 }
 
 int32 untouched_allocation() {
-    ensures result == 0 by auto;
+    ensures result == 0 by auto();
 }
 ```
 

@@ -18,7 +18,7 @@ verifying "global_write_requires_ownership.c";
 
 int32 increment() {
     requires counter < 1000;
-    ensures result == old(counter) + 1 by auto;
+    ensures result == old(counter) + 1 by auto();
 }
 ```
 

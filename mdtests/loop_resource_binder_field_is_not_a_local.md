@@ -51,7 +51,7 @@ int32 spin(struct cell* node, int32 n) {
         invariant i <= 1;
         invariant c.rank == old(c.rank);
 
-        initialize by simp;
+        initialize by simp();
         preserve by {
             have c.rank == i;
             have i == 0 by { simp() using { c.rank == i; c.rank == old(c.rank); old(c.rank) == 0; } }

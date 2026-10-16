@@ -12,7 +12,7 @@ int32 run(int32 (*callback)(int32 code, ...), int32 value) {
 verifying "c_variadic_function_pointer_rejected.c";
 
 int32 run(int32 (*callback)(int32 code), int32 value) {
-    ensures result == value by auto;
+    ensures result == value by auto();
 }
 ```
 

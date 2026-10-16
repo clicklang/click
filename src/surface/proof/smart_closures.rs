@@ -2453,7 +2453,7 @@ impl<'a> Proof<'a> {
         // A Special fact such as `aligned(p + i, 8)` is not generally a
         // simp-derivation: the kernel's pointer rule consumes a matching
         // alignment/relation fact directly. Use the selected pairs when
-        // `simp using` supplied them; otherwise recover only typed Special
+        // `simp() using` supplied them; otherwise recover only typed Special
         // candidates from the recorded Surface map for generic `simp()`.
         if let Some(surface_goal) = self.surface_goal()
             && let Some(goal) = self.goal()

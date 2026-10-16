@@ -776,7 +776,7 @@ struct rb_node* rb_first(const struct rb_root* root) {
                 invariant ctx_all_left(ctx.model) == 1;
                 invariant plug(ctx.model, t.model) == old(t.model);
 
-                initialize by simp;
+                initialize by simp();
                 preserve by {
                     match t.model {
                         RbTree::Empty => { contradiction(t.model == RbTree::Empty); },
@@ -941,7 +941,7 @@ struct rb_node* rb_last(const struct rb_root* root) {
                 invariant ctx_all_right(ctx.model) == 1;
                 invariant plug(ctx.model, t.model) == old(t.model);
 
-                initialize by simp;
+                initialize by simp();
                 preserve by {
                     match t.model {
                         RbTree::Empty => { contradiction(t.model == RbTree::Empty); },

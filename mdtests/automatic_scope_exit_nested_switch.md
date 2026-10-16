@@ -47,11 +47,11 @@ int32 nested_return_reads_before_cleanup() {
 verifying "automatic_scope_exit_nested_switch.c";
 
 int32 nested_fallthrough_keeps_local_alive() {
-    ensures result == 7 by auto;
+    ensures result == 7 by auto();
 }
 
 int32 nested_return_reads_before_cleanup() {
-    ensures result == 9 by auto;
+    ensures result == 9 by auto();
 }
 ```
 

@@ -18,10 +18,10 @@ int32 json_object_inc_ref_count(struct json_object* obj) {
 verifying "json_object_inc_ref_count.c";
 
 int32 json_object_inc_ref_count(struct json_object* obj) {
-    owns obj->ref_count by auto;
+    owns obj->ref_count by auto();
     requires obj->ref_count < 2147483647;
-    ensures returns_incremented: result == old(obj->ref_count) + 1 by auto;
-    ensures stores_incremented: obj->ref_count == old(obj->ref_count) + 1 by auto;
+    ensures returns_incremented: result == old(obj->ref_count) + 1 by auto();
+    ensures stores_incremented: obj->ref_count == old(obj->ref_count) + 1 by auto();
 }
 ```
 

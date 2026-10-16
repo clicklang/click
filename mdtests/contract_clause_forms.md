@@ -32,29 +32,29 @@ verifying "contract_clause_forms.c";
 int32 increment(int32 x) {
     requires x >= 0;
     requires x < 2147483647;
-    ensures result == x + 1 by auto;
-    ensures result > x by auto;
+    ensures result == x + 1 by auto();
+    ensures result > x by auto();
 }
 
 int32 labeled_increment(int32 x) {
     requires x < 2147483647;
-    ensures incremented: result == x + 1 by auto;
+    ensures incremented: result == x + 1 by auto();
 }
 
 int32 decrement(int32 x) {
     requires x > 0;
-    ensures result == x - 1 by auto;
+    ensures result == x - 1 by auto();
 }
 
 int32 copy_first(int32 p[]) {
     views p[0..1];
     consumes p[1..2];
-    ensures result == p[0] by auto;
+    ensures result == p[0] by auto();
 }
 
 int32 clear(int32 x) {
     requires x == 0;
-    ensures result == 0 by auto;
+    ensures result == 0 by auto();
     ensures result == x by { execute(); simp(); }
 }
 ```

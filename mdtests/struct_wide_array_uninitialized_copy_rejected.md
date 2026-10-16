@@ -12,7 +12,7 @@ struct words make(void) {
 ```click
 verifying "wide.c";
 struct words make() {
-    ensures result.data[0] == 4294967296u64 by auto;
+    ensures result.data[0] == 4294967296u64 by auto();
 }
 ```
 

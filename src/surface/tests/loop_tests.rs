@@ -718,7 +718,7 @@ fn explicit_swap_loop_fixture(include_transports: bool) -> (&'static str, String
                 invariant j >= 0 and j <= 1;
                 invariant p[0] <= p[2];
                 invariant p[1] <= p[2];
-                initialize by simp;
+                initialize by simp();
                 preserve by {{
                     have j == 0 by {{
                         apply(int32_less_than_increment_implies_less_equal(j, 0)) using {{ j < 1; }}
@@ -780,7 +780,7 @@ fn explicit_invariant_body_checks_expands_and_rejects_incomplete_proofs() {
                 decreases 3 - i;
                 invariant i >= 0;
                 invariant i <= 3;
-                initialize by simp;
+                initialize by simp();
                 preserve by {
                     step();
                     close_invariants by { simp(); }
@@ -927,14 +927,14 @@ fn frontier_local_loop_verifies_and_advances_to_exit() {
                     decreases 3 - i;
                     invariant i >= 0;
                     invariant i <= 3;
-                    initialize by simp;
+                    initialize by simp();
                     preserve by {
                         step();
                         close_invariants();
                     }
                 }
-                have at(count.entry, i) == 0 by simp;
-                have at(count.exit, i) == 3 by simp;
+                have at(count.entry, i) == 0 by simp();
+                have at(count.exit, i) == 3 by simp();
                 step();
                 simp();
             }
@@ -969,14 +969,14 @@ fn individual_loop_proof_has_no_whole_claim_acceptance_check() {
                     decreases 3 - i;
                     invariant i >= 0;
                     invariant i <= 3;
-                    initialize by simp;
+                    initialize by simp();
                     preserve by {
                         step();
                         close_invariants();
                     }
                 }
-                have at(count.entry, i) == 0 by simp;
-                have at(count.exit, i) == 3 by simp;
+                have at(count.entry, i) == 0 by simp();
+                have at(count.exit, i) == 3 by simp();
                 step();
                 simp();
             }
@@ -1109,7 +1109,7 @@ fn loop_initialization_simp_retains_checked_fixed_state_proof() {
             } by {
                 loop diverges {
                     invariant x >= 0;
-                    initialize by simp;
+                    initialize by simp();
                     preserve by {
                         step();
                         close_invariants();
@@ -1124,7 +1124,7 @@ fn loop_initialization_simp_retains_checked_fixed_state_proof() {
     verified.expect("loop initialization simp should verify through Proof");
 
     let offset = click_source
-        .find("initialize by simp")
+        .find("initialize by simp()")
         .expect("initialization proof should contain its smart simp")
         + "initialize by ".len();
     let line = click_source[..offset]
@@ -1145,7 +1145,7 @@ fn loop_initialization_simp_retains_checked_fixed_state_proof() {
         column,
     )
     .expect("the retained initialization closer should expand");
-    assert!(!expanded.contains("initialize by simp"), "{expanded}");
+    assert!(!expanded.contains("initialize by simp()"), "{expanded}");
     assert!(expanded.contains("assumption();"), "{expanded}");
     verify_c0_sources(&expanded, &[("initialize_by_simp.c", c_source)])
         .expect("expanded initialization closer should independently verify");
@@ -1299,7 +1299,7 @@ fn closing_invariants_on_a_break_path_is_refused() {
                 step();
                 loop {
                     invariant i >= 0;
-                    initialize by simp;
+                    initialize by simp();
                     preserve by {
                         step();
                         close_invariants();
@@ -1343,7 +1343,7 @@ fn frontier_local_loop_verifies_a_lowered_c_for_loop() {
                     decreases 3 - i;
                     invariant i >= 0;
                     invariant i <= 3;
-                    initialize by simp;
+                    initialize by simp();
                     preserve by {
                         step();
                         step();
@@ -1390,7 +1390,7 @@ fn frontier_local_loop_verifies_at_a_branch_local_frontier() {
                         decreases 2 - i;
                         invariant i >= 0;
                         invariant i <= 2;
-                        initialize by simp;
+                        initialize by simp();
                         preserve by {
                             step();
                             close_invariants();
@@ -1420,8 +1420,8 @@ fn frontier_loop_binding_replaces_scope_without_merging_declarations() {
             loop {
                 invariant i >= bound;
                 invariant i >= bound;
-                initialize by simp;
-                preserve by simp;
+                initialize by simp();
+                preserve by simp();
             }
         }
     "#,
@@ -1483,14 +1483,14 @@ fn frontier_local_loop_verifies_nested_loops_at_their_respective_frontiers() {
                     decreases 2 - i;
                     invariant i >= 0;
                     invariant i <= 2;
-                    initialize by simp;
+                    initialize by simp();
                     preserve by {
                         step();
                         loop {
                             decreases 2 - j;
                             invariant j >= 0;
                             invariant j <= 2;
-                            initialize by simp;
+                            initialize by simp();
                             preserve by {
                                 step();
                                 close_invariants();
@@ -1545,7 +1545,7 @@ fn frontier_loop_step_expansion_uses_the_current_invariant_lowering() {
                 loop {
                     decreases n - i;
                     invariant i >= 0 and i <= n;
-                    initialize by simp;
+                    initialize by simp();
                     preserve by {
                         step();
                         step();
@@ -1607,7 +1607,7 @@ fn frontier_local_loop_checks_an_optional_decreases_measure() {
                 loop {
                     decreases n;
                     invariant n >= 0;
-                    initialize by simp;
+                    initialize by simp();
                     preserve by {
                         have 0 <= n - 1 by {
                             apply(int32_positive_predecessor_is_nonnegative(n)) using { n > 0; }
@@ -1843,7 +1843,7 @@ fn frontier_local_loop_expands_an_explicit_nested_tactic_at_its_own_location() {
                     decreases 3 - i;
                     invariant i >= 0;
                     invariant i <= 3;
-                    initialize by simp;
+                    initialize by simp();
                     preserve by {
                         step();
                         close_invariants();
@@ -1854,7 +1854,7 @@ fn frontier_local_loop_expands_an_explicit_nested_tactic_at_its_own_location() {
             }
         "#;
     let initialize_simp = click_source
-        .find("initialize by simp")
+        .find("initialize by simp()")
         .expect("proof should contain explicit initialization")
         + "initialize by ".len();
     let line = click_source[..initialize_simp]
@@ -1893,7 +1893,7 @@ fn frontier_local_loop_expands_an_explicit_nested_tactic_at_its_own_location() {
     )
     .expect("explicit initialization tactic should expand at its own source location");
 
-    assert!(!expanded.contains("initialize by simp"), "{expanded}");
+    assert!(!expanded.contains("initialize by simp()"), "{expanded}");
     assert!(expanded.contains("preserve by {"), "{expanded}");
     verify_c0_sources(&expanded, &[("count_to_three.c", c_source)])
         .expect("expanded explicit initialization tactic should freshly check");
@@ -1920,7 +1920,7 @@ fn frontier_local_loop_at_function_entry_keeps_initialization_capture_separate()
                 loop {
                     decreases n;
                     invariant n >= 0;
-                    initialize by simp;
+                    initialize by simp();
                     preserve by {
                         have 0 <= n - 1 by {
                             apply(int32_positive_predecessor_is_nonnegative(n)) using { n > 0; }
@@ -1984,7 +1984,7 @@ fn frontier_local_loop_expands_a_tactic_inside_preservation_at_its_own_location(
                     decreases 3 - i;
                     invariant i >= 0;
                     invariant i <= 3;
-                    initialize by simp;
+                    initialize by simp();
                     preserve by {
                         step();
                         close_invariants();
@@ -2025,7 +2025,7 @@ fn frontier_local_loop_expands_a_tactic_inside_preservation_at_its_own_location(
     // A bare `step()` is a simple tactic: expanding it leaves the source as
     // written, and the loop's other phases stay untouched.
     assert_eq!(expanded, click_source);
-    assert!(expanded.contains("initialize by simp"), "{expanded}");
+    assert!(expanded.contains("initialize by simp()"), "{expanded}");
     verify_c0_sources(&expanded, &[("count_to_three.c", c_source)])
         .expect("expanded preservation step should freshly check");
 }
@@ -2053,7 +2053,7 @@ fn explicit_loop_closer_cannot_bypass_proof_owned_bundle_check() {
                 loop {
                     invariant i >= 0;
                     invariant i <= 1;
-                    initialize by simp;
+                    initialize by simp();
                     preserve by {
                         step();
                         close_invariants();
@@ -2114,7 +2114,7 @@ fn body_final_branch_preservation_completes_at_typed_back_edge_boundary() {
                     decreases n - i;
                     invariant i >= 0;
                     invariant parity >= 0 and parity <= 1;
-                    initialize by simp;
+                    initialize by simp();
                     {preserve}
                 }
                 step();
@@ -2193,7 +2193,7 @@ fn frontier_local_loop_exit_bound_weakens_to_a_looser_ensures() {
                     decreases 3 - i;
                     invariant i >= 0;
                     invariant i <= 3;
-                    initialize by simp;
+                    initialize by simp();
                     preserve by {
                         step();
                         close_invariants();
@@ -2244,7 +2244,7 @@ fn whole_claim_expansion_reconstructs_nested_decided_branch_and_loop_match() {
                         decreases 2 - x;
                         invariant x >= 1;
                         invariant x <= 2;
-                        initialize by simp;
+                        initialize by simp();
                         preserve by {
                             have marker() != Marker::Inactive by {
                                 unfold(marker());
@@ -2499,7 +2499,7 @@ int32 f(int32 n) {
     loop { decreases 1; invariant n == 5;
         preserve by {
             loop { decreases 1; invariant n == 5;
-                preserve by { step(); have result == 7 by simp; simp(); }
+                preserve by { step(); have result == 7 by simp(); simp(); }
             }
         }
     }
@@ -2572,7 +2572,7 @@ int32 f(int32 n) {
     branch then {
         step(); step();
         loop { decreases n-i; invariant i >= 0; invariant i <= n; }
-        step(); have result == n by simp; simp();
+        step(); have result == n by simp(); simp();
     } else { step(); simp(); }
 }
 "#;

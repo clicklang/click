@@ -185,7 +185,7 @@ void parent_detach(struct parent* p) {
         },
         ParentLink::Linked(kid) => {
             unfold(link);
-            have old(p->kid) == kid by simp;
+            have old(p->kid) == kid by simp();
             if p->kid->refs > 1 {
                 execute();
                 let out = fold(parent(p), { link: ParentLink::Empty });
@@ -208,14 +208,14 @@ void caller(struct parent* first, struct parent* second, struct child* kid) {
     owns child_ref(kid);
 } by {
     let { link: first_link } = step(parent_attach(first, kid), {});
-    have count(child_ref(kid)) == 2 by simp;
+    have count(child_ref(kid)) == 2 by simp();
     let { link: second_link } = step(parent_attach(second, kid), {});
-    have count(child_ref(kid)) == 3 by simp;
+    have count(child_ref(kid)) == 3 by simp();
     step(child_release(kid), {});
-    have count(child_ref(kid)) == 2 by simp;
+    have count(child_ref(kid)) == 2 by simp();
     let { out: first_out } = step(parent_detach(first), { link: first_link });
     step();
-    have count(child_ref(kid)) == 2 by simp;
+    have count(child_ref(kid)) == 2 by simp();
     step(parent_read_payload(second), { link: second_link });
     let { out: second_out } = step(parent_detach(second), { link: second_link });
     step();

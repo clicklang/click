@@ -75,7 +75,7 @@ void release_run(int32* data, int32* occupied, int32 capacity, int32 start, int3
         invariant start <= i;
         decreases i - start;
 
-        initialize by simp;
+        initialize by simp();
         preserve by {
             let { next: n } = unfold(w);
             have n == i;

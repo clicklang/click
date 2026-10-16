@@ -34,8 +34,8 @@ fn sum(bytes: &[u8]) -> i32 {
             }
             have 0 <= bytes[i] as i32 and 255 >= bytes[i] as i32;
             have 0 <= to_integer(total);
-            have defined(total + bytes[i] as i32) by auto;
-            have i < 18446744073709551615u64 by auto;
+            have defined(total + bytes[i] as i32) by auto();
+            have i < 18446744073709551615u64 by auto();
             have prefix(bytes, i + 1u64) == prefix(bytes, i) + to_integer(bytes[i] as i32) by {
                 peel(prefix(bytes, i + 1u64)) using {
                     0u64 <= i;
@@ -53,7 +53,7 @@ fn sum(bytes: &[u8]) -> i32 {
                     prefix(bytes, i + 1u64) == prefix(bytes, i) + to_integer((bytes[i] as i32));
                 }
             }
-            have 0 <= to_integer(total + bytes[i] as i32) by auto;
+            have 0 <= to_integer(total + bytes[i] as i32) by auto();
             have i <= 1000u64 by { arithmetic() using { i <= bytes.len(); bytes.len() <= 1000u64; } }
             have to_integer(i) <= 1000 by {
                 apply(uint64_less_equal_to_integer(i, 1000u64)) using { i <= 1000u64; }
@@ -89,7 +89,7 @@ fn sum(bytes: &[u8]) -> i32 {
         rewrite(i == bytes.len());
         simp();
     }
-    have to_integer(total) == prefix(bytes, bytes.len()) by auto;
+    have to_integer(total) == prefix(bytes, bytes.len()) by auto();
     execute();
     simp();
 }

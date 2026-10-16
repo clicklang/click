@@ -54,9 +54,9 @@ resulting shared proof state. Goal-specific closing steps still have their
 normal roles: `simp()` or resource reasoning closes postconditions. A claim
 with its own `by` keeps that independent proof, and the grouped proof covers
 the claims without one. When two or more claims omit their proofs, they share
-an implicit `} by auto;`.
+an implicit `} by auto();`.
 
-The shorthand `} by auto;` builds one deterministic grouped script:
+The shorthand `} by auto();` builds one deterministic grouped script:
 `execute()`, which also checks declared loops, then the `auto` closer, which
 tries `simp()` on each open postcondition, then the solver and a bounded search
 for a chain of rewrites. Composite-resource folds and theorem applications
@@ -76,11 +76,11 @@ Currently accepted tactics:
 
 <!-- verified-example: mdtests/algebraic_maybe.md -->
 ```click
-by auto;
-by simp;
+by auto();
+by simp();
 ```
 
-Omitting a proof clause uses `auto`. `by simp;` means the same operation as
+Omitting a proof clause uses `auto`. `by simp();` means the same operation as
 `by { simp(); }`. All three forms act at the current execution frontier; `simp`
 does not implicitly execute C. See the
 [proof tactics reference](../reference/tactics/index.md).
@@ -490,7 +490,7 @@ semantic proof-local name over repeating a numeric statement coordinate:
 ```click
 mark before_write;
 step();
-have p[0] == at(before_write, p[0]) + 1 by simp;
+have p[0] == at(before_write, p[0]) + 1 by simp();
 ```
 
 The mark names the current state only. It does not advance or rewind the
@@ -525,7 +525,7 @@ loop {
     invariant i >= 0;
     invariant i <= n;
 
-    initialize by auto;
+    initialize by auto();
     preserve by {
         step();
         simp();

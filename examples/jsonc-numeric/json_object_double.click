@@ -4,4 +4,4 @@ double json_object_get_double(struct json_object* obj) {
     requires isfinite(obj->value);
     views obj->value;
     ensures returns_value: result == obj->value;
-} by auto;
+} by auto();

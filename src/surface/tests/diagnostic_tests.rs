@@ -133,7 +133,7 @@ fn auto_have_budget_failure_keeps_the_exhaustion_reason() {
     let source = r#"
         verifying "bound.c";
         uint64 bound(uint64 a, uint64 b) { ensures result == a; } by {
-            have a <= b - b % 4u64 by auto;
+            have a <= b - b % 4u64 by auto();
             execute(); simp();
         }
     "#;
@@ -404,7 +404,7 @@ fn resource_neutral_callee_preserves_callers_allocation_resource() {
             fold(storage(owner));
             execute_until(statement(2));
             unfold(storage(owner));
-            have 1 <= owner->cap by simp;
+            have 1 <= owner->cap by simp();
             fold(allocated(owner));
             execute();
             simp();
@@ -828,7 +828,7 @@ fn failed_algebraic_simp_reports_claim_without_internal_schema_dump() {
             ensures match value {
                 Maybe::None => Maybe<int32>::Some(0),
                 Maybe::Some(x) => Maybe<int32>::Some(x),
-            } == value by simp;
+            } == value by simp();
         }
     "#;
     let error = verify_c0_sources(source, &[]).unwrap_err();
@@ -1159,7 +1159,7 @@ fn identical_load_renders_name_distinct_snapshot_loads() {
             int32 sym_index_clobber(int32* p, int32 i) {
                 owns p[0..2];
                 requires 0 <= i and i < 2;
-                ensures result == old(p[0]) by auto;
+                ensures result == old(p[0]) by auto();
             }
         "#;
 
@@ -3483,7 +3483,7 @@ fn a_failed_retain_names_the_population_count_requirement() {
 fn auto_have_failure_trace_retains_checked_call_prefix() {
     let c = "int helper(void) { return 1; } int f(void) { int x; x = helper(); return x; }";
     let source = "verifying \"f.c\"; int32 helper() { ensures result == 1; } by { execute(); simp(); } \
-                  int32 f() { ensures result == 1; } by { step(); step(); have x == 2 by auto; execute(); simp(); }";
+                  int32 f() { ensures result == 1; } by { step(); step(); have x == 2 by auto(); execute(); simp(); }";
     with_proof_trace("f", || {
         let error =
             verify_c0_sources(source, &[("f.c", c)]).expect_err("the false have must still fail");

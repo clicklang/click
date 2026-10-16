@@ -1624,7 +1624,7 @@ impl<'a> Proof<'a> {
                         .iter()
                         .map(|requirement| {
                             spelling(requirement)
-                                .map(|spelled| format!("    requires {spelled} by auto;"))
+                                .map(|spelled| format!("    requires {spelled} by auto();"))
                         })
                         .collect::<Result<Vec<_>, _>>()?
                         .join("\n");

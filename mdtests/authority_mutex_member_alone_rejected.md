@@ -49,10 +49,10 @@ int32 run() {
     unfold(control);
     step();
     fold(reference(obj));
-    have count(reference(obj)) == 1 by simp;
+    have count(reference(obj)) == 1 by simp();
     let control = fold(control(obj), { refs: 1 });
     step();
-    have count(reference(obj)) == 1 by simp;
+    have count(reference(obj)) == 1 by simp();
     step(pthread_mutex_destroy(&obj->mu), { lifetime: lifetime });
     unfold(control);
     unfold(reference(obj));

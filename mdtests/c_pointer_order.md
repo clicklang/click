@@ -17,7 +17,7 @@ verifying "c_pointer_order.c";
 int32 pointer_before(int32 data[], int32 n) {
     requires 1 <= n;
     views data[0..n];
-    ensures result == 1 by auto;
+    ensures result == 1 by auto();
 }
 ```
 

@@ -128,7 +128,7 @@ executes sized_rotate(struct rb_node* rb_old, struct rb_node* rb_new) {
                             rewrite(promoted_left == sized_left(old(tree.model)));
                             assumption();
                         }
-                        have defined(2147483646 - sized_value(right_model)) by auto;
+                        have defined(2147483646 - sized_value(right_model)) by auto();
                         have sized_value(left_model) <= 2147483646 - sized_value(right_model) by {
                             rewrite(left_model == sized_left(promoted_left));
                             rewrite(right_model == sized_right(promoted_left));
@@ -698,7 +698,7 @@ executes sized_rotate(struct rb_node* rb_old, struct rb_node* rb_new) {
                             rewrite(promoted_right == sized_right(old(tree.model)));
                             assumption();
                         }
-                        have defined(2147483646 - sized_value(right_model)) by auto;
+                        have defined(2147483646 - sized_value(right_model)) by auto();
                         have sized_value(left_model) <= 2147483646 - sized_value(right_model) by {
                             rewrite(left_model == sized_left(promoted_right));
                             rewrite(right_model == sized_right(promoted_right));

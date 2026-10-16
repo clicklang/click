@@ -18,7 +18,7 @@ theorem observed_range(value: uint32) {
 }
 
 theorem integer_successor_is_greater(value: Integer) {
-    ensures value < value + 1 by simp;
+    ensures value < value + 1 by simp();
 }
 
 theorem strict_integer_order(value: Integer) {

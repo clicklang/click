@@ -398,16 +398,19 @@ pub(in crate::surface::proof) fn verify_execution_proofs_forward(
                 )?;
                 environment.frontier_loop_certificates.borrow_mut().preserve =
                     Some(preservation_certificate.clone());
-                // `preserve by simp;` is one smart tactic standing for the
-                // whole phase, exactly as `initialize by simp;` is: the
+                // `preserve by simp();` is one smart tactic standing for the
+                // whole phase, exactly as `initialize by simp();` is: the
                 // planned preservation certificate is its expansion. The
                 // driver's own tactics are all generated here, so no
                 // source-indexed step claims the occurrence.
                 if let Some(preserve_source_index) = source.preserve_source_index
-                    && matches!(
-                        loop_clause.and_then(StructuralClause::preserve_proof),
-                        Some(SourceProof::Tactic(SmartTactic::Simp))
-                    )
+                    && match loop_clause.and_then(StructuralClause::preserve_proof) {
+                        Some(SourceProof::Tactic(SmartTactic::Simp)) => true,
+                        Some(SourceProof::Script(tactics)) => {
+                            matches!(tactics.as_slice(), [ProofTactic::Simp])
+                        }
+                        _ => false,
+                    }
                     && let Some(site) = source.proof_site.as_ref()
                     && capture_selects_source(
                         expansion_capture.as_deref(),

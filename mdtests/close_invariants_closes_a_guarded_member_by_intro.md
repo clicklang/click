@@ -52,7 +52,7 @@ int32 count_run(int32 n) {
         invariant 0 <= run and run <= i;
         invariant (i <= 2 and run == 0) or (2 <= i and 2 + run == i);
 
-        initialize by simp;
+        initialize by simp();
         preserve by {
             mark iteration;
             if i < 2 {

@@ -72,23 +72,23 @@ int32 bump_shared() {
     requires shared.value < 1000;
     owns shared.value;
     owns shared.ready;
-    ensures result == old(shared.value) + 1 by auto;
-    ensures shared.value == old(shared.value) + 1 by auto;
-    ensures shared.ready == 1 by auto;
+    ensures result == old(shared.value) + 1 by auto();
+    ensures shared.value == old(shared.value) + 1 by auto();
+    ensures shared.ready == 1 by auto();
 }
 
 int32 increment_private() {
     owns private.value;
     requires private.value < 1000;
-    ensures result == old(private.value) + 1 by auto;
-    ensures private.value == old(private.value) + 1 by auto;
+    ensures result == old(private.value) + 1 by auto();
+    ensures private.value == old(private.value) + 1 by auto();
 }
 
 int32 increment_file_private() {
     owns file_private.value;
     requires file_private.value < 1000;
-    ensures result == old(file_private.value) + 1 by auto;
-    ensures file_private.value == old(file_private.value) + 1 by auto;
+    ensures result == old(file_private.value) + 1 by auto();
+    ensures file_private.value == old(file_private.value) + 1 by auto();
 }
 
 int32 run() {

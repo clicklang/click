@@ -15,7 +15,7 @@ void set_second() { words[1] = 7; }
 verifying "viewed_global.c";
 void set_second() {
     views words[1..2];
-    ensures words[1] == 7 by auto;
+    ensures words[1] == 7 by auto();
 }
 ```
 

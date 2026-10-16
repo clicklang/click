@@ -37,7 +37,7 @@ int32 write_i_read_j(int32 p[], int32 i, int32 j, int32 n) {
     consumes p[i..i + 1];
     views p[j..j + 1];
     requires separate(memory(p[i..i + 1]), memory(p[j..j + 1]));
-    ensures keeps_j: result == old(p[j]) by auto;
+    ensures keeps_j: result == old(p[j]) by auto();
 }
 ```
 

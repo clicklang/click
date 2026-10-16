@@ -542,7 +542,7 @@ mod certificate_tests {
         let file = parse(
             r#"
                 theorem reflexive(x: int32) {
-                    ensures x <= x by auto;
+                    ensures x <= x by auto();
                 }
             "#,
         )
@@ -602,11 +602,11 @@ mod certificate_tests {
             r#"
                 theorem required(x: int32) {
                     requires x >= 0;
-                    ensures x >= 0 by auto;
+                    ensures x >= 0 by auto();
                 }
 
                 theorem reflexive(x: int32) {
-                    ensures x == x by simp;
+                    ensures x == x by simp();
                 }
 
                 theorem applied(x: int32) {
@@ -634,12 +634,12 @@ mod certificate_tests {
                 theorem conjunction(x: int32) {
                     requires x >= 0;
                     requires x <= 10;
-                    ensures (x >= 0) and (x <= 10) by simp;
+                    ensures (x >= 0) and (x <= 10) by simp();
                 }
 
                 theorem disjunction(x: int32) {
                     requires x >= 0;
-                    ensures (x >= 0) or (x < 0) by auto;
+                    ensures (x >= 0) or (x < 0) by auto();
                 }
 
                 theorem impossible(x: int32) {
@@ -2602,7 +2602,7 @@ pub(super) fn prove_claim_by_simp(
 ) -> Result<Vec<VerifiedCTheorem>, ClickError> {
     if count_loop_regions(parsed_function) != 0 {
         return Err(ClickError::new(format!(
-            "`simp` does not prove loop-backed claims for `{claim_label}`; use `by auto;`"
+            "`simp` does not prove loop-backed claims for `{claim_label}`; use `by auto();`"
         )));
     }
 

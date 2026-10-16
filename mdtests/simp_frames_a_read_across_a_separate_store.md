@@ -43,13 +43,13 @@ int32 service_step(struct service* owner) {
         owns owner->cell[0..1];
     } then {
         step();
-        have owner->cell == old(owner->cell) by auto;
+        have owner->cell == old(owner->cell) by auto();
     } else {
         step();
-        have owner->cell == old(owner->cell) by auto;
+        have owner->cell == old(owner->cell) by auto();
     }
     step();
-    have owner->cell[0] == owner->phase by simp;
+    have owner->cell[0] == owner->phase by simp();
     execute();
     simp();
 }

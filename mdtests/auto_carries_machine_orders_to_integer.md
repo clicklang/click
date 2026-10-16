@@ -10,7 +10,7 @@ theorem bridged_uint64(i: uint64, n: uint64) {
     requires i < n;
     requires n <= 1000u64;
     ensures to_integer(i) <= 999 by {
-        have to_integer(i) <= 999 by auto;
+        have to_integer(i) <= 999 by auto();
         assumption();
     }
 }
@@ -20,7 +20,7 @@ theorem bridged_int32(total: int32, b: int32) {
     requires b <= 255;
     requires to_integer(total) <= 255000;
     ensures to_integer(total) + to_integer(b) <= 2147483647 by {
-        have to_integer(total) + to_integer(b) <= 2147483647 by auto;
+        have to_integer(total) + to_integer(b) <= 2147483647 by auto();
         assumption();
     }
 }

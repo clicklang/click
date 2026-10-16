@@ -661,7 +661,7 @@ fn expansion_spells_qualified_module_citations_by_their_in_scope_path() {
 
 #[test]
 fn expansion_keeps_explicit_library_paths_and_unimported_predicates() {
-    let source = "theorem client() { ensures click::bytes::equal(p, 0, q, 0, 1) by simp; }";
+    let source = "theorem client() { ensures click::bytes::equal(p, 0, q, 0, 1) by simp(); }";
     assert_eq!(
         library_citation_spelling(source, "have click::bytes::equal(p, 0, q, 0, 1);"),
         "have click::bytes::equal(p, 0, q, 0, 1);"
@@ -1233,14 +1233,14 @@ int32 nested_nonnegative(int32 x, int32 flag) {
 
 #[test]
 fn locates_a_block_tactic_as_one_source_statement() {
-    let source = "by { have x == x by simp; simp(); }";
+    let source = "by { have x == x by simp(); simp(); }";
     let tokens = scan_source_tokens(source).expect("source should scan");
     let proof = proof_span(&tokens, 0).expect("proof should have a span");
 
     let first = find_tactic_span(&tokens, &proof, 0).expect("first tactic should exist");
     let second = find_tactic_span(&tokens, &proof, 1).expect("second tactic should exist");
 
-    assert_eq!(&source[first], "have x == x by simp;");
+    assert_eq!(&source[first], "have x == x by simp();");
     assert_eq!(&source[second], "simp();");
 }
 
@@ -1725,7 +1725,7 @@ fn source_position_maps_smart_and_implicit_default_proofs() {
     let explicit = r#"verifying "identity.c";
 int32 identity(int32 x) {
     ensures result == x;
-} by auto;
+} by auto();
 "#;
     assert_eq!(
         c0_tactic_source_position(
@@ -1752,7 +1752,7 @@ int32 identity(int32 x) {
     );
     let expanded = expand_c0_tactic_source_at(explicit, &[("identity.c", c_source)], 4, 6)
         .expect("an internal smart-proof timing should select the whole source proof");
-    assert!(!expanded.contains("by auto"));
+    assert!(!expanded.contains("by auto()"));
     verify_c0_sources(&expanded, &[("identity.c", c_source)])
         .expect("the expanded smart proof should verify");
 
@@ -1841,7 +1841,7 @@ fn expanded_bitvector_facts_print_parseable_negative_literals() {
     // the claim is spelled with the negative literal the expansion prints.
     let click_source = r#"verifying "all_bits.c";
 int32 all_bits() {
-    ensures result == -1 by auto;
+    ensures result == -1 by auto();
 }"#;
     let offset = click_source.find("auto").expect("auto should be present");
     let position = position_at_offset(click_source, offset);
@@ -2176,7 +2176,7 @@ int32 increment(int32 x) {
     let max: int32 = 2147483647;
     let expected = x + 1;
     requires x < max;
-    ensures result_value: result == expected by auto;
+    ensures result_value: result == expected by auto();
 }"#;
     let offset = click_source.find("auto").expect("auto should be present");
     let position = position_at_offset(click_source, offset);
@@ -2244,9 +2244,9 @@ fn expansion_retains_callees_used_by_an_earlier_claim() {
     let click_source = r#"verifying "set_cell.c";
 verifying "set_then_read.c";
 int32 set_cell(int32 p[], int32 value) {
-    owns p[0..1] by auto;
-    ensures p[0] == value by auto;
-    ensures result == value by auto;
+    owns p[0..1] by auto();
+    ensures p[0] == value by auto();
+    ensures result == value by auto();
 }
 int32 set_then_read(int32 p[], int32 value) {
     owns p[0..1] by {
@@ -2390,7 +2390,7 @@ fn expanded_symbolic_range_propositions_use_parser_syntax() {
     let click_source = r#"verifying "identity.c";
 int32 identity(int32 x, int32 n) {
     requires (0..n).any(|k| { k == x });
-    ensures same_any: (0..n).any(|k| { k == x }) by auto;
+    ensures same_any: (0..n).any(|k| { k == x }) by auto();
 }"#;
     let offset = click_source.find("auto").expect("auto should be present");
     let position = position_at_offset(click_source, offset);
@@ -2454,7 +2454,7 @@ int32 good(int32 x) {
     ensures result == x;
 }
 int32 bad(int32 x) {
-    ensures result == x + 1 by simp;
+    ensures result == x + 1 by simp();
 }
 "#;
     let sources = [("good.c", good_c), ("bad.c", bad_c)];
@@ -2481,7 +2481,7 @@ int32 good(int32 x) {
     ensures result == x by { execute(); simp(); }
 }
 int32 bad(int32 x) {
-    ensures result == x + 1 by simp;
+    ensures result == x + 1 by simp();
 }
 "#;
     let sources = [("good.c", good_c), ("bad.c", bad_c)];
@@ -2555,9 +2555,9 @@ int32 write_selected(int32 p[2], int32 flag) {
 } by {
     execute();
     if result == 0 {
-        have result + 1 == 1 by simp;
+        have result + 1 == 1 by simp();
     } else {
-        have result - 1 == 0 by simp;
+        have result - 1 == 0 by simp();
     }
     simp();
 }
@@ -2566,8 +2566,8 @@ int32 write_selected(int32 p[2], int32 flag) {
     let verified = verify_c0_sources(click_source, &sources);
     verified.expect("branched baseline should verify");
     for (selected_text, selected_smart) in [
-        ("have result + 1", "have result + 1 == 1 by simp"),
-        ("have result - 1", "have result - 1 == 0 by simp"),
+        ("have result + 1", "have result + 1 == 1 by simp()"),
+        ("have result - 1", "have result - 1 == 0 by simp()"),
     ] {
         let selected_offset = click_source.find(selected_text).unwrap();
         let selected = position_at_offset(click_source, selected_offset);
@@ -2679,7 +2679,7 @@ fn pure_mixed_linear_smart_script_expands_the_retained_proof_object_path() {
     let source = r#"
         theorem required(x: int32) {
             requires x >= 0;
-            ensures x >= 0 by auto;
+            ensures x >= 0 by auto();
         }
 
         theorem applied_then_simp(x: int32) {
@@ -2829,7 +2829,7 @@ extern int32 child(int32 x) {
 
 int32 parent(int32 x) {
     requires x >= 0;
-    ensures result == x by auto;
+    ensures result == x by auto();
 }
 "#;
     let c_sources = [("calls.c", c_source)];
@@ -3276,9 +3276,9 @@ mod scaling_tests {
 fn premise_free_applications_are_simple_but_required_premises_stay_smart() {
     let source = r#"
         import click::integer;
-        theorem unconditional(x: int32) { ensures x == x by simp; }
+        theorem unconditional(x: int32) { ensures x == x by simp(); }
         theorem conditional(x: int32) { requires x == 0; ensures x == 0 by assumption(); }
-        theorem value_identity(z: Integer) { ensures z == z by simp; }
+        theorem value_identity(z: Integer) { ensures z == z by simp(); }
         theorem computed(x: int64) {
             requires defined(x + 1i64);
             ensures to_integer(x + 1i64) == to_integer(x + 1i64) by {

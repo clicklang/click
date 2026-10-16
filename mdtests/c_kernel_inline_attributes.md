@@ -29,7 +29,7 @@ verifying "c_kernel_inline_attributes.c";
 
 int32 run(int32 value) {
     requires value < 100;
-    ensures result == value + 2 by auto;
+    ensures result == value + 2 by auto();
 }
 ```
 

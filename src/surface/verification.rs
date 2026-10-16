@@ -2735,7 +2735,7 @@ fn verify_c0_sources_in_context(
                 })?,
                 SourceProof::Default | SourceProof::Tactic(SmartTactic::Simp) => {
                     return Err(ClickError::new(format!(
-                        "grouped proof for `{}` must use `by auto;` or an explicit `by {{ ... }}` proof script",
+                        "grouped proof for `{}` must use `by auto();` or an explicit `by {{ ... }}` proof script",
                         function_block.signature().name()
                     )));
                 }
@@ -8423,8 +8423,8 @@ verifying "reader.c";
 
 int32 reader(int32 p[]) {
     views p[0..1];
-    ensures exact_value: result == p[0] by auto;
-    ensures lower_bound: result >= p[0] by auto;
+    ensures exact_value: result == p[0] by auto();
+    ensures lower_bound: result >= p[0] by auto();
 }
 "#;
         let source = "int reader(int *p) { return p[0]; }";
@@ -8815,7 +8815,7 @@ mod retained_caller_tests {
             .map(|(name, source)| (name.as_str(), source.as_str()))
             .collect::<Vec<_>>();
         let (session, _) = C0VerificationSession::new(&click, &sources).unwrap();
-        let position = expansion::position_at_offset(&click, click.rfind("auto;").unwrap());
+        let position = expansion::position_at_offset(&click, click.rfind("auto();").unwrap());
         for _ in 0..2 {
             session
                 .verify_at(&click, position.line, position.column)
@@ -8843,7 +8843,7 @@ mod retained_caller_tests {
             .iter()
             .map(|(name, source)| (name.as_str(), source.as_str()))
             .collect::<Vec<_>>();
-        let position = expansion::position_at_offset(&click, click.rfind("auto;").unwrap());
+        let position = expansion::position_at_offset(&click, click.rfind("auto();").unwrap());
         verify_c0_sources(&click, &sources).unwrap();
         let _tables = crate::kernel::VerificationSession::resume();
         for _ in 0..2 {

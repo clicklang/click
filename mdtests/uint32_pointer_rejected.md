@@ -14,7 +14,7 @@ verifying "uint32_pointer_rejected.c";
 
 uint32 uint32_pointer_rejected(uint32* value) {
     views value[0..1];
-    ensures result == value[0] by auto;
+    ensures result == value[0] by auto();
 }
 ```
 

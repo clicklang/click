@@ -69,7 +69,7 @@ int32 claim(int32* data, int32* occupied, int32 capacity) {
         decreases p - i;
         invariant 0 <= i and i <= p;
         owns occupied[0..capacity];
-        initialize by simp;
+        initialize by simp();
         preserve by {
             mark iteration;
             have i < p by {

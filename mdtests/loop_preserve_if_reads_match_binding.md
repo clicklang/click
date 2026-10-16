@@ -41,7 +41,7 @@ void count_to(int32 n) {
         invariant i <= n;
         invariant m.model == old(m.model);
 
-        initialize by simp;
+        initialize by simp();
         preserve by {
             have 0 <= n - i - 1 by { arithmetic() using { i < n; i >= 0; n >= 0; } }
             have n - i - 1 < n - i by { arithmetic() using { i < n; i >= 0; n >= 0; } }

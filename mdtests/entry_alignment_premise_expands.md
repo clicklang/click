@@ -232,7 +232,7 @@ int32 arena_init(struct arena* arena, int32 capacity) {
         };
         owns occupied[0..capacity];
 
-        initialize by simp;
+        initialize by simp();
         preserve by {
             mark iteration;
             step();

@@ -5,10 +5,9 @@ should establish it.
 
 Omit a function's proof clause when the default automation is sufficient.
 `auto` orchestrates execution, effect reasoning, and proposition reasoning
-through checked proof operations; write `by auto;` when you want to name that
-default explicitly. For a proof that needs written steps, use a `by { ... }`
-block with parenthesized tactic calls such as `execute();` and `simp();`.
-The shorthand forms described below remain available.
+through checked proof operations; write `by auto();` when you want to name that
+default explicitly. A one-tactic proof can be written as `by simp();` or
+`by { simp(); }`. Use a `by { ... }` block for a sequence of tactics.
 
 Prefer smart tactics while authoring unless profiling identifies a hotspot.
 Exact `using` blocks are ordinary Click and may be committed after expansion,
@@ -17,13 +16,13 @@ but manually listing every premise is not the normal starting workflow.
 An omitted proof closes the statement where it holds:
 
 - `ensures P;` on a C function holds at function exit, so Click executes to
-  it first. That is `by auto;`: execute, then close the claim with `auto`,
+  it first. That is `by auto();`: execute, then close the claim with `auto`,
   which is `simp` and then, if `simp` misses, the solver and the rewrite
   search. A script that ends with the claim still open closes it the same
   way.
-- `have P;` holds where it is written. It is `have P by simp;` and never
+- `have P;` holds where it is written. It is `have P by simp();` and never
   executes C.
-- `have P by auto;` also proves `P` where it is written. With no C to run
+- `have P by auto();` also proves `P` where it is written. With no C to run
   toward the fact, `auto` first tries the solver, which refutes the integer
   negation of a linear `Integer` bound from the facts connected to it, then
   `simp` (`mdtests/have_by_auto_refutes_a_linear_bound.md`), then a short
@@ -33,10 +32,11 @@ An omitted proof closes the statement where it holds:
 A proof of one step needs no braces: `by T(args);` is `by { T(args); }` for
 any tactic written as a call, as in `have 0 <= x by assumption();`. `click
 expand`, `profile` and `audit` read it as that block, and an expansion that
-needs the braces writes them. `by simp;` and `by auto;` are written without
-parentheses, and a `simp` step in a block may be too: `simp;` is `simp();`.
+needs the braces writes them. Tactic calls always require parentheses,
+including `simp()` and `auto()`. `by auto();` and `by { auto(); }` both request
+the same whole-proof automation; `auto()` is not a step in a mixed script.
 
-`by simp;` does not execute C. For a whole-function proof, use `by auto;` or make the
+`by simp();` does not execute C. For a whole-function proof, use `by auto();` or make the
 sequence explicit:
 
 <!-- verified-example: mdtests/proof_script_execute_and_simp_using.md -->

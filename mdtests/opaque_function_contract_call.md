@@ -23,9 +23,9 @@ verifying "set_cell.c";
 verifying "set_then_read.c";
 
 int32 set_cell(int32 p[], int32 value) {
-    owns p[0..1] by auto;
-    ensures p[0] == value by auto;
-    ensures result == value by auto;
+    owns p[0..1] by auto();
+    ensures p[0] == value by auto();
+    ensures result == value by auto();
 }
 
 int32 set_then_read(int32 p[], int32 value) {

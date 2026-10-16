@@ -36,7 +36,7 @@ int32 stuck_phase(int32 n) {
         invariant i >= 0;
         invariant j >= 0;
         invariant j <= 2;
-        initialize by simp;
+        initialize by simp();
         preserve by {
             if j > 0 {
                 step();

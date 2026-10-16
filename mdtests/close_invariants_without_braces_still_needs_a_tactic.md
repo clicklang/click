@@ -19,7 +19,7 @@ int32 wait_for_zero(int32 x) diverges {
 } by {
     loop diverges {
         invariant x == x;
-        initialize by simp;
+        initialize by simp();
         preserve by {
             step();
             close_invariants by 3;

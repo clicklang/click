@@ -40,20 +40,20 @@ contract int32 PositiveStep(int32 input) {
 int32 increment(int32 value) {
     requires -100 <= value;
     requires value <= 1000;
-    ensures result == value + 1 by auto;
-    ensures value < result by auto;
+    ensures result == value + 1 by auto();
+    ensures value < result by auto();
 }
 
 int32 apply_step(int32 (*callback)(int32), int32 input) {
     requires PositiveStep(callback);
     requires 0 <= input;
     requires input <= 100;
-    ensures result == input + 1 by auto;
-    ensures 0 < result by auto;
+    ensures result == input + 1 by auto();
+    ensures 0 < result by auto();
 }
 
 int32 refining_step_caller() {
-    ensures result == 42 by auto;
+    ensures result == 42 by auto();
 }
 ```
 

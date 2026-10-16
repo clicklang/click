@@ -19,7 +19,7 @@ int32 run(void) {
 verifying "c_const_cast_aggregate_write_rejected.c";
 
 int32 run() {
-    ensures result == result by auto;
+    ensures result == result by auto();
 }
 ```
 

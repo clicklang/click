@@ -24,13 +24,13 @@ verifying "uint8_narrow_assign.c";
 uint8 narrow_return(int32 x) {
     requires x >= 0;
     requires x <= 255;
-    ensures narrowed_return: result == x by auto;
+    ensures narrowed_return: result == x by auto();
 }
 
 uint8 narrow_assign(int32 x) {
     requires x >= 0;
     requires x <= 255;
-    ensures narrowed_assign: result == x by auto;
+    ensures narrowed_assign: result == x by auto();
 }
 ```
 

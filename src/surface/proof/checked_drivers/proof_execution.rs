@@ -5245,7 +5245,7 @@ fn pre_exit_outcome_tactic_error(tactic: &ProofTactic) -> Option<String> {
     let (name, alternative) = match tactic {
         ProofTactic::Witness(_) => ("witness", ""),
         ProofTactic::Choose(_) => ("choose", ""),
-        ProofTactic::Simp => ("simp", ", or prove the claim `by auto;`"),
+        ProofTactic::Simp => ("simp", ", or prove the claim `by auto();`"),
         _ => return None,
     };
     Some(format!(

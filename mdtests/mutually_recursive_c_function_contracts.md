@@ -34,11 +34,11 @@ verifying "even.c";
 verifying "odd.c";
 
 int32 even(int32 n) diverges {
-    ensures result >= 0 by auto;
+    ensures result >= 0 by auto();
 }
 
 int32 odd(int32 n) diverges {
-    ensures result >= 0 by auto;
+    ensures result >= 0 by auto();
 }
 ```
 

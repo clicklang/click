@@ -18,7 +18,7 @@ int32 prefix_scalar_updates() {
 verifying "prefix_scalar_updates.c";
 
 int32 prefix_scalar_updates() {
-    ensures result == 3 by auto;
+    ensures result == 3 by auto();
 }
 ```
 

@@ -66,7 +66,7 @@ int spin(struct node* p, int n) {
                 invariant i <= n;
                 invariant t.model == Tree::Node(id, value, left_model);
 
-                initialize by simp;
+                initialize by simp();
                 preserve by {
                     step();
                     close_invariants by {

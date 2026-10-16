@@ -36,7 +36,7 @@ int32 phase_count(int32 n) {
         invariant i >= 0;
         invariant j >= 0;
         invariant j <= 2;
-        initialize by simp;
+        initialize by simp();
         preserve by {
             if j > 0 {
                 have 0 <= j - 1 by {

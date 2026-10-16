@@ -95,7 +95,7 @@ int32 run() {
         unfold(control);
         unfold(reference(obj));
         unfold(reference(obj));
-        have count(reference(obj)) == 0 by simp;
+        have count(reference(obj)) == 0 by simp();
         unfold(authority(reference(obj)));
         step();
         step();
@@ -107,7 +107,7 @@ int32 run() {
         step(pthread_mutex_destroy(&obj->mu), { lifetime: lifetime });
         unfold(control);
         unfold(reference(obj));
-        have count(reference(obj)) == 0 by simp;
+        have count(reference(obj)) == 0 by simp();
         unfold(authority(reference(obj)));
         step();
         step();
@@ -122,7 +122,7 @@ int32 run() {
     step();
     step(pthread_mutex_destroy(&obj->mu), { lifetime: lifetime });
     unfold(control);
-    have count(reference(obj)) == 0 by simp;
+    have count(reference(obj)) == 0 by simp();
     unfold(authority(reference(obj)));
     step();
     step();

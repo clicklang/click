@@ -37,7 +37,7 @@ int32 complete(int32 cb) {
 int32 complete_on_each_path(int32 cb, int32 failed) {
     consumes can_complete(cb);
 
-    ensures result == result by auto;
+    ensures result == result by auto();
 }
 ```
 

@@ -28,7 +28,7 @@ int32 drift(int32 n) {
         decreases n - 6;
         invariant n >= 0;
         invariant n <= 100;
-        initialize by simp;
+        initialize by simp();
         preserve by {
             have 0 <= n - 1 by {
                 apply(int32_positive_predecessor_is_nonnegative(n)) using { n > 0; }

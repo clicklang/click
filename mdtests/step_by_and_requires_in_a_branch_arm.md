@@ -40,7 +40,7 @@ int32 compare_requires(uint8 bytes[], int32 c) {
     ensures 1 == 1 by {
         branch then {
             step() {
-                requires forall (k: uint64) { k < 2 implies defined(bytes[k]) and defined(bytes[k]) } by simp;
+                requires forall (k: uint64) { k < 2 implies defined(bytes[k]) and defined(bytes[k]) } by simp();
             }
             step();
             simp();

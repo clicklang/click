@@ -18,7 +18,7 @@ int32 for_omitted_clauses() {
 verifying "for_omitted_clauses.c";
 
 int32 for_omitted_clauses() {
-    ensures result == 3 by auto;
+    ensures result == 3 by auto();
 }
 ```
 

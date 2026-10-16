@@ -150,7 +150,7 @@ needle = "apply(int32_greater_equal_and_not_greater_than_implies_equal(amount, 0
 [[form]]
 id = "have"
 path = "mdtests/post_execution_have_checks_each_path.md"
-needle = "have result == 1 by simp;"
+needle = "have result == 1 by simp();"
 
 [[form]]
 id = "open"

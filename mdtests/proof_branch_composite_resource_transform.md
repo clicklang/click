@@ -45,16 +45,16 @@ verifying "select_ready.c";
 
 int32 select_left(int32 key) {
     consumes left_path(key);
-    owns ready_permit(key) by auto;
+    owns ready_permit(key) by auto();
 
-    ensures result == key by auto;
+    ensures result == key by auto();
 }
 
 int32 select_right(int32 key) {
     consumes right_path(key);
-    owns ready_permit(key) by auto;
+    owns ready_permit(key) by auto();
 
-    ensures result == key by auto;
+    ensures result == key by auto();
 }
 
 int32 select_ready(int32 key, int32 choose_left) {

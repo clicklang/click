@@ -79,7 +79,7 @@ theorem compute_size_restores_subtree_size()
                     rewrite(right_model == sized_right(old(tree.model)));
                     assumption();
                 }
-                have defined(2147483646 - sized_value(right_model)) by auto;
+                have defined(2147483646 - sized_value(right_model)) by auto();
                 have sized_value(left_model) <= 2147483646 - sized_value(right_model) by {
                     rewrite(left_model == sized_left(old(tree.model)));
                     rewrite(right_model == sized_right(old(tree.model)));

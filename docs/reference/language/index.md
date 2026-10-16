@@ -54,7 +54,7 @@ verifying "file.c";
 int32 function_name(int32 p[], int32 n) {
     requires n >= 0;
     requires viewable(p[0..n]);
-    ensures label: result == n by auto;
+    ensures label: result == n by auto();
 }
 ```
 
@@ -704,7 +704,7 @@ contract int32 Spinner(int32 x) diverges {
 
 int32 run(int32 (*step)(int32), int32 x) diverges {
     requires Spinner(step);
-    ensures result == 1 by auto;
+    ensures result == 1 by auto();
 }
 ```
 
@@ -741,13 +741,13 @@ grouped proof that would prove no claim is refused. Structural region clauses,
 including loop proofs, retain their own proof blocks.
 
 When two or more claims omit their proofs and no grouped proof is written,
-they share an implicit `} by auto;`, so the default form also executes the
+they share an implicit `} by auto();`, so the default form also executes the
 function once. `click expand` at the contract's closing `}` writes that
 grouped proof out. A single claim without a proof keeps its own default
 `auto`, which is the same proof.
 
 For contracts that need only ordinary execution, loop checks, and
-simplification, the grouped proof can be written `} by auto;`. This is a fixed
+simplification, the grouped proof can be written `} by auto();`. This is a fixed
 expansion of those steps. It does not search through composite-resource folds
 or theorem applications; use an explicit grouped block for those operations.
 
@@ -911,7 +911,7 @@ to a C function:
 theorem preserves_assumption(x: int32) {
     requires x >= 0;
 
-    ensures x >= 0 by auto;
+    ensures x >= 0 by auto();
 }
 ```
 
@@ -940,7 +940,7 @@ theorem cell_of_a_viewed_range(v: int32[], lo: int32, hi: int32, k: int32) {
     views v[lo..hi];
     requires lo <= k;
     requires k < hi;
-    ensures to_integer(v[k]) == to_integer(v[k]) by simp;
+    ensures to_integer(v[k]) == to_integer(v[k]) by simp();
 }
 ```
 
@@ -1454,11 +1454,11 @@ verifier's resource context rather than copied as pure facts.
 <!-- verified-example: mdtests/resource_context_write.md -->
 ```click
 int32 write_next(int32 p[], int32 x) {
-    owns p[0..1] by auto;
+    owns p[0..1] by auto();
     requires x < 2147483647;
 
-    ensures returns_written: result == p[0] by auto;
-    ensures writes_next: p[0] == x + 1 by auto;
+    ensures returns_written: result == p[0] by auto();
+    ensures writes_next: p[0] == x + 1 by auto();
 }
 ```
 
@@ -2909,8 +2909,8 @@ It is mainly used in postconditions and invariants:
 
 <!-- verified-example: mdtests/proposition_connectives_quantifiers_and_old.md -->
 ```click
-ensures p[0] == old(p[0]) by auto;
-ensures forall (k: int32) { 0 <= k and k < n implies p[k] == old(p[k]) } by auto;
+ensures p[0] == old(p[0]) by auto();
+ensures forall (k: int32) { 0 <= k and k < n implies p[k] == old(p[k]) } by auto();
 ```
 
 Inside `old(...)`, `result` is unavailable.
@@ -3114,7 +3114,7 @@ that bare name as a selector later:
 ```click
 mark before_write;
 step();
-have p[0] == at(before_write, p[0]) + 1 by simp;
+have p[0] == at(before_write, p[0]) + 1 by simp();
 ```
 
 `mark` is a simple tactic and does not move execution. Its name is scoped to
@@ -3273,7 +3273,7 @@ int32 bounded_increment(int32 x) {
     let expected = x + 1;
 
     requires x < max;
-    ensures result_value: result == expected by auto;
+    ensures result_value: result == expected by auto();
 }
 ```
 

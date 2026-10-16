@@ -93,7 +93,7 @@ theorem explicit_walk_use(a: int32[], n: int32, from: int32, fuel: Nat) {
 }
 
 int32 identity(int32 x) {
-    ensures result == x by auto;
+    ensures result == x by auto();
 }
 ```
 

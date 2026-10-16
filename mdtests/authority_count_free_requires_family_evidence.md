@@ -33,7 +33,7 @@ int32 spent_count() {
     branch then { step(); simp(); } else {}
     step();
     step();
-    have count(reference(obj)) == 0 by simp;
+    have count(reference(obj)) == 0 by simp();
     execute();
     simp();
 }

@@ -65,7 +65,7 @@ int32 input_cursor_init(
 int32 input_cursor_remaining(struct input_cursor* owner) {
     views input_cursor(owner);
 
-    ensures result == owner->len - owner->pos by auto;
+    ensures result == owner->len - owner->pos by auto();
 }
 
 int32 input_cursor_peek(struct input_cursor* owner) {

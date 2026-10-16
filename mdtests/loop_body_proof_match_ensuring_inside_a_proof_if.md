@@ -58,7 +58,7 @@ void spin(struct cell* node, int32 n) {
         invariant i >= 0;
         invariant i <= n;
 
-        initialize by simp;
+        initialize by simp();
         preserve by {
             if i < 5 {
                 match c.model ensuring {

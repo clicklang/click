@@ -1115,7 +1115,7 @@ fn callee_subrange_requirement_completes_without_a_body_rerun() {
         int32 write_at(int32 p[], int32 i) {
             requires i >= 0;
             requires i < 2147483647;
-            owns p[i..i + 1] by auto;
+            owns p[i..i + 1] by auto();
 
         }
 
@@ -1123,7 +1123,7 @@ fn callee_subrange_requirement_completes_without_a_body_rerun() {
             requires i >= 0;
             requires i < n;
             requires n <= 2147483647;
-            owns p[0..n] by auto;
+            owns p[0..n] by auto();
 
         }
     "#;
@@ -2263,7 +2263,7 @@ fn simp_rejects_loop_backed_claims() {
             verifying "count_to_three.c";
 
             int32 count_to_three() {
-                ensures returns_three: result == 3 by simp;
+                ensures returns_three: result == 3 by simp();
             }
         "#;
 
@@ -2273,7 +2273,7 @@ fn simp_rejects_loop_backed_claims() {
     assert!(
         error
             .message()
-            .contains("`simp` does not prove loop-backed claims"),
+            .contains("`simp` requires execution to reach function exit first"),
         "{}",
         error.message()
     );
@@ -2315,7 +2315,7 @@ fn verifies_quantified_old_memory_postcondition() {
                 consumes p[1..2];
                 ensures keeps_first_cell: forall (k: int32) {
                     0 <= k and k < 1 implies p[k] == old(p[k])
-                } by auto;
+                } by auto();
             }
         "#;
 
@@ -2347,7 +2347,7 @@ fn separate_requirement_proves_symbolic_unwritten_read() {
                 consumes p[i..i + 1];
                 views p[j..j + 1];
                 requires separate(memory(p[i..i + 1]), memory(p[j..j + 1]));
-                ensures keeps_j: result == old(p[j]) by auto;
+                ensures keeps_j: result == old(p[j]) by auto();
             }
         "#;
 
@@ -2389,7 +2389,7 @@ fn quantified_old_memory_rejects_overwritten_cell() {
                 consumes p[1..2];
                 ensures keeps_second_cell: forall (k: int32) {
                     1 <= k and k < 2 implies p[k] == old(p[k])
-                } by auto;
+                } by auto();
             }
         "#;
 
@@ -2423,7 +2423,7 @@ fn owned_segment_rejects_write_outside_owned_memory() {
 
             int32 write_second(int32* p) {
                 consumes p[0..1];
-                ensures returns_written: result == 9 by auto;
+                ensures returns_written: result == 9 by auto();
             }
         "#;
 

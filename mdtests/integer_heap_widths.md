@@ -105,19 +105,19 @@ uint64_t realloc_uint64_array_with_size_t(size_t count) {
 verifying "integer_heap_widths.c";
 
 int16_t malloc_int16_array() {
-    ensures result == 0 or result == 5 by auto;
+    ensures result == 0 or result == 5 by auto();
 }
 
 uint16_t malloc_uint16_array() {
-    ensures result == 0 or result == 11 by auto;
+    ensures result == 0 or result == 11 by auto();
 }
 
 uint32_t malloc_uint32_array() {
-    ensures result == 0 or result == 17 by auto;
+    ensures result == 0 or result == 17 by auto();
 }
 
 int64_t malloc_int64_array() {
-    ensures result == 0 or result == 23 by auto;
+    ensures result == 0 or result == 23 by auto();
 }
 
 uint64_t calloc_uint64_array() {
@@ -131,12 +131,12 @@ uint16_t calloc_uint16_array_with_size_t(size_t count) {
 
 uint64_t malloc_uint64_array_with_size_t(size_t count) {
     requires count == 2;
-    ensures result == 0 or result == 29 by auto;
+    ensures result == 0 or result == 29 by auto();
 }
 
 uint64_t realloc_uint64_array_with_size_t(size_t count) {
     requires count == 3;
-    ensures result == 0 or result == 37 by auto;
+    ensures result == 0 or result == 37 by auto();
 }
 ```
 

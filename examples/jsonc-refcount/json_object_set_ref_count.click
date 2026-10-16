@@ -4,4 +4,4 @@ int32 json_object_set_ref_count(struct json_object* obj, int32 count) {
     consumes *obj;
     ensures returns_count: result == count;
     ensures stores_count: obj->ref_count == count;
-} by auto;
+} by auto();

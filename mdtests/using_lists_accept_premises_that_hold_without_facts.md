@@ -46,7 +46,7 @@ function icount(p: int32[], lo: int32, hi: int32) -> Integer {
 theorem start_below(lo: int32, n: int32) {
     requires 0 <= lo;
     requires lo <= n;
-    ensures 0 <= n by simp;
+    ensures 0 <= n by simp();
 }
 
 theorem last_cell(a: int32[], n: int32) {
@@ -111,12 +111,12 @@ int32 probe(int32 n) {
 int32 span(int32 lo, int32 hi) {
     requires lo <= hi;
     requires 0 <= lo;
-    ensures result == hi - lo by auto;
+    ensures result == hi - lo by auto();
 }
 
 int32 call_span(int32 n) {
     requires 0 <= n;
-    ensures result == 0 by auto;
+    ensures result == 0 by auto();
 }
 ```
 

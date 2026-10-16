@@ -64,18 +64,18 @@ int pass_unsigned(void) {
 ```click
 verifying "integer_pointers_of_either_signedness_read_the_same_bits.c";
 
-uint32 read_unsigned_word() { ensures result == 4294967295 by auto; }
-int32 read_signed_word() { ensures result == -294967296 by auto; }
-uint32 store_through_signed() { ensures result == 4294967294 by auto; }
-uint16 read_unsigned_half() { ensures result == 65480 by auto; }
-int16 read_signed_half() { ensures result == -56 by auto; }
-uint64 read_unsigned_long() { ensures result == 18446744073709551615 by auto; }
-int64 read_signed_long() { ensures result == -9223372036854775808 by auto; }
+uint32 read_unsigned_word() { ensures result == 4294967295 by auto(); }
+int32 read_signed_word() { ensures result == -294967296 by auto(); }
+uint32 store_through_signed() { ensures result == 4294967294 by auto(); }
+uint16 read_unsigned_half() { ensures result == 65480 by auto(); }
+int16 read_signed_half() { ensures result == -56 by auto(); }
+uint64 read_unsigned_long() { ensures result == 18446744073709551615 by auto(); }
+int64 read_signed_long() { ensures result == -9223372036854775808 by auto(); }
 int32 first(int32 *p) {
     views p[0..1];
     ensures result == p[0];
 }
-int32 pass_unsigned() { ensures result == -1 by auto; }
+int32 pass_unsigned() { ensures result == -1 by auto(); }
 ```
 
 ```expect

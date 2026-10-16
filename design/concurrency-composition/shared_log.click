@@ -376,7 +376,7 @@ int32 vector_grow(struct vector* owner) {
             }
             assumption();
         }
-        have forall (k: int32) { 0 <= k and k < old(owner->len) implies owner->data[k] == old(owner->data[k]) } by simp;
+        have forall (k: int32) { 0 <= k and k < old(owner->len) implies owner->data[k] == old(owner->data[k]) } by simp();
         let after = fold(allocated_vector(owner), { cap: owner->cap });
         have result == 1 by {
             normalize();

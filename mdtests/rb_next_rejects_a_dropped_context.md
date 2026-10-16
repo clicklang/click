@@ -1674,7 +1674,7 @@ struct rb_node* rb_next(struct rb_node* node) {
                                     RbTree::Node(entry_identity, entry_parent, entry_color,
                                         entry_left, entry_right));
 
-                                initialize by simp;
+                                initialize by simp();
                                 preserve by {
                                     match t.model {
                                         RbTree::Empty => { contradiction(t.model
@@ -1926,7 +1926,7 @@ struct rb_node* rb_next(struct rb_node* node) {
                         invariant rb_list_ends_with(rb_inorder(t.model), old(node)) == 1;
                         invariant plug(c.model, t.model) == plug(old(c.model), old(t.model));
 
-                        initialize by simp;
+                        initialize by simp();
                         preserve by {
                             match t.model {
                                 RbTree::Empty => { contradiction(t.model == RbTree::Empty); },

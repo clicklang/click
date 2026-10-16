@@ -47,13 +47,13 @@ uint8 calloc_uint8_pointer_array() {
 verifying "calloc_int32_pointer_array.c";
 
 int32 calloc_int32_pointer_array() {
-    ensures result == 0 or result == 37 by auto;
+    ensures result == 0 or result == 37 by auto();
 }
 
 verifying "calloc_uint8_pointer_array.c";
 
 uint8 calloc_uint8_pointer_array() {
-    ensures result == 0 or result == 42 by auto;
+    ensures result == 0 or result == 42 by auto();
 }
 ```
 

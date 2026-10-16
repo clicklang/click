@@ -734,7 +734,7 @@ fn verifies_loadable_segment_proposition_for_indexed_read() {
                 requires index < n;
                 views p[0..n];
 
-                ensures returns_loaded_value: result == p[index] by auto;
+                ensures returns_loaded_value: result == p[index] by auto();
             }
         "#;
 
@@ -782,7 +782,7 @@ fn uninitialized_scalar_read_fails_verification() {
             verifying "read_uninitialized.c";
 
             int32 read_uninitialized() {
-                ensures result == 0 by auto;
+                ensures result == 0 by auto();
             }
         "#;
 
@@ -807,7 +807,7 @@ fn uninitialized_local_array_read_fails_verification() {
             verifying "read_uninitialized_array.c";
 
             int32 read_uninitialized_array() {
-                ensures result == 0 by auto;
+                ensures result == 0 by auto();
             }
         "#;
 
@@ -834,7 +834,7 @@ fn pointer_argument_keeps_its_null_execution_path() {
             verifying "pointer_is_null.c";
 
             int32 pointer_is_null(int32* p) {
-                ensures result == 0 by auto;
+                ensures result == 0 by auto();
             }
         "#;
 
@@ -1064,8 +1064,8 @@ fn have_after_loop_completes_without_a_body_rerun() {
                     decreases 1 - j;
                     invariant j >= 0 and j <= 1;
                 }
-                have i == 1 by simp;
-                have j == 1 by simp;
+                have i == 1 by simp();
+                have j == 1 by simp();
                 step();
                 simp();
             }
@@ -1485,7 +1485,7 @@ fn struct_name_signature_mismatch_reports_direct_error() {
 
         int32 get_value(struct expected* p) {
             views p->value;
-            ensures result == old(p->value) by auto;
+            ensures result == old(p->value) by auto();
         }
     "#;
 
@@ -1573,8 +1573,8 @@ fn observed_cursor_facts_produce_checkable_surface_certificates() {
             unfold(input_cursor(owner));
             observe(readable_input(owner->data, owner->len));
             execute();
-            have 0 <= owner->pos by simp;
-            have owner->pos <= owner->len by simp;
+            have 0 <= owner->pos by simp();
+            have owner->pos <= owner->len by simp();
             have separate(
                 memory(*owner),
                 memory(owner->data[0..owner->len])
@@ -1660,9 +1660,9 @@ fn explicit_store_step_with_unfolded_resource_facts_verifies() {
                 unfold(terminated_at);
                 simp();
             }
-            have owner->data[owner->len] == 0 by simp;
-            have 0 <= owner->len by simp;
-            have owner->len < owner->cap by simp;
+            have owner->data[owner->len] == 0 by simp();
+            have 0 <= owner->len by simp();
+            have owner->len < owner->cap by simp();
             have separate(
                 memory(*owner),
                 memory(owner->data[0..owner->cap])
@@ -1748,15 +1748,15 @@ fn expanded_read_step_uses_contextual_range_separation() {
             ensures owner->data[owner->len] == 0;
         } by {
             unfold(owned_string(owner));
-            have 0 <= owner->len - 1 by simp;
-            have owner->len - 1 < owner->len by simp;
+            have 0 <= owner->len - 1 by simp();
+            have owner->len - 1 < owner->len by simp();
             execute();
             have terminated_at(owner->data, owner->len) by {
                 unfold(terminated_at);
                 simp();
             }
-            have 0 <= owner->len by simp;
-            have owner->len < owner->cap by simp;
+            have 0 <= owner->len by simp();
+            have owner->len < owner->cap by simp();
             have separate(
                 memory(*owner),
                 memory(owner->data[0..owner->cap])
@@ -1840,9 +1840,9 @@ fn decrement_contract_checks_nonnegative_and_equality_certificates() {
             requires value == count;
             ensures result == value - 1;
         } by {
-            have 0 <= value - 1 by simp;
-            have value - 1 < value by simp;
-            have value - 1 == count - 1 by simp;
+            have 0 <= value - 1 by simp();
+            have value - 1 < value by simp();
+            have value - 1 == count - 1 by simp();
             execute();
             simp();
         }

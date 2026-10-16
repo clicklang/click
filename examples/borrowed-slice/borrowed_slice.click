@@ -144,7 +144,7 @@ int32 borrowed_slice_buffer_get(
     requires index < length;
     views owned_borrowable_buffer(owner, data, length);
 
-    ensures result == data[index] by auto;
+    ensures result == data[index] by auto();
 }
 
 int32 borrowed_slice_buffer_pipeline(

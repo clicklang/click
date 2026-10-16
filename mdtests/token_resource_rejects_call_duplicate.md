@@ -32,7 +32,7 @@ int32 consume_two(int32 first, int32 second) {
 int32 call_same(int32 cb) {
     consumes can_complete(cb);
 
-    ensures result == 0 by auto;
+    ensures result == 0 by auto();
 }
 ```
 

@@ -15,7 +15,7 @@ Contracts are built from propositions:
 <!-- verified-example: mdtests/contract_clause_forms.md -->
 ```click
 requires x >= 0;
-ensures result == x + 1 by auto;
+ensures result == x + 1 by auto();
 ```
 
 The expressions `x >= 0` and `result == x + 1` are propositions.
@@ -168,7 +168,7 @@ execution keeps both paths, and the proof has to handle both — see
 
 <!-- verified-example: mdtests/opaque_call_old_entry_state.md -->
 ```click
-ensures result == old(p[0]) by auto;
+ensures result == old(p[0]) by auto();
 ```
 
 Old values are central for memory proofs. They let a postcondition compare the

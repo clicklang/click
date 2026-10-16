@@ -34,7 +34,7 @@ verifying "c_proof_applies_a_loadable_premise_theorem_with_using.c";
 
 theorem viewable_range_is_nonnegative(v: int32[], n: int32) {
     requires n >= 0 and viewable(v[0..n]);
-    ensures 0 <= n by simp;
+    ensures 0 <= n by simp();
 }
 
 int32 probe(int32 a[], int32 n) {

@@ -145,7 +145,7 @@ void parent_detach(struct parent* p) {
         },
         ParentLink::Linked(kid) => {
             unfold(link);
-            have old(p->kid) == kid by simp;
+            have old(p->kid) == kid by simp();
             if p->kid->refs > 1 {
                 execute();
                 simp();

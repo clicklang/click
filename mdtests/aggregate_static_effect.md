@@ -20,7 +20,7 @@ verifying "aggregate_static_effect.c";
 
 int32 increment() {
     requires state.value < 1000;
-    ensures result == old(state.value) + 1 by auto;
+    ensures result == old(state.value) + 1 by auto();
 }
 ```
 

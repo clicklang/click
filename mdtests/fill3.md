@@ -21,7 +21,7 @@ verifying "fill3.c";
 
 int32 fill3(int32* p) {
     consumes p[0..3];
-    ensures returns_second: result == 2 by auto;
+    ensures returns_second: result == 2 by auto();
 }
 ```
 

@@ -21,8 +21,8 @@ int32 publish_uint8(uint8** out, uint8* source[]) {
 verifying "publish_int32.c";
 
 int32 publish_int32(int32** out, int32* source[]) {
-    owns out[0..1] by auto;
-    owns source[0..1] by auto;
+    owns out[0..1] by auto();
+    owns source[0..1] by auto();
 
     ensures out[0] == source[0];
     ensures result == 0;
@@ -31,8 +31,8 @@ int32 publish_int32(int32** out, int32* source[]) {
 verifying "publish_uint8.c";
 
 int32 publish_uint8(uint8** out, uint8* source[]) {
-    owns out[0..1] by auto;
-    owns source[0..1] by auto;
+    owns out[0..1] by auto();
+    owns source[0..1] by auto();
 
     ensures out[0] == source[0];
     ensures result == 0;

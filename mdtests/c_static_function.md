@@ -33,7 +33,7 @@ verifying "c_static_function.c";
 
 int32 add_one(int32 value) {
     requires value < 100;
-    ensures result == value + 1 by auto;
+    ensures result == value + 1 by auto();
 }
 
 int32 run(int32 value) {

@@ -10,7 +10,7 @@ verifying "identity.c";
 
 int32 identity(int32 fd) {
     requires open_fd(fd);
-    ensures result == fd by auto;
+    ensures result == fd by auto();
 }
 ```
 

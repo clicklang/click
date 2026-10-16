@@ -36,9 +36,9 @@ int32 run() { ensures result == 0 or result == 3; } by {
     fold(control(&pool));
     step(consume(&pool, p), { member: first });
 
-    have second.serial == 2 by simp;
+    have second.serial == 2 by simp();
     unfold(control(&pool));
-    have count(ticket(&pool, _)) == 2 by simp;
+    have count(ticket(&pool, _)) == 2 by simp();
     unfold(second);
     unfold(authority(ticket(&pool, _)));
     execute(); simp();

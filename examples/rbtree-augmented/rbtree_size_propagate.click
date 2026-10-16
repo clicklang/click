@@ -37,7 +37,7 @@ void sized_propagate(struct rb_node* rb, struct rb_node* stop) {
         invariant links.word == old(links.word);
         invariant rb == old(rb) or rb == stop;
         invariant metadata.value == 1 or rb == old(rb);
-        initialize by simp;
+        initialize by simp();
         preserve by {
             have rb == old(rb) by {
                 cases {

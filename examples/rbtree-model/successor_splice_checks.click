@@ -187,7 +187,7 @@ theorem immediate_successor_rejects_zero_height(erased: struct rb_node*,
             normalize();
         }
         apply(rb_reparent_preserves_is_rb(splice_black_leaf(l, erased), successor));
-        have is_rb(rb_reparent(splice_black_leaf(l, erased), successor)) == 1 by auto;
+        have is_rb(rb_reparent(splice_black_leaf(l, erased), successor)) == 1 by auto();
         rewrite(rb_successor_context(successor, above, Color::Black,
                 splice_black_leaf(l, erased), splice_black_leaf(successor, erased), Context::Top)
             == Context::Right(successor, above, Color::Black,

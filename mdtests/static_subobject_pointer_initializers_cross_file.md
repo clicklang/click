@@ -52,7 +52,7 @@ int32 read_subobjects() {
     owns storage_file::timeout_pointer[0..1];
     owns storage_file::byte_pointer[0..1];
     requires storage_file::middle[0] == 6 and storage_file::timeout_pointer[0] == 0 and storage_file::byte_pointer[0] == 0;
-    ensures result == 6 by auto;
+    ensures result == 6 by auto();
 }
 
 int32 run() {

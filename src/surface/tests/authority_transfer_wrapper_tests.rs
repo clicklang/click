@@ -129,8 +129,8 @@ fn authority_member_wrapper_requires_population_cleanup_before_free() {
             fold(member(p));
             fold(authority(held(p)));
             fold(held(p));
-            have count(held(p)) == 1 by simp;
-            have count(member(p)) == 1 by simp;
+            have count(held(p)) == 1 by simp();
+            have count(member(p)) == 1 by simp();
             execute();
         }
     "#;

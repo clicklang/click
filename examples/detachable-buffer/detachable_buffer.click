@@ -111,7 +111,7 @@ int32 detachable_buffer_get(
     requires index < owner->len;
     views attached_buffer(owner);
 
-    ensures result == owner->data[index] by auto;
+    ensures result == owner->data[index] by auto();
 }
 
 int32 detachable_buffer_pipeline(

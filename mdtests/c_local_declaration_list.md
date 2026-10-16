@@ -14,7 +14,7 @@ int32 local_declaration_list() {
 verifying "local_declaration_list.c";
 
 int32 local_declaration_list() {
-    ensures result == 3 by auto;
+    ensures result == 3 by auto();
 }
 ```
 

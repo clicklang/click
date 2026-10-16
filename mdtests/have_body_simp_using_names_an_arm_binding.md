@@ -122,7 +122,7 @@ unsigned long spin(struct node* p, int n) {
                 invariant i >= 0;
                 invariant i <= n;
                 invariant t.model == Tree::Node(id, color, left_model);
-                initialize by simp;
+                initialize by simp();
                 preserve by {
                     have color_bit(color) == color_bit(color) by {
                         simp() using { t.model == Tree::Node(id, color, left_model); }

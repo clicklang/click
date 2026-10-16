@@ -2889,7 +2889,7 @@ mod tests {
 
         fs::write(
             root.join("outside.click"),
-            "theorem outside() { ensures 0 == 0 by simp; }",
+            "theorem outside() { ensures 0 == 0 by simp(); }",
         )
         .unwrap();
         let escape = "import \"../outside.click\";";

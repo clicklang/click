@@ -55,19 +55,19 @@ target "x86_64-unknown-linux-gnu";
 verifying "main.c";
 
 uint64 *sizes(uint64 *p) {
-    ensures result == p by auto;
+    ensures result == p by auto();
 }
 
 uint64 *counts(uint64 *p) {
-    ensures result == p by auto;
+    ensures result == p by auto();
 }
 
 int64 *values(int64 *p) {
-    ensures result == p by auto;
+    ensures result == p by auto();
 }
 
 uint64 *words(uint64 *p) {
-    ensures result == p by auto;
+    ensures result == p by auto();
 }
 
 int32 allocate() {

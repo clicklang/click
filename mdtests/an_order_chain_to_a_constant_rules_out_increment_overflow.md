@@ -19,7 +19,7 @@ int32 next_index(int32 i, int32 j) {
     requires 0 <= i;
     requires i <= j;
     requires j < 1000;
-    ensures result == i + 1 by auto;
+    ensures result == i + 1 by auto();
 }
 ```
 

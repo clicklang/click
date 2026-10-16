@@ -95,8 +95,8 @@ int32 vector_copy(
         invariant forall (k: int32) { 0 <= k and k < i implies dst[k] == old(src[k]) };
         owns dst[0..length];
         initialize by {
-            have 0 <= i by auto;
-            have i <= length by auto;
+            have 0 <= i by auto();
+            have i <= length by auto();
             have forall (k: int32) { 0 <= k and k < i implies dst[k] == old(src[k]) } by {
                 intro();
                 intro();
@@ -111,7 +111,7 @@ int32 vector_copy(
             simp();
         }
     }
-    have i == length by auto;
+    have i == length by auto();
     have forall (k: int32) { 0 <= k and k < length implies dst[k] == old(src[k]) } by {
         intro();
         intro();
@@ -203,10 +203,10 @@ int32 vector_grow(struct vector* owner) {
             assumption();
         }
         fold(allocated_vector(owner));
-        have result == 0 by auto;
-        have result == 0 implies owner->cap == old(owner->cap) by auto;
-        have result == 0 implies owner->data == old(owner->data) by auto;
-        have result == 1 implies owner->cap == (old(owner->cap) + 1) by auto;
+        have result == 0 by auto();
+        have result == 0 implies owner->cap == old(owner->cap) by auto();
+        have result == 0 implies owner->data == old(owner->data) by auto();
+        have result == 1 implies owner->cap == (old(owner->cap) + 1) by auto();
         assumption();
         assumption();
         assumption();
@@ -222,12 +222,12 @@ int32 vector_grow(struct vector* owner) {
         step();
         step();
         step();
-        have owner->cap == at(statement(9).entry, new_capacity) by auto;
-        have forall (k: int32) { 0 <= k and k < old(owner->len) implies owner->data[k] == old(owner->data[k]) } by simp;
+        have owner->cap == at(statement(9).entry, new_capacity) by auto();
+        have forall (k: int32) { 0 <= k and k < old(owner->len) implies owner->data[k] == old(owner->data[k]) } by simp();
         fold(allocated_vector(owner));
-        have result == 0 implies owner->cap == old(owner->cap) by auto;
-        have result == 0 implies owner->data == old(owner->data) by auto;
-        have result == 1 implies owner->cap == (old(owner->cap) + 1) by auto;
+        have result == 0 implies owner->cap == old(owner->cap) by auto();
+        have result == 0 implies owner->data == old(owner->data) by auto();
+        have result == 1 implies owner->cap == (old(owner->cap) + 1) by auto();
         assumption();
         assumption();
         assumption();
@@ -689,7 +689,7 @@ int32 vector_init(struct vector* owner, int32 data[], int32 capacity) {
     step();
     step();
     fold(empty_vector(owner));
-    have result == 0 by auto;
+    have result == 0 by auto();
     assumption();
     assumption();
     assumption();
@@ -752,8 +752,8 @@ int32 vector_fill(struct vector* owner, int32 value) {
     unfold(nonempty_vector(owner));
     step();
     step();
-    have i >= 0 by auto;
-    have i <= owner->len by auto;
+    have i >= 0 by auto();
+    have i <= owner->len by auto();
     loop as fill_cells {
         decreases owner->len - i;
         invariant i >= 0 and i <= owner->len;
@@ -800,7 +800,7 @@ int32 vector_replace_if(
     step();
     branch then {
         step();
-        have replace != 0 implies selected == replacement by auto;
+        have replace != 0 implies selected == replacement by auto();
     } else {
         step();
         have replace != 0 implies selected == replacement by {
@@ -822,7 +822,7 @@ int32 vector_clear(struct vector* owner) {
     unfold(nonempty_vector(owner));
     step();
     step();
-    have owner->len == 0 by auto;
+    have owner->len == 0 by auto();
     apply(int32_less_equal_transitive(1, at(statement(0).entry, owner->len), at(statement(0).entry, owner->cap))) using {
         at(statement(0).entry, 1) <= at(statement(0).entry, owner->len);
         at(statement(0).entry, owner->len) <= at(statement(0).entry, owner->cap);
