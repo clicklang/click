@@ -4662,6 +4662,25 @@ impl ResourceContext {
             .copied()
             .filter(|entry| contains(self.fact(*entry).resource(), &other_resource))
             .collect::<BTreeSet<_>>();
+        // No owner in `other`'s own block: its owner can live in a block an
+        // exact pointer equality identifies with `other`'s address (a fresh
+        // symbolic block equal to a parameter's address, say). Only then
+        // walk that equality component, so queries the block answers keep
+        // their cost.
+        let excluded = if excluded.is_empty() {
+            let start = other.start_pointer();
+            [other.base(), &start]
+                .into_iter()
+                .flat_map(|pointer| assumptions.pointer_equality_component(pointer))
+                .filter(|(alias, _)| alias.block != other.base().block)
+                .flat_map(|(alias, _)| {
+                    self.owned_memory_candidates_at(&alias.block, &alias, assumptions)
+                })
+                .filter(|entry| contains(self.fact(*entry).resource(), &other_resource))
+                .collect::<BTreeSet<_>>()
+        } else {
+            excluded
+        };
         if excluded.is_empty() {
             return Vec::new();
         }

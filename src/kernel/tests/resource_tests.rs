@@ -102,6 +102,41 @@ fn separation_candidates_preserve_derived_aliases_and_loaded_bases() {
 }
 
 #[test]
+fn separation_candidates_follow_a_block_alias_to_the_owner() {
+    // `__rb_insert` in the sized double rotations: the queried range sits in
+    // a fresh symbolic block that a pointer equality identifies with a
+    // parameter's address, so its owner lives in another block.
+    let _session = crate::kernel::VerificationSession::enter();
+    let a = Bitvector32Term::Variable(Variable(989_800));
+    let parameter = Pointer {
+        block: PointerBlock::ExternalArgument,
+        offset: PointerOffsetTerm::scale_int32(a, 4),
+    };
+    let loaded = Pointer::symbolic(Variable(989_801));
+    let target = Pointer::symbolic(Variable(989_802));
+    let range = |pointer: Pointer, start: u32, end: u32| {
+        CMemoryRange::new_with_element_width(pointer, start.into(), end.into(), 4)
+    };
+    let frame = ResourceContext::new()
+        .unchecked_with_fact(CResourceFact::own_memory(range(parameter.clone(), 1, 2)))
+        .unchecked_with_fact(CResourceFact::own_memory(range(target.clone(), 1, 2)));
+    let query = |context: &PureFactContext| {
+        context.proves_resource_separate(
+            &CResource::Memory(range(target.clone(), 1, 2)),
+            &CResource::Memory(range(loaded.clone(), 1, 2)),
+        )
+    };
+    let unrelated =
+        PureFactContext::new().assume_proposition(Proposition::CResourceComposition(frame.clone()));
+    assert!(!query(&unrelated), "an unowned range proves nothing");
+    let aliased = unrelated.assume_condition(
+        ConditionTerm::pointer_equal(loaded.clone(), parameter.clone()),
+        true,
+    );
+    assert!(query(&aliased));
+}
+
+#[test]
 fn normalized_resource_specs_validate_families_and_preserve_transfer_metadata() {
     let segment = CMemorySegment::new(c_variable("p"), c_int32_literal(0), c_int32_literal(2));
     let memory_view = CResourceSpec::new(
