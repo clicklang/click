@@ -7854,19 +7854,28 @@ impl<'a> Proof<'a> {
             .iter()
             .map(|(kernel, _)| kernel.clone())
             .collect::<Vec<_>>();
-        // Increment-order rules have a checked named theorem certificate.
-        // Avoid building speculative graph-normalization contexts for this
-        // shape, while preserving the ordinary normalization choices elsewhere.
-        let increment_order = signed_nonstrict_parts(goal)
+        // Signed-order rules have checked named theorem certificates. Try
+        // those before allocating speculative normalization contexts, including
+        // for predecessor and negated-bound rules without an explicit `+ 1`.
+        let signed_order = signed_nonstrict_parts(goal)
             .or_else(|| signed_strict_parts(goal))
-            .is_some_and(|(left, right)| {
-                [left, right].iter().any(|term| {
-                    matches!(term, Bitvector32Term::Add(left, right) if left.as_ref() == &Bitvector32Term::Constant(1) || right.as_ref() == &Bitvector32Term::Constant(1))
-                })
-            });
-        if increment_order
-            && let Some(closed) = proof.try_typed_atomic_simp_from_selected_premises(&premise_pairs)
-        {
+            .is_some();
+        let theorem_application_closes_goal =
+            !matches!(self.context.as_ref(), ProofContext::Execution(_));
+        let try_typed_derivation = || {
+            let SimpEvidence::Derivation(derivation) =
+                plan_simp_certificate(goal, &assumptions_from_propositions(&restricted))?
+            else {
+                return None;
+            };
+            proof.check_typed_atomic_simp_candidate(
+                goal,
+                &derivation,
+                &premise_pairs,
+                theorem_application_closes_goal,
+            )
+        };
+        if signed_order && let Some(closed) = try_typed_derivation() {
             return Some(closed);
         }
         if crate::kernel::proof::fact_reasoning::is_single_normalization_condition(goal)
@@ -7940,20 +7949,14 @@ impl<'a> Proof<'a> {
         {
             return Some(closed);
         }
-        let theorem_application_closes_goal =
-            !matches!(self.context.as_ref(), ProofContext::Execution(_));
-        plan_simp_certificate(goal, &assumptions_from_propositions(&restricted))
-            .and_then(|plan| {
-                let SimpEvidence::Derivation(derivation) = &plan else {
-                    return None;
-                };
-                proof.check_typed_atomic_simp_candidate(
-                    goal,
-                    derivation,
-                    &premise_pairs,
-                    theorem_application_closes_goal,
-                )
-            })
+        // The selected context has not changed, so the ordinary derivation
+        // slot need not repeat the early attempt.
+        let typed = if signed_order {
+            None
+        } else {
+            try_typed_derivation()
+        };
+        typed
             .or_else(|| proof.try_restricted_equality_rewrite_chain(&premise_pairs))
             .or_else(|| proof.try_outcome_anchored_order_transitivity(&premise_pairs))
             .or_else(|| proof.try_outcome_anchored_increment_order(&premise_pairs))
