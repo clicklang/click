@@ -73,6 +73,13 @@ Existing produce-then-check code is a defect, tracked in
 change is: does this re-validate something the same session produced? If so,
 restructure it so the producing operation is the only one.
 
+Explicit return closers lower the folded claim goal once. They also try its
+unfolded form only when the proof has unfolded a predicate; an empty unfold
+list must not repeat the same lowering and its entry/exit resource expansion.
+Profiling attributes this work to `return claim goal lowering`. The
+[unfolded-predicate fixture](https://github.com/clicklang/click/blob/master/mdtests/explicit_return_closer_keeps_unfolded_predicate_goal.md)
+keeps the distinct folded and unfolded forms available when they are needed.
+
 ### Refused ownership separation
 
 A refused separation of fixed fields on independent pointer parameters uses
