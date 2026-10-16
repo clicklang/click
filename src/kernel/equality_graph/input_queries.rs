@@ -246,8 +246,8 @@ impl EqualityGraph {
                     continue;
                 }
                 crate::instrumentation::record_deterministic_work(1);
-                if let Bitvector32Term::PointerAddress(address) = &term {
-                    pending.push(address.as_ref().clone());
+                if let Some(address) = term.address_pointer() {
+                    pending.push(address.clone());
                 }
                 if let Some(neighbors) = self.admitted.bitvector64_equality_facts.get(&term) {
                     terms.extend(neighbors.keys().cloned());
@@ -301,7 +301,7 @@ impl EqualityGraph {
                     continue;
                 }
                 crate::instrumentation::record_deterministic_work(1);
-                if let Bitvector32Term::PointerAddress(address) = &term {
+                if let Some(address) = term.address_pointer() {
                     let reached = parameter_alias_bucket(address);
                     reached_objects.insert(reached.clone());
                     pending.push(reached);

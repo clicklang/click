@@ -1941,7 +1941,8 @@ impl Renderer<'_> {
                 }
                 self.push(" }");
             }
-            Bitvector32Term::PointerAddress(pointer) => {
+            Bitvector32Term::PointerAddress(pointer)
+            | Bitvector32Term::ObjectPointerAddress(pointer, _) => {
                 self.push("address(");
                 self.pointer(pointer);
                 self.push(")");

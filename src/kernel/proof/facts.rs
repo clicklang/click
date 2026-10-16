@@ -2459,7 +2459,10 @@ fn collect_bitvector_atoms(term: &Bitvector32Term, atoms: &mut BTreeSet<Bitvecto
         Bitvector32Term::MemoryLoad(_, pointer, _) => {
             collect_pointer_bitvector_atoms(pointer, atoms)
         }
-        Bitvector32Term::PointerAddress(pointer) => collect_pointer_bitvector_atoms(pointer, atoms),
+        Bitvector32Term::PointerAddress(pointer)
+        | Bitvector32Term::ObjectPointerAddress(pointer, _) => {
+            collect_pointer_bitvector_atoms(pointer, atoms)
+        }
         // A load variable names one read; the atoms of the address it read
         // are the atoms an equality must rewrite to reach it (`p->q->x`
         // under `p->q == r`). Follow registered addresses a bounded number

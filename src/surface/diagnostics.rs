@@ -6340,7 +6340,8 @@ pub(super) fn describe_bitvector_with_context(
         }
         Bitvector32Term::AlgebraicMatch { .. } => "match <algebraic value> { ... }".to_string(),
         Bitvector32Term::MemoryLoad(_, pointer, _) => describe_load_at(pointer, parameter_binding),
-        Bitvector32Term::PointerAddress(pointer) => {
+        Bitvector32Term::PointerAddress(pointer)
+        | Bitvector32Term::ObjectPointerAddress(pointer, _) => {
             format!("((uint64){})", describe_pointer(pointer, parameter_binding))
         }
         Bitvector32Term::IntegerToMachine { value, destination } => format!(

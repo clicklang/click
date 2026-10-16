@@ -499,7 +499,8 @@ fn write_havoc_identity(mut identity: String, mut tasks: Vec<HavocIdentityTask>)
                         tasks.push(HavocIdentityTask::Text(")"));
                         tasks.push(HavocIdentityTask::Pointer(*pointer));
                     }
-                    Bitvector32Term::PointerAddress(pointer) => {
+                    Bitvector32Term::PointerAddress(pointer)
+                    | Bitvector32Term::ObjectPointerAddress(pointer, _) => {
                         identity.push_str("address(");
                         tasks.push(HavocIdentityTask::Text(")"));
                         tasks.push(HavocIdentityTask::Pointer(*pointer));

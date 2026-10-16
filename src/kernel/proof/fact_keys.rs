@@ -2115,9 +2115,14 @@ fn alpha_bitvector_key_with_bindings<const ALLOW_LOADS: bool>(
                 *kind,
             )
         }
-        Bitvector32Term::PointerAddress(pointer) => AlphaBitvectorKey::Address(Box::new(
-            alpha_pointer_key_with_bindings::<ALLOW_LOADS>(pointer, bindings, next_binder)?,
-        )),
+        Bitvector32Term::PointerAddress(pointer)
+        | Bitvector32Term::ObjectPointerAddress(pointer, _) => {
+            AlphaBitvectorKey::Address(Box::new(alpha_pointer_key_with_bindings::<ALLOW_LOADS>(
+                pointer,
+                bindings,
+                next_binder,
+            )?))
+        }
         Bitvector32Term::IntegerToMachine { value, destination } => {
             AlphaBitvectorKey::IntegerToMachine(
                 *destination,
