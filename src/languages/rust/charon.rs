@@ -1777,6 +1777,14 @@ pub(super) fn decode_crate(
                 adapter.trait_impl_methods.insert(id, interface);
                 name
             }
+            // A crate trait's default method: its body is the trait's
+            // interface function for that method, generic over the
+            // implementing type, verified once against the interface.
+            a::FunSource::TraitDefault {
+                trait_ref, item_id, ..
+            } if adapter.interface_trait(trait_ref.id)? => {
+                adapter.interface_name(trait_ref.id, *item_id)?
+            }
             a::FunSource::TraitImpl {
                 trait_ref,
                 impl_ref,
@@ -2186,9 +2194,13 @@ pub(super) fn decode_crate(
         }
         if imp.methods.iter().count() != krate.trait_decls[id].methods.iter().count()
             || imp.methods.iter().any(|method| {
-                !adapter
-                    .trait_impl_methods
-                    .contains_key(&method.skip_binder.id)
+                let function = method.skip_binder.id;
+                // A method the implementation does not write is the
+                // trait's default, imported as the interface function.
+                let default = krate.fun_decls.get(function).is_some_and(|f| {
+                    matches!(&f.src, a::FunSource::TraitDefault { trait_ref, .. } if trait_ref.id == id)
+                });
+                !default && !adapter.trait_impl_methods.contains_key(&function)
             })
         {
             return Err(unsupported(

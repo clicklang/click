@@ -1547,8 +1547,8 @@ impl Parser {
         }
         // A crate trait method's implementation, or a C++ override, inherits
         // its interface, which the sidecar may declare before or after it: a
-        // trait's `extern` method, or the virtual method overridden, whose
-        // contract a call through it assumes.
+        // trait's method, external or a default method with its proof, or the
+        // virtual method overridden, whose contract a call through it assumes.
         let cpp = self.language == SourceLanguage::Cpp;
         for (implementation, interface) in std::mem::take(&mut self.rust_trait_implementations) {
             // A defining class's method is stated on that class's memory, which
@@ -1576,7 +1576,7 @@ impl Parser {
             }
             let Some(interface) = function_blocks
                 .iter()
-                .find(|block| (cpp || block.is_external()) && block.signature().name() == interface)
+                .find(|block| block.signature().name() == interface)
                 .cloned()
             else {
                 continue;

@@ -15,6 +15,13 @@ trait trait_objects::Shape {
         requires 0 <= half and half <= 50;
         ensures size(self) == half + half;
     }
+    // A default method's interface, with the proof of its default body,
+    // which reads `size(self)` as `area`'s interface does.
+    fn area_twice(&self, scale: i32) -> i32 {
+        requires 0 <= scale and scale <= 50;
+        requires 0 <= size(self) and size(self) <= 100;
+        ensures result == size(self) + scale + scale;
+    } by { execute(); simp(); }
 }
 
 // Each implementation defines `size` and inherits `area`'s interface, read
@@ -83,4 +90,10 @@ fn trait_objects::reset_square(half: i32) -> i32 {
 fn trait_objects::reset_dyn_square(half: i32) -> i32 {
     requires 0 <= half and half <= 50;
     ensures result == half + half;
+} by { execute(); simp(); }
+
+// `Square` keeps `area_twice`'s default body, called with its object.
+fn trait_objects::default_square(scale: i32) -> i32 {
+    requires 0 <= scale and scale <= 50;
+    ensures result == 3 + scale + scale;
 } by { execute(); simp(); }
