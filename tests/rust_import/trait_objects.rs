@@ -16,7 +16,7 @@ fn trait_objects_project() -> Project {
 // struct's definitions, and after a mutable call only what the interface
 // says of the new state.
 #[test]
-#[ignore = "nightly: 7s in the parallel gate"]
+#[ignore = "nightly: 8s in the parallel gate"]
 fn charon_trait_object_functions_are_defined_per_implementation() {
     let p = trait_objects_project();
     let prepared = p.prepared().unwrap();
@@ -56,6 +56,13 @@ fn charon_trait_object_functions_are_defined_per_implementation() {
             "        ensures size(self) == half;",
             "::set.interface_ensures_0",
         ),
+        // A default method's body is verified with its object: it knows
+        // `area`'s result only through `area`'s interface.
+        (
+            "        ensures result == size(self) + scale + scale;",
+            "        ensures result == size(self) + scale;",
+            "trait_objects::Shape::area_twice.ensures_0",
+        ),
         // Every implementation defines each of the trait's functions.
         (
             "    function size(self) -> i32 { self.side }\n",
@@ -75,7 +82,7 @@ fn charon_trait_object_functions_are_defined_per_implementation() {
 }
 
 #[test]
-#[ignore = "nightly: 20s in the parallel gate"]
+#[ignore = "nightly: 24s in the parallel gate"]
 fn charon_trait_objects_tools_recheck_expanded_certificates() {
     let p = trait_objects_project();
     for command in ["verify", "profile", "audit"] {
@@ -87,6 +94,7 @@ fn charon_trait_objects_tools_recheck_expanded_certificates() {
         "<trait_objects::Circle as trait_objects::Shape>::area.contract",
         "<trait_objects::Square as trait_objects::Shape>::set.contract",
         "__rust_q_I13_trait_objects_I12_reset_square.contract",
+        "trait_objects::Shape::area_twice.contract",
     ] {
         assert_cli(&p, &["expand", "--claim", claim, "--in-place"]);
         assert_cli(&p, &["verify"]);

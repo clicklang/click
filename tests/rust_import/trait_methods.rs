@@ -14,7 +14,7 @@ fn trait_methods_project() -> Project {
 // establishes, and must accept every call it allows. The interface reads nothing
 // through `self`, whose type it does not know.
 #[test]
-#[ignore = "nightly: 2.2s in the parallel gate"]
+#[ignore = "nightly: 6s in the parallel gate"]
 fn charon_trait_method_implementations_refine_their_interface() {
     let p = trait_methods_project();
     let prepared = p.prepared().unwrap();
@@ -25,8 +25,8 @@ fn charon_trait_method_implementations_refine_their_interface() {
         // proof must establish.
         (
             &[(
-                "        ensures scale < result and result <= 3001;\n    }\n}",
-                "        ensures scale < result and result <= 2000;\n    }\n}",
+                "        ensures scale < result and result <= 3001;\n    }\n    fn twice",
+                "        ensures scale < result and result <= 2000;\n    }\n    fn twice",
             )][..],
             "`<trait_methods::Square as trait_methods::Shape>::area.interface_ensures_0`",
         ),
@@ -55,11 +55,12 @@ fn charon_trait_method_implementations_refine_their_interface() {
             )][..],
             "trait_methods::through_dyn.ensures_0",
         ),
-        // Without the `trait` block, a call through the trait has no contract.
+        // Without an interface for `area`, a call through the trait has no
+        // contract.
         (
             &[
                 (
-                    "trait trait_methods::Shape {\n    fn area(&self, scale: i32) -> i32 {\n        requires 0 <= scale and scale <= 1000;\n        ensures scale < result and result <= 3001;\n    }\n}\n",
+                    "    fn area(&self, scale: i32) -> i32 {\n        requires 0 <= scale and scale <= 1000;\n        ensures scale < result and result <= 3001;\n    }\n",
                     "",
                 ),
                 // Circle then inherits no bounds; it states its own.
@@ -73,22 +74,22 @@ fn charon_trait_method_implementations_refine_their_interface() {
         // The interface has no field of `self` to read, nor its resources.
         (
             &[(
-                "        ensures scale < result and result <= 3001;\n    }\n}",
-                "        ensures scale < result and result <= 3001;\n        ensures self.side == 3;\n    }\n}",
+                "        ensures scale < result and result <= 3001;\n    }\n    fn twice",
+                "        ensures scale < result and result <= 3001;\n        ensures self.side == 3;\n    }\n    fn twice",
             )][..],
             "a trait method's interface reads nothing through `self`",
         ),
         (
             &[(
-                "        ensures scale < result and result <= 3001;\n    }\n}",
-                "        views self.side;\n        ensures scale < result and result <= 3001;\n    }\n}",
+                "        ensures scale < result and result <= 3001;\n    }\n    fn twice",
+                "        views self.side;\n        ensures scale < result and result <= 3001;\n    }\n    fn twice",
             )][..],
             "a trait method's interface holds no resources",
         ),
         // An implementation must be verified against its own contract.
         (
             &[(
-                "impl trait_methods::Shape for trait_methods::Circle {\n    fn area(&self, scale: i32) -> i32 {\n        ensures result == scale + scale + 1;\n    } by { execute(); simp(); }\n}\n",
+                "impl trait_methods::Shape for trait_methods::Circle {\n    fn area(&self, scale: i32) -> i32 {\n        ensures result == scale + scale + 1;\n    } by { execute(); simp(); }\n    fn twice(&self, scale: i32) -> i32 {\n        ensures result == scale + 3;\n    } by { execute(); simp(); }\n}\n",
                 "",
             )][..],
             "`<trait_methods::Circle as trait_methods::Shape>::area` implements the trait method interface `trait_methods::Shape::area` but has no contract",
@@ -101,6 +102,33 @@ fn charon_trait_method_implementations_refine_their_interface() {
                 "(shape: &trait_methods::Square, scale: i32)",
             )][..],
             "signature mismatch for `trait_methods::total` parameter 1",
+        ),
+        // A default method's body is verified against its own contract,
+        // its calls of `area` assuming `area`'s interface.
+        (
+            &[(
+                "        ensures result <= 6002;\n    } by { execute(); simp(); }\n}",
+                "        ensures result <= 5000;\n    } by { execute(); simp(); }\n}",
+            )][..],
+            "trait_methods::Shape::twice.ensures_0",
+        ),
+        // An override of a default method inherits its contract and must
+        // accept every call it allows.
+        (
+            &[(
+                "    fn twice(&self, scale: i32) -> i32 {\n        ensures result == scale + 3;",
+                "    fn twice(&self, scale: i32) -> i32 {\n        requires 0 <= scale and scale <= 10;\n        ensures result == scale + 3;",
+            )][..],
+            "does not refine the trait method interface `trait_methods::Shape::twice`",
+        ),
+        // A call on a type that keeps the default gets the default's
+        // contract, and no more.
+        (
+            &[(
+                "fn trait_methods::direct_default(scale: i32) -> i32 {\n    requires 0 <= scale and scale <= 1000;\n    ensures result <= 6002;",
+                "fn trait_methods::direct_default(scale: i32) -> i32 {\n    requires 0 <= scale and scale <= 1000;\n    ensures result <= 6001;",
+            )][..],
+            "trait_methods::direct_default.ensures_0",
         ),
     ] {
         let mut invalid = SIDECAR.to_string();
@@ -118,7 +146,7 @@ fn charon_trait_method_implementations_refine_their_interface() {
 }
 
 #[test]
-#[ignore = "nightly: 5.2s in the parallel gate"]
+#[ignore = "nightly: 15s in the parallel gate"]
 fn charon_trait_methods_tools_recheck_expanded_certificates() {
     let p = trait_methods_project();
     for command in ["verify", "profile", "audit"] {
@@ -128,6 +156,8 @@ fn charon_trait_methods_tools_recheck_expanded_certificates() {
         "__rust_q_I13_trait_methods_I5_total.contract",
         "__rust_q_I13_trait_methods_I7_dynamic.contract",
         "<trait_methods::Circle as trait_methods::Shape>::area.contract",
+        "trait_methods::Shape::twice.contract",
+        "<trait_methods::Circle as trait_methods::Shape>::twice.contract",
     ] {
         assert_cli(&p, &["expand", "--claim", claim, "--in-place"]);
         assert_cli(&p, &["verify"]);
