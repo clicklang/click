@@ -43,11 +43,10 @@ The work is the deterministic work of the first (uncached) query in an empty
 | 64  | 193 | 194 | 391   |
 | 256 | 769 | 770 | 1,543 |
 
-The probe was the test
-`definedness_frame_is_flat_against_unrelated_history_and_facts` in
-`src/scaling_tests/kernel/quantified_frame/definedness_frame_tests.rs`
-(from the fix for the guarded-definedness frame), with the value leaf measured
-by these calls:
+The probe was a test beside
+`conjunct_elimination_is_flat_against_unrelated_history_and_facts` in
+`src/scaling_tests/kernel/quantified_frame/conjunct_elimination_tests.rs`,
+with the same snapshots, measuring these calls:
 
 ```rust
 let bi = crate::kernel::intern_c_memory_ref(&before);
@@ -70,6 +69,6 @@ stores, with the guarded `memset` postcondition carried across `dst[4] = 0`.
   disjoint store is equal at 16, 64 and 256 unrelated earlier stores, and that
   it grows with the steps between the two snapshots, not the steps before them.
 - Answers are unchanged: the existing refusal regressions still refuse, for
-  example `mdtests/a_guarded_memset_postcondition_does_not_cross_a_store_in_its_range.md`
+  example `mdtests/guarded_definedness_does_not_hide_an_overlapping_store.md`
   and the `quantified_frame_rejects_*` family. This includes the case where the
   cell was last written before `before`, and the stored-value pinning arm.

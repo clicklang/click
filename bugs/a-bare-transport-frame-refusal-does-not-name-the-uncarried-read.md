@@ -37,8 +37,10 @@ void fill(uint8* dst) {
 }
 ```
 
-`mdtests/a_guarded_memset_postcondition_does_not_cross_a_store_in_its_range.md`
-is the `using` form of this refusal.
+Adding `using { at(filled, ...); }` with the same source gives the
+"found no frame evidence" refusal, which names the cell walks;
+`mdtests/a_guarded_memset_postcondition_does_not_cross_a_store_of_unknown_separation.md`
+is a regression of that `using` form.
 
 ## Acceptance criteria
 
