@@ -755,7 +755,7 @@ fn reordered_cstr_requirement_expands_without_planning_and_reverifies() {
             requires known_len < 18446744073709551615u64;
             requires defined(known_len + 1u64);
             requires viewable(haystack[0..known_len + 1u64]);
-            requires cstr::readable(haystack);
+            views str: cstr_at(haystack, _);
             views haystack[0..known_len + 1u64];
             ensures result < 18446744073709551615u64;
         } by {
@@ -767,7 +767,7 @@ fn reordered_cstr_requirement_expands_without_planning_and_reverifies() {
 
     let (verified, planning_transitions) =
         count_planning_statement_transitions(|| verify_c0_sources(click_source, &sources));
-    let verified = verified.expect("the exact reordered caller requirement should verify");
+    let verified = verified.expect("the reordered borrowed string should verify");
     assert_eq!(
         planning_transitions, 0,
         "the source-identity retry must not enter hidden statement planning"
@@ -791,12 +791,8 @@ fn reordered_cstr_requirement_expands_without_planning_and_reverifies() {
     )
     .expect("the source-identity retry should expand into source");
     assert!(
-        expanded_source.contains("obtain (len: uint64) { at(function.entry,"),
-        "the expansion should state the established entry existential: {expanded_source}"
-    );
-    assert!(
-        expanded_source.contains("extract(at(function.entry, viewable(haystack[0.."),
-        "the expansion should consume a retained source projection: {expanded_source}"
+        expanded_source.contains("views str: cstr_at(haystack, _);"),
+        "the expansion should keep the reordered string clause: {expanded_source}"
     );
     assert!(!expanded_source.contains("execute();"));
     assert!(!expanded_source.contains("simp();"));

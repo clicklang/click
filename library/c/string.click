@@ -31,11 +31,6 @@ extern uint8* memset(uint8 destination[], int32 value, uint64 bytes) {
 }
 
 extern uint64 strlen(const uint8* bytes) {
-    requires cstr::readable(bytes);
-    ensures result < 18446744073709551615u64;
-    ensures viewable(bytes[0..result + 1u64]);
-    ensures forall (k: uint64) { k < result implies bytes[k] != '\0' };
-    ensures bytes[result] == '\0';
-    ensures cstr::readable_len(bytes, result);
-    ensures old(bytes[0]) == '\0' implies result == 0u64;
+    views s: cstr_at(bytes, _);
+    ensures result == s.len;
 }

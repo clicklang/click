@@ -2615,6 +2615,11 @@ parameter, the call is refused with the parameter named
 `mdtests/cstr_at_binder_refuses_an_ambiguous_choice.md`); equal values are
 not searched for.
 
+A C library contract's value binders are named the same way: the library's
+`strlen` views `s: cstr_at(bytes, _)`, so a sidecar writes
+`step(strlen(bytes), { s: cstr_at(bytes, 2u64) })`
+(`mdtests/cstr_readable_witness_stated_before_call.md`).
+
 The selected `modeled-pthread` runtime declares named mutex binders too.
 Initialization takes `state` and produces `lifetime`; destruction takes
 `lifetime`. For example, initialization can be written
