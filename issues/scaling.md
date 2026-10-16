@@ -106,12 +106,15 @@ instead of from what the step changed.
    the rule in `AGENTS.md` (construct valid proofs; never produce-then-check):
    a step still runs its executor up to three times (a probe before
    obligations, and a call before its `return`), instance, observation and
-   population rewrites still re-check their producer's result, a join walks
-   its own arms once to collect their memory steps, and condition and
-   function-level theorems still list their contexts. A walk that meets an
-   already checked branch or proof-case join no longer walks its arms again,
-   so a statement inside nested joins is walked once per join that directly
-   holds it rather than once per enclosing join. A plain composite `fold` or `unfold` is recorded from its
+   population rewrites still re-check their producer's result, and condition
+   and function-level theorems still list their contexts. A walk that meets
+   an already checked branch or proof-case join no longer walks its arms
+   again, so a statement inside nested joins is walked once per join that
+   directly holds it rather than once per enclosing join. That walk, which
+   collects the arms' memory steps, reads each recorded event's result and
+   re-checks no premise or rewrite; it takes no facts. The function's
+   completion walk still re-checks population-authority rewrites and
+   lifetime ends. A plain composite `fold` or `unfold` is recorded from its
    producer's result without re-expanding or comparing (2.84 billion
    instructions at N = 64; fold work at N = 256 137,981 to 22,782).
 5. **Fixed: satisfying a composite checked every held one of its shape.**
