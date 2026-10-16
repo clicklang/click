@@ -1,6 +1,7 @@
 mod cpp_class_objects;
 mod cpp_model;
 mod cpp_syntax;
+mod name_table;
 mod rust_literals;
 use super::names;
 mod rust_syntax;
@@ -8,6 +9,7 @@ mod rust_trait_objects;
 pub(crate) use rust_trait_objects::implementation_interface_contract;
 pub(super) mod tokenizer;
 use cpp_model::rewrite_model_accessors;
+use name_table::{NameKind, NameTable};
 use rust_syntax::rust_signature_hint;
 
 use crate::languages::SourceLanguage;
@@ -791,7 +793,10 @@ struct Parser {
     current_global_array_shapes: BTreeMap<String, GlobalArrayShape>,
     current_algebraic_params: BTreeMap<String, (AlgebraicTypeApplication, usize)>,
     current_click_type_parameters: BTreeSet<String>,
-    current_contract_bindings: BTreeSet<String>,
+    /// The lexical names bound at the cursor that carry no further data:
+    /// contract bindings, Integer parameters and lets, theorem parameters
+    /// and proof binders (see [`NameKind`]).
+    names: NameTable,
     /// Names of the pure functions this module can call: its own
     /// declarations, indexed before any item is parsed, its imports' and the
     /// standard library's. A bare call written where a proposition is
@@ -819,18 +824,9 @@ struct Parser {
     /// memory base is refused by name instead of lowering to a width-unknown
     /// load.
     current_arm_binding_types: BTreeMap<String, AlgebraicFieldType>,
-    current_integer_params: BTreeSet<String>,
-    current_integer_lets: BTreeSet<String>,
     /// Whether specification comparisons with arithmetic are Integer
     /// comparisons (`arithmetic "integer";`).
     integer_arithmetic: bool,
-    /// Every parameter of the theorem being parsed, of any type, so a
-    /// `have name: P` cannot take a parameter's name.
-    current_theorem_param_names: BTreeSet<String>,
-    /// Names introduced by `obtain (...)` in this proof block only.
-    /// Nested `have` and branch blocks start a new lexical binder scope;
-    /// semantic freshness is checked again by the proof object.
-    current_proof_let_names: BTreeSet<String>,
     proof_let_restores: Vec<ProofLetParserRestore>,
     /// The facts `have name: P` named, visible from the `have` to the end
     /// of its block, nested blocks included. A citation by name is read as
@@ -1302,17 +1298,13 @@ impl Parser {
             current_global_array_shapes: BTreeMap::new(),
             current_algebraic_params: BTreeMap::new(),
             current_click_type_parameters: BTreeSet::new(),
-            current_contract_bindings: BTreeSet::new(),
+            names: NameTable::default(),
             pure_function_names: BTreeSet::new(),
             current_c_object_names: None,
             bool_value_context: false,
             algebraic_variant_fields: BTreeMap::new(),
             current_arm_binding_types: BTreeMap::new(),
-            current_integer_params: BTreeSet::new(),
-            current_integer_lets: BTreeSet::new(),
             integer_arithmetic,
-            current_theorem_param_names: BTreeSet::new(),
-            current_proof_let_names: BTreeSet::new(),
             proof_let_restores: Vec::new(),
             fact_names: BTreeMap::new(),
             fact_name_restores: Vec::new(),
@@ -2383,7 +2375,7 @@ impl Parser {
             &mut self.current_algebraic_params,
             algebraic_parameter_types(&parsed_parameters.parameters),
         );
-        let previous_contract_bindings = std::mem::take(&mut self.current_contract_bindings);
+        let previous_contract_bindings = self.names.take(NameKind::ContractBinding);
         let previous_definition = std::mem::replace(&mut self.in_resource_definition, true);
         let previous_hidden = std::mem::take(&mut self.hidden_child_fields);
         let composite_body = match self.peek() {
@@ -2435,7 +2427,8 @@ impl Parser {
         self.current_algebraic_params = previous_algebraic_params;
         self.current_resource_bindings = previous_resource_bindings;
         self.current_resource_targets = previous_resource_targets;
-        self.current_contract_bindings = previous_contract_bindings;
+        self.names
+            .replace(NameKind::ContractBinding, previous_contract_bindings);
         Ok(ResourceDefinition {
             name,
             parameters: parsed_parameters.parameters,
@@ -2661,7 +2654,10 @@ impl Parser {
                 self.expect(Token::FatArrow)?;
                 let inserted = bindings
                     .iter()
-                    .filter(|name| self.current_contract_bindings.insert((*name).clone()))
+                    .filter(|name| {
+                        self.names
+                            .insert(NameKind::ContractBinding, (*name).clone())
+                    })
                     .cloned()
                     .collect::<Vec<_>>();
                 self.match_nesting += 1;
@@ -2680,7 +2676,7 @@ impl Parser {
                 self.match_nesting -= 1;
                 let body = body?;
                 for name in inserted {
-                    self.current_contract_bindings.remove(&name);
+                    self.names.remove(NameKind::ContractBinding, &name);
                 }
                 if body
                     .contains
@@ -2873,9 +2869,9 @@ impl Parser {
             )));
         }
         self.position += 1;
-        let integer_was_bound = self.current_integer_params.remove(&binder);
-        let integer_let_was_bound = self.current_integer_lets.remove(&binder);
-        let c_was_bound = self.current_contract_bindings.remove(&binder);
+        let integer_was_bound = self.names.remove(NameKind::IntegerParameter, &binder);
+        let integer_let_was_bound = self.names.remove(NameKind::IntegerLet, &binder);
+        let c_was_bound = self.names.remove(NameKind::ContractBinding, &binder);
         let parsed = (|| {
             let range = self.parse_proposition()?;
             self.expect(Token::LBrace)?;
@@ -2914,13 +2910,14 @@ impl Parser {
             Ok((range, guard, elements))
         })();
         if integer_was_bound {
-            self.current_integer_params.insert(binder.clone());
+            self.names
+                .insert(NameKind::IntegerParameter, binder.clone());
         }
         if integer_let_was_bound {
-            self.current_integer_lets.insert(binder.clone());
+            self.names.insert(NameKind::IntegerLet, binder.clone());
         }
         if c_was_bound {
-            self.current_contract_bindings.insert(binder.clone());
+            self.names.insert(NameKind::ContractBinding, binder.clone());
         }
         let (range, guard, elements) = parsed?;
         let [ResourceClause::OwnMemory(element)] = <[ResourceClause; 1]>::try_from(elements)
@@ -3108,8 +3105,8 @@ impl Parser {
         self.expect(Token::LParen)?;
         let parsed_parameters = self.parse_click_parameters()?;
         self.expect(Token::RParen)?;
-        let previous_integer_params = std::mem::replace(
-            &mut self.current_integer_params,
+        let previous_integer_params = self.names.replace(
+            NameKind::IntegerParameter,
             parsed_parameters
                 .parameters
                 .iter()
@@ -3119,7 +3116,7 @@ impl Parser {
         );
         let previous_integer_literal_context =
             std::mem::replace(&mut self.integer_literal_context, false);
-        let previous_integer_lets = std::mem::take(&mut self.current_integer_lets);
+        let previous_integer_lets = self.names.take(NameKind::IntegerLet);
         let mut execution_struct_params = BTreeMap::new();
         let mut execution_struct_array_params = BTreeSet::new();
         let mut executed_reference_params = BTreeSet::new();
@@ -3150,10 +3147,9 @@ impl Parser {
             .iter()
             .map(|parameter| parameter.name().to_string())
             .collect::<BTreeSet<_>>();
-        let previous_theorem_param_names = std::mem::replace(
-            &mut self.current_theorem_param_names,
-            parameter_names.clone(),
-        );
+        let previous_theorem_param_names = self
+            .names
+            .replace(NameKind::TheoremParameter, parameter_names.clone());
         let previous_struct_params = std::mem::replace(
             &mut self.current_struct_params,
             parsed_parameters.struct_params,
@@ -3217,7 +3213,8 @@ impl Parser {
                         // its literal context active while those clauses are
                         // parsed instead of losing the annotation first.
                         self.integer_literal_context = true;
-                        self.current_integer_lets.insert(
+                        self.names.insert(
+                            NameKind::IntegerLet,
                             contract_lets
                                 .last()
                                 .expect("just pushed let binding")
@@ -3350,9 +3347,12 @@ impl Parser {
         self.current_reference_params = previous_reference_params;
         self.current_algebraic_params = previous_algebraic_params;
         self.current_click_type_parameters = previous_type_parameters;
-        self.current_theorem_param_names = previous_theorem_param_names;
-        self.current_integer_params = previous_integer_params;
-        self.current_integer_lets = previous_integer_lets;
+        self.names
+            .replace(NameKind::TheoremParameter, previous_theorem_param_names);
+        self.names
+            .replace(NameKind::IntegerParameter, previous_integer_params);
+        self.names
+            .replace(NameKind::IntegerLet, previous_integer_lets);
         self.integer_literal_context = previous_integer_literal_context;
 
         let requires: Vec<Requirement> = requires
@@ -3452,8 +3452,8 @@ impl Parser {
             .iter()
             .map(|parameter| parameter.name().to_string())
             .collect::<Vec<_>>();
-        let previous_integer_params = std::mem::take(&mut self.current_integer_params);
-        let previous_integer_lets = std::mem::take(&mut self.current_integer_lets);
+        let previous_integer_params = self.names.take(NameKind::IntegerParameter);
+        let previous_integer_lets = self.names.take(NameKind::IntegerLet);
         let previous_integer_literal_context =
             std::mem::replace(&mut self.integer_literal_context, false);
         let mut contract_lets = Vec::new();
@@ -3607,7 +3607,8 @@ impl Parser {
                         Some(ClickType::Integer)
                     ) {
                         self.integer_literal_context = true;
-                        self.current_integer_lets.insert(
+                        self.names.insert(
+                            NameKind::IntegerLet,
                             contract_lets
                                 .last()
                                 .expect("just pushed let binding")
@@ -4012,8 +4013,10 @@ impl Parser {
         self.current_struct_array_params = previous_struct_array_params;
         self.current_reference_params = previous_reference_params;
         self.current_reference_result = previous_reference_result;
-        self.current_integer_params = previous_integer_params;
-        self.current_integer_lets = previous_integer_lets;
+        self.names
+            .replace(NameKind::IntegerParameter, previous_integer_params);
+        self.names
+            .replace(NameKind::IntegerLet, previous_integer_lets);
         self.integer_literal_context = previous_integer_literal_context;
 
         // Flattening an aggregate clause keeps the clause the author wrote
@@ -4425,7 +4428,7 @@ impl Parser {
                 .current_c_object_names
                 .as_ref()
                 .is_some_and(|names| names.contains(name))
-            || self.current_proof_let_names.contains(name)
+            || self.names.contains(NameKind::ProofBinder, name)
             || self.current_arm_binding_types.contains_key(name);
         (!shadowed).then_some(value)
     }
@@ -5766,9 +5769,7 @@ impl Parser {
                         {
                             return Err(self.error("`result` is reserved for the C value in a step output pattern; rename the produced resource binder"));
                         }
-                        if self.current_integer_params.contains(&name)
-                            || self.current_integer_lets.contains(&name)
-                        {
+                        if self.names.contains_any(NameKind::INTEGERS, &name) {
                             return Err(self
                                 .error(format!("call result name `{name}` is already in scope")));
                         }
@@ -5823,10 +5824,7 @@ impl Parser {
         declaration: &CalleeResourceBinder,
         arguments: &[ContractExpression],
     ) -> Result<CallBinderBinding, ClickError> {
-        if self.current_contract_bindings.contains(name)
-            || self.current_integer_params.contains(name)
-            || self.current_integer_lets.contains(name)
-        {
+        if self.names.contains_any(NameKind::VALUES, name) {
             return Err(self.error("produced instance conflicts with a C or pure binding"));
         }
         self.bind_proof_name(name, true)?;
@@ -6058,7 +6056,7 @@ impl Parser {
         self.expect(Token::Colon)?;
         if self.current_value_binders.contains_key(&name)
             || self.current_resource_bindings.contains_key(&name)
-            || self.current_contract_bindings.contains(&name)
+            || self.names.contains(NameKind::ContractBinding, &name)
             || parameter_names.contains(&name)
         {
             return Err(self.error(format!("duplicate binder `{name}`")));
@@ -6185,7 +6183,7 @@ impl Parser {
             .then(|| self.current_resource_bindings.get(&name).cloned())
             .flatten();
         if (rebound.is_none() && self.current_resource_bindings.contains_key(&name))
-            || self.current_contract_bindings.contains(&name)
+            || self.names.contains(NameKind::ContractBinding, &name)
         {
             return Err(self.error(format!("duplicate resource instance binding `{name}`")));
         }
@@ -7026,25 +7024,27 @@ impl Parser {
                             return Err(self.error("only pointer-to-struct types are supported"));
                         }
                         let previous_integer_context = self.integer_literal_context;
-                        let integer_was_bound = self.current_integer_params.contains(&name);
-                        let integer_let_was_bound = self.current_integer_lets.contains(&name);
-                        let c_was_bound = self.current_contract_bindings.contains(&name);
+                        let integer_was_bound =
+                            self.names.contains(NameKind::IntegerParameter, &name);
+                        let integer_let_was_bound =
+                            self.names.contains(NameKind::IntegerLet, &name);
+                        let c_was_bound = self.names.contains(NameKind::ContractBinding, &name);
                         match &click_type {
                             ClickType::Integer => {
-                                self.current_contract_bindings.remove(&name);
-                                self.current_integer_params.insert(name.clone());
+                                self.names.remove(NameKind::ContractBinding, &name);
+                                self.names.insert(NameKind::IntegerParameter, name.clone());
                                 self.integer_literal_context = true;
                             }
                             ClickType::C(_) => {
-                                self.current_integer_params.remove(&name);
-                                self.current_integer_lets.remove(&name);
-                                self.current_contract_bindings.remove(&name);
+                                self.names.remove(NameKind::IntegerParameter, &name);
+                                self.names.remove(NameKind::IntegerLet, &name);
+                                self.names.remove(NameKind::ContractBinding, &name);
                                 self.integer_literal_context = false;
                             }
                             ClickType::Algebraic(_) => {
-                                self.current_integer_params.remove(&name);
-                                self.current_integer_lets.remove(&name);
-                                self.current_contract_bindings.insert(name.clone());
+                                self.names.remove(NameKind::IntegerParameter, &name);
+                                self.names.remove(NameKind::IntegerLet, &name);
+                                self.names.insert(NameKind::ContractBinding, name.clone());
                                 self.integer_literal_context = false;
                             }
                             ClickType::Parameter(_) => {
@@ -7128,19 +7128,21 @@ impl Parser {
                     self.quantifier_binders.pop();
                     self.integer_literal_context = scope.previous_integer_context;
                     if scope.integer_was_bound {
-                        self.current_integer_params.insert(scope.name.clone());
+                        self.names
+                            .insert(NameKind::IntegerParameter, scope.name.clone());
                     } else {
-                        self.current_integer_params.remove(&scope.name);
+                        self.names.remove(NameKind::IntegerParameter, &scope.name);
                     }
                     if scope.integer_let_was_bound {
-                        self.current_integer_lets.insert(scope.name.clone());
+                        self.names.insert(NameKind::IntegerLet, scope.name.clone());
                     } else {
-                        self.current_integer_lets.remove(&scope.name);
+                        self.names.remove(NameKind::IntegerLet, &scope.name);
                     }
                     if scope.c_was_bound {
-                        self.current_contract_bindings.insert(scope.name.clone());
+                        self.names
+                            .insert(NameKind::ContractBinding, scope.name.clone());
                     } else {
-                        self.current_contract_bindings.remove(&scope.name);
+                        self.names.remove(NameKind::ContractBinding, &scope.name);
                     }
                     let body = operands.pop().expect("quantifier body operand");
                     let mut quantifier = if scope.forall {
@@ -7329,8 +7331,7 @@ impl Parser {
             ContractExpression::Binding(name)
             | ContractExpression::CBinding(name)
             | ContractExpression::CFragment(CExpression::Variable(name)) => {
-                self.current_integer_params.contains(name)
-                    || self.current_integer_lets.contains(name)
+                self.names.contains_any(NameKind::INTEGERS, name)
             }
             _ => false,
         }
@@ -7454,11 +7455,12 @@ impl Parser {
         self.expect_ident_spelling("by")?;
         let let_checkpoint = self.proof_let_restores.len();
         let fact_checkpoint = self.fact_name_restores.len();
-        let previous_proof_let_names = std::mem::take(&mut self.current_proof_let_names);
+        let previous_proof_let_names = self.names.take(NameKind::ProofBinder);
         let result = self.parse_by_clause_body();
         self.restore_proof_let_bindings(let_checkpoint);
         self.restore_fact_names(fact_checkpoint);
-        self.current_proof_let_names = previous_proof_let_names;
+        self.names
+            .replace(NameKind::ProofBinder, previous_proof_let_names);
         // A `;` after a closing brace ends nothing; accept it after a block
         // proof as everywhere else, though it is never required.
         if result.is_ok()
@@ -7556,14 +7558,15 @@ impl Parser {
                 .pop()
                 .expect("restore above checkpoint");
             if restore.was_integer_let {
-                self.current_integer_lets.insert(restore.name.clone());
+                self.names
+                    .insert(NameKind::IntegerLet, restore.name.clone());
             } else {
-                self.current_integer_lets.remove(&restore.name);
+                self.names.remove(NameKind::IntegerLet, &restore.name);
             }
             if restore.was_contract_binding {
-                self.current_contract_bindings.insert(restore.name);
+                self.names.insert(NameKind::ContractBinding, restore.name);
             } else {
-                self.current_contract_bindings.remove(&restore.name);
+                self.names.remove(NameKind::ContractBinding, &restore.name);
             }
         }
     }
@@ -7678,7 +7681,7 @@ impl Parser {
             if !slots.insert(slot.clone()) || !names.insert(name.clone()) {
                 return Err(self.error("duplicate child slot or resource name"));
             }
-            if self.current_contract_bindings.contains(&name) {
+            if self.names.contains(NameKind::ContractBinding, &name) {
                 return Err(self.error("child resource name conflicts with a C or pure binding"));
             }
             self.bind_proof_name(&name, true)?;
@@ -7698,7 +7701,7 @@ impl Parser {
                 }
                 let identity = Variable(self.next_resource_identity);
                 self.next_resource_identity += 1;
-                self.current_proof_let_names.insert(name.clone());
+                self.names.insert(NameKind::ProofBinder, name.clone());
                 result.push((slot, name, identity));
                 continue;
             }
@@ -7818,9 +7821,7 @@ impl Parser {
                 // A result is a proof binder: it hides an earlier proof
                 // binding of its name. Contract and theorem names stay
                 // reserved, and a C variable cannot be hidden.
-                if self.current_integer_params.contains(&name)
-                    || self.current_integer_lets.contains(&name)
-                {
+                if self.names.contains_any(NameKind::INTEGERS, &name) {
                     return Err(
                         self.error(format!("step result name `{name}` is already in scope"))
                     );
@@ -7870,7 +7871,7 @@ impl Parser {
                     }
                     let _ = slot;
                     self.bind_proof_name(name, false)?;
-                    self.current_proof_let_names.insert(name.clone());
+                    self.names.insert(NameKind::ProofBinder, name.clone());
                 }
                 return Ok(ProofTactic::UnfoldWitnesses {
                     resource: target,
@@ -7926,10 +7927,7 @@ impl Parser {
                 _ => format!("#{resource_name}{}", self.next_resource_identity),
             },
         };
-        if self.current_contract_bindings.contains(&name)
-            || self.current_integer_params.contains(&name)
-            || self.current_integer_lets.contains(&name)
-        {
+        if self.names.contains_any(NameKind::VALUES, &name) {
             return Err(self.error("fold result conflicts with a C or pure binding"));
         }
         self.bind_proof_name(&name, true)?;
@@ -8041,10 +8039,10 @@ impl Parser {
                     && !explicit
                         .iter()
                         .any(|(bound, name, _)| bound == *slot || name == *slot)
-                    && !self.current_contract_bindings.contains(*slot)
-                    && !self.current_integer_params.contains(*slot)
-                    && !self.current_integer_lets.contains(*slot)
-                    && !self.current_proof_let_names.contains(*slot)
+                    && !self.names.contains(NameKind::ContractBinding, slot)
+                    && !self.names.contains(NameKind::IntegerParameter, slot)
+                    && !self.names.contains(NameKind::IntegerLet, slot)
+                    && !self.names.contains(NameKind::ProofBinder, slot)
             })
             .filter_map(|slot| {
                 let (identity, _) = self.current_resource_bindings.get(slot)?;
@@ -8101,7 +8099,7 @@ impl Parser {
         loop {
             let name = self.expect_ident("existential binding name")?;
             if is_c_type_keyword(&name)
-                || self.current_proof_let_names.contains(&name)
+                || self.names.contains(NameKind::ProofBinder, &name)
                 || bindings.iter().any(|(bound, _)| bound == &name)
             {
                 return Err(self.error(format!("`{name}` is already in scope")));
@@ -8132,18 +8130,18 @@ impl Parser {
             self.bind_proof_name(name, false)?;
             self.proof_let_restores.push(ProofLetParserRestore {
                 name: name.clone(),
-                was_integer_let: self.current_integer_lets.contains(name),
-                was_contract_binding: self.current_contract_bindings.contains(name),
+                was_integer_let: self.names.contains(NameKind::IntegerLet, name),
+                was_contract_binding: self.names.contains(NameKind::ContractBinding, name),
             });
             match click_type {
                 ClickType::Integer => {
-                    self.current_contract_bindings.remove(name);
-                    self.current_integer_lets.insert(name.clone());
+                    self.names.remove(NameKind::ContractBinding, name);
+                    self.names.insert(NameKind::IntegerLet, name.clone());
                     self.integer_literal_context = true;
                 }
                 ClickType::C(_) | ClickType::Algebraic(_) => {
-                    self.current_integer_lets.remove(name);
-                    self.current_contract_bindings.insert(name.clone());
+                    self.names.remove(NameKind::IntegerLet, name);
+                    self.names.insert(NameKind::ContractBinding, name.clone());
                     self.integer_literal_context = false;
                 }
                 ClickType::Parameter(_) => unreachable!("rejected above"),
@@ -8153,8 +8151,10 @@ impl Parser {
         self.expect(Token::RBrace)?;
         self.skip_redundant_semicolon();
         self.integer_literal_context = previous_integer_context;
-        self.current_proof_let_names
-            .extend(bindings.iter().map(|(name, _)| name.clone()));
+        self.names.extend(
+            NameKind::ProofBinder,
+            bindings.iter().map(|(name, _)| name.clone()),
+        );
         // The snapshot is independent of the newly bound variables, so
         // `exists x. at(S, P(x))` is stated at the source as
         // `at(S, exists x. P(x))`. This preserves the exact fact identity of
@@ -8296,11 +8296,7 @@ impl Parser {
 
     /// Whether `name` binds a parameter, binding or C object visible here.
     fn name_bound_in_scope(&self, name: &str) -> bool {
-        self.current_proof_let_names.contains(name)
-            || self.current_contract_bindings.contains(name)
-            || self.current_integer_params.contains(name)
-            || self.current_theorem_param_names.contains(name)
-            || self.current_integer_lets.contains(name)
+        self.names.contains_any(NameKind::ALL, name)
             || self.current_resource_bindings.contains_key(name)
             || self.current_arm_binding_types.contains_key(name)
             || self.current_c_parameter_types.contains_key(name)
@@ -8425,7 +8421,10 @@ impl Parser {
                 self.expect(Token::FatArrow)?;
                 let newly_bound = bindings
                     .iter()
-                    .filter(|name| self.current_contract_bindings.insert((*name).clone()))
+                    .filter(|name| {
+                        self.names
+                            .insert(NameKind::ContractBinding, (*name).clone())
+                    })
                     .cloned()
                     .collect::<Vec<_>>();
                 // A proof arm's struct-pointer binding is a memory base in the
@@ -8447,7 +8446,7 @@ impl Parser {
                 self.current_struct_params = saved_struct_params;
                 self.current_arm_binding_types = saved_arm_binding_types;
                 for name in newly_bound {
-                    self.current_contract_bindings.remove(&name);
+                    self.names.remove(NameKind::ContractBinding, &name);
                 }
                 arms.push(ProofInductionArm {
                     type_name,
@@ -8696,12 +8695,15 @@ impl Parser {
                     self.expect(Token::FatArrow)?;
                     let newly_bound = bindings
                         .iter()
-                        .filter(|binding| self.current_contract_bindings.insert((*binding).clone()))
+                        .filter(|binding| {
+                            self.names
+                                .insert(NameKind::ContractBinding, (*binding).clone())
+                        })
                         .cloned()
                         .collect::<Vec<_>>();
                     let tactics = self.parse_possibly_empty_tactic_block();
                     for binding in newly_bound {
-                        self.current_contract_bindings.remove(&binding);
+                        self.names.remove(NameKind::ContractBinding, &binding);
                     }
                     arms.push(ProofInductionArm {
                         type_name,
@@ -9268,7 +9270,7 @@ impl Parser {
                 scopes.push((
                     self.proof_let_restores.len(),
                     self.fact_name_restores.len(),
-                    std::mem::take(&mut self.current_proof_let_names),
+                    self.names.take(NameKind::ProofBinder),
                 ));
                 let mut else_tactics = Vec::new();
                 while self.peek() != Some(&Token::RBrace) && self.peek_ident() != Some("if") {
@@ -9294,7 +9296,7 @@ impl Parser {
                     scopes.pop().expect("an else block owns a scope");
                 self.restore_proof_let_bindings(checkpoint);
                 self.restore_fact_names(fact_checkpoint);
-                self.current_proof_let_names = names;
+                self.names.replace(NameKind::ProofBinder, names);
                 self.skip_redundant_semicolon();
                 nested = Some(ProofTactic::If(ProofIf {
                     condition,
@@ -9309,7 +9311,7 @@ impl Parser {
         while let Some((checkpoint, fact_checkpoint, names)) = scopes.pop() {
             self.restore_proof_let_bindings(checkpoint);
             self.restore_fact_names(fact_checkpoint);
-            self.current_proof_let_names = names;
+            self.names.replace(NameKind::ProofBinder, names);
         }
         result
     }
@@ -9444,7 +9446,7 @@ impl Parser {
     fn parse_tactics_until_rbrace(&mut self) -> Result<Vec<ProofTactic>, ClickError> {
         let let_checkpoint = self.proof_let_restores.len();
         let fact_checkpoint = self.fact_name_restores.len();
-        let previous_proof_let_names = std::mem::take(&mut self.current_proof_let_names);
+        let previous_proof_let_names = self.names.take(NameKind::ProofBinder);
         let result = (|| {
             let mut tactics = Vec::new();
             while self.peek() != Some(&Token::RBrace) {
@@ -9454,7 +9456,8 @@ impl Parser {
         })();
         self.restore_proof_let_bindings(let_checkpoint);
         self.restore_fact_names(fact_checkpoint);
-        self.current_proof_let_names = previous_proof_let_names;
+        self.names
+            .replace(NameKind::ProofBinder, previous_proof_let_names);
         result
     }
 
@@ -12812,12 +12815,15 @@ impl Parser {
             self.expect(Token::FatArrow)?;
             let newly_bound = bindings
                 .iter()
-                .filter(|binding| self.current_contract_bindings.insert((*binding).clone()))
+                .filter(|binding| {
+                    self.names
+                        .insert(NameKind::ContractBinding, (*binding).clone())
+                })
                 .cloned()
                 .collect::<Vec<_>>();
             let body = self.parse_branch_value(bool_arms);
             for binding in newly_bound {
-                self.current_contract_bindings.remove(&binding);
+                self.names.remove(NameKind::ContractBinding, &binding);
             }
             let body = body?;
             arms.push(AlgebraicMatchArm {
@@ -13100,9 +13106,7 @@ impl Parser {
                 if let Some(field) = self.current_resource_fields.get(&name) {
                     return Ok(ContractExpression::ResourceField(field.clone()));
                 }
-                if self.current_contract_bindings.contains(&name)
-                    || self.current_integer_params.contains(&name)
-                    || self.current_integer_lets.contains(&name)
+                if self.names.contains_any(NameKind::VALUES, &name)
                 {
                     Ok(ContractExpression::Binding(name))
                 } else {
@@ -13234,7 +13238,9 @@ impl Parser {
             let ContractLetBindingKind::Value(value) = binding.kind else {
                 return Err(self.error("let ... where is a proposition binding, not an expression"));
             };
-            let binding_was_in_scope = !self.current_contract_bindings.insert(binding.name.clone());
+            let binding_was_in_scope = !self
+                .names
+                .insert(NameKind::ContractBinding, binding.name.clone());
             let previous_integer_context = self.integer_literal_context;
             let click_type = binding.click_type;
             self.integer_literal_context |= matches!(click_type, Some(ClickType::Integer));
@@ -13254,7 +13260,7 @@ impl Parser {
         for (name, _, _, binding_was_in_scope, previous_integer_context) in bindings.iter().rev() {
             self.integer_literal_context = *previous_integer_context;
             if !*binding_was_in_scope {
-                self.current_contract_bindings.remove(name);
+                self.names.remove(NameKind::ContractBinding, name);
             }
         }
         let mut body = body?;
@@ -14728,7 +14734,7 @@ mod integer_quantifier_parser_tests {
                 ..
             }
         ));
-        assert!(parser.current_integer_params.is_empty());
+        assert!(parser.names.is_empty(NameKind::IntegerParameter));
         assert!(!parser.integer_literal_context);
     }
 
@@ -14744,8 +14750,8 @@ mod integer_quantifier_parser_tests {
                 ..
             }
         ));
-        assert!(parser.current_integer_params.is_empty());
-        assert!(parser.current_contract_bindings.is_empty());
+        assert!(parser.names.is_empty(NameKind::IntegerParameter));
+        assert!(parser.names.is_empty(NameKind::ContractBinding));
     }
 
     #[test]
