@@ -5379,7 +5379,8 @@ impl AnnotationLowerer<'_> {
             }
             // Arithmetic on a pointer offsets it by whole elements, as C does.
             ContractExpression::Add(left, right) => {
-                if let Some(element_type) = self.contract_pointer_element_type(left, environment) {
+                if let Some(element_width) = self.contract_pointer_element_width(left, environment)
+                {
                     return Ok(SpecExpression::PointerOffset {
                         pointer: Box::new(
                             self.lower_contract_expression_to_spec(left, environment)?,
@@ -5387,10 +5388,11 @@ impl AnnotationLowerer<'_> {
                         elements: Box::new(
                             self.lower_contract_expression_to_spec(right, environment)?,
                         ),
-                        byte_width: element_type.byte_width(),
+                        byte_width: element_width,
                     });
                 }
-                if let Some(element_type) = self.contract_pointer_element_type(right, environment) {
+                if let Some(element_width) = self.contract_pointer_element_width(right, environment)
+                {
                     return Ok(SpecExpression::PointerOffset {
                         pointer: Box::new(
                             self.lower_contract_expression_to_spec(right, environment)?,
@@ -5398,7 +5400,7 @@ impl AnnotationLowerer<'_> {
                         elements: Box::new(
                             self.lower_contract_expression_to_spec(left, environment)?,
                         ),
-                        byte_width: element_type.byte_width(),
+                        byte_width: element_width,
                     });
                 }
                 Ok(SpecExpression::Add(
@@ -5407,9 +5409,9 @@ impl AnnotationLowerer<'_> {
                 ))
             }
             ContractExpression::Subtract(left, right) => {
-                if let Some(element_type) = self.contract_pointer_element_type(left, environment)
+                if let Some(element_width) = self.contract_pointer_element_width(left, environment)
                     && self
-                        .contract_pointer_element_type(right, environment)
+                        .contract_pointer_element_width(right, environment)
                         .is_none()
                 {
                     return Ok(SpecExpression::PointerOffset {
@@ -5420,7 +5422,7 @@ impl AnnotationLowerer<'_> {
                             Box::new(SpecExpression::Value(int32(0))),
                             Box::new(self.lower_contract_expression_to_spec(right, environment)?),
                         )),
-                        byte_width: element_type.byte_width(),
+                        byte_width: element_width,
                     });
                 }
                 Ok(SpecExpression::Subtract(
@@ -7156,6 +7158,42 @@ impl AnnotationLowerer<'_> {
         }
     }
 
+    /// Physical element widths take precedence over scalar resource carriers.
+    fn contract_pointer_element_width(
+        &self,
+        expression: &ContractExpression,
+        environment: &SpecElaborationContext,
+    ) -> Option<u32> {
+        match expression {
+            ContractExpression::CBinding(name) => self
+                .parameter_pointer_element_widths
+                .get(name)
+                .copied()
+                .or_else(|| {
+                    self.contract_pointer_element_type(expression, environment)
+                        .map(CType::byte_width)
+                }),
+            ContractExpression::QualifiedC { lowered, .. }
+            | ContractExpression::CFragment(lowered)
+            | ContractExpression::Field { lowered, .. } => {
+                self.c_expression_array_element_width(lowered, environment)
+            }
+            ContractExpression::Old(inner)
+            | ContractExpression::At {
+                expression: inner, ..
+            } => self.contract_pointer_element_width(inner, environment),
+            ContractExpression::Add(left, right) => self
+                .contract_pointer_element_width(left, environment)
+                .or_else(|| self.contract_pointer_element_width(right, environment)),
+            ContractExpression::Subtract(left, _) => {
+                self.contract_pointer_element_width(left, environment)
+            }
+            _ => self
+                .contract_pointer_element_type(expression, environment)
+                .map(CType::byte_width),
+        }
+    }
+
     /// The element type a contract expression steps by when it is a pointer:
     /// an array reference or a pointer-valued binding in scope, a pointer
     /// fragment, or pointer arithmetic on one. `None` for a scalar.
@@ -7288,11 +7326,16 @@ impl AnnotationLowerer<'_> {
             CExpression::Cast { target_type, .. } => {
                 target_type.pointee_type().map(CType::byte_width)
             }
-            CExpression::Variable(name) => environment
-                .array_refs
+            CExpression::Variable(name) => self
+                .parameter_pointer_element_widths
                 .get(name)
-                .map(|array_ref| array_ref.element_type.byte_width())
-                .or_else(|| self.parameter_pointer_element_widths.get(name).copied())
+                .copied()
+                .or_else(|| {
+                    environment
+                        .array_refs
+                        .get(name)
+                        .map(|array_ref| array_ref.element_type.byte_width())
+                })
                 .or_else(|| {
                     self.declared_pointer_element_type(name)
                         .map(|ty| ty.byte_width())
