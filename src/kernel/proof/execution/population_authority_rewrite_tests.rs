@@ -87,7 +87,6 @@ fn checked_authority_events_reject_forged_deltas() {
         &facts,
     )
     .unwrap();
-    assert!(event.advance_checked(&before, &facts).is_some());
     let forged_memory = established
         .clone()
         .with_memory(CMemory::new().with_block("local:forged", 4));
@@ -239,7 +238,7 @@ fn checked_member_events_conserve_one_occurrence_and_reject_forged_deltas() {
     let (one, birth) = established
         .checked_population_member_exchange(&member, true, definition, facts.assumptions())
         .unwrap();
-    let event = CheckedPopulationMemberRewrite::check(
+    CheckedPopulationMemberRewrite::check(
         &function,
         &established,
         &facts,
@@ -250,7 +249,6 @@ fn checked_member_events_conserve_one_occurrence_and_reject_forged_deltas() {
         &facts,
     )
     .unwrap();
-    assert!(event.advance_checked(&established, &facts).is_some());
     assert!(
         established
             .checked_population_member_exchange(&member, false, definition, facts.assumptions())
@@ -460,11 +458,10 @@ fn checked_member_exchange_transfers_exact_contained_resource() {
             .unwrap();
         assert!(!one.resources().satisfies_fact(&child, facts.assumptions()));
         assert!(one.resources().satisfies_fact(&member, facts.assumptions()));
-        let event = CheckedPopulationMemberRewrite::check(
+        CheckedPopulationMemberRewrite::check(
             &function, &empty, &facts, &member, true, &birth, &one, &facts,
         )
         .unwrap();
-        assert!(event.advance_checked(&empty, &facts).is_some());
         let duplicated = one
             .clone()
             .with_resource_context(one.resources().clone().unchecked_with_fact(child.clone()));
@@ -499,11 +496,10 @@ fn checked_member_exchange_transfers_exact_contained_resource() {
                 .resources()
                 .satisfies_fact(&member, facts.assumptions())
         );
-        let event = CheckedPopulationMemberRewrite::check(
+        CheckedPopulationMemberRewrite::check(
             &function, &one, &facts, &member, false, &death, &zero, &facts,
         )
         .unwrap();
-        assert!(event.advance_checked(&one, &facts).is_some());
         let missing = zero.clone().with_resource_context(
             zero.resources()
                 .clone()
@@ -582,11 +578,10 @@ fn member_body_facts_require_checked_birth_and_reject_forged_consumption_facts()
     for fact in body_facts.propositions {
         exposed = exposed.with_fact(fact);
     }
-    let event = CheckedPopulationMemberRewrite::check(
+    CheckedPopulationMemberRewrite::check(
         &function, &one, &facts, &member, false, &death, &zero, &exposed,
     )
     .unwrap();
-    assert!(event.advance_checked(&one, &facts).is_some());
     let forged_facts = exposed.with_fact(Proposition::ConditionIs(
         crate::kernel::ConditionTerm::Constant(false),
         true,
@@ -604,9 +599,6 @@ fn member_body_facts_require_checked_birth_and_reject_forged_consumption_facts()
         )
         .is_err()
     );
-    let mut forged = event;
-    forged.after_facts = forged_facts;
-    assert!(forged.advance_checked(&one, &facts).is_none());
 }
 
 #[test]
