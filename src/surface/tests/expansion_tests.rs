@@ -16549,6 +16549,19 @@ fn expanding_the_only_tactic_of_an_empty_initialize_phase_keeps_a_step() {
             "{expanded}"
         );
         verify_c0_sources(&expanded, &c_sources).expect("the expanded proof verifies");
+        let batch = expand_c0_tactics_source_at(
+            &source,
+            &c_sources,
+            &[expansion::position_at_offset(
+                &source,
+                source.find("initialize by").unwrap()
+                    + "initialize by ".len()
+                    + proof.find(name).unwrap(),
+            )],
+        )
+        .expect("the initialize call expands in a batch");
+        assert!(batch.source.contains("assumption();"));
+        verify_c0_sources(&batch.source, &c_sources).expect("the batch expansion verifies");
     }
 }
 

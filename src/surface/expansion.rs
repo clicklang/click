@@ -3577,6 +3577,9 @@ fn expand_selected_tactics_context(
                 span,
                 super::printing::format_partial_tactic_sequence(&tactics),
             ),
+            TacticSourceEdit::PartialProofClause(span) if tactics.is_empty() => {
+                (span, "by { assumption(); }".to_string())
+            }
             TacticSourceEdit::PartialProofClause(span) => (
                 span,
                 super::printing::format_proof_certificate(
@@ -3716,6 +3719,11 @@ impl LocatedSourceTactic {
                 self.replaced_span(span),
                 super::printing::format_partial_tactic_sequence(replacement_tactics),
             ),
+            // A whole phase can contribute no steps, but its written block
+            // must still contain a checked tactic.
+            TacticSourceEdit::PartialProofClause(span) if replacement_tactics.is_empty() => {
+                (span, "by { assumption(); }".to_string())
+            }
             TacticSourceEdit::PartialProofClause(span) => (span, certificate()?),
             TacticSourceEdit::WholeProof(edit) => {
                 let replacement = certificate()?;
