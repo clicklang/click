@@ -333,5 +333,15 @@ address matching. The other non-root rotation shapes remain.
 with the same whole-root ownership result and unchanged ancestor caches. Both
 augmented insertion wrappers check the mirrored writable callback. The two
 context cases share the packed black-parent-word lemma in the parent-update
-helper, and each has a retained expansion regression. Non-root double rotations
-remain.
+helper, and each has a retained expansion regression.
+
+
+`rbtree_size_insert_context_double_rotation.click` and its mirrored counterpart
+check the left-right and right-left three-node insertion rotations under an
+arbitrary owned ancestor context. Each composes two writable size callbacks,
+identifies the intermediate repaired model by uniqueness, updates the incoming
+link, and restores ownership of the whole root tree. The postcondition relates
+that model to `sized_plug` of the original context and repaired subtree. Both
+augmented insertion wrappers preserve the same result. Repeated color flips
+through red ancestors, general insertion subtrees, and writable erase integration
+remain unfinished.
