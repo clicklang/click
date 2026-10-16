@@ -16531,14 +16531,25 @@ fn expanding_the_only_tactic_of_an_empty_initialize_phase_keeps_a_step() {
         \x20   simp();\n\
         }\n";
     let c_sources = [("drain.c", c_source)];
-    let column = click_source.lines().nth(6).unwrap().find("simp").unwrap() + 1;
-    let expanded = expand_c0_tactic_source_at(click_source, &c_sources, 7, column)
-        .expect("the initialize `simp` expands");
-    assert!(
-        expanded.contains("initialize by { assumption(); }"),
-        "{expanded}"
-    );
-    verify_c0_sources(&expanded, &c_sources).expect("the expanded proof verifies");
+    for proof in ["simp();", "{ simp(); }", "auto();", "{ auto(); }"] {
+        let source = click_source.replace(
+            "initialize by { simp(); }",
+            &format!("initialize by {proof}"),
+        );
+        let name = if proof.contains("auto") {
+            "auto"
+        } else {
+            "simp"
+        };
+        let column = source.lines().nth(6).unwrap().find(name).unwrap() + 1;
+        let expanded = expand_c0_tactic_source_at(&source, &c_sources, 7, column)
+            .expect("the initialize call expands");
+        assert!(
+            expanded.contains("initialize by { assumption(); }"),
+            "{expanded}"
+        );
+        verify_c0_sources(&expanded, &c_sources).expect("the expanded proof verifies");
+    }
 }
 
 /// Omitted proofs of several claims share one implicit `} by auto();`, which

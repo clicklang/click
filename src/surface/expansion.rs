@@ -4825,16 +4825,9 @@ fn proof_tactic_entries(
                         source_site_kind(tactic) == SourceSiteKind::ExpandableAutomation,
                         written_tactic_source_edit(tokens, item.tokens.start, item.span.clone())?,
                     ),
-                    FlatTactic::Phase(tactic) => {
+                    FlatTactic::Phase(tactic, by) => {
                         // A frontier-local loop phase proved by one smart
                         // tactic is rewritten as the whole `by` clause.
-                        let by =
-                            item.tokens.start.checked_sub(1).filter(|by| {
-                                tokens.get(*by).is_some_and(|token| token.text == "by")
-                            });
-                        let by = by.ok_or_else(|| {
-                            ClickError::new("selected nested tactic has no source `by` clause")
-                        })?;
                         (
                             smart_tactic_name(tactic).to_string(),
                             true,
@@ -6074,7 +6067,7 @@ struct FlatSourceTactic<'t> {
 enum FlatTactic<'t> {
     Written(&'t ProofTactic),
     /// A frontier-local loop phase proved by one smart tactic (`by simp()`).
-    Phase(SmartTactic),
+    Phase(SmartTactic, usize),
 }
 
 fn collect_source_tactics<'t>(
@@ -6300,13 +6293,16 @@ fn collect_nested_proof_spans<'t>(
                 .iter()
                 .position(|token| token.span.start == span.start && token.text == "by")
                 .ok_or_else(|| ClickError::new("could not locate nested source `by` clause"))?;
-            let tactic = tokens
-                .get(by + 1)
-                .ok_or_else(|| ClickError::new("nested source `by` clause has no tactic"))?;
+            let mut first = by + 1;
+            // Both written and implicit one-call blocks surround the call.
+            if tokens.get(first).is_some_and(|token| token.text == "{") {
+                first += 1;
+            }
+            let last = tactic_end_token(tokens, first, tokens.len())?;
             spans.push(FlatSourceTactic {
-                span: tactic.span.clone(),
-                tokens: by + 1..by + 2,
-                tactic: FlatTactic::Phase(*smart),
+                span: tokens[first].span.start..tokens[last].span.end,
+                tokens: first..last + 1,
+                tactic: FlatTactic::Phase(*smart, by),
             });
             Ok(())
         }

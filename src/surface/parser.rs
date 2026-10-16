@@ -7200,6 +7200,18 @@ impl Parser {
         }
     }
 
+    fn parse_loop_phase_proof(&mut self) -> Result<SourceProof, ClickError> {
+        let proof = self.parse_by_clause()?;
+        // A lone phase `simp()` owns the generated execution and closure steps,
+        // with either brace spelling. Keep it out of per-step source capture.
+        if matches!(&proof, SourceProof::Script(tactics) if matches!(tactics.as_slice(), [ProofTactic::Simp]))
+        {
+            Ok(SourceProof::Tactic(SmartTactic::Simp))
+        } else {
+            Ok(proof)
+        }
+    }
+
     fn parse_proof_clause_or_default(&mut self) -> Result<SourceProof, ClickError> {
         if self.peek_ident() == Some("by") {
             self.parse_by_clause()
@@ -8179,7 +8191,7 @@ impl Parser {
                     if initialize_proof.is_some() {
                         return Err(self.error("duplicate `initialize` proof"));
                     }
-                    initialize_proof = Some(self.parse_by_clause()?);
+                    initialize_proof = Some(self.parse_loop_phase_proof()?);
                     continue;
                 }
                 if self.peek_ident() == Some("preserve") {
@@ -8187,7 +8199,7 @@ impl Parser {
                     if preserve_proof.is_some() {
                         return Err(self.error("duplicate `preserve` proof"));
                     }
-                    preserve_proof = Some(self.parse_by_clause()?);
+                    preserve_proof = Some(self.parse_loop_phase_proof()?);
                     continue;
                 }
                 items.extend(self.parse_region_proof_items()?);

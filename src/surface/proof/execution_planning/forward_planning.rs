@@ -404,13 +404,10 @@ pub(in crate::surface::proof) fn verify_execution_proofs_forward(
                 // driver's own tactics are all generated here, so no
                 // source-indexed step claims the occurrence.
                 if let Some(preserve_source_index) = source.preserve_source_index
-                    && match loop_clause.and_then(StructuralClause::preserve_proof) {
-                        Some(SourceProof::Tactic(SmartTactic::Simp)) => true,
-                        Some(SourceProof::Script(tactics)) => {
-                            matches!(tactics.as_slice(), [ProofTactic::Simp])
-                        }
-                        _ => false,
-                    }
+                    && matches!(
+                        loop_clause.and_then(StructuralClause::preserve_proof),
+                        Some(SourceProof::Tactic(SmartTactic::Simp))
+                    )
                     && let Some(site) = source.proof_site.as_ref()
                     && capture_selects_source(
                         expansion_capture.as_deref(),
