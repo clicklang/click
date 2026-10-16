@@ -10,7 +10,7 @@ mod import;
 mod interface;
 mod lifetime;
 mod lowering;
-pub(crate) mod names;
+pub mod names;
 mod scalar;
 mod schema;
 pub(crate) mod standard_library;

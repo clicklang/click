@@ -128,6 +128,7 @@ mod tests {
             virtual_method: None,
             declaration_id: "root".into(),
             name: "root".into(),
+            path: vec!["root".into()],
             function_kind: CppFunctionKind::Free,
             return_type: CppType::Void,
             parameters: vec![],

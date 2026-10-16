@@ -137,4 +137,31 @@ pub(crate) struct PreparedExecution {
     /// Click `extern` contracts the frontend supplies for library functions
     /// the program calls but does not define, parsed with the sidecar.
     pub library_contracts: String,
+    /// The layout name of each record whose source spelling differs from
+    /// it, by that spelling: a C++ class template instance,
+    /// `Stored<long long>`, is laid out as `Stored__long_long`.
+    pub record_spellings: std::collections::BTreeMap<String, String>,
+}
+
+/// `text` with every whole importer name it contains spelled as its source
+/// language spells it: a Rust item by its path, `quad::walk`, and a C++
+/// declaration as C++ names it, `Square::area`.
+pub fn display_source_names(text: &str) -> std::borrow::Cow<'_, str> {
+    match rust::names::display_rust_names(text) {
+        std::borrow::Cow::Borrowed(text) => cpp::names::display_cpp_names(text),
+        std::borrow::Cow::Owned(text) => {
+            std::borrow::Cow::Owned(cpp::names::display_cpp_names(&text).into_owned())
+        }
+    }
+}
+
+/// The source spelling `name` stands for when it is a whole importer name.
+pub fn source_display_name(name: &str) -> Option<String> {
+    rust::names::rust_display_name(name).or_else(|| cpp::names::cpp_display_name(name))
+}
+
+/// Whether the claim label `label` is the one `requested` names, as the
+/// importer spells it or as its source language does.
+pub fn claim_label_matches(label: &str, requested: &str) -> bool {
+    label == requested || (requested.contains("::") && display_source_names(label) == requested)
 }

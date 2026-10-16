@@ -176,6 +176,9 @@ pub(in crate::surface) struct ProgramLayouts {
     /// Each C++ override with the virtual method it overrides, by their
     /// sidecar names: the override inherits that method's interface.
     pub(in crate::surface) virtual_overrides: Vec<(String, String)>,
+    /// The layout name of each C++ record a head spells otherwise, by that
+    /// spelling: `Stored<long long>` is `Stored__long_long`.
+    pub(in crate::surface) record_spellings: BTreeMap<String, String>,
 }
 
 /// Whether the library declaration `name` of module `identity` is known by
@@ -707,6 +710,8 @@ struct Parser {
     /// The importer names of the methods of C++ classes whose objects carry
     /// state: an override of one is stated on its own memory.
     cpp_object_methods: cpp_class_objects::ObjectMethods,
+    /// See [`ProgramLayouts::record_spellings`].
+    record_spellings: BTreeMap<String, String>,
     match_nesting: usize,
     proposition_nesting: usize,
     proof_nesting: usize,
@@ -1093,10 +1098,12 @@ impl Parser {
             // its `verifying` path does not say: its class object state is
             // rewritten here.
             if parser.language != SourceLanguage::Cpp {
-                let (tokens, positions, methods) = cpp_class_objects::rewrite_class_objects(
+                let (tokens, positions) = cpp_syntax::rewrite_function_references(
                     std::mem::take(&mut parser.tokens),
                     std::mem::take(&mut parser.positions),
-                )?;
+                );
+                let (tokens, positions, methods) =
+                    cpp_class_objects::rewrite_class_objects(tokens, positions)?;
                 parser.matching_parentheses = validate_parenthesis_nesting(&tokens, &positions)?;
                 parser.tokens = tokens;
                 parser.positions = positions;
@@ -1104,6 +1111,7 @@ impl Parser {
             }
             parser.language = SourceLanguage::Cpp;
             parser.rust_trait_implementations = layouts.virtual_overrides;
+            parser.record_spellings = layouts.record_spellings;
         }
         Ok(parser)
     }
@@ -1152,6 +1160,7 @@ impl Parser {
         };
         // So is a C++ sidecar's class object state.
         let (tokens, positions, cpp_object_methods) = if language == SourceLanguage::Cpp {
+            let (tokens, positions) = cpp_syntax::rewrite_function_references(tokens, positions);
             cpp_class_objects::rewrite_class_objects(tokens, positions)?
         } else {
             (
@@ -1164,6 +1173,7 @@ impl Parser {
         Ok(Self {
             rust_object_traits,
             cpp_object_methods,
+            record_spellings: BTreeMap::new(),
             source_aliases: BTreeMap::new(),
             qualified_functions: BTreeMap::new(),
             qualified_objects: None,
@@ -1511,7 +1521,7 @@ impl Parser {
                         };
                         ClickError::new(format!(
                             "`{}` cannot inherit {what}: {message}",
-                            crate::languages::rust::names::display_rust_names(&implementation)
+                            crate::languages::display_source_names(&implementation)
                         ))
                         .at_declaration(&implementation)
                     })?;

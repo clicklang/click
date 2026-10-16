@@ -88,14 +88,27 @@ impl LoweredCppFunction {
 /// Normalize the pinned C++ artifact into checked execution and its prepared
 /// contract-facing metadata.
 pub fn lower_import(import: &PreparedCppImport) -> Result<LoweredCppFunction, String> {
-    let names = ResolvedNames::new(
-        import
-            .export()
-            .functions
-            .iter()
-            .chain(&import.export().reachable_functions)
-            .map(|function| (function.declaration_id.as_str(), function.name.as_str())),
-    )?;
+    // Each function is named by its C++ path, which an artifact locked
+    // before paths were exported does not carry.
+    let paths = import
+        .export()
+        .functions
+        .iter()
+        .chain(&import.export().reachable_functions)
+        .map(|function| {
+            if function.path.is_empty() {
+                return Err(format!(
+                    "C++ artifact names `{}` without its C++ path; refresh it with `click import lock`",
+                    function.name
+                ));
+            }
+            Ok((
+                function.declaration_id.as_str(),
+                super::names::path_name(&function.path),
+            ))
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+    let names = ResolvedNames::new(paths.iter().map(|(id, name)| (*id, name.as_str())))?;
     // Build immutable inventories once; every function borrows the same indexes.
     let records = super::schema::RecordIndex::new(
         import

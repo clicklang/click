@@ -459,7 +459,7 @@ fn rust_crate_scalar_constants_execute_checked_initializers() {
         };
         proof.push_str(&format!(
             "fn {}() -> {ty} {{ ensures result == {value}; }} by {{ execute(); simp(); }}\n",
-            click::surface::rust_display_name(&function.name).unwrap()
+            click::surface::source_display_name(&function.name).unwrap()
         ));
     }
     assert_eq!(prepared.export().functions.len(), 12);

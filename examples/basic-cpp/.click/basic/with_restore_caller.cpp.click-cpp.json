@@ -184,6 +184,9 @@
           }
         }
       ],
+      "path": [
+        "call_with_restore"
+      ],
       "return_type": {
         "bits": 32,
         "is_const": false,
@@ -204,8 +207,8 @@
   "logical_source": "with_restore_caller.cpp",
   "preprocessor_files": [
     {
-      "accessed_path": "/home/user/click-p/examples/basic-cpp/with_restore_caller.cpp",
-      "canonical_path": "/home/user/click-p/examples/basic-cpp/with_restore_caller.cpp"
+      "accessed_path": "/home/user/click/examples/basic-cpp/with_restore_caller.cpp",
+      "canonical_path": "/home/user/click/examples/basic-cpp/with_restore_caller.cpp"
     }
   ],
   "profile": {
@@ -227,7 +230,7 @@
       "-o",
       "with_restore_caller.cpp.o"
     ],
-    "compilation_directory": "/home/user/click-p/examples/basic-cpp",
+    "compilation_directory": "/home/user/click/examples/basic-cpp",
     "compilation_file": "with_restore_caller.cpp",
     "exceptions": false,
     "frontend": "clang",
@@ -591,6 +594,9 @@
           }
         }
       ],
+      "path": [
+        "with_restore"
+      ],
       "return_type": {
         "bits": 32,
         "is_const": false,
@@ -731,6 +737,10 @@
             }
           }
         }
+      ],
+      "path": [
+        "Restore",
+        "~Restore"
       ],
       "return_type": {
         "kind": "void"
@@ -1013,6 +1023,10 @@
           }
         }
       ],
+      "path": [
+        "Restore",
+        "Restore"
+      ],
       "return_type": {
         "kind": "void"
       },
@@ -1087,6 +1101,9 @@
         }
       ],
       "name": "Restore",
+      "path": [
+        "Restore"
+      ],
       "size_bytes": 16,
       "span": {
         "end_column": 2,

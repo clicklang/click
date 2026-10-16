@@ -627,6 +627,9 @@ fn check_expectation(
                     path.display()
                 ));
             }
+            // A failure is read as `click` prints it, with importer names
+            // spelled as their source language spells them.
+            let message = click::surface::display_source_names(&message).into_owned();
             if message.contains(expected) {
                 Ok(())
             } else {

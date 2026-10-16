@@ -102,9 +102,7 @@ mod integer_truncation;
 mod lowering;
 mod modules;
 mod parser;
-pub use crate::languages::rust::names::{
-    claim_label_matches, display_rust_names, rust_display_name,
-};
+pub use crate::languages::{claim_label_matches, display_source_names, source_display_name};
 pub(crate) mod planning;
 pub(crate) mod proof_diagnostics;
 mod source_registry;

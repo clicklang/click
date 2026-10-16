@@ -3256,12 +3256,13 @@ fn a_cpp_function_is_located_by_its_declarator_not_an_executing_theorem() {
 int64 FeeFrac::EvaluateFeeDown(int32 at_size) const {
     ensures result == 0i64;
 } by { execute(); simp(); }
-theorem evaluation() executes FeeFrac_EvaluateFeeDown(const struct FeeFrac* this, int32 at_size) {
-    ensures Fast(&FeeFrac_EvaluateFeeDown) by { execute(); simp(); }
+theorem evaluation() executes FeeFrac::EvaluateFeeDown(const struct FeeFrac* this, int32 at_size) {
+    ensures Fast(&FeeFrac::EvaluateFeeDown) by { execute(); simp(); }
 }
 "#;
     let tokens = scan_source_tokens(source).unwrap();
-    let function = find_function(&tokens, "FeeFrac_EvaluateFeeDown").unwrap();
+    let name = crate::languages::cpp::names::path_name(&["FeeFrac", "EvaluateFeeDown"]);
+    let function = find_function(&tokens, &name).unwrap();
     assert_eq!(tokens[function.body_close + 1].text, "by");
     assert_eq!(tokens[function.body_open - 1].text, "const");
 }

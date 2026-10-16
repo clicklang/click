@@ -159,6 +159,9 @@
           }
         }
       ],
+      "path": [
+        "increment"
+      ],
       "return_type": {
         "bits": 32,
         "is_const": false,
@@ -179,8 +182,8 @@
   "logical_source": "increment.cpp",
   "preprocessor_files": [
     {
-      "accessed_path": "/home/user/click-p/examples/basic-cpp/increment.cpp",
-      "canonical_path": "/home/user/click-p/examples/basic-cpp/increment.cpp"
+      "accessed_path": "/home/user/click/examples/basic-cpp/increment.cpp",
+      "canonical_path": "/home/user/click/examples/basic-cpp/increment.cpp"
     }
   ],
   "profile": {
@@ -201,7 +204,7 @@
       "-o",
       "increment.cpp.o"
     ],
-    "compilation_directory": "/home/user/click-p/examples/basic-cpp",
+    "compilation_directory": "/home/user/click/examples/basic-cpp",
     "compilation_file": "increment.cpp",
     "exceptions": false,
     "frontend": "clang",

@@ -526,8 +526,7 @@ address: the importer reads Clang's conversion of the closure to the pointer
 type as a `function_address` of the call operator, which it exports as a free
 function of the lambda's parameters. The sidecar names it by its enclosing
 function and its index among the lambdas written in that function's body, in
-source order: `int caller::(lambda#0)(int y) { ... } by { ... }`, the
-importer's `caller__lambda_0`. A lambda in a member function, a capturing or
+source order: `int caller::(lambda#0)(int y) { ... } by { ... }`. A lambda in a member function, a capturing or
 generic lambda, and a lambda used other than converted to a function pointer
 are refused (`mdtests/cpp_lambda_named_contract.md`,
 `tests/cpp_import.rs`, `cpp_lambdas_*`).
@@ -803,13 +802,22 @@ name, without `struct`. A member function's receiver `this` is implicit, and
 the head's trailing `const` makes it `const FeeFrac* this`; a contract clause
 names it `this`. Const record reference parameters retain the same
 qualification. This restricts writes through that parameter without
-forbidding an alias through a mutable parameter. Diagnostics and proof steps
-name the function by the importer's name: `FeeFrac_IsEmpty`,
-`FeeFrac_operator_add_assign`, `Restore_constructor`, `choose__bool_true`. A
-member of a class template instance, such as `Stored<long long>`, is still
-written with that name and an explicit receiver,
-`void Stored__long_long_constructor(struct Stored__long_long* this, int64 next)`,
-as are `extern` and named-contract heads. Direct nonvirtual `operator[]`
+forbidding an alias through a mutable parameter. Diagnostics, claim labels and proof steps name the function as the head
+does: `FeeFrac::IsEmpty`, `FeeFrac::operator+=`, `Restore::Restore`,
+`choose<true>`. A member of a class template instance is written with the
+instance as Clang prints it, every argument spelled:
+`Stored<long long>::Stored(int64 next)`, `int32 Box<SizeTag, true>::Read() const`;
+so are `extern` and named-contract heads, a proof step's callee,
+`step(FeeFrac::IsEmpty(&this->m_feerate.base), { })`, the target of an
+`executes` theorem, and a function's address, `&FeeFrac::EvaluateFeeDown`.
+The importer names each function by its C++ path, which the artifact
+records, as the Rust importer names an item by its path: `__cpp_q` and each
+segment with its length, an identifier as written and any other segment,
+such as `operator+=`, `~Restore` or `Stored<long long>`, as its bytes in hex.
+The encoding is self-delimiting, so a diagnostic decodes it without the
+import; a claim argument may name a label either way. A free function with
+a one-word path keeps that name. An artifact locked before paths were
+exported is refused with a request to run `click import lock` again. Direct nonvirtual `operator[]`
 methods also use this method-call path, with `Class::operator[]` both as the
 selector and as the head's declarator. The receiver must be a live record lvalue; argument and result types,
 const qualification and reference authority follow the ordinary method rules.
@@ -879,13 +887,12 @@ across sibling scopes. Equal local names in disjoint scopes remain distinct
 when their declaration IDs differ. Separate lexical and lifetime validation
 checks visibility, construction, and cleanup order.
 
-C++ calls and contracts bind through Clang declaration IDs. Unique readable
-names are preserved; free namespace names replace `::` with `_`. If reachable
-declarations share a readable name, each contract name is `__click_cpp_decl_`
-plus the full lowercase hexadecimal UTF-8 declaration ID from the artifact.
-This prefix is reserved: source declarations beginning with it also receive
-encoded names, as do spellings that are not valid sidecar identifiers
-(such as anonymous namespace members). The lowered-import API exposes
+C++ calls and contracts bind through Clang declaration IDs, named by their
+C++ paths, `A::Nested::echo` or `(anonymous namespace)::same`. If reachable
+declarations share a path, as overloads do, each contract name is
+`__click_cpp_decl_` plus the full lowercase hexadecimal UTF-8 declaration ID
+from the artifact. This prefix is reserved: a source declaration beginning
+with it also receives an encoded name. The lowered-import API exposes
 `contract_name(declaration_id)`.
 Reachable overloads are supported; selecting an overloaded declaration directly
 still fails until a signature selector is available.
@@ -1122,16 +1129,19 @@ ordinary selected caller and their instantiated operations fit the existing
 profile. Boolean value arguments and unqualified builtin `bool`, `int`,
 `unsigned int`, `long`, `unsigned long`, `long long`, and `unsigned long long`
 type arguments are accepted. Each instance keeps its distinct Clang USR.
-Sidecar names append argument tokens in order, such as `choose__bool_true`,
-`identity__unsigned_long`, or `Value_select__bool_false`. Type aliases use the
-canonical builtin token; equal-width types such as `long` and `long long`
-retain different names. Callable name collisions use the existing injective
+A sidecar names an instance as Clang prints it, `choose<true>`,
+`identity<unsigned long>` or `Value::select<false>`; type aliases print as
+their canonical type, and equal-width types such as `long` and `long long`
+remain distinct. Callable name collisions use the existing injective
 Clang-declaration identity names.
 
 Concrete class-template instances reached through ordinary selected callers
-use the same ordered builtin/Boolean argument tokens, plus `__tag_Name` for
-named empty trivial tag types declared in the locked import root. For example, `Box<int, false>` exports as `Box__int__bool_false`,
-while `Box<SizeTag, true>` exports as `Box__tag_SizeTag__bool_true`.
+are written as Clang prints them, every argument spelled, including
+named empty trivial tag types declared in the locked import root:
+`Box<int, false>` and `Box<SizeTag, true>`. A struct type in a head or
+clause still names the instance's layout as the importer records it,
+`struct Box__int__bool_false`, from ordered builtin/Boolean argument tokens
+and `__tag_Name` for a tag type.
 Qualified tag names include their namespace components. Clang's canonical USR
 keeps each record, field and method nominally distinct even when layouts match;
 aliases share the canonical instance. Method, constructor and destructor names
@@ -1408,10 +1418,10 @@ A virtual method's contract is its interface. A call through it, on a
 reference or through `this`, is checked against the contract of the method
 the receiver's static type names, whichever override the dynamic type
 selects. A pure virtual method has no body; its contract is written `extern`,
-named as the importer names it. Each override inherits the interface of the
+`extern int Shape::area(int scale) const { ... }`. Each override inherits the interface of the
 method it overrides, as a Rust trait implementation does
 ([Rust reference](../rust.md#trait-method-interfaces)): the interface's
-`ensures` join its own, labeled `Square_area.interface_ensures_0`, and its
+`ensures` join its own, labeled `Square::area.interface_ensures_0`, and its
 proof establishes them; an override that writes no `requires` takes the
 interface's, and written ones must follow from the interface's, each clause
 read exactly or decided as a bare comparison. It names its parameters as the
@@ -1479,8 +1489,8 @@ as its field, and keep it, so an `ensures` reads it as it was at entry. A
 method of `Square` is stated on `Square`'s memory, `owns *this`, with
 `size(this)` read as the definition. An override of a `Shape` method
 inherits that method's clauses read the same way, labeled
-`Square_area.interface_ensures_0`. Its refinement is checked against the
-`contract` `Square_area_iface` that states them on that memory. Where a
+`Square::area.interface_ensures_0`. Its refinement is checked against the
+`contract` named for it with `_iface` that states them on that memory. Where a
 call converts a `Square` reference to a `Shape` one, as an argument or a
 receiver, the importer places `Square__click_pack__Shape` before the call
 and `Square__click_unpack__Shape` after it. The pack consumes the memory
