@@ -335,10 +335,7 @@ impl<'a> Proof<'a> {
                         "`branch` recorded condition evidence the proof object rejected: {}",
                         crate::surface::proof::cursor_execution::describe_evidence_refusal(
                             &refusal,
-                            ParameterBinding::new(
-                                context.parsed_function.parameters(),
-                                context.arguments
-                            ),
+                            context.parameter_binding(),
                         )
                     ))
                 })?;

@@ -222,10 +222,7 @@ impl<'a> Proof<'a> {
                         self.facts(),
                         resource,
                         claim.clause().borrowed(),
-                        ParameterBinding::new(
-                            context.parsed_function.parameters(),
-                            context.arguments,
-                        ),
+                        context.parameter_binding(),
                         execution
                             .core
                             .frontier
@@ -749,13 +746,7 @@ impl<'a> Proof<'a> {
                     };
                     return Err(self.step_error(format!(
                         "path {path_index}: {}{}",
-                        describe_function_outcome(
-                            path.outcome(),
-                            ParameterBinding::new(
-                                context.parsed_function.parameters(),
-                                context.arguments
-                            )
-                        ),
+                        describe_function_outcome(path.outcome(), context.parameter_binding()),
                         describe_last_statement_site(
                             &context.constants.source_layout,
                             &execution

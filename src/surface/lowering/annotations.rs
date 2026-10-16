@@ -1775,11 +1775,28 @@ pub(in crate::surface) fn elaborate_fixed_state_expression_with_algebraic_and_in
 /// a `uint8 bytes[8]` defaulted to an `int32` load at byte 24, a different
 /// cell from the one the C program and every other clause read.
 pub(in crate::surface) fn elaborate_requirement_proposition(
-    parameters: &[syntax::C0Parameter],
+    parameter_binding: ParameterBinding<'_>,
     entry_state: &CState,
     proposition: &ClickProposition,
     spec_definitions: SpecDefinitions<'_>,
 ) -> Result<SpecProposition, String> {
+    // A requirement reads only the parameters it names: with the binding's
+    // index, the parameter tables hold those alone.
+    let parameters: Vec<&syntax::C0Parameter> = match parameter_binding.index {
+        Some(index) => {
+            let mut names = BTreeSet::new();
+            crate::surface::lowering::collect_click_proposition_referenced_names(
+                proposition,
+                &mut names,
+            );
+            names
+                .iter()
+                .filter_map(|name| index.position(name))
+                .map(|position| &parameter_binding.parameters[position])
+                .collect()
+        }
+        None => parameter_binding.parameters.iter().collect(),
+    };
     let mut lowerer = AnnotationLowerer {
         capture_referenced_names: None,
         structural_clauses: &[],
@@ -1810,7 +1827,9 @@ pub(in crate::surface) fn elaborate_requirement_proposition(
                 ))
             })
             .collect(),
-        parameter_pointer_element_widths: parameter_pointer_element_widths(parameters),
+        parameter_pointer_element_widths: parameter_pointer_element_widths(
+            parameters.iter().copied(),
+        ),
         quantified_values: BTreeMap::new(),
         algebraic_variables: BTreeMap::new(),
         algebraic_types: BTreeMap::new(),
@@ -2372,11 +2391,11 @@ struct AnnotationLowerer<'a> {
     snapshots: Option<&'a RecordedSnapshots>,
 }
 
-pub(in crate::surface) fn parameter_pointer_element_widths(
-    parameters: &[syntax::C0Parameter],
+pub(in crate::surface) fn parameter_pointer_element_widths<'a>(
+    parameters: impl IntoIterator<Item = &'a syntax::C0Parameter>,
 ) -> BTreeMap<String, u32> {
     parameters
-        .iter()
+        .into_iter()
         .filter_map(|parameter| {
             parameter
                 .array_element_width()

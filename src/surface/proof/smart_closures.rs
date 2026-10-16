@@ -9327,7 +9327,7 @@ impl<'a> Proof<'a> {
         check_verification_deadline()?;
         Ok(synthesize_surface_proposition(
             &requirement.proposition,
-            ParameterBinding::new(context.parsed_function.parameters(), context.arguments),
+            context.parameter_binding(),
             &execution.core.state,
         )
         .and_then(|surface| {
@@ -9407,10 +9407,7 @@ impl<'a> Proof<'a> {
                     let synthesize_candidate = || {
                         synthesize_surface_proposition(
                             &requirement.proposition,
-                            ParameterBinding::new(
-                                context.parsed_function.parameters(),
-                                context.arguments,
-                            ),
+                            context.parameter_binding(),
                             &execution.core.state,
                         )
                     };
