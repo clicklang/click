@@ -748,3 +748,21 @@ scaling control (71 deterministic work units at every size). Focused iterated
 controls pass (eight passed, one nightly control skipped); all 738 selected
 scaling tests pass. No C source or contracts change, and no new model design
 decision is needed.
+
+
+PR #1209 merged; its sole pushed commit `86cd869c1` is verified as an upstream
+ancestor. Recovery checkpoint `c81242fbc` completes the selected arena-free
+proof through explicit descriptor-read transport, separation rewrites and
+quantified postcondition transport. Fresh, expanded and rewritten checks pass.
+Retained-session construction stops at the later arena-write failure, consistent
+with the complete normal audit: **51/52**, in 134.89 seconds with a concurrent
+proof-mode check. No full green gate or native activation is claimed.
+
+The next failure has a [complete isolated C pointer-field write
+reproduction](../bugs/archive-c-pointer-field-write-loses-domain.md): unchanged C
+and its 146-line resources/proof pass upstream baseline `64f0f0d46` and fail
+recovery at executable pointer formation. Opening the allocation resource does
+not repair it. The upstream compatibility fixture preserves the descriptor,
+subrange, occupancy resource and local pointer alias; it does not activate the
+archive or grant native place evidence from C layout. Investigate complete-read
+designation resolution next, retaining bounds, origin and lifetime controls.
