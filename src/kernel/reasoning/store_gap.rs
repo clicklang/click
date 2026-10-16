@@ -56,9 +56,12 @@
 //! for want of time; keeping them is what the byte arithmetic proves, and
 //! the verification has failed on its deadline anyway.
 //!
-//! Every other cell of the block goes down the unchanged ladder. Debug
-//! builds re-ask the ladder about the skipped cells (a bounded sample per
-//! store) and fail if it would drop one.
+//! When known C-address connections would conservatively invalidate an entire
+//! object, the per-cell rule first uses the same exact byte geometry as
+//! read-over-store. A same-block constant gap is sufficient even in that case.
+//! Other cells go down the ordinary ladder. Differential tests compare the
+//! bulk selection with per-cell stores; production stores do not recheck the
+//! cells their producer has already proved separate.
 
 use crate::kernel::{Bitvector32Term, Pointer, PointerOffsetTerm, PureFactContext};
 
@@ -164,8 +167,8 @@ pub(in crate::kernel) fn store_gap_kept_ranges(
 }
 
 /// The shift intervals, inclusive and ascending, whose cells a store of
-/// `bytes` bytes at shift `k` provably misses: every shift at most `k - 8`
-/// and at least `k + bytes`, within the constant limit, and not zero where
+/// `bytes` bytes at shift `k` provably misses: every shift at most
+/// `k - WIDEST_CELL` and at least `k + bytes`, within the constant limit, and not zero where
 /// `exclude_zero` (the anchor itself is its own key, never inside a range).
 fn kept_shifts(k: i64, bytes: i64, exclude_zero: bool) -> Vec<(i64, i64)> {
     if !(-CONSTANT_LIMIT..=CONSTANT_LIMIT).contains(&k) || bytes > WIDEST_CELL {
@@ -242,46 +245,6 @@ fn anchor_shift_is_small(anchor: &PointerOffsetTerm) -> bool {
     shift.abs() <= CONSTANT_LIMIT
 }
 
-/// How many skipped cells at each end of a range a debug build re-asks the
-/// ladder about. The ends are the cells nearest the store's window and the
-/// constant limit, where an off-by-one would show first. The count is kept
-/// small because a debug check is not free: its reasoning checkpoints are
-/// charged as work, so re-asking every skipped cell would make a debug
-/// build's store as quadratic as the ladder it spares.
-#[cfg(debug_assertions)]
-const CHECKED_GAP_CELLS: usize = 2;
-
-/// Debug builds: the ladder keeps every skipped cell it is asked about, the
-/// [`CHECKED_GAP_CELLS`] at each end of each range.
-#[cfg(debug_assertions)]
-pub(in crate::kernel) fn check_gap_kept_cells(
-    cells: &crate::kernel::primitives::CellStore,
-    kept: &[(Pointer, Pointer)],
-    store: &Pointer,
-    keep: &mut impl FnMut(&Pointer, &crate::kernel::CValue) -> bool,
-) {
-    for (low, high) in kept {
-        let range = || cells.concrete().range::<_, Pointer>(low..=high);
-        let first = range().take(CHECKED_GAP_CELLS).collect::<Vec<_>>();
-        let last = range().rev().take(CHECKED_GAP_CELLS).collect::<Vec<_>>();
-        for (cell, value) in first
-            .into_iter()
-            .chain(last.into_iter().filter(|(cell, _)| {
-                // Not asked twice where the two ends meet.
-                range()
-                    .take(CHECKED_GAP_CELLS)
-                    .all(|(first, _)| first != *cell)
-            }))
-        {
-            assert!(
-                keep(cell, value),
-                "a store at {store:?} skipped the cell at {cell:?} by its constant byte gap, \
-                 but the ladder drops it"
-            );
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -305,6 +268,63 @@ mod tests {
             ),
             PointerOffsetTerm::scale_int64(variable(904), 8, false),
         ]
+    }
+
+    #[test]
+    fn exact_byte_gap_survives_known_address_connections() {
+        let _session = crate::kernel::VerificationSession::enter();
+        for block in [
+            crate::kernel::PointerBlock::Symbolic(Variable(958_000)),
+            crate::kernel::PointerBlock::ExternalArgument,
+        ] {
+            let pointer = |id| Pointer {
+                block: block.clone(),
+                offset: PointerOffsetTerm::scale_int32(variable(id), 4),
+            };
+            let store = pointer(958_001);
+            let other = pointer(958_002);
+            let field = store.offset_by_bytes(8);
+            let connected = PureFactContext::new().assume_condition(
+                ConditionTerm::uint64_equal(
+                    Bitvector32Term::pointer_address(store.clone()),
+                    Bitvector32Term::pointer_address(other.clone()),
+                ),
+                true,
+            );
+            assert!(!connected.address_connected_objects(&store).is_empty());
+            let memory = CMemory::new().store(field.clone(), value_of_width(8, 17));
+            let full = with_store_gap_skip_disabled(|| {
+                memory.without_possible_aliasing_cells(&store, 8, &connected)
+            });
+            assert!(
+                full.has_known_cell_at(&field),
+                "an address alias cannot erase an exact same-block byte gap"
+            );
+            let fast = memory.without_possible_aliasing_cells(&store, 8, &connected);
+            assert!(
+                fast == full,
+                "bulk selection and per-cell classification must agree"
+            );
+            assert!(
+                !memory
+                    .without_possible_aliasing_cells(&store, 16, &connected)
+                    .has_known_cell_at(&field)
+            );
+            let aliased_field = other.offset_by_bytes(8);
+            let overlaps = PureFactContext::new().assume_condition(
+                ConditionTerm::uint64_equal(
+                    Bitvector32Term::pointer_address(store.clone()),
+                    Bitvector32Term::pointer_address(aliased_field.clone()),
+                ),
+                true,
+            );
+            let overlapping = CMemory::new().store(aliased_field.clone(), value_of_width(8, 19));
+            assert!(
+                !overlapping
+                    .without_possible_aliasing_cells(&store, 8, &overlaps)
+                    .has_known_cell_at(&aliased_field)
+            );
+        }
     }
 
     fn value_of_width(width: u32, seed: u32) -> CValue {
