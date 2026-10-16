@@ -10784,6 +10784,10 @@ impl ReasoningPolicy {
 
 #[derive(Clone, Debug, Default)]
 pub struct PureFactContext {
+    /// Debug builds only: the width each variable of this context's facts is
+    /// used at (`term_width.rs`). Two facts combine only within one context,
+    /// so a variable must keep one width within it. Not part of equality.
+    pub(super) variable_widths: imbl::OrdMap<Variable, CarrierWidth>,
     /// Shared ordered projection used when checked paths publish this context.
     pub(super) execution_fact_projection: super::execution_facts::ContextFacts,
     /// Persistent syntax adjacency for atomic certificate planning. Unlike
