@@ -5,7 +5,9 @@ invalid entry-value claim is rejected. The nightly regression fails because
 rejecting the latter costs more than its existing deterministic work bound;
 no false acceptance is known.
 
-Reproduced on `a6bf8166f4a079874ff992393c44b6803102cbe8` with:
+Reproduced on `a6bf8166f4a079874ff992393c44b6803102cbe8`, then rechecked
+after merging master through `548dfd9408599db9c7a89b2e55b344c87902c895`
+(including the shared arithmetic fixes), with:
 
 ```sh
 cargo nextest run --profile nightly --lib --run-ignored only \
@@ -28,9 +30,12 @@ because `k` can equal `3`.
 
 For the rejected claim, the existing scaling regression measures total work
 `[59841, 59820, 60188]` at lengths `[64, 4096, 1048576]`, exceeding its
-unchanged 30,000-unit bound. Fold work remains exactly 150 units at each
-length, so this reproduction does not show per-element fold enumeration.
-Profiling the small rejected sidecar attributes most work to failed
+unchanged 30,000-unit bound. After the master update the totals are
+`[62744, 63047, 63847]`: the last increase of 800 also exceeds the test's
+512-unit allowance for eight additional length bits. Fold work remains
+exactly 150 units at each length in both runs, so this reproduction does
+not show per-element fold enumeration.
+Profiling the original small rejected sidecar attributes most work to failed
 `simp closure: snapshot transport` attempts. Treat that as a lead, rather
 than evidence that every transport attempt is redundant.
 
