@@ -4261,7 +4261,8 @@ pub(super) fn finish_ordered_proof<'a>(
                                                 selected = false;
                                                 break;
                                             }
-                                            let selected_scope = if let Some(premises) = restricted_premises {
+                                            let (selected_scope, checks) = crate::surface::proof_diagnostics::capture_check_observations(|| -> Result<_, ClickError> {
+                                                Ok(if let Some(premises) = restricted_premises {
                                                 let selected = scope.try_restricted_simp_closure(premises);
                                                 check_verification_deadline()?;
                                                 selected
@@ -4273,7 +4274,9 @@ pub(super) fn finish_ordered_proof<'a>(
                                                 scope.try_auto_closure_after_simp()?
                                             } else {
                                                 None
-                                            };
+                                            })
+                                            });
+                                            let selected_scope = selected_scope.map_err(|error| error.with_check_observations(checks.clone()))?;
                                             let Some(scope) = selected_scope else {
                                                 check_verification_deadline()?;
                                                 if !require_explicit_closers {
@@ -4324,9 +4327,9 @@ pub(super) fn finish_ordered_proof<'a>(
                                                         )
                                                     })
                                                     .unwrap_or_default();
-                                                return Err(direct_proof.step_error(format!(
+                                                return Err(scope.body().step_error(format!(
                                                     "`{proof_label}` path {path_index}, tactic {tactic_index}: checked outcome `{closer_name}` search did not retain a complete proof for `{claim_label}`{detail}{transition_detail}",
-                                                )));
+                                                )).with_check_observations(checks));
                                             };
                                             let joined = scope.join()?;
                                             direct_proof = joined;

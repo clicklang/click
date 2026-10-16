@@ -45,7 +45,9 @@ impl<'a> ProofScope<'a> {
         self.body.goal()
     }
 
-    #[cfg(test)]
+    /// The selected nested proof, also retained when a written check fails.
+    /// Borrowing its persistent handle preserves the exact goal and context
+    /// without rebuilding them from the enclosing execution frontier.
     pub(in crate::surface::proof) fn body(&self) -> &Proof<'a> {
         &self.body
     }
@@ -799,7 +801,7 @@ impl<'a> ProofScope<'a> {
     ) -> Result<Option<Self>, ClickError> {
         let Some(body) = self
             .body
-            .try_addressed_linear_script(tactics, sites, &mut None)?
+            .try_addressed_linear_script(tactics, sites, &mut None, None)?
         else {
             return Ok(None);
         };
@@ -812,10 +814,13 @@ impl<'a> ProofScope<'a> {
         &self,
         tactics: &[ProofTactic],
         declined: &mut Option<crate::surface::proof::smart_closures::LinearScriptDecline>,
+        unfinished: &mut Option<Proof<'a>>,
     ) -> Result<Option<Self>, ClickError> {
-        let Some(body) = self
-            .body
-            .try_authoritative_linear_script_reporting(tactics, declined)?
+        let Some(body) = self.body.try_authoritative_linear_script_reporting(
+            tactics,
+            declined,
+            Some(unfinished),
+        )?
         else {
             return Ok(None);
         };
