@@ -147,7 +147,7 @@ fn charon_array_reference_assignments_tools_recheck_expanded_certificates() {
 #[test]
 #[ignore = "nightly: 20 s, over the gate's per-test budget (2026-10-06)"]
 fn charon_array_values_unchanged_fixture_verifies_external_snapshots() {
-    let p = Project::new("");
+    let p = Project::from_fixture("design/charon-trial/array-values");
     let source = include_str!("../../design/charon-trial/array-values/arrays.rs");
     let sidecar = include_str!("../../design/charon-trial/array-values/arrays.click");
     assert_eq!(

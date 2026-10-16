@@ -39,7 +39,7 @@ fn charon_chunk_proof_tools_agree() {
         assert_cli(&p, &[command]);
     }
     let proof = fs::read_to_string(p.root.join("borrow.click")).unwrap();
-    let offset = proof.find("execute_until(back_edge())").unwrap();
+    let offset = proof.find("execute_until(read(1))").unwrap();
     let line = proof[..offset].bytes().filter(|&b| b == b'\n').count() + 1;
     let column = offset - proof[..offset].rfind('\n').map_or(0, |p| p + 1) + 1;
     let cursor = format!("{}:{line}:{column}", p.root.join("borrow.click").display());
