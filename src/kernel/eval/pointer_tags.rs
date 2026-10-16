@@ -586,9 +586,21 @@ mod exact_word_address_tests {
             &assumptions,
         )
         .unwrap();
-        let CValue::UInt64(address) = encoded else {
+        let decoded = cast_c_value_to_type(
+            encoded.clone(),
+            CType::Float64Pointer,
+            IntegerConversion::Modular,
+            &mut obligations,
+            &assumptions,
+        )
+        .unwrap();
+        assert!(
+            matches!(decoded, CValue::Pointer(ref value) if value.object_class() == Some(class.clone()))
+        );
+        let CValue::UInt64(address) = encoded.numeric_value() else {
             panic!("encoded address")
         };
+        let address = address.clone();
         let tagged =
             Bitvector32Term::uint64_bitwise_or(address.clone(), Bitvector32Term::UInt64Constant(1));
         let cleared = Bitvector32Term::uint64_bitwise_and(
@@ -600,17 +612,16 @@ mod exact_word_address_tests {
             Bitvector32Term::UInt64Constant(1),
         );
         for word in [address.clone(), cleared, subtracted] {
-            let result = cast_c_value_to_type(
-                CValue::UInt64(word),
-                CType::Float64Pointer,
-                IntegerConversion::Modular,
-                &mut obligations,
+            // The numeric decoder recovers only coordinates and object class.
+            // A cast producer separately supplies the complete value identity.
+            let decoded = cast_tagged_address_to_pointer(
+                &word,
                 &assumptions,
+                &mut obligations,
+                CType::Float64Pointer,
             )
+            .unwrap()
             .unwrap();
-            let CValue::Pointer(decoded) = result else {
-                panic!("decoded pointer")
-            };
             assert_eq!(decoded.pointer(), &pointer);
             assert_eq!(decoded.object_class(), Some(class.clone()));
             assert_eq!(decoded.c_type(), CType::Float64Pointer);

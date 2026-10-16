@@ -1633,15 +1633,6 @@ impl<'a> TermRewrite<'a> {
     /// Conditional reduction in the checked proof context. The graph can
     /// establish positive equality only; an unsuccessful query stays unknown.
     /// Like cited conditions, this context never enters binder bodies.
-    pub(in crate::kernel) fn for_conditions_with_context(
-        conditions: &'a HashMap<ConditionTerm, bool>,
-        context: &'a PureFactContext,
-    ) -> Self {
-        let mut rewrite = Self::for_conditions_with_graph(conditions, &context.equality_graph);
-        rewrite.pointer_context = Some(context);
-        rewrite
-    }
-
     pub(in crate::kernel) fn for_conditions_with_graph(
         conditions: &'a HashMap<ConditionTerm, bool>,
         graph: &'a crate::kernel::equality_graph::EqualityGraph,

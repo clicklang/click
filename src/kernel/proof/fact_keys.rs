@@ -114,15 +114,15 @@ pub(crate) struct SnapshotBlindPointerValueKey {
 }
 
 impl SnapshotBlindPointerValueKey {
-    fn forgets_a_snapshot(&self) -> bool {
-        self.address.forgets_a_snapshot()
-            || self.designation.forgets_a_snapshot()
+    fn requires_checked_match(&self) -> bool {
+        self.address.requires_checked_match()
+            || self.designation.requires_checked_match()
             || self
                 .opaque_extent
                 .as_ref()
-                .is_some_and(SnapshotBlindPointerKey::forgets_a_snapshot)
+                .is_some_and(SnapshotBlindPointerKey::requires_checked_match)
             || self.extent.as_ref().is_some_and(|(start, width)| {
-                start.forgets_a_snapshot() || width.forgets_a_snapshot()
+                start.requires_checked_match() || width.requires_checked_match()
             })
     }
 }
@@ -203,7 +203,7 @@ impl SnapshotBlindConditionKey {
         match self {
             Self::AlgebraicEqual(_, _) => false,
             Self::PointerValueEqual(left, right) => {
-                left.forgets_a_snapshot() || right.forgets_a_snapshot()
+                left.requires_checked_match() || right.requires_checked_match()
             }
             Self::Comparison(_, left, right) => {
                 left.requires_checked_match() || right.requires_checked_match()

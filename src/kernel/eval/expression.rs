@@ -1942,7 +1942,12 @@ fn evaluate_c_cast_paths(
                     )
                     .map_err(CRuntimeError::PointerConversion)?;
                     Ok(CValue::Pointer(match address {
-                        Some(address) => pointer.with_address(address.pointer().clone()),
+                        Some(address) => {
+                            let class = pointer.object_class().or_else(|| address.object_class());
+                            pointer
+                                .with_address(address.pointer().clone())
+                                .with_object_class(class)
+                        }
                         None => pointer,
                     }))
                 });
@@ -3379,6 +3384,33 @@ mod pointer_integer_tests {
         );
         assert!(obligations.is_empty());
         result
+    }
+
+    #[test]
+    fn numeric_pointer_observation_retains_object_class_without_subobject_authority() {
+        use crate::kernel::effective_type::{CAccessClass, CScalarClass};
+        let class = CAccessClass::Scalar(CScalarClass::Int);
+        let root = Pointer::symbolic(Variable(991_085));
+        let source = CPointerValue::new(root.clone(), CType::Int32Pointer)
+            .with_object_class(Some(class.clone()))
+            .with_extent(Some(SubobjectExtent {
+                start: root,
+                width: 4u32.into(),
+            }));
+        let context = PureFactContext::new();
+        let encoded = cast(CValue::Pointer(source.clone()), CType::UInt64, &context).unwrap();
+        let CValue::Pointer(decoded) = cast(
+            encoded.numeric_value().clone(),
+            CType::Float64Pointer,
+            &context,
+        )
+        .unwrap() else {
+            panic!("pointer cast")
+        };
+        assert_eq!(decoded.pointer(), source.pointer());
+        assert_eq!(decoded.object_class(), Some(class));
+        assert!(!decoded.extent_is_known());
+        assert_ne!(decoded.designation(), source.designation());
     }
 
     #[test]
