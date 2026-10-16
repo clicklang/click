@@ -9,9 +9,9 @@ use click::cli::read_click_project;
 use click::instrumentation::{self, VerificationEvent};
 use click::languages::cpp::{PreparedCppImport, load_import, refresh_import};
 use click::surface::{
-    C0VerificationSession, expand_project_claim_source_by_label, expand_project_tactic_source_at,
-    project_smart_tactic_source_sites, project_tactic_source_position,
-    display_source_names, verify_program_prepared_project,
+    C0VerificationSession, display_source_names, expand_project_claim_source_by_label,
+    expand_project_tactic_source_at, project_smart_tactic_source_sites,
+    project_tactic_source_position, verify_program_prepared_project,
 };
 #[path = "support/pinned_clang.rs"]
 mod pinned_clang;
