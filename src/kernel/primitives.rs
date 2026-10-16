@@ -3943,6 +3943,9 @@ impl CAggregateLayout {
 pub struct CFunctionContractInterface {
     pub(crate) return_type: CType,
     pub(crate) return_pointee_constant: bool,
+    /// The class of the object a returned pointer designates, from the
+    /// declared return type (`design/effective-types.md`).
+    pub(crate) return_pointee_class: Option<crate::kernel::effective_type::CAccessClass>,
     pub(crate) return_aggregate_layout: Option<CAggregateLayout>,
     pub(crate) aggregate_return_mode: CAggregateReturnMode,
     pub(crate) construction_parameter: Option<(usize, CAggregateLayout)>,

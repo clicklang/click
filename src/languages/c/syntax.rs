@@ -3416,6 +3416,32 @@ impl C0Function {
         self.return_pointer_struct_name.as_deref()
     }
 
+    /// The class of the object a returned pointer designates
+    /// (`design/effective-types.md`): its struct for a struct pointer,
+    /// otherwise the pointee type's class.
+    pub fn return_pointee_class(&self) -> Option<crate::kernel::effective_type::CAccessClass> {
+        if self.return_struct_name.is_some() {
+            return None;
+        }
+        match self.return_pointer_struct_name.as_deref() {
+            Some(name) => struct_pointer_class(
+                self.return_type,
+                crate::kernel::effective_type::CPointeeBase::Struct(struct_class_in(
+                    name,
+                    &self.structs,
+                    &self.unions,
+                )),
+            )?
+            .pointee(),
+            None => {
+                let pointee = self.return_type.pointee_type()?;
+                pointee
+                    .access_class()
+                    .or_else(|| int_pointer_class(pointee))
+            }
+        }
+    }
+
     pub fn body(&self) -> &C0Statement {
         &self.body
     }
