@@ -3436,6 +3436,11 @@ pub(crate) struct CheckedProofCaseJoin {
     partition: Arc<CheckedProofCasePartition>,
     arms: Vec<CheckedProofCaseJoinArm>,
     start_state: CState,
+    /// The source the arms were walked over from the split, and the source
+    /// they all leave: a later walk reaching the join over the same source
+    /// takes this result instead of walking the arms again.
+    start_source: Option<CStatement>,
+    end_source: Option<CStatement>,
     joined_state: CState,
     /// The facts the proof holds after the join: the partition's root facts,
     /// and what every arm established or the interface admits.
@@ -3498,6 +3503,8 @@ struct WalkedCaseArms {
     partition: Arc<CheckedProofCasePartition>,
     arms: Vec<CheckedProofCaseJoinArm>,
     start_state: CState,
+    start_source: Option<CStatement>,
+    end_source: Option<CStatement>,
     /// Each arm's memory changes, as its walk met them.
     memory_steps: Vec<Vec<CheckedMemoryStep>>,
 }
@@ -3594,10 +3601,13 @@ impl CheckedProofCaseJoin {
             memory_steps.push(progress.memory_steps);
             checked.push(walked);
         }
+        let (_, end_source) = joined.expect("a join of two arms walked them");
         Ok(WalkedCaseArms {
             partition: partition.expect("a join of two arms found their partition"),
             arms: checked,
             start_state,
+            start_source: source,
+            end_source,
             memory_steps,
         })
     }
@@ -3615,6 +3625,8 @@ impl CheckedProofCaseJoin {
             partition,
             arms: checked,
             start_state,
+            start_source,
+            end_source,
             ..
         } = Self::walk_arms(parent, arms, function, arguments, true)?;
         // A fact every arm established holds whichever of their cases does.
@@ -3632,6 +3644,8 @@ impl CheckedProofCaseJoin {
             partition,
             arms: checked,
             start_state,
+            start_source,
+            end_source,
             joined_state: arms[0].0.reached_state().clone(),
             joined_facts: successor_facts.clone(),
             interface: None,
@@ -3662,6 +3676,8 @@ impl CheckedProofCaseJoin {
             partition,
             arms: checked,
             start_state,
+            start_source,
+            end_source,
             memory_steps,
         } = Self::walk_arms(parent, &arms, function, arguments, false)?;
         let exact_root = partition
@@ -3723,6 +3739,8 @@ impl CheckedProofCaseJoin {
             partition,
             arms: checked,
             start_state,
+            start_source,
+            end_source,
             joined_state: joined_state.clone(),
             joined_facts: successor_facts.clone(),
             interface: Some(CheckedProofCaseJoinInterface {
@@ -3819,9 +3837,11 @@ impl CheckedProofCaseJoin {
         self.arms.iter().map(|arm| arm.events.as_slice())
     }
 
-    /// Re-walks every arm from `state` over `source` and returns the source
-    /// they all leave, or `None` if any arm fails to reach that one program
-    /// point, or without an interface the joined state.
+    /// The source the arms leave when a walk reaches the join at `state`
+    /// over `source`: the recorded result when that is the source they were
+    /// checked over, and otherwise their walk over it, which fails if any
+    /// arm misses that one program point or, without an interface, the
+    /// joined state.
     fn advance_checked(
         &self,
         state: &CState,
@@ -3831,6 +3851,13 @@ impl CheckedProofCaseJoin {
         if state != &self.start_state {
             return None;
         }
+        // The check that built this join walked every arm from this state
+        // over this source; walking them again would only repeat it.
+        if source == &self.start_source {
+            return Some(self.end_source.clone());
+        }
+        // A walk over a different source, such as one that continues past
+        // the program point the arms reached, walks the arms over it.
         let mut remaining: Option<Option<CStatement>> = None;
         for arm in &self.arms {
             let (entered, cases, _) = case_join_arm_entry(&arm.events)?;
@@ -4541,10 +4568,6 @@ impl CheckedExecutionBranch {
 
     pub(crate) fn start_state(&self) -> &CState {
         &self.split.state
-    }
-
-    pub(crate) fn arm_facts(&self, index: usize) -> &ProofFacts {
-        &self.arms[index].facts
     }
 
     pub(crate) fn arm_events(&self, index: usize) -> &[CheckedExecutionEvent] {
@@ -6888,25 +6911,11 @@ fn check_evidence_events_with_call_events(
                 let CStatement::If { .. } = &next_statement else {
                     return None;
                 };
+                // The check that built `branch` walked both arms from this
+                // state over this `if`; they consume it alone, so they leave
+                // `tail` here as they left the branch's own continuation.
                 if !branch.matches_source(&state, &next_statement, &tail) {
                     return None;
-                }
-                let full_source = prepend_checked_evidence_statement(next_statement, tail.clone());
-                for arm_index in 0..2 {
-                    let arm = check_evidence_events_with_call_events(
-                        branch.arm_events(arm_index),
-                        branch.arm_facts(arm_index),
-                        state.clone(),
-                        Some(full_source.clone()),
-                        call_events.clone(),
-                    )?;
-                    if arm.completed.is_some()
-                        || arm.remaining != tail
-                        || (branch.interface_successor_facts().is_none()
-                            && arm.state != *branch.joined_state())
-                    {
-                        return None;
-                    }
                 }
                 state = branch.joined_state().clone();
                 remaining = tail;
