@@ -4057,6 +4057,7 @@ impl PureFactContext {
                 resources.proves_owned_range_separate_from_pointer_with(
                     range,
                     pointer,
+                    self,
                     |range, available| {
                         memory_range_shallowly_contained_with_facts(range, available, self)
                             || self.memory_range_contained_by_decided_endpoints(range, available)
@@ -4137,6 +4138,7 @@ impl PureFactContext {
                 resources.proves_owned_range_separate_from_pointer_shallow(
                     range,
                     pointer,
+                    self,
                     |pointer, available| {
                         (available.wide_bounds().is_none()
                             && self.pointer_in_range_by_shallow_fact_graph_with_width(
@@ -4474,6 +4476,7 @@ impl PureFactContext {
             resources.proves_owned_range_separate_from_pointer_shallow(
                 range,
                 pointer,
+                self,
                 |pointer, available| {
                     (available.wide_bounds().is_none()
                         && self.pointer_in_range_by_shallow_fact_graph_with_width(
