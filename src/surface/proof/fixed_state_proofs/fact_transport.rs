@@ -721,11 +721,19 @@ fn check_fixed_state_fact_transport_using_facts_inner(
                 {
                     // One label set for both leaves, so a read they share is
                     // spelled once and two different reads never share a name.
-                    let mut labels = render::SnapshotLabels::ambient();
+                    // It knows the recorded states the report above names, and
+                    // its `where` list says what produced every other state.
+                    let mut labels =
+                        render::SnapshotLabels::with_state(parameter_binding, fixed_state.state);
+                    labels.source_state(fixed_state.pre_state, "function.entry".into());
+                    for (selector, snapshot) in fixed_state.recorded_snapshots.recent(16) {
+                        labels.source_state(snapshot, describe_snapshot_selector(selector));
+                    }
                     let had = render::render_proposition_labeled(from, &mut labels);
                     let wanted = render::render_proposition_labeled(to, &mut labels);
                     rendered.push_str(&format!(
-                        "\n  quantified frame: {read_refusal}\n  leaf it had: {had}\n  leaf it wanted: {wanted}"
+                        "\n  quantified frame: {read_refusal}\n  leaf it had: {had}\n  leaf it wanted: {wanted}{}",
+                        labels.trace_legend(),
                     ));
                 }
                 crate::kernel::QuantifiedFrameRefusal::BinderExhausted => {
@@ -738,6 +746,13 @@ fn check_fixed_state_fact_transport_using_facts_inner(
     }
     Ok(CheckedFixedStateFactTransport { source, target })
 }
+
+/// The refusal of a checked `transport using` whose source and premises
+/// lowered and held, but whose frame could not carry the source to the
+/// target. A bare `transport` reports it when its planner selects nothing
+/// better (`fact_transport_planning_failure`).
+const NO_FRAME_EVIDENCE: &str =
+    "found no frame evidence carrying its source fact to the target's state";
 
 /// Show the written and checked propositions with one shared snapshot legend.
 /// Include every frontier effect: a truncated list can hide the missing frame.
@@ -754,8 +769,7 @@ fn describe_unreachable_fact_transport(
     // Refusals must expose checked identities even outside --trace-proof.
     let _exact = render::TypedNotationScope::enter();
     let mut rendered = format!(
-        "`{claim_label}` tactic {tactic_index}: `transport using` found no frame evidence \
-         carrying its source fact to the target's state\
+        "`{claim_label}` tactic {tactic_index}: `transport using` {NO_FRAME_EVIDENCE}\
          \n  source (holds): {}\
          \n  target (wanted): {}",
         crate::surface::printing::source_click_proposition(surface_source),
@@ -852,11 +866,20 @@ fn surface_predicate_call_name(proposition: &ClickProposition) -> Option<&str> {
     }
 }
 
+/// The refusal a bare `transport` reports when its premise planner fails.
+///
+/// `source_refusal` is the refusal of the bare form's own first attempt,
+/// the checked `transport using` with its source as the only premise. When
+/// that check got as far as the frame, its refusal already names the leaf
+/// the frame could not carry, the cell walks that stopped it and the effects
+/// between the two states, so it is the answer: the planner's own failure
+/// says only that no premise selection helped.
 pub(in crate::surface::proof) fn fact_transport_planning_failure(
     source: &ClickProposition,
     target: &ClickProposition,
     unfolded_predicates: &[String],
     error: &ClickError,
+    source_refusal: Option<&ClickError>,
 ) -> String {
     let opaque_name = [source, target]
         .into_iter()
@@ -865,6 +888,16 @@ pub(in crate::surface::proof) fn fact_transport_planning_failure(
     if let Some(name) = opaque_name {
         return format!(
             "`transport` cannot frame opaque predicate `{name}` across C execution because its memory footprint is hidden; run `unfold({name});` before the execution steps and transport its unfolded definition"
+        );
+    }
+    if let Some(frame_refusal) = source_refusal.and_then(|refusal| {
+        let summary = refusal.raw_summary();
+        summary
+            .find(NO_FRAME_EVIDENCE)
+            .map(|start| &summary[start..])
+    }) {
+        return format!(
+            "`transport` {frame_refusal}\n  this is the refusal with the source as the only premise; no other available fact the premise planner could list carried it either"
         );
     }
     format!(

@@ -9136,9 +9136,14 @@ impl<'a> Proof<'a> {
                             "bare `transport` selects its premises at a C execution frontier, and this proof has none; write `transport(P, Q) using { ... }` with the premises it needs",
                         ));
                     }
-                    proof = match proof.try_execution_fact_transport(source, target)? {
-                        Some(transported) => transported,
-                        None => proof.apply_planned_fact_transport(source, target, index)?,
+                    proof = match proof.try_execution_fact_transport_or_refusal(source, target)? {
+                        Ok(transported) => transported,
+                        Err(source_refusal) => proof.apply_planned_fact_transport(
+                            source,
+                            target,
+                            index,
+                            source_refusal.as_ref(),
+                        )?,
                     };
                 }
                 tactic => {

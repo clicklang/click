@@ -1911,9 +1911,12 @@ evidence.
 
 **Failure, checking, and tools:**
 
-Unrelated propositions, unsafe writes, or a bounded evidence miss fail. Click
-checks the chosen transport; expansion adds `using`, and profiling reports
-search and leaves.
+Unrelated propositions, unsafe writes, or a bounded evidence miss fail. When
+no premise the planner selects carries the source, the refusal is the one the
+same transport gets with its source listed in `using`: it names the effects
+between the two states and, for a quantified fact, the leaf the frame could
+not carry. Click checks the chosen transport; expansion adds `using`, and
+profiling reports search and leaves.
 
 **Checked examples:** [`simple_statement_step_explicit_transport.md`](https://github.com/clicklang/click/blob/master/mdtests/simple_statement_step_explicit_transport.md), [`transport_model_pointer_binding.md`](https://github.com/clicklang/click/blob/master/mdtests/transport_model_pointer_binding.md)
 
@@ -1958,12 +1961,12 @@ eight bytes, and the other operand. A source that is a reflexive equality, under
 binders and guards, needs no proof and no `using` entry. A listed quantified
 premise may name its own binder: a call's postcondition held under the binder
 its lowering chose is cited by a written form with another, as in `apply using`.
-
-**Failure, checking, and tools:**
-
 At a completed return outcome the source may name a held fact without being
 listed, up to its binder's name in the same way. Mid-execution the source must
 be listed; a refused source that is an available fact is named as one to list.
+
+**Failure, checking, and tools:**
+
 An absent source, mismatched target, or insufficient evidence fails. A refused
 narrowing names the order fact it needs, as the two segments were written. A
 refused fold frame names the step it could not place, or why the function has no

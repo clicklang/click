@@ -3462,15 +3462,24 @@ fn rejected_transport_prints_checked_reads_and_retains_prefix() {
             let error = verify_c0_sources(&source, &[("f.c", c.as_str())])
                 .expect_err("a write invalidates the transported value");
             let message = error.message();
+            // The bare form reports the refusal of its source-only check,
+            // which names the effects between the two states, as `using` does.
             if transport.contains("using") {
-                assert!(message.contains("found no frame evidence"), "{message}");
-                assert!(message.contains("at this frontier (10):"), "{message}");
+                assert!(
+                    message.contains("`transport using` found no frame evidence"),
+                    "{message}"
+                );
             } else {
                 assert!(
-                    message.contains("could not make fact transport premises explicit"),
+                    message.contains("`transport` found no frame evidence"),
+                    "{message}"
+                );
+                assert!(
+                    message.contains("this is the refusal with the source as the only premise"),
                     "{message}"
                 );
             }
+            assert!(message.contains("at this frontier (10):"), "{message}");
             assert!(message.contains("checked source (holds):"), "{message}");
             assert!(message.contains("checked target (wanted):"), "{message}");
             assert!(message.contains("read<Bits32>"), "{message}");
