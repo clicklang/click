@@ -503,7 +503,6 @@ impl ProofCertificateBuilder {
 }
 
 pub(super) fn record_post_execution_surface_tactic(
-    surface_recorded: bool,
     path_tactics: &mut Vec<ProofTactic>,
     capture_tactics: &mut Vec<ProofTactic>,
     deferred_capture: Option<&DeferredTacticCapture>,
@@ -511,9 +510,6 @@ pub(super) fn record_post_execution_surface_tactic(
     tactic_index: usize,
     tactic: ProofTactic,
 ) {
-    if surface_recorded {
-        return;
-    }
     if deferred_capture.is_some_and(|capture| {
         capture.tactic_index == tactic_index
             && (capture.post_execution_index == post_execution_index
@@ -1305,32 +1301,22 @@ pub(super) fn synthesize_surface_paths(
 
 #[derive(Clone)]
 pub(super) enum PostExecutionTactic {
+    /// A written leaf the post-execution context admits
+    /// (`SourceContext::PostExecution`). It applies as the one checked step
+    /// `ProofStep::from_leaf_tactic` gives it, exactly as in every other
+    /// context that admits it.
+    Leaf(ProofTactic),
     Both(ProofBoth),
-    Fold(ResourceClause),
     /// `fold(resource) by { ... }` or with `requires` entries: the fold and
     /// the proofs of the body facts its fast path leaves open.
     FoldProved(ProofTactic),
-    Unfold(ResourceClause),
-    Construct(ResourceClause),
     CloseOpen {
         resource: ResourceClause,
         preserve_exposed_body: bool,
         /// The source's `open(r) { ... } by { ... }` proof.
         written_close_proof: Option<Vec<ProofTactic>>,
     },
-    UnfoldPredicate(String),
-    /// `unfold(f(args))`, with the `using` guard list when the source wrote
-    /// one. A pure-function unfold is proposition-only work, so it defers
-    /// past function exit exactly as a predicate unfold does.
-    UnfoldFunction {
-        application: ClickFunctionApplication,
-        premises: Option<Vec<ClickProposition>>,
-    },
     Apply(TheoremApplication),
-    ApplyUsing {
-        application: TheoremApplication,
-        premises: Vec<ClickProposition>,
-    },
     Have(ProofHave),
     Transport {
         source: ClickProposition,
@@ -1405,10 +1391,6 @@ pub(super) struct DeferredPostExecutionTactic {
     pub(super) tactic_index: usize,
     pub(super) source_index: usize,
     pub(super) tactic: PostExecutionTactic,
-    /// The tactic's surface steps are already retained by checked `Proof`
-    /// provenance or a legacy surface record. The exit drain performs only
-    /// the deferred outcome work and must not record those steps again.
-    pub(super) surface_recorded: bool,
 }
 
 #[cfg(test)]
@@ -1712,14 +1694,9 @@ pub(super) fn post_execution_tactic_timing(
         ),
         PostExecutionTactic::Simp | PostExecutionTactic::SimpUsing(_) => ("simp", "smart"),
         PostExecutionTactic::AutoClose => ("auto", "smart"),
-        PostExecutionTactic::Fold(_) => ("fold", "simple"),
+        PostExecutionTactic::Leaf(tactic) => (tactic_name(tactic), "simple"),
         PostExecutionTactic::FoldProved(_) => ("fold", "control"),
-        PostExecutionTactic::Unfold(_) => ("unfold", "simple"),
-        PostExecutionTactic::Construct(_) => ("construct", "simple"),
         PostExecutionTactic::CloseOpen { .. } => ("open", "control"),
-        PostExecutionTactic::UnfoldPredicate(_) => ("unfold", "simple"),
-        PostExecutionTactic::UnfoldFunction { .. } => ("unfold", "simple"),
-        PostExecutionTactic::ApplyUsing { .. } => ("apply", "simple"),
         PostExecutionTactic::Choose(_) => ("choose", "simple"),
         PostExecutionTactic::LetSatisfy(_) => ("obtain", "simple"),
         PostExecutionTactic::Witness(_) => ("witness", "simple"),

@@ -632,43 +632,18 @@ pub(in crate::surface::proof) fn apply_source_step_proofs<'a>(
 }
 
 fn flat_post_execution_tactic(tactic: &ProofTactic) -> Option<PostExecutionTactic> {
+    if SourceContext::PostExecution.leaf_step(tactic).is_some() {
+        return Some(PostExecutionTactic::Leaf(tactic.clone()));
+    }
     match tactic {
-        ProofTactic::FoldResource(resource) => Some(PostExecutionTactic::Fold(resource.clone())),
         ProofTactic::StepProved { step, .. }
             if matches!(step.as_ref(), ProofTactic::FoldResource(_)) =>
         {
             Some(PostExecutionTactic::FoldProved(tactic.clone()))
         }
-        ProofTactic::UnfoldResource(resource) => {
-            Some(PostExecutionTactic::Unfold(resource.clone()))
-        }
-        ProofTactic::ConstructResource(resource) => {
-            Some(PostExecutionTactic::Construct(resource.clone()))
-        }
-        ProofTactic::UnfoldPredicate(name) => {
-            Some(PostExecutionTactic::UnfoldPredicate(name.clone()))
-        }
-        ProofTactic::UnfoldFunction(application) => Some(PostExecutionTactic::UnfoldFunction {
-            application: application.clone(),
-            premises: None,
-        }),
-        ProofTactic::PeelFunction {
-            application,
-            premises,
-        } => Some(PostExecutionTactic::UnfoldFunction {
-            application: application.clone(),
-            premises: Some(premises.clone()),
-        }),
         ProofTactic::ApplyTheorem(application) => {
             Some(PostExecutionTactic::Apply(application.clone()))
         }
-        ProofTactic::ApplyTheoremUsing {
-            application,
-            premises,
-        } => Some(PostExecutionTactic::ApplyUsing {
-            application: application.clone(),
-            premises: premises.clone(),
-        }),
         ProofTactic::Have(have) => Some(PostExecutionTactic::Have(have.clone())),
         // After execution, `extract(P)` adds `P` to every path exactly as
         // `have P by { extract(P); }` does, through the same checked scope.
@@ -731,7 +706,6 @@ fn deferred_post_execution_linear_region(
                 tactic_index: indexed.index,
                 source_index: indexed.source_index,
                 tactic,
-                surface_recorded: false,
             })
         })
         .collect::<Option<Vec<_>>>()?;
@@ -768,7 +742,6 @@ fn deferred_post_execution_region(
                     then_tactics: deferred_post_execution_region(then_branch)?,
                     else_tactics: deferred_post_execution_region(else_branch)?,
                 },
-                surface_recorded: false,
             }];
             deferred.extend(deferred_post_execution_region(continuation)?);
             Some(deferred)
@@ -788,7 +761,6 @@ fn deferred_post_execution_region(
                     returned_tactics: deferred_post_execution_region(returned_branch)?,
                     threw_tactics: deferred_post_execution_region(threw_branch)?,
                 },
-                surface_recorded: false,
             }];
             deferred.extend(deferred_post_execution_region(continuation)?);
             Some(deferred)

@@ -1530,7 +1530,6 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
                         tactic_index: environment.frontier_loop_source.loop_tactic_index,
                         source_index: environment.frontier_loop_source.loop_source_index,
                         tactic: PostExecutionTactic::Simp,
-                        surface_recorded: false,
                     });
                 }
                 return_proofs.push(Arc::new(LoopReturnProof {
