@@ -865,8 +865,9 @@ arithmetic is observed with `to_integer`, so `x + 1 > x` reads
 `uint32`. Unsuffixed literals take the Integer type. A comparison with a
 pointer parameter among its arithmetic operands, and a comparison without
 arithmetic between machine values, keep their C meaning; the latter has the
-same truth either way. Expansions and diagnostics print the inserted
-`to_integer`. See
+same truth either way. A population count is a quantity, so a comparison
+with a `count(...)` operand also compares Integers. Expansions and
+diagnostics print the inserted `to_integer`. See
 `mdtests/integer_arithmetic_makes_specification_addition_exact.md` and its
 C-arithmetic twin
 `mdtests/machine_specification_addition_needs_its_overflow_bound.md`.
@@ -883,6 +884,27 @@ comparison is exactly as strong as the Integer one
 outside the type's range, or observations of two different types, establish
 no native fact. Deciding such an Integer comparison likewise asks the native
 comparison it is equivalent to.
+
+An Integer equality over `+`, `-`, `*` and negation of 32-bit (`int32` or
+`uint32`) observations and constants also establishes the equality of the
+same expression in wrapping 32-bit arithmetic: reduction modulo 2^32 maps
+each observation to its word and respects these operations. So
+`to_integer(entry) - to_integer(capacity) == 0` establishes that the word
+`entry - capacity` is zero, which a built-in check such as retiring a
+population authority at count zero reads
+(`mdtests/an_integer_count_equality_retires_its_authority.md`). Only this
+direction holds, and only for equality: equal words do not make equal
+Integers, so the word equality never decides the Integer one, and Integer
+orders establish no word fact. A term of more than 64 nodes establishes
+nothing.
+
+A population count `entry + quantity` or `entry - quantity` whose signed
+overflow is ruled out on its path, by the path's facts or by the count's own
+obligation, observes as `to_integer(entry) + to_integer(quantity)` (or the
+difference), so Integer reasoning combines it with other facts. `simp`
+selects Integer equalities over machine observations as rewrite candidates,
+as it selects native equalities
+(`mdtests/an_integer_entry_count_premise_rewrites_a_grown_count.md`).
 Resources may declare `field total: Integer;`: folding checks the resource's
 facts, and `old(model.total)` retains the entry value across updates.
 Checked resource pattern bindings retain each field's declared carrier, name,
