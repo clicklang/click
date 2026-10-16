@@ -534,7 +534,7 @@ fn byte_widths_decide_partial_overlap_of_the_boundary_cells() {
     let before = CMemory::new();
     let old = application(&before, &v, bv(LO), bv(HI));
     let last = Bitvector32Term::subtract(bv(HI), Bitvector32Term::Constant(1));
-    let wide = CValue::Int64(Bitvector32Term::Constant(0));
+    let wide = CValue::Int64(Bitvector32Term::Int64Constant(0));
     // An eight-byte store at `v + 4*(hi - 1)` covers the last cell and the
     // endpoint cell. Nothing may separate it, even with `hi - 1 >= lo`.
     let after = before

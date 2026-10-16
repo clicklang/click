@@ -77,6 +77,7 @@ mod memory_equality_index;
 mod resource_algebra;
 mod term_operations;
 mod term_shape;
+mod term_width;
 pub(super) use derivations::*;
 pub(crate) use memory_state::resource_context_has_symbolic_range_read;
 pub use memory_state::value_independent_click_memory;
@@ -89,6 +90,7 @@ pub(in crate::kernel) use term_operations::{
     int64_add_interval_fits, int64_subtract_interval_fits,
 };
 pub(crate) use term_shape::{BitvectorBinaryOp, BitvectorComparisonOp, BitvectorUnaryOp};
+pub(crate) use term_width::*;
 
 pub(super) const C_POINTER_BYTE_WIDTH: u32 = 8;
 

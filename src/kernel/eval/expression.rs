@@ -1669,6 +1669,15 @@ pub(in crate::kernel) fn evaluate_c_expression_paths(
         }
     }
     budget.check_path_width(paths.len())?;
+    for path in &paths {
+        if let CExpressionOutcome::Value(value) = &path.outcome {
+            crate::kernel::debug_assert_widths(
+                "an evaluated expression",
+                || crate::kernel::value_width_mismatch(value),
+                value,
+            );
+        }
+    }
     Ok(paths)
 }
 
