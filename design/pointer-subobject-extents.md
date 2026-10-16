@@ -245,6 +245,88 @@ memory transport, and it still left two mdtests and two examples failing on
 reads of one cell across snapshots. Narrowing the C comparison itself needs
 none of that.
 
+## Phase C: pointers of unseen formation (proposed)
+
+Status: proposed 2026-10-16, not approved. Decisions E1-E3 below await the
+maintainer.
+
+### The hole
+
+Today a value without an extent means two different things. A pointer the
+function formed from a declared object, an allocation or a string literal
+is bounded by its complete object, and that bound is exact. A pointer whose
+formation the function never saw also has no extent: a parameter, a pointer
+loaded from memory at entry, a call result, or a pointer reloaded from a
+cell a call or loop havocs. Its actual designation may be a single member.
+Neither kind is checked against an extent, and authority stays
+address-based, so the second kind can step past its member and read a
+sibling with permission held through another pointer at the same address.
+[The bug file](../bugs/pointer-arithmetic-crosses-scalar-subobject.md#pointers-of-unseen-formation)
+has two complete programs that verify on master: a callee steps a pointer
+field its caller set to `&p->first`, and a callee reads through a parameter
+its caller formed as `&p->first + 1`. In both, the contract states the
+designation exactly (`requires h->link == &p->first`), but the comparison
+stays an address equality because one side has no extent.
+
+### Principle
+
+Every pointer value has a designation. A pointer of unseen formation gets
+a fresh **symbolic extent**: its start and width are new variables, and
+accesses and arithmetic through it are checked against them exactly as
+against a member's extent. Only facts can prove such a check, and the facts
+come from what the contract already says:
+
+1. **Memory clauses (D1, callee side).** A clause naming a range through a
+   pointer value claims the pointer designates that range. At a call this
+   is the caller's obligation today (`segment_extent_refusal`). Where the
+   same clause is assumed (function entry, a call's results, an unfold), it
+   adds the fact that the range lies inside the pointer's extent.
+   `views p->second` through a `struct Pair* p` covers `p`'s bytes 4 to 8,
+   which is what narrowing `p` to `second` needs.
+2. **Pointer equality (D2).** A contract `v == w` between two values with
+   extents already requires equal starts and widths (#1241). With symbolic
+   extents it pins the unknown one to the known one. `requires
+   h->link == &p->first` then tells the callee that `h->link` designates
+   `first`, and `*(h->link + 1)` is refused.
+3. **Nothing from the type.** A `T*` does not designate a `T`: a one-past
+   pointer has the same type.
+
+A pointer the function forms itself keeps today's exact extent, or none
+when it is a complete object. Equalities between two symbolic extents
+relate their variables, so `requires q == p` with `views p[0..2]` still
+lets the callee read `q[1]`.
+
+### Representation and cost
+
+`SubobjectExtent::width` becomes a term; constant widths are the existing
+case. The guards in `subobject_extent_guards` already compare the access
+against `start` and `width`, and `pointer_access_in_range` decides them
+from facts when they are not constant. Coverage facts are ordinary pure
+facts over the extent's own variables, added once per assumed clause, so
+each check stays a local decision with no scan of unrelated pointers.
+
+### Steps
+
+1. Width as a term, constant everywhere: no behavior change.
+2. Symbolic extents for parameters and pointers loaded at entry, with
+   coverage from entry clauses. Add the bug's two programs as rejected
+   fixtures and run the full corpus; investigate each new failure as either
+   reliance on an unstated designation (a finding) or a lost fact (a bug).
+3. Call results, havocked reloads and loop-carried values.
+4. C++ references and pointers; documentation.
+
+### Decisions
+
+- **E1. Parameters get symbolic extents, not only loaded pointers.**
+  Recommended: yes. The parameter program above needs it.
+- **E2. A struct pointer used with `->` does not imply one complete
+  struct.** Recommended: yes, rely on clauses. The alternative assumes
+  `sizeof(T)` bytes whenever the body selects a member, which a one-past
+  `struct T*` violates.
+- **E3. Width as a term rather than a separate "unknown extent" variant.**
+  Recommended: a term. Equalities and coverage facts then work on one kind
+  of extent, and constant widths need no special case.
+
 ## Decisions (approved as recommended)
 
 - **D1. Resource clauses double as extent claims at calls and folds.**
