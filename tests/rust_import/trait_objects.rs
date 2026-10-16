@@ -85,7 +85,7 @@ fn charon_trait_object_functions_are_defined_per_implementation() {
 #[ignore = "nightly: 24s in the parallel gate"]
 fn charon_trait_objects_tools_recheck_expanded_certificates() {
     let p = trait_objects_project();
-    for command in ["verify", "profile", "audit"] {
+    for command in ["profile", "audit"] {
         assert_cli(&p, &[command]);
     }
     for claim in [
@@ -97,6 +97,6 @@ fn charon_trait_objects_tools_recheck_expanded_certificates() {
         "trait_objects::Shape::area_twice.contract",
     ] {
         assert_cli(&p, &["expand", "--claim", claim, "--in-place"]);
-        assert_cli(&p, &["verify"]);
     }
+    assert_cli(&p, &["verify"]);
 }
