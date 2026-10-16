@@ -1058,6 +1058,9 @@ struct ProofDiagnosticProofState(
     // function outcome.
     Option<CValue>,
     Vec<crate::kernel::ReadResolutionDiagnostic>,
+    // The instance a refused `fold` proposed, when it keeps a hidden record,
+    // so the refusal shows the record its failed body fact reads.
+    Option<Arc<crate::kernel::ResourceInstance>>,
 );
 
 fn diagnostic_value_variable(value: &CValue) -> Option<Variable> {
@@ -1221,6 +1224,10 @@ impl crate::surface::proof_diagnostics::ProofDiagnosticState for ProofDiagnostic
         self.5
             .as_ref()
             .map(|(label, fact, _)| (*label, fact.as_ref()))
+    }
+
+    fn proposed_hidden_record(&self) -> Option<&crate::kernel::ResourceInstance> {
+        self.11.as_deref()
     }
 
     fn memory_history(
@@ -1712,6 +1719,7 @@ impl Proof<'_> {
             source_types,
             result.cloned(),
             Vec::new(),
+            None,
         )
     }
 }
@@ -2719,6 +2727,18 @@ impl<'a> Proof<'a> {
         self.step_error_with_details(message, comparison, requirement, None, Vec::new())
     }
 
+    /// A refused `fold` of an instance that keeps a hidden record: the
+    /// failed body fact, with the record the fold proposed beside it.
+    pub(in crate::surface::proof) fn step_error_with_proposed_record(
+        &self,
+        message: impl Into<String>,
+        comparison: Option<crate::surface::proof_trace::ChildArgumentTrace>,
+        requirement: Option<(&'static str, Box<Proposition>, Option<String>)>,
+        proposed: Option<Arc<crate::kernel::ResourceInstance>>,
+    ) -> ClickError {
+        self.step_error_with_state(message, comparison, requirement, None, Vec::new(), proposed)
+    }
+
     fn step_error_with_details(
         &self,
         message: impl Into<String>,
@@ -2727,12 +2747,32 @@ impl<'a> Proof<'a> {
         rejected: Option<Arc<crate::kernel::proof::RejectedResourceRewriteFact>>,
         read_resolutions: Vec<crate::kernel::ReadResolutionDiagnostic>,
     ) -> ClickError {
+        self.step_error_with_state(
+            message,
+            comparison,
+            requirement,
+            rejected,
+            read_resolutions,
+            None,
+        )
+    }
+
+    fn step_error_with_state(
+        &self,
+        message: impl Into<String>,
+        comparison: Option<crate::surface::proof_trace::ChildArgumentTrace>,
+        requirement: Option<(&'static str, Box<Proposition>, Option<String>)>,
+        rejected: Option<Arc<crate::kernel::proof::RejectedResourceRewriteFact>>,
+        read_resolutions: Vec<crate::kernel::ReadResolutionDiagnostic>,
+        proposed: Option<Arc<crate::kernel::ResourceInstance>>,
+    ) -> ClickError {
         let reason = message.into();
         let mut diagnostic_state = self.diagnostic_state();
         diagnostic_state.4 = comparison;
         diagnostic_state.5 = requirement;
         diagnostic_state.7 = rejected;
         diagnostic_state.10 = read_resolutions;
+        diagnostic_state.11 = proposed;
         let location = self
             .site
             .path()

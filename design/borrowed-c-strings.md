@@ -211,7 +211,10 @@ body's bytes and holds its facts, but no instance, has the call materialize
 `owns R(a)` from those bytes, lend it as `views R(a)`, and recover the bytes
 at return (`mdtests/cstr_at_call_assembles_a_view_from_owned_bytes.md`; the
 refusal without the terminator fact is
-`mdtests/cstr_at_call_assembly_needs_the_terminator_fact.md`). The adapter
+`mdtests/cstr_at_call_assembly_needs_the_terminator_fact.md`, and names it:
+"assembling `views cstr_at(src, n)` from owned pieces requires an exact body
+fact", with the missing fact and the available facts, as a refused fold
+reports them). The adapter
 used to check the body facts by the refinement route only, which missed a
 quantified fact the caller states under another binder; it now also accepts
 the exact routes a fold uses. An owner of `cstr_at` lends it to a `views`

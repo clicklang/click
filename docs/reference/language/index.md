@@ -2031,6 +2031,16 @@ and folded with `fold(pair(p), { first: c });`, which takes only the child
 map; with the child bound to `first`, `fold(pair(p));` takes it by name
 (`mdtests/a_hidden_record_folds_its_child_by_name.md`). Holding it by name, `owns x: pair(p);`, is also accepted.
 
+The record has no source syntax, but diagnostics and expansion show it. A
+refusal lists a held instance with its record,
+`owns pair(p) record { first.v: <unnamed A> }`, using the same placeholders
+as the pure facts beside it
+(`mdtests/a_hidden_record_is_shown_beside_its_resource.md`). A refused fold
+adds `proposed fold: pair(p) record { ... }` below its failed body fact
+(`mdtests/a_refused_fold_shows_the_hidden_record_it_proposed.md`).
+`click expand` writes the record a fold sets as a trailing comment, which the
+parser ignores: `fold(pair(p), { first: c }); // record { first.v: c.v }`.
+
 A resource that declares fields of its own says where a named child's field
 is kept with one equation,
 `fact first.v == first_v;`. After it, `first.v` in the body reads that

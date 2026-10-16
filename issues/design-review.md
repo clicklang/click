@@ -271,20 +271,6 @@ it would slow the priorities, which are performance at the scale of large
 real-world projects and then completeness, both measured in practice. A
 false acceptance, once found, is still fixed first, as a bug.
 
-### M4. Field-less resources hide a record
-
-Today: a field-less `pair(p)` keeps its child's fields "in a record the
-author does not write" (`docs/reference/language/index.md`); the alternative
-was dropped because the kernel treats a field-less body as a function of its
-arguments in about thirty places (`design/proof-language-rulings.md`).
-
-Proposed fix: require explicit fields, or show the record in diagnostics and
-expansion. This revisits a recorded ruling.
-
-Decision: fix (maintainer, 2026-10-14): show the record in diagnostics and
-expansion output. Explicit fields are not required; the recorded ruling
-stands.
-
 ## Strengths the review credited
 
 Recorded so fixes do not trade them away: verification of unchanged source
