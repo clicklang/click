@@ -2194,7 +2194,6 @@ pub(super) fn finish_ordered_proof<'a>(
                         tactic_index: implicit_closer_index,
                         source_index: usize::MAX,
                         tactic: PostExecutionTactic::AutoClose,
-                        surface_recorded: false,
                     };
                     // Only an ordered drain that has no closing `simp` and no
                     // further resource operation of its own needs the
@@ -2210,10 +2209,12 @@ pub(super) fn finish_ordered_proof<'a>(
                                 | PostExecutionTactic::Simp
                                 | PostExecutionTactic::AutoClose
                                 | PostExecutionTactic::SimpUsing(_)
-                                | PostExecutionTactic::Fold(_)
+                                | PostExecutionTactic::Leaf(
+                                    ProofTactic::FoldResource(_)
+                                        | ProofTactic::UnfoldResource(_)
+                                        | ProofTactic::ConstructResource(_)
+                                )
                                 | PostExecutionTactic::FoldProved(_)
-                                | PostExecutionTactic::Unfold(_)
-                                | PostExecutionTactic::Construct(_)
                                 | PostExecutionTactic::CloseOpen { .. }
                         )
                     }) {
@@ -2383,31 +2384,22 @@ pub(super) fn finish_ordered_proof<'a>(
                             }
                         });
                         match post_tactic {
-                            PostExecutionTactic::Fold(_)
-                            | PostExecutionTactic::FoldProved(_)
-                            | PostExecutionTactic::Unfold(_) => {
+                            PostExecutionTactic::FoldProved(ProofTactic::StepProved {
+                                step,
+                                proof,
+                            }) => {
                                 let Some(evolving) = outcome_proof.take() else {
                                     return Err(ClickError::new(format!(
                                         "`{proof_label}` path {path_index}, tactic {tactic_index}: typed outcome resource operation has no Proof goal"
                                     )));
                                 };
                                 let before = evolving.checkpoint();
-                                let folded = match post_tactic {
-                                    PostExecutionTactic::Unfold(resource) => evolving
-                                        .apply_step(ProofStep::UnfoldResource(resource.clone()))?,
-                                    PostExecutionTactic::Fold(resource) => evolving
-                                        .apply_step(ProofStep::FoldResource(resource.clone()))?,
-                                    PostExecutionTactic::FoldProved(ProofTactic::StepProved {
-                                        step,
-                                        proof,
-                                    }) => super::checked_drivers::apply_source_step_proofs(
-                                        &evolving,
-                                        step,
-                                        proof,
-                                        *tactic_index,
-                                    )?,
-                                    _ => unreachable!("matched a resource operation above"),
-                                };
+                                let folded = super::checked_drivers::apply_source_step_proofs(
+                                    &evolving,
+                                    step,
+                                    proof,
+                                    *tactic_index,
+                                )?;
                                 has_return_resource_rewrite |=
                                     folded.execution().is_some_and(|execution| {
                                         execution
@@ -2420,7 +2412,6 @@ pub(super) fn finish_ordered_proof<'a>(
                                 outcome_proof = Some(folded);
                                 for tactic in surface_tactics {
                                     record_post_execution_surface_tactic(
-                                        deferred.surface_recorded,
                                         &mut path_surface_post_tactics,
                                         &mut path_deferred_capture_tactics,
                                         path_capture,
@@ -2430,22 +2421,72 @@ pub(super) fn finish_ordered_proof<'a>(
                                     );
                                 }
                             }
-                            PostExecutionTactic::Construct(resource) => {
-                                let Some(evolving) = outcome_proof.take() else {
-                                    return Err(ClickError::new(format!(
-                                        "`{proof_label}` path {path_index}, tactic {tactic_index}: typed outcome `construct` has no Proof goal"
-                                    )));
+                            PostExecutionTactic::FoldProved(_) => {
+                                unreachable!("a proved fold wraps its `StepProved` tactic")
+                            }
+                            PostExecutionTactic::Leaf(tactic) => {
+                                // A predicate unfold and a theorem application
+                                // read the returned value.
+                                let return_operation = match tactic {
+                                    ProofTactic::UnfoldPredicate(_) => Some("predicate unfolding"),
+                                    ProofTactic::ApplyTheoremUsing { .. } => {
+                                        Some("theorem application")
+                                    }
+                                    _ => None,
                                 };
+                                if let Some(operation) = return_operation
+                                    && !matches!(outcome, CFunctionOutcome::Return { .. })
+                                {
+                                    return Err(ClickError::new(format!(
+                                        "`{proof_label}` path {path_index}, tactic {tactic_index}: {operation} requires a return outcome"
+                                    )));
+                                }
+                                let step = SourceContext::PostExecution
+                                    .leaf_step(tactic)
+                                    .expect("a post-execution leaf converts to its checked step");
+                                let evolving = outcome_proof.take().ok_or_else(|| ClickError::new(
+                                    format!("`{proof_label}` path {path_index}, tactic {tactic_index}: the typed outcome goal for this path is unavailable")
+                                ))?;
                                 let before = evolving.checkpoint();
-                                let constructed = evolving
-                                    .apply_step(ProofStep::ConstructResource(resource.clone()))?;
-                                outcome = constructed.focused_outcome_snapshot()?;
+                                let applied = evolving.apply_step(step)?;
+                                if matches!(
+                                    tactic,
+                                    ProofTactic::FoldResource(_) | ProofTactic::UnfoldResource(_)
+                                ) {
+                                    has_return_resource_rewrite |=
+                                        applied.execution().is_some_and(|execution| {
+                                            execution
+                                                .core
+                                                .has_checked_return_resource_rewrite(path_index)
+                                        });
+                                }
+                                // A resource operation changes the outcome's
+                                // resources; the other leaves only add facts.
+                                if matches!(
+                                    tactic,
+                                    ProofTactic::FoldResource(_)
+                                        | ProofTactic::UnfoldResource(_)
+                                        | ProofTactic::ConstructResource(_)
+                                ) {
+                                    outcome = applied.focused_outcome_snapshot()?;
+                                }
+                                if let ProofTactic::UnfoldPredicate(name) = tactic
+                                    && !unfolded_predicates.contains(name)
+                                {
+                                    unfolded_predicates.push(name.clone());
+                                }
+                                // `apply using` keeps its written spelling in
+                                // the expansion; every other leaf records its
+                                // checked certificate.
                                 let surface_tactics =
-                                    constructed.certificate_since(&before)?.to_proof_tactics();
-                                outcome_proof = Some(constructed);
+                                    if matches!(tactic, ProofTactic::ApplyTheoremUsing { .. }) {
+                                        vec![tactic.clone()]
+                                    } else {
+                                        applied.certificate_since(&before)?.to_proof_tactics()
+                                    };
+                                outcome_proof = Some(applied);
                                 for tactic in surface_tactics {
                                     record_post_execution_surface_tactic(
-                                        deferred.surface_recorded,
                                         &mut path_surface_post_tactics,
                                         &mut path_deferred_capture_tactics,
                                         path_capture,
@@ -2481,7 +2522,6 @@ pub(super) fn finish_ordered_proof<'a>(
                                 // its close's proof joins it as its `by`.
                                 if let Some(close_proof) = close_proof {
                                     record_post_execution_surface_tactic(
-                                        deferred.surface_recorded,
                                         &mut path_surface_post_tactics,
                                         &mut path_deferred_capture_tactics,
                                         path_capture,
@@ -2491,76 +2531,6 @@ pub(super) fn finish_ordered_proof<'a>(
                                             resource.clone(),
                                             close_proof.to_proof_tactics(),
                                         )),
-                                    );
-                                }
-                            }
-                            PostExecutionTactic::UnfoldPredicate(name) => {
-                                let CFunctionOutcome::Return { .. } = &outcome else {
-                                    return Err(ClickError::new(format!(
-                                        "`{proof_label}` path {path_index}, tactic {tactic_index}: predicate unfolding requires a return outcome"
-                                    )));
-                                };
-
-                                let certificate = if let Some(evolving) = outcome_proof.take() {
-                                    // The migrated path: the tactic advances
-                                    // this path's one evolving outcome proof
-                                    // and retains its checked step directly.
-                                    let before = evolving.checkpoint();
-                                    let unfolded = evolving
-                                        .apply_step(ProofStep::UnfoldPredicate(name.clone()))?;
-                                    let certificate = unfolded.certificate_since(&before)?;
-                                    outcome_proof = Some(unfolded);
-                                    certificate
-                                } else {
-                                    // The unconditional substrate makes this unreachable;
-                                    // fail loudly rather than silently routing through the
-                                    // deleted legacy fixed-state root.
-                                    return Err(ClickError::new(format!(
-                                        "`{proof_label}` path {path_index}, tactic {tactic_index}: the typed outcome goal for this path is unavailable"
-                                    )));
-                                };
-                                if !unfolded_predicates.contains(name) {
-                                    unfolded_predicates.push(name.clone());
-                                }
-                                for tactic in certificate.to_proof_tactics() {
-                                    record_post_execution_surface_tactic(
-                                        deferred.surface_recorded,
-                                        &mut path_surface_post_tactics,
-                                        &mut path_deferred_capture_tactics,
-                                        path_capture,
-                                        post_execution_index,
-                                        *tactic_index,
-                                        tactic.clone(),
-                                    );
-                                }
-                            }
-                            PostExecutionTactic::UnfoldFunction {
-                                application,
-                                premises,
-                            } => {
-                                let evolving = outcome_proof.take().ok_or_else(|| ClickError::new(
-                                    format!("`{proof_label}` path {path_index}, tactic {tactic_index}: the typed outcome goal for this path is unavailable")
-                                ))?;
-                                let before = evolving.checkpoint();
-                                let step = match premises {
-                                    None => ProofStep::UnfoldFunction(application.clone()),
-                                    Some(premises) => ProofStep::PeelFunction {
-                                        application: application.clone(),
-                                        premises: premises.clone(),
-                                    },
-                                };
-                                let unfolded = evolving.apply_step(step)?;
-                                let certificate = unfolded.certificate_since(&before)?;
-                                outcome_proof = Some(unfolded);
-                                for tactic in certificate.to_proof_tactics() {
-                                    record_post_execution_surface_tactic(
-                                        deferred.surface_recorded,
-                                        &mut path_surface_post_tactics,
-                                        &mut path_deferred_capture_tactics,
-                                        path_capture,
-                                        post_execution_index,
-                                        *tactic_index,
-                                        tactic.clone(),
                                     );
                                 }
                             }
@@ -2595,7 +2565,6 @@ pub(super) fn finish_ordered_proof<'a>(
                                 // same checked conclusions when the closer runs.
                                 for tactic in certificate.to_proof_tactics() {
                                     record_post_execution_surface_tactic(
-                                        deferred.surface_recorded,
                                         &mut path_surface_post_tactics,
                                         &mut path_deferred_capture_tactics,
                                         path_capture,
@@ -2604,47 +2573,6 @@ pub(super) fn finish_ordered_proof<'a>(
                                         tactic.clone(),
                                     );
                                 }
-                            }
-                            PostExecutionTactic::ApplyUsing {
-                                application,
-                                premises,
-                            } => {
-                                let CFunctionOutcome::Return { .. } = &outcome else {
-                                    return Err(ClickError::new(format!(
-                                        "`{proof_label}` path {path_index}, tactic {tactic_index}: theorem application requires a return outcome"
-                                    )));
-                                };
-
-                                if let Some(evolving) = outcome_proof.take() {
-                                    // The migrated explicit case: the checked
-                                    // application advances this path's
-                                    // evolving outcome proof directly.
-                                    let applied =
-                                        evolving.apply_step(ProofStep::ApplyTheoremUsing {
-                                            application: application.clone(),
-                                            premises: premises.clone(),
-                                        })?;
-                                    outcome_proof = Some(applied);
-                                } else {
-                                    // The unconditional substrate makes this unreachable;
-                                    // fail loudly rather than silently routing through the
-                                    // deleted legacy fixed-state root.
-                                    return Err(ClickError::new(format!(
-                                        "`{proof_label}` path {path_index}, tactic {tactic_index}: the typed outcome goal for this path is unavailable"
-                                    )));
-                                };
-                                record_post_execution_surface_tactic(
-                                    deferred.surface_recorded,
-                                    &mut path_surface_post_tactics,
-                                    &mut path_deferred_capture_tactics,
-                                    path_capture,
-                                    post_execution_index,
-                                    *tactic_index,
-                                    ProofTactic::ApplyTheoremUsing {
-                                        application: application.clone(),
-                                        premises: premises.clone(),
-                                    },
-                                );
                             }
                             PostExecutionTactic::Have(have) => {
                                 // A throw outcome is proved like a return: its
@@ -2787,7 +2715,6 @@ pub(super) fn finish_ordered_proof<'a>(
                                         .record_lowering(&have.proposition, &fact)?;
                                 }
                                 record_post_execution_surface_tactic(
-                                    deferred.surface_recorded,
                                     &mut path_surface_post_tactics,
                                     &mut path_deferred_capture_tactics,
                                     path_capture,
@@ -2891,7 +2818,6 @@ pub(super) fn finish_ordered_proof<'a>(
                                     .record_lowering(target, checked_target)?;
                                 for tactic in certificate.to_proof_tactics() {
                                     record_post_execution_surface_tactic(
-                                        deferred.surface_recorded,
                                         &mut path_surface_post_tactics,
                                         &mut path_deferred_capture_tactics,
                                         path_capture,
@@ -2926,7 +2852,6 @@ pub(super) fn finish_ordered_proof<'a>(
                                     .apply_step(ProofStep::Choose(choice.clone()))?;
                                 existence_proof = Some((claim_index, surface_goal, proof));
                                 record_post_execution_surface_tactic(
-                                    deferred.surface_recorded,
                                     &mut path_surface_post_tactics,
                                     &mut path_deferred_capture_tactics,
                                     path_capture,
@@ -2960,7 +2885,6 @@ pub(super) fn finish_ordered_proof<'a>(
                                     .apply_step(ProofStep::LetSatisfy(binding.clone()))?;
                                 existence_proof = Some((claim_index, surface_goal, proof));
                                 record_post_execution_surface_tactic(
-                                    deferred.surface_recorded,
                                     &mut path_surface_post_tactics,
                                     &mut path_deferred_capture_tactics,
                                     path_capture,
@@ -2994,7 +2918,6 @@ pub(super) fn finish_ordered_proof<'a>(
                                     .apply_step(ProofStep::Witness(witness.clone()))?;
                                 existence_proof = Some((claim_index, surface_goal, proof));
                                 record_post_execution_surface_tactic(
-                                    deferred.surface_recorded,
                                     &mut path_surface_post_tactics,
                                     &mut path_deferred_capture_tactics,
                                     path_capture,
@@ -3032,7 +2955,6 @@ pub(super) fn finish_ordered_proof<'a>(
                                 existence_proof = Some((claim_index, surface_goal, proof));
                                 introduced_claim_scope = true;
                                 record_post_execution_surface_tactic(
-                                    deferred.surface_recorded,
                                     &mut path_surface_post_tactics,
                                     &mut path_deferred_capture_tactics,
                                     path_capture,
@@ -3060,7 +2982,6 @@ pub(super) fn finish_ordered_proof<'a>(
                                     match refreshed.apply_step(ProofStep::Assumption) {
                                         Ok(proof) => {
                                             record_post_execution_surface_tactic(
-                                                deferred.surface_recorded,
                                                 &mut path_surface_post_tactics,
                                                 &mut path_deferred_capture_tactics,
                                                 path_capture,
@@ -3360,7 +3281,6 @@ pub(super) fn finish_ordered_proof<'a>(
                                     .unwrap_or_else(|| vec![ProofTactic::Assumption]);
                                 for tactic in tactics {
                                     record_post_execution_surface_tactic(
-                                        deferred.surface_recorded,
                                         &mut path_surface_post_tactics,
                                         &mut path_deferred_capture_tactics,
                                         path_capture,
@@ -3435,7 +3355,6 @@ pub(super) fn finish_ordered_proof<'a>(
                                     match continued {
                                         Ok(proof) => {
                                             record_post_execution_surface_tactic(
-                                                deferred.surface_recorded,
                                                 &mut path_surface_post_tactics,
                                                 &mut path_deferred_capture_tactics,
                                                 path_capture,
@@ -3796,7 +3715,6 @@ pub(super) fn finish_ordered_proof<'a>(
                                     .unwrap_or_else(|| vec![normalization_step.to_proof_tactic()]);
                                 for tactic in tactics {
                                     record_post_execution_surface_tactic(
-                                        deferred.surface_recorded,
                                         &mut path_surface_post_tactics,
                                         &mut path_deferred_capture_tactics,
                                         path_capture,
@@ -3945,7 +3863,6 @@ pub(super) fn finish_ordered_proof<'a>(
                                     .to_proof_tactics()
                                 {
                                     record_post_execution_surface_tactic(
-                                        deferred.surface_recorded,
                                         &mut path_surface_post_tactics,
                                         &mut path_deferred_capture_tactics,
                                         path_capture,
