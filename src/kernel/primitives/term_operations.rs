@@ -3514,13 +3514,13 @@ impl CLValue {
     pub(in crate::kernel) fn access_class(
         &self,
     ) -> Option<crate::kernel::effective_type::CAccessClass> {
-        self.access_class
+        self.access_class.clone()
     }
 
     pub(in crate::kernel) fn object_class(
         &self,
     ) -> Option<crate::kernel::effective_type::CAccessClass> {
-        self.object_class
+        self.object_class.clone()
     }
 
     pub(in crate::kernel) fn extent(&self) -> Option<&SubobjectExtent> {

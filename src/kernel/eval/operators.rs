@@ -4992,7 +4992,7 @@ pub(in crate::kernel) fn effective_type_refusal_of(
 ) -> Option<CUndefinedBehavior> {
     let access = access?;
     let object = memory.declared_class(pointer).or(object_class)?;
-    (!access.may_access(object))
+    (!access.may_access(&object))
         .then_some(CUndefinedBehavior::IncompatibleAccess { access, object })
 }
 

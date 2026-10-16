@@ -1935,6 +1935,9 @@ pub struct C0Parameter {
     /// struct-pointer placeholder, while the kernel uses byte addressing for
     /// the lowered indexed field accesses.
     array_element_width: Option<u32>,
+    /// The struct a struct-pointer parameter points to, as a strict-aliasing
+    /// class (`design/effective-types.md`).
+    pointee_struct_class: Option<crate::kernel::effective_type::CAccessClass>,
 }
 
 /// The nominal part of a callback signature that the kernel's structural
@@ -2098,6 +2101,9 @@ pub struct C0StructLayout {
     aggregate_unions: Vec<C0AggregateUnion>,
     size_bytes: u32,
     alignment_bytes: u32,
+    /// The struct's strict-aliasing class (`design/effective-types.md`),
+    /// for a struct the C parser declared.
+    class: Option<crate::kernel::effective_type::CStructClass>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -2850,6 +2856,9 @@ pub enum C0Statement {
         pointer: C0Expression,
         value: C0Expression,
         value_type: Option<C0Type>,
+        /// The access class of a member store, which names its struct;
+        /// other stores take theirs from `value_type`.
+        member_class: Option<crate::kernel::effective_type::CAccessClass>,
         pointee_constant: bool,
         /// Where the source statement was written; see [`C0Site`].
         site: C0Site,
@@ -3138,6 +3147,9 @@ pub enum C0Expression {
         /// Source provenance minted by the C parser.  This is absent on
         /// parser-synthesized field loads used by aggregate copies.
         source: Option<C0FieldSource>,
+        /// The member access through the containing struct, for the
+        /// strict-aliasing check (`design/effective-types.md`).
+        access_class: Option<crate::kernel::effective_type::CAccessClass>,
     },
     UnionField {
         pointer: Box<C0Expression>,
@@ -4425,6 +4437,7 @@ impl C0StructLayout {
             aggregate_unions: Vec::new(),
             size_bytes,
             alignment_bytes,
+            class: None,
         })
     }
 
@@ -4683,6 +4696,7 @@ impl C0Parameter {
             pointee_struct_layout: None,
             function_pointer_signature: None,
             array_element_width: None,
+            pointee_struct_class: None,
         }
     }
 
@@ -4780,7 +4794,8 @@ impl C0Parameter {
             .unwrap_or_else(|| self.c_type.to_kernel_type());
         let pointee_class = (self.struct_name.is_none() && self.array_element_width.is_none())
             .then(|| self.c_type.pointee_type()?.access_class())
-            .flatten();
+            .flatten()
+            .or_else(|| self.pointee_struct_class.clone());
         crate::kernel::c_parameter(self.name.clone(), c_type)
             .with_volatile(self.is_volatile())
             .with_pointee_volatile(self.pointee_is_volatile())
@@ -4894,7 +4909,7 @@ impl C0Type {
         let class = self.access_class()?;
         let derived =
             crate::kernel::effective_type::CAccessClass::of_kernel_type(self.to_kernel_type());
-        (self.array_length().is_some() || derived != Some(class)).then_some(class)
+        (self.array_length().is_some() || derived.as_ref() != Some(&class)).then_some(class)
     }
 
     pub fn is_pointer(self) -> bool {
@@ -5287,10 +5302,16 @@ impl C0Statement {
                 }
                 statement
             }
-            Self::DeclareStructValue { name, layout, .. } => crate::kernel::c_declare_aggregate(
-                name.clone(),
-                layout.to_kernel_aggregate_layout(),
-            ),
+            Self::DeclareStructValue { name, layout, .. } => {
+                crate::kernel::c_declare_classed_aggregate(
+                    name.clone(),
+                    layout.to_kernel_aggregate_layout(),
+                    layout
+                        .class
+                        .clone()
+                        .map(crate::kernel::effective_type::CAccessClass::Struct),
+                )
+            }
             Self::Assign {
                 name, expression, ..
             } => crate::kernel::c_assign(name.clone(), expression.to_kernel_expression()),
@@ -5348,6 +5369,7 @@ impl C0Statement {
                 pointer,
                 value,
                 value_type,
+                member_class,
                 pointee_constant,
                 ..
             } => match value_type {
@@ -5355,7 +5377,7 @@ impl C0Statement {
                     pointer.to_kernel_expression(),
                     value.to_kernel_expression(),
                     value_type.to_kernel_type(),
-                    value_type.access_class(),
+                    member_class.clone().or_else(|| value_type.access_class()),
                     *pointee_constant,
                     false,
                 ),
@@ -5662,11 +5684,13 @@ impl C0Expression {
                 field_type,
                 pointee_constant,
                 source,
+                access_class,
                 ..
             } => crate::kernel::c_qualified_typed_load_with_source(
                 pointer.lower_expression(),
                 field_type.to_kernel_type(),
                 *pointee_constant,
+                access_class.clone(),
                 source.as_ref().and_then(|source| {
                     source.id().source_identity().map(|source_identity| {
                         crate::kernel::LoadSourceId {
@@ -7394,6 +7418,100 @@ fn offset_field_pointer(base: C0Expression, offset_bytes: u32) -> C0Expression {
     }
 }
 
+/// See [`Parser::struct_class`]. A struct-pointer member's pointee is
+/// identified by tag alone, which keeps a self-referential struct finite.
+fn struct_class_in(
+    name: &str,
+    structs: &DeclarationMap<C0StructLayout>,
+    unions: &DeclarationMap<C0UnionLayout>,
+) -> crate::kernel::effective_type::CStructClass {
+    use crate::kernel::effective_type::CStructClass;
+    match structs.get(name) {
+        Some(C0StructLayout {
+            class: Some(class), ..
+        }) => class.clone(),
+        Some(layout) => struct_class_of_fields(name, &layout.fields, structs, unions),
+        None => CStructClass::opaque(name),
+    }
+}
+
+/// The class of struct `name` with `fields`; see [`Parser::struct_class`].
+pub(super) fn struct_class_of_fields(
+    name: &str,
+    fields: &BTreeMap<String, C0StructField>,
+    structs: &DeclarationMap<C0StructLayout>,
+    unions: &DeclarationMap<C0UnionLayout>,
+) -> crate::kernel::effective_type::CStructClass {
+    let mut contents = crate::kernel::effective_type::CStructContentsBuilder::default();
+    for field in fields.values() {
+        add_member_class(
+            &mut contents,
+            field.c_type,
+            field.struct_name.as_deref(),
+            field.union_name.as_deref(),
+            field.array_element_width.is_some(),
+            structs,
+            unions,
+        );
+    }
+    contents.build(name)
+}
+
+/// Adds what a member of type `c_type` contributes to its struct's
+/// contents. `struct_array` marks an inline array of embedded structs.
+fn add_member_class(
+    contents: &mut crate::kernel::effective_type::CStructContentsBuilder,
+    c_type: C0Type,
+    struct_name: Option<&str>,
+    union_name: Option<&str>,
+    struct_array: bool,
+    structs: &DeclarationMap<C0StructLayout>,
+    unions: &DeclarationMap<C0UnionLayout>,
+) {
+    use crate::kernel::effective_type::{CPointeeBase, CStructClass};
+    match (struct_name, union_name) {
+        (Some(name), _) if c_type == C0Type::Int32 || struct_array => {
+            contents.embed(struct_class_in(name, structs, unions))
+        }
+        (Some(name), _) => contents.member(struct_pointer_class(
+            c_type,
+            CPointeeBase::Struct(CStructClass::opaque(name)),
+        )),
+        (None, Some(name)) if !c_type.is_pointer() => match unions.get(name) {
+            Some(layout) => {
+                for field in layout.fields.values() {
+                    add_member_class(
+                        contents,
+                        field.c_type,
+                        field.struct_name.as_deref(),
+                        field.union_name.as_deref(),
+                        field.array_element_width.is_some(),
+                        structs,
+                        unions,
+                    );
+                }
+            }
+            None => contents.member(None),
+        },
+        _ => contents.member(c_type.access_class()),
+    }
+}
+
+/// The class of a struct pointer of type `c_type`, a pointer or an array
+/// of pointers, to `base`; `None` for a function pointer.
+fn struct_pointer_class(
+    c_type: C0Type,
+    base: crate::kernel::effective_type::CPointeeBase,
+) -> Option<crate::kernel::effective_type::CAccessClass> {
+    let depth = match c_type {
+        C0Type::PointerArray(..) => 1,
+        _ if !c_type.is_object_pointer() => return None,
+        _ if c_type.pointee_type().is_some_and(C0Type::is_pointer) => 2,
+        _ => 1,
+    };
+    Some(crate::kernel::effective_type::CAccessClass::Pointer { base, depth })
+}
+
 fn is_plain_struct_type(parsed_type: &ParsedType) -> bool {
     parsed_type.struct_name.is_some() && parsed_type.c_type == C0Type::Int32
 }
@@ -7617,6 +7735,7 @@ fn field_expression(
     array_shape: Option<Vec<u32>>,
     source: Option<C0FieldSource>,
     pointee_constant: bool,
+    access_class: Option<crate::kernel::effective_type::CAccessClass>,
 ) -> C0Expression {
     if let Some(union_name) = field_union_name {
         return C0Expression::UnionAddress {
@@ -7640,6 +7759,7 @@ fn field_expression(
         function_pointer_signature,
         array_shape,
         source,
+        access_class,
     }
 }
 
@@ -10555,6 +10675,7 @@ impl Parser {
                     struct_name: None,
                     union_name: None,
                     array_element_width: None,
+                    pointee_struct_class: None,
                 });
                 if self.peek() != Some(&Token::Comma) {
                     return Ok(parameters);
@@ -10676,6 +10797,7 @@ impl Parser {
                         struct_name,
                         union_name: None,
                         array_element_width: None,
+                        pointee_struct_class: None,
                     });
                     if self.peek() != Some(&Token::Comma) {
                         return Ok(parameters);
@@ -10713,6 +10835,7 @@ impl Parser {
                         struct_name,
                         union_name: None,
                         array_element_width: Some(element_width),
+                        pointee_struct_class: None,
                     });
                     if self.peek() != Some(&Token::Comma) {
                         return Ok(parameters);
@@ -10735,6 +10858,17 @@ impl Parser {
                     .cloned(),
                 pointee_struct_layout: None,
                 function_pointer_signature: parsed_type.function_pointer_signature,
+                pointee_struct_class: struct_name
+                    .as_deref()
+                    .and_then(|name| {
+                        struct_pointer_class(
+                            c_type,
+                            crate::kernel::effective_type::CPointeeBase::Struct(
+                                self.struct_class(name),
+                            ),
+                        )
+                    })
+                    .and_then(|class| class.pointee()),
                 struct_name,
                 union_name: parsed_type.union_name,
                 array_element_width: None,
@@ -13160,8 +13294,10 @@ impl Parser {
                         function_pointer_signature: element_signature.clone(),
                         array_shape: None,
                         source: None,
+                        access_class: None,
                     },
                     value_type: Some(element_type),
+                    member_class: None,
                     pointee_constant: field.pointee_constant,
                     site: C0Site::NONE,
                 });
@@ -13554,6 +13690,7 @@ impl Parser {
                         pointer: *pointer,
                         value,
                         value_type: loaded_type,
+                        member_class: None,
                         pointee_constant: false,
                         site: C0Site::NONE,
                     })
@@ -13564,6 +13701,7 @@ impl Parser {
                     pointee_constant,
                     field_struct_name,
                     function_pointer_signature,
+                    access_class,
                     ..
                 } => {
                     if let Some(signature) = function_pointer_signature {
@@ -13595,6 +13733,7 @@ impl Parser {
                         pointer: *pointer,
                         value,
                         value_type: Some(field_type),
+                        member_class: access_class,
                         pointee_constant,
                         site: C0Site::NONE,
                     })
@@ -13612,6 +13751,7 @@ impl Parser {
                     pointer: C0Expression::Add(base, index),
                     value,
                     value_type: element_type,
+                    member_class: None,
                     pointee_constant: false,
                     site: C0Site::NONE,
                 }),
@@ -14996,6 +15136,7 @@ impl Parser {
                 pointer,
                 value,
                 value_type,
+                member_class,
                 pointee_constant,
                 site,
             } => {
@@ -15006,6 +15147,7 @@ impl Parser {
                         pointer,
                         value,
                         value_type,
+                        member_class,
                         pointee_constant,
                         site,
                     },
@@ -15940,6 +16082,7 @@ impl Parser {
                 function_pointer_signature,
                 array_shape,
                 source,
+                access_class,
             } => {
                 self.reject_unsequenced_updated_memory_read(&pointer)?;
                 let (prefix, pointer) = self.lower_expression_calls(*pointer)?;
@@ -15953,6 +16096,7 @@ impl Parser {
                         function_pointer_signature,
                         array_shape,
                         source,
+                        access_class,
                     },
                 ))
             }
@@ -17561,6 +17705,7 @@ impl Parser {
                         function_pointer_signature,
                         array_shape,
                         pointee_constant,
+                        access_class,
                     ) = if dot {
                         let struct_value = matches!(
                             &expression,
@@ -17598,6 +17743,7 @@ impl Parser {
                             array_shape,
                             self.mint_field_source_id(field_name, field_position),
                             pointee_constant,
+                            access_class,
                         )
                     };
                 }
@@ -18421,6 +18567,35 @@ impl Parser {
         .then_some(pointee)
     }
 
+    /// The strict-aliasing class of struct `name`
+    /// (`design/effective-types.md`): what its members, embedded structs
+    /// and unions contain at any depth.
+    fn struct_class(&self, name: &str) -> crate::kernel::effective_type::CStructClass {
+        struct_class_in(name, &self.structs, &self.unions)
+    }
+
+    /// The access class of a member access to `field` through struct
+    /// `container`. A struct-pointer member's class carries its pointee's
+    /// contents, so a pointer loaded from it designates a known struct.
+    fn member_access_class(
+        &self,
+        container: &str,
+        field: &C0StructField,
+    ) -> Option<crate::kernel::effective_type::CAccessClass> {
+        let member = match field.struct_name.as_deref() {
+            Some(name) if field.c_type.is_pointer() => struct_pointer_class(
+                field.c_type,
+                crate::kernel::effective_type::CPointeeBase::Struct(self.struct_class(name)),
+            ),
+            Some(_) => return None,
+            None => field.c_type.access_class(),
+        };
+        Some(crate::kernel::effective_type::CAccessClass::member(
+            self.struct_class(container),
+            member,
+        ))
+    }
+
     fn resolve_field_access(
         &self,
         base: &C0Expression,
@@ -18434,6 +18609,7 @@ impl Parser {
             Option<C0FunctionPointerSignature>,
             Option<Vec<u32>>,
             bool,
+            Option<crate::kernel::effective_type::CAccessClass>,
         ),
         C0SyntaxError,
     > {
@@ -18496,6 +18672,7 @@ impl Parser {
                 field.function_pointer_signature.clone(),
                 field.array_shape.clone(),
                 field.pointee_constant,
+                self.member_access_class(&struct_name, field),
             ));
         }
         if let Some(union_name) = union_name {
@@ -18538,6 +18715,7 @@ impl Parser {
                 None,
                 None,
                 field.pointee_constant,
+                None,
             ));
         }
         Err(self.error_here(format!(
@@ -18558,6 +18736,7 @@ impl Parser {
             Option<C0FunctionPointerSignature>,
             Option<Vec<u32>>,
             bool,
+            Option<crate::kernel::effective_type::CAccessClass>,
         ),
         C0SyntaxError,
     > {
@@ -18618,6 +18797,7 @@ impl Parser {
             field.function_pointer_signature.clone(),
             field.array_shape.clone(),
             field.pointee_constant,
+            self.member_access_class(&struct_name, field),
         ))
     }
 

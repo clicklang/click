@@ -4032,16 +4032,19 @@ mod tests {
                 name: "holder".into(),
                 layout: layout.clone(),
                 kind: CAggregateDeclarationKind::Local,
+                declared_class: None,
             },
             CStatement::DeclareAggregate {
                 name: "holder".into(),
                 layout: layout.clone(),
                 kind: CAggregateDeclarationKind::Constructor,
+                declared_class: None,
             },
             CStatement::DeclareAggregate {
                 name: "holder".into(),
                 layout,
                 kind: CAggregateDeclarationKind::ConstructionDestination,
+                declared_class: None,
             },
         ];
         for declaration in declarations {

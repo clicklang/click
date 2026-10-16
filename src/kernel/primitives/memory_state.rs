@@ -2585,7 +2585,7 @@ impl CMemory {
         pointer: &Pointer,
     ) -> Option<crate::kernel::effective_type::CAccessClass> {
         crate::instrumentation::record_deterministic_work(1);
-        self.blocks.get(&pointer.block)?.declared_class
+        self.blocks.get(&pointer.block)?.declared_class.clone()
     }
 
     /// A fresh block whose object, or every element of it, has

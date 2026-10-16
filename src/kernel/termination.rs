@@ -183,19 +183,21 @@ fn substitute_c_expression_variables(
         }
         BitwiseNot(body) => BitwiseNot(unary(body)),
         Load(body) => Load(unary(body)),
+        // Nor does the access class a member load carries for the
+        // strict-aliasing check, which the contract's spelling lacks.
         TypedLoad {
             pointer,
             value_type,
             volatile,
             pointee_constant,
-            access_class,
+            access_class: _,
             source,
         } => TypedLoad {
             pointer: unary(pointer),
             value_type: *value_type,
             volatile: *volatile,
             pointee_constant: *pointee_constant,
-            access_class: *access_class,
+            access_class: None,
             source: source.clone(),
         },
         Index(left, right) => {
@@ -596,7 +598,10 @@ fn c_expression_mentions_variable(expression: &CExpression, variable: &str) -> b
         variable.to_string(),
         CExpression::Value(CValue::Int32(Bitvector32Term::Constant(0))),
     );
-    substitute_c_expression_variables(expression, &substitutions) != *expression
+    // Compare normalized spellings: the substitution also erases what the
+    // structural comparison ignores.
+    substitute_c_expression_variables(expression, &substitutions)
+        != substitute_c_expression_variables(expression, &BTreeMap::new())
 }
 
 /// Assumes one evaluation path's facts. Loadability obligations are the
