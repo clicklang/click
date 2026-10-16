@@ -230,13 +230,6 @@ fn unsupported_proof_shape(
     let _ = take_driver_declines();
     let depth_declined = take_region_depth_decline();
     let short_of_exit = take_short_of_exit_decline();
-    let declined_operation = take_declined_operation();
-    if let Some(reason) = declined_operation {
-        // The drivers stopped at a written operation they refused for a
-        // stated reason, such as an `apply` whose premise is missing. That
-        // reason is the actionable part; the proof shape is not at fault.
-        return reason.with_context(format!("`{proof_label}`"));
-    }
     if depth_declined {
         return ClickError::new(format!(
             "`{proof_label}`: checked execution-region recursion exceeds the supported depth of {MAX_CHECKED_PROOF_REGION_RECURSION}. This bound counts active recursive regions, not written proof nesting; completed early-return cases run iteratively. Move an inner `match`, `branch`, or proof `if` into a contracted helper, or prove part of it in a `have`."
@@ -558,7 +551,6 @@ fn prove_claims_by_checked_tactics(
     let _ = take_driver_declines();
     let _ = take_region_depth_decline();
     let _ = take_short_of_exit_decline();
-    let _ = take_declined_operation();
     let structural = try_check_structural_function_proof(
         &initial,
         &pure_facts,

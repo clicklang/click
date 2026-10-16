@@ -7397,6 +7397,39 @@ fn bool_disequality_as_equality(
     None
 }
 
+/// What a specification `==` between two pointers owes beyond their
+/// addresses: they designate the same subobject. Specification equality is
+/// value equality (`design/pointer-subobject-extents.md`, D2), and a
+/// pointer's extent is part of its value, so `&pair.first + 1` and
+/// `&pair.second` are different pointers at one address. A call that
+/// requires `q == p` must not admit them: the callee would read through `q`
+/// with `p`'s permission.
+///
+/// `None` when the address comparison alone decides it: both extents are
+/// the same, or either value carries none. A value without an extent is
+/// bounded by its complete object, or its designation is not known (a
+/// modular result, an entry load); its equality stays an address equality,
+/// so assuming it never refutes a reachable path.
+fn pointer_designation_equality(
+    left: &CPointerValue,
+    right: &CPointerValue,
+) -> Option<Proposition> {
+    let (Some(left), Some(right)) = (left.extent(), right.extent()) else {
+        return None;
+    };
+    if left == right {
+        return None;
+    }
+    Some(Proposition::ConditionIs(
+        if left.width == right.width {
+            pointer_equality_condition(left.start.clone(), right.start.clone())
+        } else {
+            ConditionTerm::Constant(false)
+        },
+        true,
+    ))
+}
+
 pub(super) fn c_value_comparison_proposition(
     left: &CValue,
     operator: CComparisonOperator,
@@ -7415,14 +7448,30 @@ pub(super) fn c_value_comparison_proposition(
                 || right.is_null() =>
         {
             match operator {
-                CComparisonOperator::Equal => Some((
-                    pointer_equality_condition(left.pointer().clone(), right.pointer().clone()),
-                    true,
-                )),
-                CComparisonOperator::NotEqual => Some((
-                    pointer_equality_condition(left.pointer().clone(), right.pointer().clone()),
-                    false,
-                )),
+                CComparisonOperator::Equal | CComparisonOperator::NotEqual => {
+                    let equal = operator == CComparisonOperator::Equal;
+                    if let Some(designation) = pointer_designation_equality(left, right) {
+                        let values = Proposition::And(
+                            Box::new(Proposition::ConditionIs(
+                                pointer_equality_condition(
+                                    left.pointer().clone(),
+                                    right.pointer().clone(),
+                                ),
+                                true,
+                            )),
+                            Box::new(designation),
+                        );
+                        return Some(if equal {
+                            values
+                        } else {
+                            Proposition::Not(Box::new(values))
+                        });
+                    }
+                    Some((
+                        pointer_equality_condition(left.pointer().clone(), right.pointer().clone()),
+                        equal,
+                    ))
+                }
                 CComparisonOperator::LessThan
                 | CComparisonOperator::LessEqual
                 | CComparisonOperator::GreaterThan
