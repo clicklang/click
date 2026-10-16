@@ -5059,15 +5059,23 @@ fn advance_checked_open_scope<'a>(
     )
 }
 
+/// Introduces one arm's case assumption: `Ok(Some(fact))` is the kernel fact
+/// the arm adds (`Ok(Some(None))` when the arm adds none yet), and `Ok(None)`
+/// says the arm is infeasible because `available` holds the fact's exact
+/// negation.
+///
+/// The condition is lowered against `available`'s own indexed context, and
+/// the negation is looked up by its spellings, so a split costs its condition
+/// and not the proof facts that precede it.
 pub(in crate::surface::proof) fn introduce_proof_case_assumption(
     execution: &mut ExecutionProofState,
     proof_context: &ExecutionProofContext<'_>,
-    pure_facts: &mut Vec<Proposition>,
+    available: &ProofFacts,
     structured_branch_history: bool,
     condition: &ClickProposition,
     lowering_condition: &ClickProposition,
     value: bool,
-) -> Result<bool, ClickError> {
+) -> Result<Option<Option<Proposition>>, ClickError> {
     let tactic_index = proof_context.tactic_index;
     let parameters = proof_context.parsed_function.parameters();
     let arguments = proof_context.arguments;
@@ -5087,7 +5095,7 @@ pub(in crate::surface::proof) fn introduce_proof_case_assumption(
         // handling below.
         if let Ok(proposition) = lower_fixed_state_proposition(
             lowering_condition,
-            pure_facts,
+            available,
             ParameterBinding::new(parameters, arguments),
             FixedStateFrame::new(
                 proof_context.old_reference_state(&execution.core.frontier, &execution.core.state),
@@ -5113,17 +5121,13 @@ pub(in crate::surface::proof) fn introduce_proof_case_assumption(
                     proposition => Proposition::Not(Box::new(proposition)),
                 }
             };
-            if pure_facts
-                .iter()
-                .any(|available| propositions_are_exact_negations(available, &kernel_fact))
-            {
-                return Ok(false);
+            if holds_exact_negation(available, &kernel_fact) {
+                return Ok(None);
             }
             execution
                 .presentation
                 .surface_propositions
                 .record_lowering(&surface_fact, &kernel_fact)?;
-            pure_facts.push(kernel_fact.clone());
             execution
                 .presentation
                 .case_assumptions
@@ -5131,11 +5135,11 @@ pub(in crate::surface::proof) fn introduce_proof_case_assumption(
                     tactic_index,
                     condition: condition.clone(),
                     value,
-                    fact: Some(kernel_fact),
+                    fact: Some(kernel_fact.clone()),
                     at_function_entry: false,
                     match_arm: None,
                 });
-            return Ok(true);
+            return Ok(Some(Some(kernel_fact)));
         }
     }
     if execution.core.frontier.is_at_function_exit() {
@@ -5150,12 +5154,12 @@ pub(in crate::surface::proof) fn introduce_proof_case_assumption(
                 at_function_entry: false,
                 match_arm: None,
             });
-        return Ok(true);
+        return Ok(Some(None));
     }
     let at_function_entry = execution.core.frontier.is_at_function_entry();
     let proposition = lower_fixed_state_proposition(
         lowering_condition,
-        pure_facts,
+        available,
         ParameterBinding::new(parameters, arguments),
         FixedStateFrame::new(
             proof_context.old_reference_state(&execution.core.frontier, &execution.core.state),
@@ -5186,17 +5190,13 @@ pub(in crate::surface::proof) fn introduce_proof_case_assumption(
             proposition => Proposition::Not(Box::new(proposition)),
         }
     };
-    if pure_facts
-        .iter()
-        .any(|available| propositions_are_exact_negations(available, &kernel_fact))
-    {
-        return Ok(false);
+    if holds_exact_negation(available, &kernel_fact) {
+        return Ok(None);
     }
     execution
         .presentation
         .surface_propositions
         .record_lowering(&surface_fact, &kernel_fact)?;
-    pure_facts.push(kernel_fact.clone());
     execution
         .presentation
         .case_assumptions
@@ -5204,11 +5204,32 @@ pub(in crate::surface::proof) fn introduce_proof_case_assumption(
             tactic_index,
             condition: condition.clone(),
             value,
-            fact: Some(kernel_fact),
+            fact: Some(kernel_fact.clone()),
             at_function_entry,
             match_arm: None,
         });
-    Ok(true)
+    Ok(Some(Some(kernel_fact)))
+}
+
+/// Whether `available` holds a fact that `propositions_are_exact_negations`
+/// pairs with `fact`, read from the exact index by the spellings that relation
+/// accepts rather than by comparing every fact.
+fn holds_exact_negation(available: &ProofFacts, fact: &Proposition) -> bool {
+    let negated = Proposition::Not(Box::new(fact.clone()));
+    let mut spellings = vec![negated];
+    match fact {
+        Proposition::ConditionIs(condition, value) => {
+            spellings.push(Proposition::ConditionIs(condition.clone(), !value));
+        }
+        Proposition::Not(body) => {
+            spellings.push(body.as_ref().clone());
+        }
+        _ => {}
+    }
+    spellings.iter().any(|spelling| {
+        crate::instrumentation::record_deterministic_work(1);
+        available.contains(spelling) && propositions_are_exact_negations(spelling, fact)
+    })
 }
 
 fn proof_case_is_stable_program_point_condition(proposition: &ClickProposition) -> bool {

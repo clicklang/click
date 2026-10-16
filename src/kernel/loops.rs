@@ -2755,7 +2755,13 @@ fn abstract_loop_exit_states(
         }
     }
     discard_loop_exit_partial_value_bindings(&head.top, body, &mut rebound);
-    retain_proven_loop_exit_cells(&mut rebound, exit_facts, assumptions, binders.is_empty())?;
+    retain_proven_loop_exit_cells(
+        &mut rebound,
+        exit_facts,
+        &contexts,
+        assumptions,
+        binders.is_empty(),
+    )?;
     let mut successor = rebound[0].clone();
     let mut restatements = vec![LoopExitRestatement::default(); rebound.len()];
     let uninitialized = abstract_loop_exit_initialization(&mut successor, &rebound);
@@ -2838,9 +2844,14 @@ fn loop_exit_argument_contexts(
 /// Fill only changed concrete cache entries whose exact typed value every
 /// exit already proves. A load equation is evidence for a cache entry, never
 /// for a C store, initialization, or additional memory authority.
+///
+/// `built` holds the exit contexts the join already indexed for its binders
+/// (empty when the loop has none); an exit's context is built here only when
+/// it is missing, so no exit's facts are assumed twice.
 fn retain_proven_loop_exit_cells(
     states: &mut [CState],
     facts: &[&ExecutionFacts],
+    built: &[PureFactContext],
     assumptions: &PureFactContext,
     no_binders: bool,
 ) -> Result<(), String> {
@@ -2884,9 +2895,12 @@ fn retain_proven_loop_exit_cells(
                 agrees = false;
                 continue;
             };
-            let context = contexts[index].get_or_insert_with(|| {
-                assumptions_with_path_context(assumptions, facts[index], &[])
-            });
+            let context = match built.get(index) {
+                Some(context) => context,
+                None => contexts[index].get_or_insert_with(|| {
+                    assumptions_with_path_context(assumptions, facts[index], &[])
+                }),
+            };
             let equality = indexed_loop_exit_load_equality(context, &load, &value);
             if equality != Some(true) {
                 agrees = false;

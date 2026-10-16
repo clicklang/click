@@ -61,6 +61,7 @@ fn optional_exit_cache_reconciliation_does_not_walk_unrelated_store_history() {
             retain_proven_loop_exit_cells(
                 &mut exits,
                 &[&ExecutionFacts::new(), &ExecutionFacts::new()],
+                &[],
                 &PureFactContext::new(),
                 true,
             )
@@ -74,4 +75,75 @@ fn optional_exit_cache_reconciliation_does_not_walk_unrelated_store_history() {
         "{samples:?}"
     );
     eprintln!("optional cache lookup work at 4/64/1024 old stores: {samples:?}");
+}
+
+/// The exit join indexes each exit's facts once. Cache reconciliation reads
+/// the contexts the join already built for its binders instead of assuming
+/// the same exit facts a second time, so with them it rebuilds no context
+/// entries however many facts an exit carries. Rebuilding them cost the
+/// `flips_red_all` loop's exit join about 134,000 control units.
+#[test]
+fn exit_cache_reconciliation_reuses_the_joins_exit_contexts() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let pointer = Pointer {
+        block: PointerBlock::Concrete("shared".into()),
+        offset: PointerOffsetTerm::Constant(0),
+    };
+    let memory = CMemory::new().with_block("shared", 4);
+    // Name the cell's load, as the exit's own read did.
+    let load = symbolic_storage_cell_value(&memory, &pointer, CType::Int32, true).unwrap();
+    let zero = int32(0);
+    let exits = || {
+        [
+            CState::new().with_memory(memory.clone().store(pointer.clone(), zero.clone())),
+            CState::new().with_memory(memory.clone()),
+        ]
+    };
+    let mut rebuilt = Vec::new();
+    let mut reused = Vec::new();
+    for count in [4usize, 16, 64, 256] {
+        let mut facts = (0..count)
+            .map(|k| {
+                ExecutionPureFact::new(Proposition::ConditionIs(
+                    ConditionTerm::signed_less_than(
+                        Bitvector32Term::Variable(Variable(926_000 + k as u64)),
+                        Bitvector32Term::Constant(k as u32),
+                    ),
+                    true,
+                ))
+            })
+            .collect::<Vec<_>>();
+        facts.push(ExecutionPureFact::new(
+            c_value_comparison_proposition(&load, CComparisonOperator::Equal, &zero).unwrap(),
+        ));
+        let exit_facts = ExecutionFacts::from(facts);
+        let empty = ExecutionFacts::new();
+        let all = [&empty, &exit_facts];
+
+        let mut states = exits();
+        let before = crate::kernel::reasoning::path_facts::context_rebuild_entries();
+        retain_proven_loop_exit_cells(&mut states, &all, &[], &PureFactContext::new(), true)
+            .unwrap();
+        rebuilt.push(crate::kernel::reasoning::path_facts::context_rebuild_entries() - before);
+        assert_eq!(states[1].memory().known_value(&pointer), Some(zero.clone()));
+
+        let built = loop_exit_argument_contexts(&all, &PureFactContext::new(), true);
+        let mut states = exits();
+        let before = crate::kernel::reasoning::path_facts::context_rebuild_entries();
+        retain_proven_loop_exit_cells(&mut states, &all, &built, &PureFactContext::new(), true)
+            .unwrap();
+        reused.push(crate::kernel::reasoning::path_facts::context_rebuild_entries() - before);
+        assert_eq!(states[1].memory().known_value(&pointer), Some(zero.clone()));
+    }
+    assert!(
+        rebuilt
+            .iter()
+            .zip([4usize, 16, 64, 256])
+            .all(|(entries, count)| *entries > count),
+        "without the join's contexts an exit's facts are assumed here: {rebuilt:?}"
+    );
+    assert!(
+        reused.iter().all(|entries| *entries == 0),
+        "reconciliation assumed exit facts the join already indexed: {reused:?}"
+    );
 }
