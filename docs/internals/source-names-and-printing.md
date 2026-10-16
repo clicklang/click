@@ -36,6 +36,14 @@ token spans. A matching string or comment is left untouched. Name queries read
 indexes rather than scanning the original source; a source rewrite constructs
 its file bindings once before spelling the fragment.
 
+A written code region resolves through `CodeRegionRef::resolve`, both in
+annotation lowering and in proof execution. A loop label binds once per
+execution path, through the structural clause of the `loop as label` that
+declared it; a second `loop as label` at another loop is refused. Recorded
+snapshots are still stored under each spelling of their program point,
+`loop(N)` and each label of that loop, and read back by spelling, so expansion
+can cite the label the proof wrote.
+
 This is the first consolidation boundary for
 [`one-name-resolver-and-printer.md`](https://github.com/clicklang/click/blob/master/issues/one-name-resolver-and-printer.md),
 not completion of that issue. Parameters, fields, lexical binders,

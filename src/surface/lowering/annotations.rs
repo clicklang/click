@@ -6577,19 +6577,14 @@ impl AnnotationLowerer<'_> {
     }
 
     fn resolve_code_region_ref(&self, region_ref: &CodeRegionRef) -> Result<CodeRegion, String> {
-        match region_ref {
-            CodeRegionRef::BackEdge => Err("back_edge regions are supported only by `execute_until`; use `mark` to name the reached state".into()),
-            CodeRegionRef::Assignment { .. } | CodeRegionRef::Read(_) => Err("assignment and read regions are supported only by `execute_until`; use `mark` to name the reached state".into()),
-            CodeRegionRef::Function => Ok(CodeRegion::Function),
-            CodeRegionRef::Loop(index) => Ok(CodeRegion::Loop(*index)),
-            CodeRegionRef::Statement(index) => Ok(CodeRegion::Statement(*index)),
-            CodeRegionRef::Label(label) => self
-                .structural_clauses
-                .iter()
-                .find(|clause| clause.label() == Some(label.as_str()))
-                .map(|clause| *clause.region())
-                .ok_or_else(|| format!("unknown code region label `{label}`")),
-        }
+        region_ref
+            .resolve(self.structural_clauses)
+            .map_err(|error| match error {
+                CodeRegionResolutionError::ExecutionTargetOnly(_) => {
+                    format!("{error}; use `mark` to name the reached state")
+                }
+                CodeRegionResolutionError::UnknownLabel(_) => error.to_string(),
+            })
     }
 
     fn lower_c_binding_to_spec(

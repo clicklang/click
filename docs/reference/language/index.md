@@ -1148,7 +1148,9 @@ annotations, and `at(statement(N).entry|exit, ...)` snapshots.
 
 A frontier-local loop tactic may give the loop it encounters a stable name
 with `loop as label { ... }`.  The label names that encountered loop's entry
-and exit snapshots; it never searches for or jumps to a source region.  Use
+and exit snapshots; it never searches for or jumps to a source region. A
+label names one loop on an execution path: a second `loop as label` at a
+different loop is refused. Use
 `at(label.entry, expression_or_proposition)` and
 `at(label.exit, expression_or_proposition)` after the tactic has established
 those points. Intermediate propositions are proved with `have` in the ordinary
