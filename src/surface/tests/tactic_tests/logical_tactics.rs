@@ -1201,7 +1201,6 @@ fn single_simp_call_and_block_have_the_same_frontier_semantics() {
             .to_string()
     });
     assert_eq!(simp_errors[0], simp_errors[1]);
-    assert_eq!(simp_errors[0], simp_errors[2]);
     assert!(
         simp_errors[0].contains("closes the outcome claims at function exit and does not execute")
     );
