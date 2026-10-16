@@ -8018,7 +8018,7 @@ fn class_template_instances_reject_cross_instance_bindings_even_with_equal_layou
         int32 Box<SizeTag, true>::Read() const {
             views this->value; ensures result == this->value;
         } by { execute(); simp(); }
-        int32 both(const struct Box__tag_SizeTag__bool_true& left,
+        int32 both(const Box<SizeTag, true>& left,
                    const struct Box__tag_WeightTag__bool_true& right) {
             views left.value; views right.value;
             ensures result == left.value;
@@ -8058,7 +8058,7 @@ fn class_template_instances_complete_unused_parameter_types_without_source_edits
         &import,
         r#"
         verifying "unused.cpp";
-        int32 call(const struct Box__int& box) { ensures result == 7; }
+        int32 call(const Box<int>& box) { ensures result == 7; }
         by { execute(); simp(); }
     "#,
     );

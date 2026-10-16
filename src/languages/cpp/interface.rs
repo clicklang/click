@@ -46,9 +46,15 @@ pub(super) fn prepare(
         .export()
         .records
         .iter()
-        .filter_map(|record| {
-            let spelling = record.path.last()?;
-            (spelling != &record.name).then(|| (spelling.clone(), record.name.clone()))
+        .flat_map(|record| {
+            // A head's qualifier writes the record's own segment,
+            // `Stored<long long>::Read`; a type writes its path,
+            // `std::span<int>`.
+            [record.path.last().cloned(), Some(record.path.join("::"))]
+                .into_iter()
+                .flatten()
+                .filter(|spelling| spelling != &record.name)
+                .map(|spelling| (spelling, record.name.clone()))
         })
         .collect();
     Ok(PreparedExecution {

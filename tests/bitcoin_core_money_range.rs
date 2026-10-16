@@ -1288,7 +1288,7 @@ fn pinned_writable_byte_span_reference_preserves_view_offline() {
             "sysroot/usr/include/x86_64-linux-gnu/c++/12/bits/c++config.h",
         ],
     );
-    let source = "verifying \"span-probe.cpp\"; struct span__std_byte__value_unsigned_long_18446744073709551615 probe(const struct span__int__value_unsigned_long_18446744073709551615& span) { views std_span_data(span); views std_span_size(span); ensures std_span_data(result) == (uint8*)std_span_data(span); ensures std_span_size(result) == std_span_size(span) * 4u64; ensures std_span_data(span) == old(std_span_data(span)); ensures std_span_size(span) == old(std_span_size(span)); } by { execute(); simp(); }";
+    let source = "verifying \"span-probe.cpp\"; std::span<std::byte> probe(const std::span<int>& span) { views std_span_data(span); views std_span_size(span); ensures std_span_data(result) == (uint8*)std_span_data(span); ensures std_span_size(result) == std_span_size(span) * 4u64; ensures std_span_data(span) == old(std_span_data(span)); ensures std_span_size(span) == old(std_span_size(span)); } by { execute(); simp(); }";
     check_pinned_byte_proof(&root, &import, source);
 }
 
@@ -1306,7 +1306,7 @@ fn pinned_writable_byte_span_by_value_preserves_pointer_snapshot() {
             "sysroot/usr/include/x86_64-linux-gnu/c++/12/bits/c++config.h",
         ],
     );
-    let source = "verifying \"span-probe.cpp\"; struct span__std_byte__value_unsigned_long_18446744073709551615 probe(struct span__int__value_unsigned_long_18446744073709551615 span) { ensures std_span_data(result) == old((uint8*)std_span_data(span)); ensures std_span_size(result) == old(std_span_size(span)) * 4u64; } by { execute(); simp(); }";
+    let source = "verifying \"span-probe.cpp\"; std::span<std::byte> probe(std::span<int> span) { ensures std_span_data(result) == old((uint8*)std_span_data(span)); ensures std_span_size(result) == old(std_span_size(span)) * 4u64; } by { execute(); simp(); }";
     check_pinned_byte_proof(&root, &import, source);
     fs::remove_dir_all(root).unwrap();
 }
@@ -1387,7 +1387,7 @@ fn pinned_byte_template_metadata_and_span_authority_are_checked() {
             "sysroot/usr/include/x86_64-linux-gnu/c++/12/bits/c++config.h",
         ],
     );
-    let base = "verifying \"span-probe.cpp\"; struct span__std_byte__value_unsigned_long_18446744073709551615 probe(struct span__int__value_unsigned_long_18446744073709551615 span) { ensures std_span_size(result) == std_span_size(span) * 4u64; } by { execute(); simp(); }";
+    let base = "verifying \"span-probe.cpp\"; std::span<std::byte> probe(std::span<int> span) { ensures std_span_size(result) == std_span_size(span) * 4u64; } by { execute(); simp(); }";
     for bad in [
         base.replace(" * 4u64", " * 3u64"),
         base.replace("ensures std_span_size(result)", "ensures std_span_data(result) == (uint8*)std_span_data(span) + 1; ensures std_span_size(result)"),
@@ -1410,7 +1410,7 @@ fn pinned_byte_template_metadata_and_span_authority_are_checked() {
             "sysroot/usr/include/x86_64-linux-gnu/c++/12/bits/c++config.h",
         ],
     );
-    let source = "verifying \"span-probe.cpp\"; struct span__std_byte__value_unsigned_long_18446744073709551615 probe(const struct span__int__value_unsigned_long_18446744073709551615& span) { views std_span_data(span); views std_span_size(span); ensures std_span_data(result) == (uint8*)std_span_data(span); ensures std_span_size(result) == std_span_size(span) * 4u64; ensures std_span_data(span) == old(std_span_data(span)); ensures std_span_size(span) == old(std_span_size(span)); } by { execute(); simp(); }";
+    let source = "verifying \"span-probe.cpp\"; std::span<std::byte> probe(const std::span<int>& span) { views std_span_data(span); views std_span_size(span); ensures std_span_data(result) == (uint8*)std_span_data(span); ensures std_span_size(result) == std_span_size(span) * 4u64; ensures std_span_data(span) == old(std_span_data(span)); ensures std_span_size(span) == old(std_span_size(span)); } by { execute(); simp(); }";
     check_pinned_byte_proof(&root, &import, source);
     for field in ["std_span_data", "std_span_size"] {
         let bad = source.replace(&format!("views {field}(span);"), "");
@@ -3083,7 +3083,7 @@ fn axiomatic_span_refused_precondition_names_model_accessors_after_execution() {
         SPAN_DEPENDENCIES,
     );
     let source = r#"verifying "span-probe.cpp";
-struct span__int__value_unsigned_long_18446744073709551615 probe(struct span__int__value_unsigned_long_18446744073709551615& s) {
+std::span<int> probe(std::span<int>& s) {
     views std_span_data(s);
     views std_span_size(s);
     ensures std_span_data(result) == std_span_data(s);
@@ -3111,7 +3111,7 @@ fn axiomatic_span_dynamic_extent_requirement_is_proved_before_view_recovery() {
         BYTE_SPAN_DEPENDENCIES,
     );
     let source = r#"verifying "span-probe.cpp";
-struct span__std_byte__value_unsigned_long_18446744073709551615 probe(struct span__std_byte__value_unsigned_long_18446744073709551615& s) {
+std::span<std::byte> probe(std::span<std::byte>& s) {
     views std_span_data(s);
     views std_span_size(s);
     requires 1u64 <= std_span_size(s);
@@ -3196,7 +3196,7 @@ theorem uint64_predecessor_below(n: uint64) {{
         apply(uint64_to_integer_less_equal_implies_less_equal(n - 1u64, n));
     }}
 }}
-int32& {pop_back}(struct span__int__value_unsigned_long_18446744073709551615& span) {{
+int32& {pop_back}(std::span<int>& span) {{
     owns std_span_data(span);
     owns std_span_size(span);
     requires 1u64 <= std_span_size(span);
@@ -3212,7 +3212,7 @@ int32& {pop_back}(struct span__int__value_unsigned_long_18446744073709551615& sp
     execute();
     simp();
 }}
-int32& probe(struct span__int__value_unsigned_long_18446744073709551615& span) {{
+int32& probe(std::span<int>& span) {{
     owns std_span_data(span);
     owns std_span_size(span);
     requires 1u64 <= std_span_size(span);
@@ -3295,7 +3295,7 @@ fn axiomatic_span_refuses_an_uncatalogued_standard_function() {
         "std::span<int>::empty"
     );
     let source = r#"verifying "span-probe.cpp";
-bool probe(struct span__int__value_unsigned_long_18446744073709551615& span) {
+bool probe(std::span<int>& span) {
     views std_span_size(span);
     ensures result == result;
 } by {
@@ -3324,7 +3324,7 @@ const BYTE_SPAN_DEPENDENCIES: &[&str] = &[
     "sysroot/usr/include/c++/12/span",
     "sysroot/usr/include/x86_64-linux-gnu/c++/12/bits/c++config.h",
 ];
-const UCHAR_SPAN: &str = "struct span__unsigned_char__value_unsigned_long_18446744073709551615";
+const UCHAR_SPAN: &str = "std::span<unsigned char>";
 
 /// One caller of a generic `std::span` catalog entry: the C++ harness, the
 /// sidecar that proves it, and edits of that sidecar that must be refused,
@@ -3435,7 +3435,7 @@ theorem uint64_window_bounds(n: uint64) {{
 }}"#
     );
     let size_bytes =
-        r#"uint64 probe(struct span__unsigned_int__value_unsigned_long_18446744073709551615& s) {
+        r#"uint64 probe(std::span<unsigned int>& s) {
     views std_span_size(s);
     ensures result == std_span_size(s) * 4u64;
 } by {
@@ -3455,7 +3455,7 @@ theorem uint64_window_bounds(n: uint64) {{
                     window
                         .replace("    requires 3u64 <= std_span_size(s);\n", "")
                         .replace("    apply(uint64_window_bounds(std_span_size(s)));\n", ""),
-                    "precondition clause 3 of `std::span<unsigned char, 18446744073709551615UL>::subspan`",
+                    "precondition clause 3 of `std::span<unsigned char>::subspan`",
                 ),
                 // The window starts at the offset, not at the view's start.
                 (
@@ -3474,7 +3474,7 @@ theorem uint64_window_bounds(n: uint64) {{
             harness: "std::span<unsigned char> probe(std::span<unsigned char>& s) noexcept { return s.last(1); }",
             refusals: vec![(
                 last.replace("    requires 1u64 <= std_span_size(s);\n", ""),
-                "precondition clause 3 of `std::span<unsigned char, 18446744073709551615UL>::last`",
+                "precondition clause 3 of `std::span<unsigned char>::last`",
             )],
             sidecar: last,
         },
@@ -3494,7 +3494,7 @@ theorem uint64_window_bounds(n: uint64) {{
 #[test]
 #[ignore = "nightly: three more pinned C++ exports"]
 fn axiomatic_span_byte_element_entries_verify() {
-    let byte_span = "struct span__std_byte__value_unsigned_long_18446744073709551615";
+    let byte_span = "std::span<std::byte>";
     check_generic_span_cases(vec![
         GenericSpanCase {
             name: "generic-data",
@@ -3532,7 +3532,7 @@ fn axiomatic_span_byte_element_entries_verify() {
     ]);
 }
 
-const UINT_SPAN: &str = "struct span__unsigned_int__value_unsigned_long_18446744073709551615";
+const UINT_SPAN: &str = "std::span<unsigned int>";
 
 // A returned element reference is read and written directly, as in
 // `return s[0];` and `s[0] = v;`, for element types other than `int`. The
@@ -3620,7 +3620,7 @@ fn axiomatic_span_element_references_read_and_write() {
             harness: "unsigned int probe(std::span<unsigned int>& s) noexcept { return s.back(); }",
             refusals: vec![(
                 back.replace("    requires 1u64 <= std_span_size(s);\n", ""),
-                "precondition clause 3 of `std::span<unsigned int, 18446744073709551615UL>::back`",
+                "precondition clause 3 of `std::span<unsigned int>::back`",
             )],
             sidecar: back,
         },
@@ -3632,7 +3632,7 @@ fn axiomatic_span_element_references_read_and_write() {
 #[test]
 #[ignore = "nightly: three more pinned C++ exports"]
 fn axiomatic_span_element_reference_returns_and_int_access() {
-    let int_span = "struct span__int__value_unsigned_long_18446744073709551615";
+    let int_span = "std::span<int>";
     check_generic_span_cases(vec![
         GenericSpanCase {
             name: "element-reference",
@@ -3668,9 +3668,9 @@ const ARRAY_DEPENDENCIES: &[&str] = &[
     "sysroot/usr/include/c++/12/array",
     "sysroot/usr/include/x86_64-linux-gnu/c++/12/bits/c++config.h",
 ];
-const CONST_INT_SPAN: &str = "struct span__const_int__value_unsigned_long_18446744073709551615";
-const STATIC_INT_SPAN: &str = "struct span__int__value_unsigned_long_4";
-const INT_ARRAY: &str = "struct array__int__value_unsigned_long_4";
+const CONST_INT_SPAN: &str = "std::span<const int>";
+const STATIC_INT_SPAN: &str = "std::span<int, 4>";
+const INT_ARRAY: &str = "std::array<int, 4>";
 
 /// Imports `harness` and checks that `sidecar` is refused with `expected`:
 /// the claim is about a program the catalog contracts do not admit.
@@ -3701,7 +3701,7 @@ fn check_refused_span_case(
 #[test]
 #[ignore = "nightly: 6.2s in the parallel gate"]
 fn axiomatic_const_element_spans_verify() {
-    let read = r#"uint8 probe(struct span__const_unsigned_char__value_unsigned_long_18446744073709551615& s) {
+    let read = r#"uint8 probe(std::span<const unsigned char>& s) {
     views std_span_data(s);
     views std_span_size(s);
     views std_span_data(s)[0];
@@ -3789,9 +3789,9 @@ fn axiomatic_static_extent_spans_verify() {
             name: "static-extent-size-bytes",
             dependencies: &["sysroot/usr/include/c++/12/span"],
             harness: "unsigned long probe(std::span<const unsigned char, 32>& s) noexcept { return s.size_bytes(); }",
-            sidecar: "uint64 probe(struct span__const_unsigned_char__value_unsigned_long_32& s) { ensures result == 32u64; } by { execute(); simp(); }".into(),
+            sidecar: "uint64 probe(std::span<const unsigned char, 32>& s) { ensures result == 32u64; } by { execute(); simp(); }".into(),
             refusals: vec![(
-                "uint64 probe(struct span__const_unsigned_char__value_unsigned_long_32& s) { ensures result == 33u64; } by { execute(); simp(); }".into(),
+                "uint64 probe(std::span<const unsigned char, 32>& s) { ensures result == 33u64; } by { execute(); simp(); }".into(),
                 "ensures",
             )],
         },
@@ -3817,7 +3817,7 @@ fn axiomatic_static_extent_span_subviews_verify() {
         harness: "std::span<int> probe(std::span<int, 4>& s) noexcept { return s.first(2); }",
         sidecar: format!(
             "{} probe({STATIC_INT_SPAN}& s) {{ views std_span_data(s); ensures std_span_data(result) == std_span_data(s); ensures std_span_size(result) == 2u64; }} by {{ execute(); simp(); }}",
-            "struct span__int__value_unsigned_long_18446744073709551615"
+            "std::span<int>"
         ),
         refusals: vec![],
     }]);
@@ -3842,7 +3842,7 @@ fn defaulted_span_arguments_import_as_compiler_constants() {
         "{body}"
     );
     // The defaulted count runs to the end of the view.
-    let span = "struct span__int__value_unsigned_long_18446744073709551615";
+    let span = "std::span<int>";
     let source = format!(
         "verifying \"span-probe.cpp\";\n{span} probe({span}& s) {{ views std_span_data(s); views std_span_size(s); requires 1u64 <= std_span_size(s); ensures std_span_data(result) == std_span_data(s) + 1u64; ensures std_span_size(result) == std_span_size(s) - 1u64; }} by {{ execute(); simp(); }}\n"
     );
@@ -3933,7 +3933,7 @@ fn axiomatic_std_array_reference_element_resources_verify() {
             "array-reference-byte-element-write",
             "#include <array>\nunsigned char probe(std::array<unsigned char, 4>& a, unsigned char v) noexcept { a[1] = v; return a[1]; }\n",
             "uint8",
-            "struct array__unsigned_char__value_unsigned_long_4& a, uint8 v".into(),
+            "std::array<unsigned char, 4>& a, uint8 v".into(),
             "result == v and std_array_data(a)[1] == v",
             vec!["owns std_array_data(a)[1];"],
             vec!["views std_array_data(a)[1];", "owns std_array_data(a)[0];"],
@@ -3994,7 +3994,7 @@ fn axiomatic_std_array_size_and_data_verify() {
             name: "array-size",
             dependencies: &["sysroot/usr/include/c++/12/array"],
             harness: "#include <array>\nunsigned long probe(std::array<unsigned char, 32>& a) noexcept { return a.size(); }",
-            sidecar: "uint64 probe(struct array__unsigned_char__value_unsigned_long_32& a) { ensures result == 32u64; } by { execute(); simp(); }".into(),
+            sidecar: "uint64 probe(std::array<unsigned char, 32>& a) { ensures result == 32u64; } by { execute(); simp(); }".into(),
             refusals: vec![],
         },
         GenericSpanCase {
@@ -4046,7 +4046,7 @@ theorem uint64_predecessor_below(n: uint64) {{
         apply(uint64_to_integer_less_equal_implies_less_equal(n - 1u64, n));
     }}
 }}
-int32& {pop_back}(struct span__int__value_unsigned_long_18446744073709551615& span) {{
+int32& {pop_back}(std::span<int>& span) {{
     owns std_span_data(span);
     owns std_span_size(span);
     requires 1u64 <= std_span_size(span);
@@ -4062,7 +4062,7 @@ int32& {pop_back}(struct span__int__value_unsigned_long_18446744073709551615& sp
     execute();
     simp();
 }}
-int32 probe(struct span__int__value_unsigned_long_18446744073709551615& span, int32 input) {{
+int32 probe(std::span<int>& span, int32 input) {{
     owns std_span_data(span);
     owns std_span_size(span);
     owns std_span_data(span)[std_span_size(span) - 1u64];

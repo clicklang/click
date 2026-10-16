@@ -805,8 +805,11 @@ qualification. This restricts writes through that parameter without
 forbidding an alias through a mutable parameter. Diagnostics, claim labels and proof steps name the function as the head
 does: `FeeFrac::IsEmpty`, `FeeFrac::operator+=`, `Restore::Restore`,
 `choose<true>`. A member of a class template instance is written with the
-instance as Clang prints it, every argument spelled:
-`Stored<long long>::Stored(int64 next)`, `int32 Box<SizeTag, true>::Read() const`;
+instance as Clang prints it against its template's parameters, which
+leaves out trailing arguments equal to their defaults and integer
+suffixes: `Stored<long long>::Stored(int64 next)`,
+`int32 Box<SizeTag, true>::Read() const`, `std::span<int>::size`,
+`std::span<int, 4>::size`;
 so are `extern` and named-contract heads, a proof step's callee,
 `step(FeeFrac::IsEmpty(&this->m_feerate.base), { })`, the target of an
 `executes` theorem, and a function's address, `&FeeFrac::EvaluateFeeDown`.
@@ -1136,12 +1139,13 @@ remain distinct. Callable name collisions use the existing injective
 Clang-declaration identity names.
 
 Concrete class-template instances reached through ordinary selected callers
-are written as Clang prints them, every argument spelled, including
+are written as Clang prints them, including
 named empty trivial tag types declared in the locked import root:
-`Box<int, false>` and `Box<SizeTag, true>`. A struct type in a head or
-clause still names the instance's layout as the importer records it,
+`Box<int, false>` and `Box<SizeTag, true>`. A type in a head or clause
+writes a record by its C++ path, `Box<int, false>&`, `ns::Rec*` or
+`std::span<int>&`, or by the layout name the importer records,
 `struct Box__int__bool_false`, from ordered builtin/Boolean argument tokens
-and `__tag_Name` for a tag type.
+and `__tag_Name` for a tag type. Diagnostics still print the layout name.
 Qualified tag names include their namespace components. Clang's canonical USR
 keeps each record, field and method nominally distinct even when layouts match;
 aliases share the canonical instance. Method, constructor and destructor names
@@ -1853,6 +1857,9 @@ contract:
 - A standard function must be `noexcept`; throwing contracts are not modeled.
   One returning a record by value constructs it in the caller's destination.
 
+A sidecar writes a standard type as C++ does,
+`int32 probe(std::span<int>& s)`, `uint64 probe(std::span<const unsigned char, 32>& s)`
+or `std::array<int, 4>& a`.
 Contracts state a standard type's state through model accessors, never
 through a library's private fields. `std_span_data(s)` and `std_span_size(s)`
 name the data pointer and size of a `std::span`, the view of
