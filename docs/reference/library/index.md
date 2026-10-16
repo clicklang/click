@@ -2998,25 +2998,30 @@ one.
 
 ```click
 extern uint64 strlen(const uint8* bytes) {
-    requires cstr::readable(bytes);
-    ensures result < 18446744073709551615u64;
-    ensures viewable(bytes[0..result + 1u64]);
-    ensures forall (k: uint64) { k < result implies bytes[k] != '\0' };
-    ensures bytes[result] == '\0';
-    ensures cstr::readable_len(bytes, result);
-    ensures old(bytes[0]) == '\0' implies result == 0u64;
+    views s: cstr_at(bytes, _);
+    ensures result == s.len;
 }
 ```
 
-**Meaning:** Returns the `size_t` length of a dynamically viewable,
-null-terminated byte string without mutation, as C's `strlen` does. The result satisfies the readable-length relation and
-points at its null terminator; `cstr::readable_len_unique` can connect it to an
-independently framed witness. The separate `old(bytes[0])` consequence retains
-the concrete empty-string guarantee.
+**Meaning:** Returns the `size_t` length of the C string `cstr_at(bytes, len)`
+the caller holds, without mutation, as C's `strlen` does. The value binder
+`s` names the viewed string, and `s.len` its length, which the C signature
+does not carry. A call takes it from the one held `cstr_at` at `bytes`
+(`views`, `owns`, or an owner lending it), or from a call map:
+`{ s: str }` names the caller's own binder and `{ s: cstr_at(bytes, n) }`
+names the instance, which the call assembles from owned bytes and the
+string's facts when the caller holds none. The string's facts (the length is
+below `SIZE_MAX`, no earlier terminator, the terminator at `len`, every byte
+defined) come with the instance, so the result points at its terminator.
+`cstr::readable` alone grants no resource and does not satisfy the call.
 
 **Kind:** external C contract. The declaration is an explicit verification assumption.
 
-**Verified use:** [`mdtests/strlen_of_an_empty_string_and_memcmp_use_the_catalog_contracts.md`](https://github.com/clicklang/click/blob/master/mdtests/strlen_of_an_empty_string_and_memcmp_use_the_catalog_contracts.md) checks its empty-string length consequence.
+**Verified use:** [`mdtests/strlen_of_an_empty_string_and_memcmp_use_the_catalog_contracts.md`](https://github.com/clicklang/click/blob/master/mdtests/strlen_of_an_empty_string_and_memcmp_use_the_catalog_contracts.md) returns zero for `cstr_at(text, 0u64)`;
+[`mdtests/cstr_readable_witness_stated_before_call.md`](https://github.com/clicklang/click/blob/master/mdtests/cstr_readable_witness_stated_before_call.md)
+names the string a call assembles; and
+[`mdtests/cstr_dynamic_indexed_read_requires_permission.md`](https://github.com/clicklang/click/blob/master/mdtests/cstr_dynamic_indexed_read_requires_permission.md)
+refuses a caller that holds only `cstr::readable`.
 
 ## Namespace and extension rules
 

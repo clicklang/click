@@ -6,7 +6,8 @@ library's. This one spells `size_t` as `unsigned long`, the type it names on
 every Click target, and qualifies the parameter itself with `const`, which a
 function's type ignores (C11 6.7.6.3p15). GCC 14 and Clang accept it without
 a diagnostic, and the call binds to the standard-library contract for
-`strlen`, as it does through `<string.h>`.
+`strlen`, as it does through `<string.h>`: it views the caller's string and
+returns its length.
 
 ```c filename=main.c
 unsigned long strlen(const char *const s);
@@ -21,7 +22,8 @@ target "x86_64-linux-userspace";
 verifying "main.c";
 
 uint64 last_index(const char* s) {
-    requires click::cstr::readable(s);
+    views str: click::cstr::cstr_at(s, _);
+    ensures result == str.len;
     ensures s[result] == '\0';
 } by {
     execute();

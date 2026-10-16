@@ -1,4 +1,11 @@
-# Explicitly prove `strlen`'s dynamic readable witness across a local declaration
+# Explicitly prove a dynamic readable witness across a local declaration
+
+The caller's readable-string facts hold at entry, and the `have`s carry them
+past the local declaration to the call: the viewable range by `transport`,
+the definedness of each byte by instantiating the entry fact and
+transporting each instance. The call itself takes the caller's borrowed
+string `cstr_at(bytes, known_len)`, so it returns `known_len` and the C code
+reads the terminator through the string's view.
 
 ```c filename=cstr_dynamic_explicit_have_transport.c
 int32 read_terminator(uint8 bytes[], uint64 known_len) {
@@ -16,7 +23,7 @@ int32 read_terminator(uint8 bytes[], uint64 known_len) {
     requires click::cstr::readable_len(bytes, known_len);
     requires known_len < 18446744073709551615u64;
     requires viewable(bytes[0..known_len + 1u64]);
-    views bytes[0..known_len + 1u64];
+    views click::cstr::cstr_at(bytes, known_len);
     ensures result == '\0' by {
         unfold(click::cstr::readable);
         unfold(click::cstr::readable_len);
@@ -57,21 +64,7 @@ int32 read_terminator(uint8 bytes[], uint64 known_len) {
             witness { len: known_len };
             simp();
         }
-        step();
-        unfold(click::cstr::readable_len);
-        apply(click::cstr::readable_len_unique(
-            bytes,
-            at(statement(2).entry, c(length)),
-            known_len
-        )) using {
-            forall (k: uint64) {
-                k < at(statement(2).entry, c(length)) implies bytes[k] != '\0'
-            };
-            bytes[at(statement(2).entry, c(length))] == '\0';
-            forall (k: uint64) { k < known_len implies bytes[k] != '\0' };
-            bytes[known_len] == '\0';
-        }
-        step();
+        execute();
         simp();
     }
 }

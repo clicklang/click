@@ -1,9 +1,9 @@
 # A caller's C-string requirement reaches `strlen` in a `return` and through a copy
 
-Equivalent C forms verify alike. A caller that requires `cstr::readable`
-discharges `strlen`'s precondition when the call is the returned expression,
-and when the pointer reaches the call through a local copy with no store in
-between.
+Equivalent C forms verify alike. A caller that views a string
+`cstr_at(s, _)` lends it to `strlen` when the call is the returned
+expression, and when the pointer reaches the call through a local copy with
+no store in between.
 
 ```c filename=cstr_return_and_copy.c
 #include <string.h>
@@ -24,7 +24,8 @@ target "x86_64-linux-userspace";
 verifying "cstr_return_and_copy.c";
 
 uint64 returned(const char* s) {
-    requires click::cstr::readable(s);
+    views str: click::cstr::cstr_at(s, _);
+    ensures result == str.len;
     ensures s[result] == '\0';
 } by {
     execute();
@@ -32,7 +33,8 @@ uint64 returned(const char* s) {
 }
 
 uint64 copied(uint8 bytes[]) {
-    requires click::cstr::readable(bytes);
+    views str: click::cstr::cstr_at(bytes, _);
+    ensures result == str.len;
     ensures bytes[result] == '\0';
 } by {
     execute();
