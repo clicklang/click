@@ -5647,6 +5647,50 @@ fn resource_reference_entry_setup_has_near_linear_work() {
     }
 }
 
+/// Each resource clause of a function's entry reads only the parameters it
+/// names, so entry setup over one clause per parameter grows with the
+/// parameters and not with their square (issues/scaling.md, cause 8).
+#[test]
+fn entry_resource_clauses_do_not_rebuild_every_parameter() {
+    let samples = [16usize, 64, 256].map(|count| {
+        let parameters = (0..count)
+            .map(|index| format!("int32 x{index}"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let mut source = format!(
+            "resource token(v: int32) {{ field revision: int32; }}\n\
+             void f({parameters}) {{\n"
+        );
+        for index in 0..count {
+            source.push_str(&format!("owns t{index}: token(x{index});\n"));
+        }
+        source.push_str("}\n");
+        let file = parser::parse(&source).unwrap();
+        let function = &file.function_blocks()[0];
+        let c_function = syntax::parse_function(&format!("void f({parameters}) {{ }}")).unwrap();
+        let arguments = (0..count as u64)
+            .map(|index| {
+                CExpression::Value(CValue::Int32(Bitvector32Term::Variable(Variable(
+                    9_100_000 + index,
+                ))))
+            })
+            .collect::<Vec<_>>();
+        let (context, work) = crate::instrumentation::measure_deterministic_work(|| {
+            crate::surface::lowering::resource_context_from_requirements(
+                function.requires(),
+                ParameterBinding::new(c_function.parameters(), &arguments),
+                &crate::kernel::CState::new(),
+            )
+            .unwrap()
+        });
+        assert_eq!(context.facts().len(), count);
+        (count, work)
+    });
+    for pair in samples.windows(2) {
+        assert!(pair[1].1 <= pair[0].1 * 6, "{samples:?}");
+    }
+}
+
 /// `arithmetic() using` over a chain of listed order facts adds the premises
 /// once each, so its work grows with the chain and not with its square.
 /// Both a signed and an unsigned chain are measured at several lengths.
