@@ -55,7 +55,10 @@ and a resource instance of the same spelling until its block ends, and a
 resource binder hides a fact. The hidden bindings are restored from the same
 log as fact names. In an execution proof, a proof binder may not take a C
 parameter's or C object's name; `intro()` binders keep their `outer.`
-shadowing. The per-kind name sets remain; they are not yet one table.
+shadowing. A step or call result is stored in the proof's local values by
+name, so a later result of the same name replaces it there; only a C local or
+parameter of that name is refused. The per-kind name sets remain; they are
+not yet one table.
 
 This is the first consolidation boundary for
 [`one-name-resolver-and-printer.md`](https://github.com/clicklang/click/blob/master/issues/one-name-resolver-and-printer.md),

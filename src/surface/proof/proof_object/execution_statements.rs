@@ -949,11 +949,14 @@ impl<'a> Proof<'a> {
         let execution = self
             .execution()
             .ok_or_else(|| self.step_error("execution-frontier proof lost its semantic state"))?;
-        if self.state().locals().values.contains_key(name)
-            || execution.core.state.locals().contains_name(name)
+        // The result hides an earlier proof-local value of its name, as any
+        // proof binder does; a C variable of that name stays the program's.
+        if execution.core.state.locals().contains_name(name)
             || context.constants.source_layout.has_parameter_name(name)
         {
-            return Err(self.step_error(format!("step result name `{name}` is already in scope")));
+            return Err(self.step_error(format!(
+                "`{name}` names a C variable here; a proof binder cannot hide it, since execution keeps reading the program's `{name}`; choose another name"
+            )));
         }
         let (_, _, statement, _) = next_top_level_statement_from_frontier_position(
             execution.view(context),
