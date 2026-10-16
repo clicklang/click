@@ -193,3 +193,53 @@ fn native_view_prefix_retains_only_its_order_path() {
         assert!(pair[1].1 <= pair[0].1.saturating_mul(3), "{samples:?}");
     }
 }
+
+#[test]
+fn simp_retains_common_base_pointer_equality_for_load_congruence() {
+    let mut samples = Vec::new();
+    for count in [8u64, 16, 32, 64, 128] {
+        let pointer = |index| Pointer {
+            block: "indexed".into(),
+            offset: PointerOffsetTerm::Int32Scaled {
+                value: Box::new(Bitvector32Term::Variable(Variable(9_340_000 + index))),
+                byte_width: 4,
+            },
+        };
+        let equality =
+            |left, right| Proposition::ConditionIs(ConditionTerm::pointer_equal(left, right), true);
+        let required = equality(pointer(0), pointer(1));
+        let mut context = PureFactContext::new().assume_proposition(required.clone());
+        for index in 2..count {
+            context = context.assume_proposition(equality(pointer(0), pointer(index)));
+        }
+        let memory = intern_c_memory(CMemory::new().with_block("indexed", 4096));
+        let load = |index| {
+            let mut at = pointer(index);
+            at.offset = PointerOffsetTerm::Add(
+                Box::new(at.offset),
+                Box::new(PointerOffsetTerm::Constant(4)),
+            );
+            crate::kernel::canonical_term(&Bitvector32Term::MemoryLoad(
+                memory.clone(),
+                Box::new(at),
+                LoadKind::Bits32,
+            ))
+        };
+        let goal = Proposition::ConditionIs(
+            ConditionTerm::Bitvector32Equal(Box::new(load(0)), Box::new(load(1))),
+            true,
+        );
+        let (derivation, work) = crate::instrumentation::measure_deterministic_work(|| {
+            context.derive_simp_proposition(&goal).unwrap()
+        });
+        assert!(derivation.load_address_congruence_paths().is_some());
+        assert_eq!(derivation.context_premises(), vec![required.clone()]);
+        assert!(derivation.check(&context));
+        assert!(!derivation.check(&context.without_exact_fact(&required)));
+        samples.push((count, work));
+    }
+    for pair in samples.windows(2) {
+        assert!(pair[1].1 <= pair[0].1.saturating_mul(3), "{samples:?}");
+    }
+    assert!(samples.last().unwrap().1 < 4096, "{samples:?}");
+}

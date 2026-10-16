@@ -1449,6 +1449,14 @@ impl PureFactContext {
                 mirrored_premise,
             )));
         }
+        if let Some(premise) = self
+            .equality_graph
+            .exact_pointer_offset_equality_source(left, right)
+        {
+            return Some(PointerOffsetCongruenceEvidence::ExactPremise(Box::new(
+                premise.clone(),
+            )));
+        }
         if let (Some(left), Some(right)) = (
             super::super::exact_wide_scaled_offset_constant(left, self),
             super::super::exact_wide_scaled_offset_constant(right, self),
