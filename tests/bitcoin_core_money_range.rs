@@ -657,9 +657,13 @@ static int64 FeeFrac::Div(int128 n, int32 d, bool round_down) {
                 }
                 cases
             } else if phase == Some(RoundingPhase::TransportRejections) {
+                // The fee bound is stated twice, as an `int64` comparison and
+                // as an integer one; either follows from the other, so the
+                // hostile edit removes both.
                 vec![
-                    source.replace("requires this->fee < 8589934592i64;", ""),
-                    source.replace("requires to_integer(this->fee) <= 8589934591;", ""),
+                    source
+                        .replace("requires this->fee < 8589934592i64;", "")
+                        .replace("requires to_integer(this->fee) <= 8589934591;", ""),
                     source.replace("requires 0 <= to_integer(this->fee);", ""),
                 ]
             } else {
@@ -813,9 +817,12 @@ static int64 FeeFrac::Div(int128 n, int32 d, bool round_down) {
                     source.replace("requires at_size <= this->size;", ""),
                 ]
             } else {
+                // As above, the two statements of the fee bound are removed
+                // together.
                 vec![
-                    source.replace("requires this->fee < 8589934592i64;", ""),
-                    source.replace("requires to_integer(this->fee) <= 8589934591;", ""),
+                    source
+                        .replace("requires this->fee < 8589934592i64;", "")
+                        .replace("requires to_integer(this->fee) <= 8589934591;", ""),
                     source.replace("requires 0 <= to_integer(this->fee);", ""),
                     source.replace(
                         "ensures to_integer(result) == truncating_quotient(",
@@ -1703,9 +1710,11 @@ fn pinned_upstream_money_range_reexports_and_verifies_in_normal_gate() {
     let mut changed_transitive = transitive_bytes.clone();
     changed_transitive.push(b'\n');
     fs::write(&transitive, changed_transitive).unwrap();
+    // A project unit re-reads each rooted input and names the one whose
+    // bytes changed.
     let changed_dependency = load_import(&config_path).unwrap_err();
     assert!(
-        changed_dependency.contains("C++ preprocessor input inventory differs"),
+        changed_dependency.contains("c++/12/limits` differs from its import lock"),
         "{changed_dependency}"
     );
     fs::write(&transitive, transitive_bytes).unwrap();
@@ -1713,12 +1722,14 @@ fn pinned_upstream_money_range_reexports_and_verifies_in_normal_gate() {
 
     let database_path = root.join("compile_commands.json");
     let database_bytes = fs::read_to_string(&database_path).unwrap();
-    let changed_database = database_bytes.replace("-std=c++20", "-std=c++17");
+    // The unit states the command's arguments, so changing one changes the
+    // unit's description, which the lock no longer matches.
+    let changed_database = database_bytes.replace(" -O2 ", " -O1 ");
     assert_ne!(changed_database, database_bytes);
     fs::write(&database_path, changed_database).unwrap();
     let changed_command = load_import(&config_path).unwrap_err();
     assert!(
-        changed_command.contains("C++ compilation database differs"),
+        changed_command.contains("does not match its description"),
         "{changed_command}"
     );
     fs::write(&database_path, database_bytes).unwrap();
@@ -1734,7 +1745,7 @@ fn pinned_upstream_money_range_reexports_and_verifies_in_normal_gate() {
     .unwrap();
     let changed_profile = load_import(&config_path).unwrap_err();
     assert!(
-        changed_profile.contains("C++ import lock does not match the import config"),
+        changed_profile.contains("does not match its description"),
         "{changed_profile}"
     );
     fs::write(&config_path, &config_bytes).unwrap();
@@ -1755,7 +1766,7 @@ fn pinned_upstream_money_range_reexports_and_verifies_in_normal_gate() {
     let stale_selector = load_import(&config_path)
         .expect_err("a rejected selector must not load the old semantic artifact");
     assert!(
-        stale_selector.contains("C++ import lock does not match the import config"),
+        stale_selector.contains("has no source `bitcoin-src/src/policy/feerate.h`"),
         "{stale_selector}"
     );
     fs::write(&config_path, config_bytes).unwrap();
@@ -3434,15 +3445,14 @@ theorem uint64_window_bounds(n: uint64) {{
     simp();
 }}"#
     );
-    let size_bytes =
-        r#"uint64 probe(std::span<unsigned int>& s) {
+    let size_bytes = r#"uint64 probe(std::span<unsigned int>& s) {
     views std_span_size(s);
     ensures result == std_span_size(s) * 4u64;
 } by {
     execute();
     simp();
 }"#
-        .to_string();
+    .to_string();
     check_generic_span_cases(vec![
         GenericSpanCase {
             name: "generic-subspan",
