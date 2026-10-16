@@ -238,9 +238,13 @@ that writes `int32` for such a source already writes the source's spelling.
    is verified there against an `_iface` contract, and the importer packs
    the subclass into the object where a reference converts to the base.
    A mutable receiver or reference may change the state, which its
-   `ensures` read as new and `old(...)` as at entry. Remaining for C++:
-   overriding a defining class's method, constructing polymorphic objects,
-   and virtual destructors.
+   `ensures` read as new and `old(...)` as at entry. A polymorphic local is
+   built by its explicit constructor when the constructor reads no `this`
+   and its base has no fields; the compiler's vtable setup is trusted. A
+   defaulted, implicit or empty virtual destructor only resets the vtable
+   pointer and runs no proof code. Remaining for C++: overriding a defining
+   class's method, virtual destructors with effects, and constructing
+   objects whose base has fields or a constructor.
 
 ## Intended regressions
 

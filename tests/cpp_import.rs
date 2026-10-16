@@ -5637,7 +5637,7 @@ fn terminal_destructor_rejects_throwing_virtual_empty_and_nonterminal_cleanup() 
                 "~RestoreState() noexcept",
                 "virtual ~RestoreState() noexcept",
             ),
-            "public, non-virtual, non-deleted, and explicitly noexcept",
+            "virtual with an empty body",
         ),
         (
             TERMINAL_DESTRUCTOR_SOURCE.replace(
@@ -18359,19 +18359,70 @@ int total(const Shape& shape, int scale) noexcept { return shape.area(scale); }
 ";
 
 // Virtual dispatch is admitted where every override a call may reach is
-// imported and checked, and no object is built: a polymorphic class with one
-// polymorphic base, reached by reference, and a call graph whose dispatch
-// edges, from a virtual method to each override, close no cycle.
+// imported and checked: a polymorphic class with one polymorphic base,
+// reached by reference or built by a constructor that does not read `this`,
+// and a call graph whose dispatch edges, from a virtual method to each
+// override, close no cycle.
 #[test]
-#[ignore = "nightly: 0.6s in the parallel gate"]
+#[ignore = "nightly: 0.8s in the parallel gate"]
 fn virtual_dispatch_refuses_construction_recursion_and_other_class_shapes() {
     for (edits, expected) in [
+        // Construction without a constructor, and constructors that read
+        // `this` while the dynamic type changes or build a nonempty base.
         (
             &[(
                 "{ return shape.area(scale); }",
                 "{ Square square; square.side = 1; return square.area(scale); }",
             )][..],
-            "constructing a polymorphic C++ object remains unsupported",
+            "one public non-default noexcept constructor",
+        ),
+        (
+            &[
+                (
+                    "    int side;\n",
+                    "    int side;\n    explicit Square(int s) noexcept : side(area(s)) {}\n",
+                ),
+                (
+                    "{ return shape.area(scale); }",
+                    "{ Square square(scale); return square.area(scale); }",
+                ),
+            ][..],
+            "without reading `this` and has an empty body",
+        ),
+        (
+            &[
+                (
+                    "    int side;\n",
+                    "    int side;\n    explicit Square(int s) noexcept : side(s) { side = s; }\n",
+                ),
+                (
+                    "{ return shape.area(scale); }",
+                    "{ Square square(scale); return square.area(scale); }",
+                ),
+            ][..],
+            "without reading `this` and has an empty body",
+        ),
+        (
+            &[
+                ("= 0; };", "= 0;\n    explicit Shape(int) noexcept {}\n};"),
+                (
+                    "    int side;\n",
+                    "    int side;\n    explicit Square(int s) noexcept : Shape(s), side(s) {}\n",
+                ),
+                (
+                    "{ return shape.area(scale); }",
+                    "{ Square square(scale); return square.area(scale); }",
+                ),
+            ][..],
+            "polymorphic base with no fields or constructors of its own",
+        ),
+        // A virtual destructor that runs code.
+        (
+            &[(
+                "= 0; };",
+                "= 0;\n    virtual ~Shape() noexcept { int unused = 0; (void)unused; }\n};",
+            )][..],
+            "virtual with an empty body",
         ),
         // A call back through the interface from an override.
         (
