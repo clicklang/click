@@ -1,7 +1,7 @@
 use super::*;
 
 fn crate_project() -> Project {
-    let p = Project::legacy("");
+    let p = Project::isolated("");
     fs::create_dir(p.root.join("src")).unwrap();
     for (name, source) in [
         (
@@ -149,7 +149,7 @@ fn rust_crate_rejects_escape_symlink_and_changed_configuration() {
 #[test]
 #[ignore = "requires the pinned live Charon extractor"]
 fn charon_adler2_locked_crate_imports_compute_and_proves_constants() {
-    let p = Project::legacy("");
+    let p = Project::isolated("");
     for (name, bytes) in [
         (
             "lib.rs",
@@ -209,7 +209,7 @@ fn charon_adler2_locked_crate_imports_compute_and_proves_constants() {
 #[test]
 #[ignore = "nightly: live compiler/extraction checks measured at 10–20 s"]
 fn rust_crate_constructor_bodies_return_owned_field_values() {
-    let p = Project::legacy("");
+    let p = Project::isolated("");
     let source = r#"
         pub mod inner {
             pub struct Value { pub a: u32, pub b: u32 }
@@ -290,7 +290,7 @@ fn rust_crate_constructor_bodies_return_owned_field_values() {
 #[test]
 #[ignore = "requires the pinned live Charon extractor"]
 fn charon_adler2_unchanged_constructor_returns_initialized_state() {
-    let p = Project::legacy("");
+    let p = Project::isolated("");
     fs::write(
         p.root.join("lib.rs"),
         include_bytes!("../../design/charon-trial/adler2/src/lib.rs"),
@@ -334,7 +334,7 @@ fn charon_adler2_unchanged_constructor_returns_initialized_state() {
 #[test]
 #[ignore = "nightly: 20s in the parallel gate"]
 fn rust_crate_owned_operator_operands_copy_and_move_independently() {
-    let p = Project::legacy("");
+    let p = Project::isolated("");
     let source = r#"
         #[derive(Copy, Clone)]
         pub struct Packet { pub words: [u32; 4] }
@@ -421,7 +421,7 @@ fn rust_crate_owned_operator_operands_copy_and_move_independently() {
 #[test]
 #[ignore = "nightly: 15s in the parallel gate"]
 fn rust_crate_scalar_constants_execute_checked_initializers() {
-    let p = Project::legacy("");
+    let p = Project::isolated("");
     let source = r#"
         pub mod left { pub const MOD: u32 = 65521; pub fn read() -> u32 { MOD } }
         pub mod right { pub const MOD: u32 = 7; pub fn read() -> u32 { MOD } }

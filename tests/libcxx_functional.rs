@@ -9,10 +9,13 @@ use std::path::PathBuf;
 use std::process::Command;
 
 use click::cli::read_click_project;
-use click::languages::cpp::{PreparedCppImport, load_import, refresh_import};
+use click::languages::cpp::PreparedCppImport;
+#[path = "support/cpp_description.rs"]
+mod cpp_description;
 use click::surface::{
     ProgramInputs, expand_project_claim_source_by_label, verify_program_prepared_project,
 };
+use cpp_description::{load_import, refresh_import};
 
 #[path = "support/pinned_clang.rs"]
 mod pinned_clang;
@@ -80,7 +83,7 @@ fn import(
         "source": "callback.cpp", "logical_source": "callback.cpp", "dependencies": [],
         "function": function, "artifact": "callback.click-cpp.json"
     });
-    let config_path = root.join("callback.click.import.json");
+    let config_path = root.join("callback.import-description.json");
     fs::write(&config_path, serde_json::to_vec_pretty(&config).unwrap()).unwrap();
     refresh_import(&config_path)?;
     fs::remove_file(exporter).unwrap();

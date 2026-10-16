@@ -7,12 +7,15 @@ use std::process::Command;
 
 use click::cli::read_click_project;
 use click::instrumentation::{self, VerificationEvent};
-use click::languages::cpp::{PreparedCppImport, load_import, refresh_import};
+use click::languages::cpp::PreparedCppImport;
+#[path = "support/cpp_description.rs"]
+mod cpp_description;
 use click::surface::{
     C0VerificationSession, expand_project_claim_source_by_label, expand_project_tactic_source_at,
     project_smart_tactic_source_sites, project_tactic_source_position,
     verify_program_prepared_project,
 };
+use cpp_description::{load_import, lock_entry_mut, refresh_import};
 #[path = "support/pinned_clang.rs"]
 mod pinned_clang;
 use pinned_clang::{output, pinned_clang, sha256};
@@ -237,7 +240,7 @@ fn check_upstream_cpp_rounding_phase(
             config["exporter"] = exporter.to_str().unwrap().into();
         }
     }
-    let config_path = root.join(format!("{name}.click.import.json"));
+    let config_path = root.join(format!("{name}.import-description.json"));
     fs::write(&config_path, serde_json::to_vec_pretty(&config).unwrap()).unwrap();
     let sidecar = root.join(format!("{name}.click"));
     fs::write(&sidecar, source).unwrap();
@@ -255,7 +258,7 @@ fn check_upstream_cpp_rounding_phase(
         );
         click::languages::cpp::lower_import(&import).unwrap();
         let artifact: serde_json::Value =
-            serde_json::from_slice(&fs::read(root.join(format!("{name}.click-cpp.json"))).unwrap())
+            serde_json::from_slice(&fs::read(cpp_description::artifact(&config_path)).unwrap())
                 .unwrap();
         let initializer = &artifact["functions"][0]["body"]
             .as_array()
@@ -266,8 +269,8 @@ fn check_upstream_cpp_rounding_phase(
         assert_eq!(initializer["kind"], "call");
         assert_eq!(initializer["conversions"][0]["cast_kind"], "no_op");
         assert_eq!(initializer["conversions"][0]["value_type"]["bits"], 64);
-        assert!(root.join(format!("{name}.click-cpp.json")).exists());
-        assert!(root.join(format!("{name}.click.import.json.lock")).exists());
+        assert!(cpp_description::artifact(&config_path).exists());
+        assert!(root.join(click::project::LOCK_NAME).exists());
         fs::remove_dir_all(root).unwrap();
         return;
     }
@@ -280,8 +283,8 @@ fn check_upstream_cpp_rounding_phase(
                 "the real template, Boolean temporary, and source_location must reach the string_view boundary: {error}"
             );
         }
-        assert!(!root.join(format!("{name}.click-cpp.json")).exists());
-        assert!(!root.join(format!("{name}.click.import.json.lock")).exists());
+        assert!(!cpp_description::artifact(&config_path).exists());
+        assert!(!root.join(click::project::LOCK_NAME).exists());
         fs::remove_dir_all(root).unwrap();
         return;
     }
@@ -1182,7 +1185,7 @@ fn pinned_span_fixture_with_exact_dependencies(
     let dependencies = config["dependencies"].as_array_mut().unwrap();
     dependencies.extend(declaration_dependencies.iter().map(|path| (*path).into()));
     dependencies.sort_by(|a, b| a.as_str().cmp(&b.as_str()));
-    let config_path = root.join("span.click.import.json");
+    let config_path = root.join("span.import-description.json");
     fs::write(&config_path, serde_json::to_vec_pretty(&config).unwrap()).unwrap();
     refresh_import(&config_path).unwrap();
     fs::remove_file(exporter).unwrap();
@@ -1316,8 +1319,8 @@ fn pinned_byte_template_metadata_and_span_authority_are_checked() {
         "#include <span.h>\ntemplate<class T> struct Holder { int value; };\nint probe(const Holder<std::byte>& h) noexcept { return h.value; }\n",
         &["sysroot/usr/include/c++/12/cstddef"],
     );
-    let artifact_path = root.join("span.click-cpp.json");
-    let lock_path = root.join("span.click.import.json.lock");
+    let artifact_path = cpp_description::artifact(&root.join("span.import-description.json"));
+    let lock_path = root.join(click::project::LOCK_NAME);
     let artifact: serde_json::Value =
         serde_json::from_slice(&fs::read(&artifact_path).unwrap()).unwrap();
     let lock: serde_json::Value = serde_json::from_slice(&fs::read(&lock_path).unwrap()).unwrap();
@@ -1364,12 +1367,12 @@ fn pinned_byte_template_metadata_and_span_authority_are_checked() {
         }
         let bytes = serde_json::to_vec_pretty(&forged).unwrap();
         let mut forged_lock = lock.clone();
-        forged_lock["artifact_sha256"] = sha256(&bytes).into();
-        forged_lock["artifact_bytes"] = bytes.len().into();
+        lock_entry_mut(&mut forged_lock)["artifact_sha256"] = sha256(&bytes).into();
+        lock_entry_mut(&mut forged_lock)["artifact_bytes"] = bytes.len().into();
         fs::write(&artifact_path, bytes).unwrap();
         fs::write(&lock_path, serde_json::to_vec_pretty(&forged_lock).unwrap()).unwrap();
         assert!(
-            load_import(&root.join("span.click.import.json")).is_err(),
+            load_import(&root.join("span.import-description.json")).is_err(),
             "mutation {change}"
         );
     }
@@ -1477,7 +1480,7 @@ fn pinned_upstream_money_range_reexports_and_verifies_in_normal_gate() {
     fs::write(root.join("compile_commands.json"), database).unwrap();
     let exporter = std::env::var("CLICK_CPP_EXPORTER")
         .expect("scripts/check.sh supplies the pinned C++ exporter");
-    let config_path = root.join("MoneyRange.click.import.json");
+    let config_path = root.join("MoneyRange.import-description.json");
     let config = serde_json::json!({
         "schema": 6,
         "language": "c++",
@@ -4158,8 +4161,8 @@ fn pinned_std_byte_pointer_artifacts_reject_forged_declarations_offline() {
         "#include <span.h>\nstd::byte probe(std::byte* p) noexcept { return *p; }\n",
         &["sysroot/usr/include/c++/12/cstddef"],
     );
-    let artifact_path = root.join("span.click-cpp.json");
-    let lock_path = root.join("span.click.import.json.lock");
+    let artifact_path = cpp_description::artifact(&root.join("span.import-description.json"));
+    let lock_path = root.join(click::project::LOCK_NAME);
     let artifact: serde_json::Value =
         serde_json::from_slice(&fs::read(&artifact_path).unwrap()).unwrap();
     let lock: serde_json::Value = serde_json::from_slice(&fs::read(&lock_path).unwrap()).unwrap();
@@ -4213,12 +4216,12 @@ fn pinned_std_byte_pointer_artifacts_reject_forged_declarations_offline() {
         }
         let bytes = serde_json::to_vec_pretty(&forged).unwrap();
         let mut forged_lock = lock.clone();
-        forged_lock["artifact_sha256"] = sha256(&bytes).into();
-        forged_lock["artifact_bytes"] = bytes.len().into();
+        lock_entry_mut(&mut forged_lock)["artifact_sha256"] = sha256(&bytes).into();
+        lock_entry_mut(&mut forged_lock)["artifact_bytes"] = bytes.len().into();
         fs::write(&artifact_path, bytes).unwrap();
         fs::write(&lock_path, serde_json::to_vec_pretty(&forged_lock).unwrap()).unwrap();
         assert!(
-            load_import(&root.join("span.click.import.json")).is_err(),
+            load_import(&root.join("span.import-description.json")).is_err(),
             "mutation {change}"
         );
     }
@@ -4229,7 +4232,7 @@ fn pinned_std_byte_pointer_artifacts_reject_forged_declarations_offline() {
     header_bytes.extend_from_slice(b"\n// substituted standard header\n");
     fs::write(root.join(header), &header_bytes).unwrap();
     let mut forged_lock = lock;
-    forged_lock["dependencies"][header] = sha256(&header_bytes).into();
+    lock_entry_mut(&mut forged_lock)["dependencies"][header] = sha256(&header_bytes).into();
     fs::write(
         &artifact_path,
         serde_json::to_vec_pretty(&artifact).unwrap(),
@@ -4238,10 +4241,10 @@ fn pinned_std_byte_pointer_artifacts_reject_forged_declarations_offline() {
     // Preserve the original artifact bytes hashed by the lock, rather than
     // relying on JSON formatting to round-trip byte-for-byte.
     let restored = fs::read(&artifact_path).unwrap();
-    forged_lock["artifact_sha256"] = sha256(&restored).into();
-    forged_lock["artifact_bytes"] = restored.len().into();
+    lock_entry_mut(&mut forged_lock)["artifact_sha256"] = sha256(&restored).into();
+    lock_entry_mut(&mut forged_lock)["artifact_bytes"] = restored.len().into();
     fs::write(&lock_path, serde_json::to_vec_pretty(&forged_lock).unwrap()).unwrap();
-    let error = load_import(&root.join("span.click.import.json")).unwrap_err();
+    let error = load_import(&root.join("span.import-description.json")).unwrap_err();
     assert!(
         error.contains("std::byte declaration header differs"),
         "{error}"
@@ -4298,8 +4301,8 @@ fn pinned_std_byte_reinterpreted_call_result_preserves_pointer_identity_offline(
         &import,
         "verifying \"span-probe.cpp\"; uint32* echo(uint32* p) { ensures result == p; } by { execute(); simp(); } uint8* probe(uint32* p) { ensures result == (uint8*)p; } by { execute(); simp(); }",
     );
-    let artifact_path = root.join("span.click-cpp.json");
-    let lock_path = root.join("span.click.import.json.lock");
+    let artifact_path = cpp_description::artifact(&root.join("span.import-description.json"));
+    let lock_path = root.join(click::project::LOCK_NAME);
     let artifact: serde_json::Value =
         serde_json::from_slice(&fs::read(&artifact_path).unwrap()).unwrap();
     let lock: serde_json::Value = serde_json::from_slice(&fs::read(&lock_path).unwrap()).unwrap();
@@ -4318,12 +4321,12 @@ fn pinned_std_byte_reinterpreted_call_result_preserves_pointer_identity_offline(
         }
         let bytes = serde_json::to_vec_pretty(&forged).unwrap();
         let mut forged_lock = lock.clone();
-        forged_lock["artifact_sha256"] = sha256(&bytes).into();
-        forged_lock["artifact_bytes"] = bytes.len().into();
+        lock_entry_mut(&mut forged_lock)["artifact_sha256"] = sha256(&bytes).into();
+        lock_entry_mut(&mut forged_lock)["artifact_bytes"] = bytes.len().into();
         fs::write(&artifact_path, bytes).unwrap();
         fs::write(&lock_path, serde_json::to_vec_pretty(&forged_lock).unwrap()).unwrap();
         assert!(
-            load_import(&root.join("span.click.import.json")).is_err(),
+            load_import(&root.join("span.import-description.json")).is_err(),
             "mutation {change}"
         );
     }

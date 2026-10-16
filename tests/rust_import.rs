@@ -1,4 +1,3 @@
-use click::languages::rust::{load_import, refresh_import};
 use click::surface::C0VerificationSession;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -35,18 +34,10 @@ impl Project {
         .unwrap();
         p
     }
-    /// A sidecar with its own legacy import config, which the library-level
-    /// loaders still read.
-    fn legacy(source: &str) -> Self {
-        let p = Self::isolated(source);
-        let root = &p.root;
-        let exporter =
-            std::env::var("CLICK_CHARON").expect("build-charon.sh supplies CLICK_CHARON");
-        fs::write(root.join("borrow.click.import.json"), serde_json::to_vec(&serde_json::json!({"schema":3,"language":"rust","target":"x86_64-unknown-linux-gnu","source":"borrow.rs","exporter":exporter,"artifact":"borrow.ullbc"})).unwrap()).unwrap();
-        p
-    }
+    /// Where a test writes an import description in the per-sidecar config
+    /// format of earlier releases, for [`Project::adopt_config`] to translate.
     fn config(&self) -> PathBuf {
-        self.root.join("borrow.click.import.json")
+        self.root.join("borrow.import-description.json")
     }
     /// Replaces the legacy import config with the equivalent project unit:
     /// the config's source, and its crate description when it has one.
@@ -72,7 +63,6 @@ impl Project {
         )
         .unwrap();
         fs::remove_file(self.config()).unwrap();
-        let _ = fs::remove_file(self.root.join("borrow.click.import.json.lock"));
     }
     /// The project file as JSON, and its one unit's name.
     fn project_json(&self) -> (serde_json::Value, String) {
@@ -109,9 +99,6 @@ impl Project {
     /// units when the project has a project file, otherwise through the
     /// per-sidecar import config.
     fn prepared(&self) -> Result<click::languages::rust::PreparedRustImport, String> {
-        if !self.project_file().exists() {
-            return load_import(&self.config());
-        }
         let sidecar = self.root.join("borrow.click");
         let source = fs::read_to_string(&sidecar).unwrap();
         if source
@@ -151,23 +138,13 @@ impl Project {
             .any(|unit| unit["sources"].get(source).is_some())
     }
     fn refresh(&self) -> Result<(), String> {
-        if !self.project_file().exists() {
-            return refresh_import(&self.config());
-        }
         click::project::Project::load(&self.project_file())?.lock()
     }
     fn lock_file(&self) -> PathBuf {
-        if self.project_file().exists() {
-            self.root.join("click.project.lock.json")
-        } else {
-            self.root.join("borrow.click.import.json.lock")
-        }
+        self.root.join(click::project::LOCK_NAME)
     }
     /// The prepared artifact of the Rust source `source`.
     fn artifact(&self, source: &str) -> PathBuf {
-        if !self.project_file().exists() {
-            return self.root.join(source.replace(".rs", ".ullbc"));
-        }
         let project: serde_json::Value =
             serde_json::from_slice(&fs::read(self.project_file()).unwrap()).unwrap();
         let (unit, _) = project["units"]
@@ -2939,12 +2916,12 @@ fn rust_arrays_coerce_to_byte_slices_with_lengths_and_authority() {
     ] {
         assert!(C0VerificationSession::new_program_prepared(&incorrect, &prepared).is_err());
     }
-    let overflow = Project::legacy(
+    let overflow = Project::new(
         &include_str!("../examples/rust-array-slices/arrays.rs")
             .replace("[3u8, 5, 9]", "[255u8, 5, 9]"),
     );
-    refresh_import(&overflow.config()).unwrap();
-    let overflow_prepared = load_import(&overflow.config()).unwrap();
+    overflow.refresh().unwrap();
+    let overflow_prepared = overflow.prepared().unwrap();
     let error = C0VerificationSession::new_program_prepared(&sidecar, &overflow_prepared)
         .err()
         .expect("overflow must be rejected");
@@ -3454,12 +3431,12 @@ fn rust_slice_for_sum_verifies_and_expands() {
     let sidecar =
         include_str!("../examples/rust-iterators/sum.click").replace("sum.rs", "borrow.rs");
     C0VerificationSession::new_program_prepared(&sidecar, &prepared).unwrap();
-    let copied_iter = Project::legacy(
+    let copied_iter = Project::new(
         &include_str!("../examples/rust-iterators/sum.rs")
             .replace("in bytes {", "in bytes.iter() {"),
     );
-    refresh_import(&copied_iter.config()).unwrap();
-    let copied_prepared = load_import(&copied_iter.config()).unwrap();
+    copied_iter.refresh().unwrap();
+    let copied_prepared = copied_iter.prepared().unwrap();
     C0VerificationSession::new_program_prepared(&sidecar, &copied_prepared).unwrap();
     for invalid in [
         sidecar.replace(
