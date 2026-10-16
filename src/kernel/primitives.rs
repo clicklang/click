@@ -1086,6 +1086,12 @@ struct CPointerQualifiers {
     constant: bool,
     extent: Option<SubobjectExtent>,
     extent_known: bool,
+    /// The class of the object the pointer was formed to designate, from the
+    /// declaration that produced it (`design/effective-types.md`). It is not
+    /// part of the value's identity, and it survives casts, `void *`,
+    /// arithmetic and copies, so an access through any later spelling is
+    /// checked against it.
+    object_class: Option<crate::kernel::effective_type::CAccessClass>,
     local_reference: Option<super::loans::LocalScalarReference>,
 }
 
@@ -1283,6 +1289,24 @@ impl CPointerValue {
         let qualifiers = Arc::make_mut(self.qualifiers.get_or_insert_with(Default::default));
         qualifiers.extent = None;
         qualifiers.extent_known = true;
+        self
+    }
+
+    pub(crate) fn object_class(&self) -> Option<crate::kernel::effective_type::CAccessClass> {
+        self.qualifiers.as_ref()?.object_class
+    }
+
+    /// Records the class of the object the pointer designates. A pointer
+    /// that already carries one keeps it: the first declaration that formed
+    /// the pointer names the object, and a later typed spelling does not.
+    pub(crate) fn with_object_class(
+        mut self,
+        object_class: Option<crate::kernel::effective_type::CAccessClass>,
+    ) -> Self {
+        if object_class.is_some() && self.object_class().is_none() {
+            Arc::make_mut(self.qualifiers.get_or_insert_with(Default::default)).object_class =
+                object_class;
+        }
         self
     }
 
@@ -2043,6 +2067,12 @@ pub struct CLValue {
     pub(super) opaque_extent: Option<Arc<Pointer>>,
     pub(super) extent: Option<Arc<SubobjectExtent>>,
     pub(super) designation: Option<Arc<Pointer>>,
+    /// The class of the lvalue's type, which the access uses, when the
+    /// frontend supplied one.
+    pub(super) access_class: Option<crate::kernel::effective_type::CAccessClass>,
+    /// The class of the object the pointer this lvalue was reached through
+    /// designates.
+    pub(super) object_class: Option<crate::kernel::effective_type::CAccessClass>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
@@ -2159,6 +2189,9 @@ pub enum CExpression {
         volatile: bool,
         /// Qualification of a loaded pointer's pointee, not of this cell.
         pointee_constant: bool,
+        /// The class of the lvalue's C type, which the access uses, when the
+        /// frontend supplied one (`design/effective-types.md`).
+        access_class: Option<crate::kernel::effective_type::CAccessClass>,
         /// Source provenance is presentation metadata only. Its comparison
         /// traits intentionally ignore the value.
         source: CExpressionLoadSource,
@@ -3316,6 +3349,9 @@ pub enum CStatement {
         /// elements follow as ordinary stores. Absent, the object is
         /// uninitialized.
         zero_fill: Option<CZeroFill>,
+        /// The class of the object, or of its elements, when the kernel type
+        /// cannot give it (`design/effective-types.md`).
+        declared_class: Option<crate::kernel::effective_type::CAccessClass>,
     },
     /// Declare an address-backed scalar-only aggregate. Aggregate values are
     /// not runtime `CValue`s; their local binding exposes the block base so
@@ -3401,6 +3437,9 @@ pub enum CStatement {
         pointer: CExpression,
         value: CExpression,
         value_type: CType,
+        /// The class of the stored lvalue when `value_type` erases it; see
+        /// [`CExpression::TypedLoad::access_class`].
+        access_class: Option<crate::kernel::effective_type::CAccessClass>,
         /// See [`CExpression::TypedLoad::volatile`].
         volatile: bool,
         /// The destination pointer cell's declared pointee qualification.
@@ -3615,6 +3654,9 @@ pub struct CParameter {
     pub(super) pointee_volatile: bool,
     pub(super) constant: bool,
     pub(super) pointee_constant: bool,
+    /// The class of the object a pointer parameter's declaration says it
+    /// designates, when the frontend supplied one.
+    pub(super) pointee_class: Option<crate::kernel::effective_type::CAccessClass>,
 }
 
 /// A linked file-scope scalar. Globals use one stable memory block across all
@@ -5139,6 +5181,14 @@ pub enum CUndefinedBehavior {
     /// designates (C11 6.5.6p8, C++ [expr.add]): `*(&pair.first + 1)` is
     /// one past `first`, not `second`, though both name the same address.
     SubobjectAccess,
+    /// A read or write through an lvalue whose type may not access the
+    /// object (C11 6.5p7): a `long` read through a `long long *`, or an
+    /// `int **` cell read as `long *`. GCC at `-O2` assumes it never happens
+    /// (`design/effective-types.md`).
+    IncompatibleAccess {
+        access: crate::kernel::effective_type::CAccessClass,
+        object: crate::kernel::effective_type::CAccessClass,
+    },
 }
 
 impl CUndefinedBehavior {
@@ -5163,6 +5213,13 @@ impl CUndefinedBehavior {
             Self::OnePastEndComparison => "comparison of a one-past-the-end pointer with the start \
                  of another object: whether the two objects are adjacent is unspecified"
                 .to_string(),
+            Self::IncompatibleAccess { access, object } => format!(
+                "an object of type `{}` accessed through an lvalue of type `{}`: an object may \
+                 be accessed only through its own type, up to signedness and qualifiers, or a \
+                 character type (C11 6.5p7), and GCC at -O2 assumes nothing else happens",
+                object.spelling(),
+                access.spelling()
+            ),
         }
     }
 }
@@ -6369,6 +6426,10 @@ pub struct CBlock {
     /// its representation has been initialized. Untyped blocks and arrays
     /// carry no scalar declaration.
     pub(super) declared_scalar_type: Option<CType>,
+    /// The declared class of every element of the block's object, for a
+    /// declared scalar or an array of one scalar type. An access through any
+    /// pointer is checked against it (`design/effective-types.md`).
+    pub(super) declared_class: Option<crate::kernel::effective_type::CAccessClass>,
 }
 
 /// An interned, immutable memory snapshot for embedding inside terms.
@@ -11057,6 +11118,10 @@ impl ReasoningPolicy {
 
 #[derive(Clone, Debug, Default)]
 pub struct PureFactContext {
+    /// Debug builds only: the width each variable of this context's facts is
+    /// used at (`term_width.rs`). Two facts combine only within one context,
+    /// so a variable must keep one width within it. Not part of equality.
+    pub(super) variable_widths: imbl::OrdMap<Variable, CarrierWidth>,
     /// Shared ordered projection used when checked paths publish this context.
     pub(super) execution_fact_projection: super::execution_facts::ContextFacts,
     /// Persistent syntax adjacency for atomic certificate planning. Unlike
@@ -11066,13 +11131,6 @@ pub struct PureFactContext {
     pub(super) atomic_ground_facts: crate::persistent::PersistentSet<SharedIndexFact<Proposition>>,
     pub(super) atomic_quantified_facts:
         crate::persistent::PersistentSet<SharedIndexFact<Proposition>>,
-    /// True 64-bit equalities as an undirected adjacency map, derived
-    /// incrementally from `condition_facts`. Unchanged branches share it;
-    /// inserting an equality updates only its two endpoints.
-    pub(super) bitvector64_equality_facts: crate::persistent::PersistentMap<
-        Bitvector32Term,
-        crate::persistent::PersistentMap<Bitvector32Term, ConditionTerm>,
-    >,
     pub(super) condition_facts: crate::persistent::PersistentMap<ConditionTerm, bool>,
     pub(super) signed_variable_chains: super::assumptions::variable_chains::VariableChains,
     /// Incremental adjacency for conditions whose variables can be read
@@ -11131,28 +11189,6 @@ pub struct PureFactContext {
     /// (`docs/internals/verification-efficiency.md`), the fast path condition evaluation
     /// asks before the general decision.
     pub(super) difference_graph: super::difference_graph::ContextDifferenceGraph,
-    /// True `Bitvector32Equal` and `Bitvector64Equal` facts that pin a term
-    /// to a constant, keyed by that term and carrying, per fact, the constant
-    /// it names. Derived incrementally from `condition_facts`; ordered by
-    /// fact so the first entry is the one a scan of `condition_facts` in its
-    /// own order would find (`exact_signed_constant`).
-    /// The equality classes of the true `Bitvector32Equal` facts, each with
-    /// the constant its members are proved to denote. Derived incrementally
-    /// from `condition_facts`, so a term's constant after equality
-    /// normalization is a class lookup rather than a walk over every fact
-    /// the term is connected to.
-    pub(super) constant_classes: super::assumptions::ConstantClasses,
-    /// True int32 equalities filed under their exact written endpoints.
-    /// Fact order preserves the direct constant walk's deterministic choice;
-    /// no memory canonicalization, pointer-offset edges, or arithmetic folding.
-    pub(super) direct_bitvector_equalities: crate::persistent::PersistentMap<
-        Bitvector32Term,
-        crate::persistent::PersistentMap<ConditionTerm, Bitvector32Term>,
-    >,
-    pub(super) exact_constant_equalities: crate::persistent::PersistentMap<
-        Bitvector32Term,
-        crate::persistent::PersistentMap<ConditionTerm, i64>,
-    >,
     /// What an exact fact says about the null-ness of a pointer, keyed by
     /// that pointer's offset term and carrying the block the fact named
     /// together with the fact itself. Derived incrementally from
@@ -11167,39 +11203,6 @@ pub struct PureFactContext {
         PointerOffsetTerm,
         crate::persistent::PersistentMap<(PointerBlock, bool), ConditionTerm>,
     >,
-    /// Exact equalities between two pointers of *different* blocks, indexed
-    /// under each side and carrying the fact that states them. An equality
-    /// inside one block is a `PointerOffsetEqual` that never reaches this
-    /// index (`ConditionTerm::pointer_equal`), so an entry here always says
-    /// that two block spellings name one address. Derived incrementally from
-    /// `condition_facts`, like every other index above, so asking what one
-    /// pointer is proved equal to is a keyed lookup rather than a scan of
-    /// every pointer comparison the path happens to hold.
-    /// Original alignment premises, retained for graph reconstruction only.
-    pub(super) pointer_alignment_facts: crate::persistent::PersistentMap<(Pointer, u64), ()>,
-    pub(super) pointer_block_aliases: crate::persistent::PersistentMap<
-        Pointer,
-        crate::persistent::PersistentMap<Pointer, ConditionTerm>,
-    >,
-    /// The keys of `pointer_block_aliases` again, filed under each
-    /// pointer's offset term. A same-block comparison names only its two
-    /// offsets, so this is what recovers, by one keyed lookup, the block
-    /// spellings an offset was proved equal to across blocks.
-    pub(super) pointer_block_aliases_by_offset: crate::persistent::PersistentMap<
-        PointerOffsetTerm,
-        crate::persistent::PersistentSet<Pointer>,
-    >,
-    /// Cross-block alias endpoints grouped by object. External arguments
-    /// use their offset stem, since all parameters share one block; other
-    /// blocks use one bucket. Derived incrementally from exact aliases.
-    pub(super) pointer_alias_endpoints_by_object:
-        crate::persistent::PersistentMap<Pointer, crate::persistent::PersistentSet<Pointer>>,
-    /// Pointer-address endpoints of full-width equalities, by object.
-    /// Lets store framing follow address copies without scanning size facts.
-    pub(super) wide_pointer_alias_endpoints_by_object: crate::persistent::PersistentMap<
-        Pointer,
-        crate::persistent::PersistentSet<Bitvector32Term>,
-    >,
     /// Trusted persistent equality closure for pointers, offsets, and int32
     /// terms. Appended on insertion; withdrawal rebuilds from exact equality
     /// indexes, preserving the remaining support in every fragment.
@@ -11208,54 +11211,6 @@ pub struct PureFactContext {
     /// premise. Exact persistent roots identify the unchanged fact frontier.
     pub(super) pointer_value_undo: Option<Arc<super::assumptions::PointerValueUndo>>,
     pub(super) restoring_pointer_graph: Option<Arc<super::equality_graph::EqualityGraph>>,
-    /// Value-level pointer origins. C address comparisons never enter this graph.
-    pub(super) pointer_address_sources: crate::persistent::PersistentMap<
-        ConditionTerm,
-        crate::persistent::PersistentSet<ConditionTerm>,
-    >,
-    pub(super) designation_graph: super::pointer_designations::ValueClasses<Pointer>,
-    pub(super) extent_graph: super::pointer_designations::ValueClasses<Pointer>,
-    pub(super) pointer_value_classes: super::pointer_designations::ValueClasses<CPointerValue>,
-    pub(super) pointer_value_equalities:
-        crate::persistent::PersistentSet<(CPointerValue, CPointerValue)>,
-    pub(super) algebraic_graph_equalities:
-        crate::persistent::PersistentMap<(SharedPureApplication, SharedPureApplication), usize>,
-    pub(super) congruence_conditions: crate::persistent::PersistentMap<ConditionTerm, bool>,
-    /// Exact defining equations for pointer-typed reads issued on this path,
-    /// indexed by their load variable. Producer metadata certifies the C
-    /// value's type; the equation supplies its snapshot and address. Both
-    /// are required before a graph query may use the read as a bridge.
-    pub(super) typed_pointer_read_definitions: crate::persistent::PersistentMap<
-        Variable,
-        crate::persistent::PersistentMap<((u32, u32), Pointer), (Pointer, SharedCMemory)>,
-    >,
-    pub(super) uint64_graph_equalities: crate::persistent::PersistentMap<
-        (
-            super::equality_graph::MachineAtom,
-            super::equality_graph::MachineAtom,
-        ),
-        usize,
-    >,
-    /// Counts exact int32 premises supporting each canonical oriented edge.
-    /// Several spellings can support one edge; withdrawal removes one support.
-    pub(super) int32_graph_equalities: crate::persistent::PersistentMap<
-        (
-            super::equality_graph::MachineAtom,
-            super::equality_graph::MachineAtom,
-        ),
-        usize,
-    >,
-    /// Normalized same-block pointer equalities, indexed under each offset.
-    pub(super) pointer_offset_aliases: crate::persistent::PersistentMap<
-        PointerOffsetTerm,
-        crate::persistent::PersistentSet<PointerOffsetTerm>,
-    >,
-    /// `pointer_offset_aliases` again, keyed by the alias offset's root atom
-    /// (`resource_algebra::offset_root_atom`).
-    pub(super) pointer_offset_aliases_by_root: crate::persistent::PersistentMap<
-        Option<PointerOffsetTerm>,
-        crate::persistent::PersistentSet<(PointerOffsetTerm, PointerOffsetTerm)>,
-    >,
     /// Addresses of the first elements of two separated memory ranges of
     /// one block, keyed by the unordered pair and carrying the separation
     /// facts that state it. Mirrors `memory_separation_facts` under a key a
@@ -11316,14 +11271,6 @@ pub struct PureFactContext {
     /// without deciding them.
     pub(super) memory_load_condition_facts:
         std::sync::Arc<std::sync::OnceLock<BTreeMap<(PointerBlock, u64), BTreeSet<ConditionTerm>>>>,
-    /// True bitvector and int32-scaled pointer-offset equalities, indexed as
-    /// an undirected adjacency graph whose edges retain one exact source
-    /// proposition. Memory-load vertices use their
-    /// assumption-free canonical memory-load term. Derived lazily from
-    /// `condition_facts` and shared by unchanged clones.
-    pub(super) bitvector_equality_facts: std::sync::Arc<
-        std::sync::OnceLock<BTreeMap<Bitvector32Term, BTreeMap<Bitvector32Term, Proposition>>>,
-    >,
     /// A persistent set: a context is cloned and extended by one fact at
     /// each lowering path and planning probe, so an extension must copy
     /// only a search path, not the whole set.
@@ -11334,14 +11281,6 @@ pub struct PureFactContext {
     /// A context built in bulk from a fact list defers the keys until the
     /// index is first asked for (see `StatedPropositionIndex`).
     pub(super) stated_proposition_index: super::assumptions::StatedPropositionIndex,
-    /// Exact equalities between two applications of one algebraic
-    /// constructor, indexed by each field equality they entail. Both levels
-    /// are persistent so adding one proof fact changes logarithmically many
-    /// nodes instead of cloning an ambient fact table.
-    pub(super) algebraic_constructor_field_equalities: crate::persistent::PersistentMap<
-        Proposition,
-        crate::persistent::PersistentMap<(Proposition, usize), ()>,
-    >,
     /// Exact equalities between distinct checked constructors. Any such fact
     /// makes the context inconsistent by constructor disjointness.
     pub(super) algebraic_constructor_conflicts: crate::persistent::PersistentMap<Proposition, ()>,
@@ -11408,13 +11347,18 @@ pub struct PureFactContext {
     pub(super) nonmemory_separation_facts: std::sync::Arc<Vec<Proposition>>,
     pub(super) content_fingerprint: u64,
     pub(super) reasoning_policy: ReasoningPolicy,
+    /// At least the greatest execution-range variable any fact filed here
+    /// mentions; see `ExecutionVariableCeiling`. Not part of the context's
+    /// equality or hash.
+    pub(super) execution_variable_ceiling: super::assumptions::ExecutionVariableCeiling,
 }
 
 impl PartialEq for PureFactContext {
     fn eq(&self, other: &Self) -> bool {
         self.content_fingerprint == other.content_fingerprint
             && self.condition_facts == other.condition_facts
-            && self.typed_pointer_read_definitions == other.typed_pointer_read_definitions
+            && self.equality_graph.admitted.typed_pointer_read_definitions
+                == other.equality_graph.admitted.typed_pointer_read_definitions
             && self.prop_facts == other.prop_facts
             && self.resource_compositions == other.resource_compositions
             && self.store_owners == other.store_owners
@@ -12274,6 +12218,10 @@ pub(super) struct KernelVariableGenerator<'scope> {
     reserved: BTreeSet<Variable>,
     shared_reserved: Option<ReservedVariableSets>,
     deferred_reserved: Option<Box<dyn FnOnce() -> BTreeSet<Variable> + 'scope>>,
+    /// An execution stream allocates only above this: every identity up to
+    /// it is reserved without being listed (a fact context's
+    /// `execution_variable_ceiling`).
+    reserved_through: Option<Variable>,
 }
 
 impl<'scope> KernelVariableGenerator<'scope> {
@@ -12288,6 +12236,7 @@ impl<'scope> KernelVariableGenerator<'scope> {
             reserved: existing,
             shared_reserved: None,
             deferred_reserved: None,
+            reserved_through: None,
         }
     }
 
@@ -12301,6 +12250,7 @@ impl<'scope> KernelVariableGenerator<'scope> {
             reserved: existing,
             shared_reserved: None,
             deferred_reserved: None,
+            reserved_through: None,
         }
     }
 
@@ -12313,6 +12263,7 @@ impl<'scope> KernelVariableGenerator<'scope> {
             reserved: existing,
             shared_reserved: Some(shared_reserved.into()),
             deferred_reserved: None,
+            reserved_through: None,
         }
     }
 
@@ -12326,6 +12277,12 @@ impl<'scope> KernelVariableGenerator<'scope> {
             Self::fresh_for_execution_with_shared_reservations(BTreeSet::new(), shared_reserved);
         generator.deferred_reserved = Some(Box::new(collect));
         generator
+    }
+
+    /// Reserves every identity up to `ceiling` for the execution stream.
+    pub(super) fn reserving_through(mut self, ceiling: Option<Variable>) -> Self {
+        self.reserved_through = self.reserved_through.max(ceiling);
+        self
     }
 
     fn prepare_reservations(&mut self) {
@@ -12377,6 +12334,9 @@ impl<'scope> KernelVariableGenerator<'scope> {
             "a term-local fresh-variable stream must not allocate from an execution budget"
         );
         self.prepare_reservations();
+        if let Some(ceiling) = self.reserved_through {
+            budget.skip_kernel_variables_through(ceiling);
+        }
         loop {
             let variable = budget.allocate_kernel_variable()?;
             let shared_contains = self

@@ -10,6 +10,7 @@ impl CParameter {
             pointee_volatile: false,
             constant: false,
             pointee_constant: false,
+            pointee_class: None,
         }
     }
 
@@ -59,6 +60,20 @@ impl CParameter {
     pub fn with_pointee_constant(mut self, pointee_constant: bool) -> Self {
         self.pointee_constant = pointee_constant;
         self
+    }
+
+    /// The class of the object a pointer parameter designates
+    /// (`design/effective-types.md`).
+    pub fn with_pointee_class(
+        mut self,
+        pointee_class: Option<crate::kernel::effective_type::CAccessClass>,
+    ) -> Self {
+        self.pointee_class = pointee_class;
+        self
+    }
+
+    pub fn pointee_class(&self) -> Option<crate::kernel::effective_type::CAccessClass> {
+        self.pointee_class
     }
 
     pub fn with_aggregate_layout(mut self, layout: CAggregateLayout) -> Self {

@@ -2587,20 +2587,18 @@ impl<'a> Proof<'a> {
                         negate_click_proposition(branch_condition)
                     });
             }
-            let mut arm_facts = self.facts().to_vec();
-            let base_facts = arm_facts.len();
-            let feasible = introduce_proof_case_assumption(
+            let Some(added_fact) = introduce_proof_case_assumption(
                 &mut arm_execution,
                 &tactic_context,
-                &mut arm_facts,
+                self.facts(),
                 base_execution.core.has_structured_branch_history,
                 condition,
                 &lowering_condition,
                 value,
-            )?;
-            if !feasible {
+            )?
+            else {
                 continue;
-            }
+            };
             // Record where this proof-level case split sits in the path's
             // surface record, exactly as the checked form recorded it.
             if arm_execution.presentation.surface_record.blocker.is_none() {
@@ -2623,7 +2621,7 @@ impl<'a> Proof<'a> {
                         tactic_offset,
                     });
             }
-            let added = arm_facts[base_facts..].to_vec();
+            let added = added_fact.into_iter().collect::<Vec<_>>();
             let mut facts = self.facts().clone();
             for fact in &added {
                 facts = facts.with_kernel_checked_fact(fact.clone());

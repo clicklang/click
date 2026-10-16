@@ -408,17 +408,23 @@ restate a `long`. A pointer alias, `typedef struct node *node_ptr;` or
 written before it qualifies the pointer itself, as in C: `const node_ptr` is
 `struct node *const`. A parameter of a function-pointer alias is written
 with the alias, `int apply(unary f, int x)` for `typedef int (*unary)(int);`,
-and has the alias's exact signature. A head writes the C type of an array,
-union, volatile or aligned alias, of a function-pointer alias anywhere but
-as a parameter's whole type, and of a name two verified sources alias to
-different types. A standard spelling such as `size_t` or `uint32_t` keeps its
+and has the alias's exact signature. A parameter of a scalar array alias is
+written with the alias, `int first(triple values)` for `typedef int
+triple[3];`, and means `int values[3]`: C passes it as a pointer to its
+first element, and the alias's length bounds the bytes the head declares.
+The C front end adjusts such a parameter to a pointer whether the source
+writes the alias or the array declarator, so either head spelling restates
+it. A head writes the C type of a union, volatile or aligned alias, of an
+array or function-pointer alias anywhere but as a parameter's whole type,
+and of a name two verified sources alias to different types. A standard spelling such as `size_t` or `uint32_t` keeps its
 meaning even when a source typedefs it. A specification position writes
 Click's type, not a typedef name. See
 `mdtests/a_function_head_writes_the_source_typedef_names.md`,
 `mdtests/a_head_typedef_keeps_its_long_long_rank.md`,
 `mdtests/a_function_head_writes_pointer_typedef_names.md`,
 `mdtests/a_function_head_writes_function_pointer_typedef_names.md`,
-`mdtests/an_array_typedef_is_written_as_its_type_in_a_head.md` and
+`mdtests/a_function_head_writes_array_typedef_names.md`,
+`mdtests/c_typedef_array_parameter_is_adjusted_to_a_pointer.md` and
 `mdtests/a_specification_writes_click_types_not_typedef_names.md`.
 
 The GNU `__extension__` marker before a file-scope declaration suppresses a
@@ -1671,8 +1677,20 @@ function: `requires Adds(f, { amount: k });`. A call through `f` then binds
 `amount` to `k` beside the call's arguments. Passing `&add3` where
 `Adds(f, { amount: 3 })` is needed checks `add3`'s contract against `Adds`
 with `amount` fixed to `3`. An unknown, missing, or repeated name is refused.
-A refinement or execution theorem cannot yet conclude a contract with value
-parameters; formation at `&f` checks it automatically.
+A refinement theorem may conclude a contract with value parameters, fixing
+them as an attachment does: `ensures Adds(&add3, { amount: 3 }) by {
+unfold(Adds); simp(); }`, whose `unfold(Adds)` opens the obligation with
+`amount` bound to `3`. An abstract refinement fixes the values of both its
+source fact and its conclusion, `requires Adds(f, { amount: 3 }); ensures
+Shifts(f, { offset: 3 })`. See
+`mdtests/named_contract_value_parameter_refinement_theorem.md` and
+`mdtests/named_contract_value_parameter_contract_refinement_theorem.md`. An
+execution theorem fixes them the same way, `theorem t() executes add3(int32
+x) { ensures Adds(&add3, { amount: 3 }) by { step(); simp(); } }` or, from a
+source fact, `requires Adds(f, { amount: 3 }); ensures Shifts(f, { offset: 3
+})`: its one checked call is proved with the target's value parameters at
+the conclusion's values
+(`mdtests/named_contract_value_parameter_execution_theorem.md`).
 
 A top-level `contract` block defines a reusable behavioral interface without
 declaring a concrete C function:
@@ -2022,6 +2040,31 @@ its truth, or converting it to an integer or `_Bool` (including implicitly at
 an assignment, a `return`, or a call argument) is undefined behavior. Reading,
 storing, or reassigning the pointer variable is not a use; `free(p); p = 0;`
 is fine. See [Undefined behavior](../../concepts/undefined-behavior.md).
+
+An object may be read or written only through its own type, up to signedness
+and qualifiers, or through a character type (C11 6.5p7). GCC at `-O2` assumes
+nothing else happens, so Click refuses such an access even when a `void *`
+round trip hides the conversion from the frontend. The object's type comes
+from its declaration: a local or local array, or a pointer parameter's
+pointee type. A pointer read from memory designates an object of its own
+pointee type unless it carries the declaration that formed it. `long` and
+`long long` are distinct, and so are pointer types with different pointees,
+signedness included: `unsigned long **` may not read a `long *` cell. `void *`
+cells may be read through any pointer type and the reverse. The diagnostic
+names both types
+(`mdtests/a_long_read_through_a_long_long_pointer_is_refused.md`,
+`mdtests/a_declared_long_read_through_a_long_long_pointer_is_refused.md`,
+`mdtests/a_byte_buffer_read_through_a_uint32_pointer_is_refused.md`,
+`mdtests/a_pointer_cell_read_through_a_pointer_of_other_signedness_is_refused.md`,
+`mdtests/an_unsigned_read_of_a_signed_object_is_allowed.md`,
+`mdtests/a_character_view_of_an_int_is_allowed.md`). Stores are checked
+the same way
+(`mdtests/a_store_through_a_pointer_of_another_rank_is_refused.md`,
+`mdtests/an_indexed_store_through_a_pointer_of_another_rank_is_refused.md`,
+`mdtests/stores_through_the_objects_own_type_are_allowed.md`). The check does not yet
+cover struct members, `int *` and `int **` pointers, local byte arrays,
+globals, or heap objects;
+the effective-type design (`design/effective-types.md`) stages them next.
 
 Automatic scalar, pointer, and array declarations do not zero-initialize their
 storage. Reading a local before a value has been written is undefined behavior.

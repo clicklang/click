@@ -878,7 +878,9 @@ fn contract_refinement_targets(file: &ClickFile, theorem_name: &str) -> BTreeSet
         if !contract_names.contains(name.as_str()) {
             continue;
         }
-        let [argument] = arguments.as_slice() else {
+        // Contract value parameters follow the function pointer. They do
+        // not change which function's interface the refinement depends on.
+        let Some(argument) = arguments.first() else {
             continue;
         };
         if let Some(target) = contract_expression_function_address(argument) {
@@ -4368,7 +4370,7 @@ pub(in crate::surface) fn c0_statement_calls(
             }
             | syntax::C0Expression::Not(expression)
             | syntax::C0Expression::BitwiseNot(expression)
-            | syntax::C0Expression::Load(expression)
+            | syntax::C0Expression::Load(expression, _)
             | syntax::C0Expression::SequentialRead {
                 target: expression, ..
             } => {
@@ -4405,7 +4407,7 @@ pub(in crate::surface) fn c0_statement_calls(
             | syntax::C0Expression::BitwiseAnd(left, right)
             | syntax::C0Expression::BitwiseOr(left, right)
             | syntax::C0Expression::BitwiseXor(left, right)
-            | syntax::C0Expression::Index(left, right) => {
+            | syntax::C0Expression::Index(left, right, _) => {
                 collect_function_addresses(left, names);
                 collect_function_addresses(right, names);
             }

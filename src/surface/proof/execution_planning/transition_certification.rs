@@ -1743,6 +1743,7 @@ mod condition_transition_tests {
             value_type: CType::Int32,
             volatile: false,
             pointee_constant: false,
+            access_class: None,
             source: crate::kernel::CExpressionLoadSource::new(crate::kernel::LoadSourceId {
                 owner: crate::kernel::LoadSourceOwnerId {
                     source_unit: std::sync::Arc::from("bad.c"),
@@ -1801,6 +1802,7 @@ mod condition_transition_tests {
             value_type: CType::Int32,
             volatile: false,
             pointee_constant: false,
+            access_class: None,
             source: source(0),
         };
         let second = CExpression::TypedLoad {
@@ -1808,6 +1810,7 @@ mod condition_transition_tests {
             value_type: CType::Int32,
             volatile: false,
             pointee_constant: false,
+            access_class: None,
             source: source(1),
         };
         assert_eq!(first, second);

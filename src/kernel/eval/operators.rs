@@ -5062,6 +5062,37 @@ pub(in crate::kernel) fn subobject_access_refusal(
         .then_some(CUndefinedBehavior::SubobjectAccess)
 }
 
+/// The strict-aliasing check of an access through `lvalue` at `pointer`
+/// (`design/effective-types.md`). A block's declared class is authoritative;
+/// otherwise the class the pointer carries from the declaration that formed
+/// it is used. An access whose class, or whose object's class, is unknown is
+/// not checked.
+pub(in crate::kernel) fn effective_type_refusal(
+    memory: &CMemory,
+    pointer: &Pointer,
+    lvalue: &CLValue,
+) -> Option<CUndefinedBehavior> {
+    effective_type_refusal_of(
+        memory,
+        pointer,
+        lvalue.access_class(),
+        lvalue.object_class(),
+    )
+}
+
+/// [`effective_type_refusal`] given the lvalue's two classes.
+pub(in crate::kernel) fn effective_type_refusal_of(
+    memory: &CMemory,
+    pointer: &Pointer,
+    access: Option<crate::kernel::effective_type::CAccessClass>,
+    object_class: Option<crate::kernel::effective_type::CAccessClass>,
+) -> Option<CUndefinedBehavior> {
+    let access = access?;
+    let object = memory.declared_class(pointer).or(object_class)?;
+    (!access.may_access(object))
+        .then_some(CUndefinedBehavior::IncompatibleAccess { access, object })
+}
+
 /// The formation guards a pointer arithmetic result owes to its operand's
 /// subobject extent. A result whose position cannot be related to the
 /// extent is refused outright.

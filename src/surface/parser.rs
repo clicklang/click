@@ -23,6 +23,14 @@ pub(super) fn has_valid_source_tokens(source: &str) -> bool {
 use super::*;
 use claim_labels::{ClaimClauseKind, flattened_claim_ids};
 
+/// Modules brought into scope by full library paths, before declaration
+/// parsing. Expansion can replace a qualified resource with its bare name,
+/// so it must preserve this part of the original file's library context.
+pub(super) fn library_path_modules(source: &str) -> Result<BTreeSet<&'static str>, ClickError> {
+    let (tokens, positions) = tokenizer::tokenize(source, None)?;
+    library_paths::resolve_library_paths(tokens, positions, None).map(|(_, _, modules)| modules)
+}
+
 #[derive(Clone, Debug)]
 pub(super) struct QualifiedCObject {
     pub expression: CExpression,
@@ -4453,6 +4461,44 @@ impl Parser {
                     _ => return Err(self.error("expected `,` or `)` after a parameter")),
                 }
             }
+            // `triple values` for a C array typedef, `int values[3]`.
+            if let Some((element, length, constant)) = self.parse_c_array_typedef()? {
+                let name = self.expect_ident("parameter name")?;
+                let parsed_type = ParsedType {
+                    c_type: element,
+                    struct_name: None,
+                    struct_pointer: false,
+                    constant,
+                    pointee_constant: false,
+                    reference: false,
+                };
+                let parsed_parameter = self.array_parameter(name, parsed_type, Some(length))?;
+                if let Some(bytes) = parsed_parameter.declared_bytes {
+                    declared_loadable_bytes.push((parsed_parameter.parameter.name.clone(), bytes));
+                }
+                parameters.push(parsed_parameter.parameter);
+                match self.peek() {
+                    Some(Token::Comma) => {
+                        self.position += 1;
+                        continue;
+                    }
+                    Some(Token::RParen) => {
+                        return Ok(ParsedParameters {
+                            parameters,
+                            struct_params,
+                            struct_array_params,
+                            reference_params,
+                            declared_loadable_bytes,
+                        });
+                    }
+                    _ => {
+                        return Err(self.error(
+                            "expected `,` or `)` after a parameter of an array typedef, \
+                             which already has its length",
+                        ));
+                    }
+                }
+            }
             let parsed_type = self.parse_type()?;
             let parsed_parameter = if self.peek() == Some(&Token::LParen) {
                 let (name, c_type, function_pointer_signature) =
@@ -4706,9 +4752,9 @@ impl Parser {
                     } = *typedef
                     else {
                         return Err(self.error(format!(
-                            "the typedef `{spelling}` stands for an array, union, or volatile or \
-                             aligned type, or for different types in two verified sources, or is \
-                             a function pointer written other than as a parameter's type; a head \
+                            "the typedef `{spelling}` stands for a union, or volatile or aligned \
+                             type, or for different types in two verified sources, or is an array \
+                             or function pointer written other than as a parameter's type; a head \
                              writes its C type"
                         )));
                     };
@@ -4965,6 +5011,30 @@ impl Parser {
         Ok(Some(callable))
     }
 
+    /// A parameter type that is a scalar array typedef name of the verified
+    /// C source, `triple values`: its element type, length and element
+    /// `const`. `None`, with nothing consumed, for any other type.
+    fn parse_c_array_typedef(&mut self) -> Result<Option<(C0Type, u32, bool)>, ClickError> {
+        let Some(name) = self.peek_ident() else {
+            return Ok(None);
+        };
+        let Some(syntax::C0HeadTypedef::Array {
+            element,
+            length,
+            constant,
+        }) = self.c_typedefs.get(name)
+        else {
+            return Ok(None);
+        };
+        if !matches!(self.peek_next(), Some(Token::Ident(_))) {
+            return Ok(None);
+        }
+        let array = (*element, *length, *constant);
+        self.check_head_typedef(name)?;
+        self.position += 1;
+        Ok(Some(array))
+    }
+
     /// A C++ `std::function<R(A...)>` parameter type, possibly `const` and
     /// taken by reference: the callable type of its signature. `None`, with
     /// nothing consumed, when the type is not one.
@@ -5152,6 +5222,28 @@ impl Parser {
                 struct_array: true,
             });
         }
+        self.position += 1;
+        let length = match self.peek() {
+            Some(Token::Number(length)) => {
+                let length = *length;
+                self.position += 1;
+                Some(length)
+            }
+            _ => None,
+        };
+        self.expect(Token::RBracket)?;
+        self.array_parameter(name, parsed_type, length)
+    }
+
+    /// A scalar array parameter, `int values[3]`, which C passes as a
+    /// pointer to its first element; `length`, when written, bounds the
+    /// bytes the head declares.
+    fn array_parameter(
+        &self,
+        name: String,
+        parsed_type: ParsedType,
+        length: Option<u32>,
+    ) -> Result<ParsedParameter, ClickError> {
         let (pointer_type, element_width) = match parsed_type.c_type {
             C0Type::Int8 => (C0Type::Int8Pointer, 1),
             C0Type::Int16 => (C0Type::Int16Pointer, 2),
@@ -5177,14 +5269,7 @@ impl Parser {
             C0Type::UInt128Pointer => (C0Type::UInt128PointerPointer, 8),
             _ => return Err(self.error("only scalar array parameters are supported")),
         };
-
-        self.position += 1;
-        let mut declared_bytes = None;
-        if let Some(Token::Number(length)) = self.peek() {
-            declared_bytes = length.checked_mul(element_width);
-            self.position += 1;
-        }
-        self.expect(Token::RBracket)?;
+        let declared_bytes = length.and_then(|length| length.checked_mul(element_width));
         Ok(ParsedParameter {
             parameter: FunctionParameter {
                 click_type: ClickType::C(pointer_type),
@@ -10847,6 +10932,7 @@ impl Parser {
                 value_type: element_type,
                 volatile: false,
                 pointee_constant: false,
+                access_class: None,
                 source: Default::default(),
             }));
             return Ok(vec![ContractSegment {
@@ -11345,6 +11431,7 @@ impl Parser {
                     value_type: field.c_type.to_kernel_type(),
                     volatile: false,
                     pointee_constant: field.pointee_constant,
+                    access_class: None,
                     source: Default::default(),
                 },
                 start: CExpression::Value(int32(0)),
@@ -11400,6 +11487,7 @@ impl Parser {
             value_type: field.c_type.to_kernel_type(),
             volatile: false,
             pointee_constant: field.pointee_constant,
+            access_class: None,
             source: Default::default(),
         })
     }
@@ -12256,6 +12344,7 @@ impl Parser {
                                         value_type: crate::kernel::CType::Int32,
                                         volatile: false,
                                         pointee_constant: false,
+                                        access_class: None,
                                         source: Default::default(),
                                     }
                                 }
@@ -12817,6 +12906,7 @@ impl Parser {
                         value_type,
                         volatile: false,
                         pointee_constant: false,
+                        access_class: None,
                         source: Default::default(),
                     },
                 ));
@@ -12832,6 +12922,7 @@ impl Parser {
                     value_type,
                     volatile: false,
                     pointee_constant: false,
+                    access_class: None,
                     source: Default::default(),
                 },
             });
@@ -13509,7 +13600,7 @@ impl Parser {
                     self.position += 1;
                     let index = self.parse_ensure_expression()?;
                     self.expect(Token::RBracket)?;
-                    expression = C0Expression::Index(Box::new(expression), Box::new(index));
+                    expression = C0Expression::Index(Box::new(expression), Box::new(index), None);
                 }
                 Some(Token::Arrow | Token::Dot) => {
                     self.position += 1;
@@ -13517,7 +13608,7 @@ impl Parser {
                     let base = expression;
                     expression = self
                         .resolve_c0_field_load(base.clone(), &field_name)?
-                        .unwrap_or_else(|| C0Expression::Load(Box::new(base)));
+                        .unwrap_or_else(|| C0Expression::Load(Box::new(base), None));
                 }
                 _ => unreachable!("postfix expression token checked above"),
             }
@@ -13539,6 +13630,7 @@ impl Parser {
                     C0Expression::Index(
                         Box::new(carrier),
                         Box::new(C0Expression::Int32Literal(0)),
+                        None,
                     )
                 })
             }
@@ -14097,6 +14189,7 @@ fn lowered_field_expression(pointer: CExpression, field: &ResolvedField) -> CExp
             value_type: field.c_type.to_kernel_type(),
             volatile: false,
             pointee_constant: field.pointee_constant,
+            access_class: None,
             source: Default::default(),
         }
     }

@@ -27,6 +27,7 @@ pub const RESOURCE_SEMANTICS_VERSION: u32 = 71;
 
 pub(crate) mod assumptions;
 mod difference_graph;
+pub(crate) mod effective_type;
 mod equality_graph;
 mod eval;
 mod fold_read_summary;

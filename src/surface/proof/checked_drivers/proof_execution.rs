@@ -11,11 +11,6 @@ thread_local! {
     /// Whether a driver declined because the arm that continues past a split
     /// ran out of tactics before the function exits.
     static SHORT_OF_EXIT_DECLINED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
-    /// Why the checked linear driver declined the last written operation it
-    /// could not run, such as the premise an `apply` was missing, so the
-    /// terminal diagnostic names it instead of only the proof shape.
-    static DECLINED_OPERATION: std::cell::RefCell<Option<ClickError>> =
-        const { std::cell::RefCell::new(None) };
     /// The deepest region depth the structural driver entered, for the
     /// depth-accounting regression tests.
     #[cfg(test)]
@@ -69,43 +64,10 @@ pub(in crate::surface::proof) fn take_region_depth_decline() -> bool {
     REGION_DEPTH_DECLINED.with(|declined| declined.replace(false))
 }
 
-/// Declines a written operation for a stated reason, recorded for the
-/// terminal diagnostic.
-#[track_caller]
-fn decline_operation<T>(operation: String, reason: &ClickError) -> Result<Option<T>, ClickError> {
-    DECLINED_OPERATION.with(|declined| {
-        *declined.borrow_mut() = Some(
-            reason
-                .clone()
-                .with_context(format!("{operation} was refused")),
-        );
-    });
-    decline()
-}
-
-/// Takes the reason the checked linear driver last declined a written
-/// operation for, and clears it.
-pub(in crate::surface::proof) fn take_declined_operation() -> Option<ClickError> {
-    DECLINED_OPERATION.with(|declined| declined.borrow_mut().take())
-}
-
 /// Takes the recorded decline locations, in order.
 pub(in crate::surface::proof) fn take_driver_declines()
 -> Vec<&'static std::panic::Location<'static>> {
     DRIVER_DECLINES.with(|declines| std::mem::take(&mut *declines.borrow_mut()))
-}
-
-/// The explicit proof step written by a simple tactic in an execution arm. A
-/// source `step()` is the bare statement step; the other simple tactic forms
-/// map as themselves.
-fn arm_proof_step(tactic: &ProofTactic) -> Option<ProofStep> {
-    match tactic {
-        ProofTactic::Step => Some(ProofStep::Step),
-        ProofTactic::StepContract(name) => Some(ProofStep::StepContract(name.clone())),
-        ProofTactic::StepBind(name) => Some(ProofStep::StepBind(name.clone())),
-        ProofTactic::StepCall(transport) => Some(ProofStep::StepCall(transport.clone())),
-        tactic => linear_execution_proof_step(tactic),
-    }
 }
 
 /// Whether a tactic only relates facts and resources at the frontier where it
@@ -724,7 +686,11 @@ pub(in crate::surface::proof) fn apply_source_step_proofs<'a>(
     }
 }
 
-fn checked_linear_continuation_tactic(tactic: &ProofTactic) -> bool {
+/// Whether a written tactic runs at an execution frontier that has not
+/// reached the function exit. The linear continuation hands the first tactic
+/// outside this set, with its suffix, to the outcome driver; an arm refuses
+/// it.
+fn frontier_admits(tactic: &ProofTactic) -> bool {
     linear_execution_proof_step(tactic).is_some()
         || closes_loop_invariants(tactic)
         || matches!(tactic, ProofTactic::Choose(_) | ProofTactic::LetSatisfy(_))
@@ -942,6 +908,158 @@ fn checked_structural_execution_branch_supported(
         || checked_execution_region_pair_is_mixed(then_branch, else_branch)
 }
 
+/// Applies one written tactic at an execution frontier that has not reached
+/// the function exit. The linear continuation, a focused execution arm and a
+/// loop's `preserve` body all run their frontier tactics through this one
+/// function, so a tactic means the same thing in each; the contexts differ
+/// only in which tactics they admit ([`frontier_admits`]) and in what they do
+/// at the function exit. `Ok(None)` declines the proof shape.
+fn apply_frontier_source_tactic<'a>(
+    proof: Proof<'a>,
+    indexed: &IndexedTactic,
+    mut expansion_capture: Option<&mut ExpansionCapture>,
+    proof_site: Option<&ProofSite>,
+    owning_source_index: usize,
+    timing_claim_label: Option<&str>,
+) -> Result<Option<Proof<'a>>, ClickError> {
+    // Each tactic is its own source operation: time it under its source site
+    // so the profiler charges its work to the tactic rather than to shared
+    // verifier work.
+    let statement_index = proof.execution_frontier_index().unwrap_or_default();
+    let _timing = timing_claim_label.and_then(|claim_label| {
+        TacticTiming::new(
+            claim_label,
+            indexed.index,
+            indexed.source_index,
+            &indexed.tactic,
+            statement_index,
+        )
+    });
+    let checkpoint = proof.checkpoint();
+    let next = if matches!(indexed.tactic, ProofTactic::CloseInvariants) {
+        proof.apply_close_invariants_body(&[ProofTactic::Simp])?
+    } else if let Some(step) = linear_execution_proof_step(&indexed.tactic) {
+        proof
+            .apply_step_at(step, indexed.source_index)
+            .inspect_err(|_| {
+                if matches!(indexed.tactic, ProofTactic::TransportUsing { .. }) {
+                    proof.record_certification_failure_trace(proof.claim_label(), 0);
+                }
+            })?
+    } else if let ProofTactic::StepProved {
+        step,
+        proof: step_proof,
+    } = &indexed.tactic
+    {
+        apply_source_step_proofs(&proof, step, step_proof, indexed.index)?
+    } else if let ProofTactic::CloseInvariantsBy(body) = &indexed.tactic {
+        proof.apply_close_invariants_body(body)?
+    } else if let ProofTactic::Choose(choice) = &indexed.tactic {
+        proof.apply_step_at(ProofStep::Choose(choice.clone()), indexed.source_index)?
+    } else if let ProofTactic::LetSatisfy(binding) = &indexed.tactic {
+        proof.apply_step_at(ProofStep::LetSatisfy(binding.clone()), indexed.source_index)?
+    } else if let ProofTactic::ApplyTheorem(application) = &indexed.tactic {
+        // A written `apply` is a commitment, not a speculative search: its
+        // refusal is the premise it was missing, not a declined shape.
+        proof
+            .apply_theorem_application(application)
+            .map_err(|error| {
+                if crate::instrumentation::deadline_exceeded() {
+                    return error;
+                }
+                let written = crate::surface::printing::format_partial_tactic_sequence(
+                    std::slice::from_ref(&indexed.tactic),
+                );
+                error.with_context(format!(
+                    "`{}` was refused",
+                    written.trim().trim_end_matches(';')
+                ))
+            })?
+    } else if let ProofTactic::Transport { source, target } = &indexed.tactic {
+        match proof.try_execution_fact_transport(source, target)? {
+            Some(transported) => transported,
+            None => proof.apply_planned_fact_transport(source, target, indexed.index)?,
+        }
+    } else if let ProofTactic::Have(have) = &indexed.tactic {
+        let nested = proof.begin_source_have(have)?;
+        let goal = nested.goal().cloned();
+        let mut failed_check = None;
+        let selected = solve_nested_have(nested, have, &mut failed_check)
+            .map_err(|error| {
+                source_have_error(
+                    &proof,
+                    have,
+                    indexed.index,
+                    goal.as_ref(),
+                    Some(error),
+                    false,
+                )
+            })?
+            .ok_or_else(|| {
+                source_have_error(
+                    &proof,
+                    have,
+                    indexed.index,
+                    goal.as_ref(),
+                    failed_check.take(),
+                    true,
+                )
+            })?;
+        selected.join()?
+    } else if let ProofTactic::ExecuteUntil(region) = &indexed.tactic {
+        match proof.try_execute_until(region)? {
+            Some(executed) => executed,
+            None => {
+                return Err(
+                    proof.step_error("`execute_until` found no checked step from this frontier")
+                );
+            }
+        }
+    } else if matches!(indexed.tactic, ProofTactic::SmartExecute) {
+        match proof.try_execute_to_exit()? {
+            Some(executed) => executed,
+            None => {
+                return Err(proof.step_error(
+                    "`execute()` found no checked path from this frontier to function exit",
+                ));
+            }
+        }
+    } else if let ProofTactic::Loop(clause) = &indexed.tactic {
+        // A frontier-local loop is one checked operation; its expansion
+        // capture and surface record are handled inside the operation.
+        proof.apply_frontier_local_loop(
+            expansion_capture.as_deref_mut(),
+            clause,
+            indexed.index,
+            indexed.source_index,
+        )?
+    } else {
+        return decline();
+    };
+    // Observe the source tactic's limit before its timing scope ends, so a
+    // completed checked operation cannot hand control to a later tactic after
+    // exhausting its own budget.
+    check_verification_deadline()?;
+    // Generated certificates retain the source index of the smart operation
+    // that produced them. Their nested steps are part of that operation's
+    // already-recorded branch certificate, not independent expansions of the
+    // same source occurrence.
+    if indexed.source_index != owning_source_index
+        && !matches!(indexed.tactic, ProofTactic::Loop(_))
+        && let Some(site) = proof_site
+        && capture_selects_source(expansion_capture.as_deref(), site, indexed.source_index)
+    {
+        let certificate = next.certificate_since(&checkpoint)?;
+        record_proof_site_tactic_expansion(
+            expansion_capture,
+            site,
+            indexed.source_index,
+            &certificate.to_proof_tactics(),
+        );
+    }
+    Ok(Some(next))
+}
+
 /// Advances the checked linear prefix following a structural branch. Every
 /// accepted explicit or smart operation returns the next Proof directly; the
 /// first unsupported tactic and its suffix remain untouched for the
@@ -959,150 +1077,29 @@ fn advance_checked_linear_continuation<'a>(
         return decline();
     };
     for (offset, indexed) in tactics.iter().enumerate() {
-        if !checked_linear_continuation_tactic(&indexed.tactic) {
+        if !frontier_admits(&indexed.tactic) {
             return Ok(Some((proof, tactics[offset..].to_vec())));
         }
         check_verification_deadline()?;
         // Every source driver starts a tactic with an empty step delta.
         proof = proof.start_source_tactic(indexed.source_index)?;
-        let statement_index = proof.execution_frontier_index()?;
         // Once the common execution has returned, proposition and resource
         // operations are interpreted once per concrete outcome. In
         // particular, `result` has no single value on this joined Proof.
         if proof.is_at_function_exit() {
             return Ok(Some((proof, tactics[offset..].to_vec())));
         }
-        let _timing = timing_claim_label.and_then(|claim_label| {
-            TacticTiming::new(
-                claim_label,
-                indexed.index,
-                indexed.source_index,
-                &indexed.tactic,
-                statement_index,
-            )
-        });
-        let checkpoint = proof.checkpoint();
-        let next = if matches!(indexed.tactic, ProofTactic::CloseInvariants) {
-            proof.apply_close_invariants_body(&[ProofTactic::Simp])?
-        } else if let Some(step) = linear_execution_proof_step(&indexed.tactic) {
-            proof
-                .apply_step_at(step, indexed.source_index)
-                .inspect_err(|_| {
-                    if matches!(indexed.tactic, ProofTactic::TransportUsing { .. }) {
-                        proof.record_certification_failure_trace(proof.claim_label(), 0);
-                    }
-                })?
-        } else if let ProofTactic::StepProved {
-            step,
-            proof: step_proof,
-        } = &indexed.tactic
-        {
-            apply_source_step_proofs(&proof, step, step_proof, indexed.index)?
-        } else if let ProofTactic::CloseInvariantsBy(body) = &indexed.tactic {
-            proof.apply_close_invariants_body(body)?
-        } else if let ProofTactic::Choose(choice) = &indexed.tactic {
-            proof.apply_step_at(ProofStep::Choose(choice.clone()), indexed.source_index)?
-        } else if let ProofTactic::LetSatisfy(binding) = &indexed.tactic {
-            proof.apply_step_at(ProofStep::LetSatisfy(binding.clone()), indexed.source_index)?
-        } else if let ProofTactic::ApplyTheorem(application) = &indexed.tactic {
-            // The same selection `try_theorem_application` makes, keeping the
-            // selector's refusal: a declined `apply` is reported by the
-            // premise it was missing, not only as a declined shape.
-            match proof.select_theorem_application_proving_premises(application) {
-                Ok((proved, Some(step))) => proved.apply_selected_theorem_application(step)?,
-                Ok((_, None)) => return decline(),
-                Err(error) if crate::instrumentation::deadline_exceeded() => return Err(error),
-                Err(error) => {
-                    let written = crate::surface::printing::format_partial_tactic_sequence(
-                        std::slice::from_ref(&indexed.tactic),
-                    );
-                    return decline_operation(
-                        format!("`{}`", written.trim().trim_end_matches(';')),
-                        &error,
-                    );
-                }
-            }
-        } else if let ProofTactic::Transport { source, target } = &indexed.tactic {
-            match proof.try_execution_fact_transport(source, target)? {
-                Some(transported) => transported,
-                None => proof.apply_planned_fact_transport(source, target, indexed.index)?,
-            }
-        } else if let ProofTactic::Have(have) = &indexed.tactic {
-            let nested = proof.begin_source_have(have)?;
-            let goal = nested.goal().cloned();
-            let mut failed_check = None;
-            let selected = solve_nested_have(nested, have, &mut failed_check)
-                .map_err(|error| {
-                    source_have_error(
-                        &proof,
-                        have,
-                        indexed.index,
-                        goal.as_ref(),
-                        Some(error),
-                        false,
-                    )
-                })?
-                .ok_or_else(|| {
-                    source_have_error(
-                        &proof,
-                        have,
-                        indexed.index,
-                        goal.as_ref(),
-                        failed_check.take(),
-                        true,
-                    )
-                })?;
-            selected.join()?
-        } else if let ProofTactic::ExecuteUntil(region) = &indexed.tactic {
-            match proof.try_execute_until(region)? {
-                Some(executed) => executed,
-                None => {
-                    return Err(proof
-                        .step_error("`execute_until` found no checked step from this frontier"));
-                }
-            }
-        } else if matches!(indexed.tactic, ProofTactic::SmartExecute) {
-            match proof.try_execute_to_exit()? {
-                Some(executed) => executed,
-                None => {
-                    return Err(proof.step_error(
-                        "`execute()` found no checked path from this frontier to function exit",
-                    ));
-                }
-            }
-        } else if let ProofTactic::Loop(clause) = &indexed.tactic {
-            // A frontier-local loop is one checked operation; its expansion
-            // capture and surface record are handled inside the operation.
-            proof.apply_frontier_local_loop(
-                expansion_capture.as_deref_mut(),
-                clause,
-                indexed.index,
-                indexed.source_index,
-            )?
-        } else {
-            return Ok(Some((proof, tactics[offset..].to_vec())));
+        let Some(next) = apply_frontier_source_tactic(
+            proof,
+            indexed,
+            expansion_capture.as_deref_mut(),
+            proof_site,
+            owning_source_index,
+            timing_claim_label,
+        )?
+        else {
+            return decline();
         };
-        // Observe the source tactic's limit before its timing scope ends, so
-        // a completed checked operation cannot hand control to a later tactic
-        // after exhausting its own budget.
-        check_verification_deadline()?;
-        // Generated certificates retain the source index of the smart
-        // operation that produced them. Their nested steps are part of that
-        // operation's already-recorded branch certificate, not independent
-        // expansions of the same source occurrence.
-        if indexed.source_index != owning_source_index
-            && !matches!(indexed.tactic, ProofTactic::Loop(_))
-            && let Some(site) = proof_site
-            && capture_selects_source(expansion_capture.as_deref(), site, indexed.source_index)
-        {
-            let certificate = next.certificate_since(&checkpoint)?;
-            record_proof_site_tactic_expansion(
-                expansion_capture.as_deref_mut(),
-                site,
-                indexed.source_index,
-                &certificate.to_proof_tactics(),
-            );
-        }
         proof = next;
         // A checked function frame closes the execution-frontier portion of
         // this continuation. Later tactics are ordered outcome operations:
@@ -1227,7 +1224,7 @@ fn try_check_flat_function_proof_inner<'a>(
             return Err(error);
         }
         if let Some((indexed, reason)) = remaining.first().and_then(|indexed| {
-            pre_exit_outcome_tactic_error(&indexed.tactic).map(|reason| (indexed, reason))
+            pre_exit_outcome_tactic_error(&proof, &indexed.tactic).map(|reason| (indexed, reason))
         }) {
             return Err(proof
                 .at_source_tactic(indexed.source_index)
@@ -1925,7 +1922,7 @@ fn try_check_structural_function_proof_inner<'a>(
             return Err(error);
         }
         if let Some((indexed, reason)) = remaining.first().and_then(|indexed| {
-            pre_exit_outcome_tactic_error(&indexed.tactic).map(|reason| (indexed, reason))
+            pre_exit_outcome_tactic_error(&proof, &indexed.tactic).map(|reason| (indexed, reason))
         }) {
             return Err(proof
                 .at_source_tactic(indexed.source_index)
@@ -2533,7 +2530,6 @@ pub(in crate::surface::proof) fn advance_preservation_region<'a>(
                         tactics: vec![indexed.clone()],
                         continuation: Box::new(InternalProofNode::Done),
                     };
-                    let _ = take_declined_operation();
                     let advanced = advance_checked_linear_continuation(
                         proof.clone(),
                         &segment,
@@ -2544,15 +2540,6 @@ pub(in crate::surface::proof) fn advance_preservation_region<'a>(
                     )?
                     .filter(|(_, unconsumed)| unconsumed.is_empty());
                     let Some((advanced, _)) = advanced else {
-                        // A refusal with a stated reason (an `apply` whose
-                        // premise is missing) is that reason, not a shape
-                        // limitation.
-                        if let Some(reason) = take_declined_operation() {
-                            return Err(reason.with_context(format!(
-                                "`{claim_label}` tactic {}",
-                                indexed.index
-                            )));
-                        }
                         return Err(ClickError::new(format!(
                             "`{claim_label}` tactic {}: `{}` did not verify as a checked preservation operation. The preservation driver declined it; this is a proof-shape limitation, not a failed proposition check. For proposition-only work, move the operation into `have proposition by {{ ... }}`.",
                             indexed.index,
@@ -3185,135 +3172,24 @@ fn advance_focused_execution_arm<'a>(
             )?;
             continue;
         }
-        // Each arm tactic is its own source operation, exactly as in the
-        // linear continuation: time it under its source site so the profiler
-        // charges its work to the tactic rather than to shared verifier work.
-        let statement_index = proof.execution_frontier_index().unwrap_or_default();
-        let _timing = TacticTiming::new(
-            proof.claim_label(),
-            indexed.index,
-            indexed.source_index,
-            &indexed.tactic,
-            statement_index,
-        );
-        let checkpoint = proof.checkpoint();
-        let next = if matches!(indexed.tactic, ProofTactic::CloseInvariants) {
-            proof.apply_close_invariants_body(&[ProofTactic::Simp])?
-        } else if let Some(step) = linear_execution_proof_step(&indexed.tactic) {
-            proof
-                .apply_step_at(step, indexed.source_index)
-                .inspect_err(|_| {
-                    if matches!(indexed.tactic, ProofTactic::TransportUsing { .. }) {
-                        proof.record_certification_failure_trace(proof.claim_label(), 0);
-                    }
-                })?
-        } else if let ProofTactic::StepProved {
-            step,
-            proof: step_proof,
-        } = &indexed.tactic
-        {
-            apply_source_step_proofs(&proof, step, step_proof, indexed.index)?
-        } else if let ProofTactic::CloseInvariantsBy(body) = &indexed.tactic {
-            proof.apply_close_invariants_body(body)?
-        } else if let ProofTactic::Choose(choice) = &indexed.tactic {
-            proof.apply_step_at(ProofStep::Choose(choice.clone()), indexed.source_index)?
-        } else if let ProofTactic::LetSatisfy(binding) = &indexed.tactic {
-            proof.apply_step_at(ProofStep::LetSatisfy(binding.clone()), indexed.source_index)?
-        } else if let ProofTactic::ApplyTheorem(application) = &indexed.tactic {
-            if proof.is_at_function_exit() {
-                // Exit applications need one fixed-state proof per concrete
-                // outcome so that `result` lowers correctly; ordered
-                // finalization owns that distinct operation.
-                return decline();
+        if !frontier_admits(&indexed.tactic) {
+            if matches!(indexed.tactic, ProofTactic::Simp) {
+                return Err(proof.step_error(simp_before_exit_reason(&proof)));
             }
-            // This is a written arm operation, not a speculative search.
-            // Preserve a missing-premise refusal instead of turning it into
-            // an unsupported proof-shape diagnostic.
-            proof.apply_theorem_application(application)?
-        } else if let ProofTactic::Transport { source, target } = &indexed.tactic {
-            if proof.is_at_function_exit() {
-                return decline();
-            }
-            let Some(next) = proof.try_execution_fact_transport(source, target)? else {
-                return decline();
-            };
-            next
-        } else if let ProofTactic::Have(have) = &indexed.tactic {
-            let nested = proof.begin_source_have(have)?;
-            let goal = nested.goal().cloned();
-            let mut failed_check = None;
-            let selected = solve_nested_have(nested, have, &mut failed_check)
-                .map_err(|error| {
-                    source_have_error(
-                        &proof,
-                        have,
-                        indexed.index,
-                        goal.as_ref(),
-                        Some(error),
-                        false,
-                    )
-                })?
-                .ok_or_else(|| {
-                    source_have_error(
-                        &proof,
-                        have,
-                        indexed.index,
-                        goal.as_ref(),
-                        failed_check.take(),
-                        true,
-                    )
-                })?;
-            selected.join()?
-        } else if let ProofTactic::ExecuteUntil(region) = &indexed.tactic {
-            let Some(next) = proof.try_execute_until(region)? else {
-                return decline();
-            };
-            next
-        } else if let ProofTactic::Loop(clause) = &indexed.tactic {
-            // A frontier-local loop inside a case is one checked operation,
-            // exactly as in the linear continuation.
-            proof.apply_frontier_local_loop(
-                expansion_capture.as_deref_mut(),
-                clause,
-                indexed.index,
-                indexed.source_index,
-            )?
-        } else if matches!(indexed.tactic, ProofTactic::SmartExecute) {
-            let mut retried_requirements = std::collections::BTreeSet::new();
-            let Some(next) = proof.try_focused_execute_to_exit_within(
-                Vec::new(),
-                &mut retried_requirements,
-                &mut 0,
-                None,
-                None,
-            )?
-            else {
-                return decline();
-            };
-            next
-        } else if matches!(indexed.tactic, ProofTactic::Simp) {
-            // `simp` closes the outcome claims at function exit and does
-            // not execute; a script that stepped through every statement
-            // still stands before the body's end. Say what is left rather
-            // than declining the whole shape.
-            return Err(proof.step_error(simp_before_exit_reason(&proof)));
-        } else {
+            return decline();
+        }
+        let claim_label = proof.claim_label().to_string();
+        let Some(next) = apply_frontier_source_tactic(
+            proof,
+            indexed,
+            expansion_capture.as_deref_mut(),
+            proof_site,
+            owning_source_index,
+            Some(&claim_label),
+        )?
+        else {
             return decline();
         };
-        check_verification_deadline()?;
-        if indexed.source_index != owning_source_index
-            && !matches!(indexed.tactic, ProofTactic::Loop(_))
-            && let Some(site) = proof_site
-            && capture_selects_source(expansion_capture.as_deref(), site, indexed.source_index)
-        {
-            let certificate = next.certificate_since(&checkpoint)?;
-            record_proof_site_tactic_expansion(
-                expansion_capture.as_deref_mut(),
-                site,
-                indexed.source_index,
-                &certificate.to_proof_tactics(),
-            );
-        }
         proof = next;
     }
     Ok(Some(proof))
@@ -4564,7 +4440,7 @@ fn arm_execution_steps(node: &InternalProofNode, depth: usize) -> Option<Vec<Pro
                 continuation,
             } => {
                 for indexed in tactics {
-                    steps.push(arm_proof_step(&indexed.tactic)?);
+                    steps.push(linear_execution_proof_step(&indexed.tactic)?);
                 }
                 node = continuation;
             }
@@ -5059,15 +4935,23 @@ fn advance_checked_open_scope<'a>(
     )
 }
 
+/// Introduces one arm's case assumption: `Ok(Some(fact))` is the kernel fact
+/// the arm adds (`Ok(Some(None))` when the arm adds none yet), and `Ok(None)`
+/// says the arm is infeasible because `available` holds the fact's exact
+/// negation.
+///
+/// The condition is lowered against `available`'s own indexed context, and
+/// the negation is looked up by its spellings, so a split costs its condition
+/// and not the proof facts that precede it.
 pub(in crate::surface::proof) fn introduce_proof_case_assumption(
     execution: &mut ExecutionProofState,
     proof_context: &ExecutionProofContext<'_>,
-    pure_facts: &mut Vec<Proposition>,
+    available: &ProofFacts,
     structured_branch_history: bool,
     condition: &ClickProposition,
     lowering_condition: &ClickProposition,
     value: bool,
-) -> Result<bool, ClickError> {
+) -> Result<Option<Option<Proposition>>, ClickError> {
     let tactic_index = proof_context.tactic_index;
     let parameters = proof_context.parsed_function.parameters();
     let arguments = proof_context.arguments;
@@ -5087,7 +4971,7 @@ pub(in crate::surface::proof) fn introduce_proof_case_assumption(
         // handling below.
         if let Ok(proposition) = lower_fixed_state_proposition(
             lowering_condition,
-            pure_facts,
+            available,
             ParameterBinding::new(parameters, arguments),
             FixedStateFrame::new(
                 proof_context.old_reference_state(&execution.core.frontier, &execution.core.state),
@@ -5113,17 +4997,13 @@ pub(in crate::surface::proof) fn introduce_proof_case_assumption(
                     proposition => Proposition::Not(Box::new(proposition)),
                 }
             };
-            if pure_facts
-                .iter()
-                .any(|available| propositions_are_exact_negations(available, &kernel_fact))
-            {
-                return Ok(false);
+            if holds_exact_negation(available, &kernel_fact) {
+                return Ok(None);
             }
             execution
                 .presentation
                 .surface_propositions
                 .record_lowering(&surface_fact, &kernel_fact)?;
-            pure_facts.push(kernel_fact.clone());
             execution
                 .presentation
                 .case_assumptions
@@ -5131,11 +5011,11 @@ pub(in crate::surface::proof) fn introduce_proof_case_assumption(
                     tactic_index,
                     condition: condition.clone(),
                     value,
-                    fact: Some(kernel_fact),
+                    fact: Some(kernel_fact.clone()),
                     at_function_entry: false,
                     match_arm: None,
                 });
-            return Ok(true);
+            return Ok(Some(Some(kernel_fact)));
         }
     }
     if execution.core.frontier.is_at_function_exit() {
@@ -5150,12 +5030,12 @@ pub(in crate::surface::proof) fn introduce_proof_case_assumption(
                 at_function_entry: false,
                 match_arm: None,
             });
-        return Ok(true);
+        return Ok(Some(None));
     }
     let at_function_entry = execution.core.frontier.is_at_function_entry();
     let proposition = lower_fixed_state_proposition(
         lowering_condition,
-        pure_facts,
+        available,
         ParameterBinding::new(parameters, arguments),
         FixedStateFrame::new(
             proof_context.old_reference_state(&execution.core.frontier, &execution.core.state),
@@ -5186,17 +5066,13 @@ pub(in crate::surface::proof) fn introduce_proof_case_assumption(
             proposition => Proposition::Not(Box::new(proposition)),
         }
     };
-    if pure_facts
-        .iter()
-        .any(|available| propositions_are_exact_negations(available, &kernel_fact))
-    {
-        return Ok(false);
+    if holds_exact_negation(available, &kernel_fact) {
+        return Ok(None);
     }
     execution
         .presentation
         .surface_propositions
         .record_lowering(&surface_fact, &kernel_fact)?;
-    pure_facts.push(kernel_fact.clone());
     execution
         .presentation
         .case_assumptions
@@ -5204,11 +5080,32 @@ pub(in crate::surface::proof) fn introduce_proof_case_assumption(
             tactic_index,
             condition: condition.clone(),
             value,
-            fact: Some(kernel_fact),
+            fact: Some(kernel_fact.clone()),
             at_function_entry,
             match_arm: None,
         });
-    Ok(true)
+    Ok(Some(Some(kernel_fact)))
+}
+
+/// Whether `available` holds a fact that `propositions_are_exact_negations`
+/// pairs with `fact`, read from the exact index by the spellings that relation
+/// accepts rather than by comparing every fact.
+fn holds_exact_negation(available: &ProofFacts, fact: &Proposition) -> bool {
+    let negated = Proposition::Not(Box::new(fact.clone()));
+    let mut spellings = vec![negated];
+    match fact {
+        Proposition::ConditionIs(condition, value) => {
+            spellings.push(Proposition::ConditionIs(condition.clone(), !value));
+        }
+        Proposition::Not(body) => {
+            spellings.push(body.as_ref().clone());
+        }
+        _ => {}
+    }
+    spellings.iter().any(|spelling| {
+        crate::instrumentation::record_deterministic_work(1);
+        available.contains(spelling) && propositions_are_exact_negations(spelling, fact)
+    })
 }
 
 fn proof_case_is_stable_program_point_condition(proposition: &ClickProposition) -> bool {
@@ -5264,8 +5161,6 @@ pub(in crate::surface::proof) fn add_proof_branch_path(
     error
 }
 
-/// The diagnostic for an execution tactic written after execution already
-/// reached function exit: the tactic has no statement to run.
 /// Why `simp` cannot run at an execution frontier that has not reached the
 /// function exit: what still lies ahead, and the two ways to get there.
 fn simp_before_exit_reason(proof: &Proof<'_>) -> String {
@@ -5290,10 +5185,12 @@ fn simp_before_exit_reason(proof: &Proof<'_>) -> String {
         })
         .unwrap_or_else(|| "execution has not reached the function exit".to_string());
     format!(
-        "`simp` closes the outcome claims at function exit and does not execute: {ahead}. Step to the exit first with `step()` (the end of the body is one step) or `execute()`."
+        "`simp` closes the outcome claims at function exit and does not execute: {ahead}. Step to the exit first with `step()` (the end of the body is one step) or `execute()`, or prove the claim `by auto;`."
     )
 }
 
+/// The diagnostic for an execution tactic written after execution already
+/// reached function exit: the tactic has no statement to run.
 fn post_exit_execution_tactic_error(tactic: &ProofTactic) -> Option<String> {
     let name = match tactic {
         ProofTactic::Step => "step()".to_string(),
@@ -5315,15 +5212,16 @@ fn post_exit_execution_tactic_error(tactic: &ProofTactic) -> Option<String> {
 
 /// The diagnostic for a function-exit tactic written before execution
 /// reached function exit.
-fn pre_exit_outcome_tactic_error(tactic: &ProofTactic) -> Option<String> {
-    let (name, alternative) = match tactic {
-        ProofTactic::Witness(_) => ("witness", ""),
-        ProofTactic::Choose(_) => ("choose", ""),
-        ProofTactic::Simp => ("simp", ", or prove the claim `by auto;`"),
+/// `simp` gets the same diagnostic here as in an execution arm.
+fn pre_exit_outcome_tactic_error(proof: &Proof<'_>, tactic: &ProofTactic) -> Option<String> {
+    let name = match tactic {
+        ProofTactic::Witness(_) => "witness",
+        ProofTactic::Choose(_) => "choose",
+        ProofTactic::Simp => return Some(simp_before_exit_reason(proof)),
         _ => return None,
     };
     Some(format!(
-        "`{name}` requires execution to reach function exit first; write `execute();` before it{alternative}"
+        "`{name}` requires execution to reach function exit first; write `execute();` before it"
     ))
 }
 

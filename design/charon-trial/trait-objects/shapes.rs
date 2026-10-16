@@ -1,9 +1,12 @@
 //! Trait methods whose interface reads the object through model functions:
 //! `size` is `side` for a `Square` and `radius + radius` for a `Circle`, and
 //! `total` and `dynamic` reach `area` through a bound and `&dyn Shape`.
+//! `set` changes the object through `&mut self`, which `reset` and
+//! `reset_dyn` reach through `&mut T` and `&mut dyn Shape`.
 
 pub trait Shape {
     fn area(&self, scale: i32) -> i32;
+    fn set(&mut self, half: i32);
 }
 
 pub struct Square {
@@ -18,11 +21,19 @@ impl Shape for Square {
     fn area(&self, scale: i32) -> i32 {
         self.side + scale
     }
+
+    fn set(&mut self, half: i32) {
+        self.side = half + half;
+    }
 }
 
 impl Shape for Circle {
     fn area(&self, scale: i32) -> i32 {
         self.radius + self.radius + scale
+    }
+
+    fn set(&mut self, half: i32) {
+        self.radius = half;
     }
 }
 
@@ -42,4 +53,24 @@ pub fn through_bound(scale: i32) -> i32 {
 pub fn through_dyn(scale: i32) -> i32 {
     let circle = Circle { radius: 2 };
     dynamic(&circle, scale)
+}
+
+fn reset<T: Shape>(shape: &mut T, half: i32) {
+    shape.set(half);
+}
+
+fn reset_dyn(shape: &mut dyn Shape, half: i32) {
+    shape.set(half);
+}
+
+pub fn reset_square(half: i32) -> i32 {
+    let mut square = Square { side: 1 };
+    reset(&mut square, half);
+    square.side
+}
+
+pub fn reset_dyn_square(half: i32) -> i32 {
+    let mut square = Square { side: 9 };
+    reset_dyn(&mut square, half);
+    square.side
 }

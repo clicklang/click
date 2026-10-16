@@ -717,7 +717,70 @@ impl PropositionDerivation {
     }
 }
 
+impl AtomicPropositionDerivationEvidence {
+    /// Exact sources already retained by these equality producers. Other
+    /// evidence families keep their selected context until they expose a
+    /// complete dependency list too; partial provenance is never sufficient.
+    pub(in crate::kernel) fn equality_premises(&self) -> Option<BTreeSet<Proposition>> {
+        let mut premises = BTreeSet::new();
+        match self {
+            Self::BitvectorEqualityPath(path) => {
+                for step in path {
+                    crate::instrumentation::record_deterministic_work(1);
+                    premises.insert(step.premise.clone());
+                }
+            }
+            Self::LoadAddressCongruence(evidence) => {
+                evidence.offset.collect_equality_premises(&mut premises)?;
+            }
+            Self::Int32PinnedConstantEquality(evidence) => {
+                evidence.collect_context_premises(&mut premises);
+            }
+            Self::Int32LeAndNotLtImpliesEquality(evidence) => {
+                premises.insert(evidence.less_equal.clone());
+                premises.insert(evidence.not_less_than.clone());
+            }
+            Self::Int32GeAndNotGtImpliesEquality(evidence) => {
+                premises.insert(evidence.greater_equal.clone());
+                premises.insert(evidence.not_greater_than.clone());
+            }
+            _ => return None,
+        }
+        Some(premises)
+    }
+}
+
 impl PointerOffsetCongruenceEvidence {
+    fn collect_equality_premises(&self, premises: &mut BTreeSet<Proposition>) -> Option<()> {
+        crate::instrumentation::record_deterministic_work(1);
+        match self {
+            Self::Exact => {}
+            // This rule currently asks the context for constants without
+            // retaining their sources. Keep its original selected context.
+            Self::WideScaledConstant { .. } => return None,
+            Self::ExactPremise(premise) => {
+                premises.insert(premise.as_ref().clone());
+            }
+            Self::Add { first, second, .. } => {
+                first.collect_equality_premises(premises)?;
+                second.collect_equality_premises(premises)?;
+            }
+            Self::Int32Scaled { path, .. }
+            | Self::Int64Scaled { path, .. }
+            | Self::ElementIndex { path, .. } => {
+                for step in path {
+                    crate::instrumentation::record_deterministic_work(1);
+                    premises.insert(step.premise.clone());
+                }
+            }
+            Self::Int32ScaledDerived { equality, .. }
+            | Self::ElementIndexDerived { equality, .. } => {
+                equality.collect_context_premises(premises);
+            }
+        }
+        Some(())
+    }
+
     fn equality_paths(&self) -> Vec<&[BitvectorEqualityDerivationStep]> {
         match self {
             Self::Exact | Self::ExactPremise(_) | Self::WideScaledConstant { .. } => Vec::new(),
@@ -1166,13 +1229,16 @@ impl PureFactContext {
                 &self.memory_load_condition_facts,
                 &other.memory_load_condition_facts,
             )
-            && std::sync::Arc::ptr_eq(
-                &self.bitvector_equality_facts,
-                &other.bitvector_equality_facts,
-            )
             && self
+                .equality_graph
+                .admitted
+                .scalar_evidence_inputs
+                .shares_root_with(&other.equality_graph.admitted.scalar_evidence_inputs)
+            && self
+                .equality_graph
+                .admitted
                 .bitvector64_equality_facts
-                .shares_root_with(&other.bitvector64_equality_facts)
+                .shares_root_with(&other.equality_graph.admitted.bitvector64_equality_facts)
             && self.prop_facts.ptr_eq(&other.prop_facts)
             && self
                 .resource_compositions
@@ -1520,13 +1586,6 @@ impl ExecutionBudget {
         self.with_c_source_cost(c_statement_source_cost(statement))
     }
 
-    /// Adds the structural work of the independent verification evaluator.
-    /// Ordinary leaf statements cross both its verification dispatcher and
-    /// the shared statement evaluator, so their baseline contains two visits.
-    pub(crate) fn with_c_statement_verification_cost(self, statement: &CStatement) -> Self {
-        self.with_c_source_cost(c_statement_verification_source_cost(statement))
-    }
-
     /// Adds the evaluator work inherent in one selected whole-function
     /// judgment, including evaluation of its caller-side arguments.
     pub(crate) fn with_c_function_cost(
@@ -1535,18 +1594,6 @@ impl ExecutionBudget {
         arguments: &[CExpression],
     ) -> Self {
         let mut cost = c_statement_source_cost(function.body());
-        for argument in arguments {
-            cost.add_expression(c_expression_source_cost(argument).expression_steps);
-        }
-        self.with_c_source_cost(cost)
-    }
-
-    pub(crate) fn with_c_function_verification_cost(
-        self,
-        function: &CFunction,
-        arguments: &[CExpression],
-    ) -> Self {
-        let mut cost = c_statement_verification_source_cost(function.body());
         for argument in arguments {
             cost.add_expression(c_expression_source_cost(argument).expression_steps);
         }
@@ -1595,6 +1642,13 @@ impl ExecutionBudget {
     /// A budget built by [`Self::beside_live_state`] cannot issue one at all:
     /// its counter would start over identities the live state already holds,
     /// and nothing it evaluates needs an execution identity.
+    /// Moves the counter past `variable`, so nothing it hands out from now
+    /// on is `variable` or below it. Identities it skips are never handed
+    /// out; the counter only advances.
+    pub(in crate::kernel) fn skip_kernel_variables_through(&mut self, variable: Variable) {
+        self.next_kernel_variable = self.next_kernel_variable.max(variable.0 + 1);
+    }
+
     pub(in crate::kernel) fn allocate_kernel_variable(&mut self) -> ExecutionResult<Variable> {
         if self.refuses_execution_identities {
             return Err(ExecutionLimit::ExecutionIdentityBesideLiveState);
@@ -1871,53 +1925,6 @@ fn c_statement_source_cost(statement: &CStatement) -> CSourceCost {
         }
     }
     cost
-}
-
-fn c_statement_verification_source_cost(statement: &CStatement) -> CSourceCost {
-    let mut cost = c_statement_source_cost(statement);
-    cost.statement_steps = c_statement_verification_source_steps(statement);
-    cost
-}
-
-fn c_statement_verification_source_steps(statement: &CStatement) -> usize {
-    let mut steps = 0usize;
-    let mut pending = vec![statement];
-    while let Some(statement) = pending.pop() {
-        match statement {
-            CStatement::Seq(first, second) => {
-                pending.push(first);
-                pending.push(second);
-            }
-            CStatement::If {
-                then_branch,
-                else_branch,
-                ..
-            } => {
-                steps = steps.saturating_add(1);
-                pending.push(then_branch);
-                pending.push(else_branch);
-            }
-            CStatement::While {
-                invariant_checks,
-                effect_checks,
-                body,
-                ..
-            } if !invariant_checks.is_empty() || !effect_checks.is_empty() => {
-                steps = steps.saturating_add(1);
-                pending.push(body);
-            }
-            CStatement::Switch { cases, .. } => {
-                steps = steps.saturating_add(1);
-                for case in cases {
-                    pending.push(&case.body);
-                }
-            }
-            // The verification dispatcher charges once, then delegates an
-            // ordinary leaf to the shared evaluator, which charges again.
-            _ => steps = steps.saturating_add(2),
-        }
-    }
-    steps
 }
 
 pub(in crate::kernel) type ExecutionResult<T> = Result<T, ExecutionLimit>;

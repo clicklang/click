@@ -42,9 +42,13 @@ void sized_propagate(struct rb_node* rb, struct rb_node* stop) {
             have rb == old(rb) by {
                 cases {
                     rb == old(rb) => { assumption(); }
-                    rb == stop => { contradiction(rb == stop); }
+                    rb == stop => {
+                        have address(rb) == address(stop) by { rewrite(rb == stop); simp(); }
+                        contradiction(address(rb) == address(stop));
+                    }
                 }
             }
+            have rb != stop by { simp(); }
             have propagate_remaining(rb, stop) == 1 by {
                 unfold(propagate_remaining(rb, stop));
                 normalize() using { rb != stop; }

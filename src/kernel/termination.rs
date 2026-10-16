@@ -188,12 +188,14 @@ fn substitute_c_expression_variables(
             value_type,
             volatile,
             pointee_constant,
+            access_class,
             source,
         } => TypedLoad {
             pointer: unary(pointer),
             value_type: *value_type,
             volatile: *volatile,
             pointee_constant: *pointee_constant,
+            access_class: *access_class,
             source: source.clone(),
         },
         Index(left, right) => {
@@ -5235,6 +5237,7 @@ mod address_escape_tests {
             value_type: CType::Int32Pointer,
             volatile: false,
             pointee_constant: false,
+            access_class: None,
             source: CExpressionLoadSource::none(),
         };
         assert!(c_expression_mentions_variable(&child, "p"));
@@ -5343,6 +5346,7 @@ mod ranking_member_tests {
             value_type: CType::Int32,
             volatile: true,
             pointee_constant: false,
+            access_class: None,
             source: CExpressionLoadSource::none(),
         };
         let measures = vec![CRankingComponent::CExpression(CExpression::Subtract(

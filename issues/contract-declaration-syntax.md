@@ -33,7 +33,7 @@ The head is written the way the target language writes the declaration. In C
 it uses C declaration syntax, in C++ C++ declaration syntax (qualified member
 names, implicit `this`, references, `const` methods), and in Rust Rust item
 syntax (`fn`, `impl` blocks, module paths). Rust sidecars already work this
-way. C sidecars mostly do; C++ sidecars do not yet.
+way, and so do C and C++ sidecars.
 
 ```click
 // C
@@ -125,15 +125,16 @@ that writes `int32` for such a source already writes the source's spelling.
   the `step(Name())` and `step(Name(instance))` applications are refused with
   their replacements. A head must have exactly the C types of its
   declaration, `long` apart from `long long`. A head may write the source's
-  scalar, struct, pointer and function-pointer typedef names (`json_bool`,
-  `pid_t`, `node_t`, `node_ptr`, `unary f`), not yet its array aliases.
+  scalar, struct, pointer, function-pointer and array typedef names
+  (`json_bool`, `pid_t`, `node_t`, `node_ptr`, `unary f`, `triple values`).
 - **C++.** Verified functions are written as C++ declares them:
   `Restore::Restore(int* slot)`, `Restore::~Restore()`,
   `void FeeFrac::operator+=(const FeeFrac& other)`, `bool FeeFrac::IsEmpty() const`,
   `static int64 FeeFrac::Div(...)`, `choose<true>(...)`, with `this` implicit
   and records named without `struct`. A member of a class template instance
-  (`Stored<long long>`) keeps the mangled name and explicit receiver, since a
-  head does not yet spell class template arguments. An `extern` head for a
+  is written with the instance, `Stored<long long>::Read`, and a head's types
+  write records by their C++ paths, `std::span<int>&`; diagnostics, claim
+  labels and proof steps name functions the same way. An `extern` head for a
   system-header function is its C++ declaration too,
   `extern int ministd::Box::get() const`. A `contract` head is a free function
   type in C++ types, `contract int PositiveRead(const State& state)`. A
@@ -167,8 +168,8 @@ that writes `int32` for such a source already writes the source's spelling.
    parameters, `step(Name, { handle: value })` binds them, the retired forms
    are refused and migrated, and a head must have exactly its declaration's
    C types. Done: a head writes a verified source's scalar, struct,
-   pointer and function-pointer typedef names, `u32`, `json_bool`,
-   `node_t`, `node_ptr`, `unary f`. Remaining: array aliases in heads.
+   pointer, function-pointer and array typedef names, `u32`, `json_bool`,
+   `node_t`, `node_ptr`, `unary f`, `triple values`.
 2. **Native C++ heads.** Done for verified functions: qualified members with
    implicit `this`, constructors, destructors, `operator` names, `const` and
    `static` members, and `bool` function template arguments, with the corpus
@@ -199,10 +200,10 @@ that writes `int32` for such a source already writes the source's spelling.
    contract, whose value parameters are body clauses `let amount: i32;`
    attached as `Adds(f, { amount: k })`. Parameterized contracts are done
    for C and Rust function pointers, through automatic formation at
-   `&f`, and for capturing closures by contract-to-contract refinement;
-   refinement and execution theorems for them remain,
-   through the C++ exporter and Charon, with the same refinement check as C
-   (`Comparator(&f)`).
+   `&f`, and for capturing closures by contract-to-contract refinement, and
+   refinement and execution theorems conclude them with the values fixed.
+   C++ and Rust function values reach them through the C++ exporter and
+   Charon, with the same refinement check as C (`Comparator(&f)`).
 4. **Base-class and trait method interfaces.** A contract on a C++ virtual
    method or a Rust trait method is the interface for that method. Each
    override or `impl` is checked against it with the named-contract
@@ -215,13 +216,14 @@ that writes `int32` for such a source already writes the source's spelling.
    2026-10-15, the interface's `ensures` join the implementation's own and
    its proof establishes them, and its `requires` apply when the
    implementation writes none; written `requires` must follow from the
-   interface's. Object state is done for `&self` and shared object
-   references: a trait's `function size(self) -> i32;` is a field of its
+   interface's. Object state is done for `&self` and `&mut self`, shared
+   and mutable object references: a trait's `function size(self) -> i32;` is a field of its
    sealed object resource, each `impl` defines it from its fields and is
    verified on its own memory against an `_iface` contract, and the
    importer packs the struct into the object at generic instantiation and
-   `dyn` coercion. Remaining: `&mut self` object state, implementations of
-   function-free traits that rename the interface's parameters, generic
+   `dyn` coercion; a mutable reference may change the state, which its
+   `ensures` read as new and `old(...)` as at entry. Remaining:
+   implementations of function-free traits that rename the interface's parameters, generic
    traits and default methods, and C++ virtual methods. Done for C++
    virtual methods without object state: a virtual method's contract is the
    interface a call through it assumes, each override in the source

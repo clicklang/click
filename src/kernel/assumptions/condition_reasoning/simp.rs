@@ -338,8 +338,8 @@ impl PureFactContext {
     /// `PointerOffsetEqual` fact of their byte scalings; those are the
     /// spellings read here. A fact with a non-atom side is filed among the
     /// family's open facts and is always asked. The 64-bit equalities pin a
-    /// term to a constant outside the 32-bit equality graph, so a context
-    /// holding any is left to the scan. Debug builds compare every indexed
+    /// term to a constant outside the 32-bit equality graph. Only sources
+    /// naming a selected scalar spelling require the ordinary fallback. Debug builds compare every indexed
     /// answer with the scan.
     fn indexed_matching_condition_fact_for_memory_resolution(
         &self,
@@ -362,7 +362,7 @@ impl PureFactContext {
             | ConditionTerm::Bitvector32SignedGreaterEqual(left, right) => (left, right),
             _ => return None,
         };
-        if !atom(left) || !atom(right) || !self.bitvector64_equality_facts.is_empty() {
+        if !atom(left) || !atom(right) {
             return None;
         }
         let key = crate::kernel::assumptions::condition_match_key(condition)?;
@@ -375,7 +375,7 @@ impl PureFactContext {
             for byte_width in [1, 4] {
                 let scaled = PointerOffsetTerm::scale_int32(term.clone(), byte_width);
                 crate::instrumentation::record_deterministic_work(1);
-                if let Some(aliases) = self.pointer_offset_aliases.get(&scaled) {
+                if let Some(aliases) = self.equality_graph.exact_offset_aliases(&scaled) {
                     for alias in aliases.iter() {
                         crate::instrumentation::record_deterministic_work(1);
                         if let PointerOffsetTerm::Int32Scaled { value, .. } = alias
@@ -393,7 +393,15 @@ impl PureFactContext {
         match &key {
             ConditionMatchKey::Equal(left, right) => {
                 let right_spellings = spellings(right);
-                for left in spellings(left) {
+                let left_spellings = spellings(left);
+                if left_spellings
+                    .iter()
+                    .chain(&right_spellings)
+                    .any(|term| self.equality_graph.has_uint64_source(term))
+                {
+                    return None;
+                }
+                for left in left_spellings {
                     for right in &right_spellings {
                         keys.insert(if left <= *right {
                             ConditionMatchKey::Equal(left.clone(), right.clone())
@@ -405,7 +413,15 @@ impl PureFactContext {
             }
             ConditionMatchKey::Order(strict, lower, upper) => {
                 let upper_spellings = spellings(upper);
-                for lower in spellings(lower) {
+                let lower_spellings = spellings(lower);
+                if lower_spellings
+                    .iter()
+                    .chain(&upper_spellings)
+                    .any(|term| self.equality_graph.has_uint64_source(term))
+                {
+                    return None;
+                }
+                for lower in lower_spellings {
                     for upper in &upper_spellings {
                         keys.insert(ConditionMatchKey::Order(
                             *strict,

@@ -1198,6 +1198,7 @@ pub(in crate::surface) fn requirement_propositions_with_sources_and_assumptions(
         .collect::<Vec<Option<ClickError>>>();
     let mut pending = (0..requires.len()).collect::<Vec<_>>();
     let mut assumptions = initial_assumptions.clone();
+    let mut lowering_state = None;
 
     // Requirements may be written in either order, so use one retry pass
     // after the first pass has published the facts it could lower. A bounded
@@ -1219,18 +1220,26 @@ pub(in crate::surface) fn requirement_propositions_with_sources_and_assumptions(
                     &assumptions,
                 )
                 .map(Some),
-                Requirement::Proposition(proposition) => {
-                    requirement_proposition_and_facts_with_assumptions(
-                        parameter_binding,
-                        state,
-                        proposition,
-                        spec_definitions,
-                        &assumptions,
-                    )
+                Requirement::Proposition(proposition) => lowering_state
+                    .get_or_insert_with(|| {
+                        requirement_lowering_state(parameter_binding, state)
+                            .map_err(|error| error.message().to_string())
+                    })
+                    .as_ref()
+                    .map_err(|message| ClickError::new(message.clone()))
+                    .and_then(|lowering_state| {
+                        requirement_proposition_and_facts_with_assumptions(
+                            parameter_binding,
+                            state,
+                            lowering_state,
+                            proposition,
+                            spec_definitions,
+                            &assumptions,
+                        )
+                    })
                     .map(|(proposition, facts)| {
                         Some(std::iter::once(proposition).chain(facts).collect())
-                    })
-                }
+                    }),
                 Requirement::Resource(resource) => resource_clause_loadable_props_at_state(
                     resource,
                     parameter_binding,
@@ -3487,6 +3496,7 @@ pub(in crate::surface) fn requirement_proposition_prop_with_assumptions(
     requirement_proposition_and_facts_with_assumptions(
         parameter_binding,
         state,
+        &requirement_lowering_state(parameter_binding, state)?,
         proposition,
         spec_definitions,
         assumptions,
@@ -3494,16 +3504,33 @@ pub(in crate::surface) fn requirement_proposition_prop_with_assumptions(
     .map(|(proposition, _)| proposition)
 }
 
+/// The entry state with the parameters bound to their argument values where
+/// it does not bind them: the state every requirement of one list is lowered
+/// at, built once for the list.
+fn requirement_lowering_state(
+    parameter_binding: ParameterBinding<'_>,
+    state: &CState,
+) -> Result<CState, ClickError> {
+    let mut lowering_state = state.clone();
+    for (name, value) in parameter_values(parameter_binding)? {
+        if lowering_state.locals().get(&name).is_none() {
+            lowering_state = lowering_state.with_local(name, value);
+        }
+    }
+    Ok(lowering_state)
+}
+
 fn requirement_proposition_and_facts_with_assumptions(
     parameter_binding: ParameterBinding<'_>,
     state: &CState,
+    lowering_state: &CState,
     proposition: &ClickProposition,
     spec_definitions: SpecDefinitions<'_>,
     assumptions: &PureFactContext,
 ) -> Result<(Proposition, Vec<Proposition>), ClickError> {
     // The requirement is elaborated as the contract elaborates it and
-    // lowered by the kernel at the entry state, with the parameters bound
-    // to their argument values where the state does not bind them.
+    // lowered by the kernel at the entry state with the parameters bound
+    // (`requirement_lowering_state`).
     let spec = crate::surface::lowering::elaborate_requirement_proposition(
         parameter_binding.parameters,
         state,
@@ -3511,14 +3538,8 @@ fn requirement_proposition_and_facts_with_assumptions(
         spec_definitions,
     )
     .map_err(ClickError::new)?;
-    let mut lowering_state = state.clone();
-    for (name, value) in parameter_values(parameter_binding)? {
-        if lowering_state.locals().get(&name).is_none() {
-            lowering_state = lowering_state.with_local(name, value);
-        }
-    }
     let (lowered, facts, obligations) =
-        crate::kernel::c_lower_spec_proposition_at_state(&lowering_state, &spec, None, assumptions)
+        crate::kernel::c_lower_spec_proposition_at_state(lowering_state, &spec, None, assumptions)
             .map_err(|message| {
                 ClickError::new(format!(
                     "could not lower requirement `{}`: {message}",
@@ -3530,7 +3551,7 @@ fn requirement_proposition_and_facts_with_assumptions(
     // the requirements state.
     if let Some(obligation) = obligations.iter().find(|obligation| {
         !crate::kernel::c_state_justifies_loadability_obligation(
-            &lowering_state,
+            lowering_state,
             obligation,
             assumptions,
         )
@@ -3544,7 +3565,7 @@ fn requirement_proposition_and_facts_with_assumptions(
                 parameter_binding,
                 &[],
             ),
-            folded_matched_instance_note(&lowering_state, parameter_binding, assumptions)
+            folded_matched_instance_note(lowering_state, parameter_binding, assumptions)
         )));
     }
     // The kernel selected this lowering path, and every outstanding read

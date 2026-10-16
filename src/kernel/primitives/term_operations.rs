@@ -3427,6 +3427,18 @@ impl CValue {
         }
     }
 
+    /// Records the class of the object a pointer value designates; see
+    /// [`CPointerValue::with_object_class`].
+    pub(crate) fn with_pointer_object_class(
+        self,
+        object_class: Option<crate::kernel::effective_type::CAccessClass>,
+    ) -> Self {
+        match self {
+            Self::Pointer(pointer) => Self::Pointer(pointer.with_object_class(object_class)),
+            value => value,
+        }
+    }
+
     pub(crate) fn with_pointer_pointee_constant(self, pointee_constant: bool) -> Self {
         match self {
             Self::Pointer(pointer) => {
@@ -3501,6 +3513,8 @@ impl CLValue {
             designation: None,
             extent_known: false,
             opaque_extent: None,
+            access_class: None,
+            object_class: None,
         }
     }
 
@@ -3530,6 +3544,8 @@ impl CLValue {
             designation: None,
             extent_known: false,
             opaque_extent: None,
+            access_class: None,
+            object_class: None,
         }
     }
 
@@ -3551,12 +3567,14 @@ impl CLValue {
         self
     }
 
-    /// The lvalue reached through `pointer`, which keeps its extent.
+    /// The lvalue reached through `pointer`, which keeps its extent and the
+    /// class of the object it designates.
     pub(in crate::kernel) fn with_extent_of(mut self, pointer: &CPointerValue) -> Self {
         self.extent = pointer.extent().cloned().map(std::sync::Arc::new);
         self.designation = Some(std::sync::Arc::new(pointer.designation().clone()));
         self.extent_known = pointer.extent_is_known();
         self.opaque_extent = pointer.opaque_extent.clone();
+        self.object_class = pointer.object_class();
         self
     }
 
@@ -3571,6 +3589,27 @@ impl CLValue {
                 },
             )
         })
+    }
+
+    /// The class of the lvalue's type, which an access through it uses.
+    pub(in crate::kernel) fn with_access_class(
+        mut self,
+        access_class: Option<crate::kernel::effective_type::CAccessClass>,
+    ) -> Self {
+        self.access_class = access_class;
+        self
+    }
+
+    pub(in crate::kernel) fn access_class(
+        &self,
+    ) -> Option<crate::kernel::effective_type::CAccessClass> {
+        self.access_class
+    }
+
+    pub(in crate::kernel) fn object_class(
+        &self,
+    ) -> Option<crate::kernel::effective_type::CAccessClass> {
+        self.object_class
     }
 
     pub(in crate::kernel) fn extent(&self) -> Option<&SubobjectExtent> {

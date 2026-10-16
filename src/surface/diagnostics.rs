@@ -5601,6 +5601,7 @@ fn describe_untyped_array_field_read(
                 value_type,
                 volatile,
                 pointee_constant,
+                access_class: _,
                 source,
             },
         ..
@@ -5657,6 +5658,7 @@ fn describe_untyped_array_field_read(
         value_type: element_type,
         volatile: *volatile,
         pointee_constant: *pointee_constant,
+        access_class: None,
         source: source.clone(),
     }))
 }

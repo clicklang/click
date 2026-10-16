@@ -2229,9 +2229,27 @@ pub(crate) fn c_qualified_typed_load_with_source(
         value_type,
         volatile: false,
         pointee_constant,
+        access_class: None,
         source: source
             .map(crate::kernel::CExpressionLoadSource::new)
             .unwrap_or_default(),
+    }
+}
+
+/// A load of a `value_type` lvalue whose access class the kernel type cannot
+/// give (`design/effective-types.md`).
+pub(crate) fn c_classed_load(
+    pointer: CExpression,
+    value_type: CType,
+    access_class: Option<crate::kernel::effective_type::CAccessClass>,
+) -> CExpression {
+    CExpression::TypedLoad {
+        pointer: Box::new(pointer),
+        value_type,
+        volatile: false,
+        pointee_constant: false,
+        access_class,
+        source: crate::kernel::CExpressionLoadSource::none(),
     }
 }
 
@@ -2245,6 +2263,7 @@ pub(crate) fn c_qualified_volatile_typed_load(
         value_type,
         volatile: true,
         pointee_constant,
+        access_class: None,
         source: crate::kernel::CExpressionLoadSource::none(),
     }
 }
@@ -2338,6 +2357,7 @@ pub fn c_declare_with_all_qualifiers(
         pointee_constant,
         initializer: None,
         zero_fill: None,
+        declared_class: None,
     }
 }
 
@@ -2362,6 +2382,7 @@ pub fn c_declare_with_zero_fill(
         pointee_constant,
         initializer: None,
         zero_fill,
+        declared_class: None,
     }
 }
 
@@ -2384,6 +2405,7 @@ pub fn c_declare_initialized(
         constant,
         pointee_constant,
         zero_fill: None,
+        declared_class: None,
         initializer: Some(expression),
     }
 }
@@ -2525,13 +2547,16 @@ pub fn c_store(pointer: CExpression, value: CExpression) -> CStatement {
 }
 
 pub fn c_typed_store(pointer: CExpression, value: CExpression, value_type: CType) -> CStatement {
-    c_qualified_typed_store(pointer, value, value_type, false, false)
+    c_qualified_typed_store(pointer, value, value_type, None, false, false)
 }
 
+/// A typed store whose lvalue has `access_class` when `value_type` erases
+/// it, as [`c_classed_load`] does for a load.
 pub(crate) fn c_qualified_typed_store(
     pointer: CExpression,
     value: CExpression,
     value_type: CType,
+    access_class: Option<crate::kernel::effective_type::CAccessClass>,
     pointee_constant: bool,
     volatile: bool,
 ) -> CStatement {
@@ -2539,6 +2564,7 @@ pub(crate) fn c_qualified_typed_store(
         pointer,
         value,
         value_type,
+        access_class,
         pointee_constant,
         volatile,
         source: Default::default(),
@@ -4487,8 +4513,7 @@ pub fn prove_symbolic_c_statement_verification_paths_with_environment_and_loop_r
     environment: CExecutionEnvironment,
     execution_semantics: CExecutionSemantics,
 ) -> (SymbolicCExecution, Option<CVerifiedLoopRule>) {
-    let mut budget =
-        ExecutionBudget::for_new_execution().with_c_statement_verification_cost(&statement);
+    let mut budget = ExecutionBudget::for_new_execution().with_c_statement_cost(&statement);
     prove_symbolic_c_statement_verification_paths_with_environment_and_loop_rule_using_budget(
         state,
         statement,
@@ -4510,11 +4535,11 @@ fn statement_kernel_variables<'scope>(
             let mut existing = BTreeSet::new();
             collect_c_state_bitvector_variables(state, &mut existing);
             collect_c_statement_bitvector_variables(statement, &mut existing);
-            collect_assumption_variables(assumptions, &mut existing);
             existing
         },
         execution_environment_variable_index(environment),
     )
+    .reserving_through(assumptions.execution_variable_ceiling())
 }
 
 pub(crate) fn prove_symbolic_c_statement_verification_paths_with_environment_and_loop_rule_using_budget(
@@ -4597,8 +4622,7 @@ pub(crate) fn prove_symbolic_c_loop_exit_with_proven_phases(
     break_exits: Vec<CLoopBreakExit>,
     return_exits: Vec<CLoopReturnExit>,
 ) -> (SymbolicCExecution, Option<CVerifiedLoopRule>) {
-    let mut budget =
-        ExecutionBudget::for_new_execution().with_c_statement_verification_cost(&statement);
+    let mut budget = ExecutionBudget::for_new_execution().with_c_statement_cost(&statement);
     prove_symbolic_c_loop_exit_with_proven_phases_using_budget(
         state,
         statement,
@@ -4991,8 +5015,7 @@ pub fn prove_symbolic_c_function_verification_paths_with_environment(
     environment: CExecutionEnvironment,
     execution_semantics: CExecutionSemantics,
 ) -> SymbolicCExecution {
-    let budget = ExecutionBudget::for_new_execution()
-        .with_c_function_verification_cost(&function, &arguments);
+    let budget = ExecutionBudget::for_new_execution().with_c_function_cost(&function, &arguments);
     prove_symbolic_c_function_verification_paths_with_environment_and_budget(
         state,
         function,
@@ -5055,8 +5078,7 @@ pub fn prove_checked_c_function_execution_with_environment(
                 assumptions.clone(),
                 environment.clone(),
                 execution_semantics,
-                ExecutionBudget::for_new_execution()
-                    .with_c_function_verification_cost(&function, &arguments),
+                ExecutionBudget::for_new_execution().with_c_function_cost(&function, &arguments),
                 true,
                 defer_conditional_resource_effect,
             )
@@ -7766,7 +7788,8 @@ fn universally_close_pure_implication(
 }
 
 /// Opens one verified concrete target as a local named-contract refinement
-/// problem for a pure theorem proof.
+/// problem for a pure theorem proof, with the contract's value parameters
+/// fixed to `values`.
 ///
 /// No project search occurs: both names are exact map lookups, and a concrete
 /// target must already carry a verified or explicitly external rule.
@@ -7774,8 +7797,11 @@ pub fn c_function_contract_refinement_context(
     environment: &CExecutionEnvironment,
     contract_name: &str,
     target_name: &str,
+    values: &[CValue],
 ) -> Option<CFunctionContractRefinementContext> {
-    let contract = environment.get_function_contract(contract_name)?;
+    let contract = environment
+        .get_function_contract(contract_name)?
+        .instantiated(values)?;
     let function = if let Some(rule) = environment.get_verified_function_rule(target_name) {
         &rule.function
     } else {
@@ -7784,7 +7810,7 @@ pub fn c_function_contract_refinement_context(
             .function
     };
     prepare_function_contract_refinement_context(
-        contract,
+        &contract,
         function,
         &mut ExecutionBudget::for_new_execution(),
     )
@@ -7860,7 +7886,8 @@ pub fn c_named_contract_refinement_theorem_skeleton(
 }
 
 /// Opens one named contract as an implementation of another for the same
-/// exact symbolic function-pointer value.
+/// exact symbolic function-pointer value, each with its value parameters
+/// fixed to its facts' values.
 ///
 /// Both contract names are exact environment lookups. The source fact remains
 /// an explicit premise of the theorem authority issued after refinement; this
@@ -7869,11 +7896,17 @@ pub fn c_named_contract_refinement_theorem_skeleton(
 pub fn c_contract_refinement_context(
     environment: &CExecutionEnvironment,
     target_contract_name: &str,
+    target_values: &[CValue],
     source_contract_name: &str,
+    source_values: &[CValue],
     pointer: &CValue,
 ) -> Option<CFunctionContractRefinementContext> {
-    let target = environment.get_function_contract(target_contract_name)?;
-    let source = environment.get_function_contract(source_contract_name)?;
+    let target = environment
+        .get_function_contract(target_contract_name)?
+        .instantiated(target_values)?;
+    let source = environment
+        .get_function_contract(source_contract_name)?
+        .instantiated(source_values)?;
     let CValue::Pointer(pointer) = pointer else {
         return None;
     };
@@ -7885,13 +7918,14 @@ pub fn c_contract_refinement_context(
         return None;
     }
     let mut context = super::functions::contract_refinement_context_for_interface(
-        target,
+        &target,
         source.name(),
         source.interface(),
         &mut ExecutionBudget::for_new_execution(),
     )?;
     context.pointer = pointer.clone();
-    context.source_contract = Some(source.clone());
+    context.function_value_arguments = source.value_arguments().to_vec();
+    context.source_contract = Some(source);
     Some(context)
 }
 
@@ -7930,9 +7964,12 @@ pub(crate) fn prove_c_function_contract_refinement(
     let Proposition::Predicate { name, arguments } = &conclusion else {
         return None;
     };
+    // The fact names the pointer and then the values the contract's value
+    // parameters were fixed to.
     let [
         state @ Term::CState(_),
         Term::CValue(CValue::Pointer(pointer)),
+        values @ ..,
     ] = arguments.as_slice()
     else {
         return None;
@@ -7940,6 +7977,11 @@ pub(crate) fn prove_c_function_contract_refinement(
     if name != &context.contract.predicate_name()
         || pointer != &context.pointer
         || pointer.c_type() != context.contract.function_pointer_type()
+        || values.len() != context.contract.value_arguments().len()
+        || !values
+            .iter()
+            .zip(context.contract.value_arguments())
+            .all(|(term, value)| matches!(term, Term::CValue(term) if term == value))
     {
         return None;
     }
@@ -7963,10 +8005,13 @@ pub(crate) fn prove_c_function_contract_refinement(
             };
             let premise = Proposition::Predicate {
                 name: source.predicate_name(),
-                arguments: vec![
+                arguments: [
                     state.clone(),
                     Term::CValue(CValue::Pointer(context.pointer.clone())),
-                ],
+                ]
+                .into_iter()
+                .chain(source.value_arguments().iter().cloned().map(Term::CValue))
+                .collect(),
             };
             Proposition::ForAll {
                 var: *variable,
@@ -7991,25 +8036,23 @@ mod contract_interface_identity;
 /// parameter in order. No target-contract assumption authorizes this call.
 pub(crate) fn prove_executed_contract_refinement(
     environment: &CExecutionEnvironment,
-    source_names: &[&str],
+    sources: &[(&str, Vec<CValue>)],
     target_name: &str,
     conclusion: Proposition,
     rule: &CVerifiedFunctionRule,
 ) -> Option<CVerifiedPureTheorem> {
-    if source_names.is_empty() {
+    if sources.is_empty() {
         return None;
     }
     let target = environment.get_function_contract(target_name)?;
+    let target_values = executed_conclusion_values(&conclusion, target)?;
     let mut function = rule.function.clone();
     let callback = function.pop_parameter()?;
     if callback.c_type() != target.function_pointer_type() {
         return None;
     }
-    let arguments = function
-        .parameters()
-        .iter()
-        .map(|parameter| CExpression::Variable(parameter.name().to_string()))
-        .collect();
+    pop_executed_value_pins(&mut function, &target_values)?;
+    let arguments = executed_call_arguments(&function, target_values.len())?;
     let call = if function.return_type() == CType::Void {
         CStatement::Call {
             function_name: callback.name().to_string(),
@@ -8028,24 +8071,32 @@ pub(crate) fn prove_executed_contract_refinement(
     if function.body() != &call || function.source_body() != &call {
         return None;
     }
-    for source_name in source_names.iter().rev() {
+    for (source_name, source_values) in sources.iter().rev() {
         let source = environment.get_function_contract(source_name)?;
-        if callback.c_type() != source.function_pointer_type() {
+        if callback.c_type() != source.function_pointer_type()
+            || source_values.len() != source.interface().value_parameters().len()
+        {
             return None;
         }
-        let source_requirement = SpecProposition::Predicate {
-            // A function-contract predicate denotes its closed interface,
-            // independently of the caller's current population model.
-            resource_state_dependent: false,
-            name: source.predicate_name(),
-            arguments: vec![SpecPredicateArgument::Value(SpecExpression::CExpression(
-                CExpression::Variable(callback.name().to_string()),
-            ))],
-        };
+        let source_requirement =
+            SpecProposition::Predicate {
+                // A function-contract predicate denotes its closed interface,
+                // independently of the caller's current population model.
+                resource_state_dependent: false,
+                name: source.predicate_name(),
+                arguments: std::iter::once(SpecPredicateArgument::Value(
+                    SpecExpression::CExpression(CExpression::Variable(callback.name().to_string())),
+                ))
+                .chain(source_values.iter().map(|value| {
+                    SpecPredicateArgument::Value(SpecExpression::Value(value.clone()))
+                }))
+                .collect(),
+            };
         if function.pop_contract_requirement()? != source_requirement {
             return None;
         }
     }
+    let function = function.with_trailing_value_parameters(target_values.len())?;
     if !contract_interface_identity::same_interface(target, &function) {
         return None;
     }
@@ -8055,6 +8106,7 @@ pub(crate) fn prove_executed_contract_refinement(
     let [
         state @ Term::CState(_),
         Term::CValue(CValue::Pointer(pointer)),
+        ..,
     ] = arguments.as_slice()
     else {
         return None;
@@ -8069,15 +8121,18 @@ pub(crate) fn prove_executed_contract_refinement(
         return None;
     }
     let mut implication = conclusion.clone();
-    for source_name in source_names.iter().rev() {
+    for (source_name, source_values) in sources.iter().rev() {
         let premise = Proposition::Predicate {
             name: environment
                 .get_function_contract(source_name)?
                 .predicate_name(),
-            arguments: vec![
+            arguments: [
                 state.clone(),
                 Term::CValue(CValue::Pointer(pointer.clone())),
-            ],
+            ]
+            .into_iter()
+            .chain(source_values.iter().cloned().map(Term::CValue))
+            .collect(),
         };
         implication = Proposition::Implies(Box::new(premise), Box::new(implication));
     }
@@ -8088,6 +8143,59 @@ pub(crate) fn prove_executed_contract_refinement(
             body: Box::new(implication),
         }),
     })
+}
+
+/// The values an execution theorem's conclusion fixes the target contract's
+/// value parameters to, after its function pointer: one per parameter.
+fn executed_conclusion_values(
+    conclusion: &Proposition,
+    target: &CFunctionContract,
+) -> Option<Vec<CValue>> {
+    let Proposition::Predicate { arguments, .. } = conclusion else {
+        return None;
+    };
+    let values = arguments
+        .get(2..)?
+        .iter()
+        .map(|argument| match argument {
+            Term::CValue(value) => Some(value.clone()),
+            _ => None,
+        })
+        .collect::<Option<Vec<_>>>()?;
+    (values.len() == target.interface().value_parameters().len()).then_some(values)
+}
+
+/// An execution theorem's one-call wrapper carries the target contract's
+/// value parameters as its trailing parameters, each pinned to the
+/// conclusion's value by a trailing requirement `parameter == value`: the
+/// wrapper is verified for every value that equals it, which is the target
+/// contract at those values. Pops and checks the pins.
+fn pop_executed_value_pins(function: &mut CFunction, values: &[CValue]) -> Option<()> {
+    let call_count = function.parameters().len().checked_sub(values.len())?;
+    let parameters = function.parameters()[call_count..].to_vec();
+    for (parameter, value) in parameters.iter().zip(values).rev() {
+        let pin = SpecProposition::Comparison {
+            left: SpecExpression::CExpression(CExpression::Variable(parameter.name().to_string())),
+            operator: CComparisonOperator::Equal,
+            right: SpecExpression::Value(value.clone()),
+        };
+        if function.pop_contract_requirement()? != pin {
+            return None;
+        }
+    }
+    Some(())
+}
+
+/// The arguments of the one call an execution wrapper makes: its call
+/// parameters, in order, without the value parameters that trail them.
+fn executed_call_arguments(function: &CFunction, value_count: usize) -> Option<Vec<CExpression>> {
+    let call_count = function.parameters().len().checked_sub(value_count)?;
+    Some(
+        function.parameters()[..call_count]
+            .iter()
+            .map(|parameter| CExpression::Variable(parameter.name().to_string()))
+            .collect(),
+    )
 }
 
 /// The declared interface of a verified or explicitly external project
@@ -8137,12 +8245,10 @@ pub(crate) fn prove_executed_concrete_contract_refinement(
     // The callee has to be a function this project has a rule for. An
     // unverified name would make the checked call vacuous.
     project_function_interface(environment, callee_name)?;
-    let function = rule.function.clone();
-    let arguments = function
-        .parameters()
-        .iter()
-        .map(|parameter| CExpression::Variable(parameter.name().to_string()))
-        .collect();
+    let target_values = executed_conclusion_values(&conclusion, target)?;
+    let mut function = rule.function.clone();
+    pop_executed_value_pins(&mut function, &target_values)?;
+    let arguments = executed_call_arguments(&function, target_values.len())?;
     let call = if function.return_type() == CType::Void {
         CStatement::Call {
             function_name: callee_name.to_string(),
@@ -8161,13 +8267,14 @@ pub(crate) fn prove_executed_concrete_contract_refinement(
     if function.body() != &call || function.source_body() != &call {
         return None;
     }
+    let function = function.with_trailing_value_parameters(target_values.len())?;
     if !contract_interface_identity::same_interface(target, &function) {
         return None;
     }
     let Proposition::Predicate { name, arguments } = &conclusion else {
         return None;
     };
-    let [Term::CState(_), Term::CValue(CValue::Pointer(pointer))] = arguments.as_slice() else {
+    let [Term::CState(_), Term::CValue(CValue::Pointer(pointer)), ..] = arguments.as_slice() else {
         return None;
     };
     if pointer.pointer().block != PointerBlock::Function(callee_name.to_string()) {

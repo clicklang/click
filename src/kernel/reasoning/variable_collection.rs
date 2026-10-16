@@ -64,6 +64,94 @@ const HAVOC_RANGE_HOPS: usize = 64;
 
 thread_local! {
     static COLLECTING_HAVOC_RANGES: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    /// Set while [`execution_variable_ceiling`] collects: an interned
+    /// snapshot then contributes only its greatest remembered variable below
+    /// the execution ceiling, which is all a ceiling needs.
+    static EXECUTION_CEILING_ONLY: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// The greatest variable of the execution range
+/// (`ExecutionBudget::KERNEL_VARIABLE_BASE` up to its ceiling) that
+/// `proposition` mentions: what an execution must allocate above for a fresh
+/// identity to name nothing the fact names. It collects as
+/// [`collect_proposition_bitvector_variables`] does, with every snapshot in
+/// full and no collection mode of the caller's in force, except that a
+/// snapshot contributes only its greatest remembered variable.
+pub(in crate::kernel) fn proposition_execution_variable_ceiling(
+    proposition: &Proposition,
+) -> Option<Variable> {
+    execution_variable_ceiling(None, |variables| {
+        collect_proposition_bitvector_variables(proposition, variables)
+    })
+    .0
+}
+
+/// [`proposition_execution_variable_ceiling`] for a condition fact.
+pub(in crate::kernel) fn condition_execution_variable_ceiling(
+    condition: &ConditionTerm,
+) -> Option<Variable> {
+    execution_variable_ceiling(None, |variables| {
+        collect_condition_bitvector_variables(condition, variables)
+    })
+    .0
+}
+
+/// The ceiling of `proposition`'s written syntax, stopping at each snapshot,
+/// and whether it met one: filing a fact reads syntax, never snapshot
+/// contents, so a fact that names a snapshot has its whole ceiling taken
+/// later, when an execution asks for it.
+pub(in crate::kernel) fn proposition_syntax_execution_variable_ceiling(
+    proposition: &Proposition,
+) -> (Option<Variable>, bool) {
+    execution_variable_ceiling(Some(false), |variables| {
+        collect_proposition_bitvector_variables(proposition, variables)
+    })
+}
+
+/// [`proposition_syntax_execution_variable_ceiling`] for a condition fact.
+pub(in crate::kernel) fn condition_syntax_execution_variable_ceiling(
+    condition: &ConditionTerm,
+) -> (Option<Variable>, bool) {
+    execution_variable_ceiling(Some(false), |variables| {
+        collect_condition_bitvector_variables(condition, variables)
+    })
+}
+
+/// Collects for a ceiling with every caller mode cleared; `deferral` is
+/// `Some(false)` to stop at snapshots, and the second result says whether
+/// one was met.
+fn execution_variable_ceiling(
+    deferral: Option<bool>,
+    collect: impl FnOnce(&mut BTreeSet<Variable>),
+) -> (Option<Variable>, bool) {
+    struct Restore(bool, bool, bool, Option<bool>);
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            EXECUTION_CEILING_ONLY.with(|flag| flag.set(self.0));
+            CONNECTION_VARIABLES.with(|flag| flag.set(self.1));
+            COLLECTING_HAVOC_RANGES.with(|flag| flag.set(self.2));
+            DEFER_CONDITION_SNAPSHOTS.with(|state| state.set(self.3));
+        }
+    }
+    let _restore = Restore(
+        EXECUTION_CEILING_ONLY.with(|flag| flag.replace(true)),
+        CONNECTION_VARIABLES.with(|flag| flag.replace(false)),
+        COLLECTING_HAVOC_RANGES.with(|flag| flag.replace(false)),
+        DEFER_CONDITION_SNAPSHOTS.with(|state| state.replace(deferral)),
+    );
+    let mut variables = BTreeSet::new();
+    collect(&mut variables);
+    let ceiling = variables
+        .range(
+            Variable(crate::kernel::ExecutionBudget::KERNEL_VARIABLE_BASE)
+                ..Variable(crate::kernel::ExecutionBudget::KERNEL_VARIABLE_CEILING),
+        )
+        .next_back()
+        .copied();
+    (
+        ceiling,
+        DEFER_CONDITION_SNAPSHOTS.with(|state| state.get() == Some(true)),
+    )
 }
 
 /// The bitvector variables of `proposition`, with those of the ranges the
@@ -1503,6 +1591,26 @@ fn defer_condition_snapshot() -> bool {
             false
         }
     })
+}
+
+thread_local! {
+    static COORDINATE_VARIABLES: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Equality-source dependencies include byte-offset variables as well as
+/// machine-value variables. Preserve the ordinary snapshot deferral policy.
+pub(in crate::kernel) fn collect_condition_coordinate_index_variables(
+    condition: &ConditionTerm,
+    variables: &mut BTreeSet<Variable>,
+) -> bool {
+    struct Scope(bool);
+    impl Drop for Scope {
+        fn drop(&mut self) {
+            COORDINATE_VARIABLES.with(|flag| flag.set(self.0));
+        }
+    }
+    let _scope = Scope(COORDINATE_VARIABLES.with(|flag| flag.replace(true)));
+    collect_condition_index_variables(condition, variables)
 }
 
 /// Collect the ordinary condition variables, stopping at each snapshot.
@@ -4319,7 +4427,8 @@ pub(in crate::kernel) fn collect_pointer_offset_bitvector_variables(
     match offset {
         PointerOffsetTerm::Constant(_) => {}
         PointerOffsetTerm::Variable(variable) => {
-            if collecting_connection_variables() {
+            if collecting_connection_variables() || COORDINATE_VARIABLES.with(std::cell::Cell::get)
+            {
                 variables.insert(*variable);
             }
         }
@@ -5007,11 +5116,18 @@ pub(in crate::kernel) fn collect_memory_bitvector_variables(
     // counted snapshot and the entries they changed are charged, as are the
     // snapshots its cells' loads reach.
     if let Some(shared) = crate::kernel::primitives::interned_storage_of(memory) {
-        variables.extend(
-            shared_memory_variable_counts(&shared, WholeCount::Uncharged)
-                .keys()
-                .copied(),
-        );
+        let counts = shared_memory_variable_counts(&shared, WholeCount::Uncharged);
+        if EXECUTION_CEILING_ONLY.with(std::cell::Cell::get) {
+            variables.extend(
+                counts
+                    .get_less_than(&Variable(
+                        crate::kernel::ExecutionBudget::KERNEL_VARIABLE_CEILING,
+                    ))
+                    .map(|(variable, _)| *variable),
+            );
+            return;
+        }
+        variables.extend(counts.keys().copied());
         return;
     }
     collect_memory_bitvector_variables_whole(memory, variables);

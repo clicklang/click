@@ -1920,6 +1920,11 @@ fn reduce_simp_atomic_premises(
     selected: (PureFactContext, u64, AtomicPropositionDerivationEvidence),
 ) -> Option<(PureFactContext, u64, AtomicPropositionDerivationEvidence)> {
     let (mut context, mut context_id, mut evidence) = selected;
+    if for_simp
+        && let Some((retained, retained_id)) = context.retained_atomic_equality_context(&evidence)
+    {
+        return Some((retained, retained_id, evidence));
+    }
     if !for_simp || !matches!(evidence, AtomicPropositionDerivationEvidence::Legacy) {
         return Some((context, context_id, evidence));
     }

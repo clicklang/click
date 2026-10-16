@@ -224,6 +224,7 @@ mod pointer_trace_tests {
                 value_type,
                 volatile: false,
                 pointee_constant: false,
+                access_class: None,
                 source: Default::default(),
             },
         };

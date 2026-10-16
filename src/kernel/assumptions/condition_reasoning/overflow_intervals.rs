@@ -815,7 +815,7 @@ impl PureFactContext {
                 }
             }
         }
-        if let Some(equalities) = self.exact_constant_equalities.get(term) {
+        if let Some(equalities) = self.equality_graph.exact_literal_sources(term) {
             crate::instrumentation::record_deterministic_work(equalities.len().max(1));
             for condition in equalities.keys() {
                 let sides = match (width, condition) {
