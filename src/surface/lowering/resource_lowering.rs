@@ -274,16 +274,14 @@ pub(in crate::surface) fn initial_call_state(
                     },
                     |_| 1,
                 );
-                arguments.push(c_typed_pointer_value(
-                    Pointer {
-                        block: PointerBlock::ExternalArgument,
-                        offset: scale_int32_offset(
-                            Bitvector32Term::Variable(input_pointer_variable(scope, index)?),
-                            i64::from(element_width),
-                        ),
-                    },
-                    kernel_c_type,
-                ));
+                let pointer = Pointer {
+                    block: PointerBlock::ExternalArgument,
+                    offset: scale_int32_offset(
+                        Bitvector32Term::Variable(input_pointer_variable(scope, index)?),
+                        i64::from(element_width),
+                    ),
+                };
+                arguments.push(c_typed_pointer_value(pointer, kernel_c_type));
             }
             C0Type::Int8 => {
                 arguments.push(CExpression::Value(CValue::Int8(Bitvector32Term::Variable(
@@ -1220,7 +1218,10 @@ pub(in crate::surface) fn requirement_propositions_sharing_lowering_state(
         .map(|_| None)
         .collect::<Vec<Option<ClickError>>>();
     let mut pending = (0..requires.len()).collect::<Vec<_>>();
-    let mut assumptions = initial_assumptions.clone();
+    // These are the function's own entry requirements: a member selected
+    // through a pointer argument was checked by the caller, so it is
+    // assumed and recorded (`PureFactContext::assume_entry_clause_extents`).
+    let mut assumptions = initial_assumptions.clone().assume_entry_clause_extents();
 
     // Requirements may be written in either order, so use one retry pass
     // after the first pass has published the facts it could lower. A bounded
@@ -2742,12 +2743,19 @@ fn lower_resource_segment_with_values(
     // (`design/pointer-subobject-extents.md`, D1). Constant bounds are
     // refused here by name; the kernel decides the rest when it checks
     // the step.
+    // The range is named through `base_value`, as the kernel's clause
+    // evaluation records it (`CMemoryRange::with_designations`).
     let refuse_past_extent = |range: CMemoryRange| {
+        let range = range.with_designations(base_value.designations());
         let (start, end) = match range.wide_bounds() {
             Some(bounds) => bounds,
             None => (range.start(), range.end()),
         };
-        if start.as_const().is_none() || end.as_const().is_none() {
+        // An opaque extent is known only from facts this lowering lacks.
+        if start.as_const().is_none()
+            || end.as_const().is_none()
+            || base_value.extent().is_some_and(|extent| extent.is_opaque())
+        {
             return Ok(range);
         }
         match crate::kernel::memory_range_extent_refusal(

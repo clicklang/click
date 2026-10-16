@@ -3729,6 +3729,28 @@ impl PureFactContext {
     /// `i64::MAX`, so the offset term is the mathematical offset and the
     /// two comparisons place the access. No 32-bit reading of an index or a
     /// bound takes part.
+    /// [`Self::pointer_access_in_range`] or [`Self::pointer_access_in_wide_range`],
+    /// as `range`'s index kind requires. A wide range places whole-element
+    /// accesses only.
+    pub(in crate::kernel) fn pointer_access_in_held_range(
+        &self,
+        pointer: &Pointer,
+        byte_width: u32,
+        range: &CMemoryRange,
+    ) -> bool {
+        if range.wide_bounds().is_some() {
+            return self.pointer_access_in_wide_range(pointer, byte_width, range);
+        }
+        self.pointer_access_in_range(
+            pointer,
+            byte_width,
+            range.base(),
+            range.start(),
+            range.end(),
+            range.element_width(),
+        )
+    }
+
     pub(in crate::kernel) fn pointer_access_in_wide_range(
         &self,
         pointer: &Pointer,
@@ -3832,6 +3854,59 @@ impl PureFactContext {
             ),
             None => self.pointer_access_in_wide_range(pointer, bytes, range),
         }
+    }
+
+    /// Whether a coverage fact places the `byte_width` bytes at `pointer`
+    /// inside the opaque `extent` (`design/pointer-subobject-extents.md`,
+    /// Phase C). Zero bytes asks for a position, the one-past end included.
+    /// Only the extent's own coverage facts are consulted, through its
+    /// pointer class.
+    pub(in crate::kernel) fn opaque_extent_covers(
+        &self,
+        extent: &crate::kernel::SubobjectExtent,
+        pointer: &Pointer,
+        byte_width: u32,
+    ) -> bool {
+        self.equality_graph
+            .subobject_coverage_facts(&extent.start)
+            .iter()
+            .filter_map(crate::kernel::SubobjectExtent::covered_range)
+            .any(|(from, count, element_width)| {
+                self.pointer_access_in_range(
+                    pointer,
+                    byte_width,
+                    &from,
+                    &Bitvector32Term::Constant(0),
+                    &count,
+                    element_width,
+                )
+            })
+    }
+
+    /// Whether one coverage fact of the opaque `extent` holds both the
+    /// positions `from` and `to`, and so every byte between them.
+    pub(in crate::kernel) fn opaque_extent_covers_span(
+        &self,
+        extent: &crate::kernel::SubobjectExtent,
+        from: &Pointer,
+        to: &Pointer,
+    ) -> bool {
+        self.equality_graph
+            .subobject_coverage_facts(&extent.start)
+            .iter()
+            .filter_map(crate::kernel::SubobjectExtent::covered_range)
+            .any(|(base, count, element_width)| {
+                [from, to].into_iter().all(|position| {
+                    self.pointer_access_in_range(
+                        position,
+                        0,
+                        &base,
+                        &Bitvector32Term::Constant(0),
+                        &count,
+                        element_width,
+                    )
+                })
+            })
     }
 
     pub(in crate::kernel) fn pointer_access_in_range(

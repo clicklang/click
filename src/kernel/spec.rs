@@ -1737,10 +1737,18 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
         ),
         SpecProposition::Defined(expression) => {
             let mut checked = SpecEvaluation::checked(budget);
+            // Definedness is decided from no facts, except that a contract
+            // entry's own requirement keeps assuming what its caller checked
+            // about opaque pointer extents.
+            let context = if assumptions.should_assume_entry_clause_extents() {
+                PureFactContext::new().assume_entry_clause_extents()
+            } else {
+                PureFactContext::new()
+            };
             let paths = evaluate_spec_expression_paths_with_algebraic_bindings_in(
                 scope,
                 expression,
-                &PureFactContext::new(),
+                &context,
                 &mut checked,
             )?;
             let mut normal_paths = paths.into_iter().map(|path| {
@@ -6602,8 +6610,11 @@ fn evaluate_spec_pointer_offset_paths_in(
         let CValue::Pointer(pointer) = pointer_path.value else {
             continue;
         };
-        let pointer_type = pointer.c_type();
-        let pointer = pointer.into_pointer();
+        // The offset pointer designates what its operand designates, as C
+        // pointer arithmetic keeps the operand's extent
+        // (`design/pointer-subobject-extents.md`, D2).
+        let value = pointer;
+        let pointer = value.pointer().clone();
         let element_assumptions = assumptions_with_path_context(
             assumptions,
             &pointer_path.facts,
@@ -6637,10 +6648,9 @@ fn evaluate_spec_pointer_offset_paths_in(
                 canonicalized_offset_index_term(elements, &mut facts)
             };
             paths.push(SpecExpressionPath {
-                value: CValue::typed_pointer(
+                value: CValue::Pointer(value.clone().with_address(
                     pointer.offset_by_typed_elements(elements, byte_width, unsigned, wide),
-                    pointer_type,
-                ),
+                )),
                 facts,
                 obligations,
             });
@@ -7442,6 +7452,26 @@ fn pointer_designation_equality(
     };
     if left == right {
         return None;
+    }
+    // An opaque extent is known only by what covers it: equal to a known
+    // extent, it covers that extent's bytes, and covers nothing else because
+    // an opaque extent covers only what a fact states.
+    match (left.is_opaque(), right.is_opaque()) {
+        (true, false) | (false, true) => {
+            let (opaque, known) = if left.is_opaque() {
+                (left, right)
+            } else {
+                (right, left)
+            };
+            let width = known.constant_width()?;
+            return Some(opaque.coverage_fact(&CMemoryRange::new_with_element_width(
+                known.start.clone(),
+                Bitvector32Term::Constant(0),
+                Bitvector32Term::Constant(width),
+                1,
+            )));
+        }
+        _ => {}
     }
     let starts = Proposition::ConditionIs(
         pointer_equality_condition(left.start.clone(), right.start.clone()),

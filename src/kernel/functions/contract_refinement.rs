@@ -60,7 +60,7 @@ pub(super) fn checked_access_mode_refinement_adapter(
         contract_entry,
         contract.resource_requires(),
         contract.composite_resource_definitions(),
-        assumptions,
+        &assumptions.clone().assume_entry_clause_extents(),
         budget,
     )?
     else {
@@ -70,7 +70,7 @@ pub(super) fn checked_access_mode_refinement_adapter(
         function_entry,
         function.resource_requires(),
         function.composite_resource_definitions(),
-        assumptions,
+        &assumptions.clone().assume_entry_clause_extents(),
         budget,
     )?
     else {

@@ -2166,7 +2166,20 @@ impl CMemoryRange {
             end_bound: end,
             element_width,
             kind: RangeIndexKind::Int32,
+            designation: Default::default(),
         }
+    }
+
+    /// The opaque extents whose pointers named this range.
+    pub(crate) fn designations(&self) -> [Option<Variable>; 2] {
+        self.designation.0
+    }
+
+    /// The same range, recorded as named through a pointer with these
+    /// designations ([`super::CPointerValue::designations`]).
+    pub(crate) fn with_designations(mut self, designations: [Option<Variable>; 2]) -> Self {
+        self.designation.0 = designations;
+        self
     }
 
     pub fn kind(&self) -> RangeIndexKind {

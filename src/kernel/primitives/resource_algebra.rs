@@ -5627,6 +5627,40 @@ impl ResourceContext {
         Ok((context, inserted))
     }
 
+    /// Whether a held memory range named through the opaque `extent`
+    /// satisfies `covers` (`design/pointer-subobject-extents.md`, Phase C).
+    /// A range named through an extent a pointer equality identified with
+    /// `extent` counts too.
+    pub(in crate::kernel) fn designated_range_covers(
+        &self,
+        extent: &super::SubobjectExtent,
+        assumptions: &PureFactContext,
+        mut covers: impl FnMut(&CMemoryRange) -> bool,
+    ) -> bool {
+        let Some(variable) = extent.opaque_variable() else {
+            return false;
+        };
+        self.facts().iter().any(|fact| {
+            crate::instrumentation::record_deterministic_work(1);
+            fact.memory_view_range()
+                .or_else(|| fact.memory_own_range())
+                .filter(|range| {
+                    range
+                        .designations()
+                        .into_iter()
+                        .flatten()
+                        .any(|designation| {
+                            designation == variable
+                                || assumptions.pointers_known_equal(
+                                    &Pointer::symbolic(designation),
+                                    &extent.start,
+                                )
+                        })
+                })
+                .is_some_and(&mut covers)
+        })
+    }
+
     pub fn facts(&self) -> &[CResourceFact] {
         self.storage
             .materialized
@@ -9998,7 +10032,23 @@ fn wide_range_rebased(
     ))
 }
 
+/// The pieces of `available` left once `required` is taken. Each piece lies
+/// inside `available`, so it keeps `available`'s designations.
 pub(in crate::kernel) fn split_memory_range(
+    available: &CMemoryRange,
+    required: &CMemoryRange,
+    assumptions: &PureFactContext,
+) -> Option<Vec<CMemoryRange>> {
+    let designations = available.designations();
+    split_untagged_memory_range(available, required, assumptions).map(|pieces| {
+        pieces
+            .into_iter()
+            .map(|piece| piece.with_designations(designations))
+            .collect()
+    })
+}
+
+fn split_untagged_memory_range(
     available: &CMemoryRange,
     required: &CMemoryRange,
     assumptions: &PureFactContext,
@@ -10072,9 +10122,9 @@ pub(in crate::kernel) fn split_memory_range(
         // width-4 owner leaves width-4 remainders; only bounds that do not
         // divide fall back to the byte footprint of both sides.
         if let Some(required) = memory_range_in_element_width(required, available.element_width()) {
-            return split_memory_range(available, &required, assumptions);
+            return split_untagged_memory_range(available, &required, assumptions);
         }
-        return split_memory_range(
+        return split_untagged_memory_range(
             &byte_normalized_memory_range(available),
             &byte_normalized_memory_range(required),
             assumptions,
@@ -10673,7 +10723,25 @@ fn combine_memory_resource_facts(
     }
 }
 
+/// Joins two abutting ranges. The join keeps a designation only when both
+/// pieces carry it: each piece is evidence for its own bytes alone.
 fn merge_memory_ranges(
+    left: &CMemoryRange,
+    right: &CMemoryRange,
+    assumptions: &PureFactContext,
+) -> Option<CMemoryRange> {
+    let right_designations = right.designations();
+    let mut common = left
+        .designations()
+        .into_iter()
+        .flatten()
+        .filter(|designation| right_designations.contains(&Some(*designation)));
+    let designations = [common.next(), common.next()];
+    merge_untagged_memory_ranges(left, right, assumptions)
+        .map(|merged| merged.with_designations(designations))
+}
+
+fn merge_untagged_memory_ranges(
     left: &CMemoryRange,
     right: &CMemoryRange,
     assumptions: &PureFactContext,
@@ -10725,20 +10793,20 @@ fn merge_memory_ranges(
         // split's residue rejoins the owner it came from instead of leaving
         // the context permanently fragmented across two widths.
         if let Some(right) = memory_range_in_element_width(right, left.element_width()) {
-            return merge_memory_ranges(left, &right, assumptions);
+            return merge_untagged_memory_ranges(left, &right, assumptions);
         }
         let left = memory_range_in_element_width(left, right.element_width())?;
-        return merge_memory_ranges(&left, right, assumptions);
+        return merge_untagged_memory_ranges(&left, right, assumptions);
     }
     if left.base() != right.base() {
         // Pieces over two spellings of one block, such as the residue of
         // `owns x[0..4]` and the `owns (x + i)[0..1]` a call returns, meet
         // over whichever base the other can be restated on exactly.
         if let Some(right) = memory_range_rebased(right, left.base(), assumptions) {
-            return merge_memory_ranges(left, &right, assumptions);
+            return merge_untagged_memory_ranges(left, &right, assumptions);
         }
         let left = memory_range_rebased(left, right.base(), assumptions)?;
-        return merge_memory_ranges(&left, right, assumptions);
+        return merge_untagged_memory_ranges(&left, right, assumptions);
     }
     if left.end() == right.start()
         || bitvector_terms_proven_equal(left.end(), right.start(), assumptions)
