@@ -52,7 +52,7 @@ impl Parser {
             ),
             value,
             value_type: Some(element_type),
-            member_class: None,
+            lvalue_class: None,
             pointee_constant: false,
             site: C0Site::NONE,
         };
@@ -955,7 +955,7 @@ impl Parser {
                     ),
                     value,
                     value_type: Some(element_type),
-                    member_class: None,
+                    lvalue_class: None,
                     pointee_constant: false,
                     site: C0Site::NONE,
                 })
@@ -968,7 +968,7 @@ impl Parser {
             pointer: field_pointer,
             value,
             value_type: Some(field.c_type),
-            member_class: None,
+            lvalue_class: None,
             pointee_constant: field.pointee_constant,
             site: C0Site::NONE,
         }])
@@ -1218,7 +1218,7 @@ impl Parser {
                     ),
                     value: zero_initializer_value(element_type),
                     value_type: Some(element_type),
-                    member_class: None,
+                    lvalue_class: None,
                     pointee_constant: false,
                     site: C0Site::NONE,
                 })
@@ -1229,7 +1229,7 @@ impl Parser {
             pointer: field_pointer,
             value: zero_initializer_value(field.c_type),
             value_type: Some(field.c_type),
-            member_class: None,
+            lvalue_class: None,
             pointee_constant: field.pointee_constant,
             site: C0Site::NONE,
         }]

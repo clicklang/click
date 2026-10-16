@@ -2083,8 +2083,17 @@ at the accessed position is not checked
 `mdtests/container_of_reads_the_enclosing_struct.md`,
 `mdtests/container_of_into_an_unrelated_struct_is_refused.md`,
 `mdtests/a_union_member_read_after_another_member_store_is_allowed.md`).
-The check does not yet cover `int *` and `int **` pointers, local byte
-arrays, local arrays of structs, globals, or heap objects; the
+`int *` and `int **` objects have their own classes, told apart from struct
+pointers, and a local `uint8_t` or `int8_t` array is a character object
+while a local array of structs is an array of its struct
+(`mdtests/an_int_pointer_cell_read_through_a_long_pointer_is_refused.md`,
+`mdtests/a_declared_int_pointer_read_through_an_unsigned_pointer_is_refused.md`,
+`mdtests/a_local_byte_buffer_read_through_a_uint32_pointer_is_refused.md`,
+`mdtests/a_long_long_view_of_a_local_struct_array_is_refused.md`,
+`mdtests/int_pointers_byte_arrays_and_struct_arrays_are_read_through_their_own_types.md`).
+A load through an `int **` is classed when the pointer is a variable or a
+member declared without a struct; through other expressions it is not yet
+checked. The check does not yet cover globals or heap objects; the
 effective-type design (`design/effective-types.md`) stages them next.
 
 Automatic scalar, pointer, and array declarations do not zero-initialize their

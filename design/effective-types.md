@@ -155,10 +155,10 @@ allowed cases:
   - Declared locals and local arrays record their class on their block.
   - Loops keep a pointer local's class across the abstract iteration, and
     refuse a back edge that changes it.
-  - `int *` and `int **` carry no class yet, because the frontend spells
-    struct pointers with them; step 2 separates them.
-  - Globals, and local `int8` and `uint8` arrays, which the frontend also
-    uses for arrays of structs, are not covered yet.
+  - `int *` and `int **` carried no class, because the frontend spells
+    struct pointers with them; step 2b separates them.
+  - Globals are not covered yet. Local `int8` and `uint8` arrays, which the
+    frontend also uses for arrays of structs, were covered in step 2b.
 - **Step 2a (struct access paths):** done.
   - A struct class is the struct's tag with the classes it contains at any
     depth: scalar and pointer members, embedded structs' contents, and every
@@ -175,8 +175,14 @@ allowed cases:
   - Positions are not compared: the check accepts a member of the right
     class at the wrong offset. The undecidable-position rule waits for
     positional checking.
-- **Step 2b (next):** `int *` and `int **` classes, separated from struct
-  pointers, and local byte arrays separated from arrays of structs.
+- **Step 2b (`int *` classes and local arrays):** done.
+  - The parser, which knows whether a declaration names a struct, gives
+    `int *` and `int **` their classes: on parameters' pointees, on
+    declared locals, on struct members, and on loads and stores through a
+    variable or member declared without a struct. A load through another
+    expression of an ambiguous type stays unclassed.
+  - A declared local `uint8_t` or `int8_t` array records `char`; a local
+    array of structs records its struct.
 
 ## Validation
 
