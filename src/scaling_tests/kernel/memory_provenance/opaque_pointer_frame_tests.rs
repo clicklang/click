@@ -195,13 +195,25 @@ fn sibling_pointer_reads_stop_before_unrelated_shared_history() {
         let right = intern_c_memory(memory.store(
             field.offset_by_bytes(16), CValue::UInt64(Bitvector32Term::UInt64Constant(2)),
         ));
-        let a = Pointer::loaded_value(&left, &field);
-        let b = Pointer::loaded_value(&right, &field);
+        let producer = crate::kernel::equality_graph::EqualityGraph::default();
+        for index in 0..size {
+            producer.register_pointer_read_definition(
+                &Pointer::loaded(field.block.clone(), Bitvector32Term::Variable(Variable(9_930_000 + index)), 4),
+                &left, &field.offset_by_bytes(32 + index as u32 * 8),
+            );
+        }
+        let legacy = |memory: &SharedCMemory| Pointer::loaded(
+            field.block.clone(), Bitvector32Term::MemoryLoad(memory.clone(), Box::new(field.clone()), LoadKind::Bits32), 4,
+        );
+        let a = legacy(&left);
+        let b = legacy(&right);
+        producer.register_pointer_read_definition(&a, &left, &field);
+        producer.register_pointer_read_definition(&b, &right, &field);
         let context = PureFactContext::new();
         let (holds, work) = crate::instrumentation::measure_deterministic_work(|| {
             complete_pointer_reads_equal_across_frame(&a, &b, &context)
-                && pointer_read_designations_equal(&a, &b, &context)
-                && pointer_read_extents_equal(&a, &b, &context)
+                && pointer_read_designations_equal(&Pointer::loaded_value(&left, &field), &Pointer::loaded_value(&right, &field), &context)
+                && pointer_read_extents_equal(&Pointer::loaded_value(&left, &field), &Pointer::loaded_value(&right, &field), &context)
         });
         assert!(holds);
         work

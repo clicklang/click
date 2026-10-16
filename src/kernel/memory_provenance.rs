@@ -2760,7 +2760,20 @@ pub(in crate::kernel) fn complete_pointer_reads_equal_across_frame(
     right: &Pointer,
     assumptions: &PureFactContext,
 ) -> bool {
-    let (Some(a), Some(b)) = (left.as_loaded_value(), right.as_loaded_value()) else {
+    // Legacy coordinate names denote complete reads only when their typed
+    // producer retained this exact definition. Never infer one from a scalar
+    // load variable, matching arithmetic, or a different pointee stride.
+    let read = |value: &Pointer| {
+        value.as_loaded_value().or_else(|| {
+            let Bitvector32Term::MemoryLoad(memory, address, LoadKind::Bits32) =
+                crate::kernel::equality_graph::logical_pointer_read_term(value)?
+            else {
+                return None;
+            };
+            Pointer::loaded_value(&memory, &address).as_loaded_value()
+        })
+    };
+    let (Some(a), Some(b)) = (read(left), read(right)) else {
         return false;
     };
     if !crate::kernel::reasoning::pointer_offsets_proven_equal_for_memory_resolution(
@@ -6826,6 +6839,59 @@ mod opaque_pointer_frame_tests {
             &Pointer::loaded_value(&changed, &field),
             &context,
         ));
+    }
+
+    #[test]
+    fn complete_pointer_read_addresses_use_exact_retained_typed_producers() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let field = Pointer::symbolic(Variable(9_880_491));
+        let base = CMemory::new();
+        let left = intern_c_memory(base.clone().store(
+            field.offset_by_bytes(8),
+            CValue::UInt64(Bitvector32Term::UInt64Constant(1)),
+        ));
+        let right = intern_c_memory(base.store(
+            field.offset_by_bytes(16),
+            CValue::UInt64(Bitvector32Term::UInt64Constant(2)),
+        ));
+        let legacy = |memory: &SharedCMemory, width| {
+            Pointer::loaded(
+                field.block.clone(),
+                Bitvector32Term::MemoryLoad(
+                    memory.clone(),
+                    Box::new(field.clone()),
+                    LoadKind::Bits32,
+                ),
+                width,
+            )
+        };
+        let a = legacy(&left, 4);
+        let b = legacy(&right, 4);
+        let context = PureFactContext::new();
+        assert!(!complete_pointer_reads_equal_across_frame(&a, &b, &context));
+        for (value, memory) in [(&a, &left), (&b, &right)] {
+            context
+                .equality_graph
+                .register_pointer_read_definition(value, memory, &field);
+        }
+        assert!(complete_pointer_reads_equal_across_frame(&a, &b, &context));
+        // Arithmetic resemblance to a typed producer supplies no read identity.
+        assert!(!complete_pointer_reads_equal_across_frame(
+            &a,
+            &legacy(&right, 8),
+            &context
+        ));
+        let changed = intern_c_memory(
+            right
+                .memory()
+                .clone()
+                .store(field.offset_by_bytes(4), CValue::UInt32(0u32.into())),
+        );
+        let c = legacy(&changed, 4);
+        context
+            .equality_graph
+            .register_pointer_read_definition(&c, &changed, &field);
+        assert!(!complete_pointer_reads_equal_across_frame(&a, &c, &context));
     }
 
     #[test]
