@@ -307,6 +307,13 @@ that reasoning globally can change which surface facts a planner selects and
 therefore change expansion spellings. Isolated memory-resolution fuel keeps
 a nested graph query from consuming the caller's bounded reasoning budget.
 
+The bridging and the explicit certificate check (`with_extended_dag_bridging`,
+`explicit_dag_check_active`) are thread-local modes, so a memo whose
+computation can read either one keys on both. Otherwise an answer computed
+inside the scope would be served outside it, where the bridging must not
+apply, or the reverse. The resolution memos, the context-inconsistency memo,
+the DAG load-equality memo and the atomic derivation memo each do.
+
 Loop havoc uses the same edge-local rule as call havoc when a whole-loop effect
 summary has been checked: its owned ranges are carried on `LoopHavoc`, and a
 load may cross only with evidence that it is outside every range. The copy-back

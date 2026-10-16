@@ -853,9 +853,11 @@ thread_local! {
     static SIGNED_INTERVAL_MEMO: RefCell<
         std::collections::HashMap<(u64, Bitvector32Term), (i64, i64)>,
     > = RefCell::new(std::collections::HashMap::new());
+    /// Keyed by `atomic_derivation_memo_key`: the premises, whether the
+    /// query is for `simp`, and the DAG modes the derivation reads.
     static ATOMIC_DERIVATION_MEMO: RefCell<
         std::collections::HashMap<
-            (u64, bool),
+            (u64, bool, bool, bool),
             std::collections::HashMap<Proposition, Option<AtomicPropositionDerivationEvidence>>,
         >,
     > = RefCell::new(std::collections::HashMap::new());
