@@ -332,7 +332,6 @@ pub fn display_rust_names(text: &str) -> Cow<'_, str> {
     Cow::Owned(output)
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;

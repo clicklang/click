@@ -348,7 +348,7 @@ fn check_upstream_cpp_rounding_phase(
         // correction; no wide guard is assumed in the contract.
         let guard_proof = r#"import click::integer;
 verifying "bitcoin-src/src/util/feefrac.h";
-int64 FeeFrac_Div(int128 n, int32 d, bool round_down) {
+static int64 FeeFrac::Div(int128 n, int32 d, bool round_down) {
     requires d > 0;
     ensures 0 == 0;
 } by {
@@ -387,9 +387,9 @@ int64 FeeFrac_Div(int128 n, int32 d, bool round_down) {
         verify_program_prepared_project(&project, &import)
             .unwrap_or_else(|error| panic!("{selected}: {}", error.message()));
         let root_name = if fee_rate_per_k {
-            "CFeeRate_GetFeePerK"
+            "CFeeRate::GetFeePerK"
         } else {
-            "CFeeRate_GetFee"
+            "CFeeRate::GetFee"
         };
         if matches!(
             phase,
@@ -582,7 +582,7 @@ int64 FeeFrac_Div(int128 n, int32 d, bool round_down) {
         let expanded = expand_project_claim_source_by_label(
             &project,
             &ProgramInputs::program(&import),
-            &format!("FeeFrac_EvaluateFee__bool_{instance}.ensures_0"),
+            &format!("FeeFrac::EvaluateFee<{instance}>.ensures_0"),
         )
         .unwrap();
         let rewritten = project.with_entry_source(expanded.clone());
@@ -592,7 +592,7 @@ int64 FeeFrac_Div(int128 n, int32 d, bool round_down) {
         let position = project_tactic_source_position(
             &rewritten,
             &ProgramInputs::program(&import),
-            &format!("FeeFrac_EvaluateFee__bool_{instance}.contract"),
+            &format!("FeeFrac::EvaluateFee<{instance}>.contract"),
             0,
         )
         .unwrap();
@@ -891,7 +891,7 @@ int64 FeeFrac_Div(int128 n, int32 d, bool round_down) {
         let expanded = expand_project_claim_source_by_label(
             &project,
             &ProgramInputs::program(&import),
-            "FeeFrac_Div.ensures_0",
+            "FeeFrac::Div.ensures_0",
         )
         .unwrap();
         verify_program_prepared_project(&project.with_entry_source(expanded), &import).unwrap();
@@ -2360,7 +2360,7 @@ fn unified_fee_evaluation_source_with_profile(mode: &str, result_fit: bool) -> S
             "let { result: negative_product } =",
         )
         .replace("to_integer(product)", "to_integer(negative_product)")
-        .replace("FeeFrac_Div(product,", "FeeFrac_Div(negative_product,")
+        .replace("FeeFrac::Div(product,", "FeeFrac::Div(negative_product,")
         .replace("rounded", "negative_rounded");
     let fast = match (mode, result_fit) {
         ("Down", false) => include_str!(
@@ -2810,7 +2810,7 @@ fn upstream_getfee_modular_callers_cover_empty_negative_and_oversize_inputs() {
             &format!("{requirements}\n    views this->m_feerate.base.fee;"),
             1,
         );
-        callers.push_str(&format!("\ncontract int64 {name}({contract} {conclusion} }}\ntheorem {name}_application() executes CFeeRate_GetFee(const struct CFeeRate* this, int32 virtual_bytes) {{ ensures {name}(&CFeeRate_GetFee) by {{ {proof} }} }}\n"));
+        callers.push_str(&format!("\ncontract int64 {name}({contract} {conclusion} }}\ntheorem {name}_application() executes CFeeRate::GetFee(const struct CFeeRate* this, int32 virtual_bytes) {{ ensures {name}(&CFeeRate::GetFee) by {{ {proof} }} }}\n"));
     }
     callers.push_str(r#"
 contract int64 EmptyRate(const struct CFeeRate* this, int32 virtual_bytes) {
@@ -2821,8 +2821,8 @@ contract int64 EmptyRate(const struct CFeeRate* this, int32 virtual_bytes) {
     ensures this->m_feerate.base.fee == old(this->m_feerate.base.fee);
     ensures this->m_feerate.base.size == old(this->m_feerate.base.size);
 }
-theorem empty_rate_application() executes CFeeRate_GetFee(const struct CFeeRate* this, int32 virtual_bytes) {
-    ensures EmptyRate(&CFeeRate_GetFee) by {
+theorem empty_rate_application() executes CFeeRate::GetFee(const struct CFeeRate* this, int32 virtual_bytes) {
+    ensures EmptyRate(&CFeeRate::GetFee) by {
         have this->m_feerate.base.size >= 0 by { arithmetic() using { this->m_feerate.base.size == 0; } }
         have this->m_feerate.base.size <= 2147483647 by { arithmetic() using { this->m_feerate.base.size == 0; } }
         have this->m_feerate.base.size != 0 implies -9223372036854775808 <= to_integer(this->m_feerate.base.fee) by { simp(); }
@@ -3051,7 +3051,7 @@ fn upstream_getfee_per_k_modular_callers_cover_signed_and_oversize_rates() {
         ("WidePerK", 8589934592, 1000),
     ] {
         let contract = root_contract.replacen("views this->m_feerate.base.fee;", &format!("requires this->m_feerate.base.fee == {fee}i64; requires this->m_feerate.base.size == {size}; views this->m_feerate.base.fee;"), 1);
-        callers.push_str(&format!("\ncontract int64 {name}({contract} }}\ntheorem {name}_application() executes CFeeRate_GetFeePerK(const struct CFeeRate* this) {{ ensures {name}(&CFeeRate_GetFeePerK) by {{ execute(); simp(); }} }}\n"));
+        callers.push_str(&format!("\ncontract int64 {name}({contract} }}\ntheorem {name}_application() executes CFeeRate::GetFeePerK(const struct CFeeRate* this) {{ ensures {name}(&CFeeRate::GetFeePerK) by {{ execute(); simp(); }} }}\n"));
     }
     check_upstream_cpp_rounding_phase(
         "CFeeRate::GetFeePerK",

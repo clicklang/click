@@ -212,8 +212,8 @@ contract int64 FastOversizeFee(const struct FeeFrac* this, int32 at_size) {
     ensures to_integer(this->fee) * to_integer(at_size) < (to_integer(result) + 1) * to_integer(this->size);
     ensures to_integer(result) == truncating_quotient(to_integer(this->fee) * to_integer(at_size), to_integer(this->size));
 }
-theorem fastoversizefee_evaluation() executes FeeFrac_EvaluateFeeDown(const struct FeeFrac* this, int32 at_size) {
-    ensures FastOversizeFee(&FeeFrac_EvaluateFeeDown) by { execute(); simp(); }
+theorem fastoversizefee_evaluation() executes FeeFrac::EvaluateFeeDown(const struct FeeFrac* this, int32 at_size) {
+    ensures FastOversizeFee(&FeeFrac::EvaluateFeeDown) by { execute(); simp(); }
 }
 
 contract int64 FastLargeFee(const struct FeeFrac* this, int32 at_size) {
@@ -239,6 +239,6 @@ contract int64 FastLargeFee(const struct FeeFrac* this, int32 at_size) {
     ensures to_integer(this->fee) * to_integer(at_size) < (to_integer(result) + 1) * to_integer(this->size);
     ensures to_integer(result) == truncating_quotient(to_integer(this->fee) * to_integer(at_size), to_integer(this->size));
 }
-theorem fastlargefee_evaluation() executes FeeFrac_EvaluateFeeDown(const struct FeeFrac* this, int32 at_size) {
-    ensures FastLargeFee(&FeeFrac_EvaluateFeeDown) by { execute(); simp(); }
+theorem fastlargefee_evaluation() executes FeeFrac::EvaluateFeeDown(const struct FeeFrac* this, int32 at_size) {
+    ensures FastLargeFee(&FeeFrac::EvaluateFeeDown) by { execute(); simp(); }
 }

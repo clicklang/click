@@ -101,7 +101,9 @@ fn decode(text: &str) -> Option<(String, &str)> {
             _ => break,
         };
         let digits = tail.bytes().take_while(u8::is_ascii_digit).count();
-        let Some(length) = (digits > 0).then(|| tail[..digits].parse::<usize>().ok()).flatten()
+        let Some(length) = (digits > 0)
+            .then(|| tail[..digits].parse::<usize>().ok())
+            .flatten()
         else {
             break;
         };

@@ -4795,11 +4795,7 @@ fn every_return_after_construction_runs_the_checked_destructor() {
     let lowered = lower_import(&import).expect("lower cleanup on both return edges");
     assert_eq!(
         call_order(lowered.kernel_function().body()),
-        [
-            "Restore::Restore",
-            "Restore::~Restore",
-            "Restore::~Restore"
-        ]
+        ["Restore::Restore", "Restore::~Restore", "Restore::~Restore"]
     );
 
     let click_source = fs::read_to_string(&sidecar).unwrap();
@@ -5505,11 +5501,7 @@ fn conditional_construction_cleans_up_only_the_constructed_arm() {
     let lowered = lower_import(&import).expect("lower the conditional lifetime directly");
     assert_eq!(
         call_order(lowered.kernel_function().body()),
-        [
-            "Restore::Restore",
-            "Restore::~Restore",
-            "Restore::~Restore",
-        ]
+        ["Restore::Restore", "Restore::~Restore", "Restore::~Restore",]
     );
 
     let click_source = fs::read_to_string(&sidecar).unwrap();
@@ -7885,10 +7877,22 @@ fn class_template_instances_preserve_nominal_identity_and_verify_offline() {
     let mut identities = std::collections::BTreeSet::new();
     for (selected, record, spelling) in [
         ("call", "Box__int__bool_false", "Box<int, false>"),
-        ("wide", "Box__long_long__bool_false", "Box<long long, false>"),
+        (
+            "wide",
+            "Box__long_long__bool_false",
+            "Box<long long, false>",
+        ),
         ("long_type", "Box__long__bool_false", "Box<long, false>"),
-        ("tagged", "Box__tag_SizeTag__bool_true", "Box<SizeTag, true>"),
-        ("other_tag", "Box__tag_WeightTag__bool_true", "Box<WeightTag, true>"),
+        (
+            "tagged",
+            "Box__tag_SizeTag__bool_true",
+            "Box<SizeTag, true>",
+        ),
+        (
+            "other_tag",
+            "Box__tag_WeightTag__bool_true",
+            "Box<WeightTag, true>",
+        ),
     ] {
         let project = Project::with_fixture("instances.cpp", selected, CLASS_INSTANCE_SOURCE);
         refresh_import(&project.config()).unwrap();

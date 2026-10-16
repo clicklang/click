@@ -743,7 +743,10 @@ fn rewrite_function(
             contract.extend(at(
                 &position,
                 vec![
-                    ident(&implementation_interface_contract(&method_name(class, &head.method))),
+                    ident(&implementation_interface_contract(&method_name(
+                        class,
+                        &head.method,
+                    ))),
                     Token::LParen,
                 ],
             ));

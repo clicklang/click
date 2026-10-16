@@ -136,7 +136,10 @@ impl Parser {
             }
             let segment = self.expect_ident("function name")?;
             arguments = self.parse_cpp_template_arguments()?;
-            path.push(format!("{segment}{}", arguments.clone().unwrap_or_default()));
+            path.push(format!(
+                "{segment}{}",
+                arguments.clone().unwrap_or_default()
+            ));
             plain.push(segment);
         }
         let name = crate::languages::cpp::names::path_name(&path);
@@ -159,7 +162,9 @@ impl Parser {
             });
         }
         let qualifier = (path.len() >= 2).then(|| path[path.len() - 2].clone());
-        let record = qualifier.as_deref().and_then(|qualifier| self.cpp_record(qualifier));
+        let record = qualifier
+            .as_deref()
+            .and_then(|qualifier| self.cpp_record(qualifier));
         let returnless = match special_member {
             Some(destructor) => {
                 if record.is_none() {
@@ -182,9 +187,9 @@ impl Parser {
                     });
                 }
                 if is_static && qualifier.is_none() {
-                    return Err(self.error(
-                        "`static` declares a static member function, written `Rec::f`",
-                    ));
+                    return Err(
+                        self.error("`static` declares a static member function, written `Rec::f`")
+                    );
                 }
                 plain.len() >= 2 && plain[plain.len() - 1] == plain[plain.len() - 2]
             }
@@ -241,7 +246,9 @@ pub(super) fn rewrite_function_references(
             && let Some((segments, end)) = cpp_path_at(&tokens, index)
             && (segments.len() > 1 || segments[0].contains('<'))
         {
-            out_tokens.push(Token::Ident(crate::languages::cpp::names::path_name(&segments)));
+            out_tokens.push(Token::Ident(crate::languages::cpp::names::path_name(
+                &segments,
+            )));
             out_positions.push(positions[index].clone());
             index = end;
             continue;
@@ -260,7 +267,11 @@ fn cpp_path_at(tokens: &[Token], start: usize) -> Option<(Vec<String>, usize)> {
     let mut segments = Vec::new();
     let mut index = start;
     loop {
-        let segment = match (tokens.get(index), tokens.get(index + 1), tokens.get(index + 2)) {
+        let segment = match (
+            tokens.get(index),
+            tokens.get(index + 1),
+            tokens.get(index + 2),
+        ) {
             (Some(Token::Tilde), Some(Token::Ident(name)), _) if !segments.is_empty() => {
                 index += 2;
                 format!("~{name}")
