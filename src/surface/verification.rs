@@ -3055,7 +3055,7 @@ fn verify_c0_sources_in_context(
                     &storage_entry_state,
                     contract_function.resource_requires(),
                     contract_function.composite_resource_definitions(),
-                    &entry_assumptions,
+                    &entry_assumptions.clone().assume_entry_clause_extents(),
                     &mut transition_budget,
                 ) {
                     Ok(Ok((_, checked))) => Some(checked),

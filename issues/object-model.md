@@ -677,7 +677,7 @@ Recovery commit `31c252a80` reconciles the already-landed held-owner address-cla
 repair `a676ba284`. Its nine selected kernel controls and Markdown fixture pass,
 including scope, physical-width and four-size scaling controls. Neither remaining
 original example is restored by that repair. The reduced
-[descriptor-window failure](../bugs/archive-descriptor-window-fold-misses-owned-prefix.md)
+[descriptor-window failure](https://github.com/lacker/click/blob/404f4a2b2d60094db73abf9cb1a4951db059238a/bugs/archive-descriptor-window-fold-misses-owned-prefix.md)
 preserves direct descriptor-field access and the occupancy store; it passes the
 identified upstream baseline and fails the recovery archive at the window fold.
 The checked cell walk stops at loop havoc, and indexed reassembly misses the
@@ -724,7 +724,7 @@ for the selected allocation proof is claimed. No new design decision is needed.
 
 
 The remaining `give` failure now has a
-[self-contained complete loop reproduction](../bugs/archive-iterated-give-loses-loop-descriptor-ownership.md).
+[self-contained complete loop reproduction](https://github.com/lacker/click/blob/404f4a2b2d60094db73abf9cb1a4951db059238a/bugs/archive-iterated-give-loses-loop-descriptor-ownership.md).
 Its complete proof passes baseline `64f0f0d46` (with that revision's standard
 library import) and fails recovery at `give`; a single-store control without
 the loop passes recovery. This isolates the loop boundary without changing
@@ -759,7 +759,7 @@ with the complete normal audit: **51/52**, in 134.89 seconds with a concurrent
 proof-mode check. No full green gate or native activation is claimed.
 
 The next failure has a [complete isolated C pointer-field write
-reproduction](../bugs/archive-c-pointer-field-write-loses-domain.md): unchanged C
+reproduction](https://github.com/lacker/click/blob/404f4a2b2d60094db73abf9cb1a4951db059238a/bugs/archive-c-pointer-field-write-loses-domain.md): unchanged C
 and its 146-line resources/proof pass upstream baseline `64f0f0d46` and fail
 recovery at executable pointer formation. Opening the allocation resource does
 not repair it. The upstream compatibility fixture preserves the descriptor,

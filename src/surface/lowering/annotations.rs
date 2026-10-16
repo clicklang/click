@@ -1266,10 +1266,14 @@ pub(in crate::surface) fn annotated_function_with_assumptions(
                     })?,
             };
             let mut budget = crate::kernel::ExecutionBudget::for_new_execution();
+            // The frames are read off the function's own entry clauses.
             match crate::kernel::establish_resource_derived_loop_frames(
                 function,
                 &checked_entry,
-                frame_entry.assumptions,
+                &frame_entry
+                    .assumptions
+                    .clone()
+                    .assume_entry_clause_extents(),
                 &mut budget,
             ) {
                 Ok(Ok(function)) => function,
