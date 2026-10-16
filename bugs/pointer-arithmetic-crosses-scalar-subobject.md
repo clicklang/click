@@ -44,8 +44,11 @@ record the implementation and the approved cast-based contract/tag support. This
 still a draft prototype: the full Phase B compatibility and scaling
 checks must pass before closing this bug.
 Additional complete programs recorded on master `44eacfde1` appear under
-*Pointers of unseen formation* below. They remain acceptance cases for this
-prototype and must be rechecked before this report is closed.
+*Pointers of unseen formation* below. The prototype now rejects both complete
+programs at the undefined callee read.
+The regressions are
+`mdtests/a_loaded_member_pointer_keeps_its_subobject_in_a_callee.md` and
+`mdtests/an_incoming_one_past_pointer_keeps_its_subobject.md`.
 
 
 A contract pointer equality compared addresses only, so a caller could

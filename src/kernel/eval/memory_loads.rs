@@ -2400,7 +2400,7 @@ pub(in crate::kernel) fn declare_symbolic_element_access_widths(
 /// snapshot. Widening on conflict: the entry has to cover every access that
 /// resolves through it. A declared array element counts as already recorded
 /// at its declared width.
-fn record_load_access_width(memory: &CMemory, pointer: &Pointer, bytes: u32) {
+pub(in crate::kernel) fn record_load_access_width(memory: &CMemory, pointer: &Pointer, bytes: u32) {
     let key = (
         crate::kernel::intern_c_memory(memory.clone()),
         pointer.clone(),

@@ -4892,6 +4892,16 @@ fn substitute_through_load_variable(
             None => substituted_memory,
         }
     };
+    // Instantiation preserves the original read's byte dependency. Without
+    // it, a four-byte scalar at the rewritten address falls back to the
+    // eight-byte footprint also used by Bits32 pointer coordinates.
+    if let Some(bytes) = crate::kernel::registered_load_bytes_for_variable(&variable) {
+        crate::kernel::eval::record_load_access_width(
+            substituted_memory.memory(),
+            &substituted_pointer,
+            bytes,
+        );
+    }
     Some(crate::kernel::eval::canonical_term(
         &Bitvector32Term::MemoryLoad(substituted_memory, Box::new(substituted_pointer), kind),
     ))
@@ -7946,6 +7956,48 @@ mod integer_range_fold_substitution_tests {
             result,
             Err(IntegerPureSubstitutionError::UnsupportedCarrier)
         );
+    }
+
+    #[test]
+    fn quantified_load_substitution_preserves_access_width() {
+        let _session = crate::kernel::VerificationSession::enter();
+        for bytes in [4, 8] {
+            let memory = crate::kernel::intern_c_memory(CMemory::new());
+            let binder = Variable(70_156 + u64::from(bytes));
+            let pointer = Pointer::loaded(
+                PointerBlock::ExternalArgument,
+                Bitvector32Term::Variable(binder),
+                4,
+            );
+            let original = crate::kernel::eval::load_variable_for_exact_cell(
+                &memory,
+                &pointer,
+                crate::kernel::LoadKind::Bits32,
+                bytes,
+            );
+            let substituted = substitute_bitvector_variable(
+                &Bitvector32Term::Variable(original),
+                binder,
+                &Bitvector32Term::Variable(Variable(70_170 + u64::from(bytes))),
+            );
+            let Bitvector32Term::Variable(renamed) = substituted else {
+                panic!("substituted read must retain a registered name");
+            };
+            assert_eq!(
+                crate::kernel::registered_load_bytes_for_variable(&renamed),
+                Some(bytes)
+            );
+            let (_, renamed_pointer) =
+                crate::kernel::registered_load_for_variable(&renamed).unwrap();
+            assert_eq!(
+                renamed_pointer,
+                Pointer::loaded(
+                    PointerBlock::ExternalArgument,
+                    Bitvector32Term::Variable(Variable(70_170 + u64::from(bytes))),
+                    4,
+                )
+            );
+        }
     }
 
     #[test]
