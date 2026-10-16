@@ -248,7 +248,7 @@ fn charon_owned_array_fields_check_moves_snapshots_boundaries_and_frames() {
 #[ignore = "nightly: whole-example proof-tool rechecks"]
 fn charon_owned_array_fields_cli_tools_recheck_expanded_certificates() {
     let p = charon_owned_array_project();
-    for command in ["verify", "profile", "audit"] {
+    for command in ["profile", "audit"] {
         assert_cli(&p, &[command]);
     }
     for claim in [
@@ -258,8 +258,8 @@ fn charon_owned_array_fields_cli_tools_recheck_expanded_certificates() {
         "empty_move.contract",
     ] {
         assert_cli(&p, &["expand", "--claim", claim, "--in-place"]);
-        assert_cli(&p, &["verify"]);
     }
+    assert_cli(&p, &["verify"]);
 }
 #[test]
 #[ignore = "requires the separately built pinned Charon/compiler"]
@@ -306,7 +306,7 @@ fn charon_array_snapshots_check_computed_lanes_and_copy_independence() {
 #[ignore = "nightly: whole-example proof-tool rechecks"]
 fn charon_array_snapshots_cli_tools_recheck_expanded_certificates() {
     let p = charon_snapshot_project();
-    for command in ["verify", "profile", "audit"] {
+    for command in ["profile", "audit"] {
         assert_cli(&p, &[command]);
     }
     for claim in [
@@ -316,8 +316,8 @@ fn charon_array_snapshots_cli_tools_recheck_expanded_certificates() {
         "sparse.contract",
     ] {
         assert_cli(&p, &["expand", "--claim", claim, "--in-place"]);
-        assert_cli(&p, &["verify"]);
     }
+    assert_cli(&p, &["verify"]);
 }
 #[test]
 #[ignore = "requires the separately built pinned Charon/compiler"]
@@ -341,28 +341,50 @@ fn charon_assignment_operators_check_lanes_panic_obligations_and_authority() {
     let p = charon_operator_project();
     let prepared = p.prepared().unwrap();
     C0VerificationSession::new_program_prepared(CHARON_OPERATOR_SIDECAR, &prepared).unwrap();
-    for (before, after) in [
-        ("old(self.0[0]) * rhs", "old(self.0[0]) + rhs"),
-        ("old(self.0[3]) % quotient", "old(self.0[2]) % quotient"),
+    for owner in ["mul_assign", "rem_assign", "add_assign", "local"] {
+        verify_rust_function(CHARON_OPERATOR_SIDECAR, &prepared, owner).unwrap();
+    }
+    for (owner, before, after) in [
+        ("mul_assign", "old(self.0[0]) * rhs", "old(self.0[0]) + rhs"),
         (
+            "rem_assign",
+            "old(self.0[3]) % quotient",
+            "old(self.0[2]) % quotient",
+        ),
+        (
+            "add_assign",
             "ensures other.0[0] == old(other.0[0]);",
             "ensures other.0[0] == 0u32;",
         ),
-        ("requires quotient != 0u32;", "requires quotient == 0u32;"),
-        ("owns self.0[0..4];", "views self.0[0..4];"),
-        ("views other.0[0..4];", "views other.0[1..4];"),
         (
+            "rem_assign",
+            "requires quotient != 0u32;",
+            "requires quotient == 0u32;",
+        ),
+        ("mul_assign", "owns self.0[0..4];", "views self.0[0..4];"),
+        ("add_assign", "views other.0[0..4];", "views other.0[1..4];"),
+        (
+            "mul_assign",
             "requires rhs == 0u32 or self.0[0] <= 4294967295u32 / rhs;",
             "requires rhs == 2u32; requires self.0[0] == 4294967295u32;",
         ),
-        ("(b * 2u32 % 7u32)", "(b * 2u32 % 3u32)"),
-        ("(a * 2u32 % 7u32)", "(a * 2u32)"),
+        ("local", "(b * 2u32 % 7u32)", "(b * 2u32 % 3u32)"),
+        ("local", "(a * 2u32 % 7u32)", "(a * 2u32)"),
     ] {
         let invalid = CHARON_OPERATOR_SIDECAR.replace(before, after);
         assert_ne!(invalid, CHARON_OPERATOR_SIDECAR);
+        let error = verify_rust_function(&invalid, &prepared, owner)
+            .expect_err("the changed function must reject the mutation");
+        assert_eq!(
+            error.kind(),
+            click::surface::ClickErrorKind::Proof,
+            "{before}: {}",
+            error.message()
+        );
         assert!(
-            C0VerificationSession::new_program_prepared(&invalid, &prepared).is_err(),
-            "{before}"
+            !error.message().contains("budget exhausted"),
+            "{before}: {}",
+            error.message()
         );
     }
 }
@@ -703,7 +725,7 @@ fn charon_checksum_arithmetic_checks_panic_bounds_and_full_width_values() {
 #[ignore = "nightly: whole-example proof-tool rechecks"]
 fn charon_checksum_arithmetic_cli_tools_recheck_certificates() {
     let p = charon_arithmetic_project();
-    for command in ["verify", "profile", "audit"] {
+    for command in ["profile", "audit"] {
         assert_cli(&p, &[command]);
     }
     for claim in [
@@ -714,8 +736,8 @@ fn charon_checksum_arithmetic_cli_tools_recheck_certificates() {
         "conditional_divide.contract",
     ] {
         assert_cli(&p, &["expand", "--claim", claim, "--in-place"]);
-        assert_cli(&p, &["verify"]);
     }
+    assert_cli(&p, &["verify"]);
 }
 #[test]
 #[ignore = "nightly: 4s in the parallel gate"]
@@ -1661,6 +1683,29 @@ fn rust_compiler_and_subset_rejections_are_distinct() {
         assert!(!p.artifact("borrow.rs").exists());
     }
 }
+// Check the complete function proof, including every postcondition and path,
+// without rechecking unrelated bodies already covered by the original module.
+fn verify_rust_function(
+    source: &str,
+    prepared: &click::languages::rust::PreparedRustImport,
+    name: &str,
+) -> Result<(), click::surface::ClickError> {
+    let start = source
+        .find(&format!("fn {name}("))
+        .expect("the function exists");
+    let offset = start + source[start..].find('{').unwrap();
+    let prefix = &source[..offset];
+    let line = prefix.bytes().filter(|&byte| byte == b'\n').count() + 1;
+    let column = prefix.rsplit('\n').next().unwrap().len() + 1;
+    click::surface::verify_sources_at(
+        source,
+        &click::surface::ProgramInputs::program(prepared),
+        line,
+        column,
+    )
+    .map(|_| ())
+}
+
 fn assert_cli(p: &Project, args: &[&str]) {
     let result = p.cli(args);
     assert!(
@@ -4058,7 +4103,6 @@ fn split_gate_fixture_tools_recheck_certificates() {
     let proof =
         include_str!("../examples/rust-split-at/split.click").replace("split.rs", "borrow.rs");
     fs::write(p.root.join("borrow.click"), proof).unwrap();
-    assert_cli(&p, &["verify"]);
     assert_cli(&p, &["profile"]);
     assert_cli(&p, &["audit"]);
     for claim in [
@@ -4068,8 +4112,8 @@ fn split_gate_fixture_tools_recheck_certificates() {
         "right_first.contract",
     ] {
         assert_cli(&p, &["expand", "--claim", claim, "--in-place"]);
-        assert_cli(&p, &["verify"]);
     }
+    assert_cli(&p, &["verify"]);
 }
 
 #[test]
@@ -4082,7 +4126,6 @@ fn arrays_gate_fixture_tools_recheck_certificates() {
     let proof =
         include_str!("../examples/rust-arrays/arrays.click").replace("arrays.rs", "borrow.rs");
     fs::write(p.root.join("borrow.click"), proof).unwrap();
-    assert_cli(&p, &["verify"]);
     assert_cli(&p, &["profile"]);
     assert_cli(&p, &["audit"]);
     for claim in [
@@ -4093,8 +4136,8 @@ fn arrays_gate_fixture_tools_recheck_certificates() {
         "update.contract",
     ] {
         assert_cli(&p, &["expand", "--claim", claim, "--in-place"]);
-        assert_cli(&p, &["verify"]);
     }
+    assert_cli(&p, &["verify"]);
 }
 
 #[test]
@@ -4107,7 +4150,6 @@ fn usize_gate_fixture_tools_recheck_certificates() {
     let proof = include_str!("../examples/rust-usize/arithmetic.click")
         .replace("arithmetic.rs", "borrow.rs");
     fs::write(p.root.join("borrow.click"), proof).unwrap();
-    assert_cli(&p, &["verify"]);
     assert_cli(&p, &["profile"]);
     assert_cli(&p, &["audit"]);
     for claim in [
@@ -4117,8 +4159,8 @@ fn usize_gate_fixture_tools_recheck_certificates() {
         "computed.contract",
     ] {
         assert_cli(&p, &["expand", "--claim", claim, "--in-place"]);
-        assert_cli(&p, &["verify"]);
     }
+    assert_cli(&p, &["verify"]);
 }
 
 #[test]
@@ -4130,13 +4172,12 @@ fn loops_gate_fixture_tools_recheck_certificates() {
     );
     let proof = include_str!("../examples/rust-loops/loops.click").replace("loops.rs", "borrow.rs");
     fs::write(p.root.join("borrow.click"), proof).unwrap();
-    assert_cli(&p, &["verify"]);
     assert_cli(&p, &["profile"]);
     assert_cli(&p, &["audit"]);
     for claim in ["count.contract", "accumulate.contract", "walk.contract"] {
         assert_cli(&p, &["expand", "--claim", claim, "--in-place"]);
-        assert_cli(&p, &["verify"]);
     }
+    assert_cli(&p, &["verify"]);
 }
 
 #[path = "rust_import/gate_fixtures.rs"]

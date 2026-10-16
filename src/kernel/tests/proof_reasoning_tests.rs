@@ -7727,7 +7727,8 @@ fn memory_resolution_order_walk_memo_agrees_with_the_full_scan() {
             .flat_map(|left| pool.iter().map(move |right| (left, right)))
             .flat_map(|(left, right)| [true, false].map(|strict| (left, right, strict)))
             .collect::<Vec<_>>();
-        for (left, right, strict) in questions.iter().chain(questions.iter().rev()) {
+        let mut expected = Vec::with_capacity(questions.len());
+        for (left, right, strict) in &questions {
             let memoized = facts.has_order_path_for_memory_resolution(left, right, *strict);
             let scanned = crate::kernel::assumptions::with_order_walk_full_scan(|| {
                 facts.has_order_path_for_memory_resolution(left, right, *strict)
@@ -7735,6 +7736,18 @@ fn memory_resolution_order_walk_memo_agrees_with_the_full_scan() {
             assert_eq!(
                 memoized, scanned,
                 "the memoized walk and the full scan disagree on {left:?} -> {right:?} (strict {strict}) under {facts:?}"
+            );
+            expected.push(scanned);
+            compared += 1;
+            proved += usize::from(memoized);
+        }
+        // The fact set is unchanged. Reuse its full-scan oracle answers while
+        // asking every memoized question again in the original reverse order.
+        for ((left, right, strict), scanned) in questions.iter().zip(&expected).rev() {
+            let memoized = facts.has_order_path_for_memory_resolution(left, right, *strict);
+            assert_eq!(
+                memoized, *scanned,
+                "reverse memoized walk disagrees on {left:?} -> {right:?} (strict {strict}) under {facts:?}"
             );
             compared += 1;
             proved += usize::from(memoized);
