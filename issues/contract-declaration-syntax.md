@@ -200,11 +200,10 @@ that writes `int32` for such a source already writes the source's spelling.
    contract, whose value parameters are body clauses `let amount: i32;`
    attached as `Adds(f, { amount: k })`. Parameterized contracts are done
    for C and Rust function pointers, through automatic formation at
-   `&f`, and for capturing closures by contract-to-contract refinement;
-   refinement theorems conclude them with the values fixed, and execution
-   theorems for them remain,
-   through the C++ exporter and Charon, with the same refinement check as C
-   (`Comparator(&f)`).
+   `&f`, and for capturing closures by contract-to-contract refinement, and
+   refinement and execution theorems conclude them with the values fixed.
+   C++ and Rust function values reach them through the C++ exporter and
+   Charon, with the same refinement check as C (`Comparator(&f)`).
 4. **Base-class and trait method interfaces.** A contract on a C++ virtual
    method or a Rust trait method is the interface for that method. Each
    override or `impl` is checked against it with the named-contract

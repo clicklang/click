@@ -53,10 +53,11 @@ pub(super) fn verify_execution_theorem(
     // The conclusion chooses the form. A function address executes that named
     // project function and has no source premises; a plain binding executes
     // the theorem's arbitrary callback parameter under its source contracts.
-    let concrete_callee = match arguments.as_slice() {
-        [argument] => contract_expression_function_address(argument),
-        _ => None,
-    };
+    // The function value leads; the values of the contract's value
+    // parameters follow it.
+    let concrete_callee = arguments
+        .first()
+        .and_then(contract_expression_function_address);
     if !theorem.type_parameters().is_empty() {
         return Err(error("an execution theorem takes no type parameters"));
     }
@@ -101,8 +102,8 @@ pub(super) fn verify_execution_theorem(
         }
     }
     let is_callback = |arguments: &[ContractExpression]| {
-        matches!(arguments, [ContractExpression::Binding(name)] if name == &execution.callback)
-            || matches!(arguments, [ContractExpression::CFragment(CExpression::Variable(name))] if name == &execution.callback)
+        matches!(arguments.first(), Some(ContractExpression::Binding(name)) if name == &execution.callback)
+            || matches!(arguments.first(), Some(ContractExpression::CFragment(CExpression::Variable(name))) if name == &execution.callback)
     };
     if concrete_callee.is_none() && !is_callback(arguments) {
         return Err(error("the conclusion must describe the executed callback"));
@@ -111,13 +112,28 @@ pub(super) fn verify_execution_theorem(
         .predicates
         .contract_definition(target_name)
         .ok_or_else(|| error("the conclusion must name a function contract"))?;
-    if !target.value_parameters().is_empty() {
+    // A contract fact's values, lowered as the theorem's conclusion is.
+    let context = pure_theorem_context(theorem, spec_definitions)?;
+    let lower = |proposition: &ClickProposition| {
+        lower_pure_theorem_proposition(
+            theorem.name(),
+            proposition,
+            ContractEnvironment::new(&context.values, &context.array_refs),
+            &context.memory,
+            spec_definitions,
+        )
+        .map_err(ClickError::new)
+    };
+    let conclusion = lower(goal)?;
+    let target_values = super::contract_fact_values(&conclusion).ok_or_else(|| {
+        error("the conclusion's values must be C values, one per target value parameter")
+    })?;
+    if target_values.len() != target.value_parameters().len() {
         return Err(error(
-            "an execution theorem cannot yet conclude a contract with value parameters; \
-             Click checks such a contract where a call needs it",
+            "the conclusion must give one value per target value parameter",
         ));
     }
-    let mut source_names = Vec::new();
+    let mut sources = Vec::new();
     if let Some(callback) = callback {
         if callback.name() == "result"
             && target.function_block().signature().return_type() != C0Type::Void
@@ -151,7 +167,17 @@ pub(super) fn verify_execution_theorem(
                     "executes signature does not match the source contract",
                 ));
             }
-            source_names.push(name.as_str());
+            let source_values = requirement
+                .proposition()
+                .map(|proposition| lower(proposition))
+                .transpose()?
+                .as_ref()
+                .and_then(super::contract_fact_values)
+                .filter(|values| values.len() == source.value_parameters().len())
+                .ok_or_else(|| {
+                    error("a source assumption must give one C value per value parameter")
+                })?;
+            sources.push((name.as_str(), source_values));
         }
     }
     // A concrete callee is called as ordinary C, so the written parameter list
@@ -182,12 +208,16 @@ pub(super) fn verify_execution_theorem(
             )));
         }
     }
+    // The target's value parameters trail its call parameters.
+    let target_parameters = target.function_block().signature().parameters();
+    let (call_parameters, value_parameters) =
+        target_parameters.split_at(target_parameters.len() - target_values.len());
     if callback.is_some_and(|callback| callback.c_type() != target.function_pointer_type())
-        || execution.parameters.len() != target.function_block().signature().parameters().len()
+        || execution.parameters.len() != call_parameters.len()
         || execution
             .parameters
             .iter()
-            .zip(target.function_block().signature().parameters())
+            .zip(call_parameters)
             .any(|(written, declared)| {
                 written.c_type() != declared.c_type()
                     || written.struct_name() != declared.struct_name()
@@ -255,7 +285,13 @@ pub(super) fn verify_execution_theorem(
     let mut block = target.function_block().clone();
     block.one_call_proof = true;
     block.signature.name = theorem.name().to_string();
+    // The wrapper keeps the target's value parameters, each pinned below to
+    // the conclusion's value, so its interface is the target's own.
     block.signature.parameters = execution.parameters.clone();
+    block
+        .signature
+        .parameters
+        .extend(value_parameters.iter().cloned());
     if let Some(callback) = callback {
         block.signature.parameters.push(callback.clone());
     }
@@ -266,6 +302,20 @@ pub(super) fn verify_execution_theorem(
         .collect::<Result<_, _>>()
         .map_err(ClickError::new)?;
     block.requires.extend(theorem.requires().iter().cloned());
+    block.requires.extend(
+        value_parameters
+            .iter()
+            .zip(&target_values)
+            .map(|(parameter, value)| {
+                Requirement::Proposition(ClickProposition::Comparison {
+                    left: ContractExpression::CFragment(CExpression::Variable(
+                        parameter.name().to_string(),
+                    )),
+                    operator: ComparisonOperator::Equal,
+                    right: ContractExpression::CFragment(CExpression::Value(value.clone())),
+                })
+            }),
+    );
     for clause in &mut block.ensures {
         clause.ensure = match &clause.ensure {
             Ensure::Proposition(p) => Ensure::Proposition(
@@ -391,15 +441,6 @@ pub(super) fn verify_execution_theorem(
     .ok_or_else(|| error("the one-call proof did not certify every target obligation"))?;
     let rule = c_verified_function_rule(function, &claims)
         .ok_or_else(|| error("the one-call proof did not establish a checked contract"))?;
-    let context = pure_theorem_context(theorem, spec_definitions)?;
-    let conclusion = lower_pure_theorem_proposition(
-        theorem.name(),
-        goal,
-        ContractEnvironment::new(&context.values, &context.array_refs),
-        &context.memory,
-        spec_definitions,
-    )
-    .map_err(ClickError::new)?;
     let authority = match concrete_callee {
         Some(callee) => crate::kernel::prove_executed_concrete_contract_refinement(
             environment,
@@ -410,7 +451,7 @@ pub(super) fn verify_execution_theorem(
         ),
         None => crate::kernel::prove_executed_contract_refinement(
             environment,
-            &source_names,
+            &sources,
             target_name,
             conclusion.clone(),
             &rule,
