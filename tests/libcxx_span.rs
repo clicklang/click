@@ -9,7 +9,8 @@ use std::process::Command;
 use click::cli::read_click_project;
 use click::languages::cpp::{PreparedCppImport, load_import, refresh_import};
 use click::surface::{
-    ProgramInputs, expand_project_claim_source_by_label, verify_program_prepared_project,
+    ProgramInputs, display_source_names, expand_project_claim_source_by_label,
+    verify_program_prepared_project,
 };
 
 #[path = "support/pinned_clang.rs"]
@@ -111,7 +112,7 @@ fn check(root: &Path, import: &PreparedCppImport, sidecar: &str, refusals: &[(St
         let error = verify_program_prepared_project(&parsed, import)
             .expect_err("an unsupported claim must not verify");
         assert!(
-            error.message().contains(expected),
+            display_source_names(error.message()).contains(expected),
             "{}\n{edited}",
             error.message()
         );
@@ -159,7 +160,7 @@ fn libcxx_span_binds_the_model_accessors_and_catalog() {
         &sidecar,
         &[(
             sidecar.replace("    requires 2u64 <= std_span_size(s);\n", ""),
-            "operator_index",
+            "::operator[]",
         )],
     );
     fs::remove_dir_all(root).unwrap();

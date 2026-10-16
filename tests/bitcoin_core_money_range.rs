@@ -11,7 +11,7 @@ use click::languages::cpp::{PreparedCppImport, load_import, refresh_import};
 use click::surface::{
     C0VerificationSession, expand_project_claim_source_by_label, expand_project_tactic_source_at,
     project_smart_tactic_source_sites, project_tactic_source_position,
-    verify_program_prepared_project,
+    display_source_names, verify_program_prepared_project,
 };
 #[path = "support/pinned_clang.rs"]
 mod pinned_clang;
@@ -558,7 +558,7 @@ static int64 FeeFrac::Div(int128 n, int32 d, bool round_down) {
     }
 
     if evaluation_caller && phase == Some(RoundingPhase::Tools) {
-        let label = format!("{}.ensures_0", selected.replace("::", "_"));
+        let label = format!("{selected}.ensures_0");
         let expanded = expand_project_claim_source_by_label(
             &project,
             &ProgramInputs::program(&import),
@@ -3177,8 +3177,8 @@ fn axiomatic_span_pop_back_verifies_against_catalog_contracts() {
         .iter()
         .find(|function| function.name.starts_with("SpanPopBack"))
         .unwrap()
-        .name
-        .clone();
+        .path
+        .join("::");
     let source = format!(
         r#"import click::integer;
 verifying "span-probe.cpp";
@@ -3246,7 +3246,7 @@ int32& probe(struct span__int__value_unsigned_long_18446744073709551615& span) {
         let error = verify_program_prepared_project(&parsed, &import)
             .expect_err("an unsupported claim must not verify");
         assert!(
-            error.message().contains(expected),
+            display_source_names(error.message()).contains(expected),
             "{}\n{edited}",
             error.message()
         );
@@ -3304,7 +3304,12 @@ bool probe(struct span__int__value_unsigned_long_18446744073709551615& span) {
     fs::write(&sidecar, source).unwrap();
     let parsed = read_click_project(&sidecar, source).unwrap();
     let error = verify_program_prepared_project(&parsed, &import).unwrap_err();
-    assert!(error.message().contains(&axiom.name), "{}", error.message());
+    let spelling = axiom.path.join("::");
+    assert!(
+        display_source_names(error.message()).contains(&spelling),
+        "{}",
+        error.message()
+    );
 }
 
 const SPAN_DEPENDENCIES: &[&str] = &[
@@ -3370,7 +3375,7 @@ fn check_generic_span_cases(cases: Vec<GenericSpanCase>) {
             let error = verify_program_prepared_project(&parsed, &import)
                 .expect_err("an unsupported claim must not verify");
             assert!(
-                error.message().contains(expected),
+                display_source_names(error.message()).contains(expected),
                 "{}: {}\n{edited}",
                 case.name,
                 error.message()
@@ -3447,7 +3452,7 @@ theorem uint64_window_bounds(n: uint64) {{
                     window
                         .replace("    requires 3u64 <= std_span_size(s);\n", "")
                         .replace("    apply(uint64_window_bounds(std_span_size(s)));\n", ""),
-                    "precondition clause 3 of `span__unsigned_char__value_unsigned_long_18446744073709551615_subspan`",
+                    "precondition clause 3 of `std::span<unsigned char, 18446744073709551615UL>::subspan`",
                 ),
                 // The window starts at the offset, not at the view's start.
                 (
@@ -3466,7 +3471,7 @@ theorem uint64_window_bounds(n: uint64) {{
             harness: "std::span<unsigned char> probe(std::span<unsigned char>& s) noexcept { return s.last(1); }",
             refusals: vec![(
                 last.replace("    requires 1u64 <= std_span_size(s);\n", ""),
-                "precondition clause 3 of `span__unsigned_char__value_unsigned_long_18446744073709551615_last`",
+                "precondition clause 3 of `std::span<unsigned char, 18446744073709551615UL>::last`",
             )],
             sidecar: last,
         },
@@ -3612,7 +3617,7 @@ fn axiomatic_span_element_references_read_and_write() {
             harness: "unsigned int probe(std::span<unsigned int>& s) noexcept { return s.back(); }",
             refusals: vec![(
                 back.replace("    requires 1u64 <= std_span_size(s);\n", ""),
-                "precondition clause 3 of `span__unsigned_int__value_unsigned_long_18446744073709551615_back`",
+                "precondition clause 3 of `std::span<unsigned int, 18446744073709551615UL>::back`",
             )],
             sidecar: back,
         },
@@ -3681,7 +3686,7 @@ fn check_refused_span_case(
     let error = verify_program_prepared_project(&parsed, &import)
         .expect_err("an unsupported claim must not verify");
     assert!(
-        error.message().contains(expected),
+        display_source_names(error.message()).contains(expected),
         "{name}: {}\n{source}",
         error.message()
     );
@@ -3796,7 +3801,7 @@ fn axiomatic_static_extent_spans_verify() {
         &format!(
             "int32 probe({STATIC_INT_SPAN}& s) {{ views std_span_data(s); views std_span_data(s)[4]; ensures result == std_span_data(s)[4]; }} by {{ execute(); simp(); }}"
         ),
-        "operator_index",
+        "::operator[]",
     );
 }
 
@@ -3896,7 +3901,7 @@ fn axiomatic_std_array_element_access_verifies() {
         &format!(
             "int32 probe({INT_ARRAY}& a) {{ views a; ensures result == 0; }} by {{ execute(); simp(); }}"
         ),
-        "operator_index",
+        "::operator[]",
     );
 }
 
@@ -4022,8 +4027,8 @@ fn axiomatic_span_pop_back_write_needs_backing_ownership() {
         .iter()
         .find(|function| function.name.starts_with("SpanPopBack"))
         .unwrap()
-        .name
-        .clone();
+        .path
+        .join("::");
     let source = format!(
         r#"import click::integer;
 verifying "span-probe.cpp";

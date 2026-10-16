@@ -11,7 +11,8 @@ use std::process::Command;
 use click::cli::read_click_project;
 use click::languages::cpp::{PreparedCppImport, load_import, refresh_import};
 use click::surface::{
-    ProgramInputs, expand_project_claim_source_by_label, verify_program_prepared_project,
+    ProgramInputs, display_source_names, expand_project_claim_source_by_label,
+    verify_program_prepared_project,
 };
 
 #[path = "support/pinned_clang.rs"]
@@ -98,13 +99,13 @@ fn verify(
     fs::write(&path, sidecar).unwrap();
     let parsed = read_click_project(&path, sidecar).unwrap();
     verify_program_prepared_project(&parsed, import)
-        .map_err(|error| error.message().to_string())?;
+        .map_err(|error| display_source_names(error.message()).into_owned())?;
     for claim in claims {
         let expanded =
             expand_project_claim_source_by_label(&parsed, &ProgramInputs::program(import), claim)
-                .map_err(|error| error.message().to_string())?;
+                .map_err(|error| display_source_names(error.message()).into_owned())?;
         verify_program_prepared_project(&parsed.with_entry_source(expanded), import)
-            .map_err(|error| format!("{claim}: {}", error.message()))?;
+            .map_err(|error| format!("{claim}: {}", display_source_names(error.message())))?;
     }
     Ok(())
 }
@@ -149,7 +150,7 @@ fn libcxx_std_function_holds_a_capturing_lambda() {
         &root,
         &import,
         CAPTURING_SIDECAR,
-        &["caller__lambda_0.contract", "caller.contract"],
+        &["caller::(lambda#0).contract", "caller.contract"],
     )
     .unwrap_or_else(|error| panic!("{error}"));
     for (before, after, expected) in [
@@ -161,7 +162,7 @@ fn libcxx_std_function_holds_a_capturing_lambda() {
         (
             "    ensures result == y + k;\n",
             "    ensures result == y + k + 1;\n",
-            "caller__lambda_0.ensures_0",
+            "caller::(lambda#0).ensures_0",
         ),
         (
             "    requires Adds(f, { amount: k });\n",

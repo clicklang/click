@@ -5386,14 +5386,17 @@ fn positions_at_offsets(
 }
 
 /// A Rust function or C++ declaration is named by its path,
-/// `quad::walk.contract` or `Square::area.contract`, or by the name the
-/// importer gives it; this is the label under the importer's name.
+/// `quad::walk.contract`, `Square::area.contract` or `fee<true>.contract`,
+/// or by the name the importer gives it; this is the label under the
+/// importer's name.
 fn resolve_source_claim_label<'a>(
     file: &ClickFile,
     claim_label: &'a str,
 ) -> std::borrow::Cow<'a, str> {
     if let Some((function, rest)) = claim_label.split_once('.')
-        && function.contains("::")
+        && !function
+            .chars()
+            .all(|character| character.is_ascii_alphanumeric() || character == '_')
         && let Some(block) = file.function_blocks().iter().find(|block| {
             crate::languages::source_display_name(block.signature().name()).as_deref()
                 == Some(function)
