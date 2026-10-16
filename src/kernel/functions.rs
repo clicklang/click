@@ -750,6 +750,31 @@ fn with_canonical_borrowed_pointer_memory(
     state.clone().with_memory(memory)
 }
 
+/// Rejoins each owned memory piece this call borrowed and returned with the
+/// caller's pieces that abut it, as a recovered loan's return rejoins its
+/// block (`StableViewTransferPlan::recover_stable_views`). A call that lent
+/// nothing else returns before that recovery; without this its returned
+/// piece would stay split from the caller's residue, so a later typed access
+/// would depend on whether the call also borrowed something. Only the
+/// returned pieces' neighbours are read
+/// (`ResourceContext::rejoined_memory_around`).
+fn rejoin_borrowed_memory(
+    resources: ResourceContext,
+    transfer: &CFunctionResourceTransfer,
+    assumptions: &PureFactContext,
+) -> ResourceContext {
+    let seeds = transfer
+        .borrowed_inputs
+        .iter()
+        .filter(|input| input.fact.memory_own_range().is_some())
+        .map(|input| input.fact.clone())
+        .collect::<Vec<_>>();
+    if seeds.is_empty() {
+        return resources;
+    }
+    resources.rejoined_memory_around(&seeds, assumptions)
+}
+
 /// `output_assumptions` carries the call's certified output facts (the
 /// callee's ensures) on top of `assumptions`, for matching a produced
 /// composite's viewed pieces, which are evaluated at the post-state, against
@@ -781,7 +806,7 @@ fn recover_candidate_stable_view_resources(
             )));
         }
         return Ok((
-            return_resources,
+            rejoin_borrowed_memory(return_resources, transfer, assumptions),
             caller_state.loan_ledger().cloned(),
             caller_state.loan_participant(),
             caller_state.loan_view_bindings().clone(),
@@ -812,7 +837,7 @@ fn recover_candidate_stable_view_resources(
         && transfer.produced_borrowing_pieces.is_empty()
     {
         return Ok((
-            return_resources,
+            rejoin_borrowed_memory(return_resources, transfer, assumptions),
             caller_state.loan_ledger().cloned(),
             caller_state.loan_participant(),
             caller_state.loan_view_bindings().clone(),
