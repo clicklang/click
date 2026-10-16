@@ -103,6 +103,17 @@ fn many_objects(n: usize) -> (String, String) {
     many_objects_with_calls(n, 1)
 }
 
+fn partial_borrow_beside_objects(n: usize) -> (String, String) {
+    let (c, click) = many_objects(n);
+    (
+        c.replace("touch(data);", "touch_half(data);"),
+        click.replace(
+            TOUCH_CLICK,
+            "extern void touch_half(int32* data) { owns data[0..2]; }",
+        ),
+    )
+}
+
 fn objects_and_calls(n: usize) -> (String, String) {
     many_objects_with_calls(n, n)
 }
@@ -745,6 +756,18 @@ fn a_call_ignores_aliases_of_an_owned_object() {
 #[test]
 fn a_call_ignores_unrelated_owned_objects() {
     assert_flat_across("many_objects", many_objects, [1, 3], "touch(data);");
+}
+
+// Splitting a caller's owner must not enumerate the other parameter owners
+// that happen to share its external-argument memory block.
+#[test]
+fn a_partial_borrow_call_ignores_unrelated_owned_objects() {
+    assert_flat_across(
+        "partial_borrow_beside_objects",
+        partial_borrow_beside_objects,
+        [1, 3],
+        "touch_half(data);",
+    );
 }
 
 #[test]

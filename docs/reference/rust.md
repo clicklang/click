@@ -604,14 +604,28 @@ scale <= 1000;`. An implementation whose `requires` do not follow is
 refused, naming both, as is one with no contract. Without a `trait` block,
 a call through the trait has no contract.
 
+A default method, `fn twice(&self, scale: i32) -> i32 { self.area(scale) +
+self.area(scale) }` in the trait, has its interface written in the `trait`
+block with the proof of its default body: `fn twice(&self, scale: i32) ->
+i32 { requires ...; ensures result <= 6002; } by { execute(); simp(); }`.
+The body is verified once, for every type: a call of `area` in it is a call
+through the trait, under `area`'s interface, and with object state it holds
+the object as any method of the trait does. A call of `twice` through a
+bound or `&dyn` is checked against its interface; a call on a type whose
+`impl` keeps the default, `square.twice(scale)`, is a call of the default
+body, with the struct packed into its object as for a generic call. An
+`impl` that writes its own `twice` inherits and refines the interface as
+for any method
+([`design/charon-trial/trait-methods`](https://github.com/clicklang/click/blob/master/design/charon-trial/trait-methods/shapes.click)).
+
 The interface's receiver is a reference to a value of a type it does not
 know: the interface reads nothing through `self` and holds none of its
 resources, except its trait's object state (below), so an implementation whose contract needs the receiver's
 fields does not refine it. Every implementation a call can reach is in the
 import, since a generic call names its instance's implementation and a
 `dyn` coercion its vtable, and each one is checked. The importer refuses a
-crate trait with generics, associated items, supertraits, or default
-methods, a method that is generic or takes no `&self` or `&mut self`,
+crate trait with generics, associated items, or supertraits, a method
+that is generic or takes no `&self` or `&mut self`,
 non-scalar parameters or results, an implementation for anything but a
 crate struct, and a generic implementation
 ([`design/charon-trial/trait-methods`](https://github.com/clicklang/click/blob/master/design/charon-trial/trait-methods/shapes.click)).
@@ -648,8 +662,9 @@ equal to the fields. A caller passing `&Square { side: 3 }` therefore knows
 `size` is `3` and gets the interface's guarantee read with that value; one
 lending `&mut square` gets back a struct whose fields the definitions equate
 to the object's new state, so after `reset(&mut square, half)` it knows
-`square.side == half + half` and nothing of the side it lent. Generic
-traits and default methods are not yet supported
+`square.side == half + half` and nothing of the side it lent. A default
+method's body holds the object as the trait's other methods do. Generic
+traits are not yet supported
 ([`design/charon-trial/trait-objects`](https://github.com/clicklang/click/blob/master/design/charon-trial/trait-objects/shapes.click)).
 
 ### `extern` block functions

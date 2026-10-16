@@ -17,12 +17,12 @@ void pack(struct node* p, struct node* id) {
     consumes before: modeled(p);
     ensures 1 == 1;
 } by {
-    match before.model { Identity::At(id) => {
+    match before.model { Identity::At(model_id) => {
         unfold(before);
-        fold(tag_at(id));
-        unfold(tag_at(id));
+        fold(tag_at(model_id));
+        unfold(tag_at(model_id));
         step();
-        fold(tag_at(id));
+        fold(tag_at(model_id));
         execute(); simp();
     }, }
 }

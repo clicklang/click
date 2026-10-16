@@ -1601,6 +1601,7 @@ impl<'a> Proof<'a> {
                     | SpecialArithmeticNode::IntegerPolynomialIdentity { .. }
                     | SpecialArithmeticNode::IntegerQuotientShift { .. }
                     | SpecialArithmeticNode::IntegerCastIdentity { .. }
+                    | SpecialArithmeticNode::IntegerOperationIdentity { .. }
             )
         });
         let mut premises = Vec::with_capacity(certificate.premises.len());
@@ -1642,6 +1643,18 @@ impl<'a> Proof<'a> {
                         result: self.lower_integer_surface_proposition(
                             result,
                             "integer cast identity result",
+                        )?,
+                    }
+                }
+                SpecialArithmeticNode::IntegerOperationIdentity { bounds, result } => {
+                    KernelNode::IntegerOperationIdentity {
+                        bounds: bounds
+                            .iter()
+                            .map(|i| premise_ref(*i))
+                            .collect::<Result<_, _>>()?,
+                        result: self.lower_integer_surface_proposition(
+                            result,
+                            "integer operation identity result",
                         )?,
                     }
                 }
@@ -2659,6 +2672,42 @@ impl<'a> Proof<'a> {
                         result: claim(self, result, "integer certificate negated goal", false)?,
                     }
                 }
+                IntegerCertificateNode::TypeRange { result } => {
+                    let lowered = self.lower_integer_surface_proposition(
+                        result,
+                        "integer certificate type range",
+                    )?;
+                    let range = match &lowered {
+                        Proposition::ConditionIs(
+                            crate::kernel::ConditionTerm::IntegerLessEqual(left, right),
+                            true,
+                        ) => match (left.as_ref(), right.as_ref()) {
+                            (_, value @ crate::kernel::IntegerTerm::Machine(_)) => {
+                                Some((value.clone(), false))
+                            }
+                            (value @ crate::kernel::IntegerTerm::Machine(_), _) => {
+                                Some((value.clone(), true))
+                            }
+                            _ => None,
+                        },
+                        _ => None,
+                    };
+                    let Some((value, upper)) = range else {
+                        return Err(self.step_error(
+                            "integer certificate type range must be `MIN <= to_integer(v)` or `to_integer(v) <= MAX` for a machine value `v`",
+                        ));
+                    };
+                    let result = integer_affine_claim(&lowered).ok_or_else(|| {
+                        self.step_error(
+                            "integer certificate type range must be a supported mathematical Integer affine proposition",
+                        )
+                    })?;
+                    IntegerArithmeticNode::TypeRange {
+                        value,
+                        upper,
+                        result,
+                    }
+                }
                 IntegerCertificateNode::Divide {
                     source,
                     divisor,
@@ -2700,7 +2749,7 @@ impl<'a> Proof<'a> {
             })
     }
 
-    fn lower_integer_surface_proposition(
+    pub(in crate::surface::proof) fn lower_integer_surface_proposition(
         &self,
         surface: &ClickProposition,
         description: &str,
@@ -2869,6 +2918,11 @@ impl<'a> Proof<'a> {
                         _,
                         Some(ClickProposition::ForAll { name, .. }),
                     ) => Some(name),
+                    (
+                        PropositionIntroduction::Universal { .. },
+                        None,
+                        Some(ClickProposition::RangeAll { item, .. }),
+                    ) => Some(item),
                     _ => None,
                 };
                 if let Some(name) = introduced_name {
@@ -3035,6 +3089,54 @@ impl<'a> Proof<'a> {
                             );
                         }
                         Some(Arc::new(body.as_ref().clone()))
+                    }
+                    // A range quantifier stated where no lowering provenance
+                    // was recorded (a `have` at an execution frontier) names
+                    // its variable like a written `forall`. Its range guard
+                    // is the next introduction, so the remaining written goal
+                    // is that guard implying the body, which the
+                    // implication arm above then refines to the body.
+                    (
+                        None,
+                        PropositionIntroduction::Universal {
+                            variable,
+                            algebraic: None,
+                            ..
+                        },
+                        Some(ClickProposition::RangeAll {
+                            start,
+                            end,
+                            item,
+                            body,
+                            ..
+                        }),
+                    ) => {
+                        surface_bindings = surface_bindings.with_inserted(
+                            item.clone(),
+                            ContractExpression::CFragment(CExpression::Value(
+                                match self.proposition_goal("`intro` requires a proposition goal").expect("intro checked its goal") {
+                                    Proposition::ForAll { sort, .. } if sort.machine_integer_type().is_some() => sort.machine_integer_type().unwrap().symbolic_value(variable),
+                                    _ => CValue::Int32(Bitvector32Term::Variable(variable)),
+                                },
+                            )),
+                        );
+                        let bound = ContractExpression::Binding(item.clone());
+                        let guard = ClickProposition::And(
+                            Box::new(ClickProposition::Comparison {
+                                left: start.clone(),
+                                operator: ComparisonOperator::LessEqual,
+                                right: bound.clone(),
+                            }),
+                            Box::new(ClickProposition::Comparison {
+                                left: bound,
+                                operator: ComparisonOperator::LessThan,
+                                right: end.clone(),
+                            }),
+                        );
+                        Some(Arc::new(ClickProposition::Implies(
+                            Box::new(guard),
+                            body.clone(),
+                        )))
                     }
                     _ => None,
                 };
@@ -3611,6 +3713,9 @@ fn describe_special_arithmetic_check_error(
     match error {
         Error::InvalidIntegerCastIdentity(index) => format!(
             "node {index} requires an exact typed cast observation and two non-strict constant bounds on its source value, in lower/upper order, within the destination range"
+        ),
+        Error::InvalidIntegerOperationIdentity(index) => format!(
+            "node {index} requires `to_integer(a + b) == to_integer(a) + to_integer(b)` (or `-`) for an `int`, `unsigned int`, `int64` or `uint64` operation, and two non-strict constant bounds on the mathematical result, in lower/upper order, within that type's range"
         ),
         Error::InvalidIntegerProductBounds(index) => format!(
             "node {index} requires four non-strict bounds with constant endpoints on the product operands, in left-lower/upper then right-lower/upper order"

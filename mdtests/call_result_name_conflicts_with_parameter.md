@@ -37,5 +37,5 @@ void caller(int32* p) {
 }
 ```
 ```expect
-fail: step result name `p` is already in scope
+fail: `p` names a C variable here; a proof binder cannot hide it
 ```

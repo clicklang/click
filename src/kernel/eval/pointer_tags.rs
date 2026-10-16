@@ -22,6 +22,7 @@ use super::*;
 pub(in crate::kernel) struct TaggedAddress {
     pub(in crate::kernel) pointer: Pointer,
     pub(in crate::kernel) tag: Bitvector32Term,
+    pub(in crate::kernel) object_class: Option<crate::kernel::effective_type::CAccessClass>,
 }
 
 /// The exact facts a decision consulted, and whether every step could name
@@ -317,20 +318,28 @@ fn structural_form_of(
     through_facts: bool,
 ) -> Result<Option<TaggedAddress>, Refuted> {
     let direct = match term {
+        Bitvector32Term::ObjectPointerAddress(pointer, class) => Some(TaggedAddress {
+            pointer: pointer.as_ref().clone(),
+            object_class: Some(class.clone()),
+            tag: Bitvector32Term::UInt64Constant(0),
+        }),
         Bitvector32Term::PointerAddress(pointer) => Some(TaggedAddress {
             pointer: pointer.as_ref().clone(),
+            object_class: None,
             tag: Bitvector32Term::UInt64Constant(0),
         }),
         Bitvector32Term::UInt64Add(left, right) => {
             if let Some(form) = form_of(left, assumptions, undecided, used, through_facts)? {
                 Some(TaggedAddress {
                     pointer: form.pointer,
+                    object_class: form.object_class,
                     tag: add_tag(form.tag, right.as_ref().clone()),
                 })
             } else {
                 form_of(right, assumptions, undecided, used, through_facts)?.map(|form| {
                     TaggedAddress {
                         pointer: form.pointer,
+                        object_class: form.object_class,
                         tag: add_tag(left.as_ref().clone(), form.tag),
                     }
                 })
@@ -339,6 +348,7 @@ fn structural_form_of(
         Bitvector32Term::UInt64Subtract(left, right) => {
             form_of(left, assumptions, undecided, used, through_facts)?.map(|form| TaggedAddress {
                 pointer: form.pointer,
+                object_class: form.object_class,
                 tag: Bitvector32Term::uint64_subtract(form.tag, right.as_ref().clone()),
             })
         }
@@ -387,6 +397,7 @@ fn structural_form_of(
                     }
                     Some(TaggedAddress {
                         pointer: form.pointer,
+                        object_class: form.object_class,
                         tag: if tag_bound_citing(&form.tag, assumptions, used)
                             .is_some_and(|mask| mask & constant == 0)
                         {
@@ -420,6 +431,7 @@ fn structural_form_of(
                     }
                     Some(TaggedAddress {
                         pointer: form.pointer,
+                        object_class: form.object_class,
                         tag: Bitvector32Term::uint64_bitwise_or(
                             form.tag,
                             tag.unwrap_or(Bitvector32Term::UInt64Constant(constant)),
@@ -505,7 +517,8 @@ pub(in crate::kernel) fn cast_tagged_address_to_pointer(
     term: &Bitvector32Term,
     assumptions: &PureFactContext,
     obligations: &mut Vec<ProofObligation>,
-) -> Result<Option<Pointer>, String> {
+    target_type: CType,
+) -> Result<Option<CPointerValue>, String> {
     let mut used = UsedFacts::new();
     let form = match form_of(
         term,
@@ -521,7 +534,9 @@ pub(in crate::kernel) fn cast_tagged_address_to_pointer(
     let tag_is_zero =
         ConditionTerm::uint64_equal(form.tag.clone(), Bitvector32Term::UInt64Constant(0));
     match assumptions.decide(&tag_is_zero) {
-        Some(true) => Ok(Some(form.pointer)),
+        Some(true) => Ok(Some(
+            CPointerValue::new(form.pointer, target_type).with_object_class(form.object_class),
+        )),
         Some(false) => Err(
             "integer-to-pointer cast of a tagged address requires the tag bits proven zero; \
              they are refuted"
@@ -540,7 +555,9 @@ pub(in crate::kernel) fn cast_tagged_address_to_pointer(
             {
                 return Err(format!("{context}; they are refuted"));
             }
-            Ok(Some(form.pointer))
+            Ok(Some(
+                CPointerValue::new(form.pointer, target_type).with_object_class(form.object_class),
+            ))
         }
     }
 }
@@ -548,6 +565,129 @@ pub(in crate::kernel) fn cast_tagged_address_to_pointer(
 #[cfg(test)]
 mod exact_word_address_tests {
     use super::*;
+
+    #[test]
+    fn encoded_object_class_survives_tags_and_a_different_cast_type() {
+        use crate::kernel::effective_type::{CAccessClass, CScalarClass};
+        let _session = crate::kernel::VerificationSession::enter();
+        let pointer = Pointer::symbolic(Variable(980010));
+        let class = CAccessClass::Scalar(CScalarClass::Int);
+        let assumptions = PureFactContext::new()
+            .assume_condition(ConditionTerm::pointer_aligned(pointer.clone(), 4), true);
+        let mut obligations = Vec::new();
+        let encoded = cast_c_value_to_type(
+            CValue::Pointer(
+                CPointerValue::new(pointer.clone(), CType::Int32Pointer)
+                    .with_object_class(Some(class.clone())),
+            ),
+            CType::UInt64,
+            IntegerConversion::Modular,
+            &mut obligations,
+            &assumptions,
+        )
+        .unwrap();
+        let CValue::UInt64(address) = encoded else {
+            panic!("encoded address")
+        };
+        let tagged =
+            Bitvector32Term::uint64_bitwise_or(address.clone(), Bitvector32Term::UInt64Constant(1));
+        let cleared = Bitvector32Term::uint64_bitwise_and(
+            tagged.clone(),
+            Bitvector32Term::UInt64Constant(!3),
+        );
+        let subtracted = Bitvector32Term::uint64_subtract(
+            Bitvector32Term::uint64_add(address.clone(), Bitvector32Term::UInt64Constant(1)),
+            Bitvector32Term::UInt64Constant(1),
+        );
+        for word in [address.clone(), cleared, subtracted] {
+            let result = cast_c_value_to_type(
+                CValue::UInt64(word),
+                CType::Float64Pointer,
+                IntegerConversion::Modular,
+                &mut obligations,
+                &assumptions,
+            )
+            .unwrap();
+            let CValue::Pointer(decoded) = result else {
+                panic!("decoded pointer")
+            };
+            assert_eq!(decoded.pointer(), &pointer);
+            assert_eq!(decoded.object_class(), Some(class.clone()));
+            assert_eq!(decoded.c_type(), CType::Float64Pointer);
+        }
+        assert!(
+            cast_tagged_address_to_pointer(
+                &tagged,
+                &assumptions,
+                &mut obligations,
+                CType::Int32Pointer
+            )
+            .is_err()
+        );
+        assert!(obligations.is_empty());
+        assert_eq!(
+            assumptions.decide(&ConditionTerm::uint64_equal(
+                address,
+                Bitvector32Term::pointer_address(pointer)
+            )),
+            Some(true)
+        );
+    }
+
+    #[test]
+    fn object_class_recovery_uses_only_available_origin_evidence() {
+        use crate::kernel::effective_type::{CAccessClass, CScalarClass};
+        let _session = crate::kernel::VerificationSession::enter();
+        let pointer = Pointer::symbolic(Variable(980020));
+        let class = CAccessClass::Scalar(CScalarClass::Int);
+        let word = Bitvector32Term::Variable(Variable(980021));
+        let premise = Proposition::ConditionIs(
+            ConditionTerm::uint64_equal(
+                word.clone(),
+                Bitvector32Term::object_pointer_address(pointer.clone(), Some(class.clone())),
+            ),
+            true,
+        );
+        let parent = PureFactContext::new();
+        let branch = parent.clone().assume_proposition(premise.clone());
+        let mut obligations = Vec::new();
+        let decoded =
+            cast_tagged_address_to_pointer(&word, &branch, &mut obligations, CType::Float64Pointer)
+                .unwrap()
+                .unwrap();
+        assert_eq!(decoded.pointer(), &pointer);
+        assert_eq!(decoded.object_class(), Some(class));
+        for context in [
+            parent,
+            branch.without_exact_fact(&premise),
+            branch.restricted_to_facts(&[], &[]),
+        ] {
+            assert!(
+                cast_tagged_address_to_pointer(
+                    &word,
+                    &context,
+                    &mut obligations,
+                    CType::Float64Pointer
+                )
+                .unwrap()
+                .is_none()
+            );
+        }
+        let bare = cast_tagged_address_to_pointer(
+            &Bitvector32Term::pointer_address(pointer),
+            &PureFactContext::new(),
+            &mut obligations,
+            CType::Float64Pointer,
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(
+            bare.object_class(),
+            None,
+            "the target cast must not invent a class"
+        );
+        assert!(obligations.is_empty());
+    }
 
     #[test]
     fn compound_word_address_requires_origin_and_stops_at_cyclic_equations() {
@@ -564,8 +704,13 @@ mod exact_word_address_tests {
         ] {
             let mut obligations = Vec::new();
             assert_eq!(
-                cast_tagged_address_to_pointer(&expression, &assumptions, &mut obligations)
-                    .unwrap(),
+                cast_tagged_address_to_pointer(
+                    &expression,
+                    &assumptions,
+                    &mut obligations,
+                    CType::Int32Pointer
+                )
+                .unwrap(),
                 None
             );
             assert!(obligations.is_empty());

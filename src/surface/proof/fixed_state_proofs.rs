@@ -1,6 +1,6 @@
 use super::*;
 
-mod conversion_conditions;
+pub(in crate::surface) mod conversion_conditions;
 mod fact_transport;
 mod have_proofs;
 mod theorem_application;

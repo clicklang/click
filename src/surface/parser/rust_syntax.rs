@@ -333,9 +333,10 @@ impl Parser {
     }
 
     /// `trait traits::Shape { ... }`: each `fn` inside is the interface of
-    /// that method of the crate trait, an external declaration whose
-    /// contract every implementation must refine and a call through the
-    /// trait assumes. It takes no proof.
+    /// that method of the crate trait, whose contract every implementation
+    /// must refine and a call through the trait assumes. A required method's
+    /// is an external declaration; a default method's is written with the
+    /// proof of its default body.
     #[inline(never)]
     pub(super) fn parse_rust_trait_block(
         &mut self,
@@ -359,7 +360,10 @@ impl Parser {
                 result = Err(self.error("a `trait` block holds `fn` interfaces"));
                 break;
             }
-            match self.parse_function_block(true) {
+            // A default method, written with its proof, is the function its
+            // default body defines; the others are external interfaces.
+            let has_body = self.rust_trait_method_has_proof();
+            match self.parse_function_block(!has_body) {
                 // Nor does it hold any of the receiver's resources.
                 Ok(block)
                     if block.requires().iter().any(|requirement| {
@@ -386,6 +390,40 @@ impl Parser {
         result?;
         self.expect(Token::RBrace)?;
         Ok(())
+    }
+
+    /// Whether the trait method at the parser's position is written with a
+    /// proof, `fn twice(&self) -> i32 { ... } by { ... }`: the clause block,
+    /// the first brace outside the signature's parentheses, is followed by
+    /// `by`.
+    fn rust_trait_method_has_proof(&self) -> bool {
+        let mut parentheses = 0usize;
+        let mut index = self.position;
+        while let Some(token) = self.tokens.get(index) {
+            match token {
+                Token::LParen => parentheses += 1,
+                Token::RParen => parentheses = parentheses.saturating_sub(1),
+                Token::LBrace if parentheses == 0 => break,
+                Token::Semicolon | Token::RBrace if parentheses == 0 => return false,
+                _ => {}
+            }
+            index += 1;
+        }
+        let mut braces = 0usize;
+        while let Some(token) = self.tokens.get(index) {
+            match token {
+                Token::LBrace => braces += 1,
+                Token::RBrace => {
+                    braces -= 1;
+                    if braces == 0 {
+                        return matches!(self.tokens.get(index + 1), Some(Token::Ident(word)) if word == "by");
+                    }
+                }
+                _ => {}
+            }
+            index += 1;
+        }
+        false
     }
 
     /// The imported function an inherent method of a type named by a path

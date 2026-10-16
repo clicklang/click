@@ -499,6 +499,13 @@ fn object_traits(source: &[Spanned]) -> Result<BTreeMap<String, ObjectTrait>, Cl
                         },
                     );
                     item = body_close + 1;
+                    // A default method's proof is no part of the interface.
+                    if is_ident(source.get(item), "by")
+                        && source.get(item + 1).map(|(token, _)| token) == Some(&Token::LBrace)
+                        && let Some(proof_close) = matching(source, item + 1)
+                    {
+                        item = proof_close + 1;
+                    }
                     continue;
                 }
                 item += 1;

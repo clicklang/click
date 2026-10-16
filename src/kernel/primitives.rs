@@ -72,6 +72,7 @@ pub(crate) use memory_state::{
 pub(crate) use persistent_map::{SnapshotMap, SnapshotMapChange, SnapshotSet};
 mod iterated;
 pub use iterated::{CIteratedGuard, CIteratedMemory};
+pub(in crate::kernel) mod canonical_fact_set;
 mod composition_member_index;
 mod memory_equality_index;
 mod resource_algebra;
@@ -498,6 +499,9 @@ pub enum Bitvector32Term {
     /// integer copies retain that information separately in PointerInteger.
     /// Checked tag identities can recover address bits, never pointer bounds.
     PointerAddress(Box<Pointer>),
+    /// The same numeric address with checked source object-class evidence.
+    /// The destination type of a later cast never supplies this class.
+    ObjectPointerAddress(Box<Pointer>, crate::kernel::effective_type::CAccessClass),
     IntegerToMachine {
         value: SharedIntegerTerm,
         destination: MachineIntegerType,
@@ -4181,6 +4185,9 @@ impl CAggregateLayout {
 pub struct CFunctionContractInterface {
     pub(crate) return_type: CType,
     pub(crate) return_pointee_constant: bool,
+    /// The class of the object a returned pointer designates, from the
+    /// declared return type (`design/effective-types.md`).
+    pub(crate) return_pointee_class: Option<crate::kernel::effective_type::CAccessClass>,
     pub(crate) return_aggregate_layout: Option<CAggregateLayout>,
     pub(crate) aggregate_return_mode: CAggregateReturnMode,
     pub(crate) construction_parameter: Option<(usize, CAggregateLayout)>,
@@ -7864,6 +7871,9 @@ pub(super) struct ResourceContextIndex {
     /// multiset kept as facts are inserted and removed, so ordering two
     /// contexts need not walk their facts (`ResourceContext::cmp`).
     pub(super) fact_hash: u64,
+    /// The held facts as a canonical multiset: contexts holding the same
+    /// facts share its root, so equality never walks them.
+    pub(super) canonical: canonical_fact_set::CanonicalFactSet,
     pub(super) memory_facts: SnapshotMap<CResourceFact, ()>,
     pub(super) owned_memory_ranges: SnapshotMap<CMemoryRange, ()>,
     pub(super) owned_memory_range_counts: PersistentMap<CMemoryRange, usize>,
@@ -8024,7 +8034,10 @@ impl PartialEq for ResourceContext {
         {
             return true;
         }
-        self.facts() == other.facts()
+        self.storage
+            .index
+            .canonical
+            .same_contents(&other.storage.index.canonical)
             && self.storage.supported_by == other.storage.supported_by
             && compare_support_graph(self, other) == std::cmp::Ordering::Equal
             && self.storage.expansions_by_support_entry == other.storage.expansions_by_support_entry
@@ -8036,7 +8049,10 @@ impl Eq for ResourceContext {}
 
 impl std::hash::Hash for ResourceContext {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.facts().hash(state);
+        // The fact multiset's content hash: equal contexts hold equal facts,
+        // in whatever order they were filed.
+        self.storage.index.fact_hash.hash(state);
+        self.storage.index.exact.len().hash(state);
         for entry in self.storage.supported_by.iter() {
             entry.hash(state);
         }
@@ -8090,8 +8106,10 @@ impl Ord for ResourceContext {
 impl ResourceContext {
     fn structural_cmp(&self, other: &Self) -> std::cmp::Ordering {
         count_structural_comparison();
-        self.facts()
-            .cmp(other.facts())
+        self.storage
+            .index
+            .canonical
+            .cmp_contents(&other.storage.index.canonical)
             .then_with(|| {
                 self.storage
                     .supported_by

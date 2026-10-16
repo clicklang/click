@@ -19,7 +19,7 @@ pub(in crate::surface) use fixed_state_proofs::{
 mod cursor_execution;
 mod execution_planning;
 pub(in crate::surface) mod fact_reasoning;
-mod fixed_state_proofs;
+pub(in crate::surface) mod fixed_state_proofs;
 mod language_context;
 mod proof_object;
 
@@ -38,6 +38,7 @@ mod signed_definedness;
 mod smart_closures;
 mod smart_execution;
 mod solver_bridges;
+mod source_context;
 mod structural;
 mod surface_certificates;
 mod surface_construction;
@@ -106,6 +107,7 @@ pub(super) use pure_theorems::{
 use pure_theorems::{lower_pure_theorem_proposition, pure_theorem_context};
 pub(super) use resources::instantiate_composite_resource_body_resources;
 use resources::*;
+use source_context::SourceContext;
 use structural::*;
 use surface_certificates::*;
 use surface_construction::*;

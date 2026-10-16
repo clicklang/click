@@ -4966,44 +4966,22 @@ fn smart_container_alias_entries(
 
 /// Whether a smart tactic is written anywhere inside `tactic`.
 fn tactic_contains_smart_tactic(tactic: &ProofTactic) -> bool {
-    fn any(tactics: &[ProofTactic]) -> bool {
-        tactics.iter().any(|tactic| {
-            source_site_kind(tactic) == SourceSiteKind::ExpandableAutomation
-                || tactic_contains_smart_tactic(tactic)
+    // A loop proof left out is the default proof, which is smart.
+    if let ProofTactic::Loop(clause) = tactic
+        && (clause.initialize_proof().is_none() || clause.preserve_proof().is_none())
+    {
+        return true;
+    }
+    tactic.children().into_iter().any(|child| {
+        let (TacticChild::Continuing(proof) | TacticChild::Obligation(proof)) = child;
+        // A default or smart-tactic proof is itself smart.
+        proof.tactics().is_none_or(|tactics| {
+            tactics.iter().any(|tactic| {
+                source_site_kind(tactic) == SourceSiteKind::ExpandableAutomation
+                    || tactic_contains_smart_tactic(tactic)
+            })
         })
-    }
-    fn proof(proof: &SourceProof) -> bool {
-        match proof {
-            SourceProof::Default | SourceProof::Tactic(_) => true,
-            SourceProof::Script(tactics) => any(tactics),
-        }
-    }
-    match tactic {
-        ProofTactic::CloseInvariantsBy(tactics) => any(tactics),
-        ProofTactic::StepProved {
-            proof: step_proof, ..
-        } => match step_proof {
-            StepProof::By(tactics) => any(tactics),
-            StepProof::Requires(entries) => entries.iter().any(|entry| proof(&entry.have.proof)),
-        },
-        ProofTactic::StructuralInduct { arms, .. } => arms.iter().any(|arm| any(&arm.tactics)),
-        ProofTactic::Have(have) => proof(&have.proof),
-        ProofTactic::Open(open) => {
-            any(&open.tactics) || open.close_proof.as_deref().is_some_and(any)
-        }
-        ProofTactic::If(proof_if) => any(&proof_if.then_tactics) || any(&proof_if.else_tactics),
-        ProofTactic::Match(proof_match) => proof_match.arms.iter().any(|arm| any(&arm.tactics)),
-        ProofTactic::Cases(cases) => cases.arms().iter().any(|arm| any(arm.tactics())),
-        ProofTactic::Both(both) => any(&both.left_tactics) || any(&both.right_tactics),
-        ProofTactic::Branch(branch) => any(&branch.then_tactics) || any(&branch.else_tactics),
-        ProofTactic::CallOutcomes(outcomes) => {
-            any(&outcomes.returned_tactics) || any(&outcomes.threw_tactics)
-        }
-        ProofTactic::Loop(clause) => {
-            clause.initialize_proof().is_none_or(proof) || clause.preserve_proof().is_none_or(proof)
-        }
-        _ => false,
-    }
+    })
 }
 
 pub fn c0_tactic_source_position(

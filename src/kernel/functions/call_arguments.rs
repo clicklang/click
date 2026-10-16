@@ -108,7 +108,9 @@ pub(super) fn set_contract_result(
     }
     state.locals.set_typed_with_all_qualifiers(
         C_CONTRACT_RESULT_NAME.to_string(),
-        value.with_pointer_pointee_constant(interface.return_pointee_is_constant()),
+        value
+            .with_pointer_pointee_constant(interface.return_pointee_is_constant())
+            .with_pointer_object_class(interface.return_pointee_class()),
         interface.return_type(),
         false,
         false,
@@ -211,6 +213,72 @@ pub(super) fn freed_pointer_argument_conversion(
         .find_map(|(_, value)| freed_pointer_use(state, value, assumptions))
 }
 
+/// The refusal of a call that passes a pointer to an object whose known
+/// type the parameter's pointee type cannot designate
+/// (`design/effective-types.md`). The callee is verified accessing the
+/// object through that type, so the caller must not hand it another.
+pub(super) fn incompatible_pointer_argument(
+    state: &CState,
+    function_name: &str,
+    interface: &CFunctionContractInterface,
+    values: &[CValue],
+) -> Option<CRuntimeError> {
+    interface
+        .parameters()
+        .iter()
+        .zip(values)
+        .find_map(|(parameter, value)| {
+            let pointee = parameter.pointee_class()?;
+            let CValue::Pointer(pointer) = value else {
+                return None;
+            };
+            let object = state
+                .memory()
+                .declared_class(pointer.pointer())
+                .or_else(|| pointer.object_class())?;
+            (!pointee.may_designate(&object)).then(|| {
+                CRuntimeError::FunctionContract(format!(
+                    "call to `{function_name}` passes an object of type `{}` to parameter \
+                     `{}`, which points to `{}`: the callee accesses it through that type, \
+                     and an object may be accessed only through its own type, up to \
+                     signedness and qualifiers, or a character type (C11 6.5p7)",
+                    object.spelling(),
+                    parameter.name(),
+                    pointee.spelling(),
+                ))
+            })
+        })
+}
+
+/// The refusal of a return whose pointer designates an object of a known
+/// type that the declared return type's pointee cannot designate; callers
+/// access the object through that type (`design/effective-types.md`).
+pub(super) fn incompatible_pointer_return(
+    state: &CState,
+    function: &CFunction,
+    value: &CValue,
+) -> Option<CRuntimeError> {
+    let pointee = function.contract_interface().return_pointee_class()?;
+    let CValue::Pointer(pointer) = value else {
+        return None;
+    };
+    let object = state
+        .memory()
+        .declared_class(pointer.pointer())
+        .or_else(|| pointer.object_class())?;
+    (!pointee.may_designate(&object)).then(|| {
+        CRuntimeError::FunctionContract(format!(
+            "`{}` returns a pointer to an object of type `{}` as a pointer to `{}`: its \
+             callers access the object through that type, and an object may be accessed \
+             only through its own type, up to signedness and qualifiers, or a character \
+             type (C11 6.5p7)",
+            function.name(),
+            object.spelling(),
+            pointee.spelling(),
+        ))
+    })
+}
+
 pub(super) fn coerce_function_return_value(
     value: CValue,
     function: &CFunction,
@@ -292,6 +360,7 @@ pub(super) fn symbolic_contract_result(
     symbolic_call_result(interface.return_type(), variable)
         .complete_word(Pointer::symbolic(variable))
         .with_pointer_pointee_constant(interface.return_pointee_is_constant())
+        .with_pointer_object_class(interface.return_pointee_class())
 }
 
 pub(crate) fn symbolic_call_result(c_type: CType, variable: Variable) -> CValue {

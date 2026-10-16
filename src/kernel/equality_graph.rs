@@ -1722,8 +1722,8 @@ impl EqualityGraph {
                         terms::uint64_read(term).or_else(|| terms::int32_read(term))
                     {
                         pointers.push(pointer);
-                    } else if let Bitvector32Term::PointerAddress(pointer) = term {
-                        pointers.push(pointer.as_ref().clone());
+                    } else if let Some(pointer) = term.address_pointer() {
+                        pointers.push(pointer.clone());
                     }
                 }
             }

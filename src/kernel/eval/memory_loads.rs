@@ -3011,6 +3011,7 @@ fn substitute_load_variables(
                         None => term_results.push(term.clone()),
                     },
                     Bitvector32Term::PointerAddress(_)
+                    | Bitvector32Term::ObjectPointerAddress(_, _)
                     | Bitvector32Term::IntegerToMachine { .. } => term_results.push(term.clone()),
                     Bitvector32Term::ClickFunctionApplication { .. }
                     | Bitvector32Term::AlgebraicMatch { .. } => term_results.push(term.clone()),
@@ -3305,7 +3306,8 @@ fn term_mentions_a_memory_load(term: &Bitvector32Term) -> bool {
         | Bitvector32Term::UInt64Constant(_)
         | Bitvector32Term::MachineIntegerConstant(_) => false,
         Bitvector32Term::MemoryLoad(_, _, _) => true,
-        Bitvector32Term::PointerAddress(pointer) => {
+        Bitvector32Term::PointerAddress(pointer)
+        | Bitvector32Term::ObjectPointerAddress(pointer, _) => {
             pointer.offset.any_scaled_value(term_mentions_a_memory_load)
         }
         Bitvector32Term::If {

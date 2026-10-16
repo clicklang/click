@@ -1806,7 +1806,9 @@ impl Residues {
                     _ => x.map(|x| Residue::new(x.bits, x.value ^ c)),
                 }
             }
-            T::PointerAddress(pointer) => self.address_residue(pointer, depth - 1),
+            T::PointerAddress(pointer) | T::ObjectPointerAddress(pointer, _) => {
+                self.address_residue(pointer, depth - 1)
+            }
             _ => None,
         };
         Residue::better(best, structural)

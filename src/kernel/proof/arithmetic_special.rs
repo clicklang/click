@@ -115,7 +115,8 @@ fn bitvector_payload(root: &Bitvector32Term) -> Option<usize> {
                 payload = payload.checked_add(name.len())?;
                 pending.extend(arguments.iter());
             }
-            Bitvector32Term::PointerAddress(pointer) => {
+            Bitvector32Term::PointerAddress(pointer)
+            | Bitvector32Term::ObjectPointerAddress(pointer, _) => {
                 payload = payload.checked_add(pointer_payload(pointer)?)?;
             }
             _ => return None,
@@ -299,7 +300,12 @@ fn bitvector_equal(left: &Bitvector32Term, right: &Bitvector32Term) -> bool {
             ) if left_name == right_name && left_arguments.len() == right_arguments.len() => {
                 pending.extend(left_arguments.iter().zip(right_arguments.iter()));
             }
-            (Bitvector32Term::PointerAddress(left), Bitvector32Term::PointerAddress(right)) => {
+            (
+                Bitvector32Term::PointerAddress(left)
+                | Bitvector32Term::ObjectPointerAddress(left, _),
+                Bitvector32Term::PointerAddress(right)
+                | Bitvector32Term::ObjectPointerAddress(right, _),
+            ) => {
                 if !pointer_equal(left, right) {
                     return false;
                 }
@@ -577,6 +583,10 @@ pub(crate) enum SpecialArithmeticNode {
         bounds: Vec<usize>,
         result: Proposition,
     },
+    IntegerOperationIdentity {
+        bounds: Vec<usize>,
+        result: Proposition,
+    },
     UnsignedSumBound {
         bounds: Vec<usize>,
         result: Proposition,
@@ -645,6 +655,7 @@ pub(crate) enum SpecialArithmeticCheckError {
     IntegerPolynomialLimitExceeded,
     InvalidIntegerQuotientShift(usize),
     InvalidIntegerCastIdentity(usize),
+    InvalidIntegerOperationIdentity(usize),
     InvalidPremise(usize),
     InvalidNodeReference(usize),
     InvalidOperator(usize),
@@ -724,6 +735,9 @@ impl SpecialArithmeticCertificate {
             }
             SpecialArithmeticNode::IntegerCastIdentity { bounds, result } => {
                 super::integer_cast_identity::check(index, bounds, premises, result)
+            }
+            SpecialArithmeticNode::IntegerOperationIdentity { bounds, result } => {
+                super::integer_operation_identity::check(index, bounds, premises, result)
             }
             SpecialArithmeticNode::PointerTranslation {
                 relation,
@@ -1211,6 +1225,7 @@ impl SpecialArithmeticNode {
             | Self::IntegerPolynomialIdentity { result, .. }
             | Self::IntegerQuotientShift { result, .. }
             | Self::IntegerCastIdentity { result, .. }
+            | Self::IntegerOperationIdentity { result, .. }
             | Self::PointerTranslation { result, .. }
             | Self::PointerAlignment { result, .. }
             | Self::PointerWordEquality { result, .. }
@@ -2052,13 +2067,20 @@ fn bounded_term_hashes(roots: &[&Bitvector32Term]) -> Option<HashMap<usize, u64>
         }
         if expanded {
             let mut hasher = DefaultHasher::new();
-            std::mem::discriminant(term).hash(&mut hasher);
+            // Address annotations affect decoding, not numeric identity.
+            if term.address_pointer().is_some() {
+                std::mem::discriminant(&Bitvector32Term::PointerAddress(Box::new(Pointer::null())))
+                    .hash(&mut hasher);
+            } else {
+                std::mem::discriminant(term).hash(&mut hasher);
+            }
             match term {
                 Bitvector32Term::Constant(value) => value.hash(&mut hasher),
                 Bitvector32Term::Int64Constant(value) => value.hash(&mut hasher),
                 Bitvector32Term::UInt64Constant(value) => value.hash(&mut hasher),
                 Bitvector32Term::Variable(value) => value.hash(&mut hasher),
-                Bitvector32Term::PointerAddress(pointer) => {
+                Bitvector32Term::PointerAddress(pointer)
+                | Bitvector32Term::ObjectPointerAddress(pointer, _) => {
                     pointer_identity_hash(pointer)?.hash(&mut hasher)
                 }
                 Bitvector32Term::Add(left, right)
@@ -2179,8 +2201,16 @@ fn pointer_or_masked_tag<'a>(
     right: &'a Bitvector32Term,
 ) -> Option<(&'a Pointer, &'a Bitvector32Term, u64)> {
     let (pointer, tag) = match (left, right) {
-        (Bitvector32Term::PointerAddress(pointer), tag)
-        | (tag, Bitvector32Term::PointerAddress(pointer)) => (pointer.as_ref(), tag),
+        (
+            Bitvector32Term::PointerAddress(pointer)
+            | Bitvector32Term::ObjectPointerAddress(pointer, _),
+            tag,
+        )
+        | (
+            tag,
+            Bitvector32Term::PointerAddress(pointer)
+            | Bitvector32Term::ObjectPointerAddress(pointer, _),
+        ) => (pointer.as_ref(), tag),
         _ => return None,
     };
     let (_, mask) = masked_source(tag)?;
@@ -2295,7 +2325,8 @@ fn tagged_form_inner<'a>(
                 }
                 active.insert(identity);
                 match current {
-                    Bitvector32Term::PointerAddress(pointer) => store(
+                    Bitvector32Term::PointerAddress(pointer)
+                    | Bitvector32Term::ObjectPointerAddress(pointer, _) => store(
                         identity,
                         Some(TaggedAddress {
                             pointer: Arc::new(pointer.as_ref().clone()),

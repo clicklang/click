@@ -749,6 +749,7 @@ impl CFunctionContractInterface {
         Self {
             return_type,
             return_pointee_constant: false,
+            return_pointee_class: None,
             return_aggregate_layout: None,
             aggregate_return_mode: CAggregateReturnMode::Copy,
             construction_parameter: None,
@@ -784,6 +785,10 @@ impl CFunctionContractInterface {
 
     pub fn return_pointee_is_constant(&self) -> bool {
         self.return_pointee_constant
+    }
+
+    pub fn return_pointee_class(&self) -> Option<crate::kernel::effective_type::CAccessClass> {
+        self.return_pointee_class.clone()
     }
 
     pub fn return_aggregate_layout(&self) -> Option<&CAggregateLayout> {
@@ -1394,6 +1399,14 @@ impl CFunction {
 
     pub fn with_return_pointee_constant(mut self, constant: bool) -> Self {
         self.contract_interface.return_pointee_constant = constant;
+        self
+    }
+
+    pub fn with_return_pointee_class(
+        mut self,
+        class: Option<crate::kernel::effective_type::CAccessClass>,
+    ) -> Self {
+        self.contract_interface.return_pointee_class = class;
         self
     }
 

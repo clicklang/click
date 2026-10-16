@@ -31,6 +31,16 @@ to two loops on one path. Before, `at(L.exit, ...)` read the last loop named
 (`mdtests/a_loop_label_names_one_loop.md`). Snapshots are still keyed by
 spelling.
 
+Proof binders now share one rule, applied by `bind_proof_name`: the newest
+binding wins wherever a name is read, and a proof binder cannot hide a C
+variable in an execution proof. Before, a value binder could reuse a `have`
+fact's name, so a citation read the fact while an expression read the value,
+and a match-arm binder could hide a C parameter. That made
+`mdtests/rb_at_rejects_wrong_color_bit.md` refuse its fold at the parent
+word instead of at the color bit it tests. Step and call results still refuse
+reuse outright; loosening them needs the later phases to resolve the result
+by its binding rather than its spelling.
+
 The complete scoped table for parameters, fields, binders, constructors,
 resources, program points and project modules remains open. Proof inventories
 still interpret shared parser tokens; parser-produced AST spans and integration

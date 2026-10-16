@@ -531,7 +531,7 @@ impl PureFactContext {
             }
             ConditionTerm::Constant(value) => Some(*value),
             _ => {
-                if let Some(value) = self.exact_condition_value(condition) {
+                if let Some(value) = self.known_condition_value(condition) {
                     return Some(value);
                 }
                 if let Some(value) = self.decide_exact_signed_constant_order(condition) {
@@ -1232,6 +1232,24 @@ impl PureFactContext {
         keys.into_iter().collect()
     }
 
+    /// The same scoped fact through the shared condition application index.
+    /// Address-origin annotations do not alter a numeric condition's truth.
+    pub(in crate::kernel) fn known_condition_value(
+        &self,
+        condition: &ConditionTerm,
+    ) -> Option<bool> {
+        self.exact_condition_value(condition).or_else(|| {
+            let value = [true, false]
+                .into_iter()
+                .find(|value| self.equality_graph.knows_condition(condition, *value))?;
+            record_implicit_reasoning_provenance(
+                self,
+                &Proposition::ConditionIs(condition.clone(), value),
+            );
+            Some(value)
+        })
+    }
+
     /// The exact recorded value of `condition` (or of its mirrored form),
     /// recording the fact as consumed provenance when a collection is
     /// active: an exact lookup is a premise like any other.
@@ -1483,6 +1501,14 @@ impl PureFactContext {
         if self.contains_assumed_exact(&mirrored_premise) {
             return Some(PointerOffsetCongruenceEvidence::ExactPremise(Box::new(
                 mirrored_premise,
+            )));
+        }
+        if let Some(premise) = self
+            .equality_graph
+            .exact_pointer_offset_equality_source(left, right)
+        {
+            return Some(PointerOffsetCongruenceEvidence::ExactPremise(Box::new(
+                premise.clone(),
             )));
         }
         if let (Some(left), Some(right)) = (
@@ -1780,8 +1806,8 @@ impl PureFactContext {
             Bitvector32Term::MemoryLoad(memory, pointer, kind) => {
                 Bitvector32Term::MemoryLoad(memory.clone(), pointer.clone(), *kind)
             }
-            Bitvector32Term::PointerAddress(pointer) => {
-                Bitvector32Term::PointerAddress(pointer.clone())
+            Bitvector32Term::PointerAddress(_) | Bitvector32Term::ObjectPointerAddress(_, _) => {
+                term.clone()
             }
             term => match (term.as_binary(), term.as_unary()) {
                 (Some((op, left, right)), _) => op.build(

@@ -224,7 +224,10 @@ that writes `int32` for such a source already writes the source's spelling.
    `dyn` coercion; a mutable reference may change the state, which its
    `ensures` read as new and `old(...)` as at entry. Remaining:
    implementations of function-free traits that rename the interface's parameters, generic
-   traits and default methods, and C++ virtual methods. Done for C++
+   traits, and C++ virtual methods. Done for default methods: the `trait`
+   block writes a default method's interface with the proof of its default
+   body, verified once with calls of the trait's methods under their
+   interfaces; an `impl` that overrides it refines it. Done for C++
    virtual methods without object state: a virtual method's contract is the
    interface a call through it assumes, each override in the source
    inherits it and is checked to refine it, a pure virtual method's contract

@@ -1112,9 +1112,12 @@ fn cast_c_value_to_type_with_integer_origin(
                             &bits,
                             assumptions,
                             obligations,
+                            target_type,
                         )
                         .map_err(CRuntimeError::PointerConversion)?;
-                        if recovered.as_ref() != Some(record.pointer.pointer()) {
+                        if recovered.as_ref().map(CPointerValue::pointer)
+                            != Some(record.pointer.pointer())
+                        {
                             return Err(CRuntimeError::PointerConversion(
                                 "integer-to-pointer cast requires the original pointer with its tag cleared".into(),
                             ));
@@ -1157,17 +1160,19 @@ fn cast_c_value_to_type_with_integer_origin(
                 {
                     return Ok(CValue::typed_pointer(Pointer::null(), target_type));
                 }
-                // Existing checked tag identities can recover address bits for
-                // comparisons. They cannot recover the original designation.
-                return match super::pointer_tags::cast_tagged_address_to_pointer(&term, assumptions, obligations) {
-                    Ok(Some(pointer)) if pointer == Pointer::null() => Ok(CValue::typed_pointer(pointer, target_type)),
+                // Numeric tag equations recover coordinates and source object class,
+                // never the original designation or bounds.
+                return match super::pointer_tags::cast_tagged_address_to_pointer(
+                    &term, assumptions, obligations, target_type,
+                ) {
+                    Ok(Some(pointer)) if pointer.pointer() == &Pointer::null() => Ok(CValue::Pointer(pointer)),
                     Ok(Some(pointer)) => {
-                        // This is the cast producer's fresh opaque value identity.
-                        // A numeric term or numeric congruence class cannot name it.
                         let origin = integer_pointer_origin.ok_or_else(|| CRuntimeError::PointerConversion(
                             "integer-to-pointer cast requires a complete representation or a fresh cast identity".into(),
                         ))?;
-                        Ok(CValue::Pointer(CPointerValue::new(origin, target_type).with_address(pointer)))
+                        Ok(CValue::Pointer(CPointerValue::new(origin, target_type)
+                            .with_address(pointer.pointer().clone())
+                            .with_object_class(pointer.object_class())))
                     }
                     Ok(None) => Err(CRuntimeError::PointerConversion(
                         "integer-to-pointer cast requires an unchanged pointer representation, a recorded address, or zero".to_string(),
@@ -1209,7 +1214,10 @@ fn cast_c_value_to_type_with_integer_origin(
                 "function addresses do not convert to integers".to_string(),
             ));
         }
-        let address = Bitvector32Term::pointer_address(pointer.pointer().clone());
+        let address = Bitvector32Term::object_pointer_address(
+            pointer.pointer().clone(),
+            pointer.object_class(),
+        );
         let numeric = match target_type {
             CType::UInt64 => CValue::UInt64(address),
             _ => CValue::Int64(address),
@@ -1930,10 +1938,11 @@ fn evaluate_c_cast_paths(
                         bits,
                         &effective_assumptions,
                         &mut obligations,
+                        target_type,
                     )
                     .map_err(CRuntimeError::PointerConversion)?;
                     Ok(CValue::Pointer(match address {
-                        Some(address) => pointer.with_address(address),
+                        Some(address) => pointer.with_address(address.pointer().clone()),
                         None => pointer,
                     }))
                 });

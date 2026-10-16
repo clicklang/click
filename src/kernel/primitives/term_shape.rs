@@ -165,6 +165,7 @@ impl Bitvector32Term {
             | Self::AlgebraicMatch { .. }
             | Self::MemoryLoad(..)
             | Self::PointerAddress(_)
+            | Self::ObjectPointerAddress(_, _)
             | Self::IntegerToMachine { .. }
             | Self::BitwiseNot(_)
             | Self::Int64BitwiseNot(_)
@@ -219,6 +220,7 @@ impl Bitvector32Term {
             | Self::AlgebraicMatch { .. }
             | Self::MemoryLoad(..)
             | Self::PointerAddress(_)
+            | Self::ObjectPointerAddress(_, _)
             | Self::IntegerToMachine { .. }
             | crate::kernel::binary_machine_term!(_, _)
             | Self::Float32Binary { .. }

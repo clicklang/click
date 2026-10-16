@@ -730,7 +730,8 @@ fn collect_bitvector_carriers(term: &Bitvector32Term, variables: &mut CarrierVar
         Bitvector32Term::MemoryLoad(_, pointer, _) => {
             collect_pointer_carriers(pointer, variables);
         }
-        Bitvector32Term::PointerAddress(pointer) => {
+        Bitvector32Term::PointerAddress(pointer)
+        | Bitvector32Term::ObjectPointerAddress(pointer, _) => {
             collect_pointer_carriers(pointer, variables);
         }
         Bitvector32Term::IntegerToMachine { value, .. } => {
@@ -1240,6 +1241,7 @@ pub(crate) struct TermRewrite<'a> {
     pointer_value_exact: Option<(&'a CPointerValue, &'a CPointerValue)>,
     pointer_offset_exact: Option<(&'a PointerOffsetTerm, &'a PointerOffsetTerm)>,
     conditions: Option<&'a HashMap<ConditionTerm, bool>>,
+    cited_conditions: Option<&'a crate::kernel::equality_graph::EqualityGraph>,
     bounded_uint64_indices: Option<std::collections::HashSet<Bitvector32Term>>,
     equality_graph: Option<&'a crate::kernel::equality_graph::EqualityGraph>,
     pointer_context: Option<&'a PureFactContext>,
@@ -1370,6 +1372,7 @@ impl<'a> TermRewrite<'a> {
     fn empty() -> Self {
         Self {
             conditions: None,
+            cited_conditions: None,
             bounded_uint64_indices: None,
             equality_graph: None,
             pointer_context: None,
@@ -1445,6 +1448,7 @@ impl<'a> TermRewrite<'a> {
             .max();
         let mut rewrite = Self {
             conditions: None,
+            cited_conditions: None,
             bounded_uint64_indices: None,
             equality_graph: None,
             pointer_context: None,
@@ -1581,6 +1585,7 @@ impl<'a> TermRewrite<'a> {
             bitvector: None,
             integer_exact: None,
             conditions: Some(conditions),
+            cited_conditions: None,
             bounded_uint64_indices: None,
             equality_graph: None,
             pointer_context: None,
@@ -1646,6 +1651,29 @@ impl<'a> TermRewrite<'a> {
         rewrite
     }
 
+    pub(in crate::kernel) fn for_cited_conditions_with_context(
+        conditions: &'a HashMap<ConditionTerm, bool>,
+        selected: &'a crate::kernel::equality_graph::EqualityGraph,
+        ambient: &'a PureFactContext,
+    ) -> Self {
+        let mut rewrite =
+            Self::for_cited_conditions_with_graph(conditions, selected, &ambient.equality_graph);
+        rewrite.pointer_context = Some(ambient);
+        rewrite
+    }
+
+    /// The explicitly selected premises may decide either polarity. Their
+    /// graph is built once by the selecting operation, never by a lookup.
+    pub(in crate::kernel) fn for_cited_conditions_with_graph(
+        conditions: &'a HashMap<ConditionTerm, bool>,
+        selected: &'a crate::kernel::equality_graph::EqualityGraph,
+        ambient: &'a crate::kernel::equality_graph::EqualityGraph,
+    ) -> Self {
+        let mut rewrite = Self::for_conditions_with_graph(conditions, ambient);
+        rewrite.cited_conditions = Some(selected);
+        rewrite
+    }
+
     pub(crate) fn for_pointer_offset_exact(
         from: &'a PointerOffsetTerm,
         to: &'a PointerOffsetTerm,
@@ -1690,6 +1718,7 @@ impl<'a> TermRewrite<'a> {
             pointer_value_exact: None,
             pointer_offset_exact: None,
             conditions: None,
+            cited_conditions: None,
             bounded_uint64_indices: None,
             equality_graph: None,
             pointer_context: None,
@@ -1778,6 +1807,7 @@ impl<'a> TermRewrite<'a> {
             pointer_value_exact: None,
             pointer_offset_exact: None,
             conditions: None,
+            cited_conditions: None,
             bounded_uint64_indices: None,
             equality_graph: None,
             pointer_context: None,
@@ -1960,6 +1990,7 @@ impl<'a> TermRewrite<'a> {
             pointer_value_exact: None,
             pointer_offset_exact: None,
             conditions: None,
+            cited_conditions: None,
             bounded_uint64_indices: None,
             equality_graph: None,
             pointer_context: None,
@@ -4201,6 +4232,15 @@ impl<'a> TermRewrite<'a> {
         {
             return ConditionTerm::Constant(*value);
         }
+        // Only the explicitly cited facts can refute a condition here. The
+        // shared graph makes address-origin annotations numerically transparent.
+        if let Some(graph) = self.cited_conditions {
+            for value in [true, false] {
+                if graph.knows_condition(v, value) {
+                    return ConditionTerm::Constant(value);
+                }
+            }
+        }
         let result = match v {
             ConditionTerm::Constant(_) | ConditionTerm::Variable(_) => v.clone(),
             ConditionTerm::AlgebraicEqual(a, b) => ConditionTerm::AlgebraicEqual(
@@ -4631,6 +4671,9 @@ impl<'a> TermRewrite<'a> {
             }
             Bitvector32Term::PointerAddress(pointer) => {
                 Bitvector32Term::pointer_address(self.pointer(pointer))
+            }
+            Bitvector32Term::ObjectPointerAddress(pointer, class) => {
+                Bitvector32Term::object_pointer_address(self.pointer(pointer), Some(class.clone()))
             }
             Bitvector32Term::IntegerToMachine { value, destination } => {
                 Bitvector32Term::IntegerToMachine {

@@ -582,6 +582,13 @@ The complexity contract implies several design constraints:
   lowering and planning clone a context and extend it by a fact at every
   path, and a shared copy-on-write set made each extension copy every stated
   proposition.
+  A resource context's facts are also kept as a canonical multiset
+  (`CanonicalFactSet`): a hash-consed treap whose shape depends on its
+  contents alone, so two contexts holding the same facts share one root and
+  compare equal by pointer. A call that consumes the caller's ownership and
+  hands it back rebuilds an equal context, and comparing it with the one it
+  came from no longer walks every fact. Inserting or removing a fact is
+  expected logarithmic.
 - Propositions, terms, memories, functions, and environments used as cache
   keys need stable interned identities or cached content fingerprints. Cache
   lookup must not traverse the object whose computation it is intended to
@@ -677,6 +684,14 @@ pins separated, null-guarded, and refused calls at fixed costs beside
 proved kernel query at one cost beside 8 to 64 parameter objects.
 `refused_parameter_separation_ignores_unrelated_owned_objects` pins both
 missing ownership and overlapping operands at fixed work over the same sizes.
+
+The mixed range-and-pointer separation query uses these conservative containment
+indexes too. Its shallow membership predicates still check the selected owners;
+a refusal no longer walks every owner in the shared external-argument block.
+This matters when a call borrows part of an array: testing an untouched tail
+cell must not visit unrelated parameter objects before recognizing byte
+disjointness. `a_partial_borrow_call_ignores_unrelated_owned_objects` compares
+the call's deterministic work beside one and three unrelated owned objects.
 
 Deciding that a context is a valid partition reads the same indexes. Only an
 identity held twice or with invalid access, a block owning two or more

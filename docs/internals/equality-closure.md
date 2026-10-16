@@ -36,6 +36,16 @@ whose goal compares two loads of one pointer-valued field takes the
 load-equality bridge in either form
 (`mdtests/loop_node_link_frames_across_parent_link_store.md`).
 
+Retained load-address congruence uses the same view. For an exact same-base
+pointer comparison, it selects the source through the existing scalar-evidence
+adjacency index and retains that original pointer premise. The full offset
+sides must match; coordinate keys only nominate candidates. This avoids
+repeatedly proving restricted subsets of a connected component merely to
+rediscover the address alias, and withdrawing the named premise invalidates
+the derivation. The scaling control
+`simp_retains_common_base_pointer_equality_for_load_congruence` covers a field
+displacement and increasing connected aliases.
+
 The bridge registers only the selected addresses and offsets. It neither
 enumerates pointer aliases nor derives equal blocks from equal offsets.
 Truth remains scoped to its admitted premise; withdrawing either that premise
@@ -231,6 +241,16 @@ congruence applications, with distinct operator tags. Pointer-to-word address
 expressions use the complete pointer address class. No cancellation,
 injectivity, arithmetic definedness, or memory access permission follows.
 Unsupported constructors remain opaque.
+
+Pointer-to-word casts also retain the source pointer's checked object class
+when one is known. This annotation is part of the stored address term, so
+memory storage and substitution preserve it without a global address-to-class
+registry. Annotated and unannotated addresses register the same numeric
+application in equality closure. The supported tag operations carry the
+annotation to decoding; an integer-to-pointer cast restores the original
+class, never the destination type's class. A bare address remains unclassified,
+and unavailable or withdrawn origin evidence cannot supply a class. Loop
+object-class joins and incompatible-access checks remain in force.
 
 A `Bits64` read uses its registered defining snapshot and complete address,
 with an eight-byte producer-width check for named scalar reads. It is a

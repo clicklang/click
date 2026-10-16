@@ -813,16 +813,15 @@ impl PointerOffsetCongruenceEvidence {
                     ) == Some(*value)
             }
             Self::ExactPremise(premise) => {
-                let Proposition::ConditionIs(
-                    ConditionTerm::PointerOffsetEqual(premise_left, premise_right),
-                    true,
-                ) = premise.as_ref()
-                else {
+                let Proposition::ConditionIs(condition, true) = premise.as_ref() else {
+                    return false;
+                };
+                let Some((premise_left, premise_right)) = condition.pointer_offset_sides() else {
                     return false;
                 };
                 assumptions.contains_assumed_exact(premise)
-                    && ((premise_left.as_ref() == left && premise_right.as_ref() == right)
-                        || (premise_left.as_ref() == right && premise_right.as_ref() == left))
+                    && ((premise_left == left && premise_right == right)
+                        || (premise_left == right && premise_right == left))
             }
             Self::Add {
                 first,

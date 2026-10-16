@@ -867,7 +867,7 @@ fn walk_written_expressions(
 ///
 /// A resource subject and a memory segment are written in C fragments, which
 /// carry no fold and no `Integer` read, so they are leaves here.
-fn walk_written_expressions_in_proposition(
+pub(in crate::surface) fn walk_written_expressions_in_proposition(
     proposition: &ClickProposition,
     visit: &mut impl FnMut(&ContractExpression),
 ) {

@@ -2093,8 +2093,23 @@ while a local array of structs is an array of its struct
 `mdtests/int_pointers_byte_arrays_and_struct_arrays_are_read_through_their_own_types.md`).
 A load through an `int **` is classed when the pointer is a variable or a
 member declared without a struct; through other expressions it is not yet
-checked. The check does not yet cover globals or heap objects; the
-effective-type design (`design/effective-types.md`) stages them next.
+checked.
+
+Each function is verified separately, so the check holds at calls too. A
+call is refused when a pointer argument designates an object of a known type
+that the parameter's pointee type cannot designate, because the callee is
+verified accessing it through that type; a struct pointer parameter accepts
+a struct that embeds its struct, or one its struct embeds. A function may
+not return a pointer to a known object as a pointer to an incompatible type,
+and its callers take a returned pointer as designating an object of the
+declared return type
+(`mdtests/a_call_passing_a_long_to_a_long_long_parameter_is_refused.md`,
+`mdtests/a_call_passing_one_struct_for_another_is_refused.md`,
+`mdtests/returning_a_struct_as_another_struct_is_refused.md`,
+`mdtests/a_returned_pointer_designates_its_declared_type.md`,
+`mdtests/calls_and_returns_of_matching_pointer_types_are_allowed.md`).
+The check does not yet cover globals or heap objects; the effective-type
+design (`design/effective-types.md`) stages them next.
 
 Automatic scalar, pointer, and array declarations do not zero-initialize their
 storage. Reading a local before a value has been written is undefined behavior.

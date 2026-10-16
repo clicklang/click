@@ -4583,7 +4583,8 @@ pub(crate) fn term_is_shallow_structural_cache_key(term: &Bitvector32Term) -> bo
                 Bitvector32Term::MemoryLoad(_, pointer, _) => {
                     pending.push(Node::Offset(&pointer.offset, depth + 1));
                 }
-                Bitvector32Term::PointerAddress(pointer) => {
+                Bitvector32Term::PointerAddress(pointer)
+                | Bitvector32Term::ObjectPointerAddress(pointer, _) => {
                     pending.push(Node::Offset(&pointer.offset, depth + 1));
                 }
                 crate::kernel::binary_machine_term!(left, right) => {
@@ -4963,7 +4964,8 @@ pub(super) fn canonicalize_atomic_loads_deep(term: &Bitvector32Term) -> Bitvecto
                     | Bitvector32Term::Int64Constant(_)
                     | Bitvector32Term::UInt64Constant(_)
                     | Bitvector32Term::MachineIntegerConstant(_) => results.push(term.clone()),
-                    Bitvector32Term::PointerAddress(_) => results.push(term.clone()),
+                    Bitvector32Term::PointerAddress(_)
+                    | Bitvector32Term::ObjectPointerAddress(_, _) => results.push(term.clone()),
                     Bitvector32Term::MemoryLoad(memory, pointer, kind) => {
                         let kind = *kind;
                         let canonical_pointer = canonicalize_pointer_loads(pointer);
@@ -5605,7 +5607,10 @@ pub(crate) fn c_condition_fact_has_memory(fact: &Proposition) -> bool {
     fn bitvector_has_memory(term: &Bitvector32Term) -> bool {
         match term {
             Bitvector32Term::MemoryLoad(_, _, _) => true,
-            Bitvector32Term::PointerAddress(pointer) => offset_has_memory(&pointer.offset),
+            Bitvector32Term::PointerAddress(pointer)
+            | Bitvector32Term::ObjectPointerAddress(pointer, _) => {
+                offset_has_memory(&pointer.offset)
+            }
             Bitvector32Term::If {
                 then_term,
                 else_term,
@@ -5737,7 +5742,7 @@ fn collect_bitvector_memories(term: &Bitvector32Term, memories: &mut Vec<SharedC
         | Bitvector32Term::UInt64Constant(_)
         | Bitvector32Term::MachineIntegerConstant(_)
         | Bitvector32Term::Variable(_) => {}
-        Bitvector32Term::PointerAddress(_) => {}
+        Bitvector32Term::PointerAddress(_) | Bitvector32Term::ObjectPointerAddress(_, _) => {}
         Bitvector32Term::MemoryLoad(memory, _, _) => {
             if !memories.contains(memory) {
                 memories.push(memory.clone());
@@ -5915,7 +5920,9 @@ fn transport_framed_atomic_bitvector(
         | Bitvector32Term::Int64Constant(_)
         | Bitvector32Term::UInt64Constant(_)
         | Bitvector32Term::MachineIntegerConstant(_) => term.clone(),
-        Bitvector32Term::PointerAddress(_) => term.clone(),
+        Bitvector32Term::PointerAddress(_) | Bitvector32Term::ObjectPointerAddress(_, _) => {
+            term.clone()
+        }
         Bitvector32Term::Variable(variable) => {
             // A load variable transports as the load it represents:
             // when frame evidence rewrites that load to the post-effect
@@ -6402,7 +6409,8 @@ fn normalize_exact_memory_loads_in_bitvector_iterative(
                     Bitvector32Term::ClickFunctionApplication { .. }
                     | Bitvector32Term::AlgebraicMatch { .. }
                     | Bitvector32Term::IntegerToMachine { .. } => results.push(term),
-                    Bitvector32Term::PointerAddress(_) => results.push(term),
+                    Bitvector32Term::PointerAddress(_)
+                    | Bitvector32Term::ObjectPointerAddress(_, _) => results.push(term),
                     load @ Bitvector32Term::MemoryLoad(_, _, _) => {
                         if !active_loads.insert(load.clone()) {
                             results.push(load);

@@ -1028,23 +1028,12 @@ fn first_executing_tactic(tactics: &[ProofTactic]) -> Option<&'static str> {
         ProofTactic::Branch(_) => Some("branch"),
         ProofTactic::CallOutcomes(_) => Some("outcomes"),
         ProofTactic::CloseInvariantsBy(_) => Some("close_invariants"),
-        ProofTactic::Open(open) => first_executing_tactic(&open.tactics),
-        ProofTactic::If(proof_if) => first_executing_tactic(&proof_if.then_tactics)
-            .or_else(|| first_executing_tactic(&proof_if.else_tactics)),
-        ProofTactic::Cases(cases) => cases
-            .arms()
-            .iter()
-            .find_map(|arm| first_executing_tactic(arm.tactics())),
-        ProofTactic::Both(both) => first_executing_tactic(&both.left_tactics)
-            .or_else(|| first_executing_tactic(&both.right_tactics)),
-        ProofTactic::Match(proof_match) => proof_match
-            .arms
-            .iter()
-            .find_map(|arm| first_executing_tactic(&arm.tactics)),
-        ProofTactic::StructuralInduct { arms, .. } => arms
-            .iter()
-            .find_map(|arm| first_executing_tactic(&arm.tactics)),
-        _ => None,
+        // A `have` or other obligation proves a proposition, where C cannot
+        // run; only the blocks that continue the proof can execute.
+        tactic => tactic.children().into_iter().find_map(|child| match child {
+            TacticChild::Continuing(ChildProof::Script(tactics)) => first_executing_tactic(tactics),
+            _ => None,
+        }),
     })
 }
 
@@ -5971,9 +5960,18 @@ fn check_trait_method_implementations(
             continue;
         };
         let rust = crate::languages::rust::names::is_rust_name(function.name());
-        // A C++ virtual method with a body is verified against its own
-        // contract, which is its interface.
-        let verified_interface = if rust || environment.get_function_contract(interface).is_some() {
+        // A C++ virtual method with a body, or a Rust trait's default method,
+        // is verified against its own contract, which is its interface. A
+        // Rust interface is a verified function only where the sidecar
+        // states its default body.
+        let interface_source = parsed_sources
+            .get(interface)
+            .map_or(interface, |(_, function)| function.source_name());
+        let verified_interface = if environment.get_function_contract(interface).is_some()
+            || (rust
+                && !function_blocks.iter().any(|block| {
+                    !block.is_external() && block.signature().name() == interface_source
+                })) {
             None
         } else {
             environment.get_function(interface)
@@ -5981,9 +5979,7 @@ fn check_trait_method_implementations(
         if environment.get_function_contract(interface).is_none() && verified_interface.is_none() {
             continue;
         }
-        let interface_name = parsed_sources
-            .get(interface)
-            .map_or(interface, |(_, function)| function.source_name());
+        let interface_name = interface_source;
         // A trait or class whose object carries state states each
         // implementation's interface on that implementation's own memory. A
         // C++ override of a method that is itself stated so also refines that

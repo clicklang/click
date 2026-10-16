@@ -489,9 +489,9 @@ impl ResourceContextIndex {
                     insert_resource_index_entry(&result.iterated_by_block, second.clone(), entry);
             }
         }
-        result.fact_hash = result
-            .fact_hash
-            .wrapping_add(resource_fact_content_hash(fact));
+        let hash = resource_fact_content_hash(fact);
+        result.fact_hash = result.fact_hash.wrapping_add(hash);
+        result.canonical = result.canonical.with_inserted(fact, hash);
         result.exact = insert_resource_index_entry(&result.exact, fact.clone(), entry);
         result.by_resource =
             insert_resource_index_entry(&result.by_resource, fact.resource().clone(), entry);
@@ -750,9 +750,9 @@ impl ResourceContextIndex {
                     remove_resource_index_entry(&result.iterated_by_block, second, entry);
             }
         }
-        result.fact_hash = result
-            .fact_hash
-            .wrapping_sub(resource_fact_content_hash(fact));
+        let hash = resource_fact_content_hash(fact);
+        result.fact_hash = result.fact_hash.wrapping_sub(hash);
+        result.canonical = result.canonical.without_one(fact, hash);
         result.exact = remove_resource_index_entry(&result.exact, fact, entry);
         result.by_resource =
             remove_resource_index_entry(&result.by_resource, fact.resource(), entry);
@@ -1188,7 +1188,8 @@ fn collect_memory_load_work<'a>(
                         ));
                         work.push(MemoryLoadFootprintWork::Offset(&pointer.offset, depth + 1));
                     }
-                    Bitvector32Term::PointerAddress(pointer) => {
+                    Bitvector32Term::PointerAddress(pointer)
+                    | Bitvector32Term::ObjectPointerAddress(pointer, _) => {
                         work.push(MemoryLoadFootprintWork::Offset(&pointer.offset, depth + 1));
                     }
                     crate::kernel::binary_machine_term!(left, right)
@@ -4764,11 +4765,13 @@ impl ResourceContext {
         &self,
         range: &CMemoryRange,
         pointer: &Pointer,
+        assumptions: &PureFactContext,
         contains_pointer: impl Fn(&Pointer, &CMemoryRange) -> bool,
     ) -> bool {
         self.proves_owned_range_separate_from_pointer_with(
             range,
             pointer,
+            assumptions,
             crate::kernel::assumptions::memory_range_shallowly_contained,
             contains_pointer,
         )
@@ -4782,16 +4785,23 @@ impl ResourceContext {
         &self,
         range: &CMemoryRange,
         pointer: &Pointer,
+        assumptions: &PureFactContext,
         range_contained: impl Fn(&CMemoryRange, &CMemoryRange) -> bool,
         contains_pointer: impl Fn(&Pointer, &CMemoryRange) -> bool,
     ) -> bool {
         if range.base().block != pointer.block {
             return false;
         }
-        let Some(positions) = self.storage.index.memory_by_block.get(&pointer.block) else {
-            return false;
-        };
-        let range_position = positions.iter().copied().find(|entry| {
+        // A failed separation query must not ask every other parameter
+        // object in the shared block. These conservative containment indexes
+        // select the same possible owners as the full scan; the caller's
+        // membership predicates still decide which ones hold each operand.
+        let range_candidates = self.owned_memory_candidates_for_range(range, assumptions);
+        #[cfg(debug_assertions)]
+        self.cross_check_owned_candidates(&pointer.block, &range_candidates, |available| {
+            range_contained(range, available)
+        });
+        let range_position = range_candidates.into_iter().find(|entry| {
             self.fact(*entry)
                 .memory_own_range()
                 .is_some_and(|available| range_contained(range, available))
@@ -4799,7 +4809,13 @@ impl ResourceContext {
         let Some(range_position) = range_position else {
             return false;
         };
-        positions.iter().copied().any(|entry| {
+        let pointer_candidates =
+            self.owned_memory_candidates_at(&pointer.block, pointer, assumptions);
+        #[cfg(debug_assertions)]
+        self.cross_check_owned_candidates(&pointer.block, &pointer_candidates, |available| {
+            contains_pointer(pointer, available)
+        });
+        pointer_candidates.into_iter().any(|entry| {
             entry != range_position
                 && self
                     .fact(entry)

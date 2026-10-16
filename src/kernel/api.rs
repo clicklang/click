@@ -8379,6 +8379,7 @@ fn rewrite_int32_term_by_exact_equality(
         | Bitvector32Term::Variable(_)
         | Bitvector32Term::MemoryLoad(_, _, _)
         | Bitvector32Term::PointerAddress(_)
+        | Bitvector32Term::ObjectPointerAddress(_, _)
         | Bitvector32Term::Int64Constant(_)
         | Bitvector32Term::UInt64Constant(_)
         | Bitvector32Term::MachineIntegerConstant(_)

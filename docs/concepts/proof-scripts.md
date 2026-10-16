@@ -117,6 +117,17 @@ identity, including in a nested `have` and in its checked expansion. A
 qualifier with no corresponding enclosing binding is rejected. A `have`
 written after `intro()` stays inside that postcondition's binder scope.
 
+A proof binder may reuse a name. The newest binding of a name wins wherever
+the name is read, until the block that binds it ends: a value bound by
+`let { ... } = unfold(...)`, `obtain`, `intro() as`, a call or step result, or
+a `match` arm hides a fact named by `have` and a resource instance of the same
+spelling, so a citation, a value and a resource argument all read the same
+binding (`mdtests/intro_as_hides_a_fact_name.md`). One name cannot be hidden:
+in an execution proof, a proof binder may not take the name of a C parameter
+or C object, since `step()` and `at(...)` keep reading the program's variable.
+`intro()` and `intro() as` are the exception described above, and reach the
+parameter through `outer.`.
+
 Whichever kind it is, a proposition a step writes down is lowered against the
 premises in scope where it is written: the claim's own `requires` and every
 fact the proof has established before that point. That is what makes the

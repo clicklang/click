@@ -1657,6 +1657,19 @@ fn execute_function_paths(
             ));
             continue;
         }
+        if let Some(refusal) = incompatible_pointer_argument(
+            state,
+            function.name(),
+            function.contract_interface(),
+            &arguments_path.values,
+        ) {
+            paths.push(CFunctionPath::new(
+                CFunctionOutcome::RuntimeError(refusal),
+                arguments_path.facts,
+                arguments_path.obligations,
+            ));
+            continue;
+        }
         let Some((argument_values, argument_obligations)) = coerce_c_function_arguments(
             function,
             &arguments_path.values,
@@ -2079,6 +2092,19 @@ pub(super) fn execute_c_function_call_paths(
         ) {
             paths.push(CFunctionPath::new(
                 CFunctionOutcome::UndefinedBehavior(undefined_behavior),
+                arguments_path.facts,
+                arguments_path.obligations,
+            ));
+            continue;
+        }
+        if let Some(refusal) = incompatible_pointer_argument(
+            caller_state,
+            function.name(),
+            function.contract_interface(),
+            &arguments_path.values,
+        ) {
+            paths.push(CFunctionPath::new(
+                CFunctionOutcome::RuntimeError(refusal),
                 arguments_path.facts,
                 arguments_path.obligations,
             ));
@@ -5005,6 +5031,18 @@ fn prepare_verified_function_call<'a>(
     ) {
         return Ok(Err(CFunctionPath::new(
             CFunctionOutcome::UndefinedBehavior(undefined_behavior),
+            arguments_path.facts,
+            arguments_path.obligations,
+        )));
+    }
+    if let Some(refusal) = incompatible_pointer_argument(
+        caller_state,
+        application.name,
+        contract_interface,
+        &arguments_path.values,
+    ) {
+        return Ok(Err(CFunctionPath::new(
+            CFunctionOutcome::RuntimeError(refusal),
             arguments_path.facts,
             arguments_path.obligations,
         )));
@@ -19285,6 +19323,9 @@ fn function_outcome_from_body_changing_quantities(
             obligations,
         ));
     }
+    if let Some(refusal) = incompatible_pointer_return(&state, function, &value) {
+        return Ok((CFunctionOutcome::RuntimeError(refusal), obligations));
+    }
     let Some(value) = coerce_function_return_value(value, function, &mut obligations, assumptions)
     else {
         return Ok((
@@ -19360,6 +19401,9 @@ fn function_outcome_from_body_with_resource_transfer(
             obligations,
             None,
         ));
+    }
+    if let Some(refusal) = incompatible_pointer_return(&state, function, &value) {
+        return Ok((CFunctionOutcome::RuntimeError(refusal), obligations, None));
     }
     let Some(value) = coerce_function_return_value(value, function, &mut obligations, assumptions)
     else {
@@ -20368,6 +20412,9 @@ pub(super) fn function_outcome_from_body(
                     CFunctionOutcome::UndefinedBehavior(undefined_behavior),
                     obligations,
                 );
+            }
+            if let Some(refusal) = incompatible_pointer_return(&state, function, &value) {
+                return (CFunctionOutcome::RuntimeError(refusal), obligations);
             }
             let Some(value) =
                 coerce_function_return_value(value, function, &mut obligations, assumptions)

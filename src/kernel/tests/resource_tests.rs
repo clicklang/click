@@ -6495,3 +6495,69 @@ fn first_state_difference_names_the_resource_held_on_one_side() {
 mod scaling_tests {
     include!("../../scaling_tests/kernel/tests/resource_tests.rs");
 }
+
+fn canonical_cell(index: i64) -> CResourceFact {
+    CResourceFact::own_memory(CMemoryRange::new(
+        Pointer {
+            block: PointerBlock::Concrete(format!("object{index}")),
+            offset: PointerOffsetTerm::Constant(0),
+        },
+        Bitvector32Term::Constant(0),
+        Bitvector32Term::Constant(1),
+    ))
+}
+
+#[test]
+fn equal_resource_contexts_share_one_canonical_fact_set() {
+    let facts = (0..16).map(canonical_cell).collect::<Vec<_>>();
+    let forward = ResourceContext::new().unchecked_with_facts(facts.iter().cloned());
+    let backward = ResourceContext::new().unchecked_with_facts(facts.iter().rev().cloned());
+    assert!(
+        forward
+            .storage
+            .index
+            .canonical
+            .shares_root_with(&backward.storage.index.canonical)
+    );
+    assert_eq!(forward, backward);
+    // Taking a fact and giving it back restores the set, not a copy of it.
+    let empty = PureFactContext::new();
+    let taken = forward
+        .clone()
+        .without_fact_incrementally(&facts[3], &empty)
+        .expect("the fact is held");
+    assert!(
+        !taken
+            .storage
+            .index
+            .canonical
+            .shares_root_with(&forward.storage.index.canonical)
+    );
+    let returned = taken.unchecked_with_fact(facts[3].clone());
+    assert!(
+        returned
+            .storage
+            .index
+            .canonical
+            .shares_root_with(&forward.storage.index.canonical)
+    );
+}
+
+#[test]
+fn comparing_equal_resource_contexts_walks_no_facts() {
+    // Contexts holding the same facts are told equal by their canonical
+    // fact sets' roots, whatever their size: no fact is visited.
+    for size in [64, 1024] {
+        let facts = (0..size).map(canonical_cell).collect::<Vec<_>>();
+        let first = ResourceContext::new().unchecked_with_facts(facts.iter().cloned());
+        let second = ResourceContext::new().unchecked_with_facts(facts.iter().rev().cloned());
+        let before = crate::kernel::primitives::canonical_fact_set::canonical_fact_set_walks();
+        assert_eq!(first.cmp(&second), std::cmp::Ordering::Equal);
+        assert!(first == second);
+        assert_eq!(
+            crate::kernel::primitives::canonical_fact_set::canonical_fact_set_walks(),
+            before,
+            "size {size}"
+        );
+    }
+}

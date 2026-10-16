@@ -1914,7 +1914,30 @@ fn evaluate_spec_integer_expression_paths_in(
                     let ty = MachineIntegerType::from_c_type(path.value.c_type())
                         .ok_or(ExecutionLimit::Paths)?;
                     let bits = c_value_bitvector_term(&path.value).ok_or(ExecutionLimit::Paths)?;
-                    let value = IntegerTerm::from_machine(ty, bits).ok_or(ExecutionLimit::Paths)?;
+                    // Only a population count is read exactly: its sum is
+                    // the kernel's own composition, while a written
+                    // `to_integer(a + b)` keeps its observation so that
+                    // `int32_add_to_integer` and its relatives state what
+                    // they say.
+                    let value = if ty == MachineIntegerType::Int32
+                        && matches!(
+                            machine.as_ref(),
+                            SpecExpression::CountedResourceCount { .. }
+                        )
+                        && matches!(
+                            bits,
+                            Bitvector32Term::Add(..) | Bitvector32Term::Subtract(..)
+                        ) {
+                        let path_assumptions = assumptions_with_path_context(
+                            assumptions,
+                            &path.facts,
+                            &path.obligations,
+                        );
+                        exact_signed_observation(&bits, &path_assumptions, &path.obligations)
+                    } else {
+                        IntegerTerm::from_machine(ty, bits)
+                    }
+                    .ok_or(ExecutionLimit::Paths)?;
                     let mut obligations = path.obligations;
                     retain_required_integer_obligation(
                         &mut obligations,
@@ -7834,5 +7857,50 @@ mod pointer_integer_observation_tests {
             assert_eq!(&paths[0].value, word.numeric_value());
             assert!(!matches!(paths[0].value, CValue::PointerInteger(_)));
         }
+    }
+}
+
+/// The exact Integer value of the signed `int32` term `bits`. A sum or
+/// difference whose signed overflow is ruled out on this path, decided
+/// false by `assumptions` or required not to happen by one of
+/// `obligations`, is the Integer sum or difference of its operands'
+/// values: a population count `entry + quantity` then reads
+/// `to_integer(entry) + to_integer(quantity)`, which Integer reasoning can
+/// combine with other facts. Any other term is its plain observation.
+fn exact_signed_observation(
+    bits: &Bitvector32Term,
+    assumptions: &PureFactContext,
+    obligations: &[ProofObligation],
+) -> Option<IntegerTerm> {
+    let ruled_out = |overflow: ConditionTerm| {
+        assumptions.decide(&overflow) == Some(false)
+            || obligations.iter().any(|obligation| {
+                obligation.proposition() == &Proposition::ConditionIs(overflow.clone(), false)
+            })
+    };
+    match bits {
+        Bitvector32Term::Add(left, right)
+            if ruled_out(ConditionTerm::signed_add_overflows(
+                left.as_ref().clone(),
+                right.as_ref().clone(),
+            )) =>
+        {
+            Some(IntegerTerm::add(
+                exact_signed_observation(left, assumptions, obligations)?,
+                exact_signed_observation(right, assumptions, obligations)?,
+            ))
+        }
+        Bitvector32Term::Subtract(left, right)
+            if ruled_out(ConditionTerm::signed_subtract_overflows(
+                left.as_ref().clone(),
+                right.as_ref().clone(),
+            )) =>
+        {
+            Some(IntegerTerm::subtract(
+                exact_signed_observation(left, assumptions, obligations)?,
+                exact_signed_observation(right, assumptions, obligations)?,
+            ))
+        }
+        _ => IntegerTerm::from_machine(MachineIntegerType::Int32, bits.clone()),
     }
 }

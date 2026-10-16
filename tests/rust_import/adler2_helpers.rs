@@ -219,7 +219,13 @@ fn charon_adler2_helpers_prove_all_lanes_and_lock_original_modules() {
     C0VerificationSession::new_program_prepared(helper_library(), &prepared).unwrap();
     // Module identity is checked even when all the proved helpers are unchanged.
     fs::write(p.root.join("src/lib.rs"), "// changed crate root\n").unwrap();
-    assert!(p.prepared().unwrap_err().contains("lock differs"));
+    let error = p.prepared().unwrap_err();
+    assert!(
+        error.contains("Rust source")
+            && error.contains("src/lib.rs")
+            && error.contains("differs from its import lock"),
+        "{error}"
+    );
 }
 
 #[test]
@@ -1174,9 +1180,9 @@ fn charon_adler2_single_byte_compute_tools_recheck_original_contract() {
 
 fn recheck_compute_tools(contract: &str, bytes: usize) {
     let p = compute_project(contract);
-    for command in ["verify", "profile"] {
-        assert_cli(&p, &[command]);
-    }
+    // Profile verifies the complete original input; the final CLI verify below
+    // checks the expanded proofs. Avoid a duplicate original verification.
+    assert_cli(&p, &["profile"]);
     let source = fs::read_to_string(p.root.join("borrow.click")).unwrap();
     let site = if bytes == 4 {
         "have ((__rust_mir_115_remaining as u32) as i32) == 3".to_owned()
@@ -1726,9 +1732,9 @@ fn charon_adler2_small_batch_compute_rejects_false_tail_state_and_ranking() {
 fn charon_adler2_small_batch_compute_tools_recheck_original_contract() {
     let p = compute_project(SMALL_BATCH_COMPUTE);
     let claim = "adler2::Adler32::compute.contract";
-    for command in ["verify", "profile"] {
-        assert_cli(&p, &[command]);
-    }
+    // Profile verifies the whole original fixture; the final full CLI verify
+    // below checks every proof again after expanding the computation.
+    assert_cli(&p, &["profile"]);
     // Helpers and arithmetic lemmas have their own audits. Selecting the
     // complete computation claim keeps this long nightly check within one
     // bounded audit run and still expands every smart site of the body.
@@ -2592,9 +2598,9 @@ fn charon_adler2_checksum_tools_recheck_original_contract() {
     let p = adler2_helpers_project();
     let source = format!("verifying \"src/lib.rs\";\n{COMMON_ADLER_SPEC}\n{PACKING}\n{CHECKSUM}");
     fs::write(p.root.join("borrow.click"), &source).unwrap();
-    for command in ["verify", "profile"] {
-        assert_cli(&p, &[command]);
-    }
+    // Profile verifies the complete original input; the final CLI verify below
+    // checks the expanded proofs. Avoid a duplicate original verification.
+    assert_cli(&p, &["profile"]);
     let offset = source.find("have result == old(((self.b as u32)").unwrap();
     let line = source[..offset].bytes().filter(|&b| b == b'\n').count() + 1;
     let cursor = format!("{}:{line}:2", p.root.join("borrow.click").display());
@@ -2744,9 +2750,9 @@ fn charon_adler2_public_checksum_tools_recheck_original_contracts() {
     let p = adler2_helpers_project();
     let source = public_one_byte_proof();
     fs::write(p.root.join("borrow.click"), &source).unwrap();
-    for command in ["verify", "profile"] {
-        assert_cli(&p, &[command]);
-    }
+    // Profile verifies the complete original input; the final CLI verify below
+    // checks the expanded proofs. Avoid a duplicate original verification.
+    assert_cli(&p, &["profile"]);
     let offset = source
         .find("have to_integer(__rust_mir_0) == old(adler_spec_checksum(data")
         .unwrap();
@@ -2887,7 +2893,12 @@ fn charon_adler2_resumed_client_live_refresh_checks_the_input_closure() {
     .unwrap();
     fs::write(p.root.join("resumed.rs"), "pub fn different() {}\n").unwrap();
     let error = p.prepared().unwrap_err();
-    assert!(error.contains("lock differs from its inputs"), "{error}");
+    assert!(
+        error.contains("Rust source")
+            && error.contains("resumed.rs")
+            && error.contains("differs from its import lock"),
+        "{error}"
+    );
 }
 
 #[test]
@@ -2976,7 +2987,12 @@ fn charon_adler2_incremental_client_live_refresh_checks_the_input_closure() {
     .unwrap();
     fs::write(p.root.join("incremental.rs"), "pub fn different() {}\n").unwrap();
     let error = p.prepared().unwrap_err();
-    assert!(error.contains("lock differs from its inputs"), "{error}");
+    assert!(
+        error.contains("Rust source")
+            && error.contains("incremental.rs")
+            && error.contains("differs from its import lock"),
+        "{error}"
+    );
 }
 
 #[test]
@@ -3315,7 +3331,43 @@ fn check_public_boundary_tools(lengths: &[usize]) {
                 ],
             );
         }
-        assert_cli(&p, &["verify"]);
+        let expanded = fs::read_to_string(p.root.join("borrow.click")).unwrap();
+        // Only the final fragment contains write_slice and adler32_slice.
+        // The full profile checked every preceding callee and lemma already;
+        // require those declarations and proof bodies to remain unchanged.
+        let fragment = "    fn write_slice(";
+        assert!(
+            source.split_once(fragment).unwrap().0 == expanded.split_once(fragment).unwrap().0,
+            "expansion changed an unselected callee or lemma"
+        );
+        for name in claims {
+            let written = if expanded.contains(&format!("fn {name}(")) {
+                name
+            } else {
+                name.rsplit("::").next().unwrap()
+            };
+            let start = expanded.find(&format!("fn {written}(")).unwrap();
+            let body = start + expanded[start..].find("} by {").unwrap() + "} by {".len();
+            let body = body + expanded[body..].len() - expanded[body..].trim_start().len();
+            let line = expanded[..body]
+                .bytes()
+                .filter(|&byte| byte == b'\n')
+                .count()
+                + 1;
+            let column = expanded[..body].rsplit('\n').next().unwrap().len() + 1;
+            let location = format!("{}:{line}:{column}", p.root.join("borrow.click").display());
+            let checked = Command::new(env!("CARGO_BIN_EXE_click"))
+                .args(["verify", &location])
+                .output()
+                .unwrap();
+            assert!(
+                checked.status.success(),
+                "{name}: {}\n{}",
+                String::from_utf8_lossy(&checked.stdout),
+                String::from_utf8_lossy(&checked.stderr)
+            );
+            assert!(String::from_utf8_lossy(&checked.stdout).contains("1 selected proof verified"));
+        }
     }
 }
 
@@ -3493,9 +3545,9 @@ fn adler_deferred_batch_b_tools_expand_and_reverify() {
     let p = Project::isolated("");
     let source = batch_prefix_proof(BATCH_PREFIX);
     fs::write(p.root.join("borrow.click"), &source).unwrap();
-    for command in ["verify", "profile"] {
-        assert_cli(&p, &[command]);
-    }
+    // Profile verifies the complete original input; the final CLI verify below
+    // checks the expanded proofs. Avoid a duplicate original verification.
+    assert_cli(&p, &["profile"]);
     let offset = source.find("have defined(pos + 4)").unwrap();
     let line = source[..offset].bytes().filter(|&b| b == b'\n').count() + 1;
     let cursor = format!("{}:{line}:2", p.root.join("borrow.click").display());
@@ -3631,9 +3683,9 @@ fn adler_native_vector_prefix_tools_expand_and_reverify() {
     let p = Project::isolated("");
     let source = vector_prefix_proof();
     fs::write(p.root.join("borrow.click"), &source).unwrap();
-    for command in ["verify", "profile"] {
-        assert_cli(&p, &[command]);
-    }
+    // Profile verifies the complete original input; the final CLI verify below
+    // checks the expanded proofs. Avoid a duplicate original verification.
+    assert_cli(&p, &["profile"]);
     let offset = source.find("have total - remaining <= 2147483643").unwrap();
     let line = source[..offset].bytes().filter(|&b| b == b'\n').count() + 1;
     let cursor = format!("{}:{line}:2", p.root.join("borrow.click").display());
