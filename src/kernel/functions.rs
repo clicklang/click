@@ -3562,9 +3562,9 @@ fn execute_verified_function_applications_with_suspension(
         // resources agree on its fresh fields.
         let mut produced_instances = BTreeMap::new();
         // Current arguments of a produced instance are read at return, where
-        // the contract's input instances still address cells their unmatched
-        // bodies owned (`produces after: state(region->arena)` beside a
-        // consumed region). These views come only from the contract's inputs
+        // the contract's input instances still address cells their decided
+        // arms or unmatched bodies owned (`produces after: state(region->arena)`
+        // beside a consumed region). These views come only from the contract's inputs
         // and are computed once. Entry arguments use entry_contract_state.
         let mut produced_argument_state: Option<CState> = None;
         for resource in interface.resource_ensures() {
@@ -3610,19 +3610,22 @@ fn execute_verified_function_applications_with_suspension(
             // original spec's reference arguments are captured separately.
             let instance_resource = instance_resource.with_resource_arguments(Vec::new());
             let argument_state = produced_argument_state.get_or_insert_with(|| {
-                let views = transfer
-                    .callee_resources
-                    .facts()
-                    .iter()
-                    .flat_map(|fact| {
-                        unmatched_instance_body_views(
-                            fact,
-                            interface.composite_resource_definitions(),
-                            &post_state,
-                            &effective_assumptions,
-                        )
-                    })
-                    .collect::<Vec<_>>();
+                // Use the same decided-arm read authority as ordinary return
+                // clauses, visiting only this call's inputs, never its frame.
+                let mut views = instance_arm_views(
+                    &transfer.callee_resources,
+                    interface.composite_resource_definitions(),
+                    &post_state,
+                    &effective_assumptions,
+                );
+                views.extend(transfer.callee_resources.facts().iter().flat_map(|fact| {
+                    unmatched_instance_body_views(
+                        fact,
+                        interface.composite_resource_definitions(),
+                        &post_state,
+                        &effective_assumptions,
+                    )
+                }));
                 if views.is_empty() {
                     post_state.clone()
                 } else {
@@ -16435,7 +16438,14 @@ pub(in crate::kernel) fn resource_clause_section_supply(
     // A matched instance supplies the cells of the arm this section's
     // premises select, and nothing when they select none (D7). The arm stays
     // folded either way: only its read authority is published here.
-    let mut views = instance_arm_views(&base, definitions, state, assumptions);
+    let mut views = supplied
+        .iter()
+        .filter_map(|fact| match fact.resource() {
+            CResource::Instance(instance) => Some(instance),
+            _ => None,
+        })
+        .flat_map(|instance| instance_arm_read_authority(instance, definitions, state, assumptions))
+        .collect::<Vec<_>>();
     // A control may contain an authority that generic composite expansion
     // cannot expose without a live population ledger. Its declared memory is
     // still readable through the folded clause, independently of that ledger.
@@ -16646,12 +16656,13 @@ pub(super) fn instance_arm_read_authority(
     state: &CState,
     assumptions: &PureFactContext,
 ) -> Vec<CResourceFact> {
-    let Some(definition) = definitions
-        .iter()
-        .find(|definition| definition.name() == instance.name())
-    else {
+    let Ok(index) = definitions.binary_search_by(|definition| {
+        crate::instrumentation::record_deterministic_work(1);
+        definition.name().cmp(instance.name())
+    }) else {
         return Vec::new();
     };
+    let definition = &definitions[index];
     let Some(body) = definition.matched.as_ref() else {
         return Vec::new();
     };

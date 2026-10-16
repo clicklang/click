@@ -2438,3 +2438,113 @@ fn a_view_lending_call_and_its_observation_ignore_unrelated_allocations() {
     }
     assert_constant_plus_log_growth("a view-lending call and its observation", &samples, 4.0);
 }
+
+/// Decided-arm read authority selects its definition by name and evaluates
+/// only that body's cells, even with unrelated definitions and caller owners.
+#[test]
+fn matched_input_argument_views_ignore_unrelated_definitions_and_owners() {
+    use crate::kernel::{
+        AlgebraicSchemas, AlgebraicTerm, AlgebraicTermNode, AlgebraicType, AlgebraicValue,
+        AlgebraicValueType, AlgebraicVariantType, CResourceMatchArm, CResourceMatchBody,
+    };
+    use std::sync::Arc;
+
+    let _session = crate::kernel::VerificationSession::enter();
+    let variants: Arc<[AlgebraicVariantType]> = vec![AlgebraicVariantType {
+        name: "Held".into(),
+        fields: vec![],
+    }]
+    .into();
+    let ty = AlgebraicType {
+        rigid: false,
+        name: "ArgumentModel".into(),
+        arguments: vec![],
+        variants: variants.clone(),
+        schemas: Arc::new(AlgebraicSchemas::new(std::collections::BTreeMap::from([(
+            AlgebraicValueType::Algebraic {
+                name: "ArgumentModel".into(),
+                arguments: vec![],
+            },
+            variants,
+        )]))),
+    };
+    let model = AlgebraicTerm {
+        algebraic_type: ty.clone(),
+        node: AlgebraicTermNode::Constructor {
+            variant: "Held".into(),
+            fields: vec![],
+        },
+    };
+    let schema = ResourceFieldSchema::new(vec![(
+        "model".into(),
+        ResourceFieldType::Algebraic(ty.clone()),
+    )])
+    .unwrap();
+    let target = ResourceInstance::new(
+        Variable(TARGET_HEAP),
+        "zz_target".into(),
+        vec![].into(),
+        schema.clone(),
+        vec![AlgebraicValue::Algebraic(model)].into(),
+    )
+    .unwrap();
+    let mut definition =
+        CCompositeResourceDefinition::new("zz_target", vec![], None, false, vec![], vec![])
+            .with_instance_schema(Some(schema));
+    definition.matched = Some(CResourceMatchBody {
+        field_index: 0,
+        algebraic_type: ty,
+        arms: vec![CResourceMatchArm {
+            variant: "Held".into(),
+            bindings: vec![],
+            binding_types: vec![],
+            binding_variables: vec![],
+            contains: vec![CResourceSpec::owned_memory(CMemorySegment::new(
+                CExpression::Value(CValue::pointer(heap_base(TARGET_HEAP))),
+                c_int32_literal(0),
+                c_int32_literal(2),
+            ))],
+            facts: vec![],
+            children: vec![],
+        }],
+    });
+    let mut samples = Vec::new();
+    for size in SIZES {
+        let mut definitions = (0..size)
+            .map(|index| {
+                CCompositeResourceDefinition::new(
+                    format!("a{index:04}"),
+                    vec![],
+                    None,
+                    false,
+                    vec![],
+                    vec![],
+                )
+            })
+            .collect::<Vec<_>>();
+        definitions.push(definition.clone());
+        let state =
+            CState::new().with_resource_context(ResourceContext::new().unchecked_with_facts(
+                (0..size).map(|index| owned_range(heap_base(index as u64 + 1), 0, 1)),
+            ));
+        let (views, work) = crate::instrumentation::measure_deterministic_work(|| {
+            crate::kernel::functions::instance_arm_read_authority(
+                &target,
+                &definitions,
+                &state,
+                &PureFactContext::new(),
+            )
+        });
+        assert_eq!(views.len(), 1);
+        assert_eq!(
+            views[0],
+            CResourceFact::view_memory(CMemoryRange::new(
+                heap_base(TARGET_HEAP),
+                Bitvector32Term::Constant(0),
+                Bitvector32Term::Constant(2),
+            )),
+        );
+        samples.push((size, work));
+    }
+    assert_constant_plus_log_growth("matched input argument views", &samples, 4.0);
+}
