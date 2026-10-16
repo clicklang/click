@@ -7819,47 +7819,6 @@ mod integer_truncation_tests;
 #[cfg(test)]
 mod compound_conditional_tests;
 
-#[cfg(test)]
-mod pointer_integer_observation_tests {
-    use super::*;
-
-    #[test]
-    fn integer_specifications_observe_bits_without_a_pointer_record() {
-        let context = PureFactContext::new();
-        let pointer = CPointerValue::new(Pointer::symbolic(Variable(994_001)), CType::Int32Pointer);
-        let word = crate::kernel::eval::cast_c_value_to_type(
-            CValue::Pointer(pointer),
-            CType::UInt64,
-            crate::kernel::eval::IntegerConversion::Modular,
-            &mut Vec::new(),
-            &context,
-        )
-        .unwrap();
-        assert!(crate::kernel::resource_arguments_proven_equal(
-            &AlgebraicValue::C(word.clone()),
-            &AlgebraicValue::C(word.numeric_value().clone()),
-            &context,
-        ));
-        let state = CState::new().with_local("word", word.clone());
-        for expression in [
-            SpecExpression::Value(word.clone()),
-            SpecExpression::CExpression(CExpression::Variable("word".into())),
-        ] {
-            let paths = evaluate_spec_expression_paths_with_bindings(
-                &state,
-                &expression,
-                &context,
-                &BTreeMap::new(),
-                &mut ExecutionBudget::new(),
-            )
-            .unwrap();
-            assert_eq!(paths.len(), 1);
-            assert_eq!(&paths[0].value, word.numeric_value());
-            assert!(!matches!(paths[0].value, CValue::PointerInteger(_)));
-        }
-    }
-}
-
 /// The exact Integer value of the signed `int32` term `bits`. A sum or
 /// difference whose signed overflow is ruled out on this path, decided
 /// false by `assumptions` or required not to happen by one of
@@ -7902,5 +7861,46 @@ fn exact_signed_observation(
             ))
         }
         _ => IntegerTerm::from_machine(MachineIntegerType::Int32, bits.clone()),
+    }
+}
+
+#[cfg(test)]
+mod pointer_integer_observation_tests {
+    use super::*;
+
+    #[test]
+    fn integer_specifications_observe_bits_without_a_pointer_record() {
+        let context = PureFactContext::new();
+        let pointer = CPointerValue::new(Pointer::symbolic(Variable(994_001)), CType::Int32Pointer);
+        let word = crate::kernel::eval::cast_c_value_to_type(
+            CValue::Pointer(pointer),
+            CType::UInt64,
+            crate::kernel::eval::IntegerConversion::Modular,
+            &mut Vec::new(),
+            &context,
+        )
+        .unwrap();
+        assert!(crate::kernel::resource_arguments_proven_equal(
+            &AlgebraicValue::C(word.clone()),
+            &AlgebraicValue::C(word.numeric_value().clone()),
+            &context,
+        ));
+        let state = CState::new().with_local("word", word.clone());
+        for expression in [
+            SpecExpression::Value(word.clone()),
+            SpecExpression::CExpression(CExpression::Variable("word".into())),
+        ] {
+            let paths = evaluate_spec_expression_paths_with_bindings(
+                &state,
+                &expression,
+                &context,
+                &BTreeMap::new(),
+                &mut ExecutionBudget::new(),
+            )
+            .unwrap();
+            assert_eq!(paths.len(), 1);
+            assert_eq!(&paths[0].value, word.numeric_value());
+            assert!(!matches!(paths[0].value, CValue::PointerInteger(_)));
+        }
     }
 }
