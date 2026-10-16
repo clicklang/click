@@ -3302,15 +3302,15 @@ mod tests {
                     assert_eq!(store.get(pointer), model.get(pointer).cloned());
                 }
                 for (earlier, earlier_model) in &history {
+                    // The reference maps are immutable during this pair's checks.
+                    // Their difference is symmetric; compute that oracle once.
+                    let expected = model_diff(&model, earlier_model);
                     assert_eq!(
                         store.differing_pointers(earlier),
-                        model_diff(&model, earlier_model),
+                        expected,
                         "seed {seed_value}"
                     );
-                    assert_eq!(
-                        earlier.differing_pointers(&store),
-                        model_diff(earlier_model, &model),
-                    );
+                    assert_eq!(earlier.differing_pointers(&store), expected);
                     if store == *earlier {
                         assert_eq!(&model, earlier_model, "equal stores hold one cell map");
                     }
@@ -3322,7 +3322,7 @@ mod tests {
                     assert_eq!(
                         store.is_without(earlier, &removed),
                         removed.iter().all(|pointer| !model.contains_key(*pointer))
-                            && differing == model_diff(earlier_model, &model),
+                            && differing == expected,
                     );
                 }
                 history.push((store.clone(), model.clone()));

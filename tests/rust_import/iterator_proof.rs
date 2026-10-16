@@ -54,19 +54,24 @@ fn expansion_rechecks(fixture: &str) {
     assert_cli(&p, &["verify"]);
 }
 fn audits_checked_frontiers(fixture: &str) {
+    let p = project(fixture);
+    assert_cli(&p, &["verify"]);
+    let proof = fs::read_to_string(p.root.join("borrow.click")).unwrap();
     for selector in [
         "execute_until(read(0))",
         "execute_until(assignment(total, 1))",
         "execute_until(back_edge())",
     ] {
-        let p = project(fixture);
-        assert_cli(&p, &["verify"]);
-        let proof = fs::read_to_string(p.root.join("borrow.click")).unwrap();
         let offset = proof.find(selector).unwrap();
         let line = proof[..offset].bytes().filter(|&b| b == b'\n').count() + 1;
         let column = offset - proof[..offset].rfind('\n').map_or(0, |p| p + 1) + 1;
         let cursor = format!("{}:{line}:{column}", p.root.join("borrow.click").display());
         assert_cli(&p, &["audit", "--start-at", &cursor, "--max-sites", "1"]);
+        assert_eq!(
+            fs::read_to_string(p.root.join("borrow.click")).unwrap(),
+            proof,
+            "audit must leave the original input unchanged"
+        );
     }
 }
 
