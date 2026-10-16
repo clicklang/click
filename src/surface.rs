@@ -512,6 +512,10 @@ pub struct ClickFile {
     /// Explicit trusted thread-runtime profile. Absent means ordinary C
     /// verification grants no create/join semantics.
     thread_runtime: crate::languages::c::thread_runtime::CThreadRuntime,
+    /// Whether this file opts into Integer-default specification
+    /// arithmetic with `arithmetic "integer";`, the migration switch for
+    /// design-review P2. Removed once every file uses the new default.
+    integer_arithmetic: bool,
     algebraic_type_definitions: Vec<AlgebraicTypeDefinition>,
     predicate_definitions: Vec<PredicateDefinition>,
     click_function_definitions: Vec<ClickFunctionDefinition>,
@@ -6134,6 +6138,11 @@ impl ClickFile {
     /// The declared C implementation target, if this file selects one.
     pub fn declared_c_target(&self) -> Option<crate::languages::c::target::CTarget> {
         self.c_target
+    }
+
+    /// Whether this file's specification arithmetic is over `Integer`.
+    pub fn integer_arithmetic(&self) -> bool {
+        self.integer_arithmetic
     }
 
     /// The C implementation target this file's sources are preprocessed and

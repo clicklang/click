@@ -124,8 +124,14 @@ Progress: a prototype on `examples/bounded-pool` written in Integer form
 shrinks the sidecar from 437 to 284 lines, and showed that built-in checks
 read only machine facts. Step 1 is done: an Integer comparison of exact
 machine observations also files its native comparison, so resource
-quantities and count definedness accept Integer premises. Next: the
-switch-over itself, then Integer-valued population counts.
+quantities and count definedness accept Integer premises. Step 2 has
+started: `arithmetic "integer";` opts a file into the rule, as a migration
+switch removed when the default flips, and the kernel decides Integer
+comparisons of machine observations through their native comparisons.
+Under the directive, `bounded-pool`'s `pool_init` verifies with its bridge
+lemmas removed; the next blocker is population counts, which are still
+`int32` machine sums. Next: Integer-valued population counts, then the
+migration file by file and the flip.
 
 Afterwards, delete the `machine_integer` and `integer` lemmas Integer
 arithmetic makes unnecessary, complete the families that remain, and give

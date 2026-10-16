@@ -8625,7 +8625,7 @@ fn aliased_operands(
 /// order-preserving on each supported type, so the two comparisons have
 /// the same truth. A constant outside the type's range makes the Integer
 /// comparison decided by the range alone; nothing is returned for it.
-fn native_comparison_of_integer_observation(
+pub(in crate::kernel) fn native_comparison_of_integer_observation(
     condition: &ConditionTerm,
     value: bool,
 ) -> Option<(ConditionTerm, bool)> {
@@ -8803,6 +8803,28 @@ mod integer_observation_tests {
         );
         assert_eq!(
             context.decide(&ConditionTerm::equal(word(1), word(2))),
+            Some(false)
+        );
+    }
+
+    #[test]
+    fn a_native_fact_decides_its_integer_observation() {
+        let context = PureFactContext::new().assume_condition(
+            ConditionTerm::signed_less_equal(word(1), Bitvector32Term::Constant(3)),
+            true,
+        );
+        assert_eq!(
+            context.decide(&ConditionTerm::IntegerLessEqual(
+                observe(MachineIntegerType::Int32, 1),
+                constant(3)
+            )),
+            Some(true)
+        );
+        assert_eq!(
+            context.decide(&ConditionTerm::IntegerGreaterThan(
+                observe(MachineIntegerType::Int32, 1),
+                constant(3)
+            )),
             Some(false)
         );
     }
