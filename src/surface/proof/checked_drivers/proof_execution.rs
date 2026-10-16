@@ -52,8 +52,15 @@ pub(in crate::surface::proof) fn take_short_of_exit_decline() -> bool {
 /// unimplemented.
 #[track_caller]
 fn decline_region_depth<T>() -> Result<Option<T>, ClickError> {
-    REGION_DEPTH_DECLINED.with(|declined| declined.set(true));
+    note_region_depth_exceeded();
     decline()
+}
+
+/// Records that an analysis of the proof's regions stopped at the nesting
+/// bound, so a driver that then finds no region to run reports the bound
+/// rather than an unimplemented shape.
+fn note_region_depth_exceeded() {
+    REGION_DEPTH_DECLINED.with(|declined| declined.set(true));
 }
 
 /// Takes whether any driver declined on the region-depth bound since the
@@ -346,6 +353,7 @@ fn checked_execution_region_end_at(
     initial: CheckedExecutionRegionEnd,
 ) -> Option<CheckedExecutionRegionEnd> {
     if depth >= MAX_CHECKED_EXECUTION_REGION_DEPTH {
+        note_region_depth_exceeded();
         return None;
     }
     let mut node = node;
@@ -586,6 +594,7 @@ fn checked_execution_region_contains_source_at(
     depth: usize,
 ) -> bool {
     if depth >= MAX_CHECKED_EXECUTION_REGION_DEPTH {
+        note_region_depth_exceeded();
         return false;
     }
     let nested = |region: &InternalProofNode| {
@@ -4471,6 +4480,7 @@ fn advance_checked_branch_arms<'a>(
 /// structural driver.
 fn arm_execution_steps(node: &InternalProofNode, depth: usize) -> Option<Vec<ProofStep>> {
     if depth >= MAX_CHECKED_EXECUTION_REGION_DEPTH {
+        note_region_depth_exceeded();
         return None;
     }
     let mut steps = Vec::new();
