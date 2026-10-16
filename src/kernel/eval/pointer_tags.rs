@@ -167,6 +167,67 @@ impl PureFactContext {
     }
 }
 
+/// A mask covering every possible tag bit. Symbolic tags use only exact
+/// scalar bounds, so lookup work is independent of unrelated assumptions.
+pub(in crate::kernel) fn tag_bound_citing(
+    term: &Bitvector32Term,
+    assumptions: &PureFactContext,
+    used: &mut UsedFacts,
+) -> Option<u64> {
+    if let Some(mask) = tag_bound(term) {
+        return Some(mask);
+    }
+    let exact = |condition: ConditionTerm, used: &mut UsedFacts| {
+        for spelling in [condition.clone(), condition.flipped()] {
+            crate::instrumentation::record_deterministic_work(1);
+            if assumptions.condition_facts.get(&spelling) == Some(&true) {
+                used.cite(Proposition::ConditionIs(spelling, true));
+                return true;
+            }
+        }
+        false
+    };
+    let lower = match term {
+        Bitvector32Term::UInt64FromInt32(value) => Some(ConditionTerm::signed_less_equal(
+            0u32.into(),
+            value.as_ref().clone(),
+        )),
+        Bitvector32Term::UInt64FromInt64(value) => Some(ConditionTerm::int64_signed_less_equal(
+            Bitvector32Term::Int64Constant(0),
+            value.as_ref().clone(),
+        )),
+        Bitvector32Term::UInt64From32(_)
+        | Bitvector32Term::Variable(_)
+        | Bitvector32Term::MemoryLoad(..) => None,
+        _ => return None,
+    };
+    if lower.is_some_and(|condition| !exact(condition, used)) {
+        return None;
+    }
+    for mask in [1u32, 3, 7] {
+        let upper = match term {
+            Bitvector32Term::UInt64FromInt32(value) => {
+                ConditionTerm::signed_less_equal(value.as_ref().clone(), mask.into())
+            }
+            Bitvector32Term::UInt64FromInt64(value) => ConditionTerm::int64_signed_less_equal(
+                value.as_ref().clone(),
+                Bitvector32Term::Int64Constant(i64::from(mask)),
+            ),
+            Bitvector32Term::UInt64From32(value) => {
+                ConditionTerm::unsigned_less_equal(value.as_ref().clone(), mask.into())
+            }
+            _ => ConditionTerm::uint64_less_equal(
+                term.clone(),
+                Bitvector32Term::UInt64Constant(u64::from(mask)),
+            ),
+        };
+        if exact(upper, used) {
+            return Some(u64::from(mask));
+        }
+    }
+    None
+}
+
 fn require(
     form: &TaggedAddress,
     alignment: u64,
@@ -188,7 +249,12 @@ fn require(
             format!("the tag below {alignment}"),
         ),
     ];
-    for (condition, what) in conditions {
+    for (index, (condition, what)) in conditions.into_iter().enumerate() {
+        if index == 1
+            && tag_bound_citing(&form.tag, assumptions, used).is_some_and(|mask| mask < alignment)
+        {
+            continue;
+        }
         match assumptions.decide_citing(&condition, used) {
             Some(true) => {}
             Some(false) => {
@@ -286,17 +352,14 @@ fn structural_form_of(
             // The tag side is a constant, or for `|` a masked term `x & m`
             // (rbtree's `rb_color(rb) | (unsigned long)p`), whose bound the
             // mask constant gives.
-            let masked_bound = |term: &Bitvector32Term| match term {
-                Bitvector32Term::UInt64BitwiseAnd(left, right) => {
-                    left.uint64_as_const().or_else(|| right.uint64_as_const())
-                }
-                _ => None,
+            let masked_bound = |term: &Bitvector32Term, used: &mut UsedFacts| {
+                tag_bound_citing(term, assumptions, used)
             };
             let (inner, tag, constant) = match (left.uint64_as_const(), right.uint64_as_const()) {
                 (None, Some(constant)) => (left, None, constant),
                 (Some(constant), None) => (right, None, constant),
                 (None, None) if matches!(operation, CBitwiseOperation::Or) => {
-                    match (masked_bound(left), masked_bound(right)) {
+                    match (masked_bound(left, used), masked_bound(right, used)) {
                         (None, Some(bound)) => (left, Some(right.as_ref().clone()), bound),
                         (Some(bound), None) => (right, Some(left.as_ref().clone()), bound),
                         _ => return Ok(None),
@@ -324,10 +387,16 @@ fn structural_form_of(
                     }
                     Some(TaggedAddress {
                         pointer: form.pointer,
-                        tag: Bitvector32Term::uint64_bitwise_and(
-                            form.tag,
-                            Bitvector32Term::UInt64Constant(constant),
-                        ),
+                        tag: if tag_bound_citing(&form.tag, assumptions, used)
+                            .is_some_and(|mask| mask & constant == 0)
+                        {
+                            Bitvector32Term::UInt64Constant(0)
+                        } else {
+                            Bitvector32Term::uint64_bitwise_and(
+                                form.tag,
+                                Bitvector32Term::UInt64Constant(constant),
+                            )
+                        },
                     })
                 }
                 CBitwiseOperation::Or => {
@@ -500,6 +569,47 @@ mod exact_word_address_tests {
                 None
             );
             assert!(obligations.is_empty());
+        }
+    }
+
+    #[test]
+    fn symbolic_tag_bounds_require_nonnegative_and_upper_premises() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let tag = Bitvector32Term::Variable(Variable(980_011));
+        let converted = Bitvector32Term::UInt64FromInt32(Box::new(tag.clone()));
+        let lower = ConditionTerm::signed_less_equal(0u32.into(), tag.clone());
+        let upper = ConditionTerm::signed_less_equal(tag, 1u32.into());
+        for context in [
+            PureFactContext::new(),
+            PureFactContext::new().assume_condition(lower.clone(), true),
+            PureFactContext::new().assume_condition(upper.clone(), true),
+        ] {
+            assert_eq!(
+                tag_bound_citing(&converted, &context, &mut UsedFacts::new()),
+                None
+            );
+        }
+        let pointer = Pointer::symbolic(Variable(980_012));
+        let context = PureFactContext::new()
+            .assume_condition(lower.clone(), true)
+            .assume_condition(upper.clone(), true)
+            .assume_condition(ConditionTerm::pointer_aligned(pointer.clone(), 8), true);
+        let tagged = Bitvector32Term::uint64_bitwise_or(
+            Bitvector32Term::pointer_address(pointer.clone()),
+            converted,
+        );
+        let cleared =
+            Bitvector32Term::uint64_bitwise_and(tagged, Bitvector32Term::UInt64Constant(!3));
+        let mut used = UsedFacts::new();
+        let form = tagged_address_form(&cleared, &context, &mut used).unwrap();
+        assert_eq!(form.pointer, pointer);
+        assert_eq!(form.tag.uint64_as_const(), Some(0));
+        assert!(used.complete);
+        for condition in [lower, upper] {
+            assert!(
+                used.premises
+                    .contains(&Proposition::ConditionIs(condition, true))
+            );
         }
     }
 

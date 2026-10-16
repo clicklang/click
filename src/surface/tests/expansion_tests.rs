@@ -18343,6 +18343,26 @@ fn callback_reads_keep_the_initialized_target_contract_in_all_proof_modes() {
 fn packed_pointer_cast_contracts_survive_expansion_and_retained_verification() {
     for (fixture, claim, postcondition) in [
         (
+            "mdtests/a_bounded_native_word_tag_can_precede_its_pointer.md",
+            "stamp.ensures_0",
+            "ensures ((int32*)(slot->word & ~3)) == p;",
+        ),
+        (
+            "mdtests/a_checked_low_tag_add_preserves_an_incoming_word_relationship.md",
+            "blacken.ensures_0",
+            "ensures ((struct node*)(result & ~3)) == old((struct node*)(word & ~3));",
+        ),
+        (
+            "mdtests/a_bounded_variable_tag_keeps_a_stored_pointer_relationship.md",
+            "stamp.ensures_0",
+            "ensures ((int32*)(slot->word & ~3)) == p;",
+        ),
+        (
+            "mdtests/a_bounded_variable_tag_preserves_an_incoming_word_relationship.md",
+            "recolor.ensures_0",
+            "ensures ((struct node*)(result & ~3)) == old((struct node*)(word & ~3));",
+        ),
+        (
             "mdtests/tagged_pointer_from_field_fact.md",
             "parent_value.ensures_0",
             "ensures result == next->value;",
