@@ -685,6 +685,14 @@ proved kernel query at one cost beside 8 to 64 parameter objects.
 `refused_parameter_separation_ignores_unrelated_owned_objects` pins both
 missing ownership and overlapping operands at fixed work over the same sizes.
 
+The mixed range-and-pointer separation query uses these conservative containment
+indexes too. Its shallow membership predicates still check the selected owners;
+a refusal no longer walks every owner in the shared external-argument block.
+This matters when a call borrows part of an array: testing an untouched tail
+cell must not visit unrelated parameter objects before recognizing byte
+disjointness. `a_partial_borrow_call_ignores_unrelated_owned_objects` compares
+the call's deterministic work beside one and three unrelated owned objects.
+
 Deciding that a context is a valid partition reads the same indexes. Only an
 identity held twice or with invalid access, a block owning two or more
 ranges, or a base that an exact pointer equality joins to another block can
