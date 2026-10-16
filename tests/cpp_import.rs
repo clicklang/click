@@ -7876,13 +7876,13 @@ fn class_template_instances_preserve_nominal_identity_and_verify_offline() {
     let mut alias_identity = None;
     let mut identities = std::collections::BTreeSet::new();
     for (selected, record, spelling) in [
-        ("call", "Box__int__bool_false", "Box<int, false>"),
+        ("call", "Box__int__bool_false", "Box<int>"),
         (
             "wide",
             "Box__long_long__bool_false",
-            "Box<long long, false>",
+            "Box<long long>",
         ),
-        ("long_type", "Box__long__bool_false", "Box<long, false>"),
+        ("long_type", "Box__long__bool_false", "Box<long>"),
         (
             "tagged",
             "Box__tag_SizeTag__bool_true",
@@ -7910,11 +7910,11 @@ fn class_template_instances_preserve_nominal_identity_and_verify_offline() {
             import.export().reachable_functions[0].name,
             format!("{record}_Read")
         );
-        // The member is written as C++ names it, by the instance Clang
-        // prints, every argument spelled.
+        // The member and the record type are written as C++ names them, by
+        // the instance Clang prints, a defaulted argument left out.
         assert_eq!(instance.path, [spelling]);
         let sidecar = format!(
-            "verifying \"instances.cpp\"; int32 {spelling}::Read() const {{ views this->value; ensures result == this->value; }} by {{ execute(); simp(); }} int32 {selected}(const struct {record}& box) {{ views box.value; ensures result == box.value; }} by {{ execute(); simp(); }}"
+            "verifying \"instances.cpp\"; int32 {spelling}::Read() const {{ views this->value; ensures result == this->value; }} by {{ execute(); simp(); }} int32 {selected}(const {spelling}& box) {{ views box.value; ensures result == box.value; }} by {{ execute(); simp(); }}"
         );
         fs::remove_file(&project.exporter).unwrap();
         check_return_call_sidecar(&project, &load_import(&project.config()).unwrap(), &sidecar);
