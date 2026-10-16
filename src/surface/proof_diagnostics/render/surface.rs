@@ -394,12 +394,24 @@ impl Printer<'_> {
                     })
                     .unwrap_or_else(|| name.clone());
                 let mut spelled_arguments = Vec::new();
-                for argument in arguments {
-                    // A predicate's state argument is implicit in Click.
-                    if matches!(argument, Term::CMemory(_) | Term::CState(_)) {
-                        continue;
-                    }
-                    spelled_arguments.push(self.term(argument, depth)?.text);
+                let mut arguments = arguments.iter();
+                while let Some(argument) = arguments.next() {
+                    let spelled = match argument {
+                        // The logical resource-state argument is implicit.
+                        Term::CState(_) => continue,
+                        // Each array argument is a (memory, pointer) pair.
+                        // Its snapshot is part of the argument's identity.
+                        Term::CMemory(memory) => {
+                            let pointer @ Term::CValue(crate::kernel::CValue::Pointer(_)) =
+                                arguments.next()?
+                            else {
+                                return None;
+                            };
+                            self.place_read_in(memory, |printer| printer.term(pointer, depth))?
+                        }
+                        _ => self.term(argument, depth)?,
+                    };
+                    spelled_arguments.push(spelled.text);
                 }
                 Some(atom(format!("{surface}({})", spelled_arguments.join(", "))))
             }
@@ -2523,6 +2535,47 @@ mod tests {
             source(&fact, &mut labels),
             "(a + b) * (a - b) >= a and (a & b) == 0 implies not ((a & b) == 0)"
         );
+    }
+
+    #[test]
+    fn predicate_array_arguments_keep_their_individual_snapshots() {
+        let pointer = CValue::Pointer(CPointerValue::new(
+            Pointer {
+                block: PointerBlock::Concrete("global:cells".into()),
+                offset: PointerOffsetTerm::Constant(0),
+            },
+            CType::Int32Pointer,
+        ));
+        let before = CState::new()
+            .with_local("cells", pointer.clone())
+            .with_memory(CMemory::new().with_block("global:cells", 4));
+        let copied = before
+            .clone()
+            .with_memory(CMemory::new().with_block("global:cells", 8));
+        let current = before
+            .clone()
+            .with_memory(CMemory::new().with_block("global:cells", 16));
+        let mut labels = SnapshotLabels::with_state(ParameterBinding::default(), &current);
+        labels.source_state(&before, ENTRY_POINT.into());
+        labels.source_state(&copied, "copied".into());
+        let predicate = |memories: [&CMemory; 3]| Proposition::Predicate {
+            name: "same".into(),
+            arguments: std::iter::once(Term::CState(Box::new(before.clone())))
+                .chain(memories.into_iter().flat_map(|memory| {
+                    [Term::CMemory(memory.clone()), Term::CValue(pointer.clone())]
+                }))
+                .collect(),
+        };
+        assert_eq!(
+            source(
+                &predicate([before.memory(), copied.memory(), current.memory()]),
+                &mut labels,
+            ),
+            "same(old(cells), at(copied, cells), cells)"
+        );
+        let fact = predicate([current.memory(); 3]);
+        assert_eq!(source(&fact, &mut labels), "same(cells, cells, cells)");
+        assert_eq!(source(&fact, &mut labels), "same(cells, cells, cells)");
     }
 
     #[test]

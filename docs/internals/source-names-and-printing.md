@@ -31,6 +31,11 @@ presentation-only `(unsigned)` text into generated source. Expression, place
 and snapshot formatters are shared with diagnostics; those formatters preserve
 source syntax rather than inheriting refusal mode.
 
+Predicate diagnostics retain each array argument's memory snapshot. An array
+read at entry prints as `old(src)`, a recorded state as `at(copied, src)`, and
+the current state as `src`. Only the predicate's implicit logical resource
+state is omitted; two array arguments with different snapshots remain distinct.
+
 Canonical library names in a generated fragment are rewritten only at parser
 token spans. A matching string or comment is left untouched. Name queries read
 indexes rather than scanning the original source; a source rewrite constructs
