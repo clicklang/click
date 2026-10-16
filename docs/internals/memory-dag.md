@@ -379,6 +379,18 @@ those boundaries. `wide_range_reader_tests` cover native bounds above 2³²,
 alias alignment, resource unfolding and projection, loop frames, certificates,
 missing-resource diagnostics and mixed domains/element widths.
 
+## Bounded two-snapshot load equality
+
+A two-snapshot load equality first uses the typed common-ancestor read walk.
+It advances the newer endpoint until the paths meet, retaining each checked
+no-write hop, and stops before their shared older history. If an intervening
+step affects the read or cannot be framed, the existing source/value walks
+still decide stored-value equality, endpoint pinning, or refusal. Transport
+traces name the successful stop as a common snapshot. The cold-query scaling
+regressions `load_equality_ignores_history_before_both_snapshots` and
+`load_equality_work_tracks_the_snapshot_delta` distinguish history before both
+snapshots from the steps between them, including a previously written cell.
+
 ## Source and tests
 
 The representation and edge producers live in
