@@ -2758,6 +2758,32 @@ impl CMemory {
         }
     }
 
+    /// [`Self::with_block_or_read_only`] with the object's declared class
+    /// recorded in the same declaration, as [`Self::with_classed_block`]
+    /// records it.
+    pub(in crate::kernel) fn with_classed_block_or_read_only(
+        mut self,
+        block: impl Into<PointerBlock>,
+        size: u32,
+        read_only: bool,
+        declared_class: Option<crate::kernel::effective_type::CAccessClass>,
+    ) -> Self {
+        if declared_class.is_none() {
+            return self.with_block_or_read_only(block, size, read_only);
+        }
+        let block = block.into();
+        let base = intern_derivation_base(&mut self);
+        let mut declaration = if read_only {
+            CBlock::read_only(size)
+        } else {
+            CBlock::new(size)
+        };
+        declaration.declared_class = declared_class;
+        std::sync::Arc::make_mut(&mut self.blocks).insert(block.clone(), declaration);
+        record_c_memory_derivation(&mut self, CMemoryDerivation::BlockDeclared { base, block });
+        self
+    }
+
     pub(in crate::kernel) fn with_read_only_block(
         mut self,
         block: impl Into<PointerBlock>,
@@ -2774,6 +2800,21 @@ impl CMemory {
     /// program transition. Symbolic aggregate return values use this to make
     /// their known layout available for bounds checks while keeping the
     /// symbolic load identity independent of the caller's memory snapshot.
+    /// Gives a synthetic block the declared class of the storage it stands
+    /// for (`design/effective-types.md`). Synthetic memories record no
+    /// derivation, so the class needs none either.
+    pub(in crate::kernel) fn with_block_declared_class(
+        mut self,
+        block: &PointerBlock,
+        class: crate::kernel::effective_type::CAccessClass,
+    ) -> Self {
+        if let Some(mut declaration) = self.blocks.get(block).cloned() {
+            declaration.declared_class = Some(class);
+            std::sync::Arc::make_mut(&mut self.blocks).insert(block.clone(), declaration);
+        }
+        self
+    }
+
     pub(in crate::kernel) fn with_block_without_derivation(
         mut self,
         block: impl Into<PointerBlock>,

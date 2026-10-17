@@ -149,7 +149,29 @@ impl CGlobal {
             pointee_volatile: false,
             constant: false,
             pointee_constant: false,
+            declared_class: None,
         }
+    }
+
+    /// Records the class the frontend gives the object.
+    pub fn with_declared_class(
+        mut self,
+        class: Option<crate::kernel::effective_type::CAccessClass>,
+    ) -> Self {
+        // A class the kernel type already gives is not stored, so a
+        // declaration lowered with and without the frontend's knowledge
+        // stays one declaration.
+        let derived = crate::kernel::effective_type::CAccessClass::of_kernel_type(self.c_type);
+        self.declared_class = class.filter(|class| derived.as_ref() != Some(class));
+        self
+    }
+
+    /// The class the object's block records: the frontend's, or what the
+    /// kernel type gives.
+    pub fn declared_class(&self) -> Option<crate::kernel::effective_type::CAccessClass> {
+        self.declared_class
+            .clone()
+            .or_else(|| crate::kernel::effective_type::CAccessClass::of_kernel_type(self.c_type))
     }
 
     pub fn name(&self) -> &str {
@@ -249,7 +271,30 @@ impl CGlobalArray {
             length,
             initial_values,
             constant: false,
+            declared_class: None,
         }
+    }
+
+    /// Records the class the frontend gives the object.
+    pub fn with_declared_class(
+        mut self,
+        class: Option<crate::kernel::effective_type::CAccessClass>,
+    ) -> Self {
+        // A class the kernel type already gives is not stored, so a
+        // declaration lowered with and without the frontend's knowledge
+        // stays one declaration.
+        let derived =
+            crate::kernel::effective_type::CAccessClass::of_kernel_type(self.element_type);
+        self.declared_class = class.filter(|class| derived.as_ref() != Some(class));
+        self
+    }
+
+    /// The class the object's block records: the frontend's, or what the
+    /// kernel type gives.
+    pub fn declared_class(&self) -> Option<crate::kernel::effective_type::CAccessClass> {
+        self.declared_class.clone().or_else(|| {
+            crate::kernel::effective_type::CAccessClass::of_kernel_type(self.element_type)
+        })
     }
 
     pub fn name(&self) -> &str {
@@ -303,7 +348,23 @@ impl CGlobalAggregate {
             layout,
             initializers,
             constant: false,
+            declared_class: None,
         }
+    }
+
+    /// Records the class the frontend gives the object.
+    pub fn with_declared_class(
+        mut self,
+        class: Option<crate::kernel::effective_type::CAccessClass>,
+    ) -> Self {
+        self.declared_class = class;
+        self
+    }
+
+    /// The class the object's block records: the frontend's, or what the
+    /// kernel type gives.
+    pub fn declared_class(&self) -> Option<crate::kernel::effective_type::CAccessClass> {
+        self.declared_class.clone()
     }
 
     pub fn source_name(&self) -> &str {
@@ -359,7 +420,23 @@ impl CGlobalAggregateArray {
             length,
             initializers,
             constant: false,
+            declared_class: None,
         }
+    }
+
+    /// Records the class the frontend gives the object.
+    pub fn with_declared_class(
+        mut self,
+        class: Option<crate::kernel::effective_type::CAccessClass>,
+    ) -> Self {
+        self.declared_class = class;
+        self
+    }
+
+    /// The class the object's block records: the frontend's, or what the
+    /// kernel type gives.
+    pub fn declared_class(&self) -> Option<crate::kernel::effective_type::CAccessClass> {
+        self.declared_class.clone()
     }
 
     pub fn source_name(&self) -> &str {

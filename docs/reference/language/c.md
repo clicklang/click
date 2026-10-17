@@ -2116,8 +2116,14 @@ parameter, while a C read of the same object through an unrelated struct is
 still refused
 (`mdtests/a_resource_argument_reads_the_containing_struct_as_a_value.md`,
 `mdtests/a_resource_argument_does_not_exempt_the_c_read_beside_it.md`).
-The check does not yet cover globals or heap objects; the effective-type
-design (`design/effective-types.md`) stages them next.
+Globals are covered as locals are: a global scalar, array, struct or array of
+structs records its declared type
+(`mdtests/a_global_long_read_through_a_long_long_pointer_is_refused.md`,
+`mdtests/a_global_byte_buffer_read_through_a_uint32_pointer_is_refused.md`,
+`mdtests/a_global_struct_read_through_another_struct_is_refused.md`,
+`mdtests/globals_read_through_their_own_types_are_allowed.md`). The check does
+not yet cover heap objects; the effective-type design
+(`design/effective-types.md`) stages them next.
 
 Automatic scalar, pointer, and array declarations do not zero-initialize their
 storage. Reading a local before a value has been written is undefined behavior.

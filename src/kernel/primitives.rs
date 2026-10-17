@@ -3749,6 +3749,9 @@ pub struct CGlobal {
     pub(super) pointee_volatile: bool,
     pub(super) constant: bool,
     pub(super) pointee_constant: bool,
+    /// The object's strict-aliasing class (`design/effective-types.md`),
+    /// when the frontend knows more than the kernel type says.
+    pub(super) declared_class: Option<crate::kernel::effective_type::CAccessClass>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
@@ -3759,6 +3762,9 @@ pub struct CGlobalArray {
     pub(super) length: u32,
     pub(super) initial_values: CArrayContents,
     pub(super) constant: bool,
+    /// The object's strict-aliasing class (`design/effective-types.md`),
+    /// when the frontend knows more than the kernel type says.
+    pub(super) declared_class: Option<crate::kernel::effective_type::CAccessClass>,
 }
 
 /// A linked file-scope aggregate. The layout describes the typed leaf cells
@@ -3771,6 +3777,9 @@ pub struct CGlobalAggregate {
     pub(super) layout: CAggregateLayout,
     pub(super) initializers: Vec<CAggregateInitializer>,
     pub(super) constant: bool,
+    /// The object's strict-aliasing class (`design/effective-types.md`),
+    /// when the frontend knows more than the kernel type says.
+    pub(super) declared_class: Option<crate::kernel::effective_type::CAccessClass>,
 }
 
 /// A linked file-scope array of supported struct aggregates. Initializer
@@ -3784,6 +3793,9 @@ pub struct CGlobalAggregateArray {
     pub(super) length: u32,
     pub(super) initializers: Vec<CAggregateInitializer>,
     pub(super) constant: bool,
+    /// The object's strict-aliasing class (`design/effective-types.md`),
+    /// when the frontend knows more than the kernel type says.
+    pub(super) declared_class: Option<crate::kernel::effective_type::CAccessClass>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
