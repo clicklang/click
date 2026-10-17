@@ -2400,6 +2400,29 @@ impl<'a> Proof<'a> {
     /// theorem's parameters, or the locals of the execution state a nested
     /// `have` reads, so a refusal never prints a kernel variable where the
     /// reader wrote a name.
+    /// [`Self::diagnostic_naming_tables`], deferred to rendering when the
+    /// proof's parameter binding shares its lists.
+    pub(in crate::surface::proof) fn diagnostic_naming(&self) -> super::DiagnosticNaming {
+        let deferred = |state: &CState, binding: ParameterBinding<'_>| {
+            binding.naming.map(|naming| {
+                super::DiagnosticNaming::LocalsThenParameters(state.clone(), naming.clone())
+            })
+        };
+        let deferred = match self.context.as_ref() {
+            ProofContext::Pure(_) => None,
+            ProofContext::FixedState(context) => {
+                deferred(context.fixed_state.state, context.parameter_binding)
+            }
+            ProofContext::Execution(context) => self
+                .execution()
+                .and_then(|execution| deferred(&execution.core.state, context.parameter_binding())),
+        };
+        deferred.unwrap_or_else(|| {
+            let (names, values) = self.diagnostic_naming_tables();
+            super::DiagnosticNaming::Tables(names, values)
+        })
+    }
+
     pub(in crate::surface::proof) fn diagnostic_naming_tables(
         &self,
     ) -> (Vec<syntax::C0Parameter>, Vec<CExpression>) {

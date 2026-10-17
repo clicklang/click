@@ -223,6 +223,10 @@ pub(in crate::surface) struct ProgramLayouts {
     /// by their sidecar names: without a contract of its own, it has the
     /// method's.
     pub(in crate::surface) virtual_dispatches: Vec<(String, String)>,
+    /// Each C++ function's calls of methods on a receiver that may be an
+    /// object of a derived class, by sidecar names: the function called, and
+    /// the reference parameter the receiver is, or `None` for `this`.
+    pub(in crate::surface) receiver_calls: BTreeMap<String, Vec<(String, Option<String>)>>,
     /// The layout name of each C++ record a head spells otherwise, by that
     /// spelling: `Stored<long long>` is `Stored__long_long`.
     pub(in crate::surface) record_spellings: BTreeMap<String, String>,
@@ -793,6 +797,7 @@ struct Parser {
     /// interface it inherits.
     rust_trait_implementations: Vec<(String, String)>,
     cpp_dispatches: Vec<(String, String)>,
+    cpp_receiver_calls: BTreeMap<String, Vec<(String, Option<String>)>>,
     /// The crate traits whose objects carry state, by importer name: the
     /// token rewrite already gave their implementations their interfaces.
     rust_object_traits: BTreeSet<String>,
@@ -1179,6 +1184,7 @@ impl Parser {
             parser.language = SourceLanguage::Cpp;
             parser.rust_trait_implementations = layouts.virtual_overrides;
             parser.cpp_dispatches = layouts.virtual_dispatches;
+            parser.cpp_receiver_calls = layouts.receiver_calls;
             parser.record_spellings = layouts.record_spellings;
         }
         Ok(parser)
@@ -1286,6 +1292,7 @@ impl Parser {
             rust_trait_type_parameters: BTreeSet::new(),
             rust_trait_implementations: Vec::new(),
             cpp_dispatches: Vec::new(),
+            cpp_receiver_calls: BTreeMap::new(),
             tokens,
             positions,
             matching_parentheses,
@@ -1663,7 +1670,13 @@ impl Parser {
                 && (self.cpp_object_methods.interfaces.contains(&interface)
                     || self.cpp_object_methods.on_memory.contains(&interface))
             {
-                if !self.cpp_object_methods.on_memory.contains(&implementation) {
+                // A defining class's override the sidecar does not state has
+                // no contract, which verification refuses.
+                let class = crate::languages::cpp::names::cpp_display_name(&implementation)
+                    .and_then(|path| Some(path.rsplit_once("::")?.0.to_string()));
+                if !self.cpp_object_methods.on_memory.contains(&implementation)
+                    && !class.is_some_and(|class| self.cpp_object_methods.defining.contains(&class))
+                {
                     let overridden = if self.cpp_object_methods.on_memory.contains(&interface) {
                         "a method of a class that defines its object's state"
                     } else {
@@ -1725,6 +1738,59 @@ impl Parser {
             {
                 let alias = block.dispatch_alias(&dispatch);
                 function_blocks.push(alias);
+            }
+        }
+        // A method of a class another derives from holds its memory, and a
+        // reference to it holds the object class's object: a call that needs
+        // the other is refused here, naming what each holds.
+        let methods = &self.cpp_object_methods;
+        for (caller, calls) in &self.cpp_receiver_calls {
+            let caller_class = crate::languages::cpp::names::cpp_display_name(caller)
+                .and_then(|path| Some(path.rsplit_once("::")?.0.to_string()));
+            for (callee, holder) in calls {
+                let message = match holder {
+                    None => {
+                        let (Some((class, method)), Some((_, (root, derived)))) = (
+                            methods.dispatches.get(callee),
+                            caller_class
+                                .as_ref()
+                                .and_then(|class| methods.derived_from.get_key_value(class)),
+                        ) else {
+                            continue;
+                        };
+                        format!(
+                            "`{caller}` calls `{class}::{method}` through `this`, which may be \
+                             an object of a class deriving from its class, such as `{derived}`: \
+                             the call runs whichever override the object's class selects, which \
+                             needs `{root}`'s object, and `{caller}`, stated on its class's \
+                             memory, does not hold that object; a qualified call, \
+                             `this->{class}::{method}(...)`, runs `{class}::{method}` itself"
+                        )
+                    }
+                    Some(parameter) => {
+                        let Some(class) = methods
+                            .object_parameters
+                            .get(caller)
+                            .and_then(|parameters| parameters.get(parameter))
+                        else {
+                            continue;
+                        };
+                        if !methods.on_memory.contains(callee) {
+                            continue;
+                        }
+                        let (root, derived) = &methods.derived_from[class];
+                        format!(
+                            "`{caller}` calls `{callee}` on `{parameter}`, a reference to \
+                             `{class}`, which may be an object of a class deriving from it, such \
+                             as `{derived}`: `{parameter}` holds `{root}`'s object, not \
+                             `{class}`'s memory, on which `{callee}` is stated"
+                        )
+                    }
+                };
+                return Err(ClickError::new(
+                    crate::languages::display_source_names(&message).into_owned(),
+                )
+                .at_declaration(&crate::languages::display_source_names(caller)));
             }
         }
         let end = self.position;
