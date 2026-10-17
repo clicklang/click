@@ -1,3 +1,5 @@
+import click::machine_integer;
+
 verifying "loop.rs";
 
 impl Drop for Guard {
@@ -23,6 +25,17 @@ fn guarded_walk(value: &mut i32, n: i32) -> i32 {
     execute_until(loop(0));
     loop {
         decreases n - i;
+        preserve by {
+            apply(int32_nonnegative_subtract_within_value_is_defined(n, i)) using {
+                0 <= i;
+                i <= n;
+            };
+            have 0 < n - i by { arithmetic() using { 0 <= i; i < n; }; }
+            apply(int32_positive_predecessor_is_nonnegative(n - i)) using { 0 < n - i; };
+            apply(int32_positive_predecessor_strictly_decreases(n - i)) using { 0 < n - i; };
+            execute_until(back_edge());
+            close_invariants() by simp();
+        }
         owns value[0..1];
         views guard.slot;
         views guard.saved;
@@ -42,6 +55,17 @@ fn final_header(n: i32) -> i32 {
     execute_until(loop(0));
     loop {
         decreases n - i;
+        preserve by {
+            apply(int32_nonnegative_subtract_within_value_is_defined(n, i)) using {
+                0 <= i;
+                i <= n;
+            };
+            have 0 < n - i by { arithmetic() using { 0 <= i; i < n; }; }
+            apply(int32_positive_predecessor_is_nonnegative(n - i)) using { 0 < n - i; };
+            apply(int32_positive_predecessor_strictly_decreases(n - i)) using { 0 < n - i; };
+            execute_until(back_edge());
+            close_invariants() by simp();
+        }
         invariant 0 <= i and i <= n;
     }
     execute(); simp();
