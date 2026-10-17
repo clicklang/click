@@ -23,6 +23,11 @@ model, as `examples/rbtree-insert` does, audits as it verifies. The retained ses
 fixed while checking each rewritten local proof; audit the library path itself
 to select library sites.
 
+Expected-failure mdtests are excluded before runtime discovery or input
+preparation. They contribute no audit sites, including when selected alone.
+A mixed selection still audits its positive sources, and syntax or input
+errors in a positive fixture fail the audit.
+
 The inventory includes smart tactics inside ordinary `have` bodies, including
 nested bodies and checked proof arms. A smart container owns its body: its
 inner aliases count as one site. Audit and profile use the same source table
