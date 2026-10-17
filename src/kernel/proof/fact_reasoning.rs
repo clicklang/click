@@ -178,7 +178,7 @@ pub(crate) fn normalize_using_conditions(
     // its conditions; each must be available as a part or as the whole.
     let mut cited = Vec::new();
     for (index, premise) in premises.iter().enumerate() {
-        if matches!(premise, Proposition::And(..))
+        if super::equality_rewrite::pointer_value_equality_address(premise).is_some()
             && crate::kernel::listed_premise_holds(premise, |part| {
                 facts.available(part)
                     || condition_polarity_forms(part)

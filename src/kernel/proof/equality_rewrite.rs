@@ -293,8 +293,10 @@ fn designation_conjuncts(equality: &Proposition) -> Option<(&Proposition, Vec<&P
             Proposition::ConditionIs(
                 ConditionTerm::PointerEqual(left, right),
                 true,
-            ) if SubobjectExtent::opaque_start(left).is_some()
-                || SubobjectExtent::opaque_start(right).is_some() =>
+            ) if [left, right].into_iter().any(|start| {
+                SubobjectExtent::opaque_start(start).is_some()
+                    || SubobjectExtent::is_complete_object_designation(start)
+            }) =>
             {
                 conjuncts.push(conjunct);
             }
