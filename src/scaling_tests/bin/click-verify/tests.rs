@@ -22,18 +22,10 @@ fn trace_source_locations_resolve_each_claim_once() {
         cold_work.push(work);
         let (_, repeated_work) = click::instrumentation::measure_deterministic_work(|| {
             for index in 0..size {
-                assert!(
-                    locations
-                        .position("sample.contract", &[index])
-                        .is_some()
-                );
+                assert!(locations.position("sample.contract", &[index]).is_some());
             }
             for index in [size + 100, usize::MAX] {
-                assert!(
-                    locations
-                        .position("sample.contract", &[index])
-                        .is_none()
-                );
+                assert!(locations.position("sample.contract", &[index]).is_none());
             }
         });
         assert_eq!(locations.outer.borrow().len(), 1);
@@ -62,32 +54,22 @@ fn trace_source_locations_share_the_index_across_distinct_nested_sites() {
         let (root, path) = temporary_project("trace-nested-index", "void sample() {}", &source);
         let target = load_target_inputs(&path, Some(&root)).unwrap();
         let locations = ProofSourceLocations::new(&target.project, &target.inputs);
-        locations
-            .position("sample.contract", &[0])
-            .unwrap();
+        locations.position("sample.contract", &[0]).unwrap();
         let tokenization = ProofSourceIndex::tokenization_work();
         let (_, work) = click::instrumentation::measure_deterministic_work(|| {
             for step in 0..size {
-                let have = locations
-                    .position("sample.contract", &[step])
-                    .unwrap();
-                let nested = locations
-                    .position("sample.contract", &[step, 0])
-                    .unwrap();
+                let have = locations.position("sample.contract", &[step]).unwrap();
+                let nested = locations.position("sample.contract", &[step, 0]).unwrap();
                 assert_eq!(nested.line, step + 3);
                 assert_eq!(nested.column, 18);
                 assert!(
                     locations
-                        .with_index(|index| index
-                            .have_body_contains(&have, &nested)
-                            .unwrap())
+                        .with_index(|index| index.have_body_contains(&have, &nested).unwrap())
                         .unwrap()
                 );
                 assert!(
                     locations
-                        .with_index(|index| index
-                            .line_has_multiple_starts(&nested)
-                            .unwrap())
+                        .with_index(|index| index.line_has_multiple_starts(&nested).unwrap())
                         .unwrap()
                 );
             }
