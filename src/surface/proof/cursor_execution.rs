@@ -2873,7 +2873,8 @@ fn execute_step_from_frontier_position_selecting_path(
                     &[]
                 )
             ))
-            .with_kind(kind));
+            .with_kind(kind)
+            .with_runtime_missing_resource(error));
         }
         let path_case_split = statement_successors_are_path_cases(&transitions);
         let split_condition = if path_case_split {
@@ -3545,7 +3546,8 @@ fn execute_step_from_frontier_position_selecting_path(
                     &execution_pure_facts
                 )
             ))
-            .with_kind(kind));
+            .with_kind(kind)
+            .with_runtime_missing_resource(&error));
         }
     }
     execution

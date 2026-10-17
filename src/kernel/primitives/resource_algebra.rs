@@ -5672,7 +5672,7 @@ impl ResourceContext {
     }
 
     /// Select folded composites without materializing unrelated memory facts.
-    pub(in crate::kernel) fn composite_facts(&self) -> impl Iterator<Item = &CResourceFact> {
+    pub(crate) fn composite_facts(&self) -> impl Iterator<Item = &CResourceFact> {
         let entries = self
             .storage
             .index
