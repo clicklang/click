@@ -2396,6 +2396,13 @@ reassigned cannot stand there: it means the caller's actual, and a caller
 substitutes its own, so the clause would describe an object the exit does not
 hold.
 
+The same call may produce both the link cell and a named instance whose
+argument reads it: `produces root->p; produces out: leaf(root->p);`.
+The primitive output supplies read authority for the named output argument;
+the output clauses can be written in either order. This applies to C calls
+and applications of checked user tactics
+(`mdtests/user_tactic_produced_cell_supplies_named_output.md`).
+
 A produced instance is the one the body folded under that name, so a walk
 hands its final instances over by refolding them under the produced names at
 the arguments the exit reached. Naming a position the proof does not hold
