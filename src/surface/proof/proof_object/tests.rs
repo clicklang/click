@@ -13633,7 +13633,9 @@ fn checked_callback_statement_publishes_its_typed_read_evidence() {
     let function = parsed_function.to_kernel_function();
     fn load_type(statement: &CStatement) -> Option<(CType, &str)> {
         match statement {
-            CStatement::Seq(left, right) => load_type(left).or_else(|| load_type(right)),
+            CStatement::Seq(statements) => {
+                statements.iter().find_map(|statement| load_type(statement))
+            }
             CStatement::Assign {
                 name,
                 expression: CExpression::TypedLoad { value_type, .. },

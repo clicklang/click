@@ -3510,9 +3510,9 @@ fn statement_contains_internal_throw(statement: &CStatement) -> bool {
     match statement {
         CStatement::Throw(_) => true,
         CStatement::ForStep { step, .. } => statement_contains_internal_throw(step),
-        CStatement::Seq(first, second) => {
-            statement_contains_internal_throw(first) || statement_contains_internal_throw(second)
-        }
+        CStatement::Seq(statements) => statements
+            .iter()
+            .any(|statement| statement_contains_internal_throw(statement)),
         CStatement::TryCatchInt32 {
             try_body, handler, ..
         } => {

@@ -5963,7 +5963,7 @@ pub(super) fn describe_c_statement_head(statement: &CStatement) -> String {
                 .unwrap_or_default(),
             describe_c_expression(condition)
         ),
-        CStatement::Seq(first, _) => describe_c_statement_head(first),
+        CStatement::Seq(statements) => describe_c_statement_head(statements.first()),
         CStatement::Return(expression) => {
             format!("return {};", describe_c_expression(expression))
         }
