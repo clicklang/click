@@ -67,8 +67,7 @@ fn loop_invariant_surfaces(
     environment
         .function_block
         .structural_clauses()
-        .iter()
-        .filter(|clause| clause.region() == &CodeRegion::Loop(loop_index))
+        .for_loop(loop_index).into_iter()
         .map(|clause| {
             clause.resolved().map_err(|message| {
                 ClickError::new(format!(
@@ -337,8 +336,8 @@ pub(in crate::surface::proof) fn verify_loop_initialization_pure_proof(
     for label in environment
         .function_block
         .structural_clauses()
-        .iter()
-        .filter(|clause| clause.region() == &CodeRegion::Loop(loop_index))
+        .for_loop(loop_index)
+        .into_iter()
         .filter_map(StructuralClause::label)
     {
         recorded_snapshots.label_loop(loop_index, label);

@@ -546,6 +546,24 @@ fn charge_run_work(units: usize) -> bool {
     !any
 }
 
+thread_local! {
+    static UNCHARGED_WORK: Cell<bool> = const { Cell::new(false) };
+}
+
+/// Runs `operation` charging none of the deterministic work it records:
+/// for a shortcut that replaces a walk which charged nothing, so taking it
+/// leaves every budget's charges as they were.
+pub(crate) fn without_charging<R>(operation: impl FnOnce() -> R) -> R {
+    struct Restore(bool);
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            UNCHARGED_WORK.with(|flag| flag.set(self.0));
+        }
+    }
+    let _restore = Restore(UNCHARGED_WORK.with(|flag| flag.replace(true)));
+    operation()
+}
+
 /// Records `units` of deterministic verifier work.
 ///
 /// This is the one accounting path: every unit charges each enclosing
@@ -563,6 +581,9 @@ fn charge_run_work(units: usize) -> bool {
 pub(crate) fn record_deterministic_work(units: usize) {
     #[cfg(debug_assertions)]
     if UNCHARGED_DEBUG_CHECK.with(Cell::get) {
+        return;
+    }
+    if UNCHARGED_WORK.with(Cell::get) {
         return;
     }
     if CHECKED_COLLECTION_DEPTH.with(|depth| depth.get() > 0) {

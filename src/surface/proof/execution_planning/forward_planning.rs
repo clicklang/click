@@ -151,8 +151,7 @@ pub(in crate::surface::proof) fn verify_execution_proofs_forward(
             let loop_clause = environment
                 .function_block
                 .structural_clauses()
-                .iter()
-                .find(|clause| clause.region() == &CodeRegion::Loop(loop_index));
+                .for_loop(loop_index);
             let explicit_tactics = loop_clause.and_then(explicit_loop_preservation_tactics);
             let default_initialization = SourceProof::Default;
             let initialization_proof = loop_clause.map(|clause| {
@@ -702,8 +701,8 @@ fn advance_execution_proof_statement(
                 let loop_labels = environment
                     .function_block
                     .structural_clauses()
-                    .iter()
-                    .filter(|clause| clause.region() == &CodeRegion::Loop(loop_index))
+                    .for_loop(loop_index)
+                    .into_iter()
                     .filter_map(StructuralClause::label)
                     .map(str::to_string)
                     .collect::<Vec<_>>();
@@ -724,8 +723,7 @@ fn advance_execution_proof_statement(
                     if let Some(loop_clause) = environment
                         .function_block
                         .structural_clauses()
-                        .iter()
-                        .find(|clause| clause.region() == &CodeRegion::Loop(loop_index))
+                        .for_loop(loop_index)
                     {
                         record_loop_exit_invariants(
                             &mut surface_propositions,
