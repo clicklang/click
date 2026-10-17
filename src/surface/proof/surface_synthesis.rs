@@ -708,8 +708,7 @@ fn bitvector_term_exceeds_depth_limit(root: &Bitvector32Term) -> bool {
                     pending.push((value, depth + 1));
                 }
             }
-            Bitvector32Term::PointerAddress(pointer)
-            | Bitvector32Term::ObjectPointerAddress(pointer, _) => {
+            Bitvector32Term::PointerAddress(pointer, _) => {
                 if let PointerOffsetTerm::Int32Scaled { value, .. }
                 | PointerOffsetTerm::Int64Scaled { value, .. } = &pointer.offset
                 {
@@ -2931,8 +2930,7 @@ fn synthesize_surface_bitvector(
         | Bitvector32Term::Float32Binary { .. }
         | Bitvector32Term::Float64Negate(_)
         | Bitvector32Term::Float64Binary { .. } => None,
-        Bitvector32Term::PointerAddress(pointer)
-        | Bitvector32Term::ObjectPointerAddress(pointer, _) => {
+        Bitvector32Term::PointerAddress(pointer, _) => {
             let pointer =
                 synthesize_surface_pointer(pointer, parameter_binding, state, bound_variables)?;
             Some(ContractExpression::CFragment(CExpression::Cast {
@@ -3695,8 +3693,7 @@ pub(super) fn bitvector_term_is_load_free(term: &Bitvector32Term) -> bool {
         }
         match term {
             Bitvector32Term::MemoryLoad(_, _, _) => return false,
-            Bitvector32Term::PointerAddress(pointer)
-            | Bitvector32Term::ObjectPointerAddress(pointer, _) => {
+            Bitvector32Term::PointerAddress(pointer, _) => {
                 pending.extend(pointer.offset.scaled_values());
             }
             Bitvector32Term::Constant(_)

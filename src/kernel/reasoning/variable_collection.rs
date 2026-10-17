@@ -1814,8 +1814,7 @@ fn collect_bitvector_integer_variables_seen(
         | Bitvector32Term::MachineIntegerConstant(_)
         | Bitvector32Term::Variable(_) => {}
         Bitvector32Term::MemoryLoad(_, pointer, _)
-        | Bitvector32Term::PointerAddress(pointer)
-        | Bitvector32Term::ObjectPointerAddress(pointer, _) => {
+        | Bitvector32Term::PointerAddress(pointer, _) => {
             collect_pointer_integer_variables(pointer, variables, seen)
         }
         Bitvector32Term::IntegerToMachine { value, .. } => {
@@ -2550,8 +2549,7 @@ pub(crate) fn collect_bitvector_variables(
             collect_pointer_bitvector_variables(pointer, variables);
             collect_stored_load_connection_variables(memory, pointer, variables);
         }
-        Bitvector32Term::PointerAddress(pointer)
-        | Bitvector32Term::ObjectPointerAddress(pointer, _) => {
+        Bitvector32Term::PointerAddress(pointer, _) => {
             collect_pointer_bitvector_variables(pointer, variables);
         }
         Bitvector32Term::IntegerToMachine { value, .. } => {
@@ -2681,8 +2679,7 @@ fn collect_bitvector_capture_variables_seen(
             }
         }
         Bitvector32Term::MemoryLoad(_, pointer, _)
-        | Bitvector32Term::PointerAddress(pointer)
-        | Bitvector32Term::ObjectPointerAddress(pointer, _) => {
+        | Bitvector32Term::PointerAddress(pointer, _) => {
             collect_pointer_capture_variables(pointer, variables, integer_seen)
         }
         Bitvector32Term::IntegerToMachine { value, .. } => {
@@ -3390,8 +3387,7 @@ fn collect_bitvector_scope_summary(
             summary
         }
         Bitvector32Term::MemoryLoad(_, pointer, _)
-        | Bitvector32Term::PointerAddress(pointer)
-        | Bitvector32Term::ObjectPointerAddress(pointer, _) => {
+        | Bitvector32Term::PointerAddress(pointer, _) => {
             collect_pointer_scope_summary(pointer, summaries)
         }
         Bitvector32Term::IntegerToMachine { value, .. } => {
@@ -3856,8 +3852,7 @@ fn collect_bitvector_binder_variables_seen(
         | Bitvector32Term::MachineIntegerConstant(_)
         | Bitvector32Term::Variable(_)
         | Bitvector32Term::MemoryLoad(_, _, _)
-        | Bitvector32Term::PointerAddress(_)
-        | Bitvector32Term::ObjectPointerAddress(_, _) => {}
+        | Bitvector32Term::PointerAddress(_, _) => {}
         Bitvector32Term::IntegerToMachine { value, .. } => {
             collect_integer_binder_variables_shared(
                 value,

@@ -626,9 +626,7 @@ pub(in crate::kernel) fn quantified_int32_fact_certifies_loadable_cell(
             // the base expression (for example the owner parameter), not to
             // that index.
             Bitvector32Term::MemoryLoad(_, _, _) => {}
-            Bitvector32Term::PointerAddress(_)
-            | Bitvector32Term::ObjectPointerAddress(_, _)
-            | Bitvector32Term::IntegerToMachine { .. } => {}
+            Bitvector32Term::PointerAddress(_, _) | Bitvector32Term::IntegerToMachine { .. } => {}
         }
     }
 

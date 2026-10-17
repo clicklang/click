@@ -65,7 +65,7 @@ fn pointer_spelling_skips_cyclic_offsets_and_tries_the_next_local() {
                 let cyclic = Pointer {
                     block: pointer.block.clone(),
                     offset: PointerOffsetTerm::Int32Scaled {
-                        value: Box::new(Bitvector32Term::PointerAddress(Box::new(pointer.clone()))),
+                        value: Box::new(Bitvector32Term::pointer_address(pointer.clone())),
                         byte_width: 4,
                     },
                 };

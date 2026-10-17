@@ -1806,9 +1806,7 @@ impl Residues {
                     _ => x.map(|x| Residue::new(x.bits, x.value ^ c)),
                 }
             }
-            T::PointerAddress(pointer) | T::ObjectPointerAddress(pointer, _) => {
-                self.address_residue(pointer, depth - 1)
-            }
+            T::PointerAddress(pointer, _) => self.address_residue(pointer, depth - 1),
             _ => None,
         };
         Residue::better(best, structural)
@@ -1823,10 +1821,13 @@ impl Residues {
         };
         let mut best = None;
         for (base, offset) in [(left, right), (right, left)] {
-            let base = Bitvector32Term::PointerAddress(Box::new(Pointer {
-                block: pointer.block.clone(),
-                offset: base.as_ref().clone(),
-            }));
+            let base = Bitvector32Term::PointerAddress(
+                Box::new(Pointer {
+                    block: pointer.block.clone(),
+                    offset: base.as_ref().clone(),
+                }),
+                crate::kernel::AddressObjectClass::NONE,
+            );
             let found = self
                 .residue(&base, depth)
                 .zip(offset_residue(offset))

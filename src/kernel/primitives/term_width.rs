@@ -193,7 +193,7 @@ pub(crate) fn term_width(term: &Bitvector32Term) -> WidthResult {
         T::MachineIntegerConstant(constant) => {
             Ok(Some(CarrierWidth::of_bits(constant.format().bits())))
         }
-        T::Variable(_) | T::PointerAddress(_) | T::ObjectPointerAddress(_, _) => Ok(None),
+        T::Variable(_) | T::PointerAddress(_, _) => Ok(None),
         T::Add(l, r)
         | T::Subtract(l, r)
         | T::Multiply(l, r)

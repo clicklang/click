@@ -69,8 +69,14 @@ fn bounded_pointer_value_skips_unrelated_facts_cells_and_history() {
             ConditionTerm::pointer_equal(parent.clone(), parent_alias.clone()),
             true,
         );
-        let value = Bitvector32Term::PointerAddress(Box::new(parent));
-        let wanted = Bitvector32Term::PointerAddress(Box::new(parent_alias));
+        let value = Bitvector32Term::PointerAddress(
+            Box::new(parent),
+            crate::kernel::AddressObjectClass::NONE,
+        );
+        let wanted = Bitvector32Term::PointerAddress(
+            Box::new(parent_alias),
+            crate::kernel::AddressObjectClass::NONE,
+        );
         let source = intern_c_memory(
             snapshot
                 .memory()

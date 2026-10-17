@@ -115,8 +115,7 @@ fn bitvector_payload(root: &Bitvector32Term) -> Option<usize> {
                 payload = payload.checked_add(name.len())?;
                 pending.extend(arguments.iter());
             }
-            Bitvector32Term::PointerAddress(pointer)
-            | Bitvector32Term::ObjectPointerAddress(pointer, _) => {
+            Bitvector32Term::PointerAddress(pointer, _) => {
                 payload = payload.checked_add(pointer_payload(pointer)?)?;
             }
             _ => return None,
@@ -301,10 +300,8 @@ fn bitvector_equal(left: &Bitvector32Term, right: &Bitvector32Term) -> bool {
                 pending.extend(left_arguments.iter().zip(right_arguments.iter()));
             }
             (
-                Bitvector32Term::PointerAddress(left)
-                | Bitvector32Term::ObjectPointerAddress(left, _),
-                Bitvector32Term::PointerAddress(right)
-                | Bitvector32Term::ObjectPointerAddress(right, _),
+                Bitvector32Term::PointerAddress(left, _),
+                Bitvector32Term::PointerAddress(right, _),
             ) => {
                 if !pointer_equal(left, right) {
                     return false;
@@ -2067,20 +2064,13 @@ fn bounded_term_hashes(roots: &[&Bitvector32Term]) -> Option<HashMap<usize, u64>
         }
         if expanded {
             let mut hasher = DefaultHasher::new();
-            // Address annotations affect decoding, not numeric identity.
-            if term.address_pointer().is_some() {
-                std::mem::discriminant(&Bitvector32Term::PointerAddress(Box::new(Pointer::null())))
-                    .hash(&mut hasher);
-            } else {
-                std::mem::discriminant(term).hash(&mut hasher);
-            }
+            std::mem::discriminant(term).hash(&mut hasher);
             match term {
                 Bitvector32Term::Constant(value) => value.hash(&mut hasher),
                 Bitvector32Term::Int64Constant(value) => value.hash(&mut hasher),
                 Bitvector32Term::UInt64Constant(value) => value.hash(&mut hasher),
                 Bitvector32Term::Variable(value) => value.hash(&mut hasher),
-                Bitvector32Term::PointerAddress(pointer)
-                | Bitvector32Term::ObjectPointerAddress(pointer, _) => {
+                Bitvector32Term::PointerAddress(pointer, _) => {
                     pointer_identity_hash(pointer)?.hash(&mut hasher)
                 }
                 Bitvector32Term::Add(left, right)
@@ -2201,16 +2191,8 @@ fn pointer_or_masked_tag<'a>(
     right: &'a Bitvector32Term,
 ) -> Option<(&'a Pointer, &'a Bitvector32Term, u64)> {
     let (pointer, tag) = match (left, right) {
-        (
-            Bitvector32Term::PointerAddress(pointer)
-            | Bitvector32Term::ObjectPointerAddress(pointer, _),
-            tag,
-        )
-        | (
-            tag,
-            Bitvector32Term::PointerAddress(pointer)
-            | Bitvector32Term::ObjectPointerAddress(pointer, _),
-        ) => (pointer.as_ref(), tag),
+        (Bitvector32Term::PointerAddress(pointer, _), tag)
+        | (tag, Bitvector32Term::PointerAddress(pointer, _)) => (pointer.as_ref(), tag),
         _ => return None,
     };
     let (_, mask) = masked_source(tag)?;
@@ -2325,8 +2307,7 @@ fn tagged_form_inner<'a>(
                 }
                 active.insert(identity);
                 match current {
-                    Bitvector32Term::PointerAddress(pointer)
-                    | Bitvector32Term::ObjectPointerAddress(pointer, _) => store(
+                    Bitvector32Term::PointerAddress(pointer, _) => store(
                         identity,
                         Some(TaggedAddress {
                             pointer: Arc::new(pointer.as_ref().clone()),
@@ -3134,7 +3115,10 @@ mod tests {
     }
 
     fn measured_tagged_form(pointer_depth: usize, tag_depth: usize) -> (bool, usize, usize) {
-        let address = Bitvector32Term::PointerAddress(Box::new(deep_pointer(pointer_depth)));
+        let address = Bitvector32Term::PointerAddress(
+            Box::new(deep_pointer(pointer_depth)),
+            crate::kernel::AddressObjectClass::NONE,
+        );
         let variable = Bitvector32Term::Variable(crate::kernel::Variable(394));
         let mut tagged = address;
         for index in 0..tag_depth {
@@ -3300,7 +3284,10 @@ mod tests {
         );
 
         let pointer = pointer(PointerOffsetTerm::Constant(0));
-        let address = Bitvector32Term::PointerAddress(Box::new(pointer.clone()));
+        let address = Bitvector32Term::PointerAddress(
+            Box::new(pointer.clone()),
+            crate::kernel::AddressObjectClass::NONE,
+        );
         let word_relation = Proposition::ConditionIs(
             ConditionTerm::uint64_equal(
                 Bitvector32Term::Variable(crate::kernel::Variable(901)),
@@ -3525,7 +3512,10 @@ mod tests {
         for alignment in [1, 2, 4, 8, 16, 32, 64, 1u64 << 63] {
             let null_condition = ConditionTerm::Bitvector64Equal(
                 Box::new(Bitvector32Term::UInt64BitwiseAnd(
-                    Box::new(Bitvector32Term::PointerAddress(Box::new(Pointer::null()))),
+                    Box::new(Bitvector32Term::PointerAddress(
+                        Box::new(Pointer::null()),
+                        crate::kernel::AddressObjectClass::NONE,
+                    )),
                     Box::new(Bitvector32Term::UInt64Constant(alignment - 1)),
                 )),
                 Box::new(Bitvector32Term::UInt64Constant(0)),
@@ -3629,7 +3619,10 @@ mod tests {
     #[test]
     fn tagged_word_certificate_requires_exact_alignment() {
         let next = pointer(PointerOffsetTerm::Constant(0));
-        let address = Bitvector32Term::PointerAddress(Box::new(next.clone()));
+        let address = Bitvector32Term::PointerAddress(
+            Box::new(next.clone()),
+            crate::kernel::AddressObjectClass::NONE,
+        );
         let relation = Proposition::ConditionIs(
             ConditionTerm::uint64_equal(
                 Bitvector32Term::Variable(crate::kernel::Variable(10)),
@@ -3690,8 +3683,10 @@ mod tests {
         // Keep the source form used by tagged-pointer resources: the word is
         // related directly to address(p) plus its low tag bit.
         let word = Bitvector32Term::Variable(crate::kernel::Variable(11));
-        let direct_address =
-            Bitvector32Term::PointerAddress(Box::new(pointer(PointerOffsetTerm::Constant(0))));
+        let direct_address = Bitvector32Term::PointerAddress(
+            Box::new(pointer(PointerOffsetTerm::Constant(0))),
+            crate::kernel::AddressObjectClass::NONE,
+        );
         let direct_tag =
             Bitvector32Term::uint64_bitwise_and(word.clone(), Bitvector32Term::UInt64Constant(1));
         let direct = Proposition::ConditionIs(
@@ -3826,7 +3821,10 @@ mod tests {
     #[test]
     fn direct_tagged_word_certificate_uses_only_alignment_evidence() {
         let next = pointer(PointerOffsetTerm::Constant(0));
-        let address = Bitvector32Term::PointerAddress(Box::new(next.clone()));
+        let address = Bitvector32Term::PointerAddress(
+            Box::new(next.clone()),
+            crate::kernel::AddressObjectClass::NONE,
+        );
         let goal = Proposition::ConditionIs(
             ConditionTerm::uint64_equal(
                 Bitvector32Term::uint64_bitwise_or(
@@ -3854,7 +3852,10 @@ mod tests {
         let unrelated = Proposition::ConditionIs(
             ConditionTerm::uint64_equal(
                 Bitvector32Term::Variable(crate::kernel::Variable(901)),
-                Bitvector32Term::PointerAddress(Box::new(pointer(PointerOffsetTerm::Constant(0)))),
+                Bitvector32Term::PointerAddress(
+                    Box::new(pointer(PointerOffsetTerm::Constant(0))),
+                    crate::kernel::AddressObjectClass::NONE,
+                ),
             ),
             true,
         );
@@ -3902,17 +3903,19 @@ mod tests {
             ConditionTerm::uint64_equal(
                 Bitvector32Term::uint64_bitwise_or(
                     Bitvector32Term::uint64_add(
-                        Bitvector32Term::PointerAddress(Box::new(pointer(
-                            PointerOffsetTerm::Constant(0),
-                        ))),
+                        Bitvector32Term::PointerAddress(
+                            Box::new(pointer(PointerOffsetTerm::Constant(0))),
+                            crate::kernel::AddressObjectClass::NONE,
+                        ),
                         Bitvector32Term::UInt64Constant(1),
                     ),
                     Bitvector32Term::UInt64Constant(4),
                 ),
                 Bitvector32Term::uint64_add(
-                    Bitvector32Term::PointerAddress(Box::new(pointer(
-                        PointerOffsetTerm::Constant(0),
-                    ))),
+                    Bitvector32Term::PointerAddress(
+                        Box::new(pointer(PointerOffsetTerm::Constant(0))),
+                        crate::kernel::AddressObjectClass::NONE,
+                    ),
                     Bitvector32Term::UInt64Constant(4),
                 ),
             ),
@@ -3997,7 +4000,10 @@ mod tests {
     #[test]
     fn tagged_word_negative_result_needs_distinct_constant_tags() {
         let pointer = pointer(PointerOffsetTerm::Constant(0));
-        let address = Bitvector32Term::PointerAddress(Box::new(pointer));
+        let address = Bitvector32Term::PointerAddress(
+            Box::new(pointer),
+            crate::kernel::AddressObjectClass::NONE,
+        );
         let word = Bitvector32Term::Variable(crate::kernel::Variable(30));
         let relation = Proposition::ConditionIs(
             ConditionTerm::uint64_equal(
@@ -4053,8 +4059,10 @@ mod tests {
         let alignments = AlignmentIndex::new(&[]).expect("empty alignment index");
         let mut previous = 0;
         for depth in [4, 16, 64, 256, 1024] {
-            let address =
-                Bitvector32Term::PointerAddress(Box::new(pointer(PointerOffsetTerm::Constant(0))));
+            let address = Bitvector32Term::PointerAddress(
+                Box::new(pointer(PointerOffsetTerm::Constant(0))),
+                crate::kernel::AddressObjectClass::NONE,
+            );
             let variable = Bitvector32Term::Variable(crate::kernel::Variable(294));
             let mut tagged = address;
             for index in 0..depth {
@@ -4141,7 +4149,10 @@ mod tests {
     #[test]
     fn alignment_premise_charges_concrete_and_string_literal_blocks() {
         let normal_pointer = pointer(PointerOffsetTerm::Constant(0));
-        let address = Bitvector32Term::PointerAddress(Box::new(normal_pointer.clone()));
+        let address = Bitvector32Term::PointerAddress(
+            Box::new(normal_pointer.clone()),
+            crate::kernel::AddressObjectClass::NONE,
+        );
         let word = Bitvector32Term::Variable(crate::kernel::Variable(92));
         let relation = Proposition::ConditionIs(
             ConditionTerm::Bitvector64Equal(
@@ -4225,9 +4236,10 @@ mod tests {
         let deep_alignment = Proposition::ConditionIs(
             ConditionTerm::Bitvector64Equal(
                 Box::new(Bitvector32Term::UInt64BitwiseAnd(
-                    Box::new(Bitvector32Term::PointerAddress(Box::new(heap_pointer(
-                        PointerOffsetTerm::Constant(0),
-                    )))),
+                    Box::new(Bitvector32Term::PointerAddress(
+                        Box::new(heap_pointer(PointerOffsetTerm::Constant(0))),
+                        crate::kernel::AddressObjectClass::NONE,
+                    )),
                     Box::new(mask),
                 )),
                 Box::new(Bitvector32Term::UInt64Constant(0)),
@@ -4248,8 +4260,10 @@ mod tests {
         ));
 
         let word = Bitvector32Term::Variable(crate::kernel::Variable(93));
-        let address =
-            Bitvector32Term::PointerAddress(Box::new(pointer(PointerOffsetTerm::Constant(0))));
+        let address = Bitvector32Term::PointerAddress(
+            Box::new(pointer(PointerOffsetTerm::Constant(0))),
+            crate::kernel::AddressObjectClass::NONE,
+        );
         let relation = Proposition::ConditionIs(
             ConditionTerm::Bitvector64Equal(
                 Box::new(word.clone()),
@@ -4290,9 +4304,10 @@ mod tests {
         let goal = Proposition::ConditionIs(
             ConditionTerm::Bitvector64Equal(
                 Box::new(Bitvector32Term::UInt64BitwiseAnd(
-                    Box::new(Bitvector32Term::PointerAddress(Box::new(heap_pointer(
-                        PointerOffsetTerm::Constant(0),
-                    )))),
+                    Box::new(Bitvector32Term::PointerAddress(
+                        Box::new(heap_pointer(PointerOffsetTerm::Constant(0))),
+                        crate::kernel::AddressObjectClass::NONE,
+                    )),
                     Box::new(mask),
                 )),
                 Box::new(Bitvector32Term::UInt64Constant(0)),

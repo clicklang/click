@@ -18678,3 +18678,37 @@ fn branch_arm_source_selection_and_batch_expansion_follow_the_interface_rule() {
         verify_c0_sources(&batch.source, &c).unwrap();
     }
 }
+
+#[test]
+fn tidied_expansion_closers_prove_normalized_claims_with_one_normalize() {
+    let original = "int32 f() {\n    ensures result == 0;\n} by {\n    step();\n}\n";
+    let expanded = "int32 f() {\n    ensures result == 0;\n} by {\n    step();\n    have result == 0 by {\n        normalize();\n    }\n    have p == q by {\n        assumption();\n    }\n    have r == s by {\n        normalize();\n    }\n    assumption();\n    assumption();\n    assumption();\n    assumption();\n}\n";
+    assert_eq!(
+        tidy_expansion_closers(original, expanded).as_deref(),
+        Some(
+            "int32 f() {\n    ensures result == 0;\n} by {\n    step();\n    have p == q by {\n        assumption();\n    }\n    normalize();\n    assumption();\n    assumption();\n}\n"
+        )
+    );
+}
+
+#[test]
+fn tidied_expansion_closers_leave_other_closers_alone() {
+    let original = "f by {\n    step();\n}\n";
+    // More normalized claims than closers.
+    let short = "f by {\n    have a by {\n        normalize();\n    }\n    have b by {\n        normalize();\n    }\n    assumption();\n}\n";
+    // A closer run that does not end its block.
+    let continued =
+        "f by {\n    have a by {\n        normalize();\n    }\n    assumption();\n    step();\n}\n";
+    // No claim proved by `normalize();` alone.
+    let simplified = "f by {\n    have a by {\n        simp();\n    }\n    assumption();\n}\n";
+    for expanded in [short, continued, simplified] {
+        assert_eq!(
+            tidy_expansion_closers(original, expanded),
+            None,
+            "{expanded}"
+        );
+    }
+    // Text the expansion left as it was is never rewritten.
+    let written = "f by {\n    have a by {\n        normalize();\n    }\n    assumption();\n}\n";
+    assert_eq!(tidy_expansion_closers(written, written), None);
+}

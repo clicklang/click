@@ -4351,11 +4351,30 @@ mod annotated_alignment_conflict_tests {
                 true
             ),
         );
+        // An address's class is not part of its identity, so the classed
+        // spelling is the same term as the bare one and cannot hide a fact.
+        assert_eq!(
+            ConditionTerm::Bitvector64Equal(
+                Box::new(masked_address.clone()),
+                Box::new(zero.clone())
+            ),
+            ConditionTerm::Bitvector64Equal(
+                Box::new(Bitvector32Term::uint64_bitwise_and(
+                    Bitvector32Term::object_pointer_address(
+                        Pointer::symbolic(Variable(970_001)),
+                        None,
+                    ),
+                    Bitvector32Term::UInt64Constant(7),
+                )),
+                Box::new(zero.clone()),
+            ),
+        );
         // The context's same-key insertion replaces its prior value. Admit
-        // a distinct spelling here to exercise congruence conflict handling;
-        // the factory's canonical spelling was checked above.
+        // a distinct spelling (operands swapped) to exercise congruence
+        // conflict handling; the factory's canonical spelling was checked
+        // above.
         let not_aligned = Proposition::ConditionIs(
-            ConditionTerm::Bitvector64Equal(Box::new(masked_address), Box::new(zero)),
+            ConditionTerm::Bitvector64Equal(Box::new(zero), Box::new(masked_address)),
             false,
         );
         let base = PureFactContext::new().assume_proposition(aligned.clone());

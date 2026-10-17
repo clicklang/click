@@ -72,7 +72,10 @@ fn computed_index_translation_checks_bounds_and_scales_with_payload() {
 fn pointer_tag_reads_require_alignment_and_scale_with_word_syntax() {
     let base = pointer(PointerOffsetTerm::Constant(0));
     let alignment = Proposition::ConditionIs(ConditionTerm::pointer_aligned(base.clone(), 8), true);
-    let address = Bitvector32Term::PointerAddress(Box::new(base.clone()));
+    let address = Bitvector32Term::PointerAddress(
+        Box::new(base.clone()),
+        crate::kernel::AddressObjectClass::NONE,
+    );
     let value = Bitvector32Term::Variable(crate::kernel::Variable(71_001));
     let mask = |term, bits| {
         Bitvector32Term::uint64_bitwise_and(term, Bitvector32Term::UInt64Constant(bits))
@@ -143,7 +146,10 @@ fn pointer_tag_reads_require_alignment_and_scale_with_word_syntax() {
 #[test]
 fn tagged_word_alignment_index_scales_with_alignment_count() {
     let base_pointer = pointer(PointerOffsetTerm::Constant(0));
-    let address = Bitvector32Term::PointerAddress(Box::new(base_pointer.clone()));
+    let address = Bitvector32Term::PointerAddress(
+        Box::new(base_pointer.clone()),
+        crate::kernel::AddressObjectClass::NONE,
+    );
     let word = Bitvector32Term::Variable(crate::kernel::Variable(12));
     let relation = Proposition::ConditionIs(
         ConditionTerm::uint64_equal(
@@ -195,7 +201,10 @@ fn tagged_word_alignment_index_scales_with_alignment_count() {
 #[test]
 fn direct_tagged_word_checker_does_not_scan_unrelated_alignments() {
     let base_pointer = pointer(PointerOffsetTerm::Constant(0));
-    let address = Bitvector32Term::PointerAddress(Box::new(base_pointer.clone()));
+    let address = Bitvector32Term::PointerAddress(
+        Box::new(base_pointer.clone()),
+        crate::kernel::AddressObjectClass::NONE,
+    );
     let goal = Proposition::ConditionIs(
         ConditionTerm::uint64_equal(
             Bitvector32Term::uint64_bitwise_or(
@@ -296,8 +305,10 @@ fn translation_work_scales_with_explicit_payload() {
 fn tagged_word_traversal_scales_with_tagged_depth() {
     let mut previous = None;
     for depth in [4, 8, 16, 32, 64] {
-        let address =
-            Bitvector32Term::PointerAddress(Box::new(pointer(PointerOffsetTerm::Constant(0))));
+        let address = Bitvector32Term::PointerAddress(
+            Box::new(pointer(PointerOffsetTerm::Constant(0))),
+            crate::kernel::AddressObjectClass::NONE,
+        );
         let variable = Bitvector32Term::Variable(crate::kernel::Variable(94));
         let mut tagged = address;
         for _ in 0..depth {
@@ -339,8 +350,10 @@ fn tagged_word_traversal_scales_with_tagged_depth() {
 fn tagged_word_symbolic_tag_chains_scale_without_rewalking_tags() {
     let mut previous = None;
     for depth in [4, 8, 16, 32, 64] {
-        let address =
-            Bitvector32Term::PointerAddress(Box::new(pointer(PointerOffsetTerm::Constant(0))));
+        let address = Bitvector32Term::PointerAddress(
+            Box::new(pointer(PointerOffsetTerm::Constant(0))),
+            crate::kernel::AddressObjectClass::NONE,
+        );
         let variable = Bitvector32Term::Variable(crate::kernel::Variable(194));
         let mut tagged = address;
         for index in 0..depth {

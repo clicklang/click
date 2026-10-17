@@ -189,12 +189,11 @@ int32 bubble_sort3_two_pass(int32 p[3]) {
                                     interval_subtract 2, 5 2 (-1) (0);
                                     interval_atom (1) (1) (1);
                                     interval_add_bounded 6, 7 (0) (1);
-                                    interval_subtract 2, 5 2 (-1) (0);
                                     interval_atom (2) (2) (2);
-                                    interval_add_bounded 9, 10 (1) (2);
+                                    interval_add_bounded 6, 9 (1) (2);
                                     trivial => 0 <= 0;
-                                    affine_conclusion_pair 12 8 11 => ((0 - at(statement(4).entry, j)) + 1) < ((0 - at(statement(4).entry, j)) + 2);
-                                    conclusion 13;
+                                    affine_conclusion_pair 11 8 10 => ((0 - at(statement(4).entry, j)) + 1) < ((0 - at(statement(4).entry, j)) + 2);
+                                    conclusion 12;
                                 }
                             }
                         }
@@ -307,12 +306,11 @@ int32 bubble_sort3_two_pass(int32 p[3]) {
                                     interval_subtract 2, 5 2 (-1) (0);
                                     interval_atom (1) (1) (1);
                                     interval_add_bounded 6, 7 (0) (1);
-                                    interval_subtract 2, 5 2 (-1) (0);
                                     interval_atom (2) (2) (2);
-                                    interval_add_bounded 9, 10 (1) (2);
+                                    interval_add_bounded 6, 9 (1) (2);
                                     trivial => 0 <= 0;
-                                    affine_conclusion_pair 12 8 11 => ((0 - at(statement(4).entry, j)) + 1) < ((0 - at(statement(4).entry, j)) + 2);
-                                    conclusion 13;
+                                    affine_conclusion_pair 11 8 10 => ((0 - at(statement(4).entry, j)) + 1) < ((0 - at(statement(4).entry, j)) + 2);
+                                    conclusion 12;
                                 }
                             }
                         }

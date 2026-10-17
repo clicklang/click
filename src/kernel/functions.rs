@@ -17062,13 +17062,14 @@ fn symbolic_arm_binding_values(
     variant
         .fields
         .iter()
-        .map(|value_type| {
+        .enumerate()
+        .map(|(index, value_type)| {
             crate::instrumentation::record_deterministic_work(1);
             let variable = next_arm_refutation_variable();
             match value_type {
-                AlgebraicValueType::C(c_type) => {
-                    Some(AlgebraicValue::C(symbolic_call_result(*c_type, variable)))
-                }
+                AlgebraicValueType::C(c_type) => Some(AlgebraicValue::C(
+                    algebraic_type.symbolic_c_field_value(&variant.name, index, *c_type, variable),
+                )),
                 AlgebraicValueType::Integer => None,
                 AlgebraicValueType::Algebraic { .. } | AlgebraicValueType::Parameter(_) => {
                     algebraic_type

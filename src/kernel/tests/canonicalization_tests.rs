@@ -90,8 +90,7 @@ fn collect_offset_load_variables_from_term(
         | Bitvector32Term::MachineIntegerConstant(_)
         | Bitvector32Term::Variable(_) => {}
         Bitvector32Term::MemoryLoad(_, pointer, _)
-        | Bitvector32Term::PointerAddress(pointer)
-        | Bitvector32Term::ObjectPointerAddress(pointer, _) => {
+        | Bitvector32Term::PointerAddress(pointer, _) => {
             collect_offset_load_variables_from_offset(&pointer.offset, load_variables);
         }
         crate::kernel::binary_bitvector32_term!(left, right) => {
@@ -176,8 +175,7 @@ fn assert_scaled_index_free_of_raw_loads(
         Bitvector32Term::MemoryLoad(_, _, _) => {
             panic!("production pointer offset contains a raw memory load: {term:?}")
         }
-        Bitvector32Term::PointerAddress(pointer)
-        | Bitvector32Term::ObjectPointerAddress(pointer, _) => {
+        Bitvector32Term::PointerAddress(pointer, _) => {
             for value in pointer.offset.scaled_values() {
                 assert_scaled_index_free_of_raw_loads(value, load_variables);
             }

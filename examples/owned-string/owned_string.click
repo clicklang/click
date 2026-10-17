@@ -133,26 +133,7 @@ int32 owned_string_init(
         };
     }
     fold(owned_string(owner));
-    have result == 0 by {
-        normalize();
-    }
-    have owner->len == 0 by {
-        normalize();
-    }
-    have owner->cap == capacity by {
-        normalize();
-    }
-    have owner->data == data by {
-        normalize();
-    }
-    have data[0] == 0 by {
-        normalize();
-    }
-    assumption();
-    assumption();
-    assumption();
-    assumption();
-    assumption();
+    normalize();
     assumption();
 }
 

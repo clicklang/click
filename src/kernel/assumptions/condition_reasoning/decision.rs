@@ -1806,9 +1806,7 @@ impl PureFactContext {
             Bitvector32Term::MemoryLoad(memory, pointer, kind) => {
                 Bitvector32Term::MemoryLoad(memory.clone(), pointer.clone(), *kind)
             }
-            Bitvector32Term::PointerAddress(_) | Bitvector32Term::ObjectPointerAddress(_, _) => {
-                term.clone()
-            }
+            Bitvector32Term::PointerAddress(_, _) => term.clone(),
             term => match (term.as_binary(), term.as_unary()) {
                 (Some((op, left, right)), _) => op.build(
                     self.simplify_bitvector_under_assumptions(left),

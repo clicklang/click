@@ -318,14 +318,9 @@ fn structural_form_of(
     through_facts: bool,
 ) -> Result<Option<TaggedAddress>, Refuted> {
     let direct = match term {
-        Bitvector32Term::ObjectPointerAddress(pointer, class) => Some(TaggedAddress {
+        Bitvector32Term::PointerAddress(pointer, class) => Some(TaggedAddress {
             pointer: pointer.as_ref().clone(),
-            object_class: Some(class.clone()),
-            tag: Bitvector32Term::UInt64Constant(0),
-        }),
-        Bitvector32Term::PointerAddress(pointer) => Some(TaggedAddress {
-            pointer: pointer.as_ref().clone(),
-            object_class: None,
+            object_class: class.class(),
             tag: Bitvector32Term::UInt64Constant(0),
         }),
         Bitvector32Term::UInt64Add(left, right) => {
@@ -610,6 +605,80 @@ mod exact_word_address_tests {
             ),
             None
         );
+    }
+
+    #[test]
+    fn classed_and_bare_spellings_of_one_address_are_one_term() {
+        use crate::kernel::effective_type::{CAccessClass, CStructClass};
+        use std::hash::{Hash, Hasher};
+        let _session = crate::kernel::VerificationSession::enter();
+        let pointer = Pointer::symbolic(Variable(980120));
+        let other = Pointer::symbolic(Variable(980121));
+        let class = CAccessClass::Struct(CStructClass::opaque("node"));
+        let classed = Bitvector32Term::object_pointer_address(pointer.clone(), Some(class.clone()));
+        let bare = Bitvector32Term::pointer_address(pointer.clone());
+        assert_eq!(classed, bare);
+        assert_eq!(classed.cmp(&bare), std::cmp::Ordering::Equal);
+        let hash = |term: &Bitvector32Term| {
+            let mut hasher = std::collections::hash_map::DefaultHasher::new();
+            term.hash(&mut hasher);
+            hasher.finish()
+        };
+        assert_eq!(hash(&classed), hash(&bare));
+        // A premise stated over the classed spelling is the exact fact a
+        // query over the bare spelling asks for, in either polarity.
+        let stated = ConditionTerm::uint64_equal(
+            classed.clone(),
+            Bitvector32Term::pointer_address(other.clone()),
+        );
+        let asked =
+            ConditionTerm::uint64_equal(bare.clone(), Bitvector32Term::pointer_address(other));
+        let assumptions = PureFactContext::new().assume_condition(stated, false);
+        assert!(
+            crate::kernel::reasoning::path_facts::required_obligation_is_exactly_discharged(
+                &assumptions,
+                &Proposition::ConditionIs(asked, false),
+            )
+        );
+        // The class is evidence for decoding, and identity never erases it.
+        let Bitvector32Term::PointerAddress(_, retained) = &classed else {
+            panic!("an address term");
+        };
+        assert_eq!(retained.class(), Some(class));
+    }
+
+    #[test]
+    fn an_alignment_premise_over_a_classed_address_is_cited_as_admitted() {
+        use crate::kernel::effective_type::{CAccessClass, CStructClass};
+        let _session = crate::kernel::VerificationSession::enter();
+        let pointer = Pointer::symbolic(Variable(980110));
+        let class = CAccessClass::Struct(CStructClass::opaque("node"));
+        let premise = ConditionTerm::uint64_equal(
+            Bitvector32Term::uint64_bitwise_and(
+                Bitvector32Term::object_pointer_address(pointer.clone(), Some(class.clone())),
+                Bitvector32Term::UInt64Constant(7),
+            ),
+            Bitvector32Term::UInt64Constant(0),
+        );
+        let assumptions = PureFactContext::new().assume_condition(premise.clone(), true);
+        let (aligned, cited) = assumptions
+            .pointer_alignment_certificate_decision(&pointer, 8)
+            .unwrap();
+        assert!(aligned);
+        assert_eq!(cited, Some(Proposition::ConditionIs(premise, true)));
+        for address in [
+            Bitvector32Term::pointer_address(pointer.clone()),
+            Bitvector32Term::object_pointer_address(pointer.clone(), Some(class.clone())),
+        ] {
+            let tagged = ConditionTerm::uint64_equal(
+                Bitvector32Term::uint64_bitwise_or(
+                    address.clone(),
+                    Bitvector32Term::UInt64Constant(1),
+                ),
+                Bitvector32Term::uint64_add(address, Bitvector32Term::UInt64Constant(1)),
+            );
+            assert_eq!(assumptions.decide(&tagged), Some(true));
+        }
     }
 
     #[test]
