@@ -22,13 +22,47 @@ fn authority_test_scope(
                 child_slots: Default::default(),
             },
         )]),
-        children: Default::default(),
-        instances: Default::default(),
-        field_binders: Default::default(),
+        families: Default::default(),
+        family_log: Default::default(),
         unowned_resource_parameters: Default::default(),
         character_parameters: Default::default(),
         constructors: ConstructorTypes::inactive(),
     }
+}
+
+/// Each alternative arm starts from the state before the arms. Afterwards
+/// an instance the arms agree on keeps its resource, one only some arms
+/// bind keeps theirs, and one the arms give different resources is refused.
+#[test]
+fn alternative_arms_join_the_resources_they_give_an_instance() {
+    let scope = authority_test_scope(ResourceKind::Composite, C0Type::Int32Pointer, true);
+    let (agreed, partial, conflicting) = (Variable(0), Variable(1), Variable(2));
+    let alternatives = scope.begin_alternatives();
+    scope
+        .arm(&alternatives, || {
+            scope.record_child(agreed, "cell");
+            scope.record_child(partial, "cell");
+            scope.record_child(conflicting, "cellA");
+            Ok(())
+        })
+        .unwrap();
+    assert_eq!(scope.family(agreed), None, "an arm's changes are undone");
+    scope
+        .arm(&alternatives, || {
+            scope.record_instance(agreed, "cell", true);
+            scope.record_instance(conflicting, "cellB", true);
+            Ok(())
+        })
+        .unwrap();
+    scope.finish_alternatives(alternatives);
+    assert_eq!(scope.instance_resource(agreed).as_deref(), Some("cell"));
+    assert_eq!(scope.instance_resource(partial).as_deref(), Some("cell"));
+    assert_eq!(scope.instance_resource(conflicting), None);
+    let refusal = scope.refuse_ambiguous(conflicting, "x").unwrap_err();
+    assert!(
+        refusal.message().contains("`cellA` instance on one path"),
+        "{refusal}"
+    );
 }
 
 /// An inferred constructor leaves expansion fully applied, as a written one
