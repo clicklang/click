@@ -22,7 +22,7 @@ verifying "write_flag_observed.c";
 int32 write_flag_observed(int32* flag) {
     owns zero_flag(flag) by {
         observe(zero_flag(flag));
-        execute();
+        step();
     }
 }
 ```

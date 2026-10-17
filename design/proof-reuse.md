@@ -304,6 +304,13 @@ is the same simple script a person would have written. This follows
 VeriFast's auto-open/close and Viper's fold heuristics, and targets about
 100 lines per rbtree-erase arm.
 
+Status: opening ordinary composite resources is done. `auto` and
+`execute()` unfold the one owned, non-`authorized` resource whose body holds
+the refused place, and the contract's exit transition already refolds it.
+Still to do: opening a recursive instance whose model is one constructor
+(the `unfold(tree)` route the rbtree proofs take), and refolding at back
+edges and arm joins.
+
 ### R5. One script for several goals
 
 Allow one proof block to close several arms whose scripts are the same up to
