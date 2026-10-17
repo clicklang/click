@@ -2775,18 +2775,23 @@ impl<'a> TermRewrite<'a> {
                     self.changed = true;
                     return CValue::Pointer(to.clone());
                 }
-                let shifted_replacement = self.pointer_value_exact.and_then(|(from, to)| {
-                    (!self.source_disabled
-                        && matches!(from.pointer().block, PointerBlock::Symbolic(_))
-                        && from.pointer().offset == PointerOffsetTerm::Constant(0)
+                let shifted_source = self.pointer_value_exact.filter(|(from, to)| {
+                    !self.source_disabled
+                        && v.pointer() != from.pointer()
                         && v.pointer().block == from.pointer().block
-                        && v.c_type() == from.c_type()
-                        && v.designation() == from.designation()
+                        && ((matches!(from.pointer().block, PointerBlock::Symbolic(_))
+                            && from.pointer().offset == PointerOffsetTerm::Constant(0))
+                            || (from.pointer().block == PointerBlock::ExternalArgument
+                                && to.pointer().block == PointerBlock::ExternalArgument))
+                });
+                let shifted_replacement = shifted_source.and_then(|(from, to)| {
+                    (v.designation() == from.designation()
                         && v.extent() == from.extent()
                         && v.extent_is_known() == from.extent_is_known()
                         && v.opaque_extent() == from.opaque_extent())
                     .then(|| to.clone())
                 });
+                let retain_view = shifted_source.is_some() && shifted_replacement.is_none();
                 let replacement = shifted_replacement.or_else(|| match &v.pointer().block {
                     PointerBlock::Symbolic(variable) | PointerBlock::FunctionSymbolic(variable) => {
                         (!self.scope.c.contains_key(variable))
@@ -2871,10 +2876,23 @@ impl<'a> TermRewrite<'a> {
                 if self.pointer_value_exact.is_some() {
                     self.resolve_registered_loads = true;
                 }
-                let mapped = v
+                let mut mapped = v
                     .map_pointers(|address| self.pointer(address))
                     .with_designation(std::sync::Arc::new(designation))
                     .with_opaque_extent(opaque_extent);
+                if retain_view && let Some((from, _)) = shifted_source {
+                    // The numeric consequence can move another view's address;
+                    // it cannot replace an identity the source view did not name.
+                    if v.designation() != from.designation() {
+                        mapped =
+                            mapped.with_designation(std::sync::Arc::new(v.designation().clone()));
+                    }
+                    if from.extent_is_known() || v.opaque_extent() != from.opaque_extent() {
+                        mapped = mapped.with_opaque_extent(
+                            v.opaque_extent().cloned().map(std::sync::Arc::new),
+                        );
+                    }
+                }
                 self.resolve_registered_loads = previous_load_resolution;
                 CValue::Pointer(match adopted {
                     Some(extent) => mapped.with_extent(Some(extent)),
