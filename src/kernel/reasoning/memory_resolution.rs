@@ -2561,6 +2561,42 @@ fn retirements_agree_for_load(left: &CMemory, right: &CMemory, pointer: &Pointer
         })
 }
 
+/// Whether two opaque designation starts are the designations of two reads
+/// of one cell that memory resolution proves read the same stored pointer:
+/// a pointer carries its designation with it, so a cell that holds one
+/// pointer value holds one designation (`design/pointer-subobject-extents.md`).
+pub(in crate::kernel) fn designation_reads_proven_equal(
+    left: &Pointer,
+    right: &Pointer,
+    assumptions: &PureFactContext,
+) -> bool {
+    let read = |start: &Pointer| {
+        let load = crate::kernel::SubobjectExtent::opaque_start(start)
+            .and_then(crate::kernel::SubobjectExtent::unseen_identity)?;
+        crate::kernel::registered_load_for_variable(&load)
+    };
+    // Each side as known equal designations: the facts may relate one read
+    // to another, and memory relates the last pair.
+    let reads = |start: &Pointer| {
+        std::iter::once(start.clone())
+            .chain(assumptions.equality_graph.pointer_spellings(start))
+            .filter_map(|start| read(&start))
+            .collect::<Vec<_>>()
+    };
+    let right_reads = reads(right);
+    reads(left).iter().any(|(left_memory, left_address)| {
+        right_reads.iter().any(|(right_memory, right_address)| {
+            pointers_proven_equal_for_memory_resolution(left_address, right_address, assumptions)
+                && memory_snapshots_proven_equal_at_pointer(
+                    left_memory,
+                    right_memory,
+                    left_address,
+                    assumptions,
+                )
+        })
+    })
+}
+
 pub(in crate::kernel) fn memory_snapshots_proven_equal_at_pointer(
     left: &CMemory,
     right: &CMemory,

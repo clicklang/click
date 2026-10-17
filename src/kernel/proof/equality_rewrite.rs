@@ -254,14 +254,33 @@ pub(crate) fn with_known_designations_discharged<'a>(
     goal: &'a Proposition,
     facts: &ProofFacts,
 ) -> &'a Proposition {
-    let Some((address, designation)) = designation_conjuncts(goal) else {
-        return goal;
-    };
     let known = |conjunct: &Proposition| match conjunct {
         Proposition::ConditionIs(condition, value) => {
-            facts.available(conjunct) || facts.assumptions().decide(condition) == Some(*value)
+            facts.available(conjunct)
+                || facts.assumptions().decide(condition) == Some(*value)
+                || matches!((condition, value), (ConditionTerm::PointerEqual(left, right), true)
+                    if crate::kernel::reasoning::memory_resolution::designation_reads_proven_equal(
+                        left,
+                        right,
+                        facts.assumptions(),
+                    ))
         }
         other => facts.available(other),
+    };
+    // A designation equality alone, as a conjunction's side becomes.
+    static TRUE: std::sync::LazyLock<Proposition> = std::sync::LazyLock::new(|| {
+        Proposition::ConditionIs(ConditionTerm::Constant(true), true)
+    });
+    if let Proposition::ConditionIs(ConditionTerm::PointerEqual(left, right), true) = goal
+        && [left, right].into_iter().all(|start| {
+            SubobjectExtent::opaque_start(start).is_some()
+                || SubobjectExtent::is_complete_object_designation(start)
+        })
+    {
+        return if known(goal) { &TRUE } else { goal };
+    }
+    let Some((address, designation)) = designation_conjuncts(goal) else {
+        return goal;
     };
     if designation.into_iter().all(known) {
         address
