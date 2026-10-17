@@ -3211,7 +3211,8 @@ fn execute_verified_function_applications_with_suspension(
                 interface.composite_resource_definitions(),
                 &entry_state,
                 &effective_assumptions,
-            );
+            )
+            .with_caller_before_transfer(caller_state.resources());
             entry_state.memory.clone().with_call_memory_havoc(
                 memory_identity,
                 &transfer.memory_effects,

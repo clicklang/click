@@ -1908,6 +1908,12 @@ pub struct CallKeptRanges {
     /// from the residual's composites whose arguments can spell it
     /// ([`Self::range_holding`]), and the identity names the composites.
     direct: Option<std::sync::Arc<Vec<CCompositeResourceDefinition>>>,
+    /// The caller's composition before transferring call inputs. Its flat
+    /// owners exclude unchanged composite owners of the same bytes.
+    caller_before_transfer: Option<ResourceContext>,
+    /// Residual composite heads absent from that original composition. They
+    /// still need checking even inside an original flat owner.
+    introduced_composites: ResourceContext,
 }
 
 #[derive(Debug)]
@@ -1917,6 +1923,8 @@ struct KeptRangeSet {
     /// The residual's owned composites, with multiplicity, when some of
     /// their ranges are answered per address rather than listed in `ranges`.
     composites: SnapshotMap<CResourceFact, usize>,
+    original_memory: SnapshotMap<CResourceFact, ()>,
+    introduced_composites: SnapshotMap<CResourceFact, usize>,
 }
 
 impl PartialEq for CallKeptRanges {
@@ -1930,16 +1938,55 @@ fn intern_kept_range_set(
     ranges: SnapshotMap<CMemoryRange, ()>,
     composites: SnapshotMap<CResourceFact, usize>,
 ) -> std::sync::Arc<KeptRangeSet> {
+    intern_kept_range_set_with_exclusions(
+        ranges,
+        composites,
+        SnapshotMap::new(),
+        SnapshotMap::new(),
+    )
+}
+
+fn intern_kept_range_set_with_exclusions(
+    ranges: SnapshotMap<CMemoryRange, ()>,
+    composites: SnapshotMap<CResourceFact, usize>,
+    original_memory: SnapshotMap<CResourceFact, ()>,
+    introduced_composites: SnapshotMap<CResourceFact, usize>,
+) -> std::sync::Arc<KeptRangeSet> {
     let mut hash = std::collections::hash_map::DefaultHasher::new();
+    std::hash::Hash::hash(&original_memory, &mut hash);
+    std::hash::Hash::hash(&introduced_composites, &mut hash);
     std::hash::Hash::hash(&ranges, &mut hash);
     std::hash::Hash::hash(&composites, &mut hash);
     let hash = std::hash::Hasher::finish(&hash);
-    intern_kept_range_set_with_hash(ranges, composites, hash)
+    intern_kept_range_set_with_exclusions_and_hash(
+        ranges,
+        composites,
+        original_memory,
+        introduced_composites,
+        hash,
+    )
 }
 
+#[cfg(test)]
 fn intern_kept_range_set_with_hash(
     ranges: SnapshotMap<CMemoryRange, ()>,
     composites: SnapshotMap<CResourceFact, usize>,
+    hash: u64,
+) -> std::sync::Arc<KeptRangeSet> {
+    intern_kept_range_set_with_exclusions_and_hash(
+        ranges,
+        composites,
+        SnapshotMap::new(),
+        SnapshotMap::new(),
+        hash,
+    )
+}
+
+fn intern_kept_range_set_with_exclusions_and_hash(
+    ranges: SnapshotMap<CMemoryRange, ()>,
+    composites: SnapshotMap<CResourceFact, usize>,
+    original_memory: SnapshotMap<CResourceFact, ()>,
+    introduced_composites: SnapshotMap<CResourceFact, usize>,
     hash: u64,
 ) -> std::sync::Arc<KeptRangeSet> {
     type Buckets = std::collections::HashMap<u64, Vec<std::sync::Weak<KeptRangeSet>>>;
@@ -1959,6 +2006,17 @@ fn intern_kept_range_set_with_hash(
         ) && same(
             candidate.composites.ptr_eq(&composites),
             &mut candidate.composites.diff(&composites).map(|_| ()),
+        ) && same(
+            candidate.original_memory.ptr_eq(&original_memory),
+            &mut candidate.original_memory.diff(&original_memory).map(|_| ()),
+        ) && same(
+            candidate
+                .introduced_composites
+                .ptr_eq(&introduced_composites),
+            &mut candidate
+                .introduced_composites
+                .diff(&introduced_composites)
+                .map(|_| ()),
         ) {
             return candidate;
         }
@@ -1969,6 +2027,8 @@ fn intern_kept_range_set_with_hash(
         id,
         ranges,
         composites,
+        original_memory,
+        introduced_composites,
     });
     bucket.push(std::sync::Arc::downgrade(&result));
     result
@@ -1990,6 +2050,8 @@ impl CallKeptRanges {
             identity,
             premises,
             direct,
+            caller_before_transfer: None,
+            introduced_composites: ResourceContext::new(),
         }
     }
 
@@ -2006,12 +2068,41 @@ impl CallKeptRanges {
         } else {
             SnapshotMap::new()
         };
+        let introduced_composites = if let Some(original) = &self.caller_before_transfer {
+            let before = original.owned_composite_facts();
+            let after = residual.owned_composite_facts();
+            let mut introduced = ResourceContext::new();
+            for change in before.diff(after) {
+                crate::instrumentation::record_deterministic_work(1);
+                let fact = match change {
+                    SnapshotMapChange::Added(fact) => fact,
+                    SnapshotMapChange::Changed(fact) if after.get(fact) > before.get(fact) => fact,
+                    _ => continue,
+                };
+                introduced = introduced.unchecked_with_fact(fact.clone());
+            }
+            introduced
+        } else {
+            self.introduced_composites.clone()
+        };
+        let original_memory = self
+            .caller_before_transfer
+            .as_ref()
+            .map(|original| original.memory_input_facts().clone())
+            .unwrap_or_default();
         Self {
             ranges: self.ranges.clone(),
             residual: Some(residual.clone()),
-            identity: intern_kept_range_set(ranges, composites),
+            identity: intern_kept_range_set_with_exclusions(
+                ranges,
+                composites,
+                original_memory,
+                introduced_composites.owned_composite_facts().clone(),
+            ),
             premises: self.premises.clone(),
             direct: self.direct.clone(),
+            caller_before_transfer: self.caller_before_transfer.clone(),
+            introduced_composites,
         }
     }
 
@@ -2150,6 +2241,33 @@ impl CallKeptRanges {
                 for spelling in &spellings {
                     bases.extend(assumptions.exact_pointer_aliases(spelling).cloned());
                 }
+                // Exclusive owners in the caller's original composition cannot
+                // overlap. Once the flat caller frame has failed above, an
+                // original flat owner rules out every unchanged composite.
+                // A transferred owner may have been repackaged into a new
+                // composite, so retain those candidates rather than declaring
+                // the access changed merely from a mutable-range summary.
+                let residual = if self
+                    .caller_before_transfer
+                    .as_ref()
+                    .is_some_and(|original| {
+                        bases.iter().any(|base| {
+                            original
+                                .owned_memory_members_with_base(base)
+                                .any(|(_, range)| {
+                                    original
+                                        .exact_resource_facts(&CResource::Memory(range.clone()))
+                                        .into_iter()
+                                        .any(|fact| fact.has_proven_positive_quantity(assumptions))
+                                        && assumptions
+                                            .kept_range_holds_access(range, pointer, bytes)
+                                })
+                        })
+                    }) {
+                    &self.introduced_composites
+                } else {
+                    residual
+                };
                 let opened = |facts: &mut dyn Iterator<Item = &CResourceFact>| {
                     let mut seen = BTreeSet::new();
                     let mut ranges = Vec::new();
@@ -2192,6 +2310,18 @@ impl CallKeptRanges {
 }
 
 impl CallKeptOwnership {
+    /// Retain the actual pre-transfer caller composition, sharing its indexes.
+    /// This is an exclusion index, never another source of kept ownership.
+    pub(in crate::kernel) fn with_caller_before_transfer(
+        mut self,
+        caller: &ResourceContext,
+    ) -> Self {
+        if self.opened.direct.is_some() && !caller.flat_owned_memory_ranges().is_empty() {
+            self.opened.caller_before_transfer = Some(caller.clone());
+        }
+        self
+    }
+
     #[cfg(test)]
     pub(in crate::kernel) fn opened_resources_for_test(&self) -> &ResourceContext {
         &self.opened.ranges
@@ -9503,6 +9633,35 @@ mod kept_range_identity_tests {
         .join()
         .unwrap();
         assert_eq!(first.id, across.id);
+    }
+
+    #[test]
+    fn kept_range_hash_collisions_distinguish_composite_exclusions() {
+        let composite = ResourceContext::new().unchecked_with_fact(CResourceFact::own_composite(
+            "boxed".into(),
+            vec![CValue::pointer(Pointer::symbolic(Variable(9)))],
+        ));
+        let intern = |original, introduced| {
+            intern_kept_range_set_with_exclusions_and_hash(
+                ranges(7),
+                SnapshotMap::new(),
+                original,
+                introduced,
+                0,
+            )
+        };
+        let original = ResourceContext::new()
+            .unchecked_with_facts(ranges(8).keys().cloned().map(CResourceFact::own_memory));
+        let original = original.memory_input_facts();
+        let plain = intern(SnapshotMap::new(), SnapshotMap::new());
+        let excluded = intern(original.clone(), SnapshotMap::new());
+        let introduced = intern(original.clone(), composite.owned_composite_facts().clone());
+        assert_ne!(plain.id, excluded.id);
+        assert_ne!(excluded.id, introduced.id);
+        assert_eq!(
+            introduced.id,
+            intern(original.clone(), composite.owned_composite_facts().clone()).id
+        );
     }
 
     #[test]
