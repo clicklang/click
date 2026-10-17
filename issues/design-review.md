@@ -130,10 +130,19 @@ that keeps `rbtree-erase` from verifying. R4 and R5 remain.
 
 ### W4. Expansion output is hard to read
 
-Today: expanded arithmetic certificates use numbered nodes and repeat
-identical blocks (`mdtests/bubble_sort3_two_pass_sorted.md`); committed
-expansions keep noise such as `have 0 == 0 by normalize();` and runs of
-`assumption();` (`examples/vector-push/vector_push.click`).
+Done: `click expand` writes each repeated derivation of an arithmetic
+certificate once and leaves out derivations its conclusion does not use. A
+grouped closure whose claims `normalize();` proves is written as one
+`normalize();` before the remaining closers when that form verifies
+(`examples/vector-push/vector_push.click`). Committed expansions were tidied
+the same way where they still verify.
+
+Today: certificate nodes are still numbered, and sibling certificates under
+one `both` repeat the same premise and interval nodes, which one certificate
+cannot share with another (`mdtests/bubble_sort3_two_pass_sorted.md`).
+Closures that `normalize();` cannot shorten keep one `assumption();` per
+obligation, and older committed expansions keep restatements such as
+`have 0 == 0 by normalize();`.
 
 Proposed fix: named, deduplicated certificate nodes, and expansions that
 drop the noise.

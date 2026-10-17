@@ -163,15 +163,6 @@ int32 owned_segmented_buffer_swap(struct owned_segmented_buffer* owner) {
         assumption();
     }
     fold(owned_segmented_buffer(owner));
-    have result == old(owner->second_len) by {
-        normalize();
-    }
-    have owner->first_len == old(owner->second_len) by {
-        normalize();
-    }
-    have owner->second_len == old(owner->first_len) by {
-        normalize();
-    }
     have 0 < owner->first_len by {
         apply(int32_increment_less_equal_implies_less_than(0, owner->first_len)) using {
             1 <= owner->first_len;
@@ -184,17 +175,7 @@ int32 owned_segmented_buffer_swap(struct owned_segmented_buffer* owner) {
         };
         assumption();
     }
-    have owner->first_data == old(owner->second_data) by {
-        normalize();
-    }
-    have owner->second_data == old(owner->first_data) by {
-        normalize();
-    }
-    assumption();
-    assumption();
-    assumption();
-    assumption();
-    assumption();
+    normalize();
     assumption();
     assumption();
     assumption();
