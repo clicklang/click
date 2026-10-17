@@ -2401,13 +2401,16 @@ void run(int32 total) {{ requires 0 <= total; requires total <= 1000; ensures 0 
 #[test]
 #[ignore = "nightly: 14s whole wide loop expansion and negative recheck"]
 fn wide_loop_invariant_bundle_expands_without_dropping_members() {
-    let (source, proof) = wide_loop_invariant_fixture(40);
+    // Stay above both the parser limit and the short-bundle cutoff of 24.
+    let members = (crate::surface::parser::STRUCTURAL_NESTING_LIMIT + 1).max(25);
+    let (source, proof) = wide_loop_invariant_fixture(members);
     let sources = [("bundle.c", source.as_str())];
     verify_c0_sources(&proof, &sources).unwrap();
     let expanded =
         crate::surface::expand_c0_claim_source_by_label(&proof, &sources, "run.contract").unwrap();
     verify_c0_sources(&expanded, &sources).unwrap();
-    let invalid = expanded.replacen("invariant total <= 1039;", "invariant total <= -1;", 1);
+    let last = format!("invariant total <= {};", 1000 + members - 1);
+    let invalid = expanded.replacen(&last, "invariant total <= -1;", 1);
     assert_ne!(invalid, expanded);
     assert!(verify_c0_sources(&invalid, &sources).is_err());
 }

@@ -1785,6 +1785,31 @@ impl<'a> Proof<'a> {
                 scope.succeed();
                 return Ok(Some(closed));
             }
+            // A literal false premise needs no source search or arithmetic
+            // derivation. Fixed-state goals can use the same explicit
+            // contradiction as pure goals.
+            if proof.goal().is_some()
+                && proof.facts().contains(&Proposition::ConditionIs(
+                    ConditionTerm::Constant(false),
+                    true,
+                ))
+                && let Some(closed) = attempt::candidate_outcome(proof.apply_step(
+                    ProofStep::Contradiction(ClickProposition::Comparison {
+                        // Machine literals cannot be shadowed by C parameters
+                        // named `false` or `true` when the certificate is read.
+                        left: ContractExpression::CFragment(CExpression::Value(CValue::UInt32(
+                            0u32.into(),
+                        ))),
+                        operator: ComparisonOperator::Equal,
+                        right: ContractExpression::CFragment(CExpression::Value(CValue::UInt32(
+                            1u32.into(),
+                        ))),
+                    }),
+                ))?
+            {
+                scope.succeed();
+                return Ok(Some(closed));
+            }
             if let Some(closed) = proof.try_discharged_consequent_closure()? {
                 scope.succeed();
                 return Ok(Some(closed));
