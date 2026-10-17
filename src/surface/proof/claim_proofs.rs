@@ -498,6 +498,14 @@ fn prove_claims_by_checked_tactics(
                 parsed_function.parameters(),
             )),
         )),
+        parameter_naming: Some((
+            parsed_function.parameters().as_ptr() as usize,
+            arguments.as_ptr() as usize,
+            Arc::new(crate::surface::ParameterNaming::new(
+                parsed_function.parameters(),
+                &arguments,
+            )),
+        )),
         entry_context: Some(entry_context),
         function_source_registry,
         grouped_contract: grouped,
@@ -2581,8 +2589,12 @@ pub(super) fn finish_ordered_proof<'a>(
                                     // application advances this path's
                                     // evolving outcome proof.
                                     let before = evolving.checkpoint();
-                                    let applied =
-                                        evolving.apply_theorem_application(application)?;
+                                    // The same written `apply` the execution
+                                    // frontier runs, with its refusal.
+                                    let applied = super::checked_drivers::apply_written_theorem(
+                                        &evolving,
+                                        application,
+                                    )?;
                                     let certificate = applied.certificate_since(&before)?;
                                     outcome_proof = Some(applied);
                                     certificate

@@ -1,22 +1,31 @@
 use super::*;
 
+fn check_member_pointer_address_expansion(fixture: &str, function: &str) {
+    let (source, sources) = mdtest_sources(&format!("mdtests/{fixture}.md"));
+    let sources = sources
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    // Expansion already verifies the input; independently check its output.
+    let expanded =
+        expand_c0_claim_source(&source, &sources, function, CProofClaim::Grouped).unwrap();
+    without_implicit_auto(|| verify_c0_sources(&expanded, &sources)).unwrap();
+}
+
 #[test]
 fn member_pointer_addresses_retain_subobject_extents_through_expansion() {
-    for (fixture, function) in [
-        ("egraph_resource_pointer_load_alias", "check"),
-        ("egraph_resource_pointer_load_same_address", "check"),
-        ("model_pointer_alias_nonzero_field_load", "probe"),
-    ] {
-        let (source, sources) = mdtest_sources(&format!("mdtests/{fixture}.md"));
-        let sources = sources
-            .iter()
-            .map(|(name, text)| (name.as_str(), text.as_str()))
-            .collect::<Vec<_>>();
-        verify_c0_sources(&source, &sources).unwrap();
-        let expanded =
-            expand_c0_claim_source(&source, &sources, function, CProofClaim::Grouped).unwrap();
-        without_implicit_auto(|| verify_c0_sources(&expanded, &sources)).unwrap();
-    }
+    check_member_pointer_address_expansion("egraph_resource_pointer_load_alias", "check");
+}
+
+#[test]
+fn member_pointer_addresses_with_equal_numeric_addresses_expand() {
+    check_member_pointer_address_expansion("egraph_resource_pointer_load_same_address", "check");
+}
+
+#[test]
+#[ignore = "nightly: 0.63s after reducing duplicate verification"]
+fn nonzero_member_pointer_addresses_retain_subobject_extents_through_expansion() {
+    check_member_pointer_address_expansion("model_pointer_alias_nonzero_field_load", "probe");
 }
 
 #[test]
@@ -2200,7 +2209,7 @@ theorem force_bad_machine_body(n: int32) {
     }
 }
 "#,
-            "mathematical Integer expressions cannot be compared with C values",
+            "function `bad_machine_body` returns Integer, but its body can produce `k` of type int32",
         ),
         (
             r#"
@@ -2244,7 +2253,7 @@ theorem force_bad_c_body(x: int32, z: Integer) {
     }
 }
 "#,
-            "expected a specification-side Integer expression",
+            "function `bad_c_body` returns Integer, but its body can produce `x` of type int32",
         ),
     ] {
         let error = verify_c0_sources(source, &[])
@@ -15219,6 +15228,7 @@ fn grouped_leaf_implications_preserve_constant_false_premises() {
 }
 
 #[test]
+#[ignore = "nightly: 0.56s after reducing duplicate verification"]
 fn grouped_closer_over_four_paths_places_each_leafs_own_expansion() {
     // Every path but the first reported no surface branch path, because the
     // retained branch decisions were consumed innermost-first while the
@@ -15226,9 +15236,6 @@ fn grouped_closer_over_four_paths_places_each_leafs_own_expansion() {
     // then stitched onto every leaf, and the one path needing a different
     // closer conflicted with the leaves the others had already filled.
     let sources = [("contains3.c", FOUR_RETURN_C)];
-    verify_c0_sources(FOUR_RETURN_CLICK, &sources)
-        .expect("the four-return membership proof should verify");
-
     let closer = FOUR_RETURN_CLICK
         .rfind("simp();")
         .expect("proof should contain the grouped closer");
@@ -18820,6 +18827,44 @@ fn branch_arm_source_selection_and_batch_expansion_follow_the_interface_rule() {
         let batch = expand_c0_tactics_source_at(&source, &c, &positions).unwrap();
         verify_c0_sources(&batch.source, &c).unwrap();
     }
+}
+
+#[test]
+fn address_only_model_constructor_cast_expands_and_checks() {
+    let (source, c) = mdtest_sources("mdtests/model_pointer_address_constructor_preserves_cast.md");
+    let c = c
+        .iter()
+        .map(|(name, source)| (name.as_str(), source.as_str()))
+        .collect::<Vec<_>>();
+    let expanded = expand_c0_claim_source(&source, &c, "caller", CProofClaim::Grouped)
+        .unwrap_or_else(|error| panic!("{}", error.message()));
+    verify_c0_sources(&expanded, &c).unwrap_or_else(|error| panic!("{}", error.message()));
+}
+
+#[test]
+fn address_only_model_implicit_view_expands_and_checks() {
+    let (source, c) =
+        mdtest_sources("mdtests/model_pointer_address_constructor_preserves_implicit_view.md");
+    let c = c
+        .iter()
+        .map(|(name, source)| (name.as_str(), source.as_str()))
+        .collect::<Vec<_>>();
+    let expanded = expand_c0_claim_source(&source, &c, "caller", CProofClaim::Grouped)
+        .unwrap_or_else(|error| panic!("{}", error.message()));
+    verify_c0_sources(&expanded, &c).unwrap_or_else(|error| panic!("{}", error.message()));
+}
+
+#[test]
+fn void_pointer_helper_selected_view_expands_and_checks() {
+    let (source, c) =
+        mdtest_sources("mdtests/model_pointer_void_helper_preserves_selected_view.md");
+    let c = c
+        .iter()
+        .map(|(name, source)| (name.as_str(), source.as_str()))
+        .collect::<Vec<_>>();
+    let expanded = expand_c0_claim_source(&source, &c, "keep", CProofClaim::Grouped)
+        .unwrap_or_else(|error| panic!("{}", error.message()));
+    verify_c0_sources(&expanded, &c).unwrap_or_else(|error| panic!("{}", error.message()));
 }
 
 #[test]

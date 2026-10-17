@@ -7,6 +7,9 @@ field and the constructor, the equality rewrites the goal, and
 normalization decides the two constructors differ. The same reasoning lets
 the implicit `auto` prove `parent_detach`'s precondition on its call step.
 
+The logical pointer annotations below use `void*` for address identities;
+object access remains governed by the unchanged C types and resource ownership.
+
 ```c filename=simp_constructor_disequality_from_produced_field.c
 struct child { int32 refs; };
 struct parent { struct child* kid; };
@@ -30,7 +33,7 @@ int32 adopt(struct child* kid) {
 ```click
 spec enum ParentLink {
     Empty,
-    Linked(struct child*),
+    Linked(void*),
 }
 resource parent(p: struct parent*) {
     field link: ParentLink;

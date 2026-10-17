@@ -4252,6 +4252,31 @@ fn an_invariant_label_names_it_in_a_failure() {
 }
 
 #[test]
+fn nonzero_member_addresses_preserve_their_typed_place_when_printed() {
+    let c = "struct node { uint64 tag; struct node *other; struct node *next; }; void check(struct node *p, struct node *q) {}";
+    let source = r#"
+        verifying "member.c";
+        void check(struct node *p, struct node *q) {
+            requires &p->next == &q->next;
+            ensures 1 == 1;
+        }
+    "#;
+    let file = parse_c0_click_file(source, &[("member.c", c)]).unwrap();
+    let Requirement::Proposition(original) = &file.function_blocks()[0].requires()[0] else {
+        panic!("expected a pointer comparison");
+    };
+    let rendered = printing::source_click_proposition(original);
+    let rewritten = format!(
+        "verifying \"member.c\"; void check(struct node *p, struct node *q) {{ requires {rendered}; ensures 1 == 1; }}"
+    );
+    let reparsed = parse_c0_click_file(&rewritten, &[("member.c", c)]).unwrap();
+    let Requirement::Proposition(round_trip) = &reparsed.function_blocks()[0].requires()[0] else {
+        panic!("expected the printed pointer comparison");
+    };
+    assert_eq!(original, round_trip, "{rendered}");
+}
+
+#[test]
 fn pointer_storage_views_name_the_field_alone() {
     let c_source =
         "struct packet { int32* data; }; int32 read(struct packet* p) { return p->data[0]; }";
@@ -5368,7 +5393,7 @@ fn a_cpp_class_function_is_its_object_field() {
         (
             "class Square : Shape",
             "class Square : Other",
-            "only a direct subclass",
+            "names a base without a `class` block",
         ),
     ] {
         let source = source.replace(from.trim_start(), to);

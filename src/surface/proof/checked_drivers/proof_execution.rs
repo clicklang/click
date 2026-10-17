@@ -91,6 +91,23 @@ fn proof_if_arms_do_not_rejoin() -> ClickError {
     )
 }
 
+/// The refusal for a proof `if` after execution whose condition is open on
+/// some outcome path while tactics follow it: its arms do not rejoin, so
+/// what follows would be checked once per arm.
+fn post_execution_if_forks_the_proof() -> ClickError {
+    ClickError::new(
+        "the arms of this proof `if` after execution do not rejoin: its condition is not decided on every outcome path, so the tactics written after the `if` would be checked once per arm. Move those tactics into the arms",
+    )
+}
+
+/// The number of checked outcome paths at function exit.
+fn outcome_path_count(proof: &Proof<'_>) -> usize {
+    proof
+        .execution()
+        .and_then(|execution| execution.core.frontier.execution())
+        .map_or(0, |checked| checked.paths().len())
+}
+
 /// `close_invariants()` is smart: it plans the back-edge bundle body. It has
 /// no certificate step of its own, so the drivers that support it route it
 /// through `apply_close_invariants_body`, which retains the checked body as a
@@ -654,6 +671,29 @@ fn frontier_have(tactic: &ProofTactic) -> Option<std::borrow::Cow<'_, ProofHave>
     }
 }
 
+/// A written `apply`, in any context that admits it. It is a commitment,
+/// not a speculative search: its refusal is the premise it was missing,
+/// named with the `apply` as written, not a declined shape.
+pub(in crate::surface::proof) fn apply_written_theorem<'a>(
+    proof: &Proof<'a>,
+    application: &TheoremApplication,
+) -> Result<Proof<'a>, ClickError> {
+    proof
+        .apply_theorem_application(application)
+        .map_err(|error| {
+            if crate::instrumentation::deadline_exceeded() {
+                return error;
+            }
+            let written = crate::surface::printing::format_partial_tactic_sequence(
+                std::slice::from_ref(&ProofTactic::ApplyTheorem(application.clone())),
+            );
+            error.with_context(format!(
+                "`{}` was refused",
+                written.trim().trim_end_matches(';')
+            ))
+        })
+}
+
 fn flat_post_execution_tactic(tactic: &ProofTactic) -> Option<PostExecutionTactic> {
     if SourceContext::PostExecution.leaf_step(tactic).is_some() {
         return Some(PostExecutionTactic::Leaf(tactic.clone()));
@@ -845,22 +885,7 @@ fn apply_frontier_source_tactic<'a>(
     } else if let ProofTactic::LetSatisfy(binding) = &indexed.tactic {
         proof.apply_step_at(ProofStep::LetSatisfy(binding.clone()), indexed.source_index)?
     } else if let ProofTactic::ApplyTheorem(application) = &indexed.tactic {
-        // A written `apply` is a commitment, not a speculative search: its
-        // refusal is the premise it was missing, not a declined shape.
-        proof
-            .apply_theorem_application(application)
-            .map_err(|error| {
-                if crate::instrumentation::deadline_exceeded() {
-                    return error;
-                }
-                let written = crate::surface::printing::format_partial_tactic_sequence(
-                    std::slice::from_ref(&indexed.tactic),
-                );
-                error.with_context(format!(
-                    "`{}` was refused",
-                    written.trim().trim_end_matches(';')
-                ))
-            })?
+        apply_written_theorem(&proof, application)?
     } else if let ProofTactic::Transport { source, target } = &indexed.tactic {
         match proof.try_execution_fact_transport_or_refusal(source, target)? {
             Ok(transported) => transported,
@@ -1482,6 +1507,7 @@ fn try_check_structural_function_proof_inner<'a>(
                     {
                         // The condition is a proof-level case split on some
                         // outcome path: fork those paths, one per polarity.
+                        let before = outcome_path_count(&proof);
                         match proof.split_outcome_paths_by_case(
                             condition,
                             &then_tactics,
@@ -1492,6 +1518,14 @@ fn try_check_structural_function_proof_inner<'a>(
                                 check_verification_deadline()?;
                                 return decline();
                             }
+                        }
+                        // What follows a proof `if` is checked once, after
+                        // execution as before it: a split that forks paths
+                        // would check it once per arm.
+                        if outcome_path_count(&proof) > before
+                            && !matches!(&**continuation, InternalProofNode::Done)
+                        {
+                            return Err(post_execution_if_forks_the_proof());
                         }
                     }
                     proof = proof.defer_post_execution_source_tactic(
@@ -3691,6 +3725,7 @@ fn advance_focused_execution_region_with_branch_continuation<'a>(
                     {
                         // A proof-level case split on some outcome path, as at
                         // the top level: fork those paths, one per polarity.
+                        let before = outcome_path_count(&proof);
                         match proof.split_outcome_paths_by_case(
                             condition,
                             &then_tactics,
@@ -3701,6 +3736,14 @@ fn advance_focused_execution_region_with_branch_continuation<'a>(
                                 check_verification_deadline()?;
                                 return decline();
                             }
+                        }
+                        // What follows a proof `if` is checked once, after
+                        // execution as before it: a split that forks paths
+                        // would check it once per arm.
+                        if outcome_path_count(&proof) > before
+                            && !matches!(&**continuation, InternalProofNode::Done)
+                        {
+                            return Err(post_execution_if_forks_the_proof());
                         }
                     }
                     proof = proof.defer_post_execution_source_tactic(

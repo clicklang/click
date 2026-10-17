@@ -18532,14 +18532,16 @@ int total(const Shape& shape, int scale) {
     );
 }
 
-// An override of a method of a class whose object carries state is stated on
-// its own class's memory, so its class defines that state; and a defining
-// class's method, stated on that class's memory, is not overridden.
+// An override of a method of a class whose object carries state, or of a
+// defining class's method, is stated on its own class's memory, so its class
+// defines that state; and a class deriving from a defining class overrides
+// each of its methods stated on that class's memory.
 #[test]
-fn class_object_state_refuses_undefined_and_nested_overrides() {
+fn class_object_state_refuses_undefined_overrides_and_inherited_methods() {
     let source = "struct Shape { virtual int area(int scale) const noexcept = 0; };
 struct Square : Shape {
     int side;
+    int color;
     int area(int scale) const noexcept override { return side + scale; }
 };
 struct Tile : Square {
@@ -18576,12 +18578,18 @@ int total(const Shape& shape, int scale) {
         (
             "",
             "",
-            "`Tile::area` overrides `Square::area`, which is stated on its class's memory",
+            "`Tile::area` overrides `Square::area`, a method of a class that defines its \
+             object's state",
         ),
         (
             "class Square : Shape {\n    function size(this) -> int32 { this->side }\n}\n",
             "",
             "`Square::area` overrides `Shape::area`, whose class's object carries state",
+        ),
+        (
+            "int Tile::area(int scale) const {\n} by { execute(); simp(); }\n",
+            "class Tile : Square {\n}\n",
+            "`Tile::area` overrides the virtual method `Square::area` but has no contract",
         ),
     ] {
         let sidecar = sidecar.replacen(from, to, 1);

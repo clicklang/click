@@ -125,6 +125,27 @@ fn input_pointer_identity(pointer: &crate::kernel::CPointerValue) -> Option<Vari
     }
 }
 
+/// Keep the declaration class on the symbolic caller argument as well as
+/// on the checked callee binding. Contract evaluation still needs that
+/// information after the callee frame has been popped.
+fn initial_pointer_argument(
+    pointer: Pointer,
+    parameter: &syntax::C0Parameter,
+    index: usize,
+    scope: u64,
+    required: Option<crate::kernel::effective_type::CAccessClass>,
+) -> CExpression {
+    let parameter = parameter.to_kernel_parameter();
+    CExpression::Value(
+        CValue::typed_pointer(pointer, parameter.c_type()).with_contract_pointer_object_class(
+            parameter.pointee_class(),
+            required,
+            index,
+            scope,
+        ),
+    )
+}
+
 pub(in crate::surface) fn initial_call_state(
     requires: &[Requirement],
     parameters: &[syntax::C0Parameter],
@@ -146,12 +167,25 @@ pub(in crate::surface) fn initial_call_state(
             reject_aggregate_parameter_storage_resource(resource, &aggregate_parameters)?;
         }
     }
+    let initial_pointer_argument = |pointer, parameter, index, scope| {
+        initial_pointer_argument(
+            pointer,
+            parameter,
+            index,
+            scope,
+            function
+                .contract_interface()
+                .object_type_requirements()
+                .get(&index)
+                .cloned(),
+        )
+    };
     let mut arguments = Vec::new();
     let scope = input_scope(function.name());
 
     for (index, parameter) in parameters.iter().enumerate() {
         if parameter.is_struct_value() {
-            arguments.push(c_typed_pointer_value(
+            arguments.push(initial_pointer_argument(
                 Pointer {
                     block: PointerBlock::ExternalArgument,
                     offset: scale_int32_offset(
@@ -159,7 +193,9 @@ pub(in crate::surface) fn initial_call_state(
                         1,
                     ),
                 },
-                parameter.to_kernel_parameter().c_type(),
+                parameter,
+                index,
+                scope,
             ));
             continue;
         }
@@ -187,7 +223,7 @@ pub(in crate::surface) fn initial_call_state(
                 )));
             }
             C0Type::VoidPointer | C0Type::VoidPointerPointer => {
-                arguments.push(c_typed_pointer_value(
+                arguments.push(initial_pointer_argument(
                     Pointer {
                         block: PointerBlock::ExternalArgument,
                         offset: scale_int32_offset(
@@ -195,18 +231,21 @@ pub(in crate::surface) fn initial_call_state(
                             1,
                         ),
                     },
-                    parameter.to_kernel_parameter().c_type(),
+                    parameter,
+                    index,
+                    scope,
                 ));
             }
             C0Type::FunctionPointer(_) => {
-                arguments.push(c_typed_pointer_value(
+                arguments.push(initial_pointer_argument(
                     Pointer::symbolic_function(input_pointer_variable(scope, index)?),
-                    parameter.c_type().to_kernel_type(),
+                    parameter,
+                    index,
+                    scope,
                 ));
             }
             C0Type::Int8Pointer | C0Type::Int8PointerPointer => {
                 let c_type = parameter.c_type();
-                let kernel_c_type = parameter.to_kernel_parameter().c_type();
                 // Struct array parameters are lowered to byte pointers in the
                 // kernel, so their symbolic external argument address uses
                 // byte-pointer identity. The struct stride is retained only
@@ -222,7 +261,7 @@ pub(in crate::surface) fn initial_call_state(
                     },
                     |_| 1,
                 );
-                arguments.push(c_typed_pointer_value(
+                arguments.push(initial_pointer_argument(
                     Pointer {
                         block: PointerBlock::ExternalArgument,
                         offset: scale_int32_offset(
@@ -230,7 +269,9 @@ pub(in crate::surface) fn initial_call_state(
                             i64::from(element_width),
                         ),
                     },
-                    kernel_c_type,
+                    parameter,
+                    index,
+                    scope,
                 ));
             }
             C0Type::Int16Pointer
@@ -258,7 +299,6 @@ pub(in crate::surface) fn initial_call_state(
             | C0Type::Float32PointerPointer
             | C0Type::Float64PointerPointer => {
                 let c_type = parameter.c_type();
-                let kernel_c_type = parameter.to_kernel_parameter().c_type();
                 // Struct array parameters are lowered to byte pointers in the
                 // kernel, so their symbolic external argument address uses
                 // byte-pointer identity. The struct stride is retained only
@@ -281,7 +321,7 @@ pub(in crate::surface) fn initial_call_state(
                         i64::from(element_width),
                     ),
                 };
-                arguments.push(c_typed_pointer_value(pointer, kernel_c_type));
+                arguments.push(initial_pointer_argument(pointer, parameter, index, scope));
             }
             C0Type::Int8 => {
                 arguments.push(CExpression::Value(CValue::Int8(Bitvector32Term::Variable(
@@ -422,10 +462,7 @@ pub(in crate::surface) fn initial_call_state(
         // allocation's extent. Field liveness comes from the entry contract.
         let destination = Pointer::symbolic(input_pointer_variable(scope, index)?);
         crate::kernel::register_block_alignment(&destination.block, layout.alignment_bytes());
-        arguments[index] = c_typed_pointer_value(
-            destination.clone(),
-            parameter.to_kernel_parameter().c_type(),
-        );
+        arguments[index] = initial_pointer_argument(destination.clone(), parameter, index, scope);
         let memory = state
             .memory()
             .clone()
@@ -442,15 +479,17 @@ pub(in crate::surface) fn initial_call_state(
         // caller storage; the callee still receives its own fresh copy.
         state = crate::kernel::c_function_entry_state(&state, function, &arguments)
             .ok_or_else(|| ClickError::new("could not materialize aggregate argument values"))?;
-        for (parameter, argument) in parameters.iter().zip(&mut arguments) {
+        for (index, (parameter, argument)) in parameters.iter().zip(&mut arguments).enumerate() {
             if parameter.is_struct_value() {
-                *argument = c_typed_pointer_value(
+                *argument = initial_pointer_argument(
                     state
                         .locals()
                         .aggregate_object_pointer(parameter.name())
                         .expect("materialized aggregate argument")
                         .clone(),
-                    parameter.to_kernel_parameter().c_type(),
+                    parameter,
+                    index,
+                    scope,
                 );
             }
         }
@@ -1768,6 +1807,7 @@ impl<'a> ClauseParameters<'a> {
                 parameters: self.parameters,
                 arguments: &[],
                 index: self.index,
+                naming: None,
             };
             array_refs_for_values(binding, self.values, self.memory)
         })

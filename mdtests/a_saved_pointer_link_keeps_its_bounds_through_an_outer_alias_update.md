@@ -12,7 +12,7 @@ void caller(struct node *root, struct node *p, struct node *q) { root->left = q;
 
 ```click
 verifying "probe.c";
-spec enum Link { Link(struct node*), }
+spec enum Link { Link(void*), }
 resource saved(slot: struct node**) {
     field model: Link;
     match model { Link::Link(child) => { owns *slot; fact *slot == child; }, }

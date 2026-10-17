@@ -2518,10 +2518,10 @@ fn freshen_proposition_bodies(
     right_body: &Proposition,
 ) -> (Proposition, Proposition) {
     let fresh = fresh_alpha_comparison_variable(left_body, right_body, left_binder, right_binder);
-    if matches!(sort, Sort::CPointer(_)) {
+    if matches!(sort, Sort::CPointer(_) | Sort::CObjectPointer(_, _)) {
         let pointer = match sort {
             Sort::CPointer(CType::FunctionPointer(_)) => Pointer::symbolic_function(fresh),
-            Sort::CPointer(_) => Pointer::symbolic(fresh),
+            Sort::CPointer(_) | Sort::CObjectPointer(_, _) => Pointer::symbolic(fresh),
             _ => unreachable!("pointer freshening only handles pointer sorts"),
         };
         (
@@ -2568,20 +2568,22 @@ pub(crate) fn substitute_quantified_body_capture_free(
     if binder != target && proposition_variables(body).contains(&target) {
         return None;
     }
-    Some(if matches!(sort, Sort::CPointer(_)) {
-        let pointer = match sort {
-            Sort::CPointer(CType::FunctionPointer(_)) => Pointer::symbolic_function(target),
-            Sort::CPointer(_) => Pointer::symbolic(target),
-            _ => unreachable!("pointer substitution only handles pointer sorts"),
-        };
-        substitute_pointer_variable_in_proposition(body, binder, &pointer)
-    } else {
-        substitute_bitvector_variable_in_proposition(
-            body,
-            binder,
-            &Bitvector32Term::Variable(target),
-        )
-    })
+    Some(
+        if matches!(sort, Sort::CPointer(_) | Sort::CObjectPointer(_, _)) {
+            let pointer = match sort {
+                Sort::CPointer(CType::FunctionPointer(_)) => Pointer::symbolic_function(target),
+                Sort::CPointer(_) | Sort::CObjectPointer(_, _) => Pointer::symbolic(target),
+                _ => unreachable!("pointer substitution only handles pointer sorts"),
+            };
+            substitute_pointer_variable_in_proposition(body, binder, &pointer)
+        } else {
+            substitute_bitvector_variable_in_proposition(
+                body,
+                binder,
+                &Bitvector32Term::Variable(target),
+            )
+        },
+    )
 }
 
 pub(crate) fn propositions_alpha_equivalent(left: &Proposition, right: &Proposition) -> bool {

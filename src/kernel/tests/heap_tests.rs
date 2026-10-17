@@ -850,6 +850,7 @@ fn scoped_call_borrows_end_before_free() {
     let environment = CExecutionEnvironment::new()
         .with_function(helper.clone())
         .with_verified_function_rule(CVerifiedFunctionRule {
+            pointer_result: None,
             function: helper,
             loop_semantics: CLoopSemantics::Verify,
             checked_callees: None,
@@ -1458,6 +1459,7 @@ fn guarded_opaque_call_footprints_skip_only_inactive_segments() {
     let environment = CExecutionEnvironment::new()
         .with_function(function.clone())
         .with_verified_function_rule(CVerifiedFunctionRule {
+            pointer_result: None,
             function: function.clone(),
             loop_semantics: CLoopSemantics::Verify,
             checked_callees: None,
@@ -2177,4 +2179,64 @@ fn an_unplaced_heap_store_keeps_the_elements_it_may_alias_initialized() {
 #[cfg(test)]
 mod scaling_tests {
     include!("../../scaling_tests/kernel/tests/heap_tests.rs");
+}
+
+#[test]
+fn fresh_heap_struct_binding_checks_extent_alignment_and_resolution() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let class = crate::kernel::effective_type::CAccessClass::Struct(
+        crate::kernel::effective_type::CStructClass::opaque("node"),
+    );
+    for (bytes, alignment, typed) in [(8, 8, true), (16, 8, true), (1, 8, false), (8, 32, false)] {
+        for zeroed in [false, true] {
+            let state = CState::new().with_local("p", CValue::pointer(Pointer::null()));
+            let paths = execute_c_statement_paths(
+                &state,
+                &CStatement::HeapAllocate {
+                    target: "p".to_string(),
+                    bytes: c_int32_literal(bytes),
+                    zeroed,
+                    object_type: Some((class.clone(), 8, alignment)),
+                },
+                &PureFactContext::new(),
+                CExecutionContext::execute_bodies(&CExecutionEnvironment::new()),
+                &mut ExecutionBudget::default(),
+            )
+            .unwrap();
+            let [
+                CStatementExecutionPath {
+                    outcome: CStatementOutcome::Normal(pending),
+                    ..
+                },
+            ] = paths.as_slice()
+            else {
+                panic!("one pending allocation expected");
+            };
+            let Some(CValue::Pointer(pointer)) = pending.locals().get("p") else {
+                panic!("pointer expected")
+            };
+            assert_eq!(pointer.object_class(), typed.then(|| class.clone()));
+            let null = ConditionTerm::pointer_equal(pointer.pointer().clone(), Pointer::null());
+            for succeeds in [false, true] {
+                let resolved = resolve_pending_heap_allocations(
+                    pending,
+                    &PureFactContext::new().assume_condition(null.clone(), !succeeds),
+                );
+                assert!(resolved.memory.heap.pending_object_classes.is_empty());
+                let Some(CValue::Pointer(value)) = resolved.locals().get("p") else {
+                    panic!("resolved pointer expected")
+                };
+                if succeeds {
+                    assert_eq!(
+                        resolved.memory.declared_class(value.pointer()),
+                        typed.then(|| class.clone())
+                    );
+                    assert_eq!(value.object_class(), typed.then(|| class.clone()));
+                } else {
+                    assert_eq!(value.pointer(), &Pointer::null());
+                    assert!(resolved.memory.heap.live_allocations.is_empty());
+                }
+            }
+        }
+    }
 }

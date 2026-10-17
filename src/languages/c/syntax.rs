@@ -173,6 +173,12 @@ pub struct C0Function {
     /// The interface function a crate trait method's implementation
     /// implements, whose contract its own must refine.
     trait_interface: Option<String>,
+    /// The C++ virtual method a dispatch the importer names stands for.
+    dispatched_method: Option<String>,
+    /// A C++ function's calls of methods on a receiver that may be an object
+    /// of a derived class: the function called, and the reference parameter
+    /// the receiver is, or `None` for `this`.
+    receiver_calls: Vec<(String, Option<String>)>,
     parameters: Vec<C0Parameter>,
     body: C0Statement,
     /// Compiler-created carriers for statement-form callback calls. Keeping
@@ -2868,6 +2874,7 @@ pub enum C0Statement {
         target: String,
         bytes: C0Expression,
         zeroed: bool,
+        object_type: Option<(crate::kernel::effective_type::CAccessClass, u32, u32)>,
         /// Where the source statement was written; see [`C0Site`].
         site: C0Site,
     },
@@ -3316,6 +3323,24 @@ impl C0Function {
         self.trait_interface.as_deref()
     }
 
+    /// This C++ function, calling methods on receivers that may be objects of
+    /// derived classes.
+    pub(crate) fn with_receiver_calls(mut self, calls: Vec<(String, Option<String>)>) -> Self {
+        self.receiver_calls = calls;
+        self
+    }
+
+    /// Its calls of methods on receivers that may be objects of derived
+    /// classes.
+    pub(crate) fn receiver_calls(&self) -> &[(String, Option<String>)] {
+        &self.receiver_calls
+    }
+
+    /// The C++ virtual method this function, a dispatch, stands for.
+    pub(crate) fn dispatched_method(&self) -> Option<&str> {
+        self.dispatched_method.as_deref()
+    }
+
     /// A closure's function whose first `count` parameters are captures.
     pub(crate) fn with_closure_captures(mut self, count: usize) -> Self {
         self.closure_captures = count;
@@ -3363,6 +3388,19 @@ impl C0Function {
         self.return_pointee_constant
     }
 
+    /// A declaration with this function's interface and no body, named
+    /// `name`: the dispatch a C++ importer names for a virtual method.
+    pub(crate) fn external_alias(&self, name: String) -> Self {
+        let mut alias = Self::external(self.return_type, name, self.parameters.clone());
+        alias.return_pointee_constant = self.return_pointee_constant;
+        alias.return_reference = self.return_reference;
+        alias.return_struct_name = self.return_struct_name.clone();
+        alias.return_pointer_struct_name = self.return_pointer_struct_name.clone();
+        alias.requires_read_only_contract = self.requires_read_only_contract;
+        alias.dispatched_method = Some(self.name.clone());
+        alias
+    }
+
     pub(crate) fn external(
         return_type: C0Type,
         name: String,
@@ -3382,6 +3420,8 @@ impl C0Function {
             positional_parameters: false,
             closure_captures: 0,
             trait_interface: None,
+            dispatched_method: None,
+            receiver_calls: Vec::new(),
             program_entry_state: None,
             prelowered_kernel_function: None,
             parameters,
@@ -5434,12 +5474,14 @@ impl C0Statement {
                 target,
                 bytes,
                 zeroed,
+                object_type,
                 ..
-            } => crate::kernel::c_heap_allocate_sized_with_zeroed(
-                target.clone(),
-                bytes.to_kernel_expression(),
-                *zeroed,
-            ),
+            } => crate::kernel::CStatement::HeapAllocate {
+                target: target.clone(),
+                bytes: bytes.to_kernel_expression(),
+                zeroed: *zeroed,
+                object_type: object_type.clone(),
+            },
             Self::HeapFree { pointer, .. } => {
                 crate::kernel::c_heap_free(pointer.to_kernel_expression())
             }
@@ -10169,6 +10211,8 @@ impl Parser {
             positional_parameters: false,
             closure_captures: 0,
             trait_interface: None,
+            dispatched_method: None,
+            receiver_calls: Vec::new(),
             program_entry_state: None,
             prelowered_kernel_function: None,
             parameters: header.parameters,
@@ -14159,10 +14203,25 @@ impl Parser {
             };
             bytes.clone()
         };
+        let object_type = self
+            .variable_structs
+            .get(&target)
+            .filter(|_| self.variable_types.get(&target) == Some(&C0Type::Int32Pointer))
+            .and_then(|tag| self.structs.get(tag))
+            .and_then(|layout| {
+                layout.class.clone().map(|class| {
+                    (
+                        crate::kernel::effective_type::CAccessClass::Struct(class),
+                        layout.size_bytes,
+                        layout.alignment_bytes,
+                    )
+                })
+            });
         Ok(C0Statement::HeapAllocate {
             target,
             bytes,
             zeroed,
+            object_type,
             site: C0Site::NONE,
         })
     }
@@ -15254,6 +15313,7 @@ impl Parser {
                 target,
                 bytes,
                 zeroed,
+                object_type,
                 site,
             } => {
                 let (prefix, bytes) = self.lower_expression_calls(bytes)?;
@@ -15263,6 +15323,7 @@ impl Parser {
                         target,
                         bytes,
                         zeroed,
+                        object_type,
                         site,
                     },
                 ))

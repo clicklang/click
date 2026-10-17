@@ -103,6 +103,7 @@ mod lowering;
 mod modules;
 mod names;
 mod parser;
+mod pointer_result_types;
 pub use crate::languages::{claim_label_matches, display_source_names, source_display_name};
 pub(crate) mod planning;
 pub(crate) mod proof_diagnostics;
@@ -5590,6 +5591,10 @@ pub(crate) struct ParameterBinding<'a> {
     /// lowering that reads a few parameters then looks up only those
     /// instead of building a map over every parameter.
     pub(crate) index: Option<&'a ParameterIndex>,
+    /// Shared copies of these parameters and arguments, when the caller
+    /// built them: a diagnostic captured on every refused attempt keeps a
+    /// handle to them instead of copying both lists.
+    pub(crate) naming: Option<&'a std::sync::Arc<ParameterNaming>>,
 }
 
 impl<'a> ParameterBinding<'a> {
@@ -5598,6 +5603,7 @@ impl<'a> ParameterBinding<'a> {
             parameters,
             arguments,
             index: None,
+            naming: None,
         }
     }
 
@@ -5607,6 +5613,34 @@ impl<'a> ParameterBinding<'a> {
         Self {
             index: Some(index),
             ..self
+        }
+    }
+
+    /// This binding with `naming`, which must copy its parameters and
+    /// arguments.
+    pub(crate) fn with_naming(self, naming: &'a std::sync::Arc<ParameterNaming>) -> Self {
+        debug_assert_eq!(naming.parameters.len(), self.parameters.len());
+        debug_assert_eq!(naming.arguments.len(), self.arguments.len());
+        Self {
+            naming: Some(naming),
+            ..self
+        }
+    }
+}
+
+/// One copy of a proof's parameter declarations and argument expressions,
+/// shared by every diagnostic the proof captures.
+pub(crate) struct ParameterNaming {
+    pub(crate) parameters: std::sync::Arc<[syntax::C0Parameter]>,
+    pub(crate) arguments: std::sync::Arc<[CExpression]>,
+}
+
+impl ParameterNaming {
+    pub(crate) fn new(parameters: &[syntax::C0Parameter], arguments: &[CExpression]) -> Self {
+        crate::instrumentation::record_deterministic_work(parameters.len() + arguments.len());
+        Self {
+            parameters: parameters.into(),
+            arguments: arguments.into(),
         }
     }
 }
@@ -5755,6 +5789,8 @@ struct ClickFunctionEnvironment {
     /// Functions whose value provably cannot depend on C memory contents.
     /// See [`memory_independent_click_functions`].
     memory_independent: BTreeSet<String>,
+    pointer_results: BTreeMap<String, Option<std::sync::Arc<crate::kernel::PurePointerResult>>>,
+    pointer_type_error: Option<(String, String)>,
 }
 
 impl ClickFunctionEnvironment {
@@ -5766,6 +5802,8 @@ impl ClickFunctionEnvironment {
         definitions: &[ClickFunctionDefinition],
         algebraic_type_definitions: &[AlgebraicTypeDefinition],
     ) -> Self {
+        let (pointer_results, pointer_type_error) =
+            pointer_result_types::pointer_result_types(definitions, algebraic_type_definitions);
         Self {
             definitions: definitions
                 .iter()
@@ -5776,6 +5814,8 @@ impl ClickFunctionEnvironment {
                 .map(|definition| (definition.name().to_string(), definition.clone()))
                 .collect(),
             memory_independent: memory_independent_click_functions(definitions),
+            pointer_results,
+            pointer_type_error,
         }
     }
 
@@ -6928,6 +6968,17 @@ impl FunctionBlock {
             self.ensures.push(inherited);
         }
         Ok(())
+    }
+
+    /// This contract, without its proof, as the contract of `name`: a C++
+    /// dispatch that stands for this block's virtual method.
+    pub(in crate::surface) fn dispatch_alias(&self, name: &str) -> FunctionBlock {
+        let mut alias = self.clone();
+        alias.signature.name = name.to_string();
+        alias.signature.c_source = None;
+        alias.external = true;
+        alias.grouped_proof = None;
+        alias
     }
 
     pub fn parameter_struct_casts(&self) -> &BTreeMap<String, String> {

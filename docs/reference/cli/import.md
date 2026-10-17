@@ -1561,17 +1561,67 @@ cannot also be handed over in that call as a mutable reference
 (`mdtests/cpp_class_const_reference_keeps_fields.md`,
 `mdtests/cpp_class_const_reference_lends_the_object.md`).
 
+A class may derive from a defining class, and override its methods, when
+its own `class` block names that class as its base. It defines the object's
+functions on its own memory, or inherits each it does not write, read
+through its base part:
+
+<!-- verified-example: mdtests/cpp_class_subclass_override_keeps_the_interface.md -->
+```click
+class BigSquare : Square {
+    function size(this) -> int32 { this->base.side + this->extra }
+}
+int BigSquare::area(int scale) const {
+} by { execute(); simp(); }
+```
+
+Each of its overrides keeps the object class's interface read with its own
+definitions, labeled `BigSquare::area.interface_ensures_0`, and refines only
+the `contract` named for it with `_iface`, not the method it overrides
+(`mdtests/cpp_class_subclass_override_rejects_overclaim.md`). A reference to
+a class another `class` block derives from, `const Square& square`, may
+refer to an object of the derived class, so it holds the object class's
+object as a `Shape&` does, and reads `size(square)` as its field; a contract
+on it cannot read `square.side`. Where such a reference becomes a reference
+to a base, nothing is packed. A call through it, or through `this`, to a
+method that overrides one of the object class's names the dispatch
+`Square__click_dispatch__area`, whose contract is that interface on the
+object, whichever override runs; without a sidecar `class` block deriving
+from the class, the dispatch's contract is the method's own
+(`mdtests/cpp_virtual_call_through_a_derived_class_reference.md`). A qualified
+call, `square.Square::area(scale)`, and a call on a complete object, a
+local or by-value parameter, run the method named, against its own
+contract. A conversion packs with the definitions of the class of the
+complete object or reference it starts from: a `BigSquare&` passed as a
+`const Square&` is packed by `BigSquare__click_pack_const__Square`, and a
+local `Square` passed as one by `Square__click_pack_const__Square`
+(`mdtests/cpp_class_subclass_local_object_packs_itself.md`).
+
 Limits:
 - An override in a class without a defining `class` block is refused.
-- A `class` block naming a base other than the object class is refused,
-  since a further subclass would run its base's methods on an object its own
-  definitions describe.
-- Overriding a defining class's method is refused.
+- A class deriving from a defining class may inherit a method the sidecar
+  states on an ancestor's memory only where each function the object
+  class's interface for it reads is defined alike, read through the base
+  parts; otherwise it overrides the method. The inherited method runs on
+  the ancestor's part of the object, as its proof read it, and is not
+  verified again
+  (`mdtests/cpp_class_subclass_inherits_a_method_it_keeps.md`,
+  `mdtests/cpp_class_subclass_inherited_method_rejects_redefined_state.md`).
+- A method of a class another derives from holds its memory, not the
+  object, so its call through `this` to a method that may dispatch to an
+  override is refused, naming what each holds; a qualified call runs the
+  method named. A reference to such a class holds the object, so a call
+  through it of a method stated on the class's memory, one that overrides
+  none of the object class's, is refused the same way
+  (`mdtests/cpp_class_subclass_override_call_through_this_is_refused.md`,
+  `mdtests/cpp_class_subclass_memory_method_through_a_reference_is_refused.md`).
+- A class whose own fields reuse its base's tail padding is refused by the
+  layout profile.
 - A call through the interface inside a larger expression is an expression
   observer, whose contract must be read-only, so the object's call is
   written as its own statement
   (`mdtests/cpp_class_object_state_override_keeps_the_interface.md`,
-  `tests/cpp_import.rs::class_object_state_refuses_undefined_and_nested_overrides`).
+  `tests/cpp_import.rs::class_object_state_refuses_undefined_overrides_and_inherited_methods`).
 
 Discarded-result trivial copy assignment between live lvalues of the same
 nominal record lowers to shared C aggregate field copies. Clang must resolve a

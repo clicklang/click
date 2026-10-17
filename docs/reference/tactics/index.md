@@ -96,7 +96,9 @@ when the default misses or when a proof must not search.
   running more proof checks.
 - **Case splits: `if`, `cases`, `match`, `branch`.** `if P` splits on any
   proposition; `cases` uses a disjunction that is already a fact; `match`
-  splits on constructors; `branch` follows a C `if`.
+  splits on constructors; `branch` follows a C `if`. Tactics written after a
+  proof `if` or `match` are checked once, never once per arm: the arms rejoin,
+  keeping the facts every arm proved, or the split is refused.
 
 ## Automation and search
 
@@ -1771,6 +1773,14 @@ those tactics belong to the other arm and run once, in it
 In a loop's `preserve` body the rule is the same, except that arms reaching
 those tactics at different program points are different paths of the C and each
 is finished its own way.
+
+After execution the C state is fixed and each outcome path is finished on its
+own. On a path where `P` is already decided, only the matching arm runs. When
+`P` is open on some outcome path and tactics follow the `if`, the `if` is
+refused, because its arms would not rejoin and what follows would be checked
+once per arm (`mdtests/a_proof_if_after_execution_that_would_fork_is_refused.md`).
+Write those tactics inside the arms instead
+(`mdtests/a_proof_if_after_execution_closes_its_claims_in_each_arm.md`).
 
 **Failure, checking, and tools:**
 

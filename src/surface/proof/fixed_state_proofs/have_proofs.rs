@@ -91,6 +91,14 @@ pub(in crate::surface::proof) fn lower_fixed_state_proposition_with_assumptions(
     .map(|(proposition, _)| proposition)
 }
 
+/// The names a proposition reads: the parameters and locals its lowering
+/// looks up, and so all of the contract environment it needs.
+fn proposition_referenced_names(proposition: &ClickProposition) -> BTreeSet<String> {
+    let mut names = BTreeSet::new();
+    crate::surface::lowering::collect_click_proposition_referenced_names(proposition, &mut names);
+    names
+}
+
 /// Fixed-state lowering with the exact algebraic proof locals referenced by
 /// the written proposition. Algebraic `choose` bindings live outside C state,
 /// so callers pass them explicitly just as Integer proof locals are passed by
@@ -104,14 +112,10 @@ pub(in crate::surface::proof) fn lower_fixed_state_proposition_with_algebraic_va
     integer_values: &crate::persistent::PersistentMap<String, crate::kernel::SpecIntegerExpression>,
     spec_definitions: SpecDefinitions<'_>,
 ) -> Result<Proposition, String> {
-    let values = parameter_values(parameter_binding).map_err(|error| error.message)?;
-    let array_refs = array_refs_for_parameters(
-        parameter_binding.parameters,
-        &values,
-        fixed_state.state.memory(),
-    );
+    let names = proposition_referenced_names(proposition);
     let (values, array_refs) =
-        contract_environment_at_state(&values, &array_refs, fixed_state.state);
+        contract_environment_for_names(parameter_binding, &names, fixed_state.state)
+            .map_err(|error| error.message)?;
     lower_fixed_state_proposition_through_kernel_with(
         proposition,
         assumptions,
@@ -121,7 +125,10 @@ pub(in crate::surface::proof) fn lower_fixed_state_proposition_with_algebraic_va
         FixedStateLoweringOptions {
             algebraic_values: Some(algebraic_values),
             integer_values: Some(integer_values),
-            pointer_element_widths: parameter_pointer_element_widths(parameter_binding.parameters),
+            pointer_element_widths: parameter_pointer_element_widths_named(
+                parameter_binding,
+                &names,
+            ),
             ..Default::default()
         },
     )
@@ -139,14 +146,10 @@ pub(in crate::surface::proof) fn lower_fixed_state_proposition_with_integer_valu
     integer_values: &crate::persistent::PersistentMap<String, crate::kernel::SpecIntegerExpression>,
     spec_definitions: SpecDefinitions<'_>,
 ) -> Result<Proposition, String> {
-    let values = parameter_values(parameter_binding).map_err(|error| error.message)?;
-    let array_refs = array_refs_for_parameters(
-        parameter_binding.parameters,
-        &values,
-        fixed_state.state.memory(),
-    );
+    let names = proposition_referenced_names(proposition);
     let (values, array_refs) =
-        contract_environment_at_state(&values, &array_refs, fixed_state.state);
+        contract_environment_for_names(parameter_binding, &names, fixed_state.state)
+            .map_err(|error| error.message)?;
     lower_fixed_state_proposition_through_kernel_with(
         proposition,
         assumptions,
@@ -155,7 +158,10 @@ pub(in crate::surface::proof) fn lower_fixed_state_proposition_with_integer_valu
         spec_definitions,
         FixedStateLoweringOptions {
             integer_values: Some(integer_values),
-            pointer_element_widths: parameter_pointer_element_widths(parameter_binding.parameters),
+            pointer_element_widths: parameter_pointer_element_widths_named(
+                parameter_binding,
+                &names,
+            ),
             ..Default::default()
         },
     )
@@ -170,14 +176,10 @@ pub(in crate::surface::proof) fn lower_fixed_state_proposition_with_assumptions_
     fixed_state: FixedStateFrame<'_>,
     spec_definitions: SpecDefinitions<'_>,
 ) -> Result<(Proposition, crate::kernel::LoweringIntroductions), String> {
-    let values = parameter_values(parameter_binding).map_err(|error| error.message)?;
-    let array_refs = array_refs_for_parameters(
-        parameter_binding.parameters,
-        &values,
-        fixed_state.state.memory(),
-    );
+    let names = proposition_referenced_names(proposition);
     let (values, array_refs) =
-        contract_environment_at_state(&values, &array_refs, fixed_state.state);
+        contract_environment_for_names(parameter_binding, &names, fixed_state.state)
+            .map_err(|error| error.message)?;
     lower_fixed_state_proposition_through_kernel_with_introductions(
         proposition,
         assumptions,
@@ -185,7 +187,10 @@ pub(in crate::surface::proof) fn lower_fixed_state_proposition_with_assumptions_
         fixed_state,
         spec_definitions,
         FixedStateLoweringOptions {
-            pointer_element_widths: parameter_pointer_element_widths(parameter_binding.parameters),
+            pointer_element_widths: parameter_pointer_element_widths_named(
+                parameter_binding,
+                &names,
+            ),
             ..Default::default()
         },
     )
@@ -442,7 +447,8 @@ pub(in crate::surface) fn evaluate_fixed_state_expression_through_kernel_with_al
     let symbolic_load_assumptions =
         (!click_function_calls.is_empty()).then(|| assumptions.clone().keep_spec_loads_symbolic());
     let assumptions = symbolic_load_assumptions.as_ref().unwrap_or(assumptions);
-    let states = FixedStateLowering::new(
+    let states = FixedStateLowering::for_expression_values(
+        expression,
         contract_environment,
         fixed_state.pre_state,
         fixed_state.state,
@@ -582,7 +588,8 @@ pub(in crate::surface) fn capture_fixed_state_algebraic_expression_with_values(
     fixed_state: FixedStateFrame<'_>,
     spec_definitions: SpecDefinitions<'_>,
 ) -> Result<SpecAlgebraicExpression, String> {
-    let states = FixedStateLowering::new(
+    let states = FixedStateLowering::for_expression_values(
+        expression,
         contract_environment,
         fixed_state.pre_state,
         fixed_state.state,
@@ -614,7 +621,13 @@ pub(in crate::surface::proof) fn capture_fixed_state_algebraic_value(
     snapshots: &RecordedSnapshots,
     spec_definitions: SpecDefinitions<'_>,
 ) -> Result<crate::kernel::AlgebraicTerm, String> {
-    let states = FixedStateLowering::new(contract_environment, pre_state, state, None);
+    let states = FixedStateLowering::for_expression_values(
+        expression,
+        contract_environment,
+        pre_state,
+        state,
+        None,
+    );
     let spec = crate::surface::lowering::elaborate_fixed_state_algebraic_expression(
         expression,
         states.element_types,
@@ -649,7 +662,13 @@ pub(in crate::surface::proof) fn capture_resource_field_initializer(
     snapshots: &RecordedSnapshots,
     spec_definitions: SpecDefinitions<'_>,
 ) -> Result<crate::kernel::AlgebraicValue, String> {
-    let states = FixedStateLowering::new(contract_environment, pre_state, state, None);
+    let states = FixedStateLowering::for_expression_values(
+        expression,
+        contract_environment,
+        pre_state,
+        state,
+        None,
+    );
     match ty {
         crate::kernel::ResourceFieldType::C(expected) => {
             let spec = crate::surface::lowering::elaborate_fixed_state_expression(
@@ -1000,6 +1019,25 @@ impl FixedStateLowering {
             state,
             result,
             true,
+        )
+    }
+
+    /// [`Self::new`] for the names `expression` reads: the environment's
+    /// value for each of them, under the same binding rule.
+    fn for_expression_values(
+        expression: &ContractExpression,
+        contract_environment: ContractEnvironment<'_>,
+        pre_state: &CState,
+        state: &CState,
+        result: Option<&CValue>,
+    ) -> Self {
+        Self::for_names(
+            crate::surface::lowering::contract_expression_referenced_names(expression),
+            contract_environment,
+            pre_state,
+            state,
+            result,
+            false,
         )
     }
 

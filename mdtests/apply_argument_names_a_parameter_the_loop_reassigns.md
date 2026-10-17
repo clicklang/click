@@ -20,6 +20,9 @@ With the assignment `p = q` removed from the C body the proof always verified,
 and `old(p)` still names the entry pointer. The unchanged Linux `rb_next`
 reassigns its `node` parameter in both walks and applies theorems to it in each.
 
+The logical pointer annotations below use `void*` for address identities;
+object access remains governed by the unchanged C types and resource ownership.
+
 ```c filename=skip.c
 struct node { int32 value; };
 
@@ -35,15 +38,15 @@ struct node *skip(struct node *p, struct node *q, int32 n) {
 ```click
 verifying "skip.c";
 
-spec enum Box { Box(struct node*) }
+spec enum Box { Box(void*) }
 
-function holds(b: Box, p: struct node*) -> int32 {
+function holds(b: Box, p: void*) -> int32 {
     match b {
         Box::Box(q) => if q == p { 1 } else { 0 },
     }
 }
 
-theorem holds_is_nonzero(p: struct node*) {
+theorem holds_is_nonzero(p: void*) {
     requires holds(Box::Box(p), p) == 1;
     ensures holds(Box::Box(p), p) != 0 by {
         rewrite(holds(Box::Box(p), p) == 1);

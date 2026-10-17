@@ -5981,6 +5981,7 @@ mod local_descent_tests {
             body = CStatement::Seq(Arc::new(body), Arc::new(summarized_loop(1)));
         }
         CVerifiedFunctionRule {
+            pointer_result: None,
             function: CFunction::new(CType::Void, name, Vec::new(), body),
             loop_semantics: CLoopSemantics::ApplyVerifiedRules,
             checked_callees: None,
@@ -6174,6 +6175,7 @@ mod local_descent_tests {
                 body = CStatement::Seq(Arc::new(body), Arc::new(summarized_loop(1)));
             }
             CVerifiedFunctionRule {
+                pointer_result: None,
                 loop_semantics: CLoopSemantics::ApplyVerifiedRules,
                 checked_callees: None,
                 applied_tactics: Default::default(),
@@ -6330,6 +6332,7 @@ mod local_descent_tests {
             None => Vec::new(),
         };
         CVerifiedFunctionRule {
+            pointer_result: None,
             function: CFunction::new(CType::Void, name, parameters, body),
             loop_semantics: CLoopSemantics::ApplyVerifiedRules,
             checked_callees: None,
@@ -6519,6 +6522,7 @@ mod local_descent_tests {
     #[test]
     fn a_loop_certification_executed_to_its_exit_owes_no_measure() {
         let bare = |name: &str| CVerifiedFunctionRule {
+            pointer_result: None,
             loop_semantics: CLoopSemantics::ApplyVerifiedRules,
             checked_callees: None,
             applied_tactics: Default::default(),
@@ -6758,6 +6762,7 @@ mod local_descent_tests {
             function = function.with_inline_body();
         }
         CVerifiedFunctionRule {
+            pointer_result: None,
             function,
             loop_semantics: CLoopSemantics::ApplyVerifiedRules,
             checked_callees: None,
@@ -6791,6 +6796,7 @@ mod local_descent_tests {
             }]);
         }
         CVerifiedFunctionRule {
+            pointer_result: None,
             function,
             loop_semantics: CLoopSemantics::ApplyVerifiedRules,
             checked_callees: None,
@@ -6974,6 +6980,7 @@ mod local_descent_tests {
             }),
         );
         CVerifiedFunctionRule {
+            pointer_result: None,
             function: CFunction::new(CType::Void, name, Vec::new(), body)
                 .with_recursion_measure(vec![declared_component()]),
             loop_semantics: CLoopSemantics::ApplyVerifiedRules,
@@ -7185,6 +7192,7 @@ mod termination_scaling_tests {
     /// measures.
     fn rule(name: &str, callees: &[String]) -> CVerifiedFunctionRule {
         CVerifiedFunctionRule {
+            pointer_result: None,
             function: CFunction::new(CType::Void, name, Vec::new(), calls_body(callees)),
             loop_semantics: CLoopSemantics::ApplyVerifiedRules,
             checked_callees: None,
@@ -7283,6 +7291,7 @@ mod checked_callee_certification_tests {
     #[test]
     fn checked_callee_graph_distinguishes_missing_and_empty_evidence() {
         let rule = |checked_callees| CVerifiedFunctionRule {
+            pointer_result: None,
             function: CFunction::new(
                 CType::Void,
                 "caller",
