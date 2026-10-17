@@ -17226,10 +17226,9 @@ fn arm_binding_free_facts(
         .into_iter()
         .filter_map(|fact| {
             crate::instrumentation::record_deterministic_work(1);
-            let lower = |state: &CState,
-                         assumptions: &PureFactContext,
-                         budget: &mut ExecutionBudget| {
-                let paths =
+            let lower =
+                |state: &CState, assumptions: &PureFactContext, budget: &mut ExecutionBudget| {
+                    let paths =
                     crate::kernel::spec::lower_spec_proposition_at_state_with_algebraic_bindings(
                         state,
                         fact,
@@ -17239,12 +17238,12 @@ fn arm_binding_free_facts(
                         budget,
                     )
                     .ok()?;
-                let [path] = paths.as_slice() else {
-                    return None;
+                    let [path] = paths.as_slice() else {
+                        return None;
+                    };
+                    (path.facts.is_empty() && path.obligations.is_empty())
+                        .then(|| path.proposition.clone())
                 };
-                (path.facts.is_empty() && path.obligations.is_empty())
-                    .then(|| path.proposition.clone())
-            };
             // Direct scalar comparisons need no owned cells. In particular,
             // checking a null guard must not evaluate every memory clause.
             let direct = match fact {
