@@ -2114,10 +2114,10 @@ pub(in crate::surface::proof) fn with_preservation_continuation_record<R>(
 /// secondary interpreter: a tactic outside the checked operations is a
 /// prompt failure naming the tactic.
 #[allow(clippy::too_many_arguments)]
-pub(in crate::surface::proof) fn advance_preservation_region<'a>(
+pub(in crate::surface::proof) fn advance_preservation_region<'a, 'node>(
     mut proof: Proof<'a>,
-    node: &InternalProofNode,
-    pending: &[&InternalProofNode],
+    mut node: &'node InternalProofNode,
+    mut pending: &[&'node InternalProofNode],
     mut expansion_capture: Option<&mut ExpansionCapture>,
     proof_site: Option<&ProofSite>,
     owning_source_index: usize,
@@ -2125,58 +2125,112 @@ pub(in crate::surface::proof) fn advance_preservation_region<'a>(
     leaves: &mut Vec<Proof<'a>>,
     refuted_match_paths: &mut Vec<(ExecutionProofState, ProofCertificate)>,
     unfinished: &mut Vec<UnfinishedPreservationPath<'a>>,
-    last_tactic: Option<(usize, &'static str)>,
+    mut last_tactic: Option<(usize, &'static str)>,
 ) -> Result<Proof<'a>, ClickError> {
-    check_verification_deadline()?;
-    if proof.is_at_function_exit() && !matches!(node, InternalProofNode::Done) {
-        let tactics = deferred_post_execution_region(node).ok_or_else(|| {
-            proof.step_error("unsupported proof structure after a loop-body return")
-        })?;
-        for deferred in tactics {
-            proof = proof.defer_post_execution_source_tactic(
-                deferred.tactic_index,
-                deferred.source_index,
-                deferred.tactic,
-                expansion_capture.as_deref_mut(),
-            )?;
-        }
-        leaves.push(proof.clone());
-        return Ok(proof);
-    }
-    match node {
-        InternalProofNode::Match {
-            index,
-            source_index,
-            proof_match,
-            arms,
-            continuation,
-            ..
-        } => {
-            let proof = proof.with_execution_tactic_index(*index)?;
-            // With an interface the arms rejoin inside the body, as the arms
-            // of a `branch` do, and what follows the `match` is checked
-            // once on the one path that leaves it.
-            if proof_match.ensuring.is_some() {
-                let Ok(joined) = advance_execution_match(
-                    proof,
-                    proof_match,
-                    *source_index,
-                    arms,
-                    continuation,
+    // Sibling continuations stay in one preservation region. Walking them
+    // here keeps the native stack bounded by actual proof nesting.
+    loop {
+        check_verification_deadline()?;
+        if proof.is_at_function_exit() && !matches!(node, InternalProofNode::Done) {
+            let tactics = deferred_post_execution_region(node).ok_or_else(|| {
+                proof.step_error("unsupported proof structure after a loop-body return")
+            })?;
+            for deferred in tactics {
+                proof = proof.defer_post_execution_source_tactic(
+                    deferred.tactic_index,
+                    deferred.source_index,
+                    deferred.tactic,
                     expansion_capture.as_deref_mut(),
-                    proof_site,
-                    owning_source_index,
-                    0,
-                )?
-                else {
-                    return Err(ClickError::new(format!(
-                        "`{claim_label}` tactic {index}: proof `match` did not rejoin as a checked preservation operation"
-                    )));
-                };
-                return advance_preservation_region(
-                    joined,
-                    continuation,
-                    pending,
+                )?;
+            }
+            leaves.push(proof.clone());
+            return Ok(proof);
+        }
+        return match node {
+            InternalProofNode::Match {
+                index,
+                source_index,
+                proof_match,
+                arms,
+                continuation,
+                ..
+            } => {
+                proof = proof.with_execution_tactic_index(*index)?;
+                // With an interface the arms rejoin inside the body, as the arms
+                // of a `branch` do, and what follows the `match` is checked
+                // once on the one path that leaves it.
+                if proof_match.ensuring.is_some() {
+                    let Ok(joined) = advance_execution_match(
+                        proof,
+                        proof_match,
+                        *source_index,
+                        arms,
+                        continuation,
+                        expansion_capture.as_deref_mut(),
+                        proof_site,
+                        owning_source_index,
+                        0,
+                    )?
+                    else {
+                        return Err(ClickError::new(format!(
+                            "`{claim_label}` tactic {index}: proof `match` did not rejoin as a checked preservation operation"
+                        )));
+                    };
+                    proof = joined;
+                    node = continuation;
+                    last_tactic = Some((*index, "match"));
+                    continue;
+                }
+                // Without an interface, straight-line arms that end at one
+                // program point in one state still rejoin, as they do in a
+                // function body. The attempt is transactional: arms that end
+                // apart are run again below as separate paths, which costs
+                // those arms once more and nothing nested, since they nest
+                // nothing.
+                if preservation_split_has_continuation(continuation, pending)
+                    && arms.iter().all(region_is_straight_line)
+                {
+                    let saved_capture = expansion_capture.as_deref().cloned();
+                    let attempt = advance_execution_match(
+                        proof.clone(),
+                        proof_match,
+                        *source_index,
+                        arms,
+                        &rejoin_here(),
+                        expansion_capture.as_deref_mut(),
+                        proof_site,
+                        owning_source_index,
+                        0,
+                    );
+                    if let Ok(Ok(joined)) = attempt {
+                        proof = joined;
+                        node = continuation;
+                        last_tactic = Some((*index, "match"));
+                        continue;
+                    }
+                    if let (Some(capture), Some(saved)) =
+                        (expansion_capture.as_deref_mut(), saved_capture)
+                    {
+                        *capture = saved;
+                    }
+                }
+                let plan = proof.plan_execution_match(proof_match, |index| {
+                    execution_region_leading_tactic(&arms[index])
+                        .map_or(usize::MAX, |tactic| tactic.source_index)
+                })?;
+                // Otherwise every arm continues into the region's own
+                // continuation as its own path, closes the invariants and
+                // reaches the loop's boundary with its own resource state.
+                let mut arm_pending: Vec<&InternalProofNode> =
+                    Vec::with_capacity(pending.len() + 1);
+                arm_pending.push(continuation.as_ref());
+                arm_pending.extend_from_slice(pending);
+                advance_preservation_match_group(
+                    proof,
+                    &plan,
+                    arms,
+                    &plan.live_cases(),
+                    &arm_pending,
                     expansion_capture,
                     proof_site,
                     owning_source_index,
@@ -2184,434 +2238,349 @@ pub(in crate::surface::proof) fn advance_preservation_region<'a>(
                     leaves,
                     refuted_match_paths,
                     unfinished,
-                    Some((*index, "match")),
-                );
-            }
-            // Without an interface, straight-line arms that end at one
-            // program point in one state still rejoin, as they do in a
-            // function body. The attempt is transactional: arms that end
-            // apart are run again below as separate paths, which costs
-            // those arms once more and nothing nested, since they nest
-            // nothing.
-            if preservation_split_has_continuation(continuation, pending)
-                && arms.iter().all(region_is_straight_line)
-            {
-                let saved_capture = expansion_capture.as_deref().cloned();
-                let attempt = advance_execution_match(
-                    proof.clone(),
-                    proof_match,
-                    *source_index,
-                    arms,
-                    &rejoin_here(),
-                    expansion_capture.as_deref_mut(),
-                    proof_site,
-                    owning_source_index,
                     0,
-                );
-                if let Ok(Ok(joined)) = attempt {
-                    return advance_preservation_region(
-                        joined,
-                        continuation,
-                        pending,
-                        expansion_capture,
-                        proof_site,
-                        owning_source_index,
-                        claim_label,
-                        leaves,
-                        refuted_match_paths,
-                        unfinished,
-                        Some((*index, "match")),
-                    );
+                    Some((*index, "match")),
+                )
+            }
+            InternalProofNode::Done => {
+                // A `return` completes this preservation path immediately.  The
+                // syntactic continuation belongs only to paths that remained in
+                // the loop body; attempting to drive it after function exit
+                // misattributes the first continuation tactic as a post-return
+                // operation and, more importantly, loses the terminal loop exit.
+                let terminal_return = proof
+                    .execution_view()
+                    .is_ok_and(|view| view.frontier.is_at_function_exit());
+                if terminal_return {
+                    leaves.push(proof.clone());
+                    return Ok(proof);
                 }
-                if let (Some(capture), Some(saved)) =
-                    (expansion_capture.as_deref_mut(), saved_capture)
+                let Some((next, rest)) = pending.split_first() else {
+                    if !proof.is_at_region_boundary() {
+                        // One certified iteration is a path that reaches the
+                        // body's end, a `continue`, or a `break`. A path that
+                        // stops anywhere else has not been proved at all. A
+                        // script still being written stops inside the body; it
+                        // is set aside so the region's other paths still run
+                        // and the finished ones still close their back edges,
+                        // and the frontier it reached is reported after that
+                        // (`describe_unfinished_preservation`). Anything else is
+                        // a complete-but-wrong body.
+                        if proof.execution_view().is_ok_and(|view| {
+                            matches!(
+                                view.frontier.position,
+                                FrontierPosition::StatementEntry { .. }
+                            )
+                        }) {
+                            // The script ran out before the body did: the rest
+                            // of the body runs as the automatic closer runs a
+                            // whole one, and each path it reaches closes its
+                            // back edge like a written one. A rest that does not
+                            // run reports the frontier the script reached.
+                            match walk_loop_body(claim_label, proof.clone()) {
+                                Ok((completed, _)) => leaves.extend(completed),
+                                Err(error) => unfinished.push(UnfinishedPreservationPath {
+                                    proof: proof.clone(),
+                                    last_tactic,
+                                    walk_failure: Some(error.raw_summary().to_string()),
+                                }),
+                            }
+                            return Ok(proof);
+                        }
+                        return Err(ClickError::new(format!(
+                            "`{claim_label}` must execute exactly one complete loop-body iteration, ending at the body's end, a `continue`, or a `break`"
+                        )));
+                    }
+                    leaves.push(proof.clone());
+                    return Ok(proof);
+                };
+                // The tactics after a split belong to one path. A second path
+                // reaching them means two arms of that split, or of a split
+                // nested in one of its arms, are both still live: running them
+                // again would check the rest of the body once per arm.
+                //
+                // Tactics a smart tactic generated are not held to this. The
+                // automatic closer walks each path of the C on its own and its
+                // search has its own budget; its certificate writes each path's
+                // tail inside the arm that reaches it, which is the shape this
+                // rule asks a written proof for.
+                let generated = execution_region_leading_tactic(next)
+                    .is_some_and(|tactic| tactic.source_index == usize::MAX);
+                if !matches!(next, InternalProofNode::Done)
+                    && !generated
+                    && proof
+                        .execution_view()
+                        .is_ok_and(|view| !enter_preservation_continuation(next, view.frontier))
                 {
-                    *capture = saved;
+                    let after = execution_region_leading_tactic(next)
+                        .map(|tactic| format!(" (tactic {})", tactic.index))
+                        .unwrap_or_default();
+                    return Err(ClickError::new(format!(
+                        "`{claim_label}`: the tactics after a proof split in this loop body{after} are reached by more than one of its arms at the same program point, so they would be checked once per arm. Rejoin the arms where they end with `match value ensuring {{ ... }} {{ ... }}` or `if P ensuring {{ ... }} then {{ ... }} else {{ ... }}`, or move those tactics into each arm"
+                    )));
                 }
+                node = next;
+                pending = rest;
+                continue;
             }
-            let plan = proof.plan_execution_match(proof_match, |index| {
-                execution_region_leading_tactic(&arms[index])
-                    .map_or(usize::MAX, |tactic| tactic.source_index)
-            })?;
-            // Otherwise every arm continues into the region's own
-            // continuation as its own path, closes the invariants and
-            // reaches the loop's boundary with its own resource state.
-            let mut arm_pending: Vec<&InternalProofNode> = Vec::with_capacity(pending.len() + 1);
-            arm_pending.push(continuation.as_ref());
-            arm_pending.extend_from_slice(pending);
-            advance_preservation_match_group(
-                proof,
-                &plan,
-                arms,
-                &plan.live_cases(),
-                &arm_pending,
-                expansion_capture,
-                proof_site,
-                owning_source_index,
-                claim_label,
-                leaves,
-                refuted_match_paths,
-                unfinished,
-                0,
-                Some((*index, "match")),
-            )
-        }
-        InternalProofNode::Done => {
-            // A `return` completes this preservation path immediately.  The
-            // syntactic continuation belongs only to paths that remained in
-            // the loop body; attempting to drive it after function exit
-            // misattributes the first continuation tactic as a post-return
-            // operation and, more importantly, loses the terminal loop exit.
-            let terminal_return = proof
-                .execution_view()
-                .is_ok_and(|view| view.frontier.is_at_function_exit());
-            if terminal_return {
-                leaves.push(proof.clone());
-                return Ok(proof);
-            }
-            let Some((next, rest)) = pending.split_first() else {
-                if !proof.is_at_region_boundary() {
-                    // One certified iteration is a path that reaches the
-                    // body's end, a `continue`, or a `break`. A path that
-                    // stops anywhere else has not been proved at all. A
-                    // script still being written stops inside the body; it
-                    // is set aside so the region's other paths still run
-                    // and the finished ones still close their back edges,
-                    // and the frontier it reached is reported after that
-                    // (`describe_unfinished_preservation`). Anything else is
-                    // a complete-but-wrong body.
-                    if proof.execution_view().is_ok_and(|view| {
-                        matches!(
-                            view.frontier.position,
-                            FrontierPosition::StatementEntry { .. }
-                        )
-                    }) {
-                        // The script ran out before the body did: the rest
-                        // of the body runs as the automatic closer runs a
-                        // whole one, and each path it reaches closes its
-                        // back edge like a written one. A rest that does not
-                        // run reports the frontier the script reached.
-                        match walk_loop_body(claim_label, proof.clone()) {
-                            Ok((completed, _)) => leaves.extend(completed),
-                            Err(error) => unfinished.push(UnfinishedPreservationPath {
-                                proof: proof.clone(),
-                                last_tactic,
-                                walk_failure: Some(error.raw_summary().to_string()),
-                            }),
+            InternalProofNode::Linear {
+                tactics,
+                continuation,
+            } => {
+                for indexed in tactics {
+                    // A `contradiction` refutes the path it stands on, wherever it
+                    // stands. The planner's `[Contradiction]` fast path keeps a
+                    // sole-tactic arm out of the frontier split entirely; an arm
+                    // that first bridges the refuting fact into its own spelling
+                    // is an ordinary live path, and closes here instead. A refuted
+                    // path owes no invariant and no measure, contributes no back
+                    // edge and no exit, so it neither runs its continuation nor
+                    // becomes a leaf.
+                    if let ProofTactic::Contradiction(surface) = &indexed.tactic {
+                        let execution = proof.execution_view()?.execution.clone();
+                        let inside_match = execution
+                            .presentation
+                            .case_assumptions
+                            .iter()
+                            .any(|choice| choice.match_arm.is_some());
+                        let proof = proof.start_source_tactic(indexed.source_index)?;
+                        let proof = proof.apply_step_at(
+                            ProofStep::Contradiction(surface.clone()),
+                            indexed.source_index,
+                        )?;
+                        if inside_match {
+                            refuted_match_paths.push((execution, proof.path_certificate()?));
                         }
                         return Ok(proof);
                     }
-                    return Err(ClickError::new(format!(
-                        "`{claim_label}` must execute exactly one complete loop-body iteration, ending at the body's end, a `continue`, or a `break`"
-                    )));
+                    if proof.is_at_function_exit() {
+                        if let Some(reason) = post_exit_execution_tactic_error(&indexed.tactic) {
+                            return Err(proof
+                                .at_source_tactic(indexed.source_index)
+                                .step_error(reason));
+                        }
+                        let post_tactic =
+                            flat_post_execution_tactic(&indexed.tactic).ok_or_else(|| {
+                                proof.step_error("unsupported loop return closing tactic")
+                            })?;
+                        proof = proof.defer_post_execution_source_tactic(
+                            indexed.index,
+                            indexed.source_index,
+                            post_tactic,
+                            expansion_capture.as_deref_mut(),
+                        )?;
+                        continue;
+                    }
+                    let handled_by_linear_driver = !matches!(
+                        indexed.tactic,
+                        ProofTactic::Loop(_) | ProofTactic::Simp | ProofTactic::Step
+                    );
+                    if handled_by_linear_driver {
+                        let segment = InternalProofNode::Linear {
+                            tactics: vec![indexed.clone()],
+                            continuation: Box::new(InternalProofNode::Done),
+                        };
+                        let advanced = advance_checked_linear_continuation(
+                            proof.clone(),
+                            &segment,
+                            expansion_capture.as_deref_mut(),
+                            proof_site,
+                            owning_source_index,
+                            Some(claim_label),
+                        )?
+                        .ok()
+                        .filter(|(_, unconsumed)| unconsumed.is_empty());
+                        let Some((advanced, _)) = advanced else {
+                            return Err(ClickError::new(format!(
+                                "`{claim_label}` tactic {}: `{}` did not verify as a checked preservation operation. The preservation driver declined it; this is a proof-shape limitation, not a failed proposition check. For proposition-only work, move the operation into `have proposition by {{ ... }}`.",
+                                indexed.index,
+                                tactic_name(&indexed.tactic)
+                            )));
+                        };
+                        proof = advanced;
+                        if matches!(
+                            indexed.tactic,
+                            ProofTactic::CloseInvariants | ProofTactic::CloseInvariantsBy(_)
+                        ) {
+                            proof = proof
+                                .record_invariant_closer(indexed.index, indexed.source_index)?;
+                        }
+                        last_tactic = Some((indexed.index, tactic_name(&indexed.tactic)));
+                        continue;
+                    }
+                    match &indexed.tactic {
+                        ProofTactic::Step => {
+                            // The checked step is recorded, timed, and traced
+                            // under this tactic's own index, not the last one
+                            // the linear driver set.
+                            proof = proof
+                                .with_execution_tactic_index(indexed.index)?
+                                .at_source_tactic(indexed.source_index);
+                            let statement_index =
+                                proof.execution_frontier_index().unwrap_or_default();
+                            let _timing = TacticTiming::new(
+                                claim_label,
+                                indexed.index,
+                                indexed.source_index,
+                                &indexed.tactic,
+                                statement_index,
+                            );
+                            let checkpoint = proof.checkpoint();
+                            proof = proof.apply_step(ProofStep::Step)?;
+                            if indexed.source_index != owning_source_index
+                                && let Some(site) = proof_site
+                                && capture_selects_source(
+                                    expansion_capture.as_deref(),
+                                    site,
+                                    indexed.source_index,
+                                )
+                            {
+                                let certificate = proof.certificate_since(&checkpoint)?;
+                                record_proof_site_tactic_expansion(
+                                    expansion_capture.as_deref_mut(),
+                                    site,
+                                    indexed.source_index,
+                                    &certificate.to_proof_tactics(),
+                                );
+                            }
+                        }
+                        ProofTactic::Loop(clause) => {
+                            proof = proof.apply_frontier_local_loop(
+                                expansion_capture.as_deref_mut(),
+                                clause,
+                                indexed.index,
+                                indexed.source_index,
+                            )?;
+                        }
+                        ProofTactic::Simp => {
+                            // The region simp's semantic content is the bundle
+                            // closer certified at the boundary; its capture
+                            // completes with that closer.
+                            proof = proof.defer_region_simp(indexed.index, indexed.source_index)?;
+                        }
+                        tactic => {
+                            return Err(ClickError::new(format!(
+                                "`{claim_label}` tactic {}: `{}` is not a checked preservation operation",
+                                indexed.index,
+                                tactic_name(tactic)
+                            )));
+                        }
+                    }
+                    last_tactic = Some((indexed.index, tactic_name(&indexed.tactic)));
                 }
-                leaves.push(proof.clone());
-                return Ok(proof);
-            };
-            // The tactics after a split belong to one path. A second path
-            // reaching them means two arms of that split, or of a split
-            // nested in one of its arms, are both still live: running them
-            // again would check the rest of the body once per arm.
-            //
-            // Tactics a smart tactic generated are not held to this. The
-            // automatic closer walks each path of the C on its own and its
-            // search has its own budget; its certificate writes each path's
-            // tail inside the arm that reaches it, which is the shape this
-            // rule asks a written proof for.
-            let generated = execution_region_leading_tactic(next)
-                .is_some_and(|tactic| tactic.source_index == usize::MAX);
-            if !matches!(next, InternalProofNode::Done)
-                && !generated
-                && proof
-                    .execution_view()
-                    .is_ok_and(|view| !enter_preservation_continuation(next, view.frontier))
-            {
-                let after = execution_region_leading_tactic(next)
-                    .map(|tactic| format!(" (tactic {})", tactic.index))
-                    .unwrap_or_default();
-                return Err(ClickError::new(format!(
-                    "`{claim_label}`: the tactics after a proof split in this loop body{after} are reached by more than one of its arms at the same program point, so they would be checked once per arm. Rejoin the arms where they end with `match value ensuring {{ ... }} {{ ... }}` or `if P ensuring {{ ... }} then {{ ... }} else {{ ... }}`, or move those tactics into each arm"
-                )));
+                node = continuation;
+                continue;
             }
-            advance_preservation_region(
-                proof,
-                next,
-                rest,
-                expansion_capture,
-                proof_site,
-                owning_source_index,
-                claim_label,
-                leaves,
-                refuted_match_paths,
-                unfinished,
-                last_tactic,
-            )
-        }
-        InternalProofNode::Linear {
-            tactics,
-            continuation,
-        } => {
-            let mut last_tactic = last_tactic;
-            for indexed in tactics {
-                // A `contradiction` refutes the path it stands on, wherever it
-                // stands. The planner's `[Contradiction]` fast path keeps a
-                // sole-tactic arm out of the frontier split entirely; an arm
-                // that first bridges the refuting fact into its own spelling
-                // is an ordinary live path, and closes here instead. A refuted
-                // path owes no invariant and no measure, contributes no back
-                // edge and no exit, so it neither runs its continuation nor
-                // becomes a leaf.
-                if let ProofTactic::Contradiction(surface) = &indexed.tactic {
-                    let execution = proof.execution_view()?.execution.clone();
-                    let inside_match = execution
-                        .presentation
-                        .case_assumptions
-                        .iter()
-                        .any(|choice| choice.match_arm.is_some());
-                    let proof = proof.start_source_tactic(indexed.source_index)?;
-                    let proof = proof.apply_step_at(
-                        ProofStep::Contradiction(surface.clone()),
-                        indexed.source_index,
-                    )?;
-                    if inside_match {
-                        refuted_match_paths.push((execution, proof.path_certificate()?));
-                    }
-                    return Ok(proof);
-                }
-                if proof.is_at_function_exit() {
-                    if let Some(reason) = post_exit_execution_tactic_error(&indexed.tactic) {
-                        return Err(proof
-                            .at_source_tactic(indexed.source_index)
-                            .step_error(reason));
-                    }
-                    let post_tactic =
-                        flat_post_execution_tactic(&indexed.tactic).ok_or_else(|| {
-                            proof.step_error("unsupported loop return closing tactic")
-                        })?;
-                    proof = proof.defer_post_execution_source_tactic(
-                        indexed.index,
-                        indexed.source_index,
-                        post_tactic,
-                        expansion_capture.as_deref_mut(),
-                    )?;
-                    continue;
-                }
-                let handled_by_linear_driver = !matches!(
-                    indexed.tactic,
-                    ProofTactic::Loop(_) | ProofTactic::Simp | ProofTactic::Step
-                );
-                if handled_by_linear_driver {
-                    let segment = InternalProofNode::Linear {
-                        tactics: vec![indexed.clone()],
+            InternalProofNode::If {
+                index,
+                source_index,
+                condition,
+                ensuring,
+                then_branch,
+                else_branch,
+                continuation,
+            } => {
+                proof = proof.with_execution_tactic_index(*index)?;
+                // With an interface the cases rejoin inside the body, as the
+                // arms of a `branch` do, and what follows the `if` is checked
+                // once on the one path that leaves it.
+                if ensuring.is_some() {
+                    let alone = InternalProofNode::If {
+                        index: *index,
+                        source_index: *source_index,
+                        condition: condition.clone(),
+                        ensuring: ensuring.clone(),
+                        then_branch: then_branch.clone(),
+                        else_branch: else_branch.clone(),
                         continuation: Box::new(InternalProofNode::Done),
                     };
-                    let advanced = advance_checked_linear_continuation(
-                        proof.clone(),
-                        &segment,
+                    let Ok(joined) = advance_focused_execution_region(
+                        proof,
+                        None,
+                        &alone,
                         expansion_capture.as_deref_mut(),
                         proof_site,
                         owning_source_index,
-                        Some(claim_label),
+                        0,
                     )?
-                    .ok()
-                    .filter(|(_, unconsumed)| unconsumed.is_empty());
-                    let Some((advanced, _)) = advanced else {
+                    else {
                         return Err(ClickError::new(format!(
-                            "`{claim_label}` tactic {}: `{}` did not verify as a checked preservation operation. The preservation driver declined it; this is a proof-shape limitation, not a failed proposition check. For proposition-only work, move the operation into `have proposition by {{ ... }}`.",
-                            indexed.index,
-                            tactic_name(&indexed.tactic)
+                            "`{claim_label}` tactic {index}: proof `if` did not rejoin as a checked preservation operation"
                         )));
                     };
-                    proof = advanced;
-                    if matches!(
-                        indexed.tactic,
-                        ProofTactic::CloseInvariants | ProofTactic::CloseInvariantsBy(_)
-                    ) {
-                        proof =
-                            proof.record_invariant_closer(indexed.index, indexed.source_index)?;
-                    }
-                    last_tactic = Some((indexed.index, tactic_name(&indexed.tactic)));
+                    proof = joined;
+                    node = continuation;
+                    last_tactic = Some((*index, "if"));
                     continue;
                 }
-                match &indexed.tactic {
-                    ProofTactic::Step => {
-                        // The checked step is recorded, timed, and traced
-                        // under this tactic's own index, not the last one
-                        // the linear driver set.
-                        proof = proof
-                            .with_execution_tactic_index(indexed.index)?
-                            .at_source_tactic(indexed.source_index);
-                        let statement_index = proof.execution_frontier_index().unwrap_or_default();
-                        let _timing = TacticTiming::new(
-                            claim_label,
-                            indexed.index,
-                            indexed.source_index,
-                            &indexed.tactic,
-                            statement_index,
-                        );
-                        let checkpoint = proof.checkpoint();
-                        proof = proof.apply_step(ProofStep::Step)?;
-                        if indexed.source_index != owning_source_index
-                            && let Some(site) = proof_site
-                            && capture_selects_source(
-                                expansion_capture.as_deref(),
-                                site,
-                                indexed.source_index,
-                            )
-                        {
-                            let certificate = proof.certificate_since(&checkpoint)?;
-                            record_proof_site_tactic_expansion(
-                                expansion_capture.as_deref_mut(),
-                                site,
-                                indexed.source_index,
-                                &certificate.to_proof_tactics(),
-                            );
-                        }
+                // An expanded C branch is the checked execution split it spells,
+                // exactly as in a function body: a decided branch keeps its
+                // infeasible arm empty, and reading that as a logical case split
+                // would run the continuation on the refuted C arm.
+                if let Some((then_steps, else_steps)) =
+                    expanded_execution_if_steps(then_branch, else_branch)
+                    && proof.frontier_is_execution_branch(condition)?
+                {
+                    let advanced =
+                        proof.apply_expanded_execution_if(condition, &then_steps, &else_steps)?;
+                    proof = advanced;
+                    node = continuation;
+                    last_tactic = Some((*index, "if"));
+                    continue;
+                }
+                // As for a `match`: straight-line arms that end in one state
+                // rejoin without an interface.
+                if preservation_split_has_continuation(continuation, pending)
+                    && region_is_straight_line(then_branch)
+                    && region_is_straight_line(else_branch)
+                {
+                    let saved_capture = expansion_capture.as_deref().cloned();
+                    let alone = InternalProofNode::If {
+                        index: *index,
+                        source_index: *source_index,
+                        condition: condition.clone(),
+                        ensuring: None,
+                        then_branch: then_branch.clone(),
+                        else_branch: else_branch.clone(),
+                        continuation: Box::new(rejoin_here()),
+                    };
+                    let attempt = advance_focused_execution_region(
+                        proof.clone(),
+                        None,
+                        &alone,
+                        expansion_capture.as_deref_mut(),
+                        proof_site,
+                        owning_source_index,
+                        0,
+                    );
+                    if let Ok(Ok(joined)) = attempt {
+                        proof = joined;
+                        node = continuation;
+                        last_tactic = Some((*index, "if"));
+                        continue;
                     }
-                    ProofTactic::Loop(clause) => {
-                        proof = proof.apply_frontier_local_loop(
-                            expansion_capture.as_deref_mut(),
-                            clause,
-                            indexed.index,
-                            indexed.source_index,
-                        )?;
-                    }
-                    ProofTactic::Simp => {
-                        // The region simp's semantic content is the bundle
-                        // closer certified at the boundary; its capture
-                        // completes with that closer.
-                        proof = proof.defer_region_simp(indexed.index, indexed.source_index)?;
-                    }
-                    tactic => {
-                        return Err(ClickError::new(format!(
-                            "`{claim_label}` tactic {}: `{}` is not a checked preservation operation",
-                            indexed.index,
-                            tactic_name(tactic)
-                        )));
+                    if let (Some(capture), Some(saved)) =
+                        (expansion_capture.as_deref_mut(), saved_capture)
+                    {
+                        *capture = saved;
                     }
                 }
-                last_tactic = Some((indexed.index, tactic_name(&indexed.tactic)));
-            }
-            advance_preservation_region(
-                proof,
-                continuation,
-                pending,
-                expansion_capture,
-                proof_site,
-                owning_source_index,
-                claim_label,
-                leaves,
-                refuted_match_paths,
-                unfinished,
-                last_tactic,
-            )
-        }
-        InternalProofNode::If {
-            index,
-            source_index,
-            condition,
-            ensuring,
-            then_branch,
-            else_branch,
-            continuation,
-        } => {
-            let proof = proof.with_execution_tactic_index(*index)?;
-            // With an interface the cases rejoin inside the body, as the
-            // arms of a `branch` do, and what follows the `if` is checked
-            // once on the one path that leaves it.
-            if ensuring.is_some() {
-                let alone = InternalProofNode::If {
-                    index: *index,
-                    source_index: *source_index,
-                    condition: condition.clone(),
-                    ensuring: ensuring.clone(),
-                    then_branch: then_branch.clone(),
-                    else_branch: else_branch.clone(),
-                    continuation: Box::new(InternalProofNode::Done),
-                };
-                let Ok(joined) = advance_focused_execution_region(
-                    proof,
-                    None,
-                    &alone,
-                    expansion_capture.as_deref_mut(),
-                    proof_site,
-                    owning_source_index,
-                    0,
-                )?
-                else {
-                    return Err(ClickError::new(format!(
-                        "`{claim_label}` tactic {index}: proof `if` did not rejoin as a checked preservation operation"
-                    )));
-                };
-                return advance_preservation_region(
-                    joined,
-                    continuation,
-                    pending,
-                    expansion_capture,
-                    proof_site,
-                    owning_source_index,
-                    claim_label,
-                    leaves,
-                    refuted_match_paths,
-                    unfinished,
-                    Some((*index, "if")),
-                );
-            }
-            // An expanded C branch is the checked execution split it spells,
-            // exactly as in a function body: a decided branch keeps its
-            // infeasible arm empty, and reading that as a logical case split
-            // would run the continuation on the refuted C arm.
-            if let Some((then_steps, else_steps)) =
-                expanded_execution_if_steps(then_branch, else_branch)
-                && proof.frontier_is_execution_branch(condition)?
-            {
-                let advanced =
-                    proof.apply_expanded_execution_if(condition, &then_steps, &else_steps)?;
-                return advance_preservation_region(
-                    advanced,
-                    continuation,
-                    pending,
-                    expansion_capture,
-                    proof_site,
-                    owning_source_index,
-                    claim_label,
-                    leaves,
-                    refuted_match_paths,
-                    unfinished,
-                    Some((*index, "if")),
-                );
-            }
-            // As for a `match`: straight-line arms that end in one state
-            // rejoin without an interface.
-            if preservation_split_has_continuation(continuation, pending)
-                && region_is_straight_line(then_branch)
-                && region_is_straight_line(else_branch)
-            {
-                let saved_capture = expansion_capture.as_deref().cloned();
-                let alone = InternalProofNode::If {
-                    index: *index,
-                    source_index: *source_index,
-                    condition: condition.clone(),
-                    ensuring: None,
-                    then_branch: then_branch.clone(),
-                    else_branch: else_branch.clone(),
-                    continuation: Box::new(rejoin_here()),
-                };
-                let attempt = advance_focused_execution_region(
-                    proof.clone(),
-                    None,
-                    &alone,
-                    expansion_capture.as_deref_mut(),
-                    proof_site,
-                    owning_source_index,
-                    0,
-                );
-                if let Ok(Ok(joined)) = attempt {
-                    return advance_preservation_region(
-                        joined,
-                        continuation,
-                        pending,
-                        expansion_capture,
+                let (split, ids) = proof.split_preservation_case(condition, *index)?;
+                let mut arm_pending: Vec<&InternalProofNode> =
+                    Vec::with_capacity(pending.len() + 1);
+                arm_pending.push(continuation.as_ref());
+                arm_pending.extend_from_slice(pending);
+                let mut advanced = split;
+                for (value, arm) in [(true, then_branch), (false, else_branch)] {
+                    let Some(id) = ids[usize::from(!value)] else {
+                        continue;
+                    };
+                    let focused = advanced.focus_branch(id)?;
+                    advanced = advance_preservation_region(
+                        focused,
+                        arm,
+                        &arm_pending,
+                        expansion_capture.as_deref_mut(),
                         proof_site,
                         owning_source_index,
                         claim_label,
@@ -2619,125 +2588,79 @@ pub(in crate::surface::proof) fn advance_preservation_region<'a>(
                         refuted_match_paths,
                         unfinished,
                         Some((*index, "if")),
-                    );
+                    )?;
                 }
-                if let (Some(capture), Some(saved)) =
-                    (expansion_capture.as_deref_mut(), saved_capture)
-                {
-                    *capture = saved;
-                }
+                Ok(advanced)
             }
-            let (split, ids) = proof.split_preservation_case(condition, *index)?;
-            let mut arm_pending: Vec<&InternalProofNode> = Vec::with_capacity(pending.len() + 1);
-            arm_pending.push(continuation.as_ref());
-            arm_pending.extend_from_slice(pending);
-            let mut advanced = split;
-            for (value, arm) in [(true, then_branch), (false, else_branch)] {
-                let Some(id) = ids[usize::from(!value)] else {
-                    continue;
-                };
-                let focused = advanced.focus_branch(id)?;
-                advanced = advance_preservation_region(
-                    focused,
-                    arm,
-                    &arm_pending,
-                    expansion_capture.as_deref_mut(),
-                    proof_site,
-                    owning_source_index,
-                    claim_label,
-                    leaves,
-                    refuted_match_paths,
-                    unfinished,
-                    Some((*index, "if")),
-                )?;
-            }
-            Ok(advanced)
-        }
-        InternalProofNode::Branch {
-            index,
-            source_index,
-            ensuring,
-            then_branch,
-            else_branch,
-            continuation,
-            ..
-        } => {
-            let proof = proof.with_execution_tactic_index(*index)?;
-            let Ok((advanced, _, _, consumed_continuation)) = try_advance_checked_execution_branch(
-                proof.at_source_tactic(*source_index),
-                *index,
+            InternalProofNode::Branch {
+                index,
+                source_index,
                 ensuring,
                 then_branch,
                 else_branch,
                 continuation,
-                expansion_capture.as_deref_mut(),
-                proof_site,
-                owning_source_index,
-                0,
-            )?
-            else {
-                return Err(ClickError::new(format!(
-                    "`{claim_label}` tactic {index}: `branch` did not verify as a checked preservation operation"
-                )));
-            };
-            advance_preservation_region(
-                advanced,
-                if consumed_continuation {
+                ..
+            } => {
+                proof = proof.with_execution_tactic_index(*index)?;
+                let Ok((advanced, _, _, consumed_continuation)) =
+                    try_advance_checked_execution_branch(
+                        proof.at_source_tactic(*source_index),
+                        *index,
+                        ensuring,
+                        then_branch,
+                        else_branch,
+                        continuation,
+                        expansion_capture.as_deref_mut(),
+                        proof_site,
+                        owning_source_index,
+                        0,
+                    )?
+                else {
+                    return Err(ClickError::new(format!(
+                        "`{claim_label}` tactic {index}: `branch` did not verify as a checked preservation operation"
+                    )));
+                };
+                proof = advanced;
+                node = if consumed_continuation {
                     &DONE_PROOF
                 } else {
                     continuation
-                },
-                pending,
-                expansion_capture,
-                proof_site,
-                owning_source_index,
-                claim_label,
-                leaves,
-                refuted_match_paths,
-                unfinished,
-                Some((*index, "branch")),
-            )
-        }
-        InternalProofNode::CallOutcomes { .. } => Err(ClickError::new(
-            "`outcomes` is available only after function execution, not in a loop preservation proof",
-        )),
-        InternalProofNode::Open {
-            index,
-            source_index,
-            resource,
-            close_proof,
-            body,
-            continuation,
-        } => {
-            let proof = proof.with_execution_tactic_index(*index)?;
-            let scope = proof.begin_open(resource.clone(), *source_index, close_proof.clone())?;
-            let Ok(scope) = advance_checked_open_scope(
-                scope,
+                };
+                last_tactic = Some((*index, "branch"));
+                continue;
+            }
+            InternalProofNode::CallOutcomes { .. } => Err(ClickError::new(
+                "`outcomes` is available only after function execution, not in a loop preservation proof",
+            )),
+            InternalProofNode::Open {
+                index,
+                source_index,
+                resource,
+                close_proof,
                 body,
-                expansion_capture.as_deref_mut(),
-                proof_site,
-                owning_source_index,
-            )?
-            else {
-                return Err(ClickError::new(format!(
-                    "`{claim_label}` tactic {index}: `open` did not verify as a checked preservation operation"
-                )));
-            };
-            let proof = scope.join()?;
-            advance_preservation_region(
-                proof,
                 continuation,
-                pending,
-                expansion_capture,
-                proof_site,
-                owning_source_index,
-                claim_label,
-                leaves,
-                refuted_match_paths,
-                unfinished,
-                Some((*index, "open")),
-            )
-        }
+            } => {
+                proof = proof.with_execution_tactic_index(*index)?;
+                let scope =
+                    proof.begin_open(resource.clone(), *source_index, close_proof.clone())?;
+                let Ok(scope) = advance_checked_open_scope(
+                    scope,
+                    body,
+                    expansion_capture.as_deref_mut(),
+                    proof_site,
+                    owning_source_index,
+                )?
+                else {
+                    return Err(ClickError::new(format!(
+                        "`{claim_label}` tactic {index}: `open` did not verify as a checked preservation operation"
+                    )));
+                };
+                proof = scope.join()?;
+                node = continuation;
+                last_tactic = Some((*index, "open"));
+                continue;
+            }
+        };
     }
 }
 
