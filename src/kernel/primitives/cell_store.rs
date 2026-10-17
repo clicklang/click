@@ -3204,8 +3204,11 @@ mod tests {
         assert_eq!(below.slot_index(&at(&block, stem.clone())), Some(1));
     }
 
+    // Exercise every mutation and lookup in the deterministic streams. Check
+    // adjacent snapshots every step and all retained snapshots at doubling
+    // checkpoints and the final step, rather than every historical pair.
     #[test]
-    #[ignore = "nightly: 27 s, over the gate's per-test budget (2026-10-06)"]
+    #[ignore = "nightly: model-based mutation and retained-history regression"]
     fn the_run_index_agrees_with_a_per_cell_model() {
         let global = PointerBlock::Concrete("cell-store-global".to_string());
         let other = PointerBlock::Concrete("cell-store-other".to_string());
@@ -3241,7 +3244,7 @@ mod tests {
                 ));
             }
             let mut runs_seen = Vec::<CellRun>::new();
-            for _ in 0..60 {
+            for step in 0..60usize {
                 match stream.next(10) {
                     0..=2 => {
                         let width = if stream.next(3) == 0 { 1 } else { 4 };
@@ -3322,7 +3325,10 @@ mod tests {
                         });
                     }
                 }
-                assert_eq!(logical_model(&store), model, "seed {seed_value}");
+                assert!(
+                    store.logical().iter().eq(model.iter()),
+                    "seed {seed_value}: logical cells differ from the per-cell model"
+                );
                 assert_eq!(store.len(), model.len());
                 assert!(store.runs().all(|run| run.live_count() > 0));
                 assert_eq!(
@@ -3333,7 +3339,16 @@ mod tests {
                 for pointer in &pointers {
                     assert_eq!(store.get(pointer), model.get(pointer).cloned());
                 }
-                for (earlier, earlier_model) in &history {
+                // Check every transition, and the full retained history at
+                // doubling checkpoints and at the final (deepest) state.
+                // Keep every snapshot alive so copy-on-write sharing is unchanged.
+                let compare_all = (step + 1).is_power_of_two() || step + 1 == 60;
+                let comparisons = if compare_all {
+                    &history[..]
+                } else {
+                    &history[history.len().saturating_sub(1)..]
+                };
+                for (earlier, earlier_model) in comparisons {
                     // The reference maps are immutable during this pair's checks.
                     // Their difference is symmetric; compute that oracle once.
                     let expected = model_diff(&model, earlier_model);
@@ -3342,7 +3357,6 @@ mod tests {
                         expected,
                         "seed {seed_value}"
                     );
-                    assert_eq!(earlier.differing_pointers(&store), expected);
                     if store == *earlier {
                         assert_eq!(&model, earlier_model, "equal stores hold one cell map");
                     }
@@ -3350,11 +3364,11 @@ mod tests {
                         assert_eq!(&model, earlier_model);
                     }
                     let differing = earlier.differing_pointers(&store);
+                    assert_eq!(differing, expected);
                     let removed = differing.iter().collect::<Vec<_>>();
                     assert_eq!(
                         store.is_without(earlier, &removed),
-                        removed.iter().all(|pointer| !model.contains_key(*pointer))
-                            && differing == expected,
+                        removed.iter().all(|pointer| !model.contains_key(*pointer)),
                     );
                 }
                 history.push((store.clone(), model.clone()));

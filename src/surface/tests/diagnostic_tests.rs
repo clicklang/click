@@ -1839,6 +1839,8 @@ int32 f() { ensures result == 2; } by { step(); simp(); }
         [ClickModuleSource::new("entry.click", source, [])],
     );
     let c = [("f.c", "int f(void) { return 1; }")];
+    let index =
+        ProofSourceIndex::for_project(&project, &ProgramInputs::Bundle(c.to_vec())).unwrap();
     let locate = |claim: &str, path: &[usize]| {
         let outer = project_tactic_source_position(
             &project,
@@ -1850,15 +1852,13 @@ int32 f() { ensures result == 2; } by { step(); simp(); }
         let position = if path.len() == 1 {
             outer
         } else {
-            nested_tactic_source_position(source, &outer, &path[1..]).ok()?
+            index.nested_position(&outer, &path[1..]).ok()?
         };
         Some((format!("tactic@{}", position.line), position))
     };
     let arm = |claim: &str, path: &[usize], target: &SourcePosition| {
         let (_, branch) = locate(claim, path)?;
-        tactic_arm_containing_position(source, &branch, target)
-            .ok()
-            .flatten()
+        index.arm_containing(&branch, target).ok().flatten()
     };
     with_proof_trace("good", || {
         verify_project_theorem(&project, &ProgramInputs::Bundle(c.to_vec()), "good").unwrap();

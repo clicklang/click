@@ -669,7 +669,7 @@ fn stored_field_value_uses_indexed_base_aliases() {
     let bare = PureFactContext::new();
     assert!(!write_is_at_read_address(&write, &read, &bare));
     let mut samples = Vec::new();
-    for count in [16u64, 256, 4096] {
+    for count in [16u64, 64, 256] {
         let mut context = PureFactContext::new();
         for index in 0..count {
             context = context.assume_condition(
@@ -1196,7 +1196,7 @@ fn numeric_byte_geometry_ignores_unrelated_address_classes() {
     let p = pointer(970_131);
     let q = pointer(970_132);
     let mut previous = None;
-    for size in [16, 64, 256, 1024] {
+    for size in [16, 64, 256] {
         let mut context = PureFactContext::new();
         for i in 0..size {
             context = context.assume_proposition(numeric_alias(

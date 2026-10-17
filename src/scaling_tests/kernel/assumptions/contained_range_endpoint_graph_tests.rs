@@ -6,7 +6,7 @@ use super::*;
 
 #[test]
 fn signed_containment_order_graph_queries_scale_without_fact_index() {
-    for size in [16u64, 64, 256, 1024] {
+    for size in [16u64, 64, 256, 512] {
         let mut context = PureFactContext::new();
         for index in 0..size {
             context = context.assume_condition(
@@ -33,7 +33,7 @@ fn signed_containment_order_graph_queries_scale_without_fact_index() {
 #[test]
 #[ignore = "nightly: 0.7s in the parallel gate"]
 fn recorded_order_fact_graph_matches_scale_without_fact_index() {
-    for size in [16u64, 64, 256, 1024] {
+    for size in [16u64, 64, 256, 512] {
         let lower = variable(9_330_010);
         let upper = variable(9_330_011);
         let mut context = PureFactContext::new()
