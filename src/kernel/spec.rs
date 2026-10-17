@@ -6233,11 +6233,13 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
             name,
             arguments,
             result_type,
+            result_object_class,
         } => evaluate_spec_pure_function_application_paths_in(
             SpecScope::new(state, loop_entry_state, algebraic_bindings),
             name,
             arguments,
             *result_type,
+            result_object_class.as_ref(),
             assumptions,
             budget,
         )?,
@@ -6352,6 +6354,7 @@ fn evaluate_spec_pure_function_application_paths_in(
     name: &str,
     arguments: &[SpecPureFunctionArgument],
     result_type: CType,
+    result_object_class: Option<&crate::kernel::effective_type::CAccessClass>,
     assumptions: &PureFactContext,
     budget: &mut SpecEvaluation<'_>,
 ) -> ExecutionResult<Vec<SpecExpressionPath>> {
@@ -6397,6 +6400,7 @@ fn evaluate_spec_pure_function_application_paths_in(
                 },
                 result_type,
             )
+            .with_pointer_object_class(result_object_class.cloned())
         } else if result_type == CType::Bool {
             // An opaque `bool` application is read through C's conversion to
             // `bool`, so its value is exactly `0` or `1` by construction,

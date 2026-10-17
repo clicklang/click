@@ -856,6 +856,10 @@ pub struct ClickFunctionDefinition {
     type_parameters: Vec<String>,
     parameters: Vec<FunctionParameter>,
     return_type: ClickType,
+    /// The class of the object a returned pointer designates, from the
+    /// declared return type as a C function's declaration gives it
+    /// (`design/effective-types.md`).
+    return_object_class: Option<crate::kernel::effective_type::CAccessClass>,
     decreases: Option<ContractExpression>,
     body: ContractExpression,
 }
@@ -6392,6 +6396,10 @@ impl ClickFunctionDefinition {
 
     pub fn return_type(&self) -> &ClickType {
         &self.return_type
+    }
+
+    pub fn return_object_class(&self) -> Option<&crate::kernel::effective_type::CAccessClass> {
+        self.return_object_class.as_ref()
     }
 
     pub fn decreases(&self) -> Option<&ContractExpression> {

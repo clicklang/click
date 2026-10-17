@@ -6914,6 +6914,7 @@ impl AnnotationLowerer<'_> {
                 environment,
             )?,
             result_type: result_type.to_kernel_type(),
+            result_object_class: definition.return_object_class().cloned(),
         })
     }
 

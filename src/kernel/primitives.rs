@@ -2446,6 +2446,9 @@ pub enum SpecExpression {
         name: String,
         arguments: Vec<SpecPureFunctionArgument>,
         result_type: CType,
+        /// The class of the object a pointer result designates, from the
+        /// function's declared return type (`design/effective-types.md`).
+        result_object_class: Option<crate::kernel::effective_type::CAccessClass>,
     },
     LoopEntrySnapshot(Box<SpecExpression>),
     PointerOffset {
