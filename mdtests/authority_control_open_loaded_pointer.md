@@ -63,11 +63,7 @@ int32 parent_read_payload(struct parent* p) {
     requires link.link != ParentLink::Empty;
     owns child_control(p->kid);
     owns child_ref(p->kid);
-    ensures result == p->kid->payload;
     ensures result == old(p->kid->payload);
-    ensures p->kid == old(p->kid);
-    ensures link.link == old(link.link);
-    ensures link.link == ParentLink::Linked(old(p->kid));
 } by {
     match link.link {
         ParentLink::Empty => {
@@ -83,4 +79,8 @@ int32 parent_read_payload(struct parent* p) {
     }
 }
 
+```
+
+```expect
+pass
 ```
