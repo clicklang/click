@@ -3035,7 +3035,6 @@ fn failed_invariant_closure_retains_body_trace_and_focused_fact() {
         assert!(trace.contains("have len == 0u64"), "{trace}");
         assert!(trace.contains("have to_integer(len) == 0"), "{trace}");
         assert!(!trace.contains("no checked simple steps"), "{trace}");
-        let index = ProofSourceIndex::new(CLOSURE_TRACE_CLICK).unwrap();
         let project = ClickProject::new(
             "entry.click",
             [ClickModuleSource::new(
@@ -3044,12 +3043,13 @@ fn failed_invariant_closure_retains_body_trace_and_focused_fact() {
                 [],
             )],
         );
+        let index = ProofSourceIndex::for_project(
+            &project,
+            &ProgramInputs::Bundle(vec![("loop.c", CLOSURE_TRACE_C)]),
+        )
+        .unwrap();
         let positions = index
-            .project_tactic_positions(
-                &project,
-                &ProgramInputs::Bundle(vec![("loop.c", CLOSURE_TRACE_C)]),
-                error.proof_claim_label().unwrap(),
-            )
+            .project_tactic_positions(&project, error.proof_claim_label().unwrap())
             .unwrap();
         let locate = |path: &[usize]| {
             let outer = positions.get(*path.first()?)?;

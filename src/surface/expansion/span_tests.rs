@@ -1,9 +1,8 @@
-//! Every proof block the parser reads, the lexical proof index must find with
-//! the same tactics. The index also reads some braced groups that are not
-//! proofs: the arms of a resource declaration's `match`, the branches of an
-//! `if` expression in a pure function, and the body of a C function named
-//! `open`. Those are counted, not refused, until the index is built from the
-//! parser's spans.
+//! An index built from the parser's spans holds exactly the proof blocks the
+//! parser reads, with the same tactics. The lexical reading of a fragment
+//! also takes some braced groups that are not proofs: the arms of a resource
+//! declaration's `match`, the branches of an `if` expression in a pure
+//! function, and the body of a C function named `open`. Those are counted.
 
 use super::*;
 
@@ -59,7 +58,7 @@ fn corpus() -> Vec<(String, String)> {
 
 #[test]
 #[ignore = "nightly: parses the whole corpus"]
-fn the_lexical_proof_index_finds_the_blocks_the_parser_reads() {
+fn the_source_index_holds_the_blocks_the_parser_reads() {
     let mut compared = 0;
     let mut unparsed = 0;
     let mut mismatches = Vec::new();
@@ -72,14 +71,14 @@ fn the_lexical_proof_index_finds_the_blocks_the_parser_reads() {
             unparsed += 1;
             continue;
         };
-        let Ok(index) = ProofSourceIndex::new(&source) else {
+        let Ok(index) = ProofSourceIndex::build(&source, Some(&spans)) else {
             mismatches.push(format!(
-                "{name}: the lexical index refuses a file the parser reads"
+                "{name}: the index refuses the parser's proof blocks"
             ));
             continue;
         };
         compared += 1;
-        let lexical = index
+        let indexed = index
             .written_blocks()
             .into_iter()
             .map(|(open, close, tactics)| ((open.line, open.column), (close, tactics)))
@@ -92,39 +91,48 @@ fn the_lexical_proof_index_finds_the_blocks_the_parser_reads() {
             );
         }
         for (open, (close, tactics)) in &parsed {
-            match lexical.get(open) {
+            match indexed.get(open) {
                 None => mismatches.push(format!(
-                    "{name}:{}:{}: the parser reads a proof block the lexical index misses",
+                    "{name}:{}:{}: the parser reads a proof block the index misses",
                     open.0, open.1
                 )),
-                Some((lexical_close, lexical_tactics)) => {
+                Some((indexed_close, indexed_tactics)) => {
                     let starts = |list: &Vec<SourcePosition>| {
                         list.iter()
                             .map(|position| (position.line, position.column))
                             .collect::<Vec<_>>()
                     };
-                    if (lexical_close.line, lexical_close.column) != (close.line, close.column)
-                        || starts(lexical_tactics) != starts(tactics)
+                    if (indexed_close.line, indexed_close.column) != (close.line, close.column)
+                        || starts(indexed_tactics) != starts(tactics)
                     {
                         mismatches.push(format!(
-                            "{name}:{}:{}: parser tactics {:?}, lexical {:?}",
+                            "{name}:{}:{}: parser tactics {:?}, index {:?}",
                             open.0,
                             open.1,
                             starts(tactics),
-                            starts(lexical_tactics)
+                            starts(indexed_tactics)
                         ));
                     }
                 }
             }
         }
-        not_proofs += lexical
-            .keys()
-            .filter(|open| !parsed.contains_key(open))
-            .count();
+        for open in indexed.keys().filter(|open| !parsed.contains_key(open)) {
+            mismatches.push(format!(
+                "{name}:{}:{}: the index holds a block the parser does not read",
+                open.0, open.1
+            ));
+        }
+        if let Ok(fragment) = ProofSourceIndex::new(&source) {
+            not_proofs += fragment
+                .written_blocks()
+                .iter()
+                .filter(|(open, _, _)| !parsed.contains_key(&(open.line, open.column)))
+                .count();
+        }
     }
     eprintln!(
         "compared {compared} sources ({unparsed} need C layouts or imports to parse); \
-         the lexical index also read {not_proofs} braced groups that are not proofs"
+         a lexical reading takes {not_proofs} braced groups that are not proofs"
     );
     assert!(
         mismatches.is_empty(),
