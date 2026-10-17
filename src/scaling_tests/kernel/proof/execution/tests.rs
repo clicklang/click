@@ -1120,3 +1120,66 @@ fn constructing_an_instance_fold_pays_for_its_body_once() {
         "[direct derivation, construction and recording]: {samples:?}"
     );
 }
+
+#[test]
+fn a_checked_interface_join_does_not_reconstruct_a_calls_havoc() {
+    let mut samples = Vec::new();
+    for count in [4u32, 8, 16, 32] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let base = Pointer {
+            block: PointerBlock::ExternalArgument,
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        let mut memory = CMemory::new();
+        for index in 0..count {
+            memory = memory.store(base.offset_by_bytes(index * 4), int32(index));
+        }
+        let range =
+            crate::kernel::CMemoryRange::new_with_element_width(base, 0u32.into(), count.into(), 4);
+        let assumptions = PureFactContext::new();
+        let after = memory.clone().with_call_memory_havoc(
+            Variable(9_940_000),
+            std::slice::from_ref(&range),
+            &assumptions,
+            None,
+        );
+        let before_state = CState::new().with_memory(memory.clone());
+        let after_state = before_state.clone().with_memory(after.clone());
+        let parent =
+            ExecutionProofCore::at_entry(before_state.clone(), ExecutionFrontier::default());
+        let effect = ExecutionPureFact::internal(Proposition::CMemoryEffectSummary {
+            before: memory.clone(),
+            after: after.clone(),
+            mutable_ranges: vec![range.clone()],
+        })
+        .into_certified();
+        let mut called = parent.clone();
+        called.state = after_state.clone().into();
+        called.effect_facts.push(effect);
+        // The statement recorder retains exactly one effect for this call.
+        // Its checked walk is the join's provenance for the effect stream.
+        let steps = [CheckedMemoryStep {
+            before: memory,
+            after,
+            may_write: true,
+            statement_effects: Some(1),
+        }];
+        let (joined, work) = crate::instrumentation::measure_deterministic_work(|| {
+            checked_interface_effect_facts_along(
+                &before_state,
+                &after_state,
+                [&called, &parent],
+                [&ProofFacts::default(), &ProofFacts::default()],
+                [&called.effect_facts, &parent.effect_facts],
+                Some([&steps, &[]]),
+            )
+        });
+        let joined = joined.unwrap();
+        assert!(joined.iter().any(|fact| fact.is_join_summary() && matches!(fact.proposition(), Proposition::CMemoryEffectSummary { mutable_ranges, .. } if mutable_ranges == std::slice::from_ref(&range))));
+        samples.push(work);
+    }
+    assert!(
+        samples.iter().all(|work| *work <= samples[0] + 32),
+        "the join reconstructed the already checked call's havoc: {samples:?}"
+    );
+}

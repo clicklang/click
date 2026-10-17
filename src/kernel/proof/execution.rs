@@ -4737,8 +4737,10 @@ fn checked_interface_effect_facts_along(
     let mut heap_frees = [Vec::new(), Vec::new()];
     for arm_index in 0..2 {
         let assumptions = arm_facts[arm_index].assumptions();
-        // When the arm's walk vouches for the chain, the effects are read
-        // for what they cover and are not chained a second time.
+        // The arm's checked walk and exact effect stream already account
+        // for each statement's writes. Combine their recorded footprints;
+        // do not reconstruct those same stores or call havocs at the join.
+        // Without that provenance, retain the standalone coverage checks.
         let chained = arm_memory_steps.is_some_and(|steps| {
             arm_effects_follow_memory_steps(
                 steps[arm_index],
@@ -4762,7 +4764,8 @@ fn checked_interface_effect_facts_along(
                             "an interface arm effect chain does not start at its current memory",
                         );
                     }
-                    if !fact.is_join_summary()
+                    if !chained
+                        && !fact.is_join_summary()
                         && !memory_diff_is_covered_by_writes(
                             before,
                             after,
@@ -4795,7 +4798,8 @@ fn checked_interface_effect_facts_along(
                             "an interface arm effect summary does not start at its current memory",
                         );
                     }
-                    if !fact.is_join_summary()
+                    if !chained
+                        && !fact.is_join_summary()
                         && !memory_diff_is_covered_by_ranges(
                             before,
                             after,

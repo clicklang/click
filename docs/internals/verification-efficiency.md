@@ -85,6 +85,15 @@ complete construction with one direct body derivation at 4, 8, 16, and 32
 clauses, allowing only constant recording overhead. Independent certificate
 checks still reject proposed successors with unrelated state or facts.
 
+Interface joins combine the effects retained by each arm's checked statement
+walk. When that walk accounts for the complete recorded effect stream, joining
+its footprints does not reconstruct store or call-havoc results. A standalone
+stream without that provenance still receives the ordinary diff-coverage check.
+`a_checked_interface_join_does_not_reconstruct_a_calls_havoc` varies the cells
+a single recorded call discarded at 4, 8, 16, and 32; joining its one effect is
+independent of that earlier work. The independent malformed-effect controls
+continue to reject writes outside the stated footprint.
+
 Existing produce-then-check code is a defect, tracked in
 `issues/scaling.md` cause 4. The review question for any
 change is: does this re-validate something the same session produced? If so,
