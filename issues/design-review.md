@@ -69,18 +69,20 @@ checks.
 ### P1. Proofs are far larger than the code
 
 Today (2026-10-16, `scripts/proof-ratio.py`, comments and blank lines
-excluded): five of 53 examples are over the 20-lines-per-line-of-C target in
+excluded): three of 53 examples are over the 20-lines-per-line-of-C target in
 `docs/internals/verification-efficiency.md`.
 
 - `rbtree-augmented`: 40x by lines, 93x by tokens.
 - `rbtree-erase`: 36x by lines, 119x by tokens.
 - `rbtree-insert`: 35x by lines, 71x by tokens.
-- Both Rust iterator sums: 33x by lines.
 
 `arena` was 21x and is 19.6x after its hand-written `have` proofs that
 `auto` closes within 10% of each claim's work were shortened; the edits
 inside one `have` of `arena_pipeline` are held back by
-`bugs/whole-file-verify-multiplies-a-control-tactics-work.md`.
+`bugs/whole-file-verify-multiplies-a-control-tactics-work.md`. Both Rust
+iterator sums were 33x and are 18.1x: `have` proofs `auto` closes are
+`by auto()`, and `have` steps the proof does not need are gone, each within
+10% of the claim's original work.
 
 Token ratios run two to four times the line ratios because proof lines are
 long: `rbtree_erase_color_flips_red_all.click` is 518 KB with lines over
