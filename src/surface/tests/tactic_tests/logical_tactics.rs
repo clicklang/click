@@ -23,6 +23,16 @@ fn fixed_state_simp_closes_from_false_without_leaking_into_other_contracts() {
         .is_err(),
         "a different contract must still prove its actual return value"
     );
+    let shadowed = source
+        .replace("int32 f(int32 x)", "int32 f(int32 false, int32 x)")
+        .replace("requires false;", "requires 0u32 == 1u32;");
+    let shadowed_c = "int32 f(int32 false, int32 x) { return x; }\n";
+    let verified = verify_c0_sources(&shadowed, &[("f.c", shadowed_c)])
+        .expect("a C parameter may be named false");
+    let expanded = verified[0].expanded_proof_source().unwrap();
+    let (prefix, _) = shadowed.split_once(" by {").unwrap();
+    verify_c0_sources(&format!("{prefix} {expanded}"), &[("f.c", shadowed_c)])
+        .expect("the expanded contradiction must keep its literal meaning");
 }
 
 #[test]
