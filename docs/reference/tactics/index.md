@@ -946,10 +946,12 @@ leaf conjunct is accepted but adds nothing; every tactic, including
 **Failure, checking, and tools:**
 
 A noncomponent, missing antecedent, different constructor, or wrong field
-position fails. Click follows an indexed, checked derivation with no search;
-expansion is unchanged, and profiling charges that derivation.
+position fails. A refusal names the requested proposition in its written
+syntax, retaining parameter and proof-local names. Click follows an indexed,
+checked derivation with no search; expansion is unchanged, and profiling
+charges that derivation.
 
-**Checked examples:** [`logical_tactics.rs`](https://github.com/clicklang/click/blob/master/src/surface/tests/tactic_tests/logical_tactics.rs), [`algebraic_symbolic_values.md`](https://github.com/clicklang/click/blob/master/mdtests/algebraic_symbolic_values.md)
+**Checked examples:** [`extract_refusal_keeps_written_parameter_names.md`](https://github.com/clicklang/click/blob/master/mdtests/extract_refusal_keeps_written_parameter_names.md), [`logical_tactics.rs`](https://github.com/clicklang/click/blob/master/src/surface/tests/tactic_tests/logical_tactics.rs), [`algebraic_symbolic_values.md`](https://github.com/clicklang/click/blob/master/mdtests/algebraic_symbolic_values.md)
 
 ### Context-free normalization
 
