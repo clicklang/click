@@ -140,6 +140,15 @@ impl ProofFacts {
 }
 
 pub(crate) fn reverse_equality(equality: &Proposition) -> Option<Proposition> {
+    // A pointer value equality reverses part by part.
+    if designated_pointer_equality(equality).is_some()
+        && let Proposition::And(left, right) = equality
+    {
+        return Some(Proposition::And(
+            Box::new(reverse_equality(left)?),
+            Box::new(reverse_equality(right)?),
+        ));
+    }
     let reversed = match equality {
         Proposition::Equal(Term::Algebraic(a), Term::Algebraic(b)) => {
             return Some(Proposition::Equal(

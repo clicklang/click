@@ -4548,9 +4548,18 @@ pub(crate) fn listed_premise_holds(
     premise: &Proposition,
     available: impl Fn(&Proposition) -> bool,
 ) -> bool {
+    listed_premise_holds_dyn(premise, &available)
+}
+
+fn listed_premise_holds_dyn(premise: &Proposition, available: &dyn Fn(&Proposition) -> bool) -> bool {
     proposition_holds_without_facts(premise)
         || available(premise)
         || mirrored_equality(premise).is_some_and(|mirrored| available(&mirrored))
+        // A conjunction, such as a pointer value equality's address and
+        // designation parts, holds when each side does.
+        || matches!(premise, Proposition::And(left, right)
+            if listed_premise_holds_dyn(left, available)
+                && listed_premise_holds_dyn(right, available))
 }
 
 #[cfg(test)]
