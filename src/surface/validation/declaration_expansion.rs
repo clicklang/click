@@ -1557,9 +1557,14 @@ fn expand_declared_resource_tactic(
             Ok(ProofTactic::StepProved { step, proof })
         }
         ProofTactic::StepCall(transport) => {
+            record_produced_instances(&transport, resource_definitions);
             Ok(ProofTactic::StepCall(transport.try_map_type_arguments(
                 |resource| expand_declared_resource_clause(resource, resource_definitions),
             )?))
+        }
+        ProofTactic::UserTactic(application) => {
+            record_produced_instances(&application, resource_definitions);
+            Ok(ProofTactic::UserTactic(application))
         }
         ProofTactic::ArithmeticCertificate(certificate) => Ok(ProofTactic::ArithmeticCertificate(
             expand_declared_resource_certificate(certificate, resource_definitions)?,
@@ -3868,6 +3873,18 @@ pub(in crate::surface) fn standard_library_theorem_definitions()
 /// library.
 pub(in crate::surface) fn standard_library_theorem_index(name: &str) -> Option<usize> {
     full_library().ok()?.theorem_index().get(name).copied()
+}
+
+/// A produced instance is of the resource its callee's contract names,
+/// as an explicit fold's result is. The name it binds may have held a child
+/// an earlier unfold introduced, whose slot fixed another resource; that
+/// child's resource no longer describes it.
+fn record_produced_instances(transport: &CallBinderTransport, definitions: &DeclaredResourceScope) {
+    for produced in transport.produced() {
+        if let Some(family) = produced.family() {
+            definitions.record_instance(produced.identity(), family, true);
+        }
+    }
 }
 
 fn validate_resource_reference_arguments(

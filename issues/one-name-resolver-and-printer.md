@@ -68,6 +68,17 @@ declaration
 `mdtests/a_cpp_namespace_may_share_a_library_module_name.md`,
 `mdtests/a_selective_import_cannot_clash_with_a_tactic.md`).
 
+Resource instance families are still decided twice: the parser binds a child
+an `unfold` introduces under its parent's resource, and declaration expansion
+repairs it from the slot, by identity, for the whole declaration. A call's
+produced instance now records its resource there as an explicit fold does.
+Before, a name that had held a child kept the child's resource after `step`
+bound it to another instance, so `x.v` read the wrong field and a false claim
+verified
+(`mdtests/a_produced_instance_reusing_a_child_name_does_not_read_the_child_resource.md`).
+Resource bindings are not scoped to proof blocks, so one name bound in two
+match arms to children of different resources is still refused.
+
 The complete scoped table for parameters, fields, binders, constructors,
 resources, program points and project modules remains open. Proof inventories
 still interpret shared parser tokens; parser-produced AST spans and integration
