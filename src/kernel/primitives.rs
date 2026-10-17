@@ -4970,7 +4970,9 @@ pub enum ByteOrder {
 /// and index entry with the one it was built from.
 #[derive(Clone, Default)]
 pub(super) struct VerifiedLoopRules {
-    rules: imbl::Vector<Arc<CVerifiedLoopRule>>,
+    /// Behind an `Arc` so a copy of an environment shares this storage by
+    /// identity even while the vector is small enough to be held inline.
+    rules: Arc<imbl::Vector<Arc<CVerifiedLoopRule>>>,
     by_statement: imbl::OrdMap<u64, imbl::Vector<usize>>,
     execution_bound: Option<Variable>,
     reservation: Arc<OnceLock<LazyReservedVariables>>,
@@ -5007,7 +5009,7 @@ impl VerifiedLoopRules {
             .entry(Self::statement_key(&rule.loop_statement))
             .or_default()
             .push_back(self.rules.len());
-        self.rules.push_back(Arc::new(rule));
+        Arc::make_mut(&mut self.rules).push_back(Arc::new(rule));
         self.reservation = Arc::new(OnceLock::new());
     }
 
@@ -5040,7 +5042,7 @@ impl VerifiedLoopRules {
                     let rules = self.rules.clone();
                     LazyReservedVariables::new(self.execution_bound, move || {
                         let mut variables = BTreeSet::new();
-                        for rule in &rules {
+                        for rule in rules.iter() {
                             variables.extend(
                                 crate::kernel::reasoning::variable_collection::verified_loop_rule_variables(
                                     rule,
@@ -5058,7 +5060,7 @@ impl VerifiedLoopRules {
 
     #[cfg(test)]
     pub(super) fn shares_storage_with(&self, other: &Self) -> bool {
-        self.rules.ptr_eq(&other.rules)
+        Arc::ptr_eq(&self.rules, &other.rules)
     }
 }
 
