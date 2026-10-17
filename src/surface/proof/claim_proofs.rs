@@ -2673,26 +2673,36 @@ pub(super) fn finish_ordered_proof<'a>(
                                             evolving.with_outcome_store_consequences()?
                                         };
                                         let before = prepared.checkpoint();
-                                        let scope =
-                                            prepared.begin_have(have.proposition.clone())?;
-                                        let source_proof = have.checking_proof();
-                    let selected = match source_proof.as_ref() {
-                                            SourceProof::Tactic(SmartTactic::Auto) => {
-                                                scope.try_auto_fact_closure()?
-                                            }
-                                            SourceProof::Default
-                                            | SourceProof::Tactic(SmartTactic::Simp) => {
-                                                scope.try_simp_closure()?
-                                            }
-                                            SourceProof::Script(tactics) => {
-                                                scope.try_authoritative_linear_script(tactics)?
-                                            }
-                                        };
-                                        let Some(closed) = selected else {
-                                            return Err(ClickError::new(format!(
-                                                "`{proof_label}` path {path_index}, tactic {tactic_index}: checked outcome `have` search did not retain a complete proof",
-                                            )));
-                                        };
+                                        // The same checked `have` the execution
+                                        // frontier runs, with its diagnostics.
+                                        let nested = prepared.begin_source_have(have)?;
+                                        let goal = nested.goal().cloned();
+                                        let mut failed_check = None;
+                                        let closed = super::checked_drivers::solve_nested_have(
+                                            nested,
+                                            have,
+                                            &mut failed_check,
+                                        )
+                                        .map_err(|error| {
+                                            super::checked_drivers::source_have_error(
+                                                &prepared,
+                                                have,
+                                                *tactic_index,
+                                                goal.as_ref(),
+                                                Some(error),
+                                                false,
+                                            )
+                                        })?
+                                        .ok_or_else(|| {
+                                            super::checked_drivers::source_have_error(
+                                                &prepared,
+                                                have,
+                                                *tactic_index,
+                                                goal.as_ref(),
+                                                failed_check.take(),
+                                                true,
+                                            )
+                                        })?;
                                         let joined = closed.join()?;
                                         let [fact] = joined.added_facts() else {
                                             return Ok(None);

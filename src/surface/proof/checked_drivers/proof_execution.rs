@@ -1848,7 +1848,7 @@ fn defer_post_exit_outcome_tactic<'a>(
     )?))
 }
 
-fn source_have_error(
+pub(in crate::surface::proof) fn source_have_error(
     proof: &Proof<'_>,
     have: &ProofHave,
     index: usize,
@@ -1928,7 +1928,7 @@ fn source_have_error(
     ))
 }
 
-pub(super) fn solve_nested_have<'a>(
+pub(in crate::surface::proof) fn solve_nested_have<'a>(
     nested: ProofScope<'a>,
     have: &ProofHave,
     failed_check: &mut Option<ClickError>,
