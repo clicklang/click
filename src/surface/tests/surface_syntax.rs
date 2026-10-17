@@ -1457,7 +1457,7 @@ fn signed_int32_pair_affine_conclusion_round_trips_and_preserves_refs() {
                 arithmetic_certificate signed_int32 {
                     premise 0: n == n => n == n;
                     interval_atom (n) (-2147483648) (2147483647);
-                    interval_atom (n) (-2147483648) (2147483647);
+                    interval_atom (0) (0) (0);
                     affine_conclusion_pair 0 1 2 => n == n;
                     conclusion 3;
                 }

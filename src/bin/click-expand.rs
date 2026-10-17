@@ -174,9 +174,10 @@ fn run_bounded(arguments: &Arguments) -> Result<ExpandedArtifact, String> {
             },
         )
     })?;
-    verify_expansion(
+    let expanded = verified_expansion(
         Some(&project),
-        &expanded,
+        &click_source,
+        expanded,
         &inputs,
         &claim,
         matches!(arguments.selection, Selection::Claim(_)),
@@ -389,9 +390,10 @@ fn run_mdtest(arguments: &Arguments) -> Result<ExpandedArtifact, String> {
             &location,
         )
     })?;
-    verify_expansion(
+    let expanded = verified_expansion(
         project.as_ref(),
-        &expanded,
+        click_source,
+        expanded,
         &inputs,
         &claim,
         matches!(arguments.selection, Selection::Claim(_)),
@@ -579,6 +581,26 @@ fn select_smart_tactic(
             column,
         ),
     }
+}
+
+/// The expansion to write, verified: its grouped closers shortened
+/// (`tidy_expansion_closers`) when that form verifies, and as generated
+/// otherwise.
+fn verified_expansion(
+    project: Option<&ClickProject>,
+    click_source: &str,
+    expanded: String,
+    inputs: &CInput,
+    claim: &str,
+    whole_claim: bool,
+) -> Result<String, String> {
+    if let Some(tidied) = click::surface::tidy_expansion_closers(click_source, &expanded)
+        && verify_expansion(project, &tidied, inputs, claim, whole_claim).is_ok()
+    {
+        return Ok(tidied);
+    }
+    verify_expansion(project, &expanded, inputs, claim, whole_claim)?;
+    Ok(expanded)
 }
 
 /// Checks the expansion before it is written. A whole claim's expansion has
@@ -900,6 +922,42 @@ int32 identity(int32 x) {
             }
         );
         assert_eq!(arguments.limits.time, Duration::from_secs(30));
+    }
+
+    #[test]
+    fn claim_expansion_proves_its_normalized_claims_with_one_normalize() {
+        let sequence = TEMP_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+        let directory = env::temp_dir().join(format!(
+            "click-expand-closers-{}-{sequence}",
+            std::process::id()
+        ));
+        fs::create_dir(&directory).unwrap();
+        let example = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("examples/vector-push");
+        let sidecar = fs::read_to_string(example.join("vector_push.click")).unwrap();
+        // The contract without its proof, left to the implicit `auto`.
+        let unproved = format!("{}}}\n", &sidecar[..sidecar.find("} by {").unwrap()]);
+        fs::copy(
+            example.join("vector_push.c"),
+            directory.join("vector_push.c"),
+        )
+        .unwrap();
+        let click_path = directory.join("vector_push.click");
+        fs::write(&click_path, &unproved).unwrap();
+        let expanded = run(&Arguments {
+            click_path,
+            selection: Selection::Claim("vector_push.contract".to_string()),
+            limits: RunLimits::expand(),
+            output: None,
+            in_place: false,
+        })
+        .expect("the contract should expand and recheck");
+        let _ = fs::remove_dir_all(&directory);
+
+        assert!(
+            expanded.ends_with("    step();\n    normalize();\n    assumption();\n}\n"),
+            "{expanded}"
+        );
+        assert!(!expanded.contains("have result =="), "{expanded}");
     }
 
     #[test]

@@ -137,7 +137,7 @@ pub use expansion::{
     selected_c_target, selected_project_c_target, selected_project_thread_runtime,
     selected_thread_runtime, smart_tactic_source_sites, tactic_arm_containing_position,
     tactic_have_body_contains_position, tactic_line_has_multiple_starts, tactic_source_at_position,
-    tactic_source_position, tactic_starts_on_line, verifying_source_paths,
+    tactic_source_position, tactic_starts_on_line, tidy_expansion_closers, verifying_source_paths,
 };
 use expansion::{
     ExpansionCapture, NestedTacticCapture, ProofSite, VerificationTarget, verification_target_at,

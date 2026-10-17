@@ -123,20 +123,13 @@ int32 ring_buffer_pipeline(
             at(statement(4).entry, replacement));
         normalize();
     }
-    have owner->head == old(owner->head) by {
-        normalize();
-    }
     have owner->tail == 4 by {
         assumption();
-    }
-    have owner->data == old(owner->data) by {
-        normalize();
     }
     have owner->data[0] == replacement by {
         assumption();
     }
-    assumption();
-    assumption();
+    normalize();
     assumption();
     assumption();
     assumption();

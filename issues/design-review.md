@@ -130,10 +130,19 @@ that keeps `rbtree-erase` from verifying. R4 and R5 remain.
 
 ### W4. Expansion output is hard to read
 
-Today: expanded arithmetic certificates use numbered nodes and repeat
-identical blocks (`mdtests/bubble_sort3_two_pass_sorted.md`); committed
-expansions keep noise such as `have 0 == 0 by normalize();` and runs of
-`assumption();` (`examples/vector-push/vector_push.click`).
+Done: `click expand` writes each repeated derivation of an arithmetic
+certificate once and leaves out derivations its conclusion does not use. A
+grouped closure whose claims `normalize();` proves is written as one
+`normalize();` before the remaining closers when that form verifies
+(`examples/vector-push/vector_push.click`). Committed expansions were tidied
+the same way where they still verify.
+
+Today: certificate nodes are still numbered, and sibling certificates under
+one `both` repeat the same premise and interval nodes, which one certificate
+cannot share with another (`mdtests/bubble_sort3_two_pass_sorted.md`).
+Closures that `normalize();` cannot shorten keep one `assumption();` per
+obligation, and older committed expansions keep restatements such as
+`have 0 == 0 by normalize();`.
 
 Proposed fix: named, deduplicated certificate nodes, and expansions that
 drop the noise.
@@ -190,19 +199,18 @@ Decision: in progress.
 
 Today: Rust sidecars write Rust types, `*const u8`, `as` and `bool` in pure
 functions, predicates and theorems, a parenthesized comparison is a `bool`
-value, and a C or C++ `bool` parameter is a claim. What remains: a pure
+value, a C or C++ `bool` parameter is a claim, and Rust literal spellings
+(`4usize`, `4i32`, `1_000`) are accepted. What remains: a pure
 function cannot take a slice (`bytes: &[u8]` with its own `.len()`), so it
-takes `*const u8` and a `usize` length; Rust literal spellings without a
-Click equivalent (`4usize`, `4i32`, `1_000`) are refused; the shared lemma
+takes `*const u8` and a `usize` length; the shared lemma
 library is named by C types (`uint64_less_than_to_integer`); and the
 archived Charon-trial sidecars under `design/charon-trial` keep the C
 spellings they were written in.
 
-Proposed fix: slice parameters for pure functions, passed as the slice; the
-remaining literal suffixes; Rust-spelled aliases or names for the lemmas a
-Rust proof applies.
+Proposed fix: slice parameters for pure functions, passed as the slice, and
+Rust-spelled aliases or names for the lemmas a Rust proof applies.
 
-Decision: fix (maintainer, 2026-10-13), after L2: Rust types, `as` and `bool` throughout Rust sidecars. Types, `as` and `bool` done; the items above remain.
+Decision: fix (maintainer, 2026-10-13), after L2: Rust types, `as` and `bool` throughout Rust sidecars. Types, `as`, `bool` and literal suffixes done; the items above remain.
 
 ## M. Memory model, semantics and trust
 
