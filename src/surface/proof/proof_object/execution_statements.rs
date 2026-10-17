@@ -1764,7 +1764,7 @@ impl<'a> Proof<'a> {
                         }
                     ) {
                         error.with_missing_tactic_requirement(
-                            crate::surface::printing::source_click_proposition(&spelling.surface),
+                            crate::surface::printing::authored_click_proposition(&spelling.surface),
                         )
                     } else {
                         error
