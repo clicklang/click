@@ -1531,10 +1531,15 @@ passing a `Square` therefore knows the object's `size` is its `side`, and
 after lending it as a `Shape&` that its `side` is the object's new `size`
 and nothing of the `side` it lent
 (`mdtests/cpp_class_object_state_mutable_reference_returns_new_state.md`).
-After a `const Shape&` conversion it likewise knows only the definitions:
-its other fields are forgotten, since keeping the memory lent for the call
-needs one view backed by the several owned pieces of a polymorphic object,
-which stable views do not yet support.
+Where the conversion is to `const Shape&`, the importer places
+`Square__click_pack_const__Shape` and `Square__click_unpack_const__Shape`
+instead: the pack views the memory and produces, beside the object, the
+resource `Square__click_lent__Shape(object) { views *object; }`, which keeps
+the memory lent until the unpack consumes both. Nothing can change the
+memory meanwhile, so the caller keeps every field, and the same object
+cannot also be handed over in that call as a mutable reference
+(`mdtests/cpp_class_const_reference_keeps_fields.md`,
+`mdtests/cpp_class_const_reference_lends_the_object.md`).
 
 Limits:
 - An override in a class without a defining `class` block is refused.

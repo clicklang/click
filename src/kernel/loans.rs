@@ -2603,6 +2603,35 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
     }
 
     LAST_OWNED_RESERVATION_MISS.with(|miss| *miss.borrow_mut() = None);
+    // A concrete view no single owner covers, over unbound owned pieces that
+    // tile it, is backed by those pieces joined into one owner first, so the
+    // one loan below escrows them all and a produced composite can keep the
+    // view lent. Joined pieces stay joined after recovery; their bytes are
+    // the same authority.
+    let mut coalesced = None::<ResourceContext>;
+    for requirement in requirements {
+        if !requirement.fact.is_view() {
+            continue;
+        }
+        let context = coalesced.as_ref().unwrap_or(caller_resources);
+        if requirement
+            .fact
+            .memory_range()
+            .is_none_or(|range| memory_range_is_proven_empty(range, assumptions))
+            || !context
+                .view_occurrences_for_fact(&requirement.fact, assumptions)
+                .is_empty()
+            || context
+                .directly_supporting_owned_entry(&requirement.fact, assumptions)
+                .is_some()
+        {
+            continue;
+        }
+        if let Some(joined) = context.with_coalesced_owned_memory(&requirement.fact, assumptions) {
+            coalesced = Some(joined);
+        }
+    }
+    let caller_resources = coalesced.as_ref().unwrap_or(caller_resources);
     let mut residual = caller_resources.clone();
     let mut parent_view_bindings = parent_view_bindings.clone();
     let mut callee_resources = ResourceContext::new_with_equalities(assumptions);
