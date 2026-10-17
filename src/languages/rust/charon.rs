@@ -577,7 +577,7 @@ struct BodyAdapter<'a, 'b> {
     iterator_discriminants: BTreeMap<a::LocalId, a::LocalId>,
     /// The locals a crate struct reference is unsized into a `&dyn` crate
     /// trait for.
-    unsized_objects: BTreeMap<a::LocalId, (a::TypeDeclId, a::TraitDeclId)>,
+    unsized_objects: BTreeMap<a::LocalId, (a::TypeDeclId, a::TraitDeclId, bool)>,
     /// The pack, unpack, and argument of each object the block's call makes
     /// from a crate struct reference.
     coercions: std::cell::RefCell<Vec<(String, String, E)>>,
@@ -1538,11 +1538,11 @@ impl BodyAdapter<'_, '_> {
                             .get(index)
                             .and_then(|ty| self.adapter.object_parameter_trait(callee, ty))
                             .and_then(|trait_id| match operand.ty().kind() {
-                                a::TyKind::Ref(_, pointee, _) => self
-                                    .adapter
-                                    .record_id(pointee)
-                                    .ok()
-                                    .map(|record| (record, trait_id)),
+                                a::TyKind::Ref(_, pointee, kind) => {
+                                    self.adapter.record_id(pointee).ok().map(|record| {
+                                        (record, trait_id, matches!(kind, a::RefKind::Shared))
+                                    })
+                                }
                                 _ => None,
                             });
                         let unsized_object = match operand {
@@ -1554,9 +1554,10 @@ impl BodyAdapter<'_, '_> {
                             },
                             _ => None,
                         };
-                        if let Some((record, trait_id)) = generic.or(unsized_object) {
-                            let (pack, unpack) =
-                                self.adapter.object_coercion_names(record, trait_id)?;
+                        if let Some((record, trait_id, shared)) = generic.or(unsized_object) {
+                            let (pack, unpack) = self
+                                .adapter
+                                .object_coercion_names(record, trait_id, shared)?;
                             self.adapter
                                 .object_coercions
                                 .borrow_mut()

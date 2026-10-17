@@ -4,8 +4,8 @@
     "trait_objects": {
       "language": "rust",
       "lock": {
-        "artifact": "84322f252c532fc6d6de91ee1d588657e48d10463b7bdb10264ed6d40e238214",
-        "config": "865b978436ff87cbe25aa338693ac4ddd4b58260ad552d59a28bc01aa073d847",
+        "artifact": "f17c3f745511bd412f8cf7102cdbb8eda3641604bb2782ffc4c44d8152f7f772",
+        "config": "315685c3b88382dabf091e38e22fd12f32c34f8fa5f1f88702968f25fefde07d",
         "frontend": {
           "click_version": "0.1.0",
           "compiler_commit": "923c95cdf5ba65cea505aa2ea829f578e1506ed8",
@@ -13,11 +13,11 @@
           "extractor_version": "0.1.279",
           "profile": "38b817cc5760845d2e37b8f72a333f6d36a3ccdbfbf19e8c22da436e67a79ab1"
         },
-        "identity": "c9df7183b3869398b8f4adb306313e87c99e9156ffda3696651fc4a8f176c323",
+        "identity": "625c8b35c768aefbe83e5da671fd76b97704f2d5d56ba8a92fa88c86c2a9934b",
         "schema": 9,
-        "source": "1365c2252688e44182f7ac7711684c4f94bd54ff19567a89a8360defb186fb09",
+        "source": "92df893a85284360f7aec9e2bff4f058a47f2d904a89e739e2284be501e03a0f",
         "source_files": {
-          "shapes.rs": "c67d25327114c872e000bcc9b77aeacafb2d9fa824402795a250ddfe3e9a4679"
+          "shapes.rs": "c831cf8dd426d0578b9f65bad347914617b97505b89ffae3aebc408a388332bf"
         }
       }
     }

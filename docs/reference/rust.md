@@ -419,7 +419,7 @@ theorem literal_forms(word: u16, index: usize, signed_word: i32) {
 A Rust sidecar's pure functions, predicates and theorems, their quantifier
 and `let` binders, and algebraic datatype fields take Rust types too: the
 scalars (`u8`, `i32`, `u32`, `u64`, `usize`, `bool`, ...) and a raw pointer
-to one, `*const T` or `*mut T`. Such a function takes values, not borrows,
+to one or to a crate struct, `*const T` or `*mut T`. Such a function takes values, not borrows,
 and a reference `&T` is refused there. `x as T` casts in a body as in a
 contract. The C spellings (`uint8`, `const uint8*`, `(int32)x`) still read
 the same types.
@@ -658,11 +658,16 @@ memory, an implementation's `contract fn` `..._iface`.
 
 Where a struct reference becomes the object, at a call that instantiates a
 bound type parameter with the struct or coerces it to `&dyn Trait`, the
-importer brackets the call with the struct's pack and unpack: pack
-consumes the struct's memory and produces its object, whose fields are the
-definitions read on it, and unpack returns the memory with the definitions
-equal to the fields. A caller passing `&Square { side: 3 }` therefore knows
-`size` is `3` and gets the interface's guarantee read with that value; one
+importer brackets the call with the struct's pack and unpack. For a `&mut`
+reference, pack consumes the struct's memory and produces its object, whose
+fields are the definitions read on it, and unpack returns the memory with
+the definitions equal to the fields. For a shared reference, the shared pack
+views the memory and produces, beside the object, a resource that keeps the
+memory lent until the shared unpack consumes both; nothing can change it
+meanwhile, so the caller keeps every field. An implementation's `&self`
+method likewise only views `*self`. A caller passing `&Square { side: 3 }`
+therefore knows `size` is `3` and gets the interface's guarantee read with
+that value, and keeps the fields `size` does not read (`tag_after_dyn`); one
 lending `&mut square` gets back a struct whose fields the definitions equate
 to the object's new state, so after `reset(&mut square, half)` it knows
 `square.side == half + half` and nothing of the side it lent. A default

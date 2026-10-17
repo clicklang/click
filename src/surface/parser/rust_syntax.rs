@@ -884,8 +884,8 @@ impl Parser {
     }
 
     /// The type of a Click binder in a Rust sidecar, spelled as Rust does:
-    /// a scalar (`u8`, `i32`, `usize`, `bool`, ...) or a raw pointer to one,
-    /// `*const T` or `*mut T`. A pure function, predicate or theorem takes
+    /// a scalar (`u8`, `i32`, `usize`, `bool`, ...) or a raw pointer to one
+    /// or to a crate struct, `*const T` or `*mut T`. A pure function, predicate or theorem takes
     /// values: a fn's slice `bytes` passes the pointer to its first element,
     /// so a function over its bytes takes `bytes: *const u8` and a `usize`
     /// length. `None`, with nothing consumed, for anything else, which the
@@ -915,6 +915,22 @@ impl Parser {
                 _ => return Err(self.error("a Rust pointer type is `*const T` or `*mut T`")),
             };
             self.position += 2;
+            // A raw pointer to a crate struct, `*const crate::S`, as a
+            // `fn` signature reads its references to one.
+            if self
+                .peek_ident()
+                .is_some_and(|word| rust_scalar_type(word).is_none())
+            {
+                let spelling = self.expect_rust_path_name("pointee type")?;
+                return Ok(Some(ParsedType {
+                    c_type: C0Type::Int32Pointer,
+                    struct_name: Some(spelling),
+                    struct_pointer: true,
+                    constant: false,
+                    pointee_constant: !mutable,
+                    reference: false,
+                }));
+            }
             let spelling = self.expect_ident("pointee type")?;
             let Some(c_type) = rust_scalar_type(&spelling)
                 .filter(|pointee| *pointee != C0Type::Bool)
