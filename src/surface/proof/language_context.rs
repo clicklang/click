@@ -192,6 +192,11 @@ pub(in crate::surface::proof) struct ExecutionProofConstants {
     /// its parameter bindings.
     pub(in crate::surface::proof) parameter_index:
         Option<(usize, Arc<crate::surface::ParameterIndex>)>,
+    /// Shared copies of the proved function's parameters and the claim's
+    /// arguments, with the addresses of the lists they copy: a context
+    /// reading those lists hands them on to its parameter bindings.
+    pub(in crate::surface::proof) parameter_naming:
+        Option<(usize, usize, Arc<crate::surface::ParameterNaming>)>,
     /// The entry this proof was built from, handed on to the theorems it
     /// issues. `None` for a proof that is not a function's contract proof.
     pub(in crate::surface::proof) entry_context:
@@ -218,6 +223,7 @@ impl Default for ExecutionProofConstants {
             caller_source_owner: None,
             function_entry_state: None,
             parameter_index: None,
+            parameter_naming: None,
             entry_context: None,
             function_source_registry: Arc::new(FunctionSourceRegistry::default()),
             grouped_contract: false,
@@ -251,9 +257,18 @@ impl<'a> ExecutionProofContext<'a> {
     pub(in crate::surface::proof) fn parameter_binding(&self) -> ParameterBinding<'_> {
         let parameters = self.parsed_function.parameters();
         let binding = ParameterBinding::new(parameters, self.arguments);
-        match &self.constants.parameter_index {
+        let binding = match &self.constants.parameter_index {
             Some((list, index)) if *list == parameters.as_ptr() as usize => {
                 binding.with_index(index)
+            }
+            _ => binding,
+        };
+        match &self.constants.parameter_naming {
+            Some((parameter_list, argument_list, naming))
+                if *parameter_list == parameters.as_ptr() as usize
+                    && *argument_list == self.arguments.as_ptr() as usize =>
+            {
+                binding.with_naming(naming)
             }
             _ => binding,
         }

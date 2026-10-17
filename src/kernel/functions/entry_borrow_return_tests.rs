@@ -64,6 +64,7 @@ fn returned_borrows_keep_checked_entry_arguments_when_clauses_are_reordered() {
         &state,
         &state,
         2,
+        &[],
         &PureFactContext::new(),
         &mut ExecutionBudget::beside_live_state(),
     )

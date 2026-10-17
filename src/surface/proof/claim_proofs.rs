@@ -438,10 +438,7 @@ fn prove_claims_by_checked_tactics(
     )?;
     let state = canonical_claim_caller_state(
         state,
-        function_block
-            .structural_clauses()
-            .iter()
-            .any(|clause| matches!(clause.region(), CodeRegion::Loop(_))),
+        function_block.structural_clauses().any_loop(),
         &function,
         &arguments,
         &pure_facts,
@@ -496,6 +493,14 @@ fn prove_claims_by_checked_tactics(
             parsed_function.parameters().as_ptr() as usize,
             Arc::new(crate::surface::ParameterIndex::new(
                 parsed_function.parameters(),
+            )),
+        )),
+        parameter_naming: Some((
+            parsed_function.parameters().as_ptr() as usize,
+            arguments.as_ptr() as usize,
+            Arc::new(crate::surface::ParameterNaming::new(
+                parsed_function.parameters(),
+                &arguments,
             )),
         )),
         entry_context: Some(entry_context),

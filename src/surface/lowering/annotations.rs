@@ -585,7 +585,7 @@ pub(in crate::surface) fn register_kernel_fold_read_definitions(
         let entry_state = CState::new().with_population_creation_tracking();
         let mut lowerer = AnnotationLowerer {
             capture_referenced_names: None,
-            structural_clauses: &[],
+            structural_clauses: StructuralClauses::empty(),
             implicit_contract_mutable_segments: &[],
             loop_resources: BTreeMap::new(),
             inherits_resource_derived_frame: false,
@@ -641,7 +641,7 @@ fn lower_kernel_pure_function_definition(
     let entry_state = CState::new().with_population_creation_tracking();
     let mut lowerer = AnnotationLowerer {
         capture_referenced_names: None,
-        structural_clauses: &[],
+        structural_clauses: StructuralClauses::empty(),
         implicit_contract_mutable_segments: &[],
         loop_resources: BTreeMap::new(),
         inherits_resource_derived_frame: false,
@@ -732,7 +732,7 @@ pub(in crate::surface) fn lower_composite_resource_condition(
     let entry_state = CState::new().with_population_creation_tracking();
     let mut lowerer = AnnotationLowerer {
         capture_referenced_names: None,
-        structural_clauses: &[],
+        structural_clauses: StructuralClauses::empty(),
         implicit_contract_mutable_segments: &[],
         loop_resources: BTreeMap::new(),
         inherits_resource_derived_frame: false,
@@ -819,7 +819,7 @@ pub(in crate::surface) fn lower_composite_resource_body_with_bindings(
     let entry_state = CState::new().with_population_creation_tracking();
     let mut lowerer = AnnotationLowerer {
         capture_referenced_names: None,
-        structural_clauses: &[],
+        structural_clauses: StructuralClauses::empty(),
         implicit_contract_mutable_segments: &[],
         loop_resources: BTreeMap::new(),
         inherits_resource_derived_frame: false,
@@ -1013,6 +1013,9 @@ pub(in crate::surface) struct LoopAnnotation {
     quantifiers_after: u64,
     bindings_empty_after: bool,
     shape: std::sync::Arc<LoopAnnotationShape>,
+    /// The annotated loop as `kernel_loop_by_index` finds it in `function`,
+    /// when lowering it alone already holds it.
+    current_loop: Option<CStatement>,
 }
 
 /// The parts of a whole-function annotation that do not depend on its loop
@@ -1027,11 +1030,32 @@ struct LoopAnnotationShape {
     /// no loop declares resources (which are lowered for every loop before
     /// the body) or wraps the whole body as a natural control loop.
     loops_lower_alone: bool,
+    /// What [`c0_loop_by_index`] finds at each loop index of the function's
+    /// body, from one walk, so lowering one loop alone does not walk the
+    /// statements before it.
+    c0_loops: std::sync::OnceLock<Vec<Option<syntax::C0Statement>>>,
+}
+
+impl LoopAnnotationShape {
+    /// [`c0_loop_by_index`] of `body` at `target`. `body` is the body of the
+    /// function this shape was recorded from: every call passes it.
+    fn c0_loop(&self, body: &syntax::C0Statement, target: usize) -> Option<&syntax::C0Statement> {
+        self.c0_loops
+            .get_or_init(|| c0_loops_by_index(body))
+            .get(target)?
+            .as_ref()
+    }
 }
 
 impl LoopAnnotation {
     pub(in crate::surface) fn function(&self) -> &CFunction {
         &self.function
+    }
+
+    /// What `kernel_loop_by_index` finds at this annotation's loop in
+    /// `function`, if it is already known.
+    pub(in crate::surface) fn current_loop(&self) -> Option<&CStatement> {
+        self.current_loop.as_ref()
     }
 }
 
@@ -1069,6 +1093,7 @@ pub(in crate::surface) fn annotated_loop_function(
         quantifiers_after: record.map_or(0, |record| record.quantifiers_after),
         bindings_empty_after: record.is_some_and(|record| record.bindings_empty_after),
         shape: std::sync::Arc::new(shape),
+        current_loop: None,
     })
 }
 
@@ -1114,14 +1139,13 @@ pub(in crate::surface) fn annotated_loop_function_extending(
         || !previous.bindings_empty_after
         || function_block
             .structural_clauses()
-            .iter()
-            .any(|clause| !clause.scope.is_empty() || !clause.resources().is_empty())
+            .any_scoped_or_resourced()
     {
         return Ok(None);
     }
     let parsed_function =
         &*crate::surface::verification::witnessed_function(parsed_function, function_block);
-    let Some(loop_statement) = c0_loop_by_index(parsed_function.body(), loop_index) else {
+    let Some(loop_statement) = shape.c0_loop(parsed_function.body(), loop_index) else {
         return Ok(None);
     };
     let implicit_contract_mutable_segments = if shape.resource_derived_mutable_frame {
@@ -1256,12 +1280,18 @@ pub(in crate::surface) fn annotated_loop_function_extending(
     ) else {
         return Ok(None);
     };
+    // `body` numbers every loop before `lowered` as `previous.function`
+    // does, so a walk of `body` reaches `lowered` with `loop_index` loops
+    // counted and finds this loop inside it.
+    let mut next_loop_index = loop_index;
+    let current_loop = kernel_loop_by_index(&lowered, loop_index, &mut next_loop_index).cloned();
     Ok(Some(LoopAnnotation {
         function: previous.function.clone().with_body(body),
         loop_index,
         quantifiers_after,
         bindings_empty_after,
         shape: previous.shape.clone(),
+        current_loop,
     }))
 }
 
@@ -1269,6 +1299,9 @@ pub(in crate::surface) fn annotated_loop_function_extending(
 /// in that walk's order: `while`, `do` and `for` loops number themselves
 /// before their bodies, and only sequences, loops and `if` arms are
 /// descended, as `AnnotationLowerer::lower_statement` descends them.
+/// [`c0_loops_by_index`] answers every index from one walk; this is its
+/// reference.
+#[cfg(test)]
 fn c0_loop_by_index(
     statement: &syntax::C0Statement,
     target: usize,
@@ -1308,6 +1341,112 @@ fn c0_loop_by_index(
         syntax::C0Statement::While { .. } | syntax::C0Statement::DoWhile { .. }
     )
     .then_some(found)
+}
+
+/// The kernel loop numbered `target` in `statement`, numbering each
+/// `while` before its body, from `*next_loop_index`.
+pub(in crate::surface) fn kernel_loop_by_index<'a>(
+    statement: &'a CStatement,
+    target: usize,
+    next_loop_index: &mut usize,
+) -> Option<&'a CStatement> {
+    #[cfg(test)]
+    LOOP_LOOKUP_NODES.with(|count| count.set(count.get() + 1));
+    match statement {
+        CStatement::While { body, .. } => {
+            let loop_index = *next_loop_index;
+            *next_loop_index += 1;
+            if loop_index == target {
+                Some(statement)
+            } else {
+                kernel_loop_by_index(body, target, next_loop_index)
+            }
+        }
+        CStatement::Seq(first, second) => kernel_loop_by_index(first, target, next_loop_index)
+            .or_else(|| kernel_loop_by_index(second, target, next_loop_index)),
+        CStatement::If {
+            then_branch,
+            else_branch,
+            ..
+        } => kernel_loop_by_index(then_branch, target, next_loop_index)
+            .or_else(|| kernel_loop_by_index(else_branch, target, next_loop_index)),
+        CStatement::TryCatchInt32 {
+            try_body, handler, ..
+        } => kernel_loop_by_index(try_body, target, next_loop_index)
+            .or_else(|| kernel_loop_by_index(handler, target, next_loop_index)),
+        CStatement::Switch { cases, .. } => cases
+            .iter()
+            .find_map(|case| kernel_loop_by_index(&case.body, target, next_loop_index)),
+        CStatement::Skip
+        | CStatement::EndScalarReference(_)
+        | CStatement::ScalarReferenceScope(_)
+        | CStatement::Break
+        | CStatement::Continue
+        | CStatement::Goto { .. }
+        | CStatement::Declare { .. }
+        | CStatement::DeclareAggregate { .. }
+        | CStatement::Assign { .. }
+        | CStatement::CallAssign { .. }
+        | CStatement::Call { .. }
+        | CStatement::HeapAllocate { .. }
+        | CStatement::HeapFree { .. }
+        | CStatement::Throw(_)
+        | CStatement::Return(_)
+        | CStatement::Store { .. }
+        | CStatement::TypedStore { .. }
+        | CStatement::CopyAggregate { .. }
+        | CStatement::InitializeScalarArray { .. }
+        | CStatement::Update { .. }
+        | CStatement::Assert { .. } => None,
+        CStatement::ForStep { .. } | CStatement::EndAutomaticLifetimes { .. } => None,
+    }
+}
+
+#[cfg(test)]
+thread_local! {
+    static LOOP_LOOKUP_NODES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+/// The statements loop lookups (`kernel_loop_by_index`, and the C0 loop
+/// index) visited on this thread so far.
+#[cfg(test)]
+pub(in crate::surface) fn loop_lookup_nodes() -> usize {
+    LOOP_LOOKUP_NODES.with(std::cell::Cell::get)
+}
+
+/// Every loop index's [`c0_loop_by_index`] answer for `statement`, from
+/// one walk in the same order.
+fn c0_loops_by_index(statement: &syntax::C0Statement) -> Vec<Option<syntax::C0Statement>> {
+    fn walk(statement: &syntax::C0Statement, found: &mut Vec<Option<syntax::C0Statement>>) {
+        #[cfg(test)]
+        LOOP_LOOKUP_NODES.with(|count| count.set(count.get() + 1));
+        match statement {
+            syntax::C0Statement::Seq(first, second) => {
+                walk(first, found);
+                walk(second, found);
+            }
+            syntax::C0Statement::While { body, .. } | syntax::C0Statement::DoWhile { body, .. } => {
+                found.push(Some(statement.clone()));
+                walk(body, found);
+            }
+            syntax::C0Statement::For { body, .. } => {
+                found.push(None);
+                walk(body, found);
+            }
+            syntax::C0Statement::If {
+                then_branch,
+                else_branch,
+                ..
+            } => {
+                walk(then_branch, found);
+                walk(else_branch, found);
+            }
+            _ => {}
+        }
+    }
+    let mut found = Vec::new();
+    walk(statement, &mut found);
+    found
 }
 
 /// `statement` with the loop `kernel_loop_by_index` finds at `target`
@@ -1541,10 +1680,7 @@ fn annotate_function(
     let natural_control_loop = parsed_function.natural_control_loop().is_some();
     let body = if let Some((backedge_target, natural_exit_target, _)) =
         parsed_function.natural_control_loop()
-        && function_block
-            .structural_clauses()
-            .iter()
-            .any(|clause| clause.region() == &CodeRegion::Loop(0))
+        && function_block.structural_clauses().for_loop(0).is_some()
     {
         let invariant_checks = lowerer.loop_invariant_checks(0)?;
         let effect_checks = lowerer.loop_frame_checks(0)?;
@@ -1742,6 +1878,7 @@ fn annotate_function(
         records,
         contract_mutable,
         resource_derived_mutable_frame,
+        c0_loops: std::sync::OnceLock::new(),
     });
     Ok((function, shape))
 }
@@ -1763,7 +1900,7 @@ pub(in crate::surface) fn lower_branch_interface_fact(
 ) -> Result<SpecProposition, ClickError> {
     let mut lowerer = AnnotationLowerer {
         capture_referenced_names: None,
-        structural_clauses: &[],
+        structural_clauses: StructuralClauses::empty(),
         implicit_contract_mutable_segments: &[],
         loop_resources: BTreeMap::new(),
         inherits_resource_derived_frame: false,
@@ -1844,7 +1981,7 @@ fn fixed_state_elaboration<'a>(
 ) -> (AnnotationLowerer<'a>, SpecElaborationContext) {
     let lowerer = AnnotationLowerer {
         capture_referenced_names: None,
-        structural_clauses: &[],
+        structural_clauses: StructuralClauses::empty(),
         spec_definitions,
         entry_state,
         result_type: result.map(CValue::c_type).unwrap_or(CType::Int32),
@@ -1980,6 +2117,7 @@ pub(in crate::surface) fn elaborate_fixed_state_algebraic_expression(
         pointer_element_widths,
     );
     context.algebraic_values = algebraic_values.into_iter().collect();
+    lowerer.capture_referenced_names = Some(contract_expression_referenced_names(expression));
     lowerer.lower_contract_algebraic_to_spec(expression, &context)
 }
 
@@ -2197,9 +2335,9 @@ pub(in crate::surface) fn elaborate_fixed_state_expression_with_algebraic_and_in
             }
         }
     }
-    if !context.integer_values.is_empty() {
-        lowerer.capture_referenced_names = Some(names);
-    }
+    // A snapshot the expression enters reads only these names, as for a
+    // proposition, rather than every local the snapshot's state binds.
+    lowerer.capture_referenced_names = Some(names);
     lowerer.lower_contract_expression_to_spec(expression, &context)
 }
 
@@ -2238,7 +2376,7 @@ pub(in crate::surface) fn elaborate_requirement_proposition(
     };
     let mut lowerer = AnnotationLowerer {
         capture_referenced_names: None,
-        structural_clauses: &[],
+        structural_clauses: StructuralClauses::empty(),
         implicit_contract_mutable_segments: &[],
         loop_resources: BTreeMap::new(),
         inherits_resource_derived_frame: false,
@@ -2790,7 +2928,7 @@ struct LoopResourceDeclaration {
 
 struct AnnotationLowerer<'a> {
     capture_referenced_names: Option<BTreeSet<String>>,
-    structural_clauses: &'a [StructuralClause],
+    structural_clauses: &'a StructuralClauses,
     implicit_contract_mutable_segments: &'a [CMemorySegment],
     /// Resources declared by each loop, keyed by loop index. A loop with a
     /// declaration has the shape of a callee contract: its body executes
@@ -2878,6 +3016,22 @@ struct LoopLoweringRecord {
     /// Whether the walk's scoped bindings were empty once the loop was
     /// lowered, so the next loop starts from none.
     bindings_empty_after: bool,
+}
+
+/// [`parameter_pointer_element_widths`] for the parameters among `names`,
+/// found through the binding's index when it has one.
+pub(in crate::surface) fn parameter_pointer_element_widths_named(
+    parameter_binding: ParameterBinding<'_>,
+    names: &BTreeSet<String>,
+) -> BTreeMap<String, u32> {
+    let Some(index) = parameter_binding.index else {
+        return parameter_pointer_element_widths(parameter_binding.parameters);
+    };
+    parameter_pointer_element_widths(
+        names
+            .iter()
+            .filter_map(|name| Some(&parameter_binding.parameters[index.position(name)?])),
+    )
 }
 
 pub(in crate::surface) fn parameter_pointer_element_widths<'a>(
@@ -3400,8 +3554,8 @@ impl AnnotationLowerer<'_> {
         let mut measures: Option<LoopMeasureClauses> = None;
         let clauses = self
             .structural_clauses
-            .iter()
-            .filter(|clause| clause.region() == &CodeRegion::Loop(loop_index))
+            .for_loop(loop_index)
+            .into_iter()
             .cloned()
             .collect::<Vec<_>>();
         for clause in &clauses {
@@ -3678,8 +3832,8 @@ impl AnnotationLowerer<'_> {
     ) -> Result<Vec<CLoopInvariantCheck>, ClickError> {
         let unfolded_predicates = self
             .structural_clauses
-            .iter()
-            .filter(|clause| clause.region() == &CodeRegion::Loop(loop_index))
+            .for_loop(loop_index)
+            .into_iter()
             .flat_map(|clause| {
                 clause
                     .initialize_proof()
@@ -3691,8 +3845,8 @@ impl AnnotationLowerer<'_> {
             .into_iter()
             .collect::<Vec<_>>();
         self.structural_clauses
-            .iter()
-            .filter(|clause| clause.region() == &CodeRegion::Loop(loop_index))
+            .for_loop(loop_index)
+            .into_iter()
             .flat_map(StructuralClause::items)
             .enumerate()
             .map(|(item_index, item)| {

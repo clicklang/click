@@ -825,11 +825,16 @@ fn sequential_loop_clauses_cost_the_same_at_every_position() {
 /// candidacy (`PureFactList`); the reserved-variable sets it collects for
 /// fresh identities (`LazyReservedVariables`); the variables its facts
 /// hand to their fact sets' reservations beyond already reserved
-/// snapshots; and the whole-function annotation walks it makes
-/// (`LoopAnnotation`). Each once grew with the loops before: the list was a
-/// flat copy indexed afresh at every loop, every rule and loop head
-/// collected the whole path context's variables, every fact re-collected
-/// its snapshots' variables, and every loop re-annotated the whole function.
+/// snapshots; the whole-function annotation walks it makes
+/// (`LoopAnnotation`); the structural clauses it reads out of the function
+/// block's clause list (`StructuralClauses`); and the statements its loop
+/// lookups visit to find the loop in the C and kernel bodies. Each once grew
+/// with the loops before: the list was a flat copy indexed afresh at every
+/// loop, every rule and loop head collected the whole path context's
+/// variables, every fact re-collected its snapshots' variables, every loop
+/// re-annotated the whole function, binding a clause rebuilt the block's
+/// clause vector and its label, scope and region checks walked it, and each
+/// lookup walked the body from its first statement.
 ///
 /// Across the twelve-loop run, the last clause also costs what the second
 /// does. A drift of a unit or two per earlier loop is below the band between
@@ -860,6 +865,14 @@ fn sequential_loops_build_the_same_context_entries_each() {
                 "annotation walks",
                 crate::surface::lowering::loop_annotation_walks(),
             ),
+            (
+                "structural clause visits",
+                crate::surface::structural_clauses::structural_clause_visits(),
+            ),
+            (
+                "loop lookup statements",
+                crate::surface::lowering::loop_lookup_nodes(),
+            ),
         ]
     };
     let runs = [3, 6, 12].map(|n| {
@@ -867,13 +880,13 @@ fn sequential_loops_build_the_same_context_entries_each() {
         let run = run(loops, n);
         let after = counts();
         (
-            std::array::from_fn::<_, 7, _>(|index| {
+            std::array::from_fn::<_, 9, _>(|index| {
                 (after[index].0, after[index].1 - before[index].1)
             }),
             run.loops,
         )
     });
-    for index in 0..7 {
+    for index in 0..9 {
         let name = runs[0].0[index].0;
         let entries = runs.each_ref().map(|(counts, _)| counts[index].1);
         let per_loop = [(entries[1] - entries[0]) / 3, (entries[2] - entries[1]) / 6];
@@ -965,4 +978,61 @@ fn entry_setup_is_linear_in_owned_parameters() {
     let first = samples[1].1 - samples[0].1;
     let second = samples[2].1 - samples[1].1;
     assert!(second * 2 <= first * 5, "{samples:?}");
+}
+
+/// A function of `n` parameters whose proof states one fact about one of
+/// them: the `have` reads `s` and `a0` and nothing else.
+fn many_parameters(n: usize) -> (String, String) {
+    let params = (0..n)
+        .map(|i| format!("int32 a{i}"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let c = format!(
+        "int32 caller({params}) {{
+    int32 s;
+    s = a0;
+    return s;
+}}"
+    );
+    let click = format!(
+        "verifying \"hunt.c\";
+
+int32 caller({params}) {{
+    ensures result == a0 by {{
+        step();
+        step();
+        have s == a0 by {{ simp(); }}
+        step();
+        simp();
+    }}
+}}"
+    );
+    (c, click)
+}
+
+// Lowering a proof-side proposition must build the environment of the names
+// it reads, not of every parameter and local: a function of N parameters and
+// N such steps otherwise costs N^2.
+#[test]
+fn a_have_ignores_unrelated_parameters() {
+    let work = [2, 32].map(|n| {
+        let (c, click) = many_parameters(n);
+        let (result, samples) = crate::instrumentation::collect_tactic_work(|| {
+            verify_c0_sources(&click, &[("hunt.c", c.as_str())])
+        });
+        result.unwrap_or_else(|error| panic!("many_parameters at {n}: {}", error.message()));
+        samples
+            .iter()
+            .filter(|sample| sample.tactic.tactic_name == "have")
+            .map(|sample| sample.work)
+            .max()
+            .expect("the `have` reports its work")
+    });
+    assert!(
+        work[1] <= work[0] + band(work[0]),
+        "many_parameters: the `have` grows from {} to {} between 2 and 32 parameters \
+         (issues/scaling.md)",
+        work[0],
+        work[1]
+    );
 }

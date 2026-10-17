@@ -424,7 +424,7 @@ pub(in crate::surface::proof) struct ExecutionProofPresentation {
     pub(in crate::surface::proof) path_branch_premises: PersistentSequence<ClickProposition>,
     /// Frontier-local loop clauses, paired with the kernel-owned verified
     /// rules and migrated across joins as arm deltas.
-    pub(in crate::surface::proof) frontier_loop_clauses: PersistentSequence<StructuralClause>,
+    pub(in crate::surface::proof) frontier_loop_clauses: FrontierLoopClauses,
     /// Outcome tactics deferred during execution, applied in order at
     /// finalization; joins carry each arm's suffix.
     pub(in crate::surface::proof) post_execution_tactics:
@@ -669,7 +669,7 @@ impl ExecutionProofState {
                 resource_body_clauses: PersistentSequence::default(),
                 case_assumptions: PersistentSequence::default(),
                 path_branch_premises: PersistentSequence::default(),
-                frontier_loop_clauses: PersistentSequence::default(),
+                frontier_loop_clauses: FrontierLoopClauses::default(),
                 post_execution_tactics: PersistentSequence::default(),
                 call_outcome_edges: None,
                 surface_record: SurfaceRecord::default(),
@@ -701,6 +701,37 @@ impl ExecutionProofState {
 /// from (`ExecutionProofPresentation::loop_annotation`). The block and the
 /// parsed function are named by address: both are the claim's own, borrowed
 /// for the whole proof.
+/// A path's frontier-local loop clauses in binding order, with the loops
+/// they bind indexed, so asking whether a loop already has one does not
+/// walk every clause the earlier loops bound.
+#[derive(Clone, Default)]
+pub(in crate::surface::proof) struct FrontierLoopClauses {
+    clauses: PersistentSequence<StructuralClause>,
+    loops: crate::persistent::PersistentSet<usize>,
+}
+
+impl FrontierLoopClauses {
+    pub(in crate::surface::proof) fn push(&mut self, clause: StructuralClause) {
+        if let CodeRegion::Loop(index) = clause.region() {
+            self.loops = self.loops.with_value(*index);
+        }
+        self.clauses.push(clause);
+    }
+
+    /// Whether some clause is bound to loop `index`.
+    pub(in crate::surface::proof) fn binds_loop(&self, index: usize) -> bool {
+        self.loops.contains(&index)
+    }
+}
+
+impl std::ops::Deref for FrontierLoopClauses {
+    type Target = PersistentSequence<StructuralClause>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.clauses
+    }
+}
+
 pub(in crate::surface::proof) struct LoopAnnotationCache {
     pub(in crate::surface::proof) function_block: usize,
     pub(in crate::surface::proof) parsed_function: usize,
@@ -709,9 +740,13 @@ pub(in crate::surface::proof) struct LoopAnnotationCache {
     pub(in crate::surface::proof) initial_state: CState,
     pub(in crate::surface::proof) arguments: Vec<CExpression>,
     /// The frontier clauses bound before the annotated loop's own clause.
-    pub(in crate::surface::proof) frontier_clauses: PersistentSequence<StructuralClause>,
+    pub(in crate::surface::proof) frontier_clauses: FrontierLoopClauses,
     /// The annotated loop's own clause, bound to it.
     pub(in crate::surface::proof) bound_clause: StructuralClause,
+    /// The block the annotated loop was checked with: `frontier_clauses`,
+    /// then `bound_clause`, then any nested clauses its proof bound.
+    pub(in crate::surface::proof) bound_function_block: crate::surface::FunctionBlock,
+    pub(in crate::surface::proof) bound_nested_clauses: bool,
     pub(in crate::surface::proof) annotation: crate::surface::lowering::LoopAnnotation,
 }
 
@@ -1051,11 +1086,39 @@ struct ProofDiagnosticProofState(
     // so the refusal shows the record its failed body fact reads.
     Option<Arc<crate::kernel::ResourceInstance>>,
     &'static str,
-    (Vec<syntax::C0Parameter>, Vec<CExpression>),
+    DiagnosticNaming,
     // The recorded snapshots an outcome goal's `at(...)` cites. A shared
     // handle; the citable ones are selected only when a report is rendered.
     Option<crate::surface::RecordedSnapshots>,
 );
+
+/// The names a captured diagnostic gives the proof's values: the naming
+/// tables themselves, or what they are built from when the diagnostic is
+/// rendered. A diagnostic is captured on every refused attempt and rendered
+/// for few of them, so the deferred form holds shared handles and copies no
+/// list of locals or parameters.
+pub(in crate::surface::proof) enum DiagnosticNaming {
+    Tables(Vec<syntax::C0Parameter>, Vec<CExpression>),
+    /// A state's locals, then the shared entry parameters and arguments.
+    LocalsThenParameters(CState, Arc<crate::surface::ParameterNaming>),
+}
+
+impl DiagnosticNaming {
+    fn register(&self, labels: &mut crate::surface::proof_diagnostics::render::SnapshotLabels) {
+        match self {
+            Self::Tables(names, values) => {
+                labels.register_naming(ParameterBinding::new(names, values));
+            }
+            Self::LocalsThenParameters(state, naming) => {
+                let (mut names, mut values) =
+                    crate::surface::diagnostics::local_naming_tables(state);
+                names.extend(naming.parameters.iter().cloned());
+                values.extend(naming.arguments.iter().cloned());
+                labels.register_naming(ParameterBinding::new(&names, &values));
+            }
+        }
+    }
+}
 
 fn diagnostic_value_variable(value: &CValue) -> Option<Variable> {
     match value.numeric_value() {
@@ -1179,7 +1242,7 @@ impl crate::surface::proof_diagnostics::ProofDiagnosticState for ProofDiagnostic
         &self,
         labels: &mut crate::surface::proof_diagnostics::render::SnapshotLabels,
     ) {
-        labels.register_naming(ParameterBinding::new(&self.13.0, &self.13.1));
+        self.13.register(labels);
         for (variable, name) in &self.2 {
             labels.source_name(*variable, name.clone());
         }
@@ -1760,7 +1823,7 @@ impl Proof<'_> {
             Vec::new(),
             None,
             self.proof_context_description(),
-            self.diagnostic_naming_tables(),
+            self.diagnostic_naming(),
             match self.context.as_ref() {
                 ProofContext::Pure(_) => None,
                 _ => self

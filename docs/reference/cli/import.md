@@ -1599,14 +1599,22 @@ local `Square` passed as one by `Square__click_pack_const__Square`
 
 Limits:
 - An override in a class without a defining `class` block is refused.
-- A class deriving from a defining class overrides each of its methods the
-  sidecar states, since the method, stated on its own class's memory, would
-  run on an object its definitions do not describe.
+- A class deriving from a defining class may inherit a method the sidecar
+  states on an ancestor's memory only where each function the object
+  class's interface for it reads is defined alike, read through the base
+  parts; otherwise it overrides the method. The inherited method runs on
+  the ancestor's part of the object, as its proof read it, and is not
+  verified again
+  (`mdtests/cpp_class_subclass_inherits_a_method_it_keeps.md`,
+  `mdtests/cpp_class_subclass_inherited_method_rejects_redefined_state.md`).
 - A method of a class another derives from holds its memory, not the
-  object, so its call through `this` to a method a derived class overrides
-  is refused for the dispatch's missing `__object_this`, as is a call
-  through a reference to it of a method stated on its memory, one that
-  overrides none of the object class's.
+  object, so its call through `this` to a method that may dispatch to an
+  override is refused, naming what each holds; a qualified call runs the
+  method named. A reference to such a class holds the object, so a call
+  through it of a method stated on the class's memory, one that overrides
+  none of the object class's, is refused the same way
+  (`mdtests/cpp_class_subclass_override_call_through_this_is_refused.md`,
+  `mdtests/cpp_class_subclass_memory_method_through_a_reference_is_refused.md`).
 - A class whose own fields reuse its base's tail padding is refused by the
   layout profile.
 - A call through the interface inside a larger expression is an expression

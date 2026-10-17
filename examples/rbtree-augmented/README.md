@@ -370,4 +370,17 @@ Both augmented insertion wrappers preserve that result.
 color flips in all four ancestor orientations, ending at the root or an owned
 black-parent boundary. It defines the resulting recolored tree and proves the
 chain-depth bound and the context-parent relation. This is the model foundation
-for repeated propagation; the corresponding C loop proof remains unfinished.
+for repeated propagation; the full repeated-flip C loop proof remains unfinished.
+
+`rbtree_size_insert_flips.click` bundles the current owned subtree and ancestor
+path in `sized_flip_state`. Its checked `restore_sized_flip_state` tactic
+returns the root link and the whole tree with the exact `sized_plug` model and
+null root parent. The chain-to-context relationship is an explicit contract
+premise, rather than an implicit promise of this general cursor resource.
+
+`rbtree_size_insert_flip_boundary.click` proves both chain stopping cases using
+that cursor: a root focus is colored black, and a focus beneath a black parent
+returns without writes. Both ancestor orientations and the two augmented
+insertion wrappers preserve the exact `sized_flip_result` model and cached
+subtree sizes. These proofs accept arbitrary owned subtrees and outer contexts;
+they do not yet check the four continuing flip cases.

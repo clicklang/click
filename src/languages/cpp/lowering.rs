@@ -173,6 +173,7 @@ pub fn lower_import(import: &PreparedCppImport) -> Result<LoweredCppFunction, St
         library_contracts,
         &polymorphism.coercions.into_inner(),
         &polymorphism.dispatches.into_inner(),
+        &polymorphism.receiver_calls.into_inner(),
     )?);
     Ok(LoweredCppFunction {
         execution,
@@ -259,6 +260,7 @@ fn lower_function(
             CppExceptionBehavior::ScalarInt32
         ),
         pending_coercions: Vec::new(),
+        direct_receiver: None,
         polymorphism,
     };
     let lifetimes = LifetimePlan::new(&source.body, |id| context.records.get(id).copied())?;
@@ -445,6 +447,9 @@ struct LoweringContext<'a> {
     /// derived class's address: one for each reference argument that
     /// converts a derived class reference to a polymorphic base.
     pending_coercions: Vec<(String, String, CExpression)>,
+    /// The receiver of the call being lowered when it converts to a base
+    /// whose method runs as itself, on memory: it is not packed.
+    direct_receiver: Option<CppPlaceReference>,
     polymorphism: &'a Polymorphism<'a>,
 }
 
@@ -455,6 +460,8 @@ struct Polymorphism<'a> {
     /// The polymorphic classes another polymorphic class derives from: a
     /// reference to one may stand for an object of a derived class.
     open: BTreeSet<&'a str>,
+    /// The polymorphic classes that derive from a polymorphic class.
+    derived: BTreeSet<&'a str>,
     /// Every conversion of a derived class reference to a polymorphic base
     /// the program makes, by derived and base record.
     coercions: std::cell::RefCell<BTreeSet<(String, String)>>,
@@ -462,6 +469,10 @@ struct Polymorphism<'a> {
     /// class's method that overrides another, by the name of the function
     /// it calls, with the method's importer name.
     dispatches: std::cell::RefCell<BTreeMap<String, String>>,
+    /// Each function's calls of methods on a receiver that may be an object
+    /// of a derived class, by its importer name: the function called, and
+    /// the reference parameter the receiver is, or `None` for `this`.
+    receiver_calls: std::cell::RefCell<BTreeMap<String, Vec<(String, Option<String>)>>>,
 }
 
 impl<'a> Polymorphism<'a> {
@@ -473,28 +484,35 @@ impl<'a> Polymorphism<'a> {
             .chain(&import.export().reachable_functions)
             .map(|function| (function.declaration_id.as_str(), function))
             .collect();
-        let open = import
+        let mut open = BTreeSet::new();
+        let mut derived = BTreeSet::new();
+        for record in import
             .export()
             .records
             .iter()
             .filter(|record| record.polymorphic)
-            .filter_map(|record| match &record.base.as_ref()?.value_type {
-                CppType::Record {
-                    declaration_id,
-                    name,
-                    ..
-                } => records
+        {
+            crate::instrumentation::record_deterministic_work(1);
+            if let Some(CppType::Record {
+                declaration_id,
+                name,
+                ..
+            }) = record.base.as_ref().map(|base| &base.value_type)
+                && records
                     .get(declaration_id)
                     .is_some_and(|base| base.polymorphic)
-                    .then_some(name.as_str()),
-                _ => None,
-            })
-            .collect();
+            {
+                open.insert(name.as_str());
+                derived.insert(record.name.as_str());
+            }
+        }
         Self {
             functions,
             open,
+            derived,
             coercions: std::cell::RefCell::default(),
             dispatches: std::cell::RefCell::default(),
+            receiver_calls: std::cell::RefCell::default(),
         }
     }
 }
@@ -605,6 +623,7 @@ impl LoweringContext<'_> {
         callee: &super::CppFunctionReference,
         arguments: &[CppCallArgument],
     ) -> Result<String, String> {
+        self.direct_receiver = None;
         let name = self.callee_name(callee)?;
         let Some(function) = (!callee.through_pointer)
             .then(|| {
@@ -661,9 +680,6 @@ impl LoweringContext<'_> {
                 .borrow_mut()
                 .insert((class.clone(), class.clone()));
         }
-        let Some(method) = function.virtual_method.as_ref() else {
-            return Ok(name);
-        };
         let receiver = function
             .parameters
             .first()
@@ -679,11 +695,44 @@ impl LoweringContext<'_> {
         let Some(CppCallArgument::Reference { place }) = arguments.first() else {
             return Ok(name);
         };
-        if callee.qualified
-            || method.overrides.is_empty()
-            || !self.polymorphism.open.contains(class.as_str())
-            || self.is_exact(place)?
-        {
+        let exact = self.is_exact(place)?;
+        let dispatches = function.virtual_method.as_ref().is_some_and(|method| {
+            !callee.qualified
+                && !method.overrides.is_empty()
+                && self.polymorphism.open.contains(class.as_str())
+        }) && !exact;
+        if !exact && self.polymorphism.derived.contains(class.as_str()) {
+            let id = place.declaration_id.as_str();
+            let holder = (self.receiver != Some(id)).then(|| place.name.clone());
+            let target = if dispatches {
+                crate::languages::cpp::names::object_dispatch_name(
+                    class,
+                    function
+                        .path
+                        .last()
+                        .map_or(callee.name.as_str(), String::as_str),
+                )
+            } else {
+                name.clone()
+            };
+            self.polymorphism
+                .receiver_calls
+                .borrow_mut()
+                .entry(self.function_name.to_string())
+                .or_default()
+                .push((target, holder));
+        }
+        if !dispatches {
+            // A method of a class with a polymorphic base, called as itself,
+            // runs on that class's part of a derived object, which its
+            // contract states as memory.
+            if self.polymorphism.derived.contains(class.as_str())
+                && place.projections.last().is_some_and(|projection| {
+                    matches!(projection, super::schema::CppProjection::Base { .. })
+                })
+            {
+                self.direct_receiver = Some(place.clone());
+            }
             return Ok(name);
         }
         let method_name = function
@@ -1778,7 +1827,11 @@ impl LoweringContext<'_> {
             }
             CppCallArgument::Value { value } => self.lower_expression(value),
             CppCallArgument::Reference { place } => {
-                self.note_object_coercion(place)?;
+                if self.direct_receiver.as_ref() == Some(place) {
+                    self.direct_receiver = None;
+                } else {
+                    self.note_object_coercion(place)?;
+                }
                 let address = self.lower_place(place)?;
                 let root = self.place(place)?;
                 if !matches!(root.value_type, CppType::Record { .. }) {
