@@ -16,7 +16,7 @@ void set_pair(struct pair* p) {
 uint64 set_global() {
     owns state;
     ensures result == 18u64;
-} by { execute(); rewrite(state.left == 7u64); rewrite(state.right == 11u64); normalize(); }
+} by { execute(); assumption(); rewrite(state.left == 7u64); rewrite(state.right == 11u64); normalize(); }
 ```
 ```expect
 pass
