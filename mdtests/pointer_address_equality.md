@@ -40,7 +40,7 @@ int32 self_after_clear(struct node* node) {
 
 int32 other_after_link(struct node* node, struct node* other) {
     requires node != 0;
-    requires other != node;
+    requires address(other) != address(node);
     owns node->word;
     ensures result == 0;
 } by {

@@ -2549,6 +2549,20 @@ impl ConditionTerm {
         {
             return Self::pointer_equal(pointer.as_ref().clone(), Pointer::null());
         }
+        // Two addresses compare as numbers: the class an address carries is
+        // provenance for a later cast back, not part of its value, so a C
+        // comparison and a contract's `address(p) == address(q)` are one
+        // condition.
+        if let (Some(left), Some(right)) = (left.address_pointer(), right.address_pointer()) {
+            let (left, right) = (
+                Bitvector32Term::pointer_address(left.clone()),
+                Bitvector32Term::pointer_address(right.clone()),
+            );
+            if left == right {
+                return Self::Constant(true);
+            }
+            return Self::Bitvector64Equal(Box::new(left), Box::new(right));
+        }
         match (left.bitvector64_as_const(), right.bitvector64_as_const()) {
             (Some(left), Some(right)) => Self::Constant(left == right),
             _ => Self::Bitvector64Equal(Box::new(left), Box::new(right)),

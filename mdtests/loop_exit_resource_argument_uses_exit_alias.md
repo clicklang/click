@@ -36,7 +36,7 @@ void choose(int32* p, int32* q, int32* anchor, int32 flag) {
         owns c: cursor(cur, anchor);
         decreases 0;
         preserve by {
-            if p == q {
+            if address(p) == address(q) {
                 unfold(c);
                 step(); step();
                 let d = fold(cursor(p, anchor), { tag: 0 });
