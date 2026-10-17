@@ -66,6 +66,7 @@ pub(crate) use initialized_bytes::InitializedBytes;
 mod memory_state;
 pub(crate) use observed_population_families::ObservedPopulationFamilies;
 mod persistent_map;
+pub(crate) use memory_state::BlockMembership;
 pub(in crate::kernel) use memory_state::CallKeptOwnership;
 pub use memory_state::CallKeptRanges;
 pub(crate) use memory_state::{
@@ -6547,6 +6548,10 @@ pub struct CLocalEnvironment {
     /// every binding: a frame of N locals bound one at a time costs N log N.
     pub(super) bindings: crate::persistent::PersistentMap<String, CLocalBinding>,
     pub(super) slots: crate::persistent::PersistentMap<Pointer, String>,
+    /// Each scalar object's name under a fingerprint of the integer term it
+    /// holds, kept with `bindings`: naming a value looks up the objects that
+    /// may hold it instead of comparing it with every binding.
+    pub(super) held_terms: crate::persistent::PersistentMap<(u64, String), ()>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]

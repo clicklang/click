@@ -15279,7 +15279,10 @@ struct node* unpack(struct node* node) {
     unfold(packed(node));
     execute();
     fold(packed(node));
-    simp();
+    arithmetic() using {
+        aligned(result, 8);
+        node->word == address(result) + (node->word & 1);
+    };
 }
 "#;
 
@@ -15291,7 +15294,7 @@ fn expansion_names_a_resource_witness_through_the_checked_return_pointer() {
         .expect("the witness fold/unfold proof should verify");
 
     let closer = WITNESS_RESOURCE_CLICK
-        .rfind("simp();")
+        .rfind("arithmetic() using {")
         .expect("proof should contain the closer");
     let position = expansion::position_at_offset(WITNESS_RESOURCE_CLICK, closer);
     let expanded = expand_c0_tactic_source_at(

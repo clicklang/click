@@ -223,6 +223,9 @@ pub(in crate::surface) struct ProgramLayouts {
     /// by their sidecar names: without a contract of its own, it has the
     /// method's.
     pub(in crate::surface) virtual_dispatches: Vec<(String, String)>,
+    /// The instances of each generic crate trait the import declares an
+    /// interface of, by the trait's importer name.
+    pub(in crate::surface) rust_trait_instances: BTreeMap<String, BTreeSet<Vec<String>>>,
     /// Each C++ function's calls of methods on a receiver that may be an
     /// object of a derived class, by sidecar names: the function called, and
     /// the reference parameter the receiver is, or `None` for `this`.
@@ -436,10 +439,9 @@ pub(super) fn parse_file_items_for_module(
     parser.in_contract_definition = false;
     for definition in imported_resources {
         if let Some(body) = definition.composite_body() {
-            parser.declared_resource_child_slots.insert(
-                definition.name().to_string(),
-                composite_body_child_slots(body),
-            );
+            parser
+                .declared_resource_child_slots
+                .insert(definition.name().to_string(), body.child_slot_resources());
         }
     }
     for definition in imported_algebraic_types {
@@ -751,9 +753,11 @@ struct Parser {
     /// The fields of each resource declared so far, hidden ones included.
     declared_resource_fields: BTreeMap<String, Vec<ResourceFieldDefinition>>,
     /// The named child slots of each resource declared so far, across its
-    /// unmatched body and every match arm. A `fold` may leave out a slot
-    /// whose child is the in-scope resource of the same name.
-    declared_resource_child_slots: BTreeMap<String, BTreeSet<String>>,
+    /// unmatched body and every match arm, with the resource each owns when
+    /// the arms agree ([`CompositeResourceBody::child_slot_resources`]). A
+    /// `fold` may leave out a slot whose child is the in-scope resource of
+    /// the same name.
+    declared_resource_child_slots: BTreeMap<String, BTreeMap<String, Option<String>>>,
     /// In a resource that declares no fields and names a child: the hidden
     /// parent field that holds each `child.field`.
     hidden_child_fields: BTreeMap<(String, String), ResourceFieldAccess>,
@@ -793,6 +797,18 @@ struct Parser {
     /// trait bounds, `T` of `<T: traits::Shape>`: a reference to one is a
     /// reference to a value of a type the function does not know.
     rust_trait_type_parameters: BTreeSet<String>,
+    /// Each generic crate trait's block, `trait traits::Scale<T> { ... }`,
+    /// by the trait's importer name: its type parameters and its tokens.
+    rust_generic_traits: BTreeMap<String, (Vec<String>, std::ops::Range<usize>)>,
+    /// Each instance block of a generic crate trait, `trait
+    /// traits::Scale<i32> { ... }`, by the trait's importer name and its type
+    /// arguments: its tokens.
+    rust_instance_traits: BTreeMap<(String, Vec<String>), std::ops::Range<usize>>,
+    /// The instances of each generic crate trait the import uses, by the
+    /// trait's importer name.
+    rust_trait_instances: BTreeMap<String, BTreeSet<Vec<String>>>,
+    /// Whether the trait block being read is an instance the parser built.
+    rust_instantiating: bool,
     /// Each crate trait method implementation read, by name, with the
     /// interface it inherits.
     rust_trait_implementations: Vec<(String, String)>,
@@ -1162,6 +1178,7 @@ impl Parser {
         parser.qualified_functions = layouts.qualified_functions;
         parser.local_struct_pointers_by_function = layouts.local_struct_pointers;
         parser.closure_captures = layouts.closure_captures;
+        parser.rust_trait_instances = layouts.rust_trait_instances;
         parser.plain_char = layouts.plain_char;
         parser.int64_t_rank = layouts.int64_t_rank.unwrap_or(LongRank::Long);
         parser.c_typedefs = layouts.c_typedefs;
@@ -1290,6 +1307,10 @@ impl Parser {
             rust_impl_trait: None,
             rust_trait_interface: None,
             rust_trait_type_parameters: BTreeSet::new(),
+            rust_generic_traits: BTreeMap::new(),
+            rust_instance_traits: BTreeMap::new(),
+            rust_trait_instances: BTreeMap::new(),
+            rust_instantiating: false,
             rust_trait_implementations: Vec::new(),
             cpp_dispatches: Vec::new(),
             cpp_receiver_calls: BTreeMap::new(),
@@ -1656,6 +1677,9 @@ impl Parser {
                     definition.name
                 )));
             }
+        }
+        if self.language == SourceLanguage::Rust {
+            self.instantiate_rust_generic_traits(&mut function_blocks)?;
         }
         // A crate trait method's implementation, or a C++ override, inherits
         // its interface, which the sidecar may declare before or after it: a
@@ -2636,7 +2660,7 @@ impl Parser {
             self.declared_resource_fields
                 .insert(name.clone(), body.fields.clone());
             self.declared_resource_child_slots
-                .insert(name.clone(), composite_body_child_slots(body));
+                .insert(name.clone(), body.child_slot_resources());
         }
         self.names.struct_params = previous_struct_params;
         self.names
@@ -5947,6 +5971,7 @@ impl Parser {
                 binder_identity: declaration.identity,
                 instance,
                 identity,
+                family: None,
             });
             if self.peek() != Some(&Token::Comma) {
                 break;
@@ -6194,6 +6219,7 @@ impl Parser {
             binder_identity: declaration.identity,
             instance: name.to_string(),
             identity,
+            family: Some(family.clone()),
         })
     }
 
@@ -7906,18 +7932,23 @@ impl Parser {
             self.position += 1;
         }
         self.expect(Token::RBrace)?;
-        self.bind_resource_child_names(parent, bindings, introduce)
+        self.bind_resource_child_names(parent, None, bindings, introduce)
     }
 
+    /// Binds the names of an unfold or fold pattern over `parent`, whose
+    /// resource is `family` when the instance recorded one other than its
+    /// clause's.
     fn bind_resource_child_names(
         &mut self,
         parent: &ResourceClause,
+        family: Option<&str>,
         bindings: Vec<(String, String)>,
         introduce: bool,
     ) -> Result<Vec<(String, String, Variable)>, ClickError> {
-        let ResourceClause::Declared { name: family, .. } = parent else {
+        let ResourceClause::Declared { name: written, .. } = parent else {
             return Err(self.error("child bindings require a declared resource family"));
         };
+        let family = &family.map_or_else(|| written.clone(), str::to_string);
         let mut result = Vec::new();
         let mut slots = BTreeSet::new();
         let mut names = BTreeSet::new();
@@ -7968,9 +7999,20 @@ impl Parser {
                 // whole: ...` that the unfold's child becomes, keeps the
                 // resource it was declared with: its fields are that
                 // resource's, not the parent's, when a later `have` reads
-                // `whole.model`. Only a new binder records the parent, which
-                // declaration expansion replaces with the slot's resource.
-                let recorded = existing.map_or_else(|| family.clone(), |(_, family)| family);
+                // `whole.model`. A new binder takes the slot's resource when
+                // every arm of the parent's declaration agrees on it, so an
+                // unfold of the child reads the child's own fields and
+                // slots. Otherwise it records the parent, which declaration
+                // expansion replaces with the slot's resource.
+                let recorded = existing.map_or_else(
+                    || {
+                        self.declared_resource_child_slots
+                            .get(family)
+                            .and_then(|slots| slots.get(&slot).cloned().flatten())
+                            .unwrap_or_else(|| family.clone())
+                    },
+                    |(_, family)| family,
+                );
                 self.names
                     .resource_bindings
                     .insert(name.clone(), (identity, recorded));
@@ -8131,8 +8173,16 @@ impl Parser {
                 return Err(self.error("resource unfold outputs require a named resource"));
             };
             self.expect(Token::RParen)?;
+            // A child an earlier unfold introduced keeps its parent's clause
+            // as its target, since the parser cannot instantiate the slot's
+            // arguments; the resource it recorded is the slot's.
+            let family = self
+                .names
+                .resource_bindings
+                .get(&binding.name)
+                .map(|(_, family)| family.clone());
             binding.child_bindings = Some(
-                self.bind_resource_child_names(&resource, bindings, true)?
+                self.bind_resource_child_names(&resource, family.as_deref(), bindings, true)?
                     .into(),
             );
             self.expect(Token::Semicolon)?;
@@ -8278,7 +8328,7 @@ impl Parser {
             return Vec::new();
         };
         slots
-            .iter()
+            .keys()
             .filter(|slot| {
                 slot.as_str() != result
                     && !explicit
@@ -15222,22 +15272,6 @@ fn struct_byte_base(base: CExpression) -> CExpression {
 
 /// Every named child slot of a composite resource body: its unmatched
 /// body's and each match arm's, whichever resource each one owns.
-fn composite_body_child_slots(body: &CompositeResourceBody) -> BTreeSet<String> {
-    std::iter::once(body)
-        .chain(
-            body.matched
-                .iter()
-                .flat_map(|matched| &matched.arms)
-                .map(|arm| &arm.body),
-        )
-        .flat_map(|body| &body.contains)
-        .filter_map(|clause| match clause {
-            ResourceClause::Named { binding, .. } => Some(binding.name.clone()),
-            _ => None,
-        })
-        .collect()
-}
-
 /// Whether `expression` or an operand of its arithmetic is a population
 /// count, looking through `old`.
 fn has_count_operand(expression: &ContractExpression) -> bool {

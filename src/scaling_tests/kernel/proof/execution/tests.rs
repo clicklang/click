@@ -795,14 +795,12 @@ fn interface_abstraction_work_scales_with_unrelated_locals_and_memory() {
                     crate::kernel::abstract_c_state_for_interface_join_across(
                         &then_state,
                         &siblings,
-                        &stable_locals,
                         0,
                     )
                     .expect("the then arm should abstract"),
                     crate::kernel::abstract_c_state_for_interface_join_across(
                         &else_state,
                         &siblings,
-                        &stable_locals,
                         0,
                     )
                     .expect("the else arm should abstract"),

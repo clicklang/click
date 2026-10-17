@@ -64,6 +64,86 @@ fn owned_entry_footprint_names_memory_owners_and_refuses_unnameable_ones() {
     assert_eq!(checked_owned_entry_footprint(&folded), None);
 }
 
+#[test]
+fn restoring_a_loop_frame_retains_complete_pointer_reads_but_not_written_cells() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let field = CPointerValue::new(Pointer::symbolic(Variable(916_200)), CType::Int32Pointer);
+    let data = CPointerValue::new(Pointer::symbolic(Variable(916_201)), CType::Int32Pointer);
+    let field_range = CMemoryRange::from_pointer_value(&field, 0u32.into(), 2u32.into(), 4);
+    let data_range = CMemoryRange::from_pointer_value(&data, 0u32.into(), 4u32.into(), 4);
+    let initial = CMemory::new();
+    let before = CPointerValue::from_read(
+        data.pointer().clone(),
+        CType::Int32Pointer,
+        &intern_c_memory_ref(&initial),
+        field.pointer(),
+    );
+    // The frame restores scalar cache cells covering one complete pointer.
+    // Its pointer origin still comes from the original eight-byte read.
+    let memory = initial
+        .materialize_symbolic_cell(field.pointer().clone(), CType::Int32)
+        .materialize_symbolic_cell(field.pointer().offset_by_bytes(4), CType::Int32);
+    let state = CState::new()
+        .with_local("field", CValue::Pointer(field.clone()))
+        .with_local("data", CValue::Pointer(data))
+        .with_memory(memory)
+        .with_resource_context(
+            ResourceContext::new()
+                .unchecked_with_fact(CResourceFact::own_memory(field_range.clone()))
+                .unchecked_with_fact(CResourceFact::own_memory(data_range.clone())),
+        );
+    let assumptions = PureFactContext::new().assume_proposition(Proposition::CResourceSeparate {
+        left: Box::new(CResource::Memory(field_range)),
+        right: Box::new(CResource::Memory(data_range)),
+    });
+    let scalar = |value: u32| CExpression::Value(CValue::Int32(value.into()));
+    for (name, length, kept) in [("data", 4, true), ("field", 2, false)] {
+        let spec = CResourceSpec::owned_memory(CMemorySegment::new(
+            CExpression::Variable(name.into()),
+            scalar(0),
+            scalar(length),
+        ));
+        let effect = CLoopEffectCheck::new_with_origin(
+            CLoopEffect::Mutable(vec![]),
+            CLoopEffectSpan::Whole,
+            CLoopEffectOrigin::DeclaredResource,
+            None,
+        );
+        let body = CStatement::Store {
+            pointer: CExpression::Variable(name.into()),
+            value: scalar(1),
+        };
+        let head = prepare_loop_top_state(
+            &state,
+            &[effect],
+            &[],
+            &[spec],
+            &[],
+            &body,
+            &assumptions,
+            &mut ExecutionBudget::default(),
+            &mut KernelVariableGenerator::fresh_for_execution(BTreeSet::new()),
+        )
+        .unwrap();
+        assert!(head.resource_failures.is_empty());
+        let after = CPointerValue::from_read(
+            before.pointer().clone(),
+            CType::Int32Pointer,
+            &intern_c_memory_ref(head.top.memory()),
+            field.pointer(),
+        );
+        assert_eq!(
+            crate::kernel::memory_provenance::pointer_read_designations_equal(
+                before.designation(),
+                after.designation(),
+                &assumptions,
+            ),
+            kept,
+            "only a field kept outside the loop's write set retains its origin"
+        );
+    }
+}
+
 #[cfg(test)]
 mod scaling_tests {
     include!("../../scaling_tests/kernel/loops/v10_tests.rs");

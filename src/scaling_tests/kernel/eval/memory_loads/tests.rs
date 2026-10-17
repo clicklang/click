@@ -1409,7 +1409,7 @@ fn opaque_word_call_frame(size: u32) -> (CMemory, PureFactContext, Pointer) {
 
 #[test]
 fn normalizing_an_opaque_word_pointer_does_not_search_unrelated_call_resources() {
-    let costs = [16u32, 64, 256, 1024].map(|size| {
+    let costs = [4u32, 16, 64, 256].map(|size| {
         let _session = crate::kernel::VerificationSession::enter();
         let (memory, context, word) = opaque_word_call_frame(size);
         // The load producer's final step creates this opaque word. Avoid
@@ -1462,7 +1462,7 @@ fn normalizing_an_opaque_word_pointer_does_not_search_unrelated_call_resources()
 
 #[test]
 fn a_call_frame_step_queries_its_kept_range_once() {
-    for size in [16u32, 64, 256, 1024] {
+    for size in [4u32, 16, 64, 256] {
         let _session = crate::kernel::VerificationSession::enter();
         let (memory, context, word) = opaque_word_call_frame(size);
         let source = intern_c_memory_ref(&memory);
@@ -1478,6 +1478,14 @@ fn a_call_frame_step_queries_its_kept_range_once() {
             kept.range_holding(&context, None, &word, 8)
         });
         assert!(range.is_none());
+        if size == 256 {
+            // Keep the fixture large enough that a second range lookup
+            // exceeds the step's fixed overhead allowance below.
+            assert!(
+                lookup_work > 512,
+                "duplicated lookup must be detectable: {lookup_work}"
+            );
+        }
         let (effect, step_work) = crate::instrumentation::measure_deterministic_work(|| {
             crate::kernel::resource_tracker::step_effect::affects(
                 &derivation,

@@ -155,3 +155,71 @@ fn full_pointer_resource_relationship_rewriting_scales_with_its_arguments() {
         assert!(pair[1] <= pair[0] * 5 + 64, "{samples:?}");
     }
 }
+
+#[test]
+fn displaced_full_pointer_rewrite_scales_with_the_selected_offset() {
+    for symbolic in [false, true] {
+        let mut costs = Vec::new();
+        for size in [8_u64, 32, 128] {
+            let parameter = |id| {
+                CPointerValue::new(
+                    Pointer {
+                        block: PointerBlock::ExternalArgument,
+                        offset: PointerOffsetTerm::scale_int32(
+                            Bitvector32Term::Variable(Variable(id)),
+                            1,
+                        ),
+                    },
+                    CType::UInt8Pointer,
+                )
+            };
+            let base = parameter(916_221);
+            let source = if symbolic {
+                CPointerValue::new(Pointer::symbolic(Variable(916_222)), CType::UInt8Pointer)
+            } else {
+                parameter(916_222)
+            };
+            let target = base.clone().with_address(base.pointer().offset_by_bytes(2));
+            let delta = (0..size).fold(PointerOffsetTerm::Constant(0), |offset, index| {
+                PointerOffsetTerm::add(
+                    offset,
+                    PointerOffsetTerm::scale_int32(
+                        Bitvector32Term::Variable(Variable(920_000 + index)),
+                        1,
+                    ),
+                )
+            });
+            let input = source.clone().with_address(Pointer {
+                block: source.pointer().block.clone(),
+                offset: PointerOffsetTerm::add(source.pointer().offset.clone(), delta.clone()),
+            });
+            let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
+                let mut rewrite = TermRewrite::for_pointer_value_exact(&source, &target);
+                let result = rewrite.value(&CValue::Pointer(input));
+                assert_eq!(rewrite.refusal(), None);
+                result
+            });
+            let CValue::Pointer(result) = result else {
+                panic!("pointer type")
+            };
+            assert_eq!(result.pointer().block, target.pointer().block);
+            assert_eq!(
+                crate::kernel::eval::canonical_offset_term(&result.pointer().offset),
+                crate::kernel::eval::canonical_offset_term(&PointerOffsetTerm::add(
+                    target.pointer().offset.clone(),
+                    delta
+                ))
+            );
+            assert_eq!(result.designation(), target.designation());
+            assert_eq!(result.opaque_extent(), target.opaque_extent());
+            assert!(
+                work >= usize::try_from(size).unwrap(),
+                "{symbolic}: {size}: {work}"
+            );
+            costs.push(work);
+        }
+        for pair in costs.windows(2) {
+            assert!(pair[1] <= pair[0] * 5 + 64, "{symbolic}: {costs:?}");
+        }
+    }
+}

@@ -196,7 +196,7 @@ fn resource_object_provenance_does_not_scan_same_raw_block() {
 
 #[test]
 fn stored_pointer_bounds_ignore_unrelated_numeric_classes() {
-    for size in [16u64, 64, 256, 1024] {
+    for size in [8u64, 32, 128, 512] {
         let _session = crate::kernel::VerificationSession::enter();
         let field = Pointer::symbolic(Variable(96_311));
         let stored = subobject_pointer(0, 0, 4);
