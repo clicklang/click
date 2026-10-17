@@ -8360,7 +8360,7 @@ pub(crate) fn establish_resource_derived_loop_frames(
         function
             .contract_interface()
             .composite_resource_definitions(),
-        &transition_assumptions,
+        &transition_assumptions.clone().assume_entry_clause_extents(),
         budget,
     )? {
         Ok(assumptions) => assumptions,
@@ -12089,6 +12089,9 @@ fn evaluate_contract_return_resources(
         "contract resource transition",
         "ensured resource lowering",
         || {
+            // The callee established what its returned clauses designate
+            // before it returned them, so the caller assumes it
+            // (`PureFactContext::assume_entry_clause_extents`).
             evaluate_contract_return_resource_context(
                 interface,
                 canonical_borrowed_owners,
@@ -12097,7 +12100,7 @@ fn evaluate_contract_return_resources(
                 entry_state,
                 post_state,
                 interface.resource_ensures().len(),
-                assumptions,
+                &assumptions.clone().assume_entry_clause_extents(),
                 budget,
             )
         },

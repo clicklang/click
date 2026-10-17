@@ -9051,22 +9051,21 @@ fn opaque_range_extent_refusal(
     let refusal = Some(format!(
         "the clause's range of {element_width}-byte elements is not known to lie inside the object its pointer designates"
     ));
-    if kind != RangeIndexKind::Int32 {
-        return refusal;
-    }
-    if assumptions.decide(&ConditionTerm::signed_less_equal(
-        end.clone(),
-        start.clone(),
-    )) == Some(true)
-    {
+    let wide = kind == RangeIndexKind::UInt64;
+    let empty = if wide {
+        ConditionTerm::Bitvector64UnsignedLessEqual(Box::new(end.clone()), Box::new(start.clone()))
+    } else {
+        ConditionTerm::signed_less_equal(end.clone(), start.clone())
+    };
+    if assumptions.decide(&empty) == Some(true) {
         return None;
     }
     let from = base
         .pointer()
-        .offset_by_elements(start.clone(), element_width);
+        .offset_by_typed_elements(start.clone(), element_width, wide, wide);
     let to = base
         .pointer()
-        .offset_by_elements(end.clone(), element_width);
+        .offset_by_typed_elements(end.clone(), element_width, wide, wide);
     let spans = |range: &CMemoryRange| {
         [&from, &to]
             .into_iter()

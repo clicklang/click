@@ -1352,7 +1352,7 @@ fn c_function_contract_entry_facts(
         &entry_state,
         function.resource_requires(),
         function.composite_resource_definitions(),
-        &assumptions,
+        &assumptions.clone().assume_entry_clause_extents(),
         &mut budget,
     ) {
         Ok(Ok(assumptions)) => assumptions,
