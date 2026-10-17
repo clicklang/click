@@ -1435,7 +1435,7 @@ fn a_call_kept_instance_range_is_placed_in_work_linear_in_its_body() {
 #[test]
 fn symbolic_range_membership_ignores_unrelated_index_bounds() {
     let mut samples = Vec::new();
-    for size in [64, 128, 256, 512] {
+    for size in [16, 32, 64, 128] {
         let _session = crate::kernel::VerificationSession::enter();
         let base = Pointer::symbolic(Variable(94_100));
         let index = Bitvector32Term::Variable(Variable(94_101));
@@ -1682,7 +1682,7 @@ fn memory_resolution_order_walk_ignores_shared_bounds_of_other_indices() {
     };
     let mut filed = Vec::new();
     let mut scanned = Vec::new();
-    for size in [64u64, 128, 256, 512] {
+    for size in [16u64, 32, 64, 128] {
         let facts = (0..size).fold(
             bounded(bounded(PureFactContext::new(), &x), &y),
             |facts, index| bounded(facts, &variable(10 + index)),

@@ -347,7 +347,7 @@ fn assumption_reuses_facts_but_does_not_normalize_or_extract_implications() {
     assert!(
         error
             .message()
-            .contains("`assumption` found no available fact or held instance for any open claim")
+            .contains("`assumption` found no available fact or held instance for the current goal")
             || error
                 .message()
                 .contains("`assumption` requires the current goal as an available semantic fact"),

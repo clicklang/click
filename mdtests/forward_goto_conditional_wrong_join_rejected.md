@@ -27,5 +27,5 @@ int32 conditional_cleanup_wrong_join(int32 failed) {
 ```
 
 ```expect
-fail: `conditional_cleanup_wrong_join.contract` path 0, tactic 1: `normalize` did not prove any current proposition goal
+fail: `conditional_cleanup_wrong_join.contract` path 0, tactic 1: `normalize` did not prove the current goal `result == 2`
 ```

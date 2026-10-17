@@ -139,7 +139,7 @@ fn checked_read_endpoint_selects_framed_ranges_without_ambient_scan() {
 #[test]
 fn wide_read_keeps_full_buffer_index_beside_a_batch_cursor() {
     let mut samples = Vec::new();
-    for count in [0_u64, 16, 64, 256, 1024] {
+    for count in [0_u64, 4, 16, 64, 256] {
         let _session = crate::kernel::VerificationSession::enter();
         let base = Pointer {
             block: PointerBlock::ExternalArgument,
@@ -220,6 +220,20 @@ fn wide_read_keeps_full_buffer_index_beside_a_batch_cursor() {
         samples[4] <= samples[1] * 3 + 128,
         "batch read alignment scanned aliases: {samples:?}"
     );
+    {
+        let costs = samples.clone();
+        let indexed = |costs: &[usize]| costs.iter().all(|work| *work <= costs[0] + 64);
+        assert!(indexed(&costs), "indexed work: {costs:?}");
+        let scanned = costs
+            .iter()
+            .zip([0u64, 4, 16, 64, 256])
+            .map(|(work, size)| work + usize::try_from(size).unwrap())
+            .collect::<Vec<_>>();
+        assert!(
+            !indexed(&scanned),
+            "the smaller fixture must detect a visit per unrelated item: {costs:?}"
+        );
+    }
 }
 
 #[test]
@@ -479,5 +493,65 @@ fn a_read_does_not_materialize_all_covering_views() {
     assert!(
         samples[3].1 <= samples[0].1 * 2 + 32,
         "a read enumerated every covering view: {samples:?}"
+    );
+}
+
+#[test]
+fn logical_field_coordinates_keep_symbolic_offsets_without_scanning_aliases() {
+    let mut samples = Vec::new();
+    for size in [4u64, 16, 64] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let owner = Pointer::symbolic(Variable(955_930))
+            .offset_by_elements(Bitvector32Term::Variable(Variable(955_931)), 4);
+        let alias = Pointer::symbolic(Variable(955_932));
+        let mut resources = ResourceContext::new().unchecked_with_fact(CResourceFact::view_memory(
+            CMemoryRange::new_with_element_width(owner.clone(), 2u32.into(), 4u32.into(), 4),
+        ));
+        for i in 0..size {
+            resources = resources.unchecked_with_fact(CResourceFact::view_memory(
+                CMemoryRange::new_with_element_width(
+                    Pointer::symbolic(Variable(956_000 + i)),
+                    0u32.into(),
+                    4u32.into(),
+                    4,
+                ),
+            ));
+        }
+        resources.synchronize_memory_equalities(&PureFactContext::new());
+        let mut context = PureFactContext::new()
+            .assume_proposition(Proposition::CResourceComposition(resources))
+            .assume_condition(
+                ConditionTerm::pointer_equal(owner.clone(), alias.clone()),
+                true,
+            );
+        for i in 0..size {
+            context = context.assume_condition(
+                ConditionTerm::pointer_equal(
+                    alias.clone(),
+                    Pointer::symbolic(Variable(957_000 + i)),
+                ),
+                true,
+            );
+        }
+        context
+            .composition_object_resources
+            .advance_memory_equalities(&context);
+        let ((selected, work), map_work) = crate::persistent::measure_persistent_work(|| {
+            crate::instrumentation::measure_deterministic_work(|| {
+                context
+                    .composition_object_resources
+                    .memory_address_spelling(&alias.offset_by_bytes(8), &context)
+            })
+        });
+        assert_eq!(selected, Some(owner.offset_by_bytes(8)));
+        samples.push((work, map_work));
+    }
+    assert!(
+        samples[2].0 <= samples[0].0 * 2 + 64,
+        "logical read lookup scanned unrelated entries: {samples:?}"
+    );
+    assert!(
+        samples[2].1 <= samples[0].1 * 3 + 128,
+        "logical read lookup copied unrelated indexes: {samples:?}"
     );
 }

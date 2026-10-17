@@ -644,7 +644,7 @@ fn write_permission_does_not_enumerate_covering_views() {
     let base = Pointer::symbolic(Variable(960_200));
     let facts = PureFactContext::new();
     let mut samples = Vec::new();
-    for size in [16u32, 64, 256, 1024] {
+    for size in [4u32, 16, 64, 256] {
         let mut resources = ResourceContext::new_with_equalities(&facts);
         for i in 0..size {
             resources = resources.unchecked_with_fact(view(&base, 0, 8 + i));
@@ -676,6 +676,36 @@ fn write_permission_does_not_enumerate_covering_views() {
             .all(|(_, _, work)| *work <= samples[0].2 * 3 + 128),
         "write candidate selection visited covering views: {samples:?}"
     );
+    {
+        let costs = samples.iter().map(|x| x.1).collect::<Vec<_>>();
+        let indexed = |costs: &[usize]| costs.iter().all(|work| *work <= costs[0] + 64);
+        assert!(indexed(&costs), "indexed work: {costs:?}");
+        let scanned = costs
+            .iter()
+            .zip([4u32, 16, 64, 256])
+            .map(|(work, size)| work + usize::try_from(size).unwrap())
+            .collect::<Vec<_>>();
+        assert!(
+            !indexed(&scanned),
+            "the smaller fixture must detect a visit per unrelated item: {costs:?}"
+        );
+    }
+    {
+        // The first query also registers the selected pointer. Keep its
+        // original bound, and calibrate indexed lookup on the three warm sizes.
+        let costs = samples[1..].iter().map(|x| x.2).collect::<Vec<_>>();
+        let indexed = |costs: &[usize]| costs.iter().all(|work| *work <= costs[0] + 128);
+        assert!(indexed(&costs), "indexed work: {costs:?}");
+        let scanned = costs
+            .iter()
+            .zip([16u32, 64, 256])
+            .map(|(work, size)| work + usize::try_from(size).unwrap())
+            .collect::<Vec<_>>();
+        assert!(
+            !indexed(&scanned),
+            "the smaller fixture must detect a visit per unrelated item: {costs:?}"
+        );
+    }
 }
 
 #[test]
@@ -1461,7 +1491,7 @@ fn a_cold_small_memory_index_skips_unrelated_pointer_merge_history() {
 #[test]
 fn framed_pointer_fragments_rejoin_through_their_checked_read_endpoint() {
     let mut work_samples = Vec::new();
-    for size in [16u64, 64, 256, 1024] {
+    for size in [4u64, 16, 64, 256] {
         let _session = crate::kernel::VerificationSession::enter();
         let field = Pointer {
             block: PointerBlock::ExternalArgument,
@@ -1568,6 +1598,20 @@ fn framed_pointer_fragments_rejoin_through_their_checked_read_endpoint() {
             .all(|work| *work <= work_samples[0] + 128),
         "unrelated owners changed selected two-fragment work: {work_samples:?}"
     );
+    {
+        let costs = work_samples.clone();
+        let indexed = |costs: &[usize]| costs.iter().all(|work| *work <= costs[0] + 128);
+        assert!(indexed(&costs), "indexed work: {costs:?}");
+        let scanned = costs
+            .iter()
+            .zip([4u64, 16, 64, 256])
+            .map(|(work, size)| work + usize::try_from(size).unwrap())
+            .collect::<Vec<_>>();
+        assert!(
+            !indexed(&scanned),
+            "the smaller fixture must detect a visit per unrelated item: {costs:?}"
+        );
+    }
 }
 
 #[test]
