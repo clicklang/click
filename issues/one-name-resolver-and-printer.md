@@ -28,8 +28,8 @@ Code regions now resolve through one function, `CodeRegionRef::resolve`, in
 annotation lowering and proof execution. A loop label can no longer be bound
 to two loops on one path. Before, `at(L.exit, ...)` read the last loop named
 `L` while label regions resolved to the first
-(`mdtests/a_loop_label_names_one_loop.md`). Snapshots are still keyed by
-spelling.
+(`mdtests/a_loop_label_names_one_loop.md`). A recorded snapshot is now one
+entry per program point, reached by `loop(N)` or any of the loop's labels.
 
 Proof binders now share one rule, applied by `bind_proof_name`: the newest
 binding wins wherever a name is read, and a proof binder cannot hide a C
