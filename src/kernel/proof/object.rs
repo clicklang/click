@@ -926,7 +926,14 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
                 }
                 _ => false,
             };
-            if !facts.listed_premise_available(premise, &[], false) && !native() {
+            // A signed definedness fact holds exactly when both Integer
+            // bounds of its exact result do, so that listed fact also
+            // supplies each bound.
+            let definedness = || {
+                crate::kernel::assumptions::definedness_of_integer_bound(premise)
+                    .is_some_and(|fact| facts.listed_premise_available(&fact, &[], false))
+            };
+            if !facts.listed_premise_available(premise, &[], false) && !native() && !definedness() {
                 return Err(PropositionCloseError::IntegerArithmeticPremiseUnavailable(
                     index,
                 ));
