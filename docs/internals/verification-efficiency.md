@@ -335,6 +335,12 @@ charged to visible semantic output rather than hidden ambient state:
   successor's bindings against the arms' through one membership index over
   binding values and is linear in the binding count, which grows with proof
   length (`interface_binding_inheritance_is_near_linear_in_the_binding_count`).
+- Bare fact-transport premise synthesis reuses the proof's persistent fact
+  indexes and lowering assumptions across candidates. It does not rebuild the
+  complete context per candidate. The operation spans `explicit fact transport:
+  candidate synthesis` and `explicit fact transport: planning refusal` expose
+  that search and its diagnostic cost; `failing_bare_transport_reuses_candidate_assumptions`
+  counts context rebuild entries at 4, 16, and 64 unrelated premises.
 - An explicit fold read frame — a `transport` of a fact about an application
   of a checked range-fold function (`src/kernel/fold_read_summary.rs`) —
   walks the recorded memory history back from both array snapshots to a

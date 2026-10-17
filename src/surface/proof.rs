@@ -326,7 +326,8 @@ mod certificate_tests {
         );
         let state = CState::new().with_memory(CMemory::new().with_block("current", 4));
 
-        let error = checked_surface_comparison_fact_in_state(
+        let facts = ProofFacts::from_ordered(&[]);
+        let error = checked_surface_comparison_fact_in_state_with_indexed_facts(
             ExecutionView::new(
                 &ExecutionFrontier::default(),
                 &ExecutionFacts::new(),
@@ -336,7 +337,8 @@ mod certificate_tests {
             ),
             &kernel,
             SurfaceFactMatch::CanonicalExact,
-            &[],
+            &facts,
+            facts.assumptions(),
             ParameterBinding::default(),
             &state,
             SpecDefinitions::new(
