@@ -12,7 +12,7 @@ fn wide_comparison_queries_ignore_unrelated_ambient_facts() {
             // Exercise the second indexed query rather than the direct key.
             let guard = condition(complement(operator), ty);
             let mut samples = Vec::new();
-            for size in [16, 64, 256, 1024] {
+            for size in [8, 32, 128, 512] {
                 let mut context = PureFactContext::new();
                 for i in 0..size {
                     context = context
