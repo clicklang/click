@@ -1131,7 +1131,12 @@ impl adler2::Adler32 {
        execute_until(assignment(__rust_mir_148, 0));
        mark tail_add_b;
        have to_integer(at(tail_add_b, b)) == to_integer(at(tail_add_a, b));
-       have to_integer(at(tail_add_b, __rust_mir_147)) == to_integer(at(tail_add_a, a)) + to_integer(at(tail_add_a, __rust_mir_144));
+       have at(tail_add_b, __rust_mir_147) == __rust_mir_147 by normalize();
+       have to_integer(at(tail_add_b, __rust_mir_147)) == to_integer(at(tail_add_a, a)) + to_integer(at(tail_add_a, __rust_mir_144)) by {
+        rewrite(at(tail_add_b, __rust_mir_147) == __rust_mir_147);
+        rewrite(__rust_mir_147 == a);
+        assumption();
+       }
 
        have to_integer(at(tail_add_b, b)) + to_integer(at(tail_add_b, __rust_mir_147)) <= adler_tail_b_ceiling(adler_tail_consumed(((remainder_len as u32) as i32), at(tail_head, ((__rust_mir_138_remaining as u32) as i32))) + 1) by simp() using { to_integer(b) + to_integer(__rust_mir_147) <= adler_tail_b_ceiling(adler_tail_consumed(((remainder_len as u32) as i32), at(tail_head, ((__rust_mir_138_remaining as u32) as i32))) + 1); };
        have to_integer(at(tail_add_b, b)) + to_integer(at(tail_add_b, __rust_mir_147)) <= 4294967295;

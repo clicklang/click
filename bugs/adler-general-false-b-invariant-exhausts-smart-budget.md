@@ -25,10 +25,9 @@ about 19 seconds; this is a work-budget failure, not a wall-clock timeout.
 
 The violated invariant is bounded refusal of this existing false-specification
 control. Investigate the entry planner's selected evidence and failed search;
-the exact cause has not yet been reduced. The separately reproduced scalar-tail
-refusal is recorded in
-[adler-small-batch-stale-a-refusal-exhausts-smart-budget.md](adler-small-batch-stale-a-refusal-exhausts-smart-budget.md);
-a shared cause is not established.
+the exact cause has not yet been reduced. The scalar-tail stale-A control was
+repaired separately by proving its assignment chain explicitly. This invariant-entry search still needs its own
+investigation.
 
 Acceptance: the named test rejects both of its existing mutations with proof
 errors below the unchanged work limit. Preserve the Rust source, the valid
