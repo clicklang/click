@@ -12762,8 +12762,17 @@ fn smart_have_expansion_plans_against_the_ordinary_surface_goal() {
         .join("examples")
         .join("ring-buffer")
         .join("ring_buffer.click");
-    let explicit = std::fs::read_to_string(&path)
+    let project_source = std::fs::read_to_string(&path)
         .unwrap_or_else(|error| panic!("failed to read `{}`: {error}", path.display()));
+    // The example no longer needs this intermediate have. Keep the
+    // regression's ordinary surface goal explicit in its own test input.
+    let anchor = "    have owner->tail == 4 by {";
+    assert_eq!(project_source.matches(anchor).count(), 1);
+    let explicit = project_source.replacen(
+        anchor,
+        "    have owner->head == old(owner->head) by {\n        normalize();\n    }\n    have owner->tail == 4 by {",
+        1,
+    );
     let smart = explicit.replacen(
         "have owner->head == old(owner->head) by {\n        normalize();\n    }",
         "have owner->head == old(owner->head) by {\n        simp();\n    }",
