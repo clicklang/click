@@ -3816,6 +3816,74 @@ mod scaling_tests {
     include!("../../scaling_tests/kernel/tests/memory_dag_tests.rs");
 }
 
+#[test]
+fn full_pointer_read_survives_a_join_of_stores_to_its_sibling() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let before = intern_c_memory(CMemory::new());
+    let p = Pointer::symbolic(Variable(998_710));
+    let q = CPointerValue::new(Pointer::symbolic(Variable(998_711)), CType::Int32Pointer);
+    let Some(CValue::Pointer(child)) =
+        crate::kernel::eval::symbolic_load_value(&before, &p, CType::Int32Pointer)
+    else {
+        panic!("pointer load")
+    };
+    let facts = PureFactContext::new().assume_condition(
+        ConditionTerm::pointer_value_equal(child.clone(), q.clone()),
+        true,
+    );
+    let beside = Pointer {
+        block: child.pointer().block.clone(),
+        offset: PointerOffsetTerm::add(
+            child.pointer().offset.clone(),
+            PointerOffsetTerm::Constant(8),
+        ),
+    };
+    let left = before.memory().clone().store(beside.clone(), int32(0));
+    let right = before.memory().clone().store(beside, int32(1));
+    let joined = intern_c_memory(
+        left.clone()
+            .with_interface_memory_havoc(Variable(998_712), &BTreeSet::new(), &[&left, &right])
+            .unwrap(),
+    );
+    let earlier = Pointer::loaded_value(&before, q.pointer());
+    let projected = intern_c_memory(
+        crate::kernel::memory_provenance::canonical_c_memory_for_pointer_load(&joined, q.pointer()),
+    );
+    crate::kernel::reasoning::record_canonical_load_projection(&joined, &projected, q.pointer());
+    let later = Pointer::loaded_value(&projected, q.pointer());
+    assert!(
+        crate::kernel::memory_provenance::pointer_read_designations_equal(&earlier, &later, &facts)
+    );
+    assert!(crate::kernel::memory_provenance::pointer_read_extents_equal(&earlier, &later, &facts));
+    let upper_half = Pointer {
+        block: q.pointer().block.clone(),
+        offset: PointerOffsetTerm::add(q.pointer().offset.clone(), PointerOffsetTerm::Constant(4)),
+    };
+    let changed = intern_c_memory(joined.memory().clone().store(upper_half, int32(5)));
+    let projection = intern_c_memory(
+        crate::kernel::memory_provenance::canonical_c_memory_for_pointer_load(
+            &changed,
+            q.pointer(),
+        ),
+    );
+    crate::kernel::reasoning::record_canonical_load_projection(&changed, &projection, q.pointer());
+    let overwritten = Pointer::loaded_value(&projection, q.pointer());
+    assert!(
+        !crate::kernel::memory_provenance::pointer_read_designations_equal(
+            &earlier,
+            &overwritten,
+            &facts
+        )
+    );
+    assert!(
+        !crate::kernel::memory_provenance::pointer_read_extents_equal(
+            &earlier,
+            &overwritten,
+            &facts
+        )
+    );
+}
+
 /// Caching a scalar read of the predecessor is not a write, including when
 /// the access exactly matches the seeded slot's address and width.
 #[test]

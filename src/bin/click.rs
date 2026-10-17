@@ -1,3 +1,6 @@
+// Match the library trait-solver depth for its recursive shared proof types.
+#![recursion_limit = "256"]
+
 use std::env;
 
 #[path = "click/git.rs"]

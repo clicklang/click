@@ -1436,6 +1436,11 @@ impl ProofFacts {
                     candidates.push(candidate.clone());
                 }
                 if candidate == required
+                    || condition_bridged_fact_is_available(
+                        required,
+                        std::slice::from_ref(candidate),
+                        &self.assumptions,
+                    )
                     || separation_bridged_fact_is_available(
                         required,
                         std::slice::from_ref(candidate),
@@ -2158,7 +2163,9 @@ fn index_bitvector_equality_fact(
         // it observes, so a goal over those operands selects it as `simp`
         // selects their native equalities.
         Proposition::ConditionIs(
-            condition @ (ConditionTerm::PointerEqual(_, _) | ConditionTerm::IntegerEqual(_, _)),
+            condition @ (ConditionTerm::PointerEqual(_, _)
+            | ConditionTerm::PointerValueEqual(_, _)
+            | ConditionTerm::IntegerEqual(_, _)),
             true,
         ) => {
             let mut atoms = BTreeSet::new();
@@ -2445,6 +2452,12 @@ fn collect_condition_bitvector_atoms(
     atoms: &mut BTreeSet<BitvectorEqualityAtomKey>,
 ) {
     match condition {
+        ConditionTerm::PointerValueEqual(left, right) => {
+            for pointer in left.pointers().chain(right.pointers()) {
+                collect_pointer_bitvector_atoms(pointer, atoms);
+            }
+        }
+
         ConditionTerm::AlgebraicEqual(left, right) => {
             left.for_each_bitvector_term(|term| collect_bitvector_atoms(term, atoms));
             right.for_each_bitvector_term(|term| collect_bitvector_atoms(term, atoms));
@@ -4208,6 +4221,14 @@ mod integer_witness_freshness_tests {
             crate::kernel::ExecutionBudget::is_universal_witness_variable(witness),
             "{witness:?}"
         );
+    }
+}
+
+#[cfg(test)]
+mod pointer_snapshot_transport_tests {
+    use super::*;
+    mod scaling_tests {
+        include!("../../scaling_tests/kernel/proof/facts/pointer_snapshot_transport_tests.rs");
     }
 }
 

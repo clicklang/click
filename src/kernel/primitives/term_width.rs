@@ -51,7 +51,8 @@ impl CarrierWidth {
     /// The carrier a value of this tag occupies, or `None` for a value that
     /// is not a machine scalar.
     pub(crate) fn of_value(value: &CValue) -> Option<Self> {
-        Some(match value {
+        Some(match value.numeric_value() {
+            CValue::PointerInteger(_) => unreachable!("numeric projection"),
             CValue::Bool(_)
             | CValue::Int8(_)
             | CValue::Int16(_)
@@ -306,7 +307,8 @@ pub(crate) fn term_width(term: &Bitvector32Term) -> WidthResult {
 /// Where a `CValue`'s term disagrees with its tag or with itself.
 pub(crate) fn value_width_mismatch(value: &CValue) -> Option<WidthMismatch> {
     let expected = CarrierWidth::of_value(value)?;
-    let term = match value {
+    let term = match value.numeric_value() {
+        CValue::PointerInteger(_) => unreachable!("numeric projection"),
         CValue::Void | CValue::Pointer(_) => return None,
         CValue::Bool(term)
         | CValue::Int8(term)
@@ -381,7 +383,8 @@ pub(crate) fn value_mismatch(value: &CValue) -> Option<String> {
 }
 
 fn value_site(value: &CValue) -> &'static str {
-    match value {
+    match value.numeric_value() {
+        CValue::PointerInteger(_) => unreachable!("numeric projection"),
         CValue::Bool(_) => "CValue::Bool",
         CValue::Int8(_) => "CValue::Int8",
         CValue::Int16(_) => "CValue::Int16",

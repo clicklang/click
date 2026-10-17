@@ -2666,6 +2666,10 @@ impl CreationEvents {
                     if !assumptions.is_some_and(|facts| {
                         facts.exact_condition_value(&no_overflow) == Some(false)
                             || facts
+                                .equality_graph
+                                .signed_int32_interval(&entry)
+                                .is_some_and(|(_, high)| high + delta < i64::from(i32::MAX))
+                            || facts
                                 .indexed_constant_interval(&entry)
                                 .is_some_and(|(_, high)| high + delta < i64::from(i32::MAX))
                             || entry

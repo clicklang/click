@@ -133,7 +133,7 @@ impl SnapshotLabels {
             if let crate::kernel::CValue::Pointer(pointer) = value {
                 labels.immutable_pointer_name(pointer.pointer(), parameter.name());
             }
-            let term = match value {
+            let term = match value.numeric_value() {
                 crate::kernel::CValue::Bool(term)
                 | crate::kernel::CValue::Int8(term)
                 | crate::kernel::CValue::Int16(term)
@@ -1639,6 +1639,11 @@ impl Renderer<'_> {
                 self.push(" = ");
                 self.offset(b, 0);
             }
+            ConditionTerm::PointerValueEqual(a, b) => {
+                self.pointer(a.pointer());
+                self.push(" == ");
+                self.pointer(b.pointer());
+            }
             ConditionTerm::PointerEqual(a, b) => {
                 self.pointer(a);
                 self.push(" = ");
@@ -2240,7 +2245,8 @@ impl Renderer<'_> {
         self.push(")");
     }
     fn cvalue(&mut self, value: &crate::kernel::CValue) {
-        match value {
+        match value.numeric_value() {
+            crate::kernel::CValue::PointerInteger(_) => unreachable!("numeric projection"),
             crate::kernel::CValue::Void => self.push("void"),
             crate::kernel::CValue::Bool(v) => {
                 self.push("bool(");

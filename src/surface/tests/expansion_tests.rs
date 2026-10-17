@@ -14320,7 +14320,7 @@ fn source_expander_reports_missing_grouped_proof_precisely() {
 }
 
 #[test]
-fn pure_pointer_add_zero_simp_expands_to_rewrite_and_assumption() {
+fn pure_pointer_add_zero_simp_expands_to_a_checked_certificate() {
     let click_source = r#"
             theorem pointer_add_zero_equals(
                 base: int32*,
@@ -14350,7 +14350,6 @@ fn pure_pointer_add_zero_simp_expands_to_rewrite_and_assumption() {
 
     let expanded = expand_c0_tactic_source_at(click_source, &[], line, column)
         .expect("the pointer-offset identity simp should have an explicit certificate");
-    assert!(expanded.contains("rewrite(offset == 0);"), "{expanded}");
     assert!(expanded.contains("assumption();"), "{expanded}");
     assert!(!expanded.contains("simp()"), "{expanded}");
     verify_click_theorems(&expanded).expect("expanded pointer identity proof should check");
@@ -18386,6 +18385,63 @@ fn callback_reads_keep_the_initialized_target_contract_in_all_proof_modes() {
     session
         .verify_at(&expanded, position.line, position.column)
         .unwrap();
+}
+
+#[test]
+#[ignore = "nightly: packed-pointer contracts across fresh, expanded, and retained proofs"]
+fn packed_pointer_cast_contracts_survive_expansion_and_retained_verification() {
+    for (fixture, claim, postcondition) in [
+        (
+            "mdtests/a_saved_pointer_link_keeps_its_bounds_through_an_outer_alias_update.md",
+            "caller.contract",
+            "ensures p->left == old(root->left->left);",
+        ),
+        (
+            "mdtests/a_bounded_native_word_tag_can_precede_its_pointer.md",
+            "stamp.ensures_0",
+            "ensures ((int32*)(slot->word & ~3)) == p;",
+        ),
+        (
+            "mdtests/a_checked_low_tag_add_preserves_an_incoming_word_relationship.md",
+            "blacken.ensures_0",
+            "ensures ((struct node*)(result & ~3)) == old((struct node*)(word & ~3));",
+        ),
+        (
+            "mdtests/a_bounded_variable_tag_keeps_a_stored_pointer_relationship.md",
+            "stamp.ensures_0",
+            "ensures ((int32*)(slot->word & ~3)) == p;",
+        ),
+        (
+            "mdtests/a_bounded_variable_tag_preserves_an_incoming_word_relationship.md",
+            "recolor.ensures_0",
+            "ensures ((struct node*)(result & ~3)) == old((struct node*)(word & ~3));",
+        ),
+        (
+            "mdtests/tagged_pointer_from_field_fact.md",
+            "parent_value.ensures_0",
+            "ensures result == next->value;",
+        ),
+        (
+            "mdtests/a_cast_contract_crosses_a_call_with_an_explicit_postcondition.md",
+            "read_packed.ensures_0",
+            "ensures result == p->value;",
+        ),
+    ] {
+        let (source, sources) = mdtest_sources(fixture);
+        let sources = sources
+            .iter()
+            .map(|(name, text)| (name.as_str(), text.as_str()))
+            .collect::<Vec<_>>();
+        verify_c0_sources(&source, &sources).unwrap();
+        let expanded = expand_c0_claim_source_by_label(&source, &sources, claim).unwrap();
+        verify_c0_sources(&expanded, &sources).unwrap();
+        let position =
+            expansion::position_at_offset(&expanded, expanded.find(postcondition).unwrap());
+        let (session, _) = C0VerificationSession::new(&source, &sources).unwrap();
+        session
+            .verify_at(&expanded, position.line, position.column)
+            .unwrap();
+    }
 }
 
 #[test]

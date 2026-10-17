@@ -193,3 +193,34 @@ fn resource_object_provenance_does_not_scan_same_raw_block() {
         "provenance scanned the raw block: {samples:?}"
     );
 }
+
+#[test]
+fn stored_pointer_bounds_ignore_unrelated_numeric_classes() {
+    for size in [16u64, 64, 256, 1024] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let field = Pointer::symbolic(Variable(96_311));
+        let stored = subobject_pointer(0, 0, 4);
+        let memory = CMemory::new().store(field.clone(), CValue::Pointer(stored.clone()));
+        let read = CPointerValue::from_read(
+            stored.pointer().clone(),
+            CType::Int32Pointer,
+            &crate::kernel::intern_c_memory_ref(&memory),
+            &field,
+        );
+        let mut context = PureFactContext::new();
+        for index in 0..size {
+            context = context.assume_condition(
+                ConditionTerm::uint64_equal(
+                    Bitvector32Term::Variable(Variable(97_000 + index)),
+                    Bitvector32Term::UInt64Constant(index),
+                ),
+                true,
+            );
+        }
+        let (matches, work) = crate::instrumentation::measure_deterministic_work(|| {
+            context.pointer_designations_match(&read, &stored)
+        });
+        assert!(matches);
+        assert!(work <= 512, "{size} unrelated classes: {work} work");
+    }
+}

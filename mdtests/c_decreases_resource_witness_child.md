@@ -28,7 +28,7 @@ resource marked_list(node: struct node*) {
         owns allocation(node, sizeof(struct node));
         owns *node;
         fact aligned(node, 8);
-        let next: struct node* where aligned(next, 8) and node->word == address(next) + (node->word & 1);
+        let next: struct node* where aligned(next, 8) and node->word == address(next) + (node->word & 1) and ((struct node*)(node->word & ~1)) == next;
         owns marked_list(next);
     }
 }

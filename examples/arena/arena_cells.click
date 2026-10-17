@@ -663,6 +663,9 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                 arena->occupied[k] == at(find_first_free_run.entry, arena->occupied[k])
         };
 
+        invariant arena->data == old(arena->data);
+        invariant arena->occupied == old(arena->occupied);
+
         initialize by simp();
         preserve by {
             mark iteration;
@@ -1199,6 +1202,9 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                 arena->occupied[k] == at(mark_free_run.entry, arena->occupied[k])
         };
 
+        invariant arena->data == old(arena->data);
+        invariant arena->occupied == old(arena->occupied);
+
         initialize by simp();
         preserve by {
             let { next: m } = unfold(w);
@@ -1414,10 +1420,14 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                 };
             }
             close_invariants() by {
-                both { normalize(); } and {
+                both { simp(); } and {
                     both { simp(); } and {
                         both { simp(); } and {
-                            both { simp(); } and { simp(); }
+                            both { simp(); } and {
+                                both { simp(); } and {
+                                    both { simp(); } and { simp(); }
+                                }
+                            }
                         }
                     }
                 }
@@ -1879,6 +1889,9 @@ void arena_free(struct region* region) {
             region->end <= k and k < arena->capacity implies
                 arena->occupied[k] == at(clear_occupied.entry, arena->occupied[k])
         };
+        invariant arena->data == at(clear_occupied.entry, arena->data);
+        invariant arena->occupied == at(clear_occupied.entry, arena->occupied);
+        invariant region->arena == old(region->arena);
         initialize by simp();
         preserve by {
             let { next: m } = unfold(w);
@@ -2043,17 +2056,23 @@ void arena_free(struct region* region) {
                 both { normalize(); } and {
                     both { simp(); } and {
                         both { simp(); } and {
-                            both { arithmetic() using {
-                                at(opened, i) < region->end;
-                                0 <= at(opened, i);
-                                region->end <= arena->capacity;
-                                arena->capacity <= 536870911;
-                            }; } and { arithmetic() using {
-                                at(opened, i) < region->end;
-                                0 <= at(opened, i);
-                                region->end <= arena->capacity;
-                                arena->capacity <= 536870911;
-                            }; }
+                            both { simp(); } and {
+                                both { simp(); } and {
+                                    both { simp(); } and {
+                                        both { arithmetic() using {
+                                            at(opened, i) < region->end;
+                                            0 <= at(opened, i);
+                                            region->end <= arena->capacity;
+                                            arena->capacity <= 536870911;
+                                        } } and { arithmetic() using {
+                                            at(opened, i) < region->end;
+                                            0 <= at(opened, i);
+                                            region->end <= arena->capacity;
+                                            arena->capacity <= 536870911;
+                                        } }
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -2301,8 +2320,15 @@ void arena_write(struct region* region, int32 index, int32 value) {
         simp();
     }
     have region->start + index < region->arena->capacity by auto();
+    have separate(
+        memory(*region),
+        memory(*(region->arena->data + (region->start + index)))
+    ) by { simp(); }
     mark w;
     execute();
+    have region->arena == old(region->arena) by { simp(); }
+    have region->arena->data == old(region->arena->data) by { simp(); }
+
     have forall (k: int32) {
         0 <= k and k < at(w, region->arena->capacity) implies
             at(w, region->arena->occupied[k]) == region->arena->occupied[k]

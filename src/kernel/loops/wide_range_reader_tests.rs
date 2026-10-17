@@ -11,6 +11,9 @@ fn wide_loop_frames_cover_native_accesses_and_refuse_cross_width_ranges() {
         4,
     );
     let segment = EvaluatedMemorySegment {
+        designation: wide.designation.clone(),
+        opaque_extent: wide.opaque_extent.clone(),
+        extent_known: wide.carrier_extent_known,
         base: base.clone(),
         start: wide.bound_terms().0.clone(),
         end: wide.bound_terms().1.clone(),

@@ -3,7 +3,7 @@ resource marked_list(node: struct node*) {
         owns allocation(node, sizeof(struct node));
         owns *node;
         fact aligned(node, 8);
-        let next: struct node* where aligned(next, 8) and node->word == address(next) + (node->word & 1);
+        let next: struct node* where aligned(next, 8) and node->word == address(next) + (node->word & 1) and ((struct node*)(node->word & ~1)) == next;
         owns marked_list(next);
     }
 }
@@ -77,6 +77,12 @@ struct node* list_next(struct node* node) {
 } by {
     observe(marked_list(node));
     execute();
+    have address(result) == (node->word & ~1) by {
+        arithmetic() using {
+            aligned(result, 8);
+            node->word == address(result) + (node->word & 1);
+        }
+    }
     simp();
 }
 

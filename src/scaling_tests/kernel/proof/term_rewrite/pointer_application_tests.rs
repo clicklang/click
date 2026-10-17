@@ -80,3 +80,78 @@ fn pure_pointer_legacy_scalar_substitution_visits_the_shared_dag_once() {
         assert!(pair[1] <= 3 * pair[0] + 32, "work: {measurements:?}");
     }
 }
+
+#[test]
+fn full_pointer_substitution_visits_shared_read_origins_once() {
+    let _session = VerificationSession::enter();
+    let memory = intern_c_memory(CMemory::new());
+    let p = CPointerValue::new(Pointer::symbolic(Variable(810)), CType::Int32Pointer);
+    let q = CPointerValue::new(Pointer::symbolic(Variable(811)), CType::Int32Pointer);
+    let mut costs = Vec::new();
+    for depth in [16, 32, 64] {
+        let mut input = p.pointer().clone();
+        let mut expected = q.pointer().clone();
+        for _ in 0..depth {
+            input = Pointer::loaded_value(
+                &memory,
+                &call("pair", vec![argument(input.clone()), argument(input)]),
+            );
+            expected = Pointer::loaded_value(
+                &memory,
+                &call("pair", vec![argument(expected.clone()), argument(expected)]),
+            );
+        }
+        let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
+            let mut rewrite = TermRewrite::for_pointer_value_exact(&p, &q);
+            let result = rewrite.pointer(&input);
+            assert_eq!(rewrite.refusal(), None);
+            result
+        });
+        assert_eq!(result, expected);
+        costs.push(work);
+    }
+    assert!(costs[0] > 0);
+    for pair in costs.windows(2) {
+        assert!(pair[1] <= 3 * pair[0] + 32, "{costs:?}");
+    }
+}
+
+#[test]
+fn full_pointer_resource_relationship_rewriting_scales_with_its_arguments() {
+    let mut samples = Vec::new();
+    for size in [16usize, 64, 256, 1024] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let memory = intern_c_memory(CMemory::new());
+        let source = CPointerValue::from_read(
+            Pointer::symbolic(Variable(425_100)),
+            CType::Int32Pointer,
+            &memory,
+            &Pointer::symbolic(Variable(425_101)),
+        );
+        let target = CPointerValue::new(Pointer::symbolic(Variable(425_102)), CType::Int32Pointer);
+        let relationship = |value: &CPointerValue| Proposition::CResourceSeparate {
+            left: Box::new(CResource::Memory(CMemoryRange::from_pointer_value(
+                value,
+                0u32.into(),
+                1u32.into(),
+                4,
+            ))),
+            right: Box::new(CResource::Composite {
+                name: "many".into(),
+                arguments: vec![AlgebraicValue::C(CValue::Pointer(value.clone())); size].into(),
+            }),
+        };
+        let input = relationship(&source);
+        let (actual, work) = crate::instrumentation::measure_deterministic_work(|| {
+            let mut rewrite = TermRewrite::for_pointer_value_exact(&source, &target);
+            let result = rewrite.proposition(&input);
+            assert!(rewrite.refusal().is_none());
+            result
+        });
+        assert_eq!(actual, relationship(&target));
+        samples.push(work);
+    }
+    for pair in samples.windows(2) {
+        assert!(pair[1] <= pair[0] * 5 + 64, "{samples:?}");
+    }
+}

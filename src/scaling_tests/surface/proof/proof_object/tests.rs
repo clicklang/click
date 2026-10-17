@@ -100,8 +100,16 @@ fn same_block_offset_rewrite_work(
         CValue::UInt64(Bitvector32Term::Variable(Variable(8_179_098))),
     );
     if from_cursor {
+        let CValue::Pointer(cursor_value) = state.locals().get("cursor").unwrap() else {
+            unreachable!()
+        };
+        let CValue::Pointer(base_value) = state.locals().get("base").unwrap() else {
+            unreachable!()
+        };
+        let mut shifted_value = base_value.clone();
+        shifted_value.replace_pointer(shifted.clone());
         let relation = Proposition::ConditionIs(
-            ConditionTerm::pointer_equal(cursor.clone(), shifted.clone()),
+            ConditionTerm::pointer_value_equal(cursor_value.clone(), shifted_value),
             true,
         );
         let relation_surface = fixture.theorem_definitions()[0].requires[1]

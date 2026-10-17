@@ -8,6 +8,8 @@ use std::sync::Arc;
 
 #[derive(Clone)]
 pub(super) enum Input {
+    PointerValue(CPointerValue, CPointerValue),
+    PointerReadValue(Pointer, Pointer),
     Pointer(Pointer, Pointer),
     Offset(PointerOffsetTerm, PointerOffsetTerm),
     Int32(Bitvector32Term, Bitvector32Term),
@@ -166,6 +168,12 @@ impl EqualityGraph {
         }
         for node in pending.into_iter().rev() {
             match &node.input {
+                Input::PointerReadValue(left, right) => {
+                    self.add_checked_pointer_read_equality(left, right);
+                }
+                Input::PointerValue(left, right) => {
+                    self.add_pointer_value_equality(left, right);
+                }
                 Input::Pointer(left, right) => {
                     self.add_equality(left, right);
                 }

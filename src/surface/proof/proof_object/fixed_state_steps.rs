@@ -752,11 +752,10 @@ impl<'a> Proof<'a> {
             crate::kernel::integer_c_value!(value) => {
                 substitute_int32_variable_in_proposition(&body, var, value.clone())
             }
-            CValue::Pointer(pointer) => crate::kernel::substitute_pointer_variable_in_proposition(
-                &body,
-                var,
-                pointer.pointer(),
-            ),
+            CValue::Pointer(pointer) => {
+                crate::kernel::substitute_pointer_value_in_proposition(&body, var, pointer)
+                    .map_err(|error| self.step_error(&error))?
+            }
             _ => unreachable!("unsupported choice sort above"),
         };
         let mut locals = self.state().locals().clone();
@@ -1208,11 +1207,8 @@ impl<'a> Proof<'a> {
                 substitute_int32_variable_in_proposition(body, *var, value.clone())
             }
             (Proposition::Exists { var, body, .. }, CValue::Pointer(pointer)) => {
-                crate::kernel::substitute_pointer_variable_in_proposition(
-                    body,
-                    *var,
-                    pointer.pointer(),
-                )
+                crate::kernel::substitute_pointer_value_in_proposition(body, *var, pointer)
+                    .map_err(|error| self.step_error(&error))?
             }
             _ => return Ok(None),
         };
@@ -2715,11 +2711,8 @@ impl<'a> Proof<'a> {
                     )
                 }
                 ContractExpression::CFragment(CExpression::Value(CValue::Pointer(pointer))) => {
-                    crate::kernel::substitute_pointer_variable_in_proposition(
-                        &body,
-                        var,
-                        pointer.pointer(),
-                    )
+                    crate::kernel::substitute_pointer_value_in_proposition(&body, var, pointer)
+                        .map_err(|error| self.step_error(&error))?
                 }
                 _ => return Ok(None),
             },

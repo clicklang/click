@@ -513,7 +513,9 @@ fn is_pointer_relation(p: &Proposition) -> bool {
     matches!(
         p,
         Proposition::ConditionIs(
-            ConditionTerm::PointerEqual(_, _) | ConditionTerm::PointerOffsetEqual(_, _),
+            ConditionTerm::PointerValueEqual(..)
+                | ConditionTerm::PointerEqual(_, _)
+                | ConditionTerm::PointerOffsetEqual(_, _),
             true
         )
     )

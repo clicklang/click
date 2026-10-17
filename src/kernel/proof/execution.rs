@@ -3117,6 +3117,9 @@ pub(crate) struct CheckedProofCasePartition {
     /// certificate checking use the same premises without trusting surface
     /// bookkeeping.
     arm_additions: Vec<Vec<Proposition>>,
+    /// The indexed contexts constructed while deriving those exact deltas.
+    /// Entering an arm shares its context rather than admitting it again.
+    arm_contexts: Vec<ProofFacts>,
     /// Ordered declaration correspondence, including clauses whose exact
     /// proposition was already in the arm's fact store.
     arm_body_clauses: Vec<Vec<crate::kernel::functions::ResourceBodyClauseRecord>>,
@@ -3217,13 +3220,7 @@ impl CheckedProofCasePartition {
     }
 
     pub(crate) fn facts_for_case(&self, index: usize) -> Option<ProofFacts> {
-        let additions = self.arm_additions.get(index)?;
-        Some(
-            additions
-                .iter()
-                .cloned()
-                .fold(self.root_facts.clone(), |facts, fact| facts.with_fact(fact)),
-        )
+        self.arm_contexts.get(index).cloned()
     }
 
     /// The facts this partition was issued against. An arm's premises are
@@ -3245,20 +3242,20 @@ impl CheckedProofCasePartition {
         {
             return None;
         }
-        let arm_additions = [&then_fact, &else_fact]
+        let arm_contexts: Vec<_> = [&then_fact, &else_fact]
             .into_iter()
-            .map(|fact| {
-                root_facts
-                    .with_fact(fact.clone())
-                    .introduced_since(root_facts)
-                    .unwrap_or_default()
-            })
+            .map(|fact| root_facts.with_fact(fact.clone()))
+            .collect();
+        let arm_additions = arm_contexts
+            .iter()
+            .map(|facts| facts.introduced_since(root_facts).unwrap_or_default())
             .collect();
         Some(Arc::new(Self {
             identity: Arc::new(()),
             root_facts: root_facts.clone(),
             case_facts: vec![then_fact.clone(), else_fact.clone()],
             arm_additions,
+            arm_contexts,
             arm_body_clauses: vec![Vec::new(), Vec::new()],
             excluded: vec![None, None],
             witness_scope: None,
@@ -4737,8 +4734,10 @@ fn checked_interface_effect_facts_along(
     let mut heap_frees = [Vec::new(), Vec::new()];
     for arm_index in 0..2 {
         let assumptions = arm_facts[arm_index].assumptions();
-        // When the arm's walk vouches for the chain, the effects are read
-        // for what they cover and are not chained a second time.
+        // The arm's checked walk and exact effect stream already account
+        // for each statement's writes. Combine their recorded footprints;
+        // do not reconstruct those same stores or call havocs at the join.
+        // Without that provenance, retain the standalone coverage checks.
         let chained = arm_memory_steps.is_some_and(|steps| {
             arm_effects_follow_memory_steps(
                 steps[arm_index],
@@ -4762,7 +4761,8 @@ fn checked_interface_effect_facts_along(
                             "an interface arm effect chain does not start at its current memory",
                         );
                     }
-                    if !fact.is_join_summary()
+                    if !chained
+                        && !fact.is_join_summary()
                         && !memory_diff_is_covered_by_writes(
                             before,
                             after,
@@ -4795,7 +4795,8 @@ fn checked_interface_effect_facts_along(
                             "an interface arm effect summary does not start at its current memory",
                         );
                     }
-                    if !fact.is_join_summary()
+                    if !chained
+                        && !fact.is_join_summary()
                         && !memory_diff_is_covered_by_ranges(
                             before,
                             after,
@@ -6097,6 +6098,7 @@ pub(super) fn checked_interface_pointer_equality(facts: &ProofFacts, goal: &Prop
         goal,
         Proposition::ConditionIs(
             crate::kernel::ConditionTerm::PointerEqual(_, _)
+                | crate::kernel::ConditionTerm::PointerValueEqual(_, _)
                 | crate::kernel::ConditionTerm::PointerOffsetEqual(_, _),
             true
         )
@@ -9160,7 +9162,7 @@ impl ExecutionProofCore {
             return None;
         }
         let (case_facts, bindings): (Vec<_>, Vec<_>) = equations.into_iter().unzip();
-        let (arm_additions, arm_body_clauses): (Vec<_>, Vec<_>) = case_facts
+        let (arm_contexts, arm_body_clauses): (Vec<_>, Vec<_>) = case_facts
             .iter()
             .map(|case| {
                 let mut arm_facts = facts.with_fact(case.clone());
@@ -9262,12 +9264,13 @@ impl ExecutionProofCore {
                             .with_fact(Proposition::Equal(left.clone(), Term::Algebraic(spelled)));
                     }
                 }
-                (
-                    arm_facts.introduced_since(facts).unwrap_or_default(),
-                    body_clauses,
-                )
+                (arm_facts, body_clauses)
             })
             .unzip();
+        let arm_additions = arm_contexts
+            .iter()
+            .map(|arm| arm.introduced_since(facts).unwrap_or_default())
+            .collect();
         Some((
             Arc::new(CheckedProofCasePartition {
                 identity: Arc::new(()),
@@ -9275,6 +9278,7 @@ impl ExecutionProofCore {
                 excluded: vec![None; case_facts.len()],
                 case_facts,
                 arm_additions,
+                arm_contexts,
                 arm_body_clauses,
                 witness_scope: Some(self.state.clone()),
             }),
@@ -9735,6 +9739,81 @@ impl ExecutionProofCore {
             ));
         }
         Ok(entry_successor)
+    }
+
+    /// Derive an ordinary instance fold and retain its checked event together.
+    /// The caller supplies the instance and child choices, never a proposed
+    /// successor or fact delta that would require recomputing the fold.
+    pub(crate) fn fold_resource_instance_with_children(
+        &mut self,
+        function: &CFunction,
+        arguments: &[CExpression],
+        before_facts: &ProofFacts,
+        instance: &crate::kernel::ResourceInstance,
+        selected_children: Option<Arc<[(String, Variable)]>>,
+    ) -> Result<
+        (
+            crate::kernel::functions::ResourceInstanceRewriteResult,
+            ProofFacts,
+        ),
+        crate::kernel::ResourceRewriteRefusal,
+    > {
+        if self.evidence_completed {
+            return Err("a resource rewrite was recorded after the trace completed".into());
+        }
+        let definition = function
+            .proof_composite_resource_definition(instance.name())
+            .ok_or("instance definition is not registered on the function")?;
+        if definition.reaches_population() {
+            return Err("population instances require their checked custody exchange".into());
+        }
+        let _load_capture = crate::kernel::CheckedLoadEqualityCapture::start_with_call_events(
+            &self.checked_call_events,
+        );
+        let result = crate::kernel::rewrite_resource_instance_selecting_children(
+            &self.state,
+            instance,
+            definition,
+            function.composite_resource_definitions(),
+            before_facts.assumptions(),
+            false,
+            selected_children.as_deref(),
+        )?;
+        let after_facts = result
+            .semantic_facts
+            .iter()
+            .fold(before_facts.clone(), |facts, fact| {
+                facts.with_kernel_checked_fact(fact.clone())
+            });
+        let mut rewrite = CheckedResourceRewrite {
+            before_state: (*self.state).clone(),
+            after_state: result.state.clone(),
+            before_facts: before_facts.clone(),
+            after_facts: after_facts.clone(),
+            definition: definition.clone(),
+            consumption_contract: None,
+            return_context: None,
+            instance: Some(instance.clone()),
+            selected_children,
+            return_presentation: None,
+            return_observation: None,
+        };
+        if self.frontier.is_at_function_entry() && !self.frontier.entry_member_prefix {
+            rewrite.before_state =
+                crate::kernel::c_function_entry_state(&rewrite.before_state, function, arguments)
+                    .ok_or("resource rewrite could not bind the function entry state")?;
+            rewrite.after_state =
+                crate::kernel::c_function_entry_state(&rewrite.after_state, function, arguments)
+                    .ok_or("resource rewrite could not bind its successor entry state")?;
+        }
+        if self.evidence_state.is_some() {
+            self.evidence_state = Some(rewrite.after_state.clone());
+        }
+        for trace in self.execution_evidence.iter_mut() {
+            trace.push(CheckedExecutionEvent::ResourceRewrite(rewrite.clone()));
+        }
+        self.state = result.state.clone().into();
+        Ok((result, after_facts))
     }
 
     pub(crate) fn record_resource_rewrite_with_children(

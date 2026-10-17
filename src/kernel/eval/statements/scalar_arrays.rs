@@ -85,6 +85,24 @@ pub(super) fn execute(
             };
             let target = target_pointer.pointer();
             if bytes != 0
+                && let Some(refusal) = subobject_access_refusal(
+                    target,
+                    target_pointer.extent(),
+                    bytes,
+                    &facts,
+                    &obligations,
+                    assumptions,
+                    state.resources(),
+                )
+            {
+                paths.push(path(
+                    CStatementOutcome::UndefinedBehavior(refusal),
+                    facts,
+                    obligations,
+                ));
+                continue;
+            }
+            if bytes != 0
                 && (target_pointer.pointee_constant()
                     || state.memory.is_read_only_block(&target.block))
             {
@@ -102,9 +120,12 @@ pub(super) fn execute(
                 element_type.byte_width(),
             ));
             if bytes != 0
-                && !state
-                    .resources()
-                    .owns_storage_access(target, bytes, &selected)
+                && !state.resources().owns_designated_storage_access(
+                    target,
+                    target_pointer.access_designation(),
+                    bytes,
+                    &selected,
+                )
             {
                 paths.push(path(
                     CStatementOutcome::RuntimeError(CRuntimeError::MissingResource {
@@ -131,10 +152,29 @@ pub(super) fn execute(
                     ));
                     continue;
                 };
+                if let Some(refusal) = subobject_access_refusal(
+                    source.pointer(),
+                    source.extent(),
+                    bytes,
+                    &facts,
+                    &obligations,
+                    assumptions,
+                    state.resources(),
+                ) {
+                    paths.push(path(
+                        CStatementOutcome::UndefinedBehavior(refusal),
+                        facts,
+                        obligations,
+                    ));
+                    continue;
+                }
                 if !crate::kernel::api::with_extended_dag_bridging(|| {
-                    state
-                        .resources()
-                        .permits_storage_read(source.pointer(), bytes, &selected)
+                    state.resources().permits_designated_storage_read(
+                        source.pointer(),
+                        Some(source.access_designation()),
+                        bytes,
+                        &selected,
+                    )
                 }) {
                     let resource =
                         CResourceFact::view_memory(CMemoryRange::new_with_element_width(

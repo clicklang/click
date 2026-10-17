@@ -86,6 +86,7 @@ impl<'a> SpecScope<'a> {
 struct SpecEvaluation<'a> {
     budget: &'a mut ExecutionBudget,
     checked_reads: bool,
+    pointer_cast_operand: bool,
     integer_bindings: BTreeMap<Variable, IntegerTerm>,
 }
 
@@ -94,6 +95,7 @@ impl<'a> SpecEvaluation<'a> {
         Self {
             budget,
             checked_reads: false,
+            pointer_cast_operand: false,
             integer_bindings: BTreeMap::new(),
         }
     }
@@ -101,6 +103,7 @@ impl<'a> SpecEvaluation<'a> {
         Self {
             budget,
             checked_reads: true,
+            pointer_cast_operand: false,
             integer_bindings: BTreeMap::new(),
         }
     }
@@ -274,6 +277,7 @@ pub(in crate::kernel) fn evaluate_resource_child_argument_paths(
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Vec<CExpressionPath>> {
     if let SpecExpression::CExpression(expression) = expression {
+        let _specification = crate::kernel::eval::SpecificationReadScope::enter();
         return evaluate_c_expression_paths(state, expression, assumptions, budget);
     }
     let rewritten;
@@ -2502,7 +2506,8 @@ fn integer_carrier_in_bitvector(term: &Bitvector32Term, variable: Variable) -> b
 }
 
 fn integer_carrier_in_c_value(value: &CValue, variable: Variable) -> bool {
-    match value {
+    match value.numeric_value() {
+        CValue::PointerInteger(_) => unreachable!("numeric projection"),
         CValue::Pointer(pointer) => integer_carrier_in_pointer(pointer, variable),
         CValue::Void => false,
         CValue::Int8(term) => integer_carrier_in_bitvector(term, variable),
@@ -2598,6 +2603,11 @@ fn proposition_mentions_integer_variable(proposition: &Proposition, variable: Va
 
     fn condition_contains(condition: &ConditionTerm, variable: Variable) -> bool {
         match condition {
+            ConditionTerm::PointerValueEqual(left, right) => left
+                .pointers()
+                .chain(right.pointers())
+                .any(|p| integer_carrier_in_pointer(p, variable)),
+
             crate::kernel::integer_comparison_condition!(left, right) => {
                 integer_carrier_in_integer(left.as_ref(), variable)
                     || integer_carrier_in_integer(right.as_ref(), variable)
@@ -4375,8 +4385,8 @@ fn evaluate_spec_resource_at_state_in(
                         if crate::kernel::wide_range_bounds(start, end).is_some() =>
                     {
                         let (start, end) = crate::kernel::wide_range_bounds(start, end)?;
-                        Some(CResource::Memory(CMemoryRange::new_wide(
-                            base.pointer().clone(),
+                        Some(CResource::Memory(CMemoryRange::from_pointer_value_wide(
+                            base,
                             start,
                             end,
                             element_width,
@@ -4386,8 +4396,8 @@ fn evaluate_spec_resource_at_state_in(
                         CValue::Pointer(base),
                         CValue::Int32(start),
                         CValue::Int32(end),
-                    ] => Some(CResource::Memory(CMemoryRange::new_with_element_width(
-                        base.pointer().clone(),
+                    ] => Some(CResource::Memory(CMemoryRange::from_pointer_value(
+                        base,
                         start.clone(),
                         end.clone(),
                         element_width,
@@ -4401,8 +4411,8 @@ fn evaluate_spec_resource_at_state_in(
                         CValue::UInt64(end),
                     ] => {
                         let end = i32::try_from(end.uint64_as_const()?).ok()?;
-                        Some(CResource::Memory(CMemoryRange::new_with_element_width(
-                            base.pointer().clone(),
+                        Some(CResource::Memory(CMemoryRange::from_pointer_value(
+                            base,
                             start.clone(),
                             Bitvector32Term::Constant(end as u32),
                             element_width,
@@ -5234,12 +5244,45 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_in(
             budget,
         );
     }
-    evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
+    // Only the explicit cast operand reads a complete C representation.
+    // Pure functions, model fields and mathematical lets remain numeric.
+    let saved = budget.pointer_cast_operand;
+    budget.pointer_cast_operand &= matches!(
+        expression,
+        SpecExpression::CExpression(_)
+            | SpecExpression::MemoryLoad { .. }
+            | SpecExpression::AggregateFieldValue { .. }
+            | SpecExpression::Value(_)
+            | SpecExpression::LoopEntrySnapshot(_)
+            | SpecExpression::Cast(_, _)
+            | SpecExpression::Add(_, _)
+            | SpecExpression::BitwiseAnd(_, _)
+            | SpecExpression::BitwiseOr(_, _)
+            | SpecExpression::BitwiseNot(_)
+    );
+    let keep_representation = budget.pointer_cast_operand;
+    let _word_representation =
+        keep_representation.then(|| crate::kernel::eval::WordRepresentationScope::enter(true));
+    let paths = evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
         scope,
         expression,
         assumptions,
         budget,
-    )
+    );
+    budget.pointer_cast_operand = saved;
+    let paths = paths?;
+    if keep_representation {
+        return Ok(paths);
+    }
+    // Integer specifications observe mathematical values, not the hidden
+    // representation of a complete C word. Model congruence cannot copy it.
+    Ok(paths
+        .into_iter()
+        .map(|mut path| {
+            path.value = path.value.numeric_value().clone();
+            path
+        })
+        .collect())
 }
 
 fn evaluate_spec_add_chain_paths_in(
@@ -5312,6 +5355,10 @@ fn aggregate_projection_pointer(
         SpecExpression::CExpression(CExpression::Variable(name)) if name == parameter => {
             Some(SpecExpression::Value(CValue::pointer(slot.clone())))
         }
+        SpecExpression::Subobject { pointer, width } => Some(SpecExpression::Subobject {
+            pointer: Box::new(aggregate_projection_pointer(pointer, parameter, slot)?),
+            width: *width,
+        }),
         SpecExpression::PointerOffset {
             pointer,
             elements,
@@ -5462,16 +5509,29 @@ fn evaluate_resource_count_paths(
                         return None;
                     };
                     path_assumptions
-                        .exact_pointer_aliases(pointer.pointer())
-                        .cloned()
-                        .chain(path_assumptions.exact_pointer_offset_aliases(pointer.pointer()))
+                        .exact_pointer_value_aliases(pointer)
                         .find_map(|alias| {
-                            crate::instrumentation::record_deterministic_work(1);
-                            let mut value = pointer.clone();
-                            value.replace_pointer(alias);
                             let candidate = description
-                                .map_values(|_| AlgebraicValue::C(CValue::Pointer(value.clone())));
+                                .map_values(|_| AlgebraicValue::C(CValue::Pointer(alias.clone())));
                             owned_description(&candidate)
+                        })
+                        .or_else(|| {
+                            path_assumptions
+                                .exact_pointer_aliases(pointer.pointer())
+                                .cloned()
+                                .chain(
+                                    path_assumptions
+                                        .exact_pointer_offset_aliases(pointer.pointer()),
+                                )
+                                .find_map(|alias| {
+                                    crate::instrumentation::record_deterministic_work(1);
+                                    let mut value = pointer.clone();
+                                    value.replace_pointer(alias);
+                                    let candidate = description.map_values(|_| {
+                                        AlgebraicValue::C(CValue::Pointer(value.clone()))
+                                    });
+                                    owned_description(&candidate)
+                                })
                         })
                 });
                 let description =
@@ -6124,31 +6184,60 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                 )
             },
         )?,
-        SpecExpression::Cast(expression, target_type) => evaluate_spec_scalar_unary_paths_in(
-            SpecScope::new(state, loop_entry_state, algebraic_bindings),
-            expression,
-            assumptions,
-            budget,
-            |value, facts, mut obligations| {
-                // A specification's cast is C's conversion, modulo 2^N,
-                // as the same cast in C source is; `to_T(...)` is the
-                // checked conversion.
-                let outcome = cast_c_value_to_type(
-                    value,
-                    *target_type,
-                    crate::kernel::eval::IntegerConversion::Modular,
-                    &mut obligations,
-                    assumptions,
-                )
-                .map(CExpressionOutcome::Value)
-                .unwrap_or_else(CExpressionOutcome::RuntimeError);
-                vec![CExpressionPath {
-                    outcome,
-                    facts,
-                    obligations,
-                }]
-            },
-        )?,
+        SpecExpression::PointerCoercion(expression, target_type) => {
+            evaluate_spec_scalar_unary_paths_in(
+                SpecScope::new(state, loop_entry_state, algebraic_bindings),
+                expression,
+                assumptions,
+                budget,
+                |value, facts, obligations| {
+                    let outcome = match value {
+                        CValue::Pointer(pointer) if target_type.is_pointer() => {
+                            CExpressionOutcome::Value(CValue::Pointer(
+                                pointer.with_type(*target_type),
+                            ))
+                        }
+                        _ => CExpressionOutcome::RuntimeError(CRuntimeError::TypeMismatch),
+                    };
+                    vec![CExpressionPath {
+                        outcome,
+                        facts,
+                        obligations,
+                    }]
+                },
+            )?
+        }
+        SpecExpression::Cast(expression, target_type) => {
+            let saved = budget.pointer_cast_operand;
+            budget.pointer_cast_operand = target_type.is_pointer() || saved;
+            let result = evaluate_spec_scalar_unary_paths_in(
+                SpecScope::new(state, loop_entry_state, algebraic_bindings),
+                expression,
+                assumptions,
+                budget,
+                |value, facts, mut obligations| {
+                    // A specification's cast is C's conversion, modulo 2^N,
+                    // as the same cast in C source is; `to_T(...)` is the
+                    // checked conversion.
+                    let outcome = cast_c_value_to_type(
+                        value,
+                        *target_type,
+                        crate::kernel::eval::IntegerConversion::Modular,
+                        &mut obligations,
+                        assumptions,
+                    )
+                    .map(CExpressionOutcome::Value)
+                    .unwrap_or_else(CExpressionOutcome::RuntimeError);
+                    vec![CExpressionPath {
+                        outcome,
+                        facts,
+                        obligations,
+                    }]
+                },
+            );
+            budget.pointer_cast_operand = saved;
+            result?
+        }
         SpecExpression::BitwiseNot(expression) => evaluate_spec_scalar_unary_paths_in(
             SpecScope::new(state, loop_entry_state, algebraic_bindings),
             expression,
@@ -6254,6 +6343,26 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
             } else {
                 Vec::new()
             }
+        }
+        SpecExpression::Subobject { pointer, width } => {
+            evaluate_spec_expression_paths_with_algebraic_bindings_in(
+                SpecScope::new(state, loop_entry_state, algebraic_bindings),
+                pointer,
+                assumptions,
+                budget,
+            )?
+            .into_iter()
+            .filter_map(|mut path| {
+                let CValue::Pointer(value) = path.value else {
+                    return None;
+                };
+                path.value = CValue::Pointer(value.clone().with_extent(Some(SubobjectExtent {
+                    start: value.pointer().clone(),
+                    width: (*width).into(),
+                })));
+                Some(path)
+            })
+            .collect()
         }
         SpecExpression::PointerOffset {
             pointer,
@@ -6545,7 +6654,9 @@ fn array_ref_argument_memory(memory: &CMemory, pointer: &CValue) -> CMemory {
 }
 
 pub(in crate::kernel) fn c_value_bitvector_term(value: &CValue) -> Option<Bitvector32Term> {
-    match value {
+    let value = value.numeric_value();
+    match value.numeric_value() {
+        CValue::PointerInteger(_) => unreachable!("numeric projection"),
         CValue::Bool(term) => Some(term.clone()),
         CValue::Int8(term) => Some(term.clone()),
         CValue::Int16(term)
@@ -6615,11 +6726,6 @@ fn evaluate_spec_pointer_offset_paths_in(
         let CValue::Pointer(pointer) = pointer_path.value else {
             continue;
         };
-        // The offset pointer designates what its operand designates, as C
-        // pointer arithmetic keeps the operand's extent
-        // (`design/pointer-subobject-extents.md`, D2).
-        let value = pointer;
-        let pointer = value.pointer().clone();
         let element_assumptions = assumptions_with_path_context(
             assumptions,
             &pointer_path.facts,
@@ -6653,9 +6759,13 @@ fn evaluate_spec_pointer_offset_paths_in(
                 canonicalized_offset_index_term(elements, &mut facts)
             };
             paths.push(SpecExpressionPath {
-                value: CValue::Pointer(value.clone().with_address(
-                    pointer.offset_by_typed_elements(elements, byte_width, unsigned, wide),
-                )),
+                value: CValue::Pointer(
+                    pointer.clone().with_address(
+                        pointer
+                            .pointer()
+                            .offset_by_typed_elements(elements, byte_width, unsigned, wide),
+                    ),
+                ),
                 facts,
                 obligations,
             });
@@ -7508,6 +7618,38 @@ pub(super) fn c_value_comparison_proposition(
     operator: CComparisonOperator,
     right: &CValue,
 ) -> Option<Proposition> {
+    let left = left.numeric_value();
+    let right = right.numeric_value();
+    if let (CValue::Pointer(a), CValue::Pointer(b)) = (left, right)
+        && !a.is_null()
+        && !b.is_null()
+        && a.c_type().pointer_types_compatible(b.c_type())
+        && matches!(
+            operator,
+            CComparisonOperator::Equal | CComparisonOperator::NotEqual
+        )
+    {
+        let condition = ConditionTerm::pointer_value_equal(a.clone(), b.clone());
+        // Phase C's opaque claims supplement complete value equality.
+        if (a.extent().is_some_and(SubobjectExtent::is_opaque)
+            || b.extent().is_some_and(SubobjectExtent::is_opaque))
+            && let Some(coverage) = pointer_designation_equality(a, b)
+        {
+            let equality = Proposition::And(
+                Box::new(Proposition::ConditionIs(condition, true)),
+                Box::new(coverage),
+            );
+            return Some(if operator == CComparisonOperator::Equal {
+                equality
+            } else {
+                Proposition::Not(Box::new(equality))
+            });
+        }
+        return Some(Proposition::ConditionIs(
+            condition,
+            operator == CComparisonOperator::Equal,
+        ));
+    }
     if matches!(left, CValue::Int128(_) | CValue::UInt128(_))
         || matches!(right, CValue::Int128(_) | CValue::UInt128(_))
     {
@@ -7521,30 +7663,14 @@ pub(super) fn c_value_comparison_proposition(
                 || right.is_null() =>
         {
             match operator {
-                CComparisonOperator::Equal | CComparisonOperator::NotEqual => {
-                    let equal = operator == CComparisonOperator::Equal;
-                    if let Some(designation) = pointer_designation_equality(left, right) {
-                        let values = Proposition::And(
-                            Box::new(Proposition::ConditionIs(
-                                pointer_equality_condition(
-                                    left.pointer().clone(),
-                                    right.pointer().clone(),
-                                ),
-                                true,
-                            )),
-                            Box::new(designation),
-                        );
-                        return Some(if equal {
-                            values
-                        } else {
-                            Proposition::Not(Box::new(values))
-                        });
-                    }
-                    Some((
-                        pointer_equality_condition(left.pointer().clone(), right.pointer().clone()),
-                        equal,
-                    ))
-                }
+                CComparisonOperator::Equal => Some((
+                    pointer_equality_condition(left.pointer().clone(), right.pointer().clone()),
+                    true,
+                )),
+                CComparisonOperator::NotEqual => Some((
+                    pointer_equality_condition(left.pointer().clone(), right.pointer().clone()),
+                    false,
+                )),
                 CComparisonOperator::LessThan
                 | CComparisonOperator::LessEqual
                 | CComparisonOperator::GreaterThan
@@ -7706,7 +7832,8 @@ pub(super) fn c_value_comparison_proposition(
 }
 
 fn c_value_int32_term(value: &CValue) -> Option<Bitvector32Term> {
-    match value {
+    match value.numeric_value() {
+        CValue::PointerInteger(_) => unreachable!("numeric projection"),
         CValue::Int8(value) => Some(value.clone()),
         CValue::Bool(value)
         | CValue::Int16(value)
@@ -7726,7 +7853,8 @@ fn c_value_int32_term(value: &CValue) -> Option<Bitvector32Term> {
 }
 
 fn c_value_int64_term(value: &CValue) -> Option<Bitvector32Term> {
-    match value {
+    match value.numeric_value() {
+        CValue::PointerInteger(_) => unreachable!("numeric projection"),
         CValue::Int64(value) => Some(value.clone()),
         CValue::Bool(value) => Some(Bitvector32Term::int64_from_32(value.clone())),
         CValue::Int8(value) => Some(Bitvector32Term::int64_from_32(value.clone())),
@@ -7746,7 +7874,8 @@ fn c_value_int64_term(value: &CValue) -> Option<Bitvector32Term> {
 }
 
 fn c_value_uint64_term(value: &CValue) -> Option<Bitvector32Term> {
-    match value {
+    match value.numeric_value() {
+        CValue::PointerInteger(_) => unreachable!("numeric projection"),
         CValue::UInt64(value) => Some(value.clone()),
         CValue::Bool(value) => Some(Bitvector32Term::uint64_from_32(value.clone())),
         CValue::Int64(value) => Some(Bitvector32Term::uint64_from_int64(value.clone())),
@@ -7833,3 +7962,47 @@ fn exact_signed_observation(
         _ => IntegerTerm::from_machine(MachineIntegerType::Int32, bits.clone()),
     }
 }
+
+#[cfg(test)]
+mod pointer_integer_observation_tests {
+    use super::*;
+
+    #[test]
+    fn integer_specifications_observe_bits_without_a_pointer_record() {
+        let context = PureFactContext::new();
+        let pointer = CPointerValue::new(Pointer::symbolic(Variable(994_001)), CType::Int32Pointer);
+        let word = crate::kernel::eval::cast_c_value_to_type(
+            CValue::Pointer(pointer),
+            CType::UInt64,
+            crate::kernel::eval::IntegerConversion::Modular,
+            &mut Vec::new(),
+            &context,
+        )
+        .unwrap();
+        assert!(crate::kernel::resource_arguments_proven_equal(
+            &AlgebraicValue::C(word.clone()),
+            &AlgebraicValue::C(word.numeric_value().clone()),
+            &context,
+        ));
+        let state = CState::new().with_local("word", word.clone());
+        for expression in [
+            SpecExpression::Value(word.clone()),
+            SpecExpression::CExpression(CExpression::Variable("word".into())),
+        ] {
+            let paths = evaluate_spec_expression_paths_with_bindings(
+                &state,
+                &expression,
+                &context,
+                &BTreeMap::new(),
+                &mut ExecutionBudget::new(),
+            )
+            .unwrap();
+            assert_eq!(paths.len(), 1);
+            assert_eq!(&paths[0].value, word.numeric_value());
+            assert!(!matches!(paths[0].value, CValue::PointerInteger(_)));
+        }
+    }
+}
+
+#[cfg(test)]
+mod opaque_pointer_equality_tests;

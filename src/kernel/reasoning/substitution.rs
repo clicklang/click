@@ -275,6 +275,28 @@ pub(crate) fn substitute_pointer_variable_in_proposition(
     walk_proposition(proposition, &PointerSubstitution { from, to })
 }
 
+/// Bind a pointer witness without discarding its subobject designation.
+pub(crate) fn substitute_pointer_value_in_proposition(
+    proposition: &Proposition,
+    from: Variable,
+    to: &CPointerValue,
+) -> Result<Proposition, String> {
+    let c = std::collections::BTreeMap::from([(
+        from,
+        crate::kernel::proof::term_rewrite::TypedCReplacement::Pointer(to.clone()),
+    )]);
+    let integers = Default::default();
+    let algebraic = Default::default();
+    let mut rewrite = crate::kernel::proof::term_rewrite::TermRewrite::for_typed_variables(
+        &c, &integers, &algebraic,
+    );
+    let result = rewrite.proposition(proposition);
+    match rewrite.refusal() {
+        None => Ok(result),
+        Some(reason) => Err(format!("pointer witness substitution refused: {reason:?}")),
+    }
+}
+
 fn substitute_pointer_variable_in_algebraic_value(
     value: &AlgebraicValue,
     from: Variable,
@@ -1564,11 +1586,20 @@ fn walk_c_memory_range<S: VariableSubstitution + ?Sized>(
     range: &CMemoryRange,
     s: &S,
 ) -> CMemoryRange {
-    range.with_bounds(
-        s.pointer(&range.base),
-        s.bitvector(range.bound_terms().0),
-        s.bitvector(range.bound_terms().1),
-    )
+    range
+        .with_bounds(
+            s.pointer(&range.base),
+            s.bitvector(range.bound_terms().0),
+            s.bitvector(range.bound_terms().1),
+        )
+        .with_designation(std::sync::Arc::new(s.pointer(&range.designation)))
+        .with_opaque_extent(
+            range
+                .opaque_extent
+                .as_deref()
+                .map(|origin| std::sync::Arc::new(s.pointer(origin))),
+            range.carrier_extent_known,
+        )
 }
 
 #[cfg(test)]
@@ -2401,6 +2432,10 @@ fn collect_sequence_bound_variables(sequence: &SequenceTerm, variables: &mut BTr
 
 fn collect_c_value_bound_variables(value: &CValue, variables: &mut BTreeSet<Variable>) {
     match value {
+        CValue::PointerInteger(record) => {
+            collect_c_value_bound_variables(&record.numeric, variables);
+            collect_c_value_bound_variables(&CValue::Pointer(*record.pointer.clone()), variables);
+        }
         CValue::Int8(bits) => collect_bitvector_bound_variables(bits, variables),
         CValue::Bool(bits)
         | CValue::Int16(bits)
@@ -3103,6 +3138,12 @@ fn collect_condition_bound_variables(
     variables: &mut BTreeSet<Variable>,
 ) {
     match condition {
+        ConditionTerm::PointerValueEqual(left, right) => {
+            for pointer in left.pointers().chain(right.pointers()) {
+                collect_pointer_offset_bound_variables(&pointer.offset, variables);
+            }
+        }
+
         ConditionTerm::AlgebraicEqual(left, right) => {
             left.for_each_bitvector_term(|term| collect_bitvector_bound_variables(term, variables));
             right
@@ -4787,6 +4828,10 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_condition(
             substitute_bitvector_variable_in_pointer_offset(left, from, to),
             substitute_bitvector_variable_in_pointer_offset(right, from, to),
         ),
+        ConditionTerm::PointerValueEqual(left, right) => ConditionTerm::PointerValueEqual(
+            Box::new(left.map_pointers(|p| substitute_bitvector_variable_in_pointer(p, from, to))),
+            Box::new(right.map_pointers(|p| substitute_bitvector_variable_in_pointer(p, from, to))),
+        ),
         ConditionTerm::PointerEqual(left, right) => ConditionTerm::pointer_equal(
             substitute_bitvector_variable_in_pointer(left, from, to),
             substitute_bitvector_variable_in_pointer(right, from, to),
@@ -4847,6 +4892,16 @@ fn substitute_through_load_variable(
             None => substituted_memory,
         }
     };
+    // Instantiation preserves the original read's byte dependency. Without
+    // it, a four-byte scalar at the rewritten address falls back to the
+    // eight-byte footprint also used by Bits32 pointer coordinates.
+    if let Some(bytes) = crate::kernel::registered_load_bytes_for_variable(&variable) {
+        crate::kernel::eval::record_load_access_width(
+            substituted_memory.memory(),
+            &substituted_pointer,
+            bytes,
+        );
+    }
     Some(crate::kernel::eval::canonical_term(
         &Bitvector32Term::MemoryLoad(substituted_memory, Box::new(substituted_pointer), kind),
     ))
@@ -5515,6 +5570,19 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_c_value(
     to: &Bitvector32Term,
 ) -> CValue {
     match value {
+        CValue::PointerInteger(record) => CValue::PointerInteger(PointerIntegerValue {
+            kind: record.kind.clone(),
+            numeric: Box::new(substitute_bitvector_variable_in_c_value(
+                &record.numeric,
+                from,
+                to,
+            )),
+            pointer: Box::new(
+                record
+                    .pointer
+                    .map_pointers(|p| substitute_bitvector_variable_in_pointer(p, from, to)),
+            ),
+        }),
         CValue::Void => CValue::Void,
         CValue::Bool(bits) => CValue::Bool(substitute_bitvector_variable(bits, from, to)),
         CValue::Int8(bits) => int8(substitute_bitvector_variable(bits, from, to)),
@@ -5684,6 +5752,10 @@ fn substitute_pointer_variable_in_condition(
                 right, from, to,
             )),
         ),
+        ConditionTerm::PointerValueEqual(..) => {
+            crate::kernel::proof::term_rewrite::TermRewrite::for_pointer_variable(from, to)
+                .condition(condition)
+        }
         ConditionTerm::PointerEqual(left, right) => ConditionTerm::pointer_equal(
             substitute_pointer_variable_in_pointer(left, from, to),
             substitute_pointer_variable_in_pointer(right, from, to),
@@ -6250,6 +6322,14 @@ fn substitute_pointer_variable_in_spec_expression(
             )),
             *target_type,
         ),
+        SpecExpression::PointerCoercion(expression, target_type) => {
+            SpecExpression::PointerCoercion(
+                Box::new(substitute_pointer_variable_in_spec_expression(
+                    expression, from, to,
+                )),
+                *target_type,
+            )
+        }
         SpecExpression::If {
             condition,
             then_branch,
@@ -6322,6 +6402,12 @@ fn substitute_pointer_variable_in_spec_expression(
                 substitute_pointer_variable_in_spec_expression(expression, from, to),
             ))
         }
+        SpecExpression::Subobject { pointer, width } => SpecExpression::Subobject {
+            pointer: Box::new(substitute_pointer_variable_in_spec_expression(
+                pointer, from, to,
+            )),
+            width: *width,
+        },
         SpecExpression::PointerOffset {
             pointer,
             elements,
@@ -7883,6 +7969,48 @@ mod integer_range_fold_substitution_tests {
             result,
             Err(IntegerPureSubstitutionError::UnsupportedCarrier)
         );
+    }
+
+    #[test]
+    fn quantified_load_substitution_preserves_access_width() {
+        let _session = crate::kernel::VerificationSession::enter();
+        for bytes in [4, 8] {
+            let memory = crate::kernel::intern_c_memory(CMemory::new());
+            let binder = Variable(70_156 + u64::from(bytes));
+            let pointer = Pointer::loaded(
+                PointerBlock::ExternalArgument,
+                Bitvector32Term::Variable(binder),
+                4,
+            );
+            let original = crate::kernel::eval::load_variable_for_exact_cell(
+                &memory,
+                &pointer,
+                crate::kernel::LoadKind::Bits32,
+                bytes,
+            );
+            let substituted = substitute_bitvector_variable(
+                &Bitvector32Term::Variable(original),
+                binder,
+                &Bitvector32Term::Variable(Variable(70_170 + u64::from(bytes))),
+            );
+            let Bitvector32Term::Variable(renamed) = substituted else {
+                panic!("substituted read must retain a registered name");
+            };
+            assert_eq!(
+                crate::kernel::registered_load_bytes_for_variable(&renamed),
+                Some(bytes)
+            );
+            let (_, renamed_pointer) =
+                crate::kernel::registered_load_for_variable(&renamed).unwrap();
+            assert_eq!(
+                renamed_pointer,
+                Pointer::loaded(
+                    PointerBlock::ExternalArgument,
+                    Bitvector32Term::Variable(Variable(70_170 + u64::from(bytes))),
+                    4,
+                )
+            );
+        }
     }
 
     #[test]

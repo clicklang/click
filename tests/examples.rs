@@ -1,3 +1,7 @@
+// Proof-result auto traits traverse the same Arc-linked alpha-key/load cycle
+// documented in src/lib.rs. This crate needs the library's compiler setting.
+#![recursion_limit = "256"]
+
 use click::surface::ProgramInputs;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;

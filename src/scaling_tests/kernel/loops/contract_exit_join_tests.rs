@@ -127,7 +127,7 @@ fn exit_cache_reconciliation_reuses_the_joins_exit_contexts() {
         rebuilt.push(crate::kernel::reasoning::path_facts::context_rebuild_entries() - before);
         assert_eq!(states[1].memory().known_value(&pointer), Some(zero.clone()));
 
-        let built = loop_exit_argument_contexts(&all, &PureFactContext::new(), true);
+        let built = loop_exit_argument_contexts(&all, &[], &PureFactContext::new(), true);
         let mut states = exits();
         let before = crate::kernel::reasoning::path_facts::context_rebuild_entries();
         retain_proven_loop_exit_cells(&mut states, &all, &built, &PureFactContext::new(), true)

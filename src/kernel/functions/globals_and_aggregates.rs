@@ -1161,11 +1161,22 @@ pub(super) fn aggregate_argument_read_refusal(
         let CValue::Pointer(source) = value else {
             continue;
         };
+        if let Some(refusal) = crate::kernel::eval::subobject_access_refusal(
+            source.pointer(),
+            source.extent(),
+            layout.size_bytes(),
+            &ExecutionFacts::new(),
+            &[],
+            assumptions,
+            state.resources(),
+        ) {
+            return Some(CFunctionOutcome::UndefinedBehavior(refusal));
+        }
         // Actual calls use the same read boundary as ordinary aggregate
         // assignment. Entry images are evaluated values, not caller reads.
         if let Some(resource) = crate::kernel::eval::missing_aggregate_copy_read_resource(
             state,
-            source.pointer(),
+            source,
             layout,
             assumptions,
         ) {

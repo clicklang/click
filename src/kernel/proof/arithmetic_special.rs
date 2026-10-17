@@ -8,8 +8,8 @@
 //! kernel boundary.
 
 use super::super::{
-    Bitvector32Term, CComparisonOperator, CFloatClassification, CFloatCondition, ConditionTerm,
-    Pointer, PointerBlock, PointerOffsetTerm, Proposition, SignedDefinedWidth,
+    Bitvector32Term, CComparisonOperator, CFloatClassification, CFloatCondition, CPointerValue,
+    ConditionTerm, Pointer, PointerBlock, PointerOffsetTerm, Proposition, SignedDefinedWidth,
 };
 use std::collections::hash_map::DefaultHasher;
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -362,6 +362,14 @@ fn checked_pointer_alignment(condition: &ConditionTerm) -> Option<(&Pointer, u64
 
 fn condition_identity(left: &ConditionTerm, right: &ConditionTerm) -> bool {
     match (left, right) {
+        (ConditionTerm::PointerValueEqual(a, b), ConditionTerm::PointerValueEqual(c, d)) => {
+            charge_pointer(a.pointer())
+                && charge_pointer(b.pointer())
+                && charge_pointer(c.pointer())
+                && charge_pointer(d.pointer())
+                && a == c
+                && b == d
+        }
         (ConditionTerm::Constant(left), ConditionTerm::Constant(right)) => left == right,
         (
             ConditionTerm::PointerEqual(left_first, left_second),
@@ -753,7 +761,9 @@ impl SpecialArithmeticCertificate {
                             .ok_or(SpecialArithmeticCheckError::InvalidPremise(*bound))
                     })
                     .collect::<Result<Vec<_>, _>>()?;
-                if !pointer_translation(relation_proposition, &bound_propositions, result) {
+                let accepted =
+                    pointer_translation(relation_proposition, &bound_propositions, result);
+                if !accepted {
                     return Err(SpecialArithmeticCheckError::NodeResultMismatch(index));
                 }
                 Ok(())
@@ -1231,6 +1241,11 @@ fn pointer_sides(
     Option<(&PointerBlock, &PointerBlock)>,
 )> {
     match proposition {
+        Proposition::ConditionIs(ConditionTerm::PointerValueEqual(left, right), true) => Some((
+            &left.offset,
+            &right.offset,
+            Some((&left.block, &right.block)),
+        )),
         Proposition::ConditionIs(ConditionTerm::PointerEqual(left, right), true) => Some((
             &left.offset,
             &right.offset,
@@ -1378,6 +1393,23 @@ fn pointer_translation(
     bound_propositions: &[&Proposition],
     goal: &Proposition,
 ) -> bool {
+    if let Proposition::ConditionIs(ConditionTerm::PointerValueEqual(left, right), true) = goal {
+        let same_domain = |a: &CPointerValue, b: &CPointerValue| {
+            a.designation() == b.designation()
+                && a.extent() == b.extent()
+                && a.extent_is_known() == b.extent_is_known()
+        };
+        let linked = match relation {
+            Proposition::ConditionIs(ConditionTerm::PointerValueEqual(a, b), true) => {
+                (same_domain(left, a) && same_domain(right, b))
+                    || (same_domain(left, b) && same_domain(right, a))
+            }
+            _ => same_domain(left, right),
+        };
+        if !linked {
+            return false;
+        }
+    }
     let Some((goal_left, goal_right, goal_blocks)) = pointer_sides(goal) else {
         return false;
     };

@@ -5,6 +5,19 @@ use crate::kernel::primitives::*;
 
 #[derive(Clone, Debug, Default)]
 pub(in crate::kernel) struct InputData {
+    /// Value-level pointer origins. C address comparisons never enter this graph.
+    pub(in crate::kernel) pointer_address_sources: crate::persistent::PersistentMap<
+        ConditionTerm,
+        crate::persistent::PersistentSet<ConditionTerm>,
+    >,
+    pub(in crate::kernel) designation_graph:
+        crate::kernel::pointer_designations::ValueClasses<Pointer>,
+    pub(in crate::kernel) extent_graph: crate::kernel::pointer_designations::ValueClasses<Pointer>,
+    pub(in crate::kernel) pointer_value_classes:
+        crate::kernel::pointer_designations::ValueClasses<CPointerValue>,
+    pub(in crate::kernel) pointer_value_equalities:
+        crate::persistent::PersistentSet<(CPointerValue, CPointerValue)>,
+
     /// Conservative source-dependency selectors for parameter-store shortcuts.
     /// These record syntax, not equality classes or permission authority.
     pub(in crate::kernel) scalar_dependency_inputs: crate::persistent::PersistentMap<
@@ -36,9 +49,11 @@ pub(in crate::kernel) struct InputData {
         Bitvector32Term,
         crate::persistent::PersistentMap<ConditionTerm, i64>,
     >,
-    /// Original alignment premises, retained for graph reconstruction only.
-    pub(in crate::kernel) pointer_alignment_facts:
-        crate::persistent::PersistentMap<(Pointer, u64), ()>,
+    /// Exact alignment premises, including their numeric address annotations.
+    pub(in crate::kernel) pointer_alignment_facts: crate::persistent::PersistentMap<
+        (Pointer, u64),
+        crate::persistent::PersistentSet<ConditionTerm>,
+    >,
     /// Exact equalities between two pointers of *different* blocks, indexed
     /// under each side and carrying the fact that states them. An equality
     /// inside one block is a `PointerOffsetEqual` that never reaches this

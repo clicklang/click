@@ -11121,7 +11121,7 @@ impl Parser {
             {
                 let field = self.resolve_struct_field_metadata(base_struct_name, &field_name)?;
                 dereferences_pointer = field.c_type.is_pointer();
-                let pointer = self.offset_field_pointer(base, field.offset_bytes);
+                let pointer = self.member_field_pointer(base, &field);
                 let field_memory_pointer = field_has_direct_memory_place(&field);
                 scalar_field = field_memory_pointer
                     && matches!(
@@ -11767,7 +11767,7 @@ impl Parser {
             return Ok(CExpression::Load(Box::new(base)));
         };
         Ok(CExpression::TypedLoad {
-            pointer: Box::new(self.offset_field_pointer(base, field.offset_bytes)),
+            pointer: Box::new(self.member_field_pointer(base, &field)),
             value_type: field.c_type.to_kernel_type(),
             volatile: false,
             pointee_constant: field.pointee_constant,
@@ -12088,6 +12088,17 @@ impl Parser {
         Ok(())
     }
 
+    fn member_field_pointer(&self, base: CExpression, field: &ResolvedField) -> CExpression {
+        let pointer = self.offset_field_pointer(base, field.offset_bytes);
+        if field.byte_width == 0 {
+            return pointer;
+        }
+        CExpression::Subobject {
+            pointer: Box::new(pointer),
+            width: field.byte_width,
+        }
+    }
+
     fn offset_field_pointer(&self, base: CExpression, offset_bytes: u32) -> CExpression {
         crate::kernel::c_pointer_offset_bytes(base, offset_bytes)
     }
@@ -12163,6 +12174,17 @@ impl Parser {
         operand: &CExpression,
         struct_name: &str,
     ) -> Result<(), ClickError> {
+        // Integer casts name the complete word's reconstructed pointer.
+        // Unknown types (notably `result`) are checked after elaboration.
+        if matches!(
+            crate::surface::validation::infer_c_expression_type(
+                operand,
+                &self.names.c_parameter_types,
+            ),
+            None | Some(C0Type::Int64(_) | C0Type::UInt64(_))
+        ) {
+            return Ok(());
+        }
         // An explicit conversion through void retains its target layout on
         // the expression. It does not assign a layout to the source parameter.
         if matches!(
@@ -12215,7 +12237,14 @@ impl Parser {
                     "struct pointer cast expects a current C `void *` expression; put old(...) around the whole cast for an entry-state value",
                 ));
             };
-            self.record_parameter_struct_cast(&operand, &cast.struct_name)?;
+            let integer_source = crate::surface::validation::infer_c_expression_type(
+                &operand,
+                &self.names.c_parameter_types,
+            )
+            .is_some_and(|ty| matches!(ty, C0Type::Int64(_) | C0Type::UInt64(_)));
+            if !integer_source {
+                self.record_parameter_struct_cast(&operand, &cast.struct_name)?;
+            }
             return Ok(crate::surface::lowering::contract_c_unary(
                 source_operand,
                 CExpression::Cast {
@@ -12239,13 +12268,6 @@ impl Parser {
                     && (parsed_type.constant || parsed_type.pointee_constant))
             {
                 return Err(self.error("contract cast targets must be unqualified native types; byte views inherit the source qualification"));
-            }
-            if target_type.is_pointer()
-                && !matches!(target_type, CType::UInt8Pointer | CType::VoidPointer)
-            {
-                return Err(self.error(
-                    "native contract pointer casts require a `uint8*` byte-view target or a `void*` target",
-                ));
             }
             self.expect(Token::RParen)?;
             let operand = self.parse_contract_unary_at_depth(depth + 1)?;
@@ -12860,7 +12882,7 @@ impl Parser {
                     {
                         let field =
                             self.resolve_struct_field_metadata(base_struct_name, &field_name)?;
-                        let pointer = self.offset_field_pointer(base, field.offset_bytes);
+                        let pointer = self.member_field_pointer(base, &field);
                         struct_name = field.struct_name.clone();
                         union_name = field.union_name.clone();
                         struct_array_element_width = field.array_element_width;

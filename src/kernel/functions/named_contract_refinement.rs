@@ -315,7 +315,10 @@ pub(in crate::kernel) fn contract_refinement_context_for_interface(
     let mut argument_values = Vec::with_capacity(function_interface.parameters().len());
     for parameter in function_interface.parameters() {
         let variable = budget.allocate_kernel_variable().ok()?;
-        argument_values.push(symbolic_call_result(parameter.c_type(), variable));
+        argument_values.push(
+            symbolic_call_result(parameter.c_type(), variable)
+                .complete_word(Pointer::symbolic(variable)),
+        );
     }
     let result_variable = budget.allocate_kernel_variable().ok()?;
     // A contract not fixed by a fact holds for arbitrary values of its value

@@ -174,11 +174,178 @@ fn pure_pointer_projection_does_not_replace_a_program_spelling() {
     let with_program = projection_only.assume_proposition(equality(binding, program.clone()));
     assert_eq!(
         crate::kernel::arm_binding_program_spelling(&value, &with_program),
-        Some(CValue::typed_pointer(program, CType::Int32Pointer)),
+        Some(CValue::Pointer(
+            CPointerValue::new(Pointer::symbolic(Variable(411)), CType::Int32Pointer)
+                .with_address(program)
+        )),
     );
 }
 
 #[cfg(test)]
 mod scaling_tests {
     include!("../../../scaling_tests/kernel/proof/term_rewrite/pointer_application_tests.rs");
+}
+
+#[test]
+fn numeric_pointer_rewrites_preserve_origin_and_selected_extent() {
+    let source = Pointer::symbolic(Variable(420));
+    let target = Pointer {
+        block: "target".into(),
+        offset: PointerOffsetTerm::Constant(0),
+    };
+    let original = CPointerValue::new(source.clone(), CType::Int32Pointer).with_extent(Some(
+        SubobjectExtent {
+            start: source.clone(),
+            width: 4u32.into(),
+        },
+    ));
+    for mut rewrite in [
+        TermRewrite::for_pointer_address_variable(Variable(420), &target),
+        TermRewrite::for_pointer_exact(&source, &target),
+    ] {
+        let CValue::Pointer(result) = rewrite.value(&CValue::Pointer(original.clone())) else {
+            panic!("pointer rewrite changed the value's type")
+        };
+        assert_eq!(result.pointer(), &target);
+        assert_eq!(result.designation(), original.designation());
+        assert_eq!(result.opaque_extent(), original.opaque_extent());
+        assert_eq!(result.extent().unwrap().width, 4u32.into());
+        assert_eq!(result.extent().unwrap().start, target);
+        assert_ne!(
+            result,
+            CPointerValue::new(target.clone(), CType::Int32Pointer)
+        );
+    }
+}
+
+#[test]
+fn full_pointer_rewrite_changes_read_storage_without_inventing_its_origin() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let memory = intern_c_memory(CMemory::new());
+    let p = CPointerValue::new(Pointer::symbolic(Variable(421)), CType::Int32Pointer);
+    let q = CPointerValue::new(Pointer::symbolic(Variable(422)), CType::Int32Pointer);
+    let other = Pointer::symbolic(Variable(423));
+    let read = CPointerValue::from_read(other.clone(), CType::Int32Pointer, &memory, p.pointer());
+    let mut rewrite = TermRewrite::for_pointer_value_exact(&p, &q);
+    let CValue::Pointer(changed) = rewrite.value(&CValue::Pointer(read.clone())) else {
+        panic!("read changed type")
+    };
+    let expected_origin = Pointer::loaded_value(&memory, q.pointer());
+    assert_eq!(changed.pointer(), &other);
+    assert_eq!(changed.designation(), &expected_origin);
+    assert_eq!(changed.opaque_extent(), Some(&expected_origin));
+    // The same address-only rewrite cannot substitute a read's full value.
+    let mut numeric = TermRewrite::for_pointer_exact(p.pointer(), q.pointer());
+    assert_eq!(
+        numeric.value(&CValue::Pointer(read.clone())),
+        CValue::Pointer(read)
+    );
+    // Matching the pointee address does not match the read's storage cell.
+    let read = CPointerValue::from_read(p.pointer().clone(), CType::Int32Pointer, &memory, &other);
+    let mut rewrite = TermRewrite::for_pointer_value_exact(&p, &q);
+    assert_eq!(
+        rewrite.value(&CValue::Pointer(read.clone())),
+        CValue::Pointer(read.with_address(q.pointer().clone())),
+    );
+}
+
+#[test]
+fn memory_relationship_rewrite_transports_only_a_complete_pointer_carrier() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let snapshot = intern_c_memory(CMemory::new());
+    let storage = Pointer::symbolic(Variable(424_100));
+    let source = CPointerValue::from_read(
+        Pointer::symbolic(Variable(424_101)),
+        CType::Int32Pointer,
+        &snapshot,
+        &storage,
+    );
+    let target_base = Pointer {
+        block: PointerBlock::Heap(424_102),
+        offset: PointerOffsetTerm::Constant(0),
+    };
+    let target = CPointerValue::new(target_base.clone(), CType::Int32Pointer).with_extent(Some(
+        SubobjectExtent {
+            start: target_base,
+            width: 4u32.into(),
+        },
+    ));
+    let relationship = |value: &CPointerValue| Proposition::CResourceContains {
+        parent: Box::new(CResource::Composite {
+            name: "holder".into(),
+            arguments: vec![AlgebraicValue::C(CValue::Pointer(value.clone()))].into(),
+        }),
+        child: Box::new(CResource::Memory(CMemoryRange::from_pointer_value(
+            value,
+            0u32.into(),
+            1u32.into(),
+            4,
+        ))),
+    };
+    let input = relationship(&source);
+    let mut full = TermRewrite::for_pointer_value_exact(&source, &target);
+    assert_eq!(full.proposition(&input), relationship(&target));
+    assert!(full.refusal().is_none());
+    let mut numeric = TermRewrite::for_pointer_exact(source.pointer(), target.pointer());
+    let rewritten = numeric.proposition(&input);
+    let Proposition::CResourceContains { child, .. } = rewritten else {
+        panic!("containment")
+    };
+    let CResource::Memory(range) = child.as_ref() else {
+        panic!("memory")
+    };
+    assert_eq!(range.base(), target.pointer());
+    assert_eq!(range.designation.as_ref(), source.designation());
+    assert_eq!(range.opaque_extent.as_deref(), source.opaque_extent());
+    assert!(!range.carrier_extent_known);
+}
+
+#[test]
+fn a_full_pointer_rewrite_does_not_adopt_another_read_carrier_at_the_same_address() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let snapshot = intern_c_memory(CMemory::new());
+    let raw = Pointer::symbolic(Variable(424_110));
+    let source = CPointerValue::from_read(
+        raw.clone(),
+        CType::Int32Pointer,
+        &snapshot,
+        &Pointer::symbolic(Variable(424_111)),
+    );
+    let unrelated = CPointerValue::from_read(
+        raw,
+        CType::Int32Pointer,
+        &snapshot,
+        &Pointer::symbolic(Variable(424_112)),
+    );
+    let target = CPointerValue::new(
+        Pointer {
+            block: PointerBlock::Heap(424_113),
+            offset: PointerOffsetTerm::Constant(0),
+        },
+        CType::Int32Pointer,
+    );
+    let input = Proposition::CResourceSeparate {
+        left: Box::new(CResource::Memory(CMemoryRange::from_pointer_value(
+            &unrelated,
+            0u32.into(),
+            1u32.into(),
+            4,
+        ))),
+        right: Box::new(CResource::Memory(CMemoryRange::new(
+            Pointer::symbolic(Variable(424_114)),
+            0u32.into(),
+            1u32.into(),
+        ))),
+    };
+    let mut rewrite = TermRewrite::for_pointer_value_exact(&source, &target);
+    let Proposition::CResourceSeparate { left, .. } = rewrite.proposition(&input) else {
+        panic!("separation")
+    };
+    let CResource::Memory(range) = left.as_ref() else {
+        panic!("memory")
+    };
+    assert_eq!(range.base(), target.pointer());
+    assert_eq!(range.designation.as_ref(), unrelated.designation());
+    assert_eq!(range.opaque_extent.as_deref(), unrelated.opaque_extent());
+    assert!(!range.carrier_extent_known);
 }
