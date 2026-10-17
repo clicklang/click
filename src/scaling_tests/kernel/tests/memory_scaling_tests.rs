@@ -479,6 +479,90 @@ fn one_heap_store_is_logarithmic_in_unrelated_allocations() {
     assert_constant_plus_log_growth("one C store into a heap block", &samples, 16.0);
 }
 
+#[test]
+fn one_classed_heap_store_and_read_are_logarithmic_in_recorded_effective_types() {
+    // Every unrelated allocation's first word, and every other word of the
+    // target, carries a recorded effective type; recording the target's
+    // store and checking a read of it touch only the target's neighbours.
+    use crate::kernel::effective_type::{CAccessClass, CScalarClass};
+    const INT: CAccessClass = CAccessClass::Scalar(CScalarClass::Int);
+    let mut stores = Vec::new();
+    let mut reads = Vec::new();
+    for size in HEAP_SIZES {
+        let _session = crate::kernel::VerificationSession::enter();
+        let mut memory = memory_with_unrelated_allocations(size);
+        for index in 0..size {
+            let cell = heap_cell(index as u64 + 1, 0);
+            let value = CValue::UInt32(Bitvector32Term::Constant(index as u32));
+            memory = memory.with_heap_effective_type(&cell, 4, Some(INT), &value);
+        }
+        let resources = ResourceContext::new().unchecked_with_fact(CResourceFact::own_memory(
+            CMemoryRange::new(
+                heap_cell(TARGET_HEAP, 0),
+                Bitvector32Term::Constant(0),
+                Bitvector32Term::Constant(8),
+            ),
+        ));
+        let state = CState::new()
+            .with_memory(memory)
+            .with_resource_context(resources);
+        let pointer = CExpression::Value(CValue::typed_pointer(
+            heap_cell(TARGET_HEAP, 4),
+            CType::UInt32Pointer,
+        ));
+        let store = CStatement::TypedStore {
+            access_class: Some(INT),
+            pointer: pointer.clone(),
+            value: CExpression::Value(CValue::UInt32(Bitvector32Term::Constant(9))),
+            value_type: CType::UInt32,
+            volatile: false,
+            pointee_constant: false,
+            source: Default::default(),
+        };
+        let (paths, work) = crate::instrumentation::measure_deterministic_work(|| {
+            execute_c_statement_paths(
+                &state,
+                &store,
+                &PureFactContext::new(),
+                CExecutionContext::execute_bodies(&CExecutionEnvironment::new()),
+                &mut ExecutionBudget::new(),
+            )
+            .unwrap()
+        });
+        let CStatementOutcome::Normal(stored) = &paths[0].outcome else {
+            panic!("the heap store executes: {:?}", paths[0].outcome);
+        };
+        assert_eq!(
+            stored
+                .memory()
+                .heap_effective_class(&heap_cell(TARGET_HEAP, 4)),
+            Some(INT)
+        );
+        stores.push((size, work));
+        let read = CExpression::TypedLoad {
+            pointer: Box::new(pointer),
+            value_type: CType::UInt32,
+            volatile: false,
+            pointee_constant: false,
+            access_class: Some(INT),
+            source: Default::default(),
+        };
+        let (paths, work) = crate::instrumentation::measure_deterministic_work(|| {
+            crate::kernel::eval::evaluate_c_expression_paths(
+                stored,
+                &read,
+                &PureFactContext::new(),
+                &mut ExecutionBudget::new(),
+            )
+            .unwrap()
+        });
+        assert!(matches!(paths[0].outcome, CExpressionOutcome::Value(_)));
+        reads.push((size, work));
+    }
+    assert_constant_plus_log_growth("one classed C store into a heap block", &stores, 16.0);
+    assert_constant_plus_log_growth("one checked read of a typed heap cell", &reads, 16.0);
+}
+
 fn target_range() -> CMemoryRange {
     CMemoryRange::new_with_element_width(
         heap_cell(TARGET_HEAP, 0),

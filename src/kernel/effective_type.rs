@@ -332,6 +332,18 @@ impl CAccessClass {
         }
     }
 
+    /// The effective type a store through an lvalue of this class gives
+    /// memory without a declared type (C11 6.5p6): a member store gives its
+    /// struct, and a character store gives none, since GCC lets bytes be
+    /// written and the object then read as anything they spell.
+    pub fn effective_type_of_store(&self) -> Option<Self> {
+        match self {
+            Self::Member(access) => Some(Self::Struct(access.0.clone())),
+            _ if self.is_character() => None,
+            _ => Some(self.clone()),
+        }
+    }
+
     /// The C spelling of the class, for diagnostics. A member access is
     /// spelled as the struct it goes through.
     pub fn spelling(&self) -> String {

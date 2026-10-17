@@ -57,8 +57,10 @@ pub(crate) use cell_store::{
     offset_stem_and_constant,
 };
 mod derivations;
+mod heap_effective_types;
 mod initialized_bytes;
 mod observed_population_families;
+pub(crate) use heap_effective_types::HeapEffectiveTypes;
 pub(crate) use initialized_bytes::InitializedBytes;
 mod memory_state;
 pub(crate) use observed_population_families::ObservedPopulationFamilies;
@@ -6399,6 +6401,9 @@ pub(super) struct CHeapMemory {
     /// refined. Success then retires it and installs the copied prefix;
     /// failure simply resolves the new result to null.
     pub(super) pending_reallocations: SnapshotMap<Pointer, CPendingReallocation>,
+    /// The effective types C stores gave heap cells
+    /// (`design/effective-types.md`); see [`HeapEffectiveTypes`].
+    pub(super) effective_types: HeapEffectiveTypes,
 }
 
 impl std::hash::Hash for CHeapMemory {
@@ -6415,6 +6420,10 @@ impl std::hash::Hash for CHeapMemory {
         self.zeroed_prefix_allocations.hash(state);
         self.zeroed_pending_allocations.hash(state);
         self.pending_reallocations.hash(state);
+        if self.effective_types != HeapEffectiveTypes::default() {
+            "effective_types".hash(state);
+            self.effective_types.hash(state);
+        }
         if !self.uninitialized_objects.is_empty() {
             "uninitialized_objects".hash(state);
             self.uninitialized_objects.hash(state);
@@ -6459,6 +6468,9 @@ impl CHeapMemory {
             && self
                 .pending_reallocations
                 .eq_relative_to(&other.pending_reallocations, &base.pending_reallocations)
+            && self
+                .effective_types
+                .eq_relative_to(&other.effective_types, &base.effective_types)
     }
 
     /// Whether two heap states have the same allocation lifetime and shape.

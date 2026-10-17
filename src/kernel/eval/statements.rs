@@ -668,8 +668,9 @@ fn write_c_lvalue_paths_without_local_reference(
                 effective_type_refusal_of(
                     &state.memory,
                     &pointer,
-                    lvalue_classes.0,
-                    lvalue_classes.1,
+                    lvalue_classes.0.clone(),
+                    lvalue_classes.1.clone(),
+                    CAccessKind::Write,
                 )
             }) {
                 return Ok(vec![CStatementExecutionPath::new(
@@ -894,10 +895,14 @@ fn write_c_lvalue_paths_without_local_reference(
                     written_value.byte_width(),
                     &effective_assumptions,
                 )
-                .store_with_context(
+                .store_classed_with_context(
                     written_pointer.clone(),
                     written_value.clone(),
                     &effective_assumptions,
+                    lvalue_classes
+                        .0
+                        .as_ref()
+                        .and_then(|class| class.effective_type_of_store()),
                 );
             state.set_memory_with_checked_stores(next_memory, true);
             if !iterated_plan.is_empty() {

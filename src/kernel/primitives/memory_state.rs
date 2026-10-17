@@ -2589,6 +2589,42 @@ impl CMemory {
         self.blocks.get(&pointer.block)?.declared_class.clone()
     }
 
+    /// The effective type a C store gave the heap cell starting at
+    /// `pointer`, while the cell still holds the value that store wrote
+    /// (`design/effective-types.md`).
+    pub(in crate::kernel) fn heap_effective_class(
+        &self,
+        pointer: &Pointer,
+    ) -> Option<crate::kernel::effective_type::CAccessClass> {
+        if !matches!(pointer.block, PointerBlock::Heap(_)) {
+            return None;
+        }
+        self.heap
+            .effective_types
+            .class_at(pointer, self.cells.explicitly_stored_value(pointer))
+    }
+
+    /// Records the effective type a C store of `value` through an lvalue of
+    /// `class` gives the heap cell at `pointer`, without the store; a test
+    /// setup of a record a store would have left.
+    #[cfg(test)]
+    pub(in crate::kernel) fn with_heap_effective_type(
+        mut self,
+        pointer: &Pointer,
+        width: u32,
+        class: Option<crate::kernel::effective_type::CAccessClass>,
+        value: &CValue,
+    ) -> Self {
+        if !matches!(pointer.block, PointerBlock::Heap(_)) {
+            return self;
+        }
+        let mut record = self.heap.effective_types.clone();
+        if record.record(pointer, width, class, value) {
+            std::sync::Arc::make_mut(&mut self.heap).effective_types = record;
+        }
+        self
+    }
+
     /// A fresh block whose object, or every element of it, has
     /// `declared_class` (`design/effective-types.md`). The class is part of
     /// the declaration, so the block-declared derivation covers it.
@@ -3774,6 +3810,16 @@ impl CMemory {
         {
             return Err("interface arms disagree on pending heap reallocations".to_string());
         }
+        // An effective type survives the join only where every arm agrees;
+        // an entry whose cell the join forgets is unconfirmed anyway.
+        let effective_types = if others
+            .iter()
+            .all(|memory| memory.heap.effective_types == first.heap.effective_types)
+        {
+            first.heap.effective_types.clone()
+        } else {
+            super::HeapEffectiveTypes::default()
+        };
 
         let uninitialized_objects = union_of_arm_maps(
             &first.heap.uninitialized_objects,
@@ -4001,6 +4047,7 @@ impl CMemory {
             zeroed_prefix_allocations,
             zeroed_pending_allocations,
             pending_reallocations,
+            effective_types,
         });
         self.forget_zero_readings_under(forgotten_blocks.iter());
         record_c_memory_derivation(
@@ -5156,10 +5203,35 @@ impl CMemory {
     /// store edge: a later load of another cell of the same base crosses the
     /// edge only with distinctness evidence checked in the querying context.
     pub fn store_with_context(
+        self,
+        pointer: Pointer,
+        value: CValue,
+        context: &PureFactContext,
+    ) -> Self {
+        self.store_with_effective_type(pointer, value, context, None)
+    }
+
+    /// [`Self::store_with_context`] for a C store through an lvalue of
+    /// `class`, which also records the effective type it gives a heap cell
+    /// (`design/effective-types.md`). Like the initialized bytes, the record
+    /// changes with the cell under the one store edge, so the memory history
+    /// stays connected.
+    pub(in crate::kernel) fn store_classed_with_context(
+        self,
+        pointer: Pointer,
+        value: CValue,
+        context: &PureFactContext,
+        class: Option<crate::kernel::effective_type::CAccessClass>,
+    ) -> Self {
+        self.store_with_effective_type(pointer, value, context, Some(class))
+    }
+
+    fn store_with_effective_type(
         mut self,
         pointer: Pointer,
         value: CValue,
         context: &PureFactContext,
+        effective_type: Option<Option<crate::kernel::effective_type::CAccessClass>>,
     ) -> Self {
         crate::kernel::debug_assert_widths(
             "a stored value",
@@ -5181,6 +5253,14 @@ impl CMemory {
             std::sync::Arc::make_mut(&mut self.heap)
                 .initialized
                 .record(&pointer, value.byte_width());
+        }
+        if let Some(class) = effective_type
+            && matches!(pointer.block, PointerBlock::Heap(_))
+        {
+            let mut record = self.heap.effective_types.clone();
+            if record.record(&pointer, value.byte_width(), class, &value) {
+                std::sync::Arc::make_mut(&mut self.heap).effective_types = record;
+            }
         }
         // Skipped when empty so an ordinary store neither visits nor
         // reallocates the shared overlay map.
