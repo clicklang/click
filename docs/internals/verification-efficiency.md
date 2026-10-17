@@ -511,6 +511,14 @@ charged to visible semantic output rather than hidden ambient state:
   bounded and unbounded stores at 4, 1,024, and 1,000,000 elements. A constant
   store checks partial coverage at live-interval endpoints, also charging the
   intervals rather than walking all overwritten slots.
+  Seeding cached entry reads selects old runs through the existing slot-span
+  cover index before comparing their slots. Independent symbolic parameter
+  stems may share the external-argument block; they have no identical cache
+  keys and must not enumerate one another's elements. This selection supplies
+  no pointer separation or ownership authority. The mixed-width regression
+  varies a byte range from 32 through `INT32_MAX` beside one 64-bit word,
+  including both seeding orders and repeated projection. Per-cell model and
+  aliased byte-store controls retain overlap and invalidation behavior.
 - Every fact a context is built from is charged one unit of deterministic
   work (`PureFactContext::assume_proposition` and `assume_condition`), so a
   context rebuilt from a growing list at each step shows as quadratic work

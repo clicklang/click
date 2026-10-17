@@ -113,8 +113,7 @@ void inspect(struct node* parent) {
                             step();
                             have sibling->right == parent;
                             have model->right == parent by {
-                                rewrite(model == sibling);
-                                normalize() using { sibling->right == parent; };
+                                normalize();
                             }
                             let l = fold(leaf_at(parent->left->left), { model: Identity::At(leaf) });
                             let c = fold(cell(parent->left), { model: Pair::At(model, Identity::At(leaf)) }, { l: l });

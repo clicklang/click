@@ -1668,6 +1668,35 @@ impl CellStore {
             .map(|(_, run)| run)
     }
 
+    /// Held runs whose slot span meets `probe` on the same exact address
+    /// line. This selects cache keys, not semantic pointer aliases: an alias
+    /// through facts still uses the ordinary memory reasoning and invalidation.
+    /// Work follows the represented cover segments and candidate runs, never
+    /// the numeric element count or runs on other symbolic address stems.
+    pub(crate) fn runs_meeting_slot_span(&self, probe: &CellRun) -> Vec<&CellRun> {
+        let (line, first, last) = probe.slot_line_span();
+        let leading = self
+            .span_cover
+            .range(..=(line.clone(), first))
+            .next_back()
+            .filter(|((held_line, _), segment)| held_line == &line && segment.end > first);
+        let following = self.span_cover.range((
+            Bound::Excluded((line.clone(), first)),
+            Bound::Included((line, last)),
+        ));
+        let mut keys = BTreeSet::new();
+        for (_, segment) in leading.into_iter().chain(following) {
+            crate::instrumentation::record_deterministic_work(1);
+            for key in segment.runs.iter() {
+                crate::instrumentation::record_deterministic_work(1);
+                keys.insert(key);
+            }
+        }
+        keys.into_iter()
+            .map(|key| self.runs.get(key).expect("a covering run is held"))
+            .collect()
+    }
+
     /// The runs `candidates` admits, in key order, without visiting a run of
     /// another block.
     pub(crate) fn candidate_runs<'a>(
