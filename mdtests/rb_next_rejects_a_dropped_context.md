@@ -131,20 +131,20 @@ function rb_inorder(tree: RbTree) -> List<struct rb_node*>
     }
 }
 
-function rb_list_starts_with(xs: List<struct rb_node*>, value: struct rb_node*) -> int32 {
+function rb_list_starts_with<T>(xs: List<T>, value: T) -> int32 {
     match xs {
         List::Nil => 0,
         List::Cons(head, tail) => if value == head { 1 } else { 0 },
     }
 }
 
-function rb_list_ends_with(xs: List<struct rb_node*>, value: struct rb_node*) -> int32
+function rb_list_ends_with<T>(xs: List<T>, value: T) -> int32
     decreases xs
 {
     match xs {
         List::Nil => 0,
         List::Cons(head, tail) =>
-            if tail == List<struct rb_node*>::Nil {
+            if tail == List<T>::Nil {
                 if value == head { 1 } else { 0 }
             } else {
                 rb_list_ends_with(tail, value)
@@ -182,65 +182,65 @@ function ctx_all_right(ctx: Context) -> int32
     }
 }
 
-theorem list_starts_with_append(xs: List<struct rb_node*>, ys: List<struct rb_node*>,
-                                value: struct rb_node*) {
+theorem list_starts_with_append<T>(xs: List<T>, ys: List<T>,
+                                value: T) {
     requires rb_list_starts_with(xs, value) != 0;
     ensures rb_list_starts_with(list::append(xs, ys), value) == 1 by {
         induct(xs) as ih {
             List::Nil => {
-                have rb_list_starts_with(List<struct rb_node*>::Nil, value) == 0 by {
-                    unfold(rb_list_starts_with(List<struct rb_node*>::Nil, value));
+                have rb_list_starts_with(List<T>::Nil, value) == 0 by {
+                    unfold(rb_list_starts_with(List<T>::Nil, value));
                     normalize();
                 }
-                contradiction(rb_list_starts_with(List<struct rb_node*>::Nil, value) == 0);
+                contradiction(rb_list_starts_with(List<T>::Nil, value) == 0);
             }
             List::Cons(head, tail) => {
-                have rb_list_starts_with(List<struct rb_node*>::Cons(head, tail), value)
+                have rb_list_starts_with(List<T>::Cons(head, tail), value)
                     == if value == head { 1 } else { 0 } by {
-                    unfold(rb_list_starts_with(List<struct rb_node*>::Cons(head, tail), value));
+                    unfold(rb_list_starts_with(List<T>::Cons(head, tail), value));
                     normalize();
                 }
                 if value == head {
-                    have list::append(List<struct rb_node*>::Cons(head, tail), ys)
-                        == List<struct rb_node*>::Cons(head, list::append(tail, ys)) by {
-                        unfold(list::append(List<struct rb_node*>::Cons(head, tail), ys));
+                    have list::append(List<T>::Cons(head, tail), ys)
+                        == List<T>::Cons(head, list::append(tail, ys)) by {
+                        unfold(list::append(List<T>::Cons(head, tail), ys));
                         normalize();
                     }
                     have rb_list_starts_with(
-                            List<struct rb_node*>::Cons(head, list::append(tail, ys)),
+                            List<T>::Cons(head, list::append(tail, ys)),
                             value) == 1 by {
                         unfold(rb_list_starts_with(
-                            List<struct rb_node*>::Cons(head, list::append(tail, ys)), value));
+                            List<T>::Cons(head, list::append(tail, ys)), value));
                         normalize() using { value == head; };
                     }
-                    rewrite(list::append(List<struct rb_node*>::Cons(head, tail), ys)
-                        == List<struct rb_node*>::Cons(head, list::append(tail, ys)));
+                    rewrite(list::append(List<T>::Cons(head, tail), ys)
+                        == List<T>::Cons(head, list::append(tail, ys)));
                     assumption();
                 } else {
-                    have rb_list_starts_with(List<struct rb_node*>::Cons(head, tail),
+                    have rb_list_starts_with(List<T>::Cons(head, tail),
                                              value) == 0 by {
-                        rewrite(rb_list_starts_with(List<struct rb_node*>::Cons(head, tail), value)
+                        rewrite(rb_list_starts_with(List<T>::Cons(head, tail), value)
                             == if value == head { 1 } else { 0 });
                         normalize() using { not(value == head); };
                     }
                     contradiction(rb_list_starts_with(
-                        List<struct rb_node*>::Cons(head, tail), value) == 0);
+                        List<T>::Cons(head, tail), value) == 0);
                 }
             }
         }
     }
 }
 
-theorem list_ends_with_is_nonempty(xs: List<struct rb_node*>, value: struct rb_node*) {
+theorem list_ends_with_is_nonempty<T>(xs: List<T>, value: T) {
     requires rb_list_ends_with(xs, value) != 0;
-    ensures xs != List<struct rb_node*>::Nil by {
+    ensures xs != List<T>::Nil by {
         induct(xs) as ih {
             List::Nil => {
-                have rb_list_ends_with(List<struct rb_node*>::Nil, value) == 0 by {
-                    unfold(rb_list_ends_with(List<struct rb_node*>::Nil, value));
+                have rb_list_ends_with(List<T>::Nil, value) == 0 by {
+                    unfold(rb_list_ends_with(List<T>::Nil, value));
                     normalize();
                 }
-                contradiction(rb_list_ends_with(List<struct rb_node*>::Nil, value) == 0);
+                contradiction(rb_list_ends_with(List<T>::Nil, value) == 0);
             }
             List::Cons(head, tail) => {
                 normalize();
@@ -249,24 +249,24 @@ theorem list_ends_with_is_nonempty(xs: List<struct rb_node*>, value: struct rb_n
     }
 }
 
-theorem list_ends_with_cons_nonempty(head: struct rb_node*,
-                                     tail: List<struct rb_node*>,
-                                     value: struct rb_node*) {
-    requires tail != List<struct rb_node*>::Nil;
-    ensures rb_list_ends_with(List<struct rb_node*>::Cons(head, tail), value)
+theorem list_ends_with_cons_nonempty<T>(head: T,
+                                     tail: List<T>,
+                                     value: T) {
+    requires tail != List<T>::Nil;
+    ensures rb_list_ends_with(List<T>::Cons(head, tail), value)
         == rb_list_ends_with(tail, value) by {
-        unfold(rb_list_ends_with(List<struct rb_node*>::Cons(head, tail), value));
-        normalize() using { tail != List<struct rb_node*>::Nil; };
+        unfold(rb_list_ends_with(List<T>::Cons(head, tail), value));
+        normalize() using { tail != List<T>::Nil; };
     }
 }
 
-theorem list_ends_with_append(xs: List<struct rb_node*>, ys: List<struct rb_node*>,
-                              value: struct rb_node*) {
+theorem list_ends_with_append<T>(xs: List<T>, ys: List<T>,
+                              value: T) {
     requires rb_list_ends_with(ys, value) == 1;
     ensures rb_list_ends_with(list::append(xs, ys), value) == 1 by {
         induct(xs) as ih {
             List::Nil => {
-                unfold(list::append(List<struct rb_node*>::Nil, ys));
+                unfold(list::append(List<T>::Nil, ys));
                 assumption();
             }
             List::Cons(head, tail) => {
@@ -278,10 +278,10 @@ theorem list_ends_with_append(xs: List<struct rb_node*>, ys: List<struct rb_node
                 apply(list_ends_with_is_nonempty(list::append(tail, ys), value));
                 apply(list_ends_with_cons_nonempty(head, list::append(tail, ys), value));
                 apply(list::append_cons(head, tail, ys));
-                rewrite(list::append(List<struct rb_node*>::Cons(head, tail), ys)
-                    == List<struct rb_node*>::Cons(head, list::append(tail, ys)));
+                rewrite(list::append(List<T>::Cons(head, tail), ys)
+                    == List<T>::Cons(head, list::append(tail, ys)));
                 rewrite(rb_list_ends_with(
-                        List<struct rb_node*>::Cons(head, list::append(tail, ys)), value)
+                        List<T>::Cons(head, list::append(tail, ys)), value)
                     == rb_list_ends_with(list::append(tail, ys), value));
                 assumption();
             }
@@ -649,8 +649,8 @@ function ctx_descends_from(ctx: Context, node: struct rb_node*) -> int32
     }
 }
 
-function rb_list_pair_at(head: struct rb_node*, tail: List<struct rb_node*>,
-                         first: struct rb_node*, second: struct rb_node*) -> int32 {
+function rb_list_pair_at<T>(head: T, tail: List<T>,
+                         first: T, second: T) -> int32 {
     if rb_list_starts_with(tail, second) == 1 {
         if first == head { 1 } else { 0 }
     } else {
@@ -658,8 +658,8 @@ function rb_list_pair_at(head: struct rb_node*, tail: List<struct rb_node*>,
     }
 }
 
-function rb_list_adjacent(xs: List<struct rb_node*>, first: struct rb_node*,
-                          second: struct rb_node*) -> int32
+function rb_list_adjacent<T>(xs: List<T>, first: T,
+                          second: T) -> int32
     decreases xs
 {
     match xs {
@@ -673,11 +673,11 @@ function rb_list_adjacent(xs: List<struct rb_node*>, first: struct rb_node*,
     }
 }
 
-theorem list_adjacent_here(head: struct rb_node*, tail: List<struct rb_node*>,
-                           first: struct rb_node*, second: struct rb_node*) {
+theorem list_adjacent_here<T>(head: T, tail: List<T>,
+                           first: T, second: T) {
     requires first == head;
     requires rb_list_starts_with(tail, second) == 1;
-    ensures rb_list_adjacent(List<struct rb_node*>::Cons(head, tail), first, second) == 1 by {
+    ensures rb_list_adjacent(List<T>::Cons(head, tail), first, second) == 1 by {
         have rb_list_pair_at(head, tail, first, second) == 1 by {
             unfold(rb_list_pair_at(head, tail, first, second));
             normalize() using {
@@ -685,16 +685,16 @@ theorem list_adjacent_here(head: struct rb_node*, tail: List<struct rb_node*>,
                 first == head;
             };
         }
-        unfold(rb_list_adjacent(List<struct rb_node*>::Cons(head, tail), first, second));
+        unfold(rb_list_adjacent(List<T>::Cons(head, tail), first, second));
         normalize() using { rb_list_pair_at(head, tail, first, second) == 1; };
     }
 }
 
-theorem list_adjacent_cons(head: struct rb_node*, tail: List<struct rb_node*>,
-                           first: struct rb_node*, second: struct rb_node*) {
+theorem list_adjacent_cons<T>(head: T, tail: List<T>,
+                           first: T, second: T) {
     requires rb_list_adjacent(tail, first, second) == 1;
-    ensures rb_list_adjacent(List<struct rb_node*>::Cons(head, tail), first, second) == 1 by {
-        unfold(rb_list_adjacent(List<struct rb_node*>::Cons(head, tail), first, second));
+    ensures rb_list_adjacent(List<T>::Cons(head, tail), first, second) == 1 by {
+        unfold(rb_list_adjacent(List<T>::Cons(head, tail), first, second));
         if rb_list_pair_at(head, tail, first, second) == 1 {
             normalize() using { rb_list_pair_at(head, tail, first, second) == 1; };
         } else {
@@ -706,29 +706,29 @@ theorem list_adjacent_cons(head: struct rb_node*, tail: List<struct rb_node*>,
     }
 }
 
-theorem list_adjacent_append_left(xs: List<struct rb_node*>, ys: List<struct rb_node*>,
-                                  first: struct rb_node*, second: struct rb_node*) {
+theorem list_adjacent_append_left<T>(xs: List<T>, ys: List<T>,
+                                  first: T, second: T) {
     requires rb_list_adjacent(ys, first, second) == 1;
     ensures rb_list_adjacent(list::append(xs, ys), first, second) == 1 by {
         induct(xs) as ih {
             List::Nil => {
-                unfold(list::append(List<struct rb_node*>::Nil, ys));
+                unfold(list::append(List<T>::Nil, ys));
                 assumption();
             }
             List::Cons(head, tail) => {
                 apply(ih(tail, ys, first, second));
                 apply(list_adjacent_cons(head, list::append(tail, ys), first, second));
                 apply(list::append_cons(head, tail, ys));
-                rewrite(list::append(List<struct rb_node*>::Cons(head, tail), ys)
-                    == List<struct rb_node*>::Cons(head, list::append(tail, ys)));
+                rewrite(list::append(List<T>::Cons(head, tail), ys)
+                    == List<T>::Cons(head, list::append(tail, ys)));
                 assumption();
             }
         }
     }
 }
 
-theorem list_pair_at_parts(head: struct rb_node*, tail: List<struct rb_node*>,
-                           first: struct rb_node*, second: struct rb_node*) {
+theorem list_pair_at_parts<T>(head: T, tail: List<T>,
+                           first: T, second: T) {
     requires rb_list_pair_at(head, tail, first, second) == 1;
     ensures rb_list_starts_with(tail, second) == 1 by {
         if rb_list_starts_with(tail, second) == 1 {
@@ -762,21 +762,21 @@ theorem list_pair_at_parts(head: struct rb_node*, tail: List<struct rb_node*>,
     }
 }
 
-theorem list_adjacent_append_right(xs: List<struct rb_node*>, ys: List<struct rb_node*>,
-                                   first: struct rb_node*, second: struct rb_node*) {
+theorem list_adjacent_append_right<T>(xs: List<T>, ys: List<T>,
+                                   first: T, second: T) {
     requires rb_list_adjacent(xs, first, second) == 1;
     ensures rb_list_adjacent(list::append(xs, ys), first, second) == 1 by {
         induct(xs) as ih {
             List::Nil => {
-                have rb_list_adjacent(List<struct rb_node*>::Nil, first, second) == 0 by {
-                    unfold(rb_list_adjacent(List<struct rb_node*>::Nil, first, second));
+                have rb_list_adjacent(List<T>::Nil, first, second) == 0 by {
+                    unfold(rb_list_adjacent(List<T>::Nil, first, second));
                     normalize();
                 }
-                have rb_list_adjacent(List<struct rb_node*>::Nil, first, second) != 0 by {
-                    rewrite(rb_list_adjacent(List<struct rb_node*>::Nil, first, second) == 1);
+                have rb_list_adjacent(List<T>::Nil, first, second) != 0 by {
+                    rewrite(rb_list_adjacent(List<T>::Nil, first, second) == 1);
                     normalize();
                 }
-                contradiction(rb_list_adjacent(List<struct rb_node*>::Nil, first, second) == 0);
+                contradiction(rb_list_adjacent(List<T>::Nil, first, second) == 0);
             }
             List::Cons(head, tail) => {
                 apply(list::append_cons(head, tail, ys));
@@ -788,28 +788,28 @@ theorem list_adjacent_append_right(xs: List<struct rb_node*>, ys: List<struct rb
                     }
                     apply(list_starts_with_append(tail, ys, second));
                     apply(list_adjacent_here(head, list::append(tail, ys), first, second));
-                    rewrite(list::append(List<struct rb_node*>::Cons(head, tail), ys)
-                        == List<struct rb_node*>::Cons(head, list::append(tail, ys)));
+                    rewrite(list::append(List<T>::Cons(head, tail), ys)
+                        == List<T>::Cons(head, list::append(tail, ys)));
                     assumption();
                 } else {
                     have rb_list_adjacent(tail, first, second) == 1 by {
-                        have rb_list_adjacent(List<struct rb_node*>::Cons(head, tail), first, second)
+                        have rb_list_adjacent(List<T>::Cons(head, tail), first, second)
                             == rb_list_adjacent(tail, first, second) by {
-                            unfold(rb_list_adjacent(List<struct rb_node*>::Cons(head, tail),
+                            unfold(rb_list_adjacent(List<T>::Cons(head, tail),
                                                     first, second));
                             normalize() using {
                                 not(rb_list_pair_at(head, tail, first, second) == 1);
                             };
                         }
                         rewrite(rb_list_adjacent(tail, first, second)
-                            == rb_list_adjacent(List<struct rb_node*>::Cons(head, tail),
+                            == rb_list_adjacent(List<T>::Cons(head, tail),
                                                 first, second));
                         assumption();
                     }
                     apply(ih(tail, ys, first, second));
                     apply(list_adjacent_cons(head, list::append(tail, ys), first, second));
-                    rewrite(list::append(List<struct rb_node*>::Cons(head, tail), ys)
-                        == List<struct rb_node*>::Cons(head, list::append(tail, ys)));
+                    rewrite(list::append(List<T>::Cons(head, tail), ys)
+                        == List<T>::Cons(head, list::append(tail, ys)));
                     assumption();
                 }
             }
@@ -817,90 +817,90 @@ theorem list_adjacent_append_right(xs: List<struct rb_node*>, ys: List<struct rb
     }
 }
 
-theorem list_ends_then_adjacent(xs: List<struct rb_node*>, head: struct rb_node*,
-                                ys: List<struct rb_node*>,
-                                first: struct rb_node*, second: struct rb_node*) {
+theorem list_ends_then_adjacent<T>(xs: List<T>, head: T,
+                                ys: List<T>,
+                                first: T, second: T) {
     requires rb_list_ends_with(xs, first) == 1;
     requires second == head;
     ensures rb_list_adjacent(
-        list::append(xs, List<struct rb_node*>::Cons(head, ys)), first, second) == 1 by {
+        list::append(xs, List<T>::Cons(head, ys)), first, second) == 1 by {
         induct(xs) as ih {
             List::Nil => {
-                have rb_list_ends_with(List<struct rb_node*>::Nil, first) == 0 by {
-                    unfold(rb_list_ends_with(List<struct rb_node*>::Nil, first));
+                have rb_list_ends_with(List<T>::Nil, first) == 0 by {
+                    unfold(rb_list_ends_with(List<T>::Nil, first));
                     normalize();
                 }
-                have rb_list_ends_with(List<struct rb_node*>::Nil, first) != 0 by {
-                    rewrite(rb_list_ends_with(List<struct rb_node*>::Nil, first) == 1);
+                have rb_list_ends_with(List<T>::Nil, first) != 0 by {
+                    rewrite(rb_list_ends_with(List<T>::Nil, first) == 1);
                     normalize();
                 }
-                contradiction(rb_list_ends_with(List<struct rb_node*>::Nil, first) == 0);
+                contradiction(rb_list_ends_with(List<T>::Nil, first) == 0);
             }
             List::Cons(front, tail) => {
-                apply(list::append_cons(front, tail, List<struct rb_node*>::Cons(head, ys)));
-                if tail == List<struct rb_node*>::Nil {
-                    have rb_list_ends_with(List<struct rb_node*>::Cons(front, tail), first)
+                apply(list::append_cons(front, tail, List<T>::Cons(head, ys)));
+                if tail == List<T>::Nil {
+                    have rb_list_ends_with(List<T>::Cons(front, tail), first)
                         == if first == front { 1 } else { 0 } by {
-                        unfold(rb_list_ends_with(List<struct rb_node*>::Cons(front, tail), first));
-                        normalize() using { tail == List<struct rb_node*>::Nil; };
+                        unfold(rb_list_ends_with(List<T>::Cons(front, tail), first));
+                        normalize() using { tail == List<T>::Nil; };
                     }
                     if first == front {
                         have rb_list_starts_with(
-                                List<struct rb_node*>::Cons(head, ys), second) == 1 by {
+                                List<T>::Cons(head, ys), second) == 1 by {
                             unfold(rb_list_starts_with(
-                                List<struct rb_node*>::Cons(head, ys), second));
+                                List<T>::Cons(head, ys), second));
                             normalize() using { second == head; };
                         }
                         apply(list_adjacent_here(front,
-                            List<struct rb_node*>::Cons(head, ys), first, second));
-                        have list::append(List<struct rb_node*>::Nil,
-                                List<struct rb_node*>::Cons(head, ys))
-                            == List<struct rb_node*>::Cons(head, ys) by {
-                            unfold(list::append(List<struct rb_node*>::Nil,
-                                List<struct rb_node*>::Cons(head, ys)));
+                            List<T>::Cons(head, ys), first, second));
+                        have list::append(List<T>::Nil,
+                                List<T>::Cons(head, ys))
+                            == List<T>::Cons(head, ys) by {
+                            unfold(list::append(List<T>::Nil,
+                                List<T>::Cons(head, ys)));
                             normalize();
                         }
-                        rewrite(list::append(List<struct rb_node*>::Cons(front, tail),
-                                List<struct rb_node*>::Cons(head, ys))
-                            == List<struct rb_node*>::Cons(front, list::append(tail,
-                                List<struct rb_node*>::Cons(head, ys))));
-                        rewrite(tail == List<struct rb_node*>::Nil);
-                        rewrite(list::append(List<struct rb_node*>::Nil,
-                                List<struct rb_node*>::Cons(head, ys))
-                            == List<struct rb_node*>::Cons(head, ys));
+                        rewrite(list::append(List<T>::Cons(front, tail),
+                                List<T>::Cons(head, ys))
+                            == List<T>::Cons(front, list::append(tail,
+                                List<T>::Cons(head, ys))));
+                        rewrite(tail == List<T>::Nil);
+                        rewrite(list::append(List<T>::Nil,
+                                List<T>::Cons(head, ys))
+                            == List<T>::Cons(head, ys));
                         assumption();
                     } else {
-                        have rb_list_ends_with(List<struct rb_node*>::Cons(front, tail), first)
+                        have rb_list_ends_with(List<T>::Cons(front, tail), first)
                             == 0 by {
                             rewrite(rb_list_ends_with(
-                                    List<struct rb_node*>::Cons(front, tail), first)
+                                    List<T>::Cons(front, tail), first)
                                 == if first == front { 1 } else { 0 });
                             normalize() using { not(first == front); };
                         }
-                        have rb_list_ends_with(List<struct rb_node*>::Cons(front, tail), first)
+                        have rb_list_ends_with(List<T>::Cons(front, tail), first)
                             != 0 by {
                             rewrite(rb_list_ends_with(
-                                List<struct rb_node*>::Cons(front, tail), first) == 1);
+                                List<T>::Cons(front, tail), first) == 1);
                             normalize();
                         }
                         contradiction(rb_list_ends_with(
-                            List<struct rb_node*>::Cons(front, tail), first) == 0);
+                            List<T>::Cons(front, tail), first) == 0);
                     }
                 } else {
                     apply(list_ends_with_cons_nonempty(front, tail, first));
                     have rb_list_ends_with(tail, first) == 1 by {
                         rewrite(rb_list_ends_with(tail, first)
-                            == rb_list_ends_with(List<struct rb_node*>::Cons(front, tail), first));
+                            == rb_list_ends_with(List<T>::Cons(front, tail), first));
                         assumption();
                     }
                     apply(ih(tail, head, ys, first, second));
                     apply(list_adjacent_cons(front,
-                        list::append(tail, List<struct rb_node*>::Cons(head, ys)),
+                        list::append(tail, List<T>::Cons(head, ys)),
                         first, second));
-                    rewrite(list::append(List<struct rb_node*>::Cons(front, tail),
-                            List<struct rb_node*>::Cons(head, ys))
-                        == List<struct rb_node*>::Cons(front, list::append(tail,
-                            List<struct rb_node*>::Cons(head, ys))));
+                    rewrite(list::append(List<T>::Cons(front, tail),
+                            List<T>::Cons(head, ys))
+                        == List<T>::Cons(front, list::append(tail,
+                            List<T>::Cons(head, ys))));
                     assumption();
                 }
             }
