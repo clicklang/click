@@ -1360,12 +1360,14 @@ fn verifies_fill3_c0_source_with_sidecar_specification() {
                     let parsed = syntax::parse_function(FILL3_C)
                         .expect("fill3 should parse")
                         .to_kernel_function();
-                    let CStatement::Seq(prefix, suffix) = parsed.body().clone() else {
+                    let CStatement::Seq(statements) = parsed.body().clone() else {
                         panic!("fill3 body should have a prefix and suffix");
                     };
-                    let CStatement::Seq(loop_statement, result) = suffix.as_ref().clone() else {
+                    let (prefix, suffix) = (statements.first().clone(), statements.rest());
+                    let CStatement::Seq(statements) = suffix.as_ref().clone() else {
                         panic!("fill3 suffix should contain the loop and return");
                     };
+                    let (loop_statement, result) = (statements.first().clone(), statements.rest());
                     let CStatement::While {
                         condition,
                         invariant,

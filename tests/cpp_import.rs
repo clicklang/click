@@ -2634,9 +2634,10 @@ fn scalar_int32_profile_emits_function_scope_cleanup_edges_for_escaping_throws()
                 collect_unwind_edges(try_body, edges);
                 collect_unwind_edges(handler, edges);
             }
-            CStatement::Seq(first, second) => {
-                collect_unwind_edges(first, edges);
-                collect_unwind_edges(second, edges);
+            CStatement::Seq(statements) => {
+                for statement in statements.iter() {
+                    collect_unwind_edges(statement, edges);
+                }
             }
             CStatement::If {
                 then_branch,
@@ -2665,9 +2666,9 @@ fn scalar_int32_profile_emits_function_scope_cleanup_edges_for_escaping_throws()
     );
     for (_, handler) in &edges {
         assert!(
-            matches!(handler, CStatement::Seq(cleanup, rethrow)
-                if contains_call(cleanup, "Restore::~Restore")
-                    && matches!(rethrow.as_ref(), CStatement::Throw(_))),
+            matches!(handler, CStatement::Seq(sequence)
+                if { let (cleanup, rethrow) = (sequence.first(), &sequence.rest()); contains_call(cleanup, "Restore::~Restore")
+                    && matches!(rethrow.as_ref(), CStatement::Throw(_)) }),
             "each escaping edge must run the live destructor before rethrowing"
         );
     }
@@ -2677,9 +2678,9 @@ fn scalar_int32_profile_emits_function_scope_cleanup_edges_for_escaping_throws()
             .any(|(try_body, _)| matches!(try_body, CStatement::Throw(_)))
     );
     assert!(edges.iter().any(|(try_body, _)| {
-        matches!(try_body, CStatement::Seq(declare, call)
-            if matches!(declare.as_ref(), CStatement::Declare { name, .. } if name == "ignored")
-                && matches!(call.as_ref(), CStatement::CallAssign { function_name, .. } if function_name == "helper"))
+        matches!(try_body, CStatement::Seq(sequence)
+            if { let (declare, call) = (sequence.first(), &sequence.rest()); matches!(declare.as_ref(), CStatement::Declare { name, .. } if name == "ignored")
+                && matches!(call.as_ref(), CStatement::CallAssign { function_name, .. } if function_name == "helper") })
     }));
 }
 
@@ -3684,7 +3685,7 @@ fn const_reference_preserves_qualification_and_may_alias_a_mutable_reference() {
 fn contains_if(statement: &CStatement) -> bool {
     match statement {
         CStatement::If { .. } => true,
-        CStatement::Seq(first, second) => contains_if(first) || contains_if(second),
+        CStatement::Seq(statements) => statements.iter().any(|statement| contains_if(statement)),
         _ => false,
     }
 }
@@ -3695,9 +3696,9 @@ fn contains_call(statement: &CStatement, expected: &str) -> bool {
             function_name == expected
                 || click::surface::source_display_name(function_name).as_deref() == Some(expected)
         }
-        CStatement::Seq(first, second) => {
-            contains_call(first, expected) || contains_call(second, expected)
-        }
+        CStatement::Seq(statements) => statements
+            .iter()
+            .any(|statement| contains_call(statement, expected)),
         CStatement::If {
             then_branch,
             else_branch,
@@ -3715,9 +3716,10 @@ fn call_order(statement: &CStatement) -> Vec<String> {
                 click::surface::source_display_name(function_name)
                     .unwrap_or_else(|| function_name.clone()),
             ),
-            CStatement::Seq(first, second) => {
-                visit(first, calls);
-                visit(second, calls);
+            CStatement::Seq(statements) => {
+                for statement in statements.iter() {
+                    visit(statement, calls);
+                }
             }
             CStatement::If {
                 then_branch,
@@ -3751,9 +3753,10 @@ fn destructor_object_order<'a>(statement: &'a CStatement, destructor: &str) -> V
                     objects.push(name);
                 }
             }
-            CStatement::Seq(first, second) => {
-                visit(first, destructor, objects);
-                visit(second, destructor, objects);
+            CStatement::Seq(statements) => {
+                for statement in statements.iter() {
+                    visit(statement, destructor, objects);
+                }
             }
             CStatement::If {
                 then_branch,
@@ -3778,10 +3781,9 @@ fn contains_raw_aggregate_destination(statement: &CStatement, expected: &str) ->
             kind: click::kernel::CAggregateDeclarationKind::ConstructionDestination,
             ..
         } => name == expected,
-        CStatement::Seq(first, second) => {
-            contains_raw_aggregate_destination(first, expected)
-                || contains_raw_aggregate_destination(second, expected)
-        }
+        CStatement::Seq(statements) => statements
+            .iter()
+            .any(|statement| contains_raw_aggregate_destination(statement, expected)),
         CStatement::If {
             then_branch,
             else_branch,
@@ -3825,9 +3827,10 @@ fn contains_scalar_local_pipeline(
                 ..
             } if name == value_local => found[2] = true,
             CStatement::Assign { name, .. } if name == value_local => found[3] = true,
-            CStatement::Seq(first, second) => {
-                visit(first, call_local, value_local, callee, found);
-                visit(second, call_local, value_local, callee, found);
+            CStatement::Seq(statements) => {
+                for statement in statements.iter() {
+                    visit(statement, call_local, value_local, callee, found);
+                }
             }
             CStatement::If {
                 then_branch,
@@ -3874,9 +3877,10 @@ fn contains_local_aggregate_pipeline(statement: &CStatement, local: &str) -> [bo
                     }
                 }
             }
-            CStatement::Seq(first, second) => {
-                visit(first, local, found);
-                visit(second, local, found);
+            CStatement::Seq(statements) => {
+                for statement in statements.iter() {
+                    visit(statement, local, found);
+                }
             }
             CStatement::If {
                 then_branch,
@@ -4672,16 +4676,16 @@ fn terminal_return_captures_value_before_checked_destructor_cleanup() {
     );
     assert!(matches!(
         lowered.kernel_function().body(),
-        CStatement::Seq(_, returned)
-            if matches!(
+        CStatement::Seq(sequence)
+            if { let (_, returned) = (sequence.first(), &sequence.rest()); matches!(
                 returned.as_ref(),
-                CStatement::Seq(_, returned)
-                    if matches!(
+                CStatement::Seq(sequence)
+                    if { let (_, returned) = (sequence.first(), &sequence.rest()); matches!(
                         returned.as_ref(),
                         CStatement::Return(CExpression::Variable(name))
                             if name.starts_with("__click_cpp_return_value")
-                    )
-            )
+                    ) }
+            ) }
     ));
 
     let click_source = fs::read_to_string(&sidecar).unwrap();
@@ -6082,8 +6086,8 @@ fn locked_cpp_artifact_lowers_directly_and_executes_reference_semantics() {
     assert_eq!(function.parameters()[0].c_type(), CType::Int32Pointer);
     assert!(matches!(
         function.body(),
-        CStatement::Seq(store, returned)
-            if matches!(
+        CStatement::Seq(sequence)
+            if { let (store, returned) = (sequence.first(), &sequence.rest()); matches!(
                 store.as_ref(),
                 CStatement::TypedStore {
                     pointer: CExpression::Variable(pointer),
@@ -6112,7 +6116,7 @@ fn locked_cpp_artifact_lowers_directly_and_executes_reference_semantics() {
                     volatile: false,
                     ..
                 }) if matches!(pointer.as_ref(), CExpression::Variable(name) if name == "&value")
-            )
+            ) }
     ));
 
     let pointer = Pointer {
@@ -9028,11 +9032,11 @@ fn direct_return_calls_keep_guarded_try_returns_unsupported_and_emit_uncaught_cl
                 cleanup_unwind: true,
                 ..
             } => {
-                matches!(handler.as_ref(), CStatement::Seq(cleanup, rethrow) if contains_call(cleanup, "Restore::~Restore") && matches!(rethrow.as_ref(), CStatement::Throw(_)))
+                matches!(handler.as_ref(), CStatement::Seq(sequence) if { let (cleanup, rethrow) = (sequence.first(), &sequence.rest()); contains_call(cleanup, "Restore::~Restore") && matches!(rethrow.as_ref(), CStatement::Throw(_)) })
             }
-            CStatement::Seq(first, second) => {
-                has_unwind_cleanup(first) || has_unwind_cleanup(second)
-            }
+            CStatement::Seq(statements) => statements
+                .iter()
+                .any(|statement| has_unwind_cleanup(statement)),
             _ => false,
         }
     }
@@ -14458,7 +14462,9 @@ int choose(int* slot, bool fail) { Guard guard(slot); if (predicate(fail)) { *sl
     let lowered = lower_import(&load_import(&project.config()).unwrap()).unwrap();
     fn guarded_condition(statement: &CStatement) -> bool {
         match statement {
-            CStatement::Seq(first, second) => guarded_condition(first) || guarded_condition(second),
+            CStatement::Seq(statements) => statements
+                .iter()
+                .any(|statement| guarded_condition(statement)),
             CStatement::TryCatchInt32 {
                 try_body,
                 handler,
@@ -14466,7 +14472,7 @@ int choose(int* slot, bool fail) { Guard guard(slot); if (predicate(fail)) { *sl
                 ..
             } => {
                 contains_call(try_body, "predicate")
-                    && matches!(handler.as_ref(), CStatement::Seq(cleanup, rethrow) if contains_call(cleanup, "Guard::~Guard") && matches!(rethrow.as_ref(), CStatement::Throw(_)))
+                    && matches!(handler.as_ref(), CStatement::Seq(sequence) if { let (cleanup, rethrow) = (sequence.first(), &sequence.rest()); contains_call(cleanup, "Guard::~Guard") && matches!(rethrow.as_ref(), CStatement::Throw(_)) })
             }
             _ => false,
         }
@@ -15155,7 +15161,9 @@ fn converted_call_initializers_emit_active_guard_cleanup_before_rethrow() {
     let lowered = lower_import(&load_import(&project.config()).unwrap()).unwrap();
     fn has_cleanup(statement: &CStatement) -> bool {
         match statement {
-            CStatement::Seq(first, second) => has_cleanup(first) || has_cleanup(second),
+            CStatement::Seq(statements) => {
+                statements.iter().any(|statement| has_cleanup(statement))
+            }
             CStatement::TryCatchInt32 {
                 try_body,
                 handler,
@@ -15163,8 +15171,8 @@ fn converted_call_initializers_emit_active_guard_cleanup_before_rethrow() {
                 ..
             } => {
                 contains_call(try_body, "helper")
-                    && matches!(handler.as_ref(), CStatement::Seq(cleanup, rethrow)
-                    if contains_call(cleanup, "Guard::~Guard") && matches!(rethrow.as_ref(), CStatement::Throw(_)))
+                    && matches!(handler.as_ref(), CStatement::Seq(sequence)
+                    if { let (cleanup, rethrow) = (sequence.first(), &sequence.rest()); contains_call(cleanup, "Guard::~Guard") && matches!(rethrow.as_ref(), CStatement::Throw(_)) })
             }
             _ => false,
         }
@@ -15604,7 +15612,9 @@ fn converted_return_calls_emit_active_object_cleanup_on_exception() {
     let lowered = lower_import(&load_import(&project.config()).unwrap()).unwrap();
     fn has_cleanup(statement: &CStatement) -> bool {
         match statement {
-            CStatement::Seq(first, second) => has_cleanup(first) || has_cleanup(second),
+            CStatement::Seq(statements) => {
+                statements.iter().any(|statement| has_cleanup(statement))
+            }
             CStatement::TryCatchInt32 {
                 try_body,
                 handler,
@@ -15612,8 +15622,8 @@ fn converted_return_calls_emit_active_object_cleanup_on_exception() {
                 ..
             } => {
                 contains_call(try_body, "helper")
-                    && matches!(handler.as_ref(), CStatement::Seq(cleanup, rethrow)
-                    if contains_call(cleanup, "Guard::~Guard") && matches!(rethrow.as_ref(), CStatement::Throw(_)))
+                    && matches!(handler.as_ref(), CStatement::Seq(sequence)
+                    if { let (cleanup, rethrow) = (sequence.first(), &sequence.rest()); contains_call(cleanup, "Guard::~Guard") && matches!(rethrow.as_ref(), CStatement::Throw(_)) })
             }
             _ => false,
         }

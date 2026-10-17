@@ -173,7 +173,8 @@ fn a_layered_dag_costs_linear_termination_work() {
 /// address escape read the function once, not once per loop: the loop
 /// lookup and the address-taken walk were each a whole-function walk per
 /// loop, so the check was quadratic in the loops of one function
-/// (`bugs/sequential-loop-clause-grows-with-earlier-loops.md`).
+/// (see "Sequential loop clauses" in
+/// `docs/internals/verification-efficiency.md`).
 #[test]
 fn many_ranked_loops_in_one_function_cost_linear_termination_work() {
     let ranked_loop = || {
@@ -206,7 +207,7 @@ fn many_ranked_loops_in_one_function_cost_linear_termination_work() {
             [only] => only.clone(),
             _ => {
                 let (left, right) = statements.split_at(statements.len() / 2);
-                CStatement::Seq(Arc::new(sequence(left)), Arc::new(sequence(right)))
+                CStatement::seq(Arc::new(sequence(left)), Arc::new(sequence(right)))
             }
         }
     }

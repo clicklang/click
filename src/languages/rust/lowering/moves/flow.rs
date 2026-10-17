@@ -624,7 +624,9 @@ mod tests {
             let (mut assignments, mut loops) = (0, 0);
             while let Some(s) = pending.pop() {
                 match s {
-                    CStatement::Seq(a, b) => pending.extend([a.as_ref(), b.as_ref()]),
+                    CStatement::Seq(statements) => {
+                        pending.extend(statements.iter().map(|statement| statement.as_ref()))
+                    }
                     CStatement::If {
                         then_branch,
                         else_branch,
