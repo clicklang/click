@@ -176,5 +176,5 @@ struct rb_node* rb_next(struct rb_node* node) {
 ```
 
 ```expect
-fail: `execute()` could not verify the C condition: missing resource fact
+fail: pointer arithmetic left the pointed-to object
 ```

@@ -13,6 +13,31 @@ use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
 #[cfg(test)]
+mod constant_truth_tests {
+    use super::*;
+
+    #[test]
+    fn equivalent_false_polarities_are_available_only_in_their_scope() {
+        let positive_false = Proposition::ConditionIs(ConditionTerm::Constant(false), true);
+        let negative_true = Proposition::ConditionIs(ConditionTerm::Constant(true), false);
+        let root = ProofFacts::from_ordered(&[]);
+        let true_branch = root.with_fact(Proposition::ConditionIs(
+            ConditionTerm::Constant(true),
+            true,
+        ));
+        for (held, requested) in [
+            (&positive_false, &negative_true),
+            (&negative_true, &positive_false),
+        ] {
+            let branch = root.with_fact(held.clone());
+            assert!(branch.pure_assumption_available(requested));
+            assert!(!root.pure_assumption_available(requested));
+            assert!(!true_branch.pure_assumption_available(requested));
+        }
+    }
+}
+
+#[cfg(test)]
 mod disjunction_projection_tests {
     use super::*;
 
@@ -834,7 +859,13 @@ impl ProofFacts {
 
     /// Semantic availability for checking a requested premise or goal.
     pub(crate) fn available(&self, fact: &Proposition) -> bool {
-        self.contains(fact) || self.assumptions.contains_known(fact)
+        self.contains(fact)
+            || self.assumptions.contains_known(fact)
+            // Introduction and normalization can retain opposite constant
+            // polarities for the same truth claim. This is one equivalent
+            // fact, not a search for an arbitrary contradiction.
+            || matches!(fact, Proposition::ConditionIs(ConditionTerm::Constant(value), truth)
+                if self.contains(&Proposition::ConditionIs(ConditionTerm::Constant(!value), !truth)))
     }
 
     pub(crate) fn contains_top_level(&self, fact: &Proposition) -> bool {

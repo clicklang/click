@@ -20,5 +20,5 @@ int32 read_packed(unsigned long* slot, struct node* p) {
 ```
 
 ```expect
-fail: missing resource
+fail: access outside the subobject the pointer designates
 ```

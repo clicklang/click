@@ -573,7 +573,7 @@ pub(in crate::kernel) fn evaluate_composite_resource_loadable_propositions(
         if range.element_width() != segment.element_width() {
             return None;
         }
-        propositions.extend(crate::kernel::memory_range_extent_guard_spellings(range));
+        propositions.extend(crate::kernel::admitted_memory_range_extent_facts(range));
         propositions.push(range.loadable_fact(memory));
     }
     Some(propositions)

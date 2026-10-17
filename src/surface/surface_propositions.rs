@@ -1144,12 +1144,6 @@ impl SurfacePropositionMap {
             })
     }
 
-    /// The recorded universally quantified kernel facts, in proposition
-    /// order.
-    pub(in crate::surface) fn universal_kernel_facts(&self) -> impl Iterator<Item = &Proposition> {
-        in_proposition_order(self.storage.universal_kernels.iter().map(|(_, node)| node))
-    }
-
     pub fn available_kernel(
         &self,
         surface: &ClickProposition,

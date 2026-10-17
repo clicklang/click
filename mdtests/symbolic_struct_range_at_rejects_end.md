@@ -13,5 +13,5 @@ int64 at(struct pt* p, int32 n, int32 i) {
 } by { execute(); simp(); }
 ```
 ```expect
-fail: missing resource fact `views p[i].y`
+fail: pointer arithmetic left the pointed-to object
 ```

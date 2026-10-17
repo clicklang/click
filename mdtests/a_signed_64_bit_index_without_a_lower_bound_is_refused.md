@@ -22,5 +22,5 @@ int64 get(const int64* cells, int64 i) {
 ```
 
 ```expect
-fail: missing resource fact
+fail: pointer arithmetic left the pointed-to object
 ```

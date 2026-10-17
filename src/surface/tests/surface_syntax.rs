@@ -4760,11 +4760,11 @@ fn a_missing_memory_fact_is_reported_as_a_place() {
         int32 read_q(int32* q) { return q[1]; }";
     for (contract, expected) in [
         (
-            "int32 read_n(struct pad* a) { owns a->data; }",
+            "int32 read_n(struct pad* a) { owns allocation(a, sizeof(struct pad)); owns a->data; }",
             "missing resource fact `views a->n`",
         ),
         (
-            "int32 read_data(struct pad* a) { views a->n; }",
+            "int32 read_data(struct pad* a) { owns allocation(a, sizeof(struct pad)); views a->n; }",
             "missing resource fact `views a->data`",
         ),
         (
@@ -4776,7 +4776,7 @@ fn a_missing_memory_fact_is_reported_as_a_place() {
             "missing resource fact `owns p->other`",
         ),
         (
-            "int32 read_inner(struct outer* o) { views o->head; }",
+            "int32 read_inner(struct outer* o) { owns allocation(o, sizeof(struct outer)); views o->head; }",
             "missing resource fact `views o->inner.other`",
         ),
         (
@@ -4894,7 +4894,12 @@ fn a_struct_pointer_range_counts_structs() {
     verify_c0_sources(&contract("views p[0..2];"), &[("cells.c", c_source)]).unwrap();
     let error = verify_c0_sources(&contract("views p[0..1];"), &[("cells.c", c_source)])
         .expect_err("one struct does not cover the second");
-    assert!(error.message.contains("missing resource fact"), "{error:?}");
+    assert!(
+        error
+            .message
+            .contains("pointer arithmetic left the pointed-to object"),
+        "{error:?}"
+    );
 
     let link = "verifying \"cells.c\"; struct cell* first(struct cell** link) { views *link; }";
     let file = parse_c0_click_file(link, &[("cells.c", c_source)]).unwrap();

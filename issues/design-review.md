@@ -119,8 +119,8 @@ Proposed fix: [design/proof-reuse.md](../design/proof-reuse.md):
 - R2: one general contract per function, including one general `rb_erase`
   contract with a theorem that its cases are exhaustive.
 - R3: automatic unfolding of recursive spec functions.
-- R4: automatic opening and closing of resources, by `auto`; `step()` keeps
-  its meaning (maintainer, 2026-10-17).
+- R4: automatic opening of resources, by `auto`; `step()` keeps its meaning
+  (maintainer, 2026-10-17).
 - R5: one script for several arms.
 
 Decision: fix (maintainer, 2026-10-14), starting with R2.
@@ -132,7 +132,11 @@ R3 is in: `simp` evaluates recursive specification functions over known
 constructors to a fixed fuel (see the status under R3 in
 [design/proof-reuse.md](../design/proof-reuse.md#r3-automatic-unfolding-of-recursive-specification-functions)).
 Rewriting the erase-color arms with it waits on the object-class regression
-that keeps `rbtree-erase` from verifying. R4 and R5 remain.
+that keeps `rbtree-erase` from verifying. R4 is done (2026-10-17): `auto` opens
+the one ordinary resource whose body holds a refused place; opening recursive
+instances and refolding by `auto` are not pursued (maintainer, 2026-10-17; see
+[design/proof-reuse.md](../design/proof-reuse.md#r4-automatic-opening-and-closing-of-resources)).
+R5 remains.
 
 ## L. Surface language
 

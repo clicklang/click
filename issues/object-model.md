@@ -254,8 +254,9 @@ moved between gate and nightly. Report timeouts and budget failures as failures.
 
 ### 2. Extract the first independently green deliveries
 
-Prioritize reproduced P1 soundness defects, including the
-[scalar-subobject pointer defect](../bugs/pointer-arithmetic-crosses-scalar-subobject.md).
+Prioritize reproduced P1 soundness defects. The scalar-subobject pointer defect
+is repaired by the [subobject extent work](../design/pointer-subobject-extents.md),
+including unseen-pointer formation and selection checks.
 Reproduce them on the fixed baseline and the archive before deciding which
 activation changes are mandatory. Independent small fixes can land while that
 work proceeds, with accurate scope and no claim that the object model is complete.

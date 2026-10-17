@@ -36,5 +36,5 @@ void probe(struct holder* h, int32* data, int32 n) {
 }
 ```
 ```expect
-fail: required access authority is unavailable
+fail: access outside the subobject the pointer designates
 ```

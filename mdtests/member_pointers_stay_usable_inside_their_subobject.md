@@ -33,6 +33,7 @@ int32 same(struct Pair* p) {
     ensures result == p->first;
 } by { execute(); simp(); }
 int32* one_past(struct Pair* p) {
+    views *p;
     ensures address(result) == address(&p->second);
 } by { execute(); simp(); }
 int32 second(struct Pair* p) {
