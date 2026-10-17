@@ -2958,7 +2958,7 @@ theorem false_guard(x: int32) {
 }
 "#,
     )
-    .expect("the false guard's shorter certificate should replay cold");
+    .expect("the false guard's shorter certificate should verify independently");
 }
 
 #[test]
