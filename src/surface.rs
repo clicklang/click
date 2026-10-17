@@ -1063,6 +1063,9 @@ pub struct CallBinderBinding {
     instance: String,
     /// The caller's instance identity.
     identity: Variable,
+    /// The resource a produced instance is, from the callee's contract;
+    /// `None` for an instance the caller supplies.
+    family: Option<String>,
 }
 
 impl CallBinderBinding {
@@ -1080,6 +1083,10 @@ impl CallBinderBinding {
 
     pub(crate) fn identity(&self) -> Variable {
         self.identity
+    }
+
+    pub(crate) fn family(&self) -> Option<&str> {
+        self.family.as_deref()
     }
 }
 
