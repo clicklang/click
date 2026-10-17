@@ -8579,7 +8579,7 @@ impl<'a> Proof<'a> {
         // what was asked for, never a value it was found to have.
         let goal = self
             .surface_goal()
-            .map(crate::surface::printing::source_click_proposition)
+            .map(crate::surface::printing::authored_click_proposition)
             .filter(|source| !source.contains("__click_"))
             .map(|source| format!("`{source}`"))
             .or_else(|| {
