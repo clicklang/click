@@ -9887,7 +9887,7 @@ fn candidate_composite_view_adapter(
     caller_state: &CState,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
-    unestablished: &mut Option<Proposition>,
+    unestablished: &mut Option<UnestablishedCompositeFact>,
 ) -> ExecutionResult<Option<CompositeViewAdapter>> {
     let CResource::Composite { name, arguments } = required.resource() else {
         return Ok(None);
@@ -10072,6 +10072,11 @@ fn remove_frontier(
     Some(resources)
 }
 
+struct UnestablishedCompositeFact {
+    proposition: Proposition,
+    source: Option<Box<CResourceBodyFactSource>>,
+}
+
 /// Whether a composite definition's body facts already hold at the call.
 ///
 /// This mirrors what the surface `fold` requires of the facts it re-asserts:
@@ -10079,17 +10084,15 @@ fn remove_frontier(
 /// in and must be available by the kernel's exact routes. There is no search
 /// here; a fact the caller has not established is a prompt refusal the proof
 /// can answer with an explicit step.
-/// Whether the body facts of `definition` hold for `arguments` in the
-/// caller's state. A body fact the caller has not established is recorded in
-/// `unestablished`, lowered at the caller's memory, so a refused assembly can
-/// name it as a refused `fold` does.
+/// The first missing fact keeps its lowered judgment and written clause,
+/// with the call's argument bindings, for the assembly refusal.
 fn composite_definition_facts_hold(
     definition: &CCompositeResourceDefinition,
     arguments: &[AlgebraicValue],
     caller_state: &CState,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
-    unestablished: &mut Option<Proposition>,
+    unestablished: &mut Option<UnestablishedCompositeFact>,
 ) -> ExecutionResult<bool> {
     if definition.facts().is_empty() {
         return Ok(true);
@@ -10121,7 +10124,7 @@ fn composite_definition_facts_hold(
     {
         return Ok(false);
     }
-    for fact in definition.facts() {
+    for (index, fact) in definition.facts().iter().enumerate() {
         let paths = lower_spec_proposition_at_state_with_loop_entry(
             &state,
             fact,
@@ -10144,7 +10147,29 @@ fn composite_definition_facts_hold(
             || established.settles_exactly(&path.proposition)
             || resource_body_fact_is_established(&established, &path.proposition))
         {
-            *unestablished = Some(path.proposition.clone());
+            let source = definition.fact_source_spelling(index).map(|spelling| {
+                Box::new(CResourceBodyFactSource {
+                    spelling: spelling.to_owned(),
+                    bindings: definition
+                        .parameters()
+                        .iter()
+                        .zip(arguments)
+                        .map(|(parameter, argument)| {
+                            (
+                                parameter.name().to_owned(),
+                                argument
+                                    .as_c_value()
+                                    .expect("the definition's C arguments were bound above")
+                                    .clone(),
+                            )
+                        })
+                        .collect(),
+                })
+            });
+            *unestablished = Some(UnestablishedCompositeFact {
+                proposition: path.proposition.clone(),
+                source,
+            });
             return Ok(false);
         }
     }
@@ -11108,7 +11133,8 @@ fn prepare_contract_resource_transfer_unexplained(
                 {
                     return Ok(Err(CRuntimeError::UnestablishedAssemblyFact {
                         assembled: Box::new(resource.clone()),
-                        fact: Box::new(fact),
+                        fact: Box::new(fact.proposition),
+                        source: fact.source,
                     }));
                 }
                 if let Some(diagnostic) = error.loan_diagnostic(LoanRefusalOperation::Plan) {

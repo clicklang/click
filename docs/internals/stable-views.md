@@ -129,7 +129,17 @@ lend, and from a different owned composite or the caller's owned frontier
 when the viewed composite's checked expansion is covered piecewise and its
 facts hold at the call. A fact holds by the exact routes a fold uses: a
 quantified fact the caller states matches the body's up to its binder and the
-registered loads that binder indexes. Coverage starts from the exact owner occurrence
+registered loads that binder indexes.
+
+A refused assembly retains the first missing body fact's written clause and
+its call argument bindings. The diagnostic names that clause even when its
+current-state lowering is just `false`; formal names that differ from their
+call arguments are accompanied by the bindings. Hand-built definitions without
+source metadata retain the lowered-judgment diagnostic. The original C call
+and stale-field reproduction is checked in
+`mdtests/composite_view_assembly_names_broken_body_fact.md`.
+
+Coverage starts from the exact owner occurrence
 checked before reservations. When no single owner covers a view with
 concrete bounds, but the caller's unbound owned memory pieces tile its
 range, as a struct owned field by field in pieces of different widths is,

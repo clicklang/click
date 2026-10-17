@@ -26,9 +26,8 @@ use click::surface::verify_c0_sources;
 use click::surface::{
     ClickError, ClickErrorKind, ClickProject, ProofSourceIndex, VerifiedCTheorem,
     accepted_proof_trace, c0_incremental_selection, project_selected_proof_names, project_summary,
-    selected_c_target, tactic_line_has_multiple_starts, tactic_starts_on_line, verify_c0_project,
-    verify_project_at, verify_project_functions, verify_project_theorem,
-    verify_project_with_summary, verifying_source_paths, with_proof_trace,
+    selected_c_target, verify_c0_project, verify_project_at, verify_project_functions,
+    verify_project_theorem, verify_project_with_summary, verifying_source_paths, with_proof_trace,
 };
 
 const USAGE: &str = "\
@@ -248,7 +247,7 @@ fn parse_arguments(arguments: impl IntoIterator<Item = String>) -> Result<Argume
 }
 
 fn resolve_trace_target(
-    source: &str,
+    index: &ProofSourceIndex,
     line_offset: usize,
     target: &TraceTo,
 ) -> Result<click::surface::SourcePosition, String> {
@@ -257,7 +256,7 @@ fn resolve_trace_target(
         .checked_sub(line_offset)
         .filter(|line| *line > 0)
         .ok_or_else(|| format!("tactic@{} is outside the Click source", target.line))?;
-    let starts = tactic_starts_on_line(source, line).map_err(click_message)?;
+    let starts = index.starts_on_line(line);
     let selected = match target.column {
         Some(column) => starts
             .into_iter()
@@ -279,9 +278,7 @@ fn resolve_trace_target(
             _ => {
                 let outer = starts
                     .iter()
-                    .filter(|position| {
-                        !tactic_line_has_multiple_starts(source, position).unwrap_or(true)
-                    })
+                    .filter(|position| !index.line_has_multiple_starts(position).unwrap_or(true))
                     .collect::<Vec<_>>();
                 match outer.as_slice() {
                     [position] => (*position).clone(),
@@ -1397,7 +1394,11 @@ fn verify_file_within_limits(
         })
         .transpose()?;
     let trace_target = trace_to
-        .map(|target| resolve_trace_target(&click_source, line_offset, target))
+        .map(|target| {
+            let index = ProofSourceIndex::for_project(&project, &inputs.program_inputs())
+                .map_err(click_message)?;
+            resolve_trace_target(&index, line_offset, target)
+        })
         .transpose()?;
     // An untraced run takes its summary from the verification's own
     // resolution of the sources; a traced one summarizes separately.
@@ -2088,8 +2089,16 @@ void walk(int32 n) { requires n == 12; ensures 0 == 0; } by {
         loaded.project = loaded
             .project
             .with_entry_source(loaded.click_source.clone());
+        let CInput::Bundle(sources) = &loaded.inputs else {
+            panic!("expected C fixture")
+        };
+        let index = ProofSourceIndex::for_project(
+            &loaded.project,
+            &ProgramInputs::Bundle(source_refs(sources)),
+        )
+        .unwrap();
         let target = resolve_trace_target(
-            &loaded.click_source,
+            &index,
             line_offset,
             &TraceTo {
                 line: 62,
@@ -2097,9 +2106,6 @@ void walk(int32 n) { requires n == 12; ensures 0 == 0; } by {
             },
         )
         .unwrap();
-        let CInput::Bundle(sources) = &loaded.inputs else {
-            panic!("expected C fixture")
-        };
         let report = with_proof_trace("scan", || {
             let error = verify_project_functions(
                 &loaded.project,
@@ -2126,73 +2132,40 @@ void walk(int32 n) { requires n == 12; ensures 0 == 0; } by {
 
     #[test]
     fn trace_target_uses_a_unique_line_or_an_explicit_column() {
-        let source = "by { step(); step(); }\nby {\n  step();\n}\n";
+        let index = |source: &str| {
+            ProofSourceIndex::for_sidecar(source, &ProgramInputs::Bundle(Vec::new())).unwrap()
+        };
+        let target = |index: &ProofSourceIndex, line, column| {
+            resolve_trace_target(index, 8, &TraceTo { line, column })
+        };
+        let source = "theorem shared() {\n    ensures true by { simp(); simp(); }\n}\ntheorem alone() {\n    ensures true by {\n        simp();\n    }\n}\n";
+        let shared = index(source);
         assert_eq!(
-            resolve_trace_target(
-                source,
-                8,
-                &TraceTo {
-                    line: 11,
-                    column: None
-                }
-            )
-            .unwrap(),
-            click::surface::SourcePosition::new(3, 3),
+            target(&shared, 14, None).unwrap(),
+            click::surface::SourcePosition::new(6, 9),
         );
         assert!(
-            resolve_trace_target(
-                source,
-                8,
-                &TraceTo {
-                    line: 9,
-                    column: None
-                }
-            )
-            .unwrap_err()
-            .contains("several tactics")
+            target(&shared, 10, None)
+                .unwrap_err()
+                .contains("several tactics")
         );
         assert_eq!(
-            resolve_trace_target(
-                source,
-                8,
-                &TraceTo {
-                    line: 9,
-                    column: Some(6)
-                }
-            )
-            .unwrap(),
-            click::surface::SourcePosition::new(1, 6),
+            target(&shared, 10, Some(31)).unwrap(),
+            click::surface::SourcePosition::new(2, 31),
         );
 
-        // A proof `match` arm's block follows `=>`, which the source scanner
-        // reads as two punctuation tokens; its tactics are targets too.
-        let arm =
-            "by {\n    match m {\n        K::A => {\n            step();\n        },\n    }\n}\n";
+        // A `cases` arm's block follows `=>`; its tactics are targets too.
+        let arm = "theorem arm() {\n    ensures true by {\n        cases {\n            true => {\n                simp();\n            }\n            false => {\n                simp();\n            }\n        }\n    }\n}\n";
         assert_eq!(
-            resolve_trace_target(
-                arm,
-                0,
-                &TraceTo {
-                    line: 4,
-                    column: None
-                }
-            )
-            .unwrap(),
-            click::surface::SourcePosition::new(4, 13),
+            target(&index(arm), 13, None).unwrap(),
+            click::surface::SourcePosition::new(5, 17),
         );
 
-        let nested = "by {\n    have n <= n by { simp(); }\n}\n";
+        // A `have` with its proof on the same line is that line's target.
+        let nested = "theorem nested() {\n    ensures true by {\n        have true by { simp(); }\n    }\n}\n";
         assert_eq!(
-            resolve_trace_target(
-                nested,
-                8,
-                &TraceTo {
-                    line: 10,
-                    column: None,
-                },
-            )
-            .unwrap(),
-            click::surface::SourcePosition::new(2, 5),
+            target(&index(nested), 11, None).unwrap(),
+            click::surface::SourcePosition::new(3, 9),
         );
     }
 

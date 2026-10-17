@@ -10,8 +10,12 @@ fn loop_view_partition_uses_alias_graph_without_scanning_ambient_ranges() {
     let _session = crate::kernel::VerificationSession::enter();
     let source = Pointer::symbolic(Variable(916_100));
     let alias = Pointer::symbolic(Variable(916_101));
-    let owner = CResourceFact::own_memory(CMemoryRange::new_with_element_width(
-        source.clone(),
+    let source_value = CPointerValue::new(source.clone(), CType::UInt8Pointer);
+    // Respelling a copied pointer retains its origin; address equality alone
+    // cannot turn an independently originated pointer into this owner.
+    let cursor = source_value.clone().with_address(alias.clone());
+    let owner = CResourceFact::own_memory(CMemoryRange::from_pointer_value(
+        &source_value,
         0u32.into(),
         8u32.into(),
         1,
@@ -49,10 +53,7 @@ fn loop_view_partition_uses_alias_graph_without_scanning_ambient_ranges() {
         }
         resources.synchronize_memory_equalities(&assumptions);
         let state = CState::new()
-            .with_local(
-                "cursor",
-                CValue::typed_pointer(alias.clone(), CType::UInt8Pointer),
-            )
+            .with_local("cursor", CValue::Pointer(cursor.clone()))
             .with_resource_context(resources);
         let (partition, work) = crate::instrumentation::measure_deterministic_work(|| {
             loop_declared_and_withheld_resources(
@@ -66,8 +67,8 @@ fn loop_view_partition_uses_alias_graph_without_scanning_ambient_ranges() {
         });
         assert!(partition.1.contains_exact_representation(&owner));
         assert!(partition.0.satisfies_fact(
-            &CResourceFact::view_memory(CMemoryRange::new_with_element_width(
-                alias.clone(),
+            &CResourceFact::view_memory(CMemoryRange::from_pointer_value(
+                &cursor,
                 0u32.into(),
                 4u32.into(),
                 1
@@ -79,6 +80,20 @@ fn loop_view_partition_uses_alias_graph_without_scanning_ambient_ranges() {
                 &state,
                 std::slice::from_ref(&spec),
                 &PureFactContext::new(),
+                &mut ExecutionBudget::default()
+            )
+            .unwrap()
+            .is_err()
+        );
+        let independently_originated = state.with_local(
+            "cursor",
+            CValue::typed_pointer(alias.clone(), CType::UInt8Pointer),
+        );
+        assert!(
+            loop_declared_and_withheld_resources(
+                &independently_originated,
+                std::slice::from_ref(&spec),
+                &assumptions,
                 &mut ExecutionBudget::default()
             )
             .unwrap()
