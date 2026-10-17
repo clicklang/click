@@ -364,6 +364,9 @@ struct Adapter<'a> {
     /// Each crate struct a call passes as a crate trait's object, with the
     /// trait: the struct's pack and unpack functions are imported.
     object_coercions: std::cell::RefCell<BTreeSet<(a::TypeDeclId, a::TraitDeclId)>>,
+    /// Each generic crate trait's instances an implementation or a call
+    /// names, by importer name, with their type arguments after `Self`.
+    trait_instances: std::cell::RefCell<BTreeMap<a::TraitDeclId, BTreeMap<String, Vec<a::Ty>>>>,
 }
 impl Adapter<'_> {
     fn ty(&self, t: &a::Ty) -> Result<Type, String> {
@@ -1711,6 +1714,7 @@ pub(super) fn decode_crate(
         callable_parameters: std::cell::RefCell::new(Vec::new()),
         trait_impl_methods: BTreeMap::new(),
         object_coercions: std::cell::RefCell::new(BTreeSet::new()),
+        trait_instances: std::cell::RefCell::default(),
     };
     if crate_config.is_some() {
         adapter.record_closure_captures()?;
@@ -1784,7 +1788,7 @@ pub(super) fn decode_crate(
             a::FunSource::TraitDefault {
                 trait_ref, item_id, ..
             } if adapter.interface_trait(trait_ref.id)? => {
-                adapter.interface_name(trait_ref.id, *item_id)?
+                adapter.interface_name(trait_ref.id, *item_id, &trait_ref.generics)?
             }
             a::FunSource::TraitImpl {
                 trait_ref,
