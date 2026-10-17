@@ -251,9 +251,17 @@ impl Project {
                 "optimization": self.optimization.flag(),
                 "unit": unit.description,
             }))
+        } else if unit.spec.language == "c++" {
+            // A C++ unit is prepared for its own fixed target at the
+            // project's optimization level.
+            serde_json::to_vec(&serde_json::json!({
+                "target": NON_C_DIGEST_TAG,
+                "optimization": self.optimization.flag(),
+                "unit": unit.description,
+            }))
         } else {
-            // C++ and Rust units are prepared for their own fixed target, so
-            // the C target and mode leave them alone. The tag is the one their
+            // Rust units are prepared for their own fixed target, so the C
+            // target and mode leave them alone. The tag is the one their
             // locks were first written with, kept so those locks stay valid.
             serde_json::to_vec(&serde_json::json!({
                 "target": NON_C_DIGEST_TAG,
@@ -331,6 +339,7 @@ impl Project {
             root: self.root.join(&unit.spec.root),
             exceptions: unit.spec.exceptions.unwrap_or(false),
             rtti: unit.spec.rtti.unwrap_or(false),
+            optimization: self.optimization,
             args: unit.spec.args.clone(),
             lock_path: self.lock_path(),
         };
