@@ -644,10 +644,18 @@ impl ProofFacts {
         let assumptions = facts.pure_context();
         let mut implicit_transport_assumptions = PureFactContext::new();
         let mut by_predicate = PersistentMap::default();
-        for fact in facts.propositions() {
-            for variable in crate::kernel::proposition_variables(fact) {
-                reserved_variables = reserved_variables.with_value(variable);
+        // Many facts read one entry memory: reserve its variables once.
+        let collected_variables = crate::kernel::reasoning::collecting_each_memory_once(|| {
+            let mut variables = BTreeSet::new();
+            for fact in facts.propositions() {
+                variables.extend(crate::kernel::proposition_variables(fact));
             }
+            variables
+        });
+        for variable in collected_variables {
+            reserved_variables = reserved_variables.with_value(variable);
+        }
+        for fact in facts.propositions() {
             if top_level_exact.contains(fact) {
                 continue;
             }
@@ -4345,5 +4353,13 @@ mod quantified_conjunct_projection_tests {
     #[cfg(test)]
     mod scaling_tests {
         include!("../../scaling_tests/kernel/proof/facts/quantified_conjunct_projection_tests.rs");
+    }
+}
+
+#[cfg(test)]
+mod shared_memory_reservation_tests {
+    use super::*;
+    mod scaling_tests {
+        include!("../../scaling_tests/kernel/proof/facts/shared_memory_reservation_tests.rs");
     }
 }

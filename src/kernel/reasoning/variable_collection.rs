@@ -1434,15 +1434,19 @@ pub(in crate::kernel) fn execution_environment_variable_index(
 ) -> crate::kernel::ReservedVariableSets {
     let mut sets =
         crate::kernel::ReservedVariableSets::from(environment.variable_index.get_or_init(|| {
-            let mut variables = BTreeSet::new();
-            collect_execution_environment_variables_uncached(environment, &mut variables);
-            variables
+            suspending_memory_scope(|| {
+                let mut variables = BTreeSet::new();
+                collect_execution_environment_variables_uncached(environment, &mut variables);
+                variables
+            })
         }));
     for rule in environment.verified_loop_rules.iter() {
         sets.push(rule.variable_index.get_or_init(|| {
-            let mut variables = BTreeSet::new();
-            collect_verified_loop_rule_variables(rule, &mut variables);
-            variables
+            suspending_memory_scope(|| {
+                let mut variables = BTreeSet::new();
+                collect_verified_loop_rule_variables(rule, &mut variables);
+                variables
+            })
         }));
     }
     sets
@@ -1566,6 +1570,55 @@ fn checked_collection_checkpoint() -> bool {
     crate::instrumentation::record_checked_collection_attempt();
     crate::instrumentation::record_deterministic_work(1);
     crate::instrumentation::checked_collection_exhausted()
+}
+
+thread_local! {
+    /// The interned memories whose variables the enclosing
+    /// [`collecting_each_memory_once`] scope has already collected.
+    static COLLECTED_MEMORIES: std::cell::RefCell<Option<BTreeSet<(u32, u32)>>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// Runs `operation` collecting each interned memory's variables at most once.
+/// A caller that unions the variables of many propositions, such as a fact
+/// set reserving every variable its facts mention, adds a snapshot several
+/// facts share once rather than once per fact. Collections inside the scope
+/// therefore return only variables not already added by an earlier one.
+pub(crate) fn collecting_each_memory_once<R>(operation: impl FnOnce() -> R) -> R {
+    struct Restore(Option<BTreeSet<(u32, u32)>>);
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            COLLECTED_MEMORIES.with(|collected| *collected.borrow_mut() = self.0.take());
+        }
+    }
+    let _restore = Restore(
+        COLLECTED_MEMORIES.with(|collected| collected.borrow_mut().replace(BTreeSet::new())),
+    );
+    operation()
+}
+
+/// Runs `operation` outside any [`collecting_each_memory_once`] scope, for a
+/// collection whose result is cached and so must hold every variable.
+fn suspending_memory_scope<R>(operation: impl FnOnce() -> R) -> R {
+    struct Restore(Option<BTreeSet<(u32, u32)>>);
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            COLLECTED_MEMORIES.with(|collected| *collected.borrow_mut() = self.0.take());
+        }
+    }
+    let _restore = Restore(COLLECTED_MEMORIES.with(|collected| collected.borrow_mut().take()));
+    operation()
+}
+
+/// Whether an enclosing [`collecting_each_memory_once`] scope already
+/// collected this memory; marks it collected otherwise.
+fn already_collected_memory(identity: (u32, u32)) -> bool {
+    COLLECTED_MEMORIES.with(|collected| {
+        collected
+            .borrow_mut()
+            .as_mut()
+            .is_some_and(|collected| !collected.insert(identity))
+    })
 }
 
 thread_local! {
@@ -5119,7 +5172,12 @@ pub(in crate::kernel) fn collect_memory_bitvector_variables(
     // counted snapshot and the entries they changed are charged, as are the
     // snapshots its cells' loads reach.
     if let Some(shared) = crate::kernel::primitives::interned_storage_of(memory) {
-        let counts = shared_memory_variable_counts(&shared, WholeCount::Uncharged);
+        if already_collected_memory(shared.arena_id()) {
+            return;
+        }
+        let counts = suspending_memory_scope(|| {
+            shared_memory_variable_counts(&shared, WholeCount::Uncharged)
+        });
         if EXECUTION_CEILING_ONLY.with(std::cell::Cell::get) {
             variables.extend(
                 counts
