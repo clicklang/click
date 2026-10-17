@@ -11,9 +11,16 @@ pub(in crate::surface) fn source_click_proposition(proposition: &ClickPropositio
     print_proposition(proposition, PropositionSpelling::Source)
 }
 
+// Diagnostic quotations retain the declaration's spelling; certificate-only
+// type barriers must not change messages about an authored proposition.
+pub(in crate::surface) fn authored_click_proposition(proposition: &ClickProposition) -> String {
+    print_proposition(proposition, PropositionSpelling::Authored)
+}
+
 #[derive(Clone, Copy, Eq, PartialEq)]
 pub(super) enum PropositionSpelling {
     Source,
+    Authored,
     Diagnostic,
     Refusal,
 }
@@ -174,7 +181,10 @@ pub(super) fn print_proposition(
                 describe_contract_expression(start),
                 describe_contract_expression(end),
             );
-            if mode == PropositionSpelling::Source {
+            if matches!(
+                mode,
+                PropositionSpelling::Source | PropositionSpelling::Authored
+            ) {
                 format!("({start}..{end}).all(|{item}| {{ {body} }})")
             } else {
                 format!("({start}..{end}).all({item} => {body})")
@@ -192,7 +202,10 @@ pub(super) fn print_proposition(
                 describe_contract_expression(start),
                 describe_contract_expression(end),
             );
-            if mode == PropositionSpelling::Source {
+            if matches!(
+                mode,
+                PropositionSpelling::Source | PropositionSpelling::Authored
+            ) {
                 format!("({start}..{end}).any(|{item}| {{ {body} }})")
             } else {
                 format!("({start}..{end}).any({item} => {body})")

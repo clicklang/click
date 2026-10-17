@@ -6666,7 +6666,7 @@ pub(in crate::surface) fn composite_resource_definitions(
             .with_fact_source_spellings(
                 body.facts()
                     .iter()
-                    .map(crate::surface::printing::source_click_proposition)
+                    .map(crate::surface::printing::authored_click_proposition)
                     .collect(),
             )
             .with_liveness_facts(facts_claim_liveness)
