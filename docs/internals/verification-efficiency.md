@@ -85,6 +85,19 @@ complete construction with one direct body derivation at 4, 8, 16, and 32
 clauses, allowing only constant recording overhead. Independent certificate
 checks still reject proposed successors with unrelated state or facts.
 
+Logical case partitions retain each arm's indexed context alongside its exact
+premise delta. Entering an arm shares the context constructed when issuing the
+partition; independent scope and certificate checks still use the recorded
+delta and witness scope. The constructor-payload regression varies 4, 8, 16,
+and 32 explicit arguments and bounds entry by constant work.
+
+Branch-interface publication similarly extends one `ProofFacts` context as
+it exports resource viewability projections and written facts. Every following
+assertion lowers against that accumulated context, and the successor keeps it.
+The 16, 32, 64, and 128 assertion regression prevents repeated admission of
+every growing prefix; the reduced 128-assertion fixture fell from about
+178,000 to 46,000 total work units.
+
 Interface joins combine the effects retained by each arm's checked statement
 walk. When that walk accounts for the complete recorded effect stream, joining
 its footprints does not reconstruct store or call-havoc results. A standalone

@@ -158,10 +158,10 @@ pub(super) fn apply_branch_interface_with_proof_facts(
     execution.core.execution_abstraction = true;
 
     let mut exported_resources = ResourceContext::new();
-    // This vector contains only facts explicitly exported by the interface
-    // (and their local definitional projections), so materializing it is
-    // output-sized rather than proportional to the ambient proof context.
-    let mut exported_pure_facts = Vec::new();
+    // Extend one indexed context as the interface publishes each fact.
+    // Rebuilding the growing prefix for every assertion is quadratic even
+    // though the interface itself is explicit output.
+    let mut exported_pure_facts = ProofFacts::default();
     for assertion in assertions {
         if let ProofAssertion::Resource(resource) = assertion {
             // A named instance may carry a different model in each arm. The
@@ -213,6 +213,7 @@ pub(super) fn apply_branch_interface_with_proof_facts(
                 ))
             })?;
             exported_resources = exported_resources.unchecked_with_fact(fact);
+            let mut projections = Vec::new();
             append_lowered_resource_clause_loadable_fact(
                 resource,
                 parameters,
@@ -221,8 +222,13 @@ pub(super) fn apply_branch_interface_with_proof_facts(
                     .last()
                     .expect("exported resource was just appended"),
                 &abstract_state,
-                &mut exported_pure_facts,
+                &mut projections,
             );
+            for fact in projections {
+                if !exported_pure_facts.contains_top_level(&fact) {
+                    exported_pure_facts = exported_pure_facts.with_kernel_checked_fact(fact);
+                }
+            }
             // An `old(...)`-interface ensure needs the exported view's
             // loadability in its entry-memory form. Export it exactly
             // when the clause lowers at entry at all and the pre-advance
@@ -250,9 +256,9 @@ pub(super) fn apply_branch_interface_with_proof_facts(
                 }
                 for fact in entry_loadables {
                     if pre_advance_facts.assumptions().proves_exact(&fact)
-                        && !exported_pure_facts.contains(&fact)
+                        && !exported_pure_facts.contains_top_level(&fact)
                     {
-                        exported_pure_facts.push(fact);
+                        exported_pure_facts = exported_pure_facts.with_kernel_checked_fact(fact);
                     }
                 }
             }
@@ -285,15 +291,15 @@ pub(super) fn apply_branch_interface_with_proof_facts(
                 .presentation
                 .surface_propositions
                 .record_lowering(written_fact, &fact)?;
-            if !exported_pure_facts.contains(&fact) {
-                exported_pure_facts.push(fact);
+            if !exported_pure_facts.contains_top_level(&fact) {
+                exported_pure_facts = exported_pure_facts.with_kernel_checked_fact(fact);
             }
         }
     }
 
-    let exported_assumptions = assumptions_from_propositions(&exported_pure_facts);
+    let exported_assumptions = exported_pure_facts.assumptions();
     exported_resources = ResourceContext::new()
-            .try_compose_with_facts(exported_resources.facts().iter().cloned(), &exported_assumptions)
+            .try_compose_with_facts(exported_resources.facts().iter().cloned(), exported_assumptions)
             .map_err(|error| {
                 ClickError::new(format!(
                     "`{claim_label}` tactic {tactic_index}: invalid `branch ensuring` resource interface: {error}"
@@ -319,7 +325,7 @@ pub(super) fn apply_branch_interface_with_proof_facts(
                 "`{claim_label}` tactic {tactic_index}: `branch` join abstraction: {message}"
             ))
         })?;
-    *available_pure_facts = ProofFacts::from_ordered(&exported_pure_facts);
+    *available_pure_facts = exported_pure_facts;
     Ok(())
 }
 

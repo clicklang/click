@@ -3117,6 +3117,9 @@ pub(crate) struct CheckedProofCasePartition {
     /// certificate checking use the same premises without trusting surface
     /// bookkeeping.
     arm_additions: Vec<Vec<Proposition>>,
+    /// The indexed contexts constructed while deriving those exact deltas.
+    /// Entering an arm shares its context rather than admitting it again.
+    arm_contexts: Vec<ProofFacts>,
     /// Ordered declaration correspondence, including clauses whose exact
     /// proposition was already in the arm's fact store.
     arm_body_clauses: Vec<Vec<crate::kernel::functions::ResourceBodyClauseRecord>>,
@@ -3217,13 +3220,7 @@ impl CheckedProofCasePartition {
     }
 
     pub(crate) fn facts_for_case(&self, index: usize) -> Option<ProofFacts> {
-        let additions = self.arm_additions.get(index)?;
-        Some(
-            additions
-                .iter()
-                .cloned()
-                .fold(self.root_facts.clone(), |facts, fact| facts.with_fact(fact)),
-        )
+        self.arm_contexts.get(index).cloned()
     }
 
     /// The facts this partition was issued against. An arm's premises are
@@ -3245,20 +3242,20 @@ impl CheckedProofCasePartition {
         {
             return None;
         }
-        let arm_additions = [&then_fact, &else_fact]
+        let arm_contexts: Vec<_> = [&then_fact, &else_fact]
             .into_iter()
-            .map(|fact| {
-                root_facts
-                    .with_fact(fact.clone())
-                    .introduced_since(root_facts)
-                    .unwrap_or_default()
-            })
+            .map(|fact| root_facts.with_fact(fact.clone()))
+            .collect();
+        let arm_additions = arm_contexts
+            .iter()
+            .map(|facts| facts.introduced_since(root_facts).unwrap_or_default())
             .collect();
         Some(Arc::new(Self {
             identity: Arc::new(()),
             root_facts: root_facts.clone(),
             case_facts: vec![then_fact.clone(), else_fact.clone()],
             arm_additions,
+            arm_contexts,
             arm_body_clauses: vec![Vec::new(), Vec::new()],
             excluded: vec![None, None],
             witness_scope: None,
@@ -9165,7 +9162,7 @@ impl ExecutionProofCore {
             return None;
         }
         let (case_facts, bindings): (Vec<_>, Vec<_>) = equations.into_iter().unzip();
-        let (arm_additions, arm_body_clauses): (Vec<_>, Vec<_>) = case_facts
+        let (arm_contexts, arm_body_clauses): (Vec<_>, Vec<_>) = case_facts
             .iter()
             .map(|case| {
                 let mut arm_facts = facts.with_fact(case.clone());
@@ -9267,12 +9264,13 @@ impl ExecutionProofCore {
                             .with_fact(Proposition::Equal(left.clone(), Term::Algebraic(spelled)));
                     }
                 }
-                (
-                    arm_facts.introduced_since(facts).unwrap_or_default(),
-                    body_clauses,
-                )
+                (arm_facts, body_clauses)
             })
             .unzip();
+        let arm_additions = arm_contexts
+            .iter()
+            .map(|arm| arm.introduced_since(facts).unwrap_or_default())
+            .collect();
         Some((
             Arc::new(CheckedProofCasePartition {
                 identity: Arc::new(()),
@@ -9280,6 +9278,7 @@ impl ExecutionProofCore {
                 excluded: vec![None; case_facts.len()],
                 case_facts,
                 arm_additions,
+                arm_contexts,
                 arm_body_clauses,
                 witness_scope: Some(self.state.clone()),
             }),

@@ -1183,3 +1183,48 @@ fn a_checked_interface_join_does_not_reconstruct_a_calls_havoc() {
         "the join reconstructed the already checked call's havoc: {samples:?}"
     );
 }
+
+#[test]
+fn taking_a_constructor_arm_reuses_its_constructed_fact_context() {
+    let mut samples = Vec::new();
+    for count in [4u64, 8, 16, 32] {
+        let (core, mut value) = constructor_partition_fixture(2);
+        value.node = crate::kernel::AlgebraicTermNode::Constructor {
+            variant: "C0".into(),
+            fields: vec![crate::kernel::AlgebraicValue::C(CValue::Int32(
+                Bitvector32Term::ClickFunctionApplication {
+                    name: "opaque_payload".into(),
+                    arguments: (0..count)
+                        .map(|i| {
+                            crate::kernel::PureFunctionArgument::Value(CValue::Int32(
+                                Bitvector32Term::Variable(Variable(8_100_000 + i)),
+                            ))
+                        })
+                        .collect(),
+                },
+            ))],
+        };
+        let root = ProofFacts::default();
+        let (partition, _, _) = core
+            .algebraic_case_partition(
+                &root,
+                &value,
+                &crate::kernel::CExecutionEnvironment::new(),
+                &[],
+                None,
+                4_000_000,
+                65_536,
+            )
+            .unwrap();
+        let (facts, work) = crate::instrumentation::measure_deterministic_work(|| {
+            partition.facts_for_case(0).unwrap()
+        });
+        assert!(facts.contains(partition.case_fact(0).unwrap()));
+        assert!(!root.contains(partition.case_fact(0).unwrap()));
+        samples.push(work);
+    }
+    assert!(
+        samples.iter().all(|work| *work <= samples[0] + 16),
+        "entering an already constructed arm rebuilt its payload facts: {samples:?}"
+    );
+}
