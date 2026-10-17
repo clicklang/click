@@ -345,7 +345,7 @@ fn volatile_parameter_accesses_emit_ordered_facts() {
         CType::Int32,
         "volatile_read",
         vec![c_parameter("value", CType::Int32).with_volatile(true)],
-        CStatement::Seq(
+        CStatement::seq(
             std::sync::Arc::new(CStatement::Assign {
                 source: Default::default(),
                 name: "value".to_string(),

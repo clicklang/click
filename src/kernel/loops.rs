@@ -8602,9 +8602,9 @@ pub(super) fn statement_may_write_memory(state: &CState, statement: &CStatement)
         | CStatement::CopyAggregate { .. }
         | CStatement::InitializeScalarArray { .. }
         | CStatement::Update { .. } => true,
-        CStatement::Seq(first, second) => {
-            statement_may_write_memory(state, first) || statement_may_write_memory(state, second)
-        }
+        CStatement::Seq(statements) => statements
+            .iter()
+            .any(|statement| statement_may_write_memory(state, statement)),
         CStatement::TryCatchInt32 {
             try_body, handler, ..
         } => {
@@ -8675,9 +8675,10 @@ pub(super) fn collect_loop_modified_locals(statement: &CStatement, names: &mut B
             names.insert(target.clone());
         }
         CStatement::HeapFree { .. } => {}
-        CStatement::Seq(first, second) => {
-            collect_loop_modified_locals(first, names);
-            collect_loop_modified_locals(second, names);
+        CStatement::Seq(statements) => {
+            for statement in statements.iter() {
+                collect_loop_modified_locals(statement, names);
+            }
         }
         CStatement::TryCatchInt32 {
             try_body,
@@ -8867,9 +8868,10 @@ pub(crate) fn collect_address_taken_locals(statement: &CStatement, names: &mut B
             collect_address_taken_in_expression(target, names);
             collect_address_taken_in_expression(operand, names);
         }
-        CStatement::Seq(first, second) => {
-            collect_address_taken_locals(first, names);
-            collect_address_taken_locals(second, names);
+        CStatement::Seq(statements) => {
+            for statement in statements.iter() {
+                collect_address_taken_locals(statement, names);
+            }
         }
         CStatement::TryCatchInt32 {
             try_body, handler, ..

@@ -1132,10 +1132,14 @@ pub(super) fn describe_ensure_clause(clause: &EnsureClause) -> String {
             } else {
                 "produces"
             };
-            let spelling = format!(
-                "{verb} {}",
-                crate::surface::validation::describe_resource_clause(resource)
-            );
+            // A memory resource's own spelling already starts with its
+            // access verb; the clause's verb replaces it.
+            let described = crate::surface::validation::describe_resource_clause(resource);
+            let described = described
+                .strip_prefix("owns ")
+                .or_else(|| described.strip_prefix("views "))
+                .unwrap_or(&described);
+            let spelling = format!("{verb} {described}");
             clause.condition().map_or(spelling.clone(), |guard| {
                 format!("if {} {{ {spelling}; }}", describe_click_proposition(guard))
             })
@@ -5959,7 +5963,7 @@ pub(super) fn describe_c_statement_head(statement: &CStatement) -> String {
                 .unwrap_or_default(),
             describe_c_expression(condition)
         ),
-        CStatement::Seq(first, _) => describe_c_statement_head(first),
+        CStatement::Seq(statements) => describe_c_statement_head(statements.first()),
         CStatement::Return(expression) => {
             format!("return {};", describe_c_expression(expression))
         }

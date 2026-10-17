@@ -657,6 +657,13 @@ The complexity contract implies several design constraints:
   lowering and planning clone a context and extend it by a fact at every
   path, and a shared copy-on-write set made each extension copy every stated
   proposition.
+  A kernel statement sequence (`CStatement::Seq`) holds its statements
+  as a persistent indexed sequence (`CStatementSequence`, an
+  `imbl::Vector`): replacing one statement is logarithmic and shares the
+  rest, and the statements after the first are a constant-time suffix
+  view. It stands for exactly the pair tree `Seq(first, rest)` it
+  replaced, so its equality, hashing, ordering and printed form are that
+  tree's.
   A resource context's facts are also kept as a canonical multiset
   (`CanonicalFactSet`): a hash-consed treap whose shape depends on its
   contents alone, so two contexts holding the same facts share one root and
@@ -1299,6 +1306,16 @@ annotates. Each is kept so that the clause pays for its own loop:
   function's loops built once per claim (`LoopAnnotationShape::c0_loop`),
   and returns its lowered kernel loop, so the `loop` tactic does not search
   the annotated body for it.
+- Putting the lowered loop in place follows the loop's path from the
+  body's root (`KernelLoopPaths`), read once per claim and kept while each
+  replacement holds as many loops as the loop it replaces. A kernel
+  sequence's statements are a persistent indexed sequence
+  (`CStatementSequence`), so each sequence on the path replaces its one
+  statement in logarithmic time and shares the others; the path is as long
+  as the loop's nesting in the body's pairs of statements, which for a C
+  block, lowered as a balanced tree of pairs, is logarithmic in the block.
+  The walk this replaces numbered the loops of every statement before the
+  loop to find it.
 - A fact set walks an interned snapshot's bound variables once, and a
   snapshot derived from one it walked only for the entries that differ
   (`collect_memory_bound_variables`, uncharged as the whole walk was).
@@ -1316,14 +1333,21 @@ copy, collection or walk it replaces, and unit tests hold the clause index
 and the C0 loop index to the walks they replace. Measured with callgrind on
 the `loops` hunt shape, one more loop costs about 41.0 million instructions
 between 64 and 128 loops and 42.1 million between 128 and 192, where it cost
-41.4 and 42.6 million before the clause list was indexed. The remaining
+41.4 and 42.6 million before the clause list was indexed (41.6 and 42.7
+million on a later release build, against 41.6 and 42.8 before the
+statement sequence below). The remaining
 growth is logarithmic: persistent-map depths in the fact context and proof
-facts, and the memory history the snapshot reservations follow, at most 64
-derivation steps. One pointer walk stays linear in the earlier loops with a
-small constant, about half a million instructions at the last of 192 loops:
-putting the lowered loop in place rebuilds the path from the body's root to
-it (`kernel_loop_replaced`), whose right-nested statement sequence is as deep
-as the statements before the loop.
+facts, the memory history the snapshot reservations follow, at most 64
+derivation steps, and the depth of the loop in the body's pairs of
+statements. Putting a lowered loop in place, which numbered the loops of
+every statement before it, cost about 6,100 instructions plus 260 per
+earlier loop (about 56,000 at the last of 192 loops, 6.0 million in all at
+192); it now costs about 7,500 at every loop, 1.4 million in all, after a
+path index of 135,000 once per claim.
+`putting_a_lowered_loop_in_place_reads_its_path_not_the_loops_before_it`
+holds the statements it visits to the body's depth at 16 to 1,024 loops,
+and `sequential_loops_build_the_same_context_entries_each` counts them per
+loop beside the other counts.
 
 ## Regression policy
 

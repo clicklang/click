@@ -1823,7 +1823,7 @@ fn c_statement_source_cost(statement: &CStatement) -> CSourceCost {
     let mut cost = CSourceCost::default();
     let mut pending = vec![statement];
     while let Some(statement) = pending.pop() {
-        if !matches!(statement, CStatement::Seq(_, _)) {
+        if !matches!(statement, CStatement::Seq(_)) {
             cost.statement_steps = cost.statement_steps.saturating_add(1);
         }
         match statement {
@@ -1868,9 +1868,10 @@ fn c_statement_source_cost(statement: &CStatement) -> CSourceCost {
             CStatement::Assert { condition, .. } => {
                 cost.add_expression(c_expression_source_steps(condition));
             }
-            CStatement::Seq(first, second) => {
-                pending.push(first);
-                pending.push(second);
+            CStatement::Seq(statements) => {
+                for statement in statements.iter() {
+                    pending.push(statement);
+                }
             }
             CStatement::TryCatchInt32 {
                 try_body, handler, ..

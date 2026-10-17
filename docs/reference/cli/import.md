@@ -395,6 +395,13 @@ address, as in `have &r == &value;`. `r[0]` is refused with the spelling to
 write. Binding a reference is not an assignment, so `assignment(r, N)` is
 refused; a store through `r` is selected by its statement.
 
+A reference argument bound to a native scalar field keeps that field's selected
+extent, matching the complete pointer value of `&object.field` in a contract.
+An access beyond the member remains invalid even when a sibling field is also
+available. See the checked
+[member-reference equality](https://github.com/clicklang/click/blob/master/mdtests/cpp_a_member_reference_parameter_retains_its_member_equality.md)
+and [sibling-access refusal](https://github.com/clicklang/click/blob/master/mdtests/cpp_a_member_reference_parameter_keeps_its_subobject.md).
+
 Nothing here translates the C++ body to C. The sidecar signature is
 checked against the selected typed Clang declaration, while proof execution
 uses its direct kernel lowering. `click verify`, `click profile`, `click

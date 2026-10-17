@@ -18,7 +18,7 @@ void f(int32 *a, int32 *b, int32 *x, int32 *y) {
 } by {
     unfold(left); unfold(right);
     have separate(memory(y[0]), memory(b[0])) by { assumption(); }
-    fold(left); fold(right); execute(); normalize();
+    fold(left); fold(right); execute(); assumption(); assumption(); normalize();
 }
 ```
 

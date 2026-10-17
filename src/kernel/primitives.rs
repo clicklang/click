@@ -67,6 +67,7 @@ mod memory_state;
 pub(crate) use observed_population_families::ObservedPopulationFamilies;
 mod persistent_map;
 pub(crate) use memory_state::BlockMembership;
+mod statement_sequence;
 pub(in crate::kernel) use memory_state::CallKeptOwnership;
 pub use memory_state::CallKeptRanges;
 pub(crate) use memory_state::{
@@ -78,6 +79,7 @@ pub(crate) use memory_state::{
     withdraw_never_address_taken_locals,
 };
 pub(crate) use persistent_map::{SnapshotMap, SnapshotMapChange, SnapshotSet};
+pub use statement_sequence::CStatementSequence;
 mod iterated;
 pub use iterated::{CIteratedGuard, CIteratedMemory};
 pub(in crate::kernel) mod canonical_fact_set;
@@ -4017,9 +4019,12 @@ pub enum CStatement {
         condition: CExpression,
         label: Option<String>,
     },
-    /// Two statement regions whose immutable subtrees are shared by execution
-    /// frontiers as they advance through a block.
-    Seq(Arc<CStatement>, Arc<CStatement>),
+    /// Statements run in order: a source block, or a statement region an
+    /// execution frontier still has to run. Its statements are a persistent
+    /// sequence shared by the frontiers that advance through it, and it
+    /// stands for the pair tree `Seq(first, Seq(second, ...))` it replaced
+    /// (see [`CStatementSequence`]).
+    Seq(CStatementSequence),
     Return(CExpression),
     /// Produce a checked exceptional outcome. The first internal slice carries
     /// one int32 payload; source-language handler matching lands separately.

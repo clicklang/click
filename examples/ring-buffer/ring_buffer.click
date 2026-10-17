@@ -129,8 +129,9 @@ int32 ring_buffer_pipeline(
     have owner->data[0] == replacement by {
         assumption();
     }
-    normalize();
     assumption();
+    assumption();
+    normalize();
     assumption();
     assumption();
     assumption();

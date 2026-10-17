@@ -356,6 +356,23 @@ limit. Use `step()` to finish a continuing arm and `execute()` after the join.
 
 **Checked examples:** [`execute_branch_arm_stops_at_shared_continuation.md`](https://github.com/clicklang/click/blob/master/mdtests/execute_branch_arm_stops_at_shared_continuation.md), [`tactic_execute.md`](https://github.com/clicklang/click/blob/master/mdtests/tactic_execute.md)
 
+### Goals after execution
+
+When execution reaches function exit, each path's open goals are the
+contract's claims in the order the contract writes them: every `ensures`, and
+every `owns` and `produces` clause, whose goal is that the path still holds the
+instance. `views` and `consumes` clauses make no claim. A closer (`assumption`,
+`normalize`, `arithmetic`, `both`) acts on the first open goal, and a refusal
+names that goal; it does not look further down the list for a claim it could
+close (`mdtests/a_closer_after_execution_acts_on_the_first_open_claim.md`).
+`assumption()` closes a resource goal whose instance the path holds
+(`mdtests/closers_after_execution_close_a_resource_goal_first.md`). A closer
+written when every goal on the path is closed is refused
+(`mdtests/a_closer_with_no_open_goal_is_refused.md`). `fold`, `apply`, `have`
+and the other tactics that change the path's facts or resources act on the path
+and leave the goal list alone; the implicit `auto` at the end of the script
+closes the goals still open.
+
 ### Execution to a program point
 
 **Form:** `execute_until(statement(N))`
@@ -1801,12 +1818,14 @@ arms are not `P` and `not P`; otherwise use `if`. Eliminate an exact available
 disjunction, proving the same goal once under each arm's disjunct. Use `if P` to
 split on a proposition you choose, which needs no premise because `P or not P`
 always holds, and whose arms rejoin; use `cases` to use a disjunction already
-proved, whose arms continue separately.
+proved while proving a focused proposition.
 
 There is one arm per disjunct, any number from two, and the disjunction of the
 arms grouped left to right as `or` parses (`A or B or C` is `(A or B) or C`)
-must be available. At an execution frontier every arm begins from the same
-checked C state and continues separately.
+must be available. Every arm proves the same focused proposition; `cases`
+does not split C execution. In a contract proof, put the case split inside
+`have P by { cases { ... } }`. Use proof `if P { ... } else { ... }` to split
+execution and rejoin its arms.
 
 **Failure, checking, and tools:**
 
@@ -1814,7 +1833,7 @@ An unavailable disjunction or unfinished arm fails; this never substitutes `not
 A` for `B` or implicitly branches C. Click checks both proof branches, expansion
 recurses, and profiling reports descendants.
 
-**Checked examples:** [`logical_tactics.rs`](https://github.com/clicklang/click/blob/master/src/surface/tests/tactic_tests/logical_tactics.rs)
+**Checked examples:** [`logical_tactics.rs`](https://github.com/clicklang/click/blob/master/src/surface/tests/tactic_tests/logical_tactics.rs), [`cases_in_have_before_and_after_execute.md`](https://github.com/clicklang/click/blob/master/mdtests/cases_in_have_before_and_after_execute.md), [`cases_before_execute_requires_proposition_goal.md`](https://github.com/clicklang/click/blob/master/mdtests/cases_before_execute_requires_proposition_goal.md), [`cases_after_execute_requires_proposition_goal.md`](https://github.com/clicklang/click/blob/master/mdtests/cases_after_execute_requires_proposition_goal.md)
 
 ### Scoped resource opening
 

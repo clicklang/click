@@ -8,10 +8,13 @@ fn with_next_source_operation_replaced(
     replacement: CStatement,
 ) -> CStatement {
     match statement {
-        CStatement::Seq(first, second) => CStatement::Seq(
-            Arc::new(with_next_source_operation_replaced(first, replacement)),
-            second.clone(),
-        ),
+        CStatement::Seq(statements) => CStatement::Seq(statements.with_statement(
+            0,
+            Arc::new(with_next_source_operation_replaced(
+                statements.first(),
+                replacement,
+            )),
+        )),
         _ => replacement,
     }
 }

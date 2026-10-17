@@ -620,9 +620,10 @@ pub(in crate::kernel) fn collect_c_statement_bitvector_variables(
         CStatement::HeapFree { pointer } => {
             collect_c_expression_bitvector_variables(pointer, variables);
         }
-        CStatement::Seq(first, second) => {
-            collect_c_statement_bitvector_variables(first, variables);
-            collect_c_statement_bitvector_variables(second, variables);
+        CStatement::Seq(statements) => {
+            for statement in statements.iter() {
+                collect_c_statement_bitvector_variables(statement, variables);
+            }
         }
         CStatement::TryCatchInt32 {
             try_body, handler, ..
