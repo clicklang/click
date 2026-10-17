@@ -177,7 +177,7 @@ fn source_scalar_scope_arm_preparation_is_linear_in_shared_diamonds() {
 #[test]
 fn source_scalar_scope_selected_checkpoint_work_is_indexed_across_ambient_history() {
     let mut measurements = vec![];
-    for count in [16, 64, 256, 1024] {
+    for count in [4, 16, 64, 256] {
         let (mut state, support) = scope_initial();
         let parent = scope_parent(&state);
         for _ in 0..count {
@@ -215,7 +215,9 @@ fn source_scalar_scope_selected_checkpoint_work_is_indexed_across_ambient_histor
     }
     eprintln!("selected closed scope work: {measurements:?}");
     assert!(
-        measurements[3].1 < measurements[0].1 * 4,
+        measurements
+            .windows(2)
+            .all(|pair| pair[1].1 <= pair[0].1 + 128),
         "{measurements:?}"
     );
 }

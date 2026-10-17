@@ -424,7 +424,7 @@ pub(in crate::surface::proof) struct ExecutionProofPresentation {
     pub(in crate::surface::proof) path_branch_premises: PersistentSequence<ClickProposition>,
     /// Frontier-local loop clauses, paired with the kernel-owned verified
     /// rules and migrated across joins as arm deltas.
-    pub(in crate::surface::proof) frontier_loop_clauses: PersistentSequence<StructuralClause>,
+    pub(in crate::surface::proof) frontier_loop_clauses: FrontierLoopClauses,
     /// Outcome tactics deferred during execution, applied in order at
     /// finalization; joins carry each arm's suffix.
     pub(in crate::surface::proof) post_execution_tactics:
@@ -669,7 +669,7 @@ impl ExecutionProofState {
                 resource_body_clauses: PersistentSequence::default(),
                 case_assumptions: PersistentSequence::default(),
                 path_branch_premises: PersistentSequence::default(),
-                frontier_loop_clauses: PersistentSequence::default(),
+                frontier_loop_clauses: FrontierLoopClauses::default(),
                 post_execution_tactics: PersistentSequence::default(),
                 call_outcome_edges: None,
                 surface_record: SurfaceRecord::default(),
@@ -701,6 +701,37 @@ impl ExecutionProofState {
 /// from (`ExecutionProofPresentation::loop_annotation`). The block and the
 /// parsed function are named by address: both are the claim's own, borrowed
 /// for the whole proof.
+/// A path's frontier-local loop clauses in binding order, with the loops
+/// they bind indexed, so asking whether a loop already has one does not
+/// walk every clause the earlier loops bound.
+#[derive(Clone, Default)]
+pub(in crate::surface::proof) struct FrontierLoopClauses {
+    clauses: PersistentSequence<StructuralClause>,
+    loops: crate::persistent::PersistentSet<usize>,
+}
+
+impl FrontierLoopClauses {
+    pub(in crate::surface::proof) fn push(&mut self, clause: StructuralClause) {
+        if let CodeRegion::Loop(index) = clause.region() {
+            self.loops = self.loops.with_value(*index);
+        }
+        self.clauses.push(clause);
+    }
+
+    /// Whether some clause is bound to loop `index`.
+    pub(in crate::surface::proof) fn binds_loop(&self, index: usize) -> bool {
+        self.loops.contains(&index)
+    }
+}
+
+impl std::ops::Deref for FrontierLoopClauses {
+    type Target = PersistentSequence<StructuralClause>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.clauses
+    }
+}
+
 pub(in crate::surface::proof) struct LoopAnnotationCache {
     pub(in crate::surface::proof) function_block: usize,
     pub(in crate::surface::proof) parsed_function: usize,
@@ -709,9 +740,13 @@ pub(in crate::surface::proof) struct LoopAnnotationCache {
     pub(in crate::surface::proof) initial_state: CState,
     pub(in crate::surface::proof) arguments: Vec<CExpression>,
     /// The frontier clauses bound before the annotated loop's own clause.
-    pub(in crate::surface::proof) frontier_clauses: PersistentSequence<StructuralClause>,
+    pub(in crate::surface::proof) frontier_clauses: FrontierLoopClauses,
     /// The annotated loop's own clause, bound to it.
     pub(in crate::surface::proof) bound_clause: StructuralClause,
+    /// The block the annotated loop was checked with: `frontier_clauses`,
+    /// then `bound_clause`, then any nested clauses its proof bound.
+    pub(in crate::surface::proof) bound_function_block: crate::surface::FunctionBlock,
+    pub(in crate::surface::proof) bound_nested_clauses: bool,
     pub(in crate::surface::proof) annotation: crate::surface::lowering::LoopAnnotation,
 }
 

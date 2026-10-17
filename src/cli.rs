@@ -961,7 +961,10 @@ struct ProjectConfigJson {
     mode: Option<String>,
     runtime: Option<String>,
     resource_semantics: Option<String>,
-    /// Units are read by [`crate::project::Project`].
+    /// The optimization level and the units are read by
+    /// [`crate::project::Project`].
+    #[allow(dead_code)]
+    optimization: Option<String>,
     #[allow(dead_code)]
     units: Option<serde_json::Value>,
 }
@@ -2453,6 +2456,23 @@ mod tests {
                 "{error}"
             );
         }
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn project_config_accepts_its_optimization_level() {
+        let root = std::env::temp_dir().join(format!(
+            "click-project-optimization-{}-{}",
+            std::process::id(),
+            std::thread::current().name().unwrap_or("test")
+        ));
+        fs::create_dir_all(&root).unwrap();
+        let path = root.join("entry.click");
+        let click = "verifying \"entry.c\";\n";
+        fs::write(&path, click).unwrap();
+        fs::write(root.join("entry.c"), "int answer(void) { return 1; }\n").unwrap();
+        fs::write(root.join("click.project.json"), r#"{"optimization":"-O0"}"#).unwrap();
+        read_click_project(&path, click).expect("a project naming its optimization level");
         fs::remove_dir_all(root).unwrap();
     }
 

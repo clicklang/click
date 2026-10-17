@@ -4400,7 +4400,7 @@ impl Parser {
             requires,
             requirement_source_clauses,
             decreases,
-            structural_clauses: Vec::new(),
+            structural_clauses: StructuralClauses::default(),
             constructs,
             ensures,
             exceptional_ensures,
@@ -5947,6 +5947,7 @@ impl Parser {
                 binder_identity: declaration.identity,
                 instance,
                 identity,
+                family: None,
             });
             if self.peek() != Some(&Token::Comma) {
                 break;
@@ -6194,6 +6195,7 @@ impl Parser {
             binder_identity: declaration.identity,
             instance: name.to_string(),
             identity,
+            family: Some(family.clone()),
         })
     }
 

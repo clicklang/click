@@ -979,11 +979,14 @@ impl Project {
         .collect()
     }
 
-    /// The command Click synthesizes for the unit: the fixture's command,
-    /// writing the object beside the translation unit.
+    /// The command Click synthesizes for the unit: the fixture's command at
+    /// `-O0`, the level of a description whose command names none, writing
+    /// the object beside the translation unit.
     fn synthesized_arguments(&self) -> Vec<String> {
         let mut arguments = self.compilation_arguments();
         *arguments.last_mut().unwrap() = format!("{}.o", self.source_name);
+        let after_rtti = arguments.iter().position(|a| a == "-fno-rtti").unwrap() + 1;
+        arguments.insert(after_rtti, "-O0".to_string());
         arguments
     }
 
@@ -1921,6 +1924,8 @@ fn unit_arguments_are_locked_and_change_the_identity() {
     let refreshed = load_import(&project.config()).unwrap();
     assert_ne!(refreshed.identity(), first_identity);
     *changed.last_mut().unwrap() = format!("{}.o", project.source_name);
+    let after_rtti = changed.iter().position(|a| a == "-fno-rtti").unwrap() + 1;
+    changed.insert(after_rtti, "-O0".to_string());
     assert_eq!(refreshed.export().profile.compilation_command, changed);
 
     // Arguments whose inputs the lock cannot inventory are refused.
@@ -1931,7 +1936,8 @@ fn unit_arguments_are_locked_and_change_the_identity() {
         project.write_compilation_database_commands(&[command]);
         let error = refresh_import(&project.config()).unwrap_err();
         assert!(
-            error.contains("untracked preprocessor input mode"),
+            error.contains("untracked preprocessor input mode")
+                || error.contains(&format!("unsupported C++ argument 1 `{untracked}`")),
             "{error}"
         );
         assert!(!project.artifact().exists());
@@ -6657,7 +6663,7 @@ fn cpp_direct_calls_reject_missing_throwing_and_recursive_definitions() {
 #[test]
 fn cpp_unit_arguments_cannot_leave_the_pinned_slice() {
     // Arguments that override the pinned standard, target or exception mode
-    // make the observed Clang profile disagree with the unit.
+    // are Click's to set, and are refused before the export runs.
     for (argument, exceptions) in [
         ("-std=gnu++20", false),
         ("--target=aarch64-unknown-linux-gnu", false),
@@ -6680,10 +6686,149 @@ fn cpp_unit_arguments_cannot_leave_the_pinned_slice() {
             .and_then(|unit| unit.lock_with_cpp_exporter(Some(&project.exporter)))
             .unwrap_err();
         assert!(
-            error.contains("profile must match the configured") || error.contains("Clang c++20"),
+            error.contains(&format!("`{argument}` is set by Click for every C++ unit")),
             "{argument}: {error}"
         );
         assert!(!project.directory.join(click::project::LOCK_NAME).exists());
+    }
+}
+
+/// Writes a project with one C++ unit exporting `increment` from the
+/// fixture's source, with `args` and the project fields `extra`.
+fn write_increment_project(project: &Project, args: &[&str], extra: serde_json::Value) -> PathBuf {
+    let mut root = serde_json::json!({"units": {"demo": {
+        "language": "c++",
+        "args": args,
+        "sources": {"increment.cpp": {"functions": ["increment"]}},
+    }}});
+    for (key, value) in extra.as_object().unwrap() {
+        root[key] = value.clone();
+    }
+    let project_file = project.directory.join(click::project::FILE_NAME);
+    fs::write(&project_file, serde_json::to_vec(&root).unwrap()).unwrap();
+    project_file
+}
+
+const INCREMENT_ARGS: &[&str] = &[
+    "-funsigned-char",
+    "-ffreestanding",
+    "-nostdinc",
+    "-nostdinc++",
+];
+
+#[test]
+fn cpp_unit_arguments_follow_the_flag_policy() {
+    for (argument, expected) in [
+        (
+            "-O3",
+            "names an optimization level; the project verifies its units at `-O2`",
+        ),
+        ("-O0", "names an optimization level"),
+        ("-fno-strict-aliasing", "is set by Click for every C++ unit"),
+        ("-fwrapv", "unsupported C++ argument 5 `-fwrapv`"),
+        ("-Xclang", "unsupported C++ argument 5 `-Xclang`"),
+        ("-Wl,-z,now", "unsupported C++ argument 5 `-Wl,-z,now`"),
+        ("-D__OPTIMIZE__=1", "defines `__OPTIMIZE__`"),
+        ("-I", "missing value after argument 5 `-I`"),
+    ] {
+        let project = Project::new();
+        let mut args = INCREMENT_ARGS.to_vec();
+        args.push(argument);
+        let project_file = write_increment_project(&project, &args, serde_json::json!({}));
+        let error = click::project::Project::load(&project_file)
+            .and_then(|unit| unit.lock_with_cpp_exporter(Some(&project.exporter)))
+            .unwrap_err();
+        assert!(error.contains(expected), "{argument}: {error}");
+        assert!(!project.directory.join(click::project::LOCK_NAME).exists());
+    }
+    // Preprocessor inputs and options affecting only code generation or
+    // diagnostics are accepted, and the project's level reaches the command.
+    let project = Project::new();
+    let mut args = INCREMENT_ARGS.to_vec();
+    args.extend([
+        "-O0",
+        "-DNAME=1",
+        "-U",
+        "OTHER",
+        "-I.",
+        "-g",
+        "-Wall",
+        "-Wno-unused-parameter",
+        "-fstack-protector-all",
+        "-fcf-protection=full",
+        "-fstack-clash-protection",
+        "-fmacro-prefix-map=a=b",
+        "-D_FORTIFY_SOURCE=3",
+    ]);
+    let project_file =
+        write_increment_project(&project, &args, serde_json::json!({"optimization": "-O0"}));
+    click::project::Project::load(&project_file)
+        .and_then(|unit| unit.lock_with_cpp_exporter(Some(&project.exporter)))
+        .expect("accepted arguments lock");
+    let lock: serde_json::Value = serde_json::from_slice(
+        &fs::read(project.directory.join(click::project::LOCK_NAME)).unwrap(),
+    )
+    .unwrap();
+    let command = &lock["units"]["demo"]["lock"]["increment.cpp"]["profile"]["compilation_command"];
+    assert!(
+        command
+            .as_array()
+            .unwrap()
+            .contains(&serde_json::json!("-O0")),
+        "{command}"
+    );
+    assert!(
+        !command
+            .as_array()
+            .unwrap()
+            .contains(&serde_json::json!("-fno-strict-aliasing")),
+        "{command}"
+    );
+}
+
+#[test]
+fn cpp_optimizer_promises_are_refused_at_an_optimizing_level() {
+    for attribute in [
+        "__attribute__((nonnull))",
+        "__attribute__((returns_nonnull))",
+        "__attribute__((const))",
+        "__attribute__((pure))",
+        "__attribute__((leaf))",
+        "__attribute__((returns_twice))",
+        "__attribute__((malloc))",
+        "__attribute__((assume_aligned(16)))",
+        "[[noreturn]]",
+        "[[gnu::nonnull]]",
+    ] {
+        for (optimization, refused) in [("-O2", true), ("-O0", false)] {
+            let source = format!(
+                "{attribute} int* promised(int* p) noexcept;\n\
+                 int* promised(int* p) noexcept {{ return p; }}\n\
+                 int increment(int& value) noexcept {{ return *promised(&value); }}\n"
+            );
+            let project = Project::with_fixture("increment.cpp", "increment", &source);
+            let project_file = write_increment_project(
+                &project,
+                INCREMENT_ARGS,
+                serde_json::json!({"optimization": optimization}),
+            );
+            let result = click::project::Project::load(&project_file)
+                .and_then(|unit| unit.lock_with_cpp_exporter(Some(&project.exporter)));
+            if refused {
+                let error = result.unwrap_err();
+                assert!(
+                    error.contains("is an optimizer promise Click does not check"),
+                    "{attribute}: {error}"
+                );
+            } else if attribute == "[[noreturn]]" {
+                // At `-O0` Clang does not act on it, but warns that this
+                // `noreturn` function returns.
+                let error = result.unwrap_err();
+                assert!(error.contains("should not return"), "{error}");
+            } else {
+                result.unwrap_or_else(|error| panic!("{attribute} at -O0: {error}"));
+            }
+        }
     }
 }
 

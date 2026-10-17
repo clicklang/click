@@ -33,14 +33,14 @@ struct DeclaredResourceScope {
     /// counted. The standard library's own expansion applies none.
     family_rules: bool,
     definitions: BTreeMap<String, DeclaredResourceInfo>,
-    /// Instances introduced as matched-arm children, by identity. These
-    /// override whatever family the parser recorded.
-    children: std::cell::RefCell<BTreeMap<Variable, String>>,
-    /// Every other instance family seen in declaration order.
-    instances: std::cell::RefCell<BTreeMap<Variable, String>>,
-    /// Names an unfold pattern bound to a scalar field's value. The parser
-    /// allocated them an instance identity before the field was known.
-    field_binders: std::cell::RefCell<BTreeSet<Variable>>,
+    /// What the current proof path has fixed about each instance identity,
+    /// in source order. A proof name keeps one identity in its declaration,
+    /// so two alternative arms can bind it to different resources; each arm
+    /// starts from the state before the alternatives ([`Self::alternatives`]).
+    families: std::cell::RefCell<BTreeMap<Variable, InstanceFamily>>,
+    /// The previous value of each `families` entry changed since the
+    /// declaration began, so an arm's changes can be undone.
+    family_log: std::cell::RefCell<Vec<(Variable, Option<InstanceFamily>)>>,
     unowned_resource_parameters: std::cell::RefCell<BTreeMap<Variable, String>>,
     /// The enclosing C function's parameters of signed character pointer
     /// type. A resource argument naming one, passed to `uint8` bytes, is
@@ -60,9 +60,8 @@ impl DeclaredResourceScope {
     /// the preceding declaration's learned instances, retaining the shared
     /// immutable resource definitions without a per-declaration clone.
     fn begin_declaration(&self) {
-        self.children.borrow_mut().clear();
-        self.instances.borrow_mut().clear();
-        self.field_binders.borrow_mut().clear();
+        self.families.borrow_mut().clear();
+        self.family_log.borrow_mut().clear();
         self.unowned_resource_parameters.borrow_mut().clear();
         self.character_parameters.borrow_mut().clear();
     }
@@ -108,38 +107,159 @@ impl DeclaredResourceScope {
         self.definitions.contains_key(name)
     }
 
-    /// The resource of the instance `identity`, if the expansion has seen a
-    /// declaration that fixes it.
-    fn instance_resource(&self, identity: Variable) -> Option<String> {
-        if let Some(name) = self.children.borrow().get(&identity) {
-            return Some(name.clone());
+    fn family(&self, identity: Variable) -> Option<InstanceFamily> {
+        self.families.borrow().get(&identity).cloned()
+    }
+
+    fn set_family(&self, identity: Variable, family: Option<InstanceFamily>) {
+        let previous = match &family {
+            Some(family) => self.families.borrow_mut().insert(identity, family.clone()),
+            None => self.families.borrow_mut().remove(&identity),
+        };
+        if previous != family {
+            self.family_log.borrow_mut().push((identity, previous));
         }
-        self.instances.borrow().get(&identity).cloned()
+    }
+
+    /// The resource of the instance `identity`, if the current path has
+    /// fixed it.
+    fn instance_resource(&self, identity: Variable) -> Option<String> {
+        match self.family(identity)? {
+            InstanceFamily::Child(name) | InstanceFamily::Instance(name) => Some(name),
+            InstanceFamily::FieldValue | InstanceFamily::Ambiguous(_) => None,
+        }
+    }
+
+    /// Refuses a use of `name` when alternative paths bound it to
+    /// instances of different resources.
+    fn refuse_ambiguous(&self, identity: Variable, name: &str) -> Result<(), ClickError> {
+        match self.family(identity) {
+            Some(InstanceFamily::Ambiguous(resources)) => Err(ClickError::new(format!(
+                "`{name}` names a `{}` instance on one path and a `{}` instance on another; give each its own name",
+                resources.0, resources.1
+            ))),
+            _ => Ok(()),
+        }
     }
 
     /// Record the resource of `identity`. An explicit `fold(name(...), ...)`
     /// construction names its own resource, so it also replaces whatever
     /// child slot the identity was introduced by.
     fn record_instance(&self, identity: Variable, name: &str, construction: bool) {
-        if construction {
-            self.children.borrow_mut().remove(&identity);
+        if !construction && matches!(self.family(identity), Some(InstanceFamily::Child(_))) {
+            return;
         }
-        if !self.children.borrow().contains_key(&identity) {
-            self.instances
-                .borrow_mut()
-                .insert(identity, name.to_string());
-        }
+        self.set_family(identity, Some(InstanceFamily::Instance(name.to_string())));
     }
 
     fn record_field_binder(&self, identity: Variable) {
-        self.field_binders.borrow_mut().insert(identity);
+        self.set_family(identity, Some(InstanceFamily::FieldValue));
     }
 
     fn record_child(&self, identity: Variable, name: &str) {
-        self.children
-            .borrow_mut()
-            .insert(identity, name.to_string());
+        self.set_family(identity, Some(InstanceFamily::Child(name.to_string())));
     }
+
+    /// Begins alternative arms: each arm ([`Self::arm`]) starts from the
+    /// state here, and [`Self::finish_alternatives`] joins them.
+    fn begin_alternatives(&self) -> Alternatives {
+        Alternatives {
+            start: self.family_log.borrow().len(),
+            outcomes: Default::default(),
+        }
+    }
+
+    /// Expands one alternative arm, then undoes its changes, keeping what
+    /// it left for the identities it changed.
+    fn arm<T>(
+        &self,
+        alternatives: &Alternatives,
+        expand: impl FnOnce() -> Result<T, ClickError>,
+    ) -> Result<T, ClickError> {
+        let expanded = expand()?;
+        let changes = self.family_log.borrow_mut().split_off(alternatives.start);
+        let mut outcome = BTreeMap::new();
+        for (identity, _) in &changes {
+            outcome
+                .entry(*identity)
+                .or_insert_with(|| self.family(*identity));
+        }
+        let mut families = self.families.borrow_mut();
+        for (identity, previous) in changes.into_iter().rev() {
+            match previous {
+                Some(family) => families.insert(identity, family),
+                None => families.remove(&identity),
+            };
+        }
+        alternatives.outcomes.borrow_mut().push(outcome);
+        Ok(expanded)
+    }
+
+    /// After alternative arms, an instance holds what every arm agrees on.
+    /// An arm that left it alone agrees with the state before them, unless
+    /// that held nothing. Arms that gave it different resources leave it
+    /// ambiguous, so a later use is refused rather than read with one arm's
+    /// resource. The work is the arms' own changes.
+    fn finish_alternatives(&self, alternatives: Alternatives) {
+        let outcomes = alternatives.outcomes.into_inner();
+        let changed = outcomes
+            .iter()
+            .flat_map(BTreeMap::keys)
+            .copied()
+            .collect::<BTreeSet<_>>();
+        for identity in changed {
+            let before = self.family(identity);
+            let joined = outcomes
+                .iter()
+                .map(|outcome| outcome.get(&identity).cloned().unwrap_or(before.clone()))
+                .reduce(join_instance_families)
+                .flatten();
+            self.set_family(identity, joined);
+        }
+    }
+}
+
+/// Alternative arms in progress ([`DeclaredResourceScope::begin_alternatives`]).
+struct Alternatives {
+    start: usize,
+    outcomes: std::cell::RefCell<Vec<BTreeMap<Variable, Option<InstanceFamily>>>>,
+}
+
+fn join_instance_families(
+    left: Option<InstanceFamily>,
+    right: Option<InstanceFamily>,
+) -> Option<InstanceFamily> {
+    use InstanceFamily::*;
+    let (left, right) = match (left, right) {
+        (None, family) | (family, None) => return family,
+        (Some(left), Some(right)) => (left, right),
+    };
+    match (left, right) {
+        (Ambiguous(resources), _) | (_, Ambiguous(resources)) => Some(Ambiguous(resources)),
+        (left, right) if left == right => Some(left),
+        (FieldValue, _) | (_, FieldValue) => Some(FieldValue),
+        (Child(left) | Instance(left), Child(right) | Instance(right)) if left == right => {
+            Some(Child(left))
+        }
+        (Child(left) | Instance(left), Child(right) | Instance(right)) => {
+            Some(Ambiguous(Box::new((left, right))))
+        }
+    }
+}
+
+/// What a proof path has fixed about one resource instance identity.
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum InstanceFamily {
+    /// A child an unfold introduced, of its slot's resource. A later use
+    /// under another resource keeps the slot's: the parser could only
+    /// record the parent's.
+    Child(String),
+    /// An instance of a resource a declaration, fold or call named.
+    Instance(String),
+    /// A name an unfold pattern bound to a scalar field's value.
+    FieldValue,
+    /// Alternative paths gave it these two resources.
+    Ambiguous(Box<(String, String)>),
 }
 
 // Only immutable surface syntax is shared. Lowered environments, authorities,
@@ -927,9 +1047,8 @@ fn expand_declared_resource_clauses_with_rules(
         premise_free_theorems,
         family_rules,
         definitions: resource_definitions,
-        children: Default::default(),
-        instances: Default::default(),
-        field_binders: Default::default(),
+        families: Default::default(),
+        family_log: Default::default(),
         unowned_resource_parameters: Default::default(),
         character_parameters: Default::default(),
         constructors,
@@ -1557,9 +1676,14 @@ fn expand_declared_resource_tactic(
             Ok(ProofTactic::StepProved { step, proof })
         }
         ProofTactic::StepCall(transport) => {
+            record_produced_instances(&transport, resource_definitions);
             Ok(ProofTactic::StepCall(transport.try_map_type_arguments(
                 |resource| expand_declared_resource_clause(resource, resource_definitions),
             )?))
+        }
+        ProofTactic::UserTactic(application) => {
+            record_produced_instances(&application, resource_definitions);
+            Ok(ProofTactic::UserTactic(application))
         }
         ProofTactic::ArithmeticCertificate(certificate) => Ok(ProofTactic::ArithmeticCertificate(
             expand_declared_resource_certificate(certificate, resource_definitions)?,
@@ -2242,6 +2366,16 @@ fn expand_declared_resource_tactic_with_resources(
 }
 
 #[inline(never)]
+fn expand_declared_resource_script(
+    tactics: Vec<ProofTactic>,
+    resource_definitions: &DeclaredResourceScope,
+) -> Result<Vec<ProofTactic>, ClickError> {
+    tactics
+        .into_iter()
+        .map(|tactic| expand_declared_resource_tactic(tactic, resource_definitions))
+        .collect()
+}
+
 fn expand_declared_resource_tactic_with_nested_proofs(
     tactic: ProofTactic,
     resource_definitions: &DeclaredResourceScope,
@@ -2270,35 +2404,40 @@ fn expand_declared_resource_tactic_with_nested_proofs(
                 })
                 .transpose()?,
         })),
-        ProofTactic::If(proof_if) => Ok(ProofTactic::If(ProofIf {
-            condition: expand_declared_resource_proposition(
-                proof_if.condition,
-                resource_definitions,
-            )?,
-            ensuring: expand_declared_join_interface(proof_if.ensuring, resource_definitions)?,
-            then_tactics: proof_if
-                .then_tactics
-                .into_iter()
-                .map(|tactic| expand_declared_resource_tactic(tactic, resource_definitions))
-                .collect::<Result<Vec<_>, _>>()?,
-            else_tactics: proof_if
-                .else_tactics
-                .into_iter()
-                .map(|tactic| expand_declared_resource_tactic(tactic, resource_definitions))
-                .collect::<Result<Vec<_>, _>>()?,
-        })),
-        ProofTactic::Cases(proof_cases) => Ok(ProofTactic::Cases(proof_cases.try_map(
-            |assumption| {
-                expand_declared_resource_proposition(assumption.clone(), resource_definitions)
-            },
-            |tactics| {
-                tactics
-                    .iter()
-                    .cloned()
-                    .map(|tactic| expand_declared_resource_tactic(tactic, resource_definitions))
-                    .collect::<Result<Vec<_>, _>>()
-            },
-        )?)),
+        ProofTactic::If(proof_if) => {
+            let condition =
+                expand_declared_resource_proposition(proof_if.condition, resource_definitions)?;
+            let ensuring = expand_declared_join_interface(proof_if.ensuring, resource_definitions)?;
+            let alternatives = resource_definitions.begin_alternatives();
+            let then_tactics = resource_definitions.arm(&alternatives, || {
+                expand_declared_resource_script(proof_if.then_tactics, resource_definitions)
+            })?;
+            let else_tactics = resource_definitions.arm(&alternatives, || {
+                expand_declared_resource_script(proof_if.else_tactics, resource_definitions)
+            })?;
+            resource_definitions.finish_alternatives(alternatives);
+            Ok(ProofTactic::If(ProofIf {
+                condition,
+                ensuring,
+                then_tactics,
+                else_tactics,
+            }))
+        }
+        ProofTactic::Cases(proof_cases) => {
+            let alternatives = resource_definitions.begin_alternatives();
+            let proof_cases = proof_cases.try_map(
+                |assumption| {
+                    expand_declared_resource_proposition(assumption.clone(), resource_definitions)
+                },
+                |tactics| {
+                    resource_definitions.arm(&alternatives, || {
+                        expand_declared_resource_script(tactics.to_vec(), resource_definitions)
+                    })
+                },
+            )?;
+            resource_definitions.finish_alternatives(alternatives);
+            Ok(ProofTactic::Cases(proof_cases))
+        }
         ProofTactic::StructuralInduct {
             parameter,
             hypothesis,
@@ -2306,27 +2445,27 @@ fn expand_declared_resource_tactic_with_nested_proofs(
         } => {
             let constructors = &resource_definitions.constructors;
             let scrutinee = constructors.variable_type(&parameter);
-            Ok(ProofTactic::StructuralInduct {
-                arms: arms
-                    .into_iter()
-                    .map(|arm| {
-                        let types = constructors.proof_arm_binding_types(scrutinee.as_ref(), &arm);
-                        let tactics = constructors.with_bindings(&arm.bindings, types, || {
-                            arm.tactics
-                                .into_iter()
-                                .map(|tactic| {
-                                    expand_declared_resource_tactic(tactic, resource_definitions)
-                                })
-                                .collect::<Result<Vec<_>, ClickError>>()
-                        })?;
-                        Ok(ProofInductionArm {
-                            type_name: arm.type_name,
-                            variant: arm.variant,
-                            bindings: arm.bindings,
-                            tactics,
+            let alternatives = resource_definitions.begin_alternatives();
+            let arms = arms
+                .into_iter()
+                .map(|arm| {
+                    let types = constructors.proof_arm_binding_types(scrutinee.as_ref(), &arm);
+                    let tactics = constructors.with_bindings(&arm.bindings, types, || {
+                        resource_definitions.arm(&alternatives, || {
+                            expand_declared_resource_script(arm.tactics, resource_definitions)
                         })
+                    })?;
+                    Ok(ProofInductionArm {
+                        type_name: arm.type_name,
+                        variant: arm.variant,
+                        bindings: arm.bindings,
+                        tactics,
                     })
-                    .collect::<Result<Vec<_>, ClickError>>()?,
+                })
+                .collect::<Result<Vec<_>, ClickError>>()?;
+            resource_definitions.finish_alternatives(alternatives);
+            Ok(ProofTactic::StructuralInduct {
+                arms,
                 parameter,
                 hypothesis,
             })
@@ -2337,49 +2476,51 @@ fn expand_declared_resource_tactic_with_nested_proofs(
             let scrutinee =
                 expand_declared_resource_expression(proof_match.scrutinee, resource_definitions)?;
             let scrutinee_type = constructors.scrutinee_type(&scrutinee);
+            let ensuring =
+                expand_declared_join_interface(proof_match.ensuring, resource_definitions)?;
+            let alternatives = resource_definitions.begin_alternatives();
+            let arms = proof_match
+                .arms
+                .into_iter()
+                .map(|arm| {
+                    let types = constructors.proof_arm_binding_types(scrutinee_type.as_ref(), &arm);
+                    let tactics = constructors.with_bindings(&arm.bindings, types, || {
+                        resource_definitions.arm(&alternatives, || {
+                            expand_declared_resource_script(arm.tactics, resource_definitions)
+                        })
+                    })?;
+                    Ok(ProofInductionArm {
+                        type_name: arm.type_name,
+                        variant: arm.variant,
+                        bindings: arm.bindings,
+                        tactics,
+                    })
+                })
+                .collect::<Result<_, ClickError>>()?;
+            resource_definitions.finish_alternatives(alternatives);
             Ok(ProofTactic::Match(std::sync::Arc::new(ProofMatch {
                 scrutinee,
-                ensuring: expand_declared_join_interface(
-                    proof_match.ensuring,
-                    resource_definitions,
-                )?,
-                arms: proof_match
-                    .arms
-                    .into_iter()
-                    .map(|arm| {
-                        let types =
-                            constructors.proof_arm_binding_types(scrutinee_type.as_ref(), &arm);
-                        let tactics = constructors.with_bindings(&arm.bindings, types, || {
-                            arm.tactics
-                                .into_iter()
-                                .map(|tactic| {
-                                    expand_declared_resource_tactic(tactic, resource_definitions)
-                                })
-                                .collect::<Result<_, _>>()
-                        })?;
-                        Ok(ProofInductionArm {
-                            type_name: arm.type_name,
-                            variant: arm.variant,
-                            bindings: arm.bindings,
-                            tactics,
-                        })
-                    })
-                    .collect::<Result<_, ClickError>>()?,
+                ensuring,
+                arms,
             })))
         }
-        ProofTactic::Branch(proof_branch) => Ok(ProofTactic::Branch(ProofBranch {
-            ensuring: expand_declared_join_interface(proof_branch.ensuring, resource_definitions)?,
-            then_tactics: proof_branch
-                .then_tactics
-                .into_iter()
-                .map(|tactic| expand_declared_resource_tactic(tactic, resource_definitions))
-                .collect::<Result<Vec<_>, _>>()?,
-            else_tactics: proof_branch
-                .else_tactics
-                .into_iter()
-                .map(|tactic| expand_declared_resource_tactic(tactic, resource_definitions))
-                .collect::<Result<Vec<_>, _>>()?,
-        })),
+        ProofTactic::Branch(proof_branch) => {
+            let ensuring =
+                expand_declared_join_interface(proof_branch.ensuring, resource_definitions)?;
+            let alternatives = resource_definitions.begin_alternatives();
+            let then_tactics = resource_definitions.arm(&alternatives, || {
+                expand_declared_resource_script(proof_branch.then_tactics, resource_definitions)
+            })?;
+            let else_tactics = resource_definitions.arm(&alternatives, || {
+                expand_declared_resource_script(proof_branch.else_tactics, resource_definitions)
+            })?;
+            resource_definitions.finish_alternatives(alternatives);
+            Ok(ProofTactic::Branch(ProofBranch {
+                ensuring,
+                then_tactics,
+                else_tactics,
+            }))
+        }
         ProofTactic::Loop(clause) => Ok(ProofTactic::Loop(
             expand_declared_resource_structural_clause(clause, resource_definitions)?,
         )),
@@ -2545,6 +2686,9 @@ fn expand_declared_resource_clause(
             // parser could only record the family it was unfolded from, so
             // prefer what an earlier declaration fixed.
             let construction = binding.fold_fields.is_some();
+            if !construction {
+                resource_definitions.refuse_ambiguous(binding.identity, &binding.name)?;
+            }
             let parent = if construction {
                 name.clone()
             } else {
@@ -3393,18 +3537,15 @@ fn expand_declared_resource_expression_node(
             {
                 return Err(ClickError::new(format!("Requires owns {name}")));
             }
-            if resource_definitions
-                .field_binders
-                .borrow()
-                .contains(&access.identity)
-            {
-                return Err(ClickError::new(format!(
-                    "`{}` names the value of a resource field, not a resource instance",
-                    access.owner
-                )));
-            }
-            if let Some(name) = resource_definitions.children.borrow().get(&access.identity) {
-                access.resource_name.clone_from(name);
+            match resource_definitions.family(access.identity) {
+                Some(InstanceFamily::FieldValue) => {
+                    return Err(ClickError::new(format!(
+                        "`{}` names the value of a resource field, not a resource instance",
+                        access.owner
+                    )));
+                }
+                Some(InstanceFamily::Child(name)) => access.resource_name = name,
+                _ => resource_definitions.refuse_ambiguous(access.identity, &access.owner)?,
             }
             let info = resource_definitions
                 .get(&access.resource_name)
@@ -3870,6 +4011,18 @@ pub(in crate::surface) fn standard_library_theorem_index(name: &str) -> Option<u
     full_library().ok()?.theorem_index().get(name).copied()
 }
 
+/// A produced instance is of the resource its callee's contract names,
+/// as an explicit fold's result is. The name it binds may have held a child
+/// an earlier unfold introduced, whose slot fixed another resource; that
+/// child's resource no longer describes it.
+fn record_produced_instances(transport: &CallBinderTransport, definitions: &DeclaredResourceScope) {
+    for produced in transport.produced() {
+        if let Some(family) = produced.family() {
+            definitions.record_instance(produced.identity(), family, true);
+        }
+    }
+}
+
 fn validate_resource_reference_arguments(
     name: &str,
     arguments: &[ContractExpression],
@@ -3887,6 +4040,7 @@ fn validate_resource_reference_arguments(
         )));
     }
     for (reference, expected) in references.iter().zip(&info.resource_parameter_families) {
+        definitions.refuse_ambiguous(reference.identity, &reference.name)?;
         let actual = definitions
             .instance_resource(reference.identity)
             .ok_or_else(|| {

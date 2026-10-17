@@ -597,8 +597,8 @@ any method is. It inherits the interface: the interface's `ensures` join its
 own, labeled `<trait_methods::Circle as
 trait_methods::Shape>::area.interface_ensures_0`, and its proof establishes
 them all; an implementation that writes no `requires` takes the
-interface's. It names its parameters as the interface does, so the
-inherited clauses read the same. It may accept more calls than the
+interface's. The inherited clauses are read with the implementation's own
+names for its parameters: `Square`'s `area` names `scale` as `factor`. It may accept more calls than the
 interface, a wider precondition, and its `requires` are checked to follow
 from the interface's by the check that forms a named contract at `&f`,
 which reads each clause exactly or decides a bare comparison: `requires 0

@@ -1749,7 +1749,7 @@ fn pinned_upstream_money_range_reexports_and_verifies_in_normal_gate() {
     let database_bytes = fs::read_to_string(&database_path).unwrap();
     // The unit states the command's arguments, so changing one changes the
     // unit's description, which the lock no longer matches.
-    let changed_database = database_bytes.replace(" -O2 ", " -O1 ");
+    let changed_database = database_bytes.replace(" -g ", " -g -DCLICK_COMMAND_VARIANT=1 ");
     assert_ne!(changed_database, database_bytes);
     fs::write(&database_path, changed_database).unwrap();
     let changed_command = load_import(&config_path).unwrap_err();

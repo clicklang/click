@@ -108,6 +108,8 @@ pub use crate::languages::{claim_label_matches, display_source_names, source_dis
 pub(crate) mod planning;
 pub(crate) mod proof_diagnostics;
 mod source_registry;
+mod structural_clauses;
+pub use structural_clauses::StructuralClauses;
 mod surface_propositions;
 use integer_conversions::*;
 use integer_truncation::*;
@@ -1063,6 +1065,9 @@ pub struct CallBinderBinding {
     instance: String,
     /// The caller's instance identity.
     identity: Variable,
+    /// The resource a produced instance is, from the callee's contract;
+    /// `None` for an instance the caller supplies.
+    family: Option<String>,
 }
 
 impl CallBinderBinding {
@@ -1080,6 +1085,10 @@ impl CallBinderBinding {
 
     pub(crate) fn identity(&self) -> Variable {
         self.identity
+    }
+
+    pub(crate) fn family(&self) -> Option<&str> {
+        self.family.as_deref()
     }
 }
 
@@ -1345,7 +1354,7 @@ pub struct FunctionBlock {
     /// The other members of this function's recursive C component, supplied
     /// by the source frontend; empty outside a component of two or more.
     recursion_peers: Vec<String>,
-    structural_clauses: Vec<StructuralClause>,
+    structural_clauses: StructuralClauses,
     constructs: Vec<ResourceClause>,
     ensures: Vec<EnsureClause>,
     exceptional_ensures: Vec<EnsureClause>,
@@ -5354,16 +5363,15 @@ impl CodeRegionRef {
     /// read and back-edge regions name execution targets, not regions.
     pub(in crate::surface) fn resolve(
         &self,
-        structural_clauses: &[StructuralClause],
+        structural_clauses: &StructuralClauses,
     ) -> Result<CodeRegion, CodeRegionResolutionError> {
         match self {
             CodeRegionRef::Function => Ok(CodeRegion::Function),
             CodeRegionRef::Loop(index) => Ok(CodeRegion::Loop(*index)),
             CodeRegionRef::Statement(index) => Ok(CodeRegion::Statement(*index)),
             CodeRegionRef::Label(label) => structural_clauses
-                .iter()
-                .find(|clause| clause.label() == Some(label.as_str()))
-                .map(|clause| *clause.region())
+                .labelled_region(label)
+                .copied()
                 .ok_or_else(|| CodeRegionResolutionError::UnknownLabel(label.clone())),
             CodeRegionRef::BackEdge => Err(CodeRegionResolutionError::ExecutionTargetOnly(
                 "back_edge regions are",
@@ -6916,8 +6924,8 @@ impl FunctionBlock {
     /// contract: its `ensures`, which the implementation's proof establishes
     /// with its own, each named `interface_ensures_<i>`, and its `requires`
     /// when the implementation writes none. A clause the implementation
-    /// already states is not repeated. The implementation names its
-    /// parameters as the interface does, so the clauses read the same.
+    /// already states is not repeated. The interface's clauses are read with
+    /// the implementation's names for its parameters.
     pub(in crate::surface) fn inherit_interface(
         &mut self,
         interface: &FunctionBlock,
@@ -6931,13 +6939,36 @@ impl FunctionBlock {
                 .map(|parameter| parameter.name().to_string())
                 .collect::<Vec<_>>()
         };
-        if names(self) != names(interface) {
+        let (own, theirs) = (names(self), names(interface));
+        if own.len() != theirs.len() {
             return Err(format!(
-                "an implementation names its parameters as {source} does, ({}), \
-                 so the interface's clauses read the same in it",
-                names(interface).join(", ")
+                "an implementation takes the parameters {source} does, ({})",
+                theirs.join(", ")
             ));
         }
+        let renames = theirs
+            .iter()
+            .zip(&own)
+            .filter(|(from, to)| from != to)
+            .map(|(from, to)| {
+                (
+                    from.clone(),
+                    ContractExpression::CFragment(crate::kernel::c_variable(to.clone())),
+                )
+            })
+            .collect::<BTreeMap<_, _>>();
+        let renamed;
+        let interface = if renames.is_empty() {
+            interface
+        } else {
+            renamed = interface.renamed(&renames).map_err(|message| {
+                format!(
+                    "{source}'s clauses cannot be read with the implementation's parameter \
+                     names: {message}"
+                )
+            })?;
+            &renamed
+        };
         if self.requires.is_empty() {
             self.requires = interface.requires.clone();
             self.requirement_source_clauses = interface.requirement_source_clauses.clone();
@@ -6980,6 +7011,47 @@ impl FunctionBlock {
         alias.external = true;
         alias.grouped_proof = None;
         alias
+    }
+
+    /// This contract's clauses with each parameter in `renames` read as the
+    /// expression it maps to.
+    fn renamed(&self, renames: &BTreeMap<String, ContractExpression>) -> Result<Self, String> {
+        let mut renamed = self.clone();
+        renamed.requires = self
+            .requires
+            .iter()
+            .map(|requirement| {
+                Ok(match requirement {
+                    Requirement::Proposition(proposition) => Requirement::Proposition(
+                        lowering::substitute_click_proposition(proposition, renames)?,
+                    ),
+                    Requirement::Resource(resource) => Requirement::Resource(
+                        verification::substitute_resource_clause_for_summary(resource, renames)?,
+                    ),
+                    Requirement::LoadableSegment { segment } => Requirement::LoadableSegment {
+                        segment: verification::substitute_contract_segment(
+                            segment,
+                            &renames.into(),
+                        )?,
+                    },
+                })
+            })
+            .collect::<Result<_, String>>()?;
+        for clause in &mut renamed.ensures {
+            clause.ensure = match &clause.ensure {
+                Ensure::Proposition(proposition) => Ensure::Proposition(
+                    lowering::substitute_click_proposition(proposition, renames)?,
+                ),
+                Ensure::Resource(resource) => Ensure::Resource(
+                    verification::substitute_resource_clause_for_summary(resource, renames)?,
+                ),
+            };
+            if let Some(condition) = &clause.condition {
+                clause.condition =
+                    Some(lowering::substitute_click_proposition(condition, renames)?);
+            }
+        }
+        Ok(renamed)
     }
 
     pub fn parameter_struct_casts(&self) -> &BTreeMap<String, String> {
@@ -7123,7 +7195,7 @@ impl FunctionBlock {
         &self.recursion_peers
     }
 
-    pub fn structural_clauses(&self) -> &[StructuralClause] {
+    pub fn structural_clauses(&self) -> &StructuralClauses {
         &self.structural_clauses
     }
 
@@ -7188,23 +7260,21 @@ impl FunctionBlock {
     /// separate declarations.
     fn with_bound_frontier_loop_clauses(&self, clauses: &[StructuralClause]) -> Self {
         let mut function = self.clone();
-        let mut positions = BTreeMap::new();
-        let mut bound = Vec::with_capacity(function.structural_clauses.len() + clauses.len());
-        for clause in std::mem::take(&mut function.structural_clauses)
-            .into_iter()
-            .chain(clauses.iter().cloned())
-        {
-            if let CodeRegion::Loop(index) = clause.region() {
-                if let Some(position) = positions.get(index) {
-                    bound[*position] = clause;
-                    continue;
-                }
-                positions.insert(*index, bound.len());
-            }
-            bound.push(clause);
+        for clause in clauses {
+            function.structural_clauses.bind(clause.clone());
         }
-        function.structural_clauses = bound;
         function
+    }
+
+    /// Check this block's structural clauses with `check` against
+    /// `loop_count`, skipping those an earlier check of this list already
+    /// passed ([`StructuralClauses::validate`]).
+    pub(in crate::surface) fn validate_structural_clauses<E>(
+        &mut self,
+        loop_count: usize,
+        check: impl FnMut(&StructuralClause) -> Result<(), E>,
+    ) -> Result<(), E> {
+        self.structural_clauses.validate(loop_count, check)
     }
 
     /// This block with every structural clause resolved through its own
@@ -7213,11 +7283,7 @@ impl FunctionBlock {
     pub(in crate::surface) fn with_resolved_structural_clauses(
         &self,
     ) -> Result<std::borrow::Cow<'_, Self>, String> {
-        if self
-            .structural_clauses
-            .iter()
-            .all(|clause| clause.scope.is_empty())
-        {
+        if !self.structural_clauses.any_scoped() {
             return Ok(std::borrow::Cow::Borrowed(self));
         }
         let mut function = self.clone();
@@ -7225,7 +7291,8 @@ impl FunctionBlock {
             .structural_clauses
             .iter()
             .map(StructuralClause::resolved)
-            .collect::<Result<Vec<_>, String>>()?;
+            .collect::<Result<Vec<_>, String>>()?
+            .into();
         Ok(std::borrow::Cow::Owned(function))
     }
 }

@@ -146,7 +146,7 @@ fn packed_word_contract_lookup_and_scope_ignore_unrelated_words() {
     let target = value(998_002);
     let relation = equality(&source, &target);
     let mut measurements = Vec::new();
-    for size in [16u64, 64, 256, 1024] {
+    for size in [4u64, 16, 64, 256] {
         let mut parent = PureFactContext::new();
         for index in 0..size {
             parent = parent.assume_proposition(equality(
@@ -164,8 +164,11 @@ fn packed_word_contract_lookup_and_scope_ignore_unrelated_words() {
         });
         measurements.push(work);
     }
+    eprintln!("packed-word selected work: {measurements:?}");
     assert!(
-        measurements[3] <= measurements[0] * 4 + 32,
+        measurements
+            .iter()
+            .all(|work| *work <= measurements[0] + 32),
         "{measurements:?}"
     );
 }

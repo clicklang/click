@@ -4806,6 +4806,35 @@ pub(in crate::kernel) fn collect_shared_memory_bitvector_variables(
 struct SnapshotReservation {
     reserved: crate::persistent::PersistentSet<(u32, u32)>,
     met: BTreeSet<(u32, u32)>,
+    /// The snapshots whose bound variables the fact set already reserves,
+    /// and those this fact's collection walked for them.
+    bound_reserved: crate::persistent::PersistentSet<(u32, u32)>,
+    bound_walked: BTreeSet<(u32, u32)>,
+}
+
+/// The interned snapshots whose variables a fact set already reserves: for
+/// their free variables (`variables`), and separately for their bound
+/// variables (`bound`). A snapshot reached only through another's loads is
+/// counted for its free variables without its bound variables being walked,
+/// so the two are kept apart.
+#[derive(Clone, Default)]
+pub(in crate::kernel) struct ReservedSnapshots {
+    variables: crate::persistent::PersistentSet<(u32, u32)>,
+    bound: crate::persistent::PersistentSet<(u32, u32)>,
+}
+
+/// Whether the bound-variable walk of the interned snapshot `identity` can
+/// be skipped while a fact set reserves a fact's variables
+/// (`proposition_variables_reserving`): the set already reserves its bound
+/// variables, or this fact's collection already walked it. Marks it walked
+/// otherwise. Outside a reservation nothing is skipped.
+pub(in crate::kernel) fn bound_snapshot_already_reserved(identity: (u32, u32)) -> bool {
+    SNAPSHOT_RESERVATION.with(|cell| {
+        cell.borrow_mut().as_mut().is_some_and(|reservation| {
+            reservation.bound_reserved.contains(&identity)
+                || !reservation.bound_walked.insert(identity)
+        })
+    })
 }
 
 thread_local! {
@@ -4908,6 +4937,30 @@ fn extend_with_snapshot_variables(
     SNAPSHOT_RESERVATION.with(|cell| *cell.borrow_mut() = Some(reservation));
 }
 
+/// The nearest snapshot `memory` derives from, within
+/// `RESERVED_SNAPSHOT_HOPS` steps, whose bound variables the fact set being
+/// built already reserves or this fact's collection already walked; `None`
+/// outside a reservation. Its bound variables together with those of the
+/// entries `memory` changes since include all of `memory`'s.
+pub(in crate::kernel) fn bound_reserved_base(
+    memory: &crate::kernel::primitives::SharedCMemory,
+) -> Option<crate::kernel::primitives::SharedCMemory> {
+    SNAPSHOT_RESERVATION.with(|cell| {
+        let reservation = cell.borrow();
+        let reservation = reservation.as_ref()?;
+        let mut current = memory.clone();
+        for _ in 0..RESERVED_SNAPSHOT_HOPS {
+            let base = current.derivation()?.base().clone();
+            let id = base.arena_id();
+            if reservation.bound_reserved.contains(&id) || reservation.bound_walked.contains(&id) {
+                return Some(base);
+            }
+            current = base;
+        }
+        None
+    })
+}
+
 /// The variables of every entry `memory` holds that `base` does not hold
 /// the same, by the diffs `counts_from_base` reads: together with `base`'s
 /// variables they include all of `memory`'s, and each is one of `memory`'s.
@@ -4966,12 +5019,13 @@ fn variables_entering(base: &CMemory, memory: &CMemory) -> BTreeSet<Variable> {
 
 /// `proposition_variables(proposition)` for a fact set whose reserved
 /// variables already include every variable of the snapshots `reserved`
-/// names: the variables to reserve beyond those, and the snapshots the
-/// collection met, whose variables the reserved ones then include.
+/// names: the variables to reserve beyond those, with `reserved` extended
+/// by the snapshots the collection met, whose variables the reserved ones
+/// then include.
 pub(in crate::kernel) fn proposition_variables_reserving(
     proposition: &Proposition,
-    reserved: &crate::persistent::PersistentSet<(u32, u32)>,
-) -> (BTreeSet<Variable>, BTreeSet<(u32, u32)>) {
+    reserved: &mut ReservedSnapshots,
+) -> BTreeSet<Variable> {
     struct Restore(Option<SnapshotReservation>);
     impl Drop for Restore {
         fn drop(&mut self) {
@@ -4980,18 +5034,24 @@ pub(in crate::kernel) fn proposition_variables_reserving(
     }
     let previous = SNAPSHOT_RESERVATION.with(|cell| {
         cell.borrow_mut().replace(SnapshotReservation {
-            reserved: reserved.clone(),
+            reserved: reserved.variables.clone(),
             met: BTreeSet::new(),
+            bound_reserved: reserved.bound.clone(),
+            bound_walked: BTreeSet::new(),
         })
     });
     let restore = Restore(previous);
     let variables = crate::kernel::proposition_variables(proposition);
-    let met = SNAPSHOT_RESERVATION
-        .with(|cell| cell.borrow_mut().take())
-        .map(|reservation| reservation.met)
-        .unwrap_or_default();
+    if let Some(reservation) = SNAPSHOT_RESERVATION.with(|cell| cell.borrow_mut().take()) {
+        for snapshot in reservation.met {
+            reserved.variables = reserved.variables.with_value(snapshot);
+        }
+        for snapshot in reservation.bound_walked {
+            reserved.bound = reserved.bound.with_value(snapshot);
+        }
+    }
     drop(restore);
-    (variables, met)
+    variables
 }
 
 /// Whether counting a snapshot of the chain whole is charged; see
