@@ -836,6 +836,7 @@ fn sequential_loop_clauses_cost_the_same_at_every_position() {
 /// neighbours: restoring the entry's blocks at each loop head once rebuilt
 /// the block table, and comparing it walked every block declared so far.
 #[test]
+#[ignore = "nightly: 2.2s in the parallel gate"]
 fn sequential_loops_build_the_same_context_entries_each() {
     let counts = || {
         let [copied, indexed, tested] = crate::surface::pure_fact_list::fact_list_entry_counts();

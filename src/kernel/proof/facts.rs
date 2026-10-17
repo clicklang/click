@@ -174,7 +174,7 @@ fn reserve_fact_variables(
     mut snapshots: PersistentSet<(u32, u32)>,
 ) -> (PersistentSet<Variable>, PersistentSet<(u32, u32)>) {
     #[cfg(debug_assertions)]
-    let before = crate::kernel::primitives::lazy_reservation_check_enabled().then(|| {
+    let before = crate::instrumentation::lazy_reservation_cross_checks_enabled().then(|| {
         let mut whole = BTreeSet::new();
         crate::instrumentation::uncharged_debug_check(|| {
             whole = crate::kernel::proposition_variables(fact);

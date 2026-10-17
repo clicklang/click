@@ -360,7 +360,7 @@ impl LazyReservedVariables {
             .contains(&variable.0);
         if execution_range && self.execution_bound.is_none_or(|bound| *variable > bound) {
             #[cfg(debug_assertions)]
-            if lazy_reservation_check_enabled() {
+            if crate::instrumentation::lazy_reservation_cross_checks_enabled() {
                 crate::instrumentation::uncharged_debug_check(|| {
                     assert!(
                         !self.collected().contains(variable),
@@ -373,17 +373,6 @@ impl LazyReservedVariables {
         }
         self.collected().contains(variable)
     }
-}
-
-/// Debug builds only: `CLICK_DEBUG_CHECK_LAZY_RESERVATIONS=1` collects every
-/// lazy reservation a bound answered and checks the bound's answer against
-/// it, for corpus validation. The check is uncharged and never decides.
-#[cfg(debug_assertions)]
-pub(crate) fn lazy_reservation_check_enabled() -> bool {
-    static ENABLED: OnceLock<bool> = OnceLock::new();
-    *ENABLED.get_or_init(|| {
-        std::env::var_os("CLICK_DEBUG_CHECK_LAZY_RESERVATIONS").is_some_and(|value| value == "1")
-    })
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
