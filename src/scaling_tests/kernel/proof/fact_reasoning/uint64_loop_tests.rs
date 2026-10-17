@@ -105,8 +105,14 @@ fn uint64_truncation_certificates_require_full_width_bounds() {
         assert!(normalize_using_conditions(&goal, &premises[..1], &facts).is_err());
         assert!(normalize_using_conditions(&goal, &premises[1..], &facts).is_err());
     }
+    // The two cited conditions are inserted from a hash map. Installing the
+    // upper bound before the strict order saves one indexed insertion step
+    // (36 rather than 37 units); neither order visits ambient premises.
+    // Allow that one-unit variation while rejecting growth across 64x as
+    // many unrelated facts.
+    let minimum = *samples.iter().min().unwrap();
     assert!(
-        samples[0] > 0 && samples.iter().all(|work| *work == samples[0]),
+        minimum > 0 && samples.iter().all(|work| *work <= minimum + 1),
         "{samples:?}"
     );
     let too_wide = Proposition::ConditionIs(
