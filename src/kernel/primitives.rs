@@ -27,13 +27,14 @@ mod memory_construction_tests;
 #[cfg(test)]
 pub(crate) use contracts::memory_range_byte_count_guards;
 pub(crate) use contracts::{
-    MemoryRangeExtent, element_count_limit_constrains_int32, is_unnamed_footprint_base,
-    memory_range_byte_count, memory_range_byte_count_extent, memory_range_element_count,
-    memory_range_element_count_guards, memory_range_element_count_limit,
-    memory_range_extent_guard_spellings, memory_range_extent_guards, narrow_range_constant,
-    scaled_extent_element_width, stated_loadable_extent_guard_spellings,
-    stated_loadable_extent_guards, stated_separation_extent_bounds,
-    stated_separation_extent_guards, wide_loadable_element_count, wide_range_bounds,
+    MemoryRangeExtent, admitted_memory_range_extent_facts, element_count_limit_constrains_int32,
+    is_unnamed_footprint_base, memory_range_byte_count, memory_range_byte_count_extent,
+    memory_range_element_count, memory_range_element_count_guards,
+    memory_range_element_count_limit, memory_range_extent_guard_spellings,
+    memory_range_extent_guards, narrow_range_constant, scaled_extent_element_width,
+    stated_loadable_extent_guard_spellings, stated_loadable_extent_guards,
+    stated_separation_extent_bounds, stated_separation_extent_guards, wide_loadable_element_count,
+    wide_range_bounds,
 };
 mod integer;
 mod machine_integer;
@@ -1286,11 +1287,12 @@ struct CPointerQualifiers {
 /// change as the pointer moves through arithmetic or loops. Respelling the
 /// pointer's address through a proven alias leaves it alone; a substitution
 /// of the variables the address mentions maps `start` the same way. A value
-/// without an extent is bounded only by its complete object, as before.
+/// without a concrete extent either has a known complete object or carries
+/// an opaque domain whose bounds come from coverage evidence.
 ///
-/// The width is a term: a member's is its constant size, and a pointer of
-/// unseen formation will carry an unknown one (`design/pointer-subobject-extents.md`,
-/// Phase C).
+/// The term-valued width also supports the legacy symbolic-extent prototype.
+/// Production unseen pointers use `CPointerValue::opaque_extent` instead
+/// (`design/pointer-subobject-extents.md`, Phase C).
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct SubobjectExtent {
     pub(crate) start: Pointer,
@@ -1346,6 +1348,17 @@ impl SubobjectExtent {
             )))
         };
         let width = range.element_width();
+        if let Some((start, end)) = range.wide_bounds() {
+            return Proposition::Predicate {
+                name: format!("{SUBOBJECT_COVERS_PREDICATE_PREFIX}{width}"),
+                arguments: vec![
+                    pointer(self.start.clone()),
+                    pointer(range.base().clone()),
+                    Term::CValue(CValue::UInt64(start.clone())),
+                    Term::CValue(CValue::UInt64(end.clone())),
+                ],
+            };
+        }
         Proposition::Predicate {
             name: format!("{SUBOBJECT_COVERS_PREDICATE_PREFIX}{width}"),
             arguments: vec![
@@ -1384,6 +1397,33 @@ impl SubobjectExtent {
             .pointer()
             .element_index_from_base_with_width(from.pointer(), width)?;
         Some((from.pointer().clone(), count, width))
+    }
+
+    /// A native range retains both full-width endpoints in its coverage fact.
+    pub(crate) fn covered_wide_range(proposition: &Proposition) -> Option<CMemoryRange> {
+        let Proposition::Predicate { name, arguments } = proposition else {
+            return None;
+        };
+        let width = name
+            .strip_prefix(SUBOBJECT_COVERS_PREDICATE_PREFIX)?
+            .parse::<u32>()
+            .ok()
+            .filter(|width| *width > 0)?;
+        let [
+            _,
+            Term::CValue(CValue::Pointer(base)),
+            Term::CValue(CValue::UInt64(start)),
+            Term::CValue(CValue::UInt64(end)),
+        ] = arguments.as_slice()
+        else {
+            return None;
+        };
+        Some(CMemoryRange::new_wide(
+            base.pointer().clone(),
+            start.clone(),
+            end.clone(),
+            width,
+        ))
     }
 
     /// The `width` bytes at `start`: a member's extent.
@@ -1473,6 +1513,24 @@ impl CPointerValue {
     pub(in crate::kernel) fn with_opaque_extent(mut self, extent: Option<Arc<Pointer>>) -> Self {
         self.opaque_extent = extent;
         self
+    }
+
+    /// Entry member selection establishes bounds for its parent's opaque domain.
+    pub(in crate::kernel) fn opaque_coverage_fact(
+        &self,
+        range: &CMemoryRange,
+    ) -> Option<Proposition> {
+        if self.extent_is_known() {
+            return None;
+        }
+        let origin = self.opaque_extent()?;
+        Some(
+            SubobjectExtent {
+                start: origin.clone(),
+                width: Bitvector32Term::Constant(0),
+            }
+            .coverage_fact(range),
+        )
     }
 
     pub(in crate::kernel) fn access_designation(&self) -> (&Pointer, Option<&Pointer>) {
@@ -3986,6 +4044,9 @@ pub struct CMemoryRange {
     /// The opaque extent of the pointer whose clause named this range, if
     /// any. Not part of the range's identity.
     extent_claims: RangeDesignation<[Option<Variable>; 2]>,
+    /// Parent-member bounds established while evaluating this footprint.
+    /// Evidence only: it never changes the identity or authority of the range.
+    pub(super) formation_coverage: Arc<[Proposition]>,
 }
 
 /// The opaque subobject extent a held range was named through
@@ -4097,6 +4158,10 @@ pub struct CParameter {
     /// The class of the object a pointer parameter's declaration says it
     /// designates, when the frontend supplied one.
     pub(super) pointee_class: Option<crate::kernel::effective_type::CAccessClass>,
+    /// Relative index of a Rust slice's adjacent length argument. Its valid
+    /// extent grants formation bounds across argument/value-parameter splits,
+    /// independently of byte access authority. C pointers have none.
+    pub(super) slice_length_parameter: Option<usize>,
 }
 
 /// A linked file-scope scalar. Globals use one stable memory block across all
@@ -5939,7 +6004,16 @@ pub enum CRuntimeError {
     UnestablishedAssemblyFact {
         assembled: Box<CResourceFact>,
         fact: Box<Proposition>,
+        source: Option<Box<CResourceBodyFactSource>>,
     },
+}
+
+/// The written clause of a refused composite assembly, with the parameter
+/// values at that call. Diagnostic provenance only; it supplies no evidence.
+#[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub struct CResourceBodyFactSource {
+    pub spelling: String,
+    pub bindings: Vec<(String, CValue)>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]

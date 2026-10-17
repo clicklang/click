@@ -48,5 +48,5 @@ void object_release_unlocked(struct object *obj) {
 ```
 
 ```expect
-fail: missing resource fact `views obj->refs`
+fail: pointer arithmetic left the pointed-to object
 ```

@@ -26,5 +26,5 @@ int32 helper(struct holder *holder) {
 ```
 
 ```expect
-fail: missing resource fact `views holder->value`
+fail: pointer arithmetic left the pointed-to object
 ```

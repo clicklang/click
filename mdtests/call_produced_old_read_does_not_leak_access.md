@@ -37,5 +37,5 @@ int32* caller(struct box* p, int32* q) {
 ```
 
 ```expect
-fail: missing resource fact `views p->child`
+fail: access outside the subobject the pointer designates
 ```

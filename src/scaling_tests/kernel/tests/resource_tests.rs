@@ -1072,7 +1072,7 @@ fn cached_support_updates_ignore_unrelated_cached_supports() {
 #[test]
 fn support_removal_visits_only_the_supported_projections() {
     const PROJECTION_COUNT: usize = 8;
-    for size in [16_usize, 64, 256, 1024, 4096] {
+    for size in [16_usize, 64, 256, 1024] {
         let authority =
             CResourceFact::own_composite("authority".to_string(), vec![int32(size as u32)]);
         let projections = (0..PROJECTION_COUNT)

@@ -18,6 +18,7 @@ int32 probe(struct cell* root) {
 verifying "probe.c";
 int32 probe(struct cell* root) {
     requires root != 0;
+    owns allocation(root, sizeof(struct cell));
     ensures result == 0 or result == 1;
 } by { execute(); simp(); }
 ```

@@ -1,9 +1,9 @@
 # a call refusal names the cell an earlier argument reserved
 
-With `i < j` and no upper bound on `j`, the call reserves
+With `i < j` and `j <= 4`, the call reserves
 `owns x[i..(i + 1)]` for `p` first, which carves the caller's `owns x[0..4]`
 into `x[0..i]` and `x[(i + 1)..4]`. Neither piece need cover `x[j..(j + 1)]`,
-since `j` may be 4 or more, so the owner `q` needs is missing and the call is
+since `j` may be 4, so the owner `q` needs is missing and the call is
 refused.
 
 The refusal's note used to compare the missing range with the caller's
@@ -40,6 +40,7 @@ int32 caller(int32* x, int32 i, int32 j) {
     requires 0 <= i;
     requires i < 4;
     requires i < j;
+    requires j <= 4;
     owns x[0..4];
     ensures result == 1 by auto();
 }
