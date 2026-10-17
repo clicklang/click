@@ -675,16 +675,6 @@ fn flat_post_execution_tactic(tactic: &ProofTactic) -> Option<PostExecutionTacti
         ProofTactic::Transport { source, target } => Some(PostExecutionTactic::Transport {
             source: source.clone(),
             target: target.clone(),
-            premises: None,
-        }),
-        ProofTactic::TransportUsing {
-            source,
-            target,
-            premises,
-        } => Some(PostExecutionTactic::Transport {
-            source: source.clone(),
-            target: target.clone(),
-            premises: Some(premises.clone()),
         }),
         ProofTactic::Simp => Some(PostExecutionTactic::Simp),
         ProofTactic::AutoClose => Some(PostExecutionTactic::AutoClose),

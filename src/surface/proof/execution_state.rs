@@ -1318,10 +1318,11 @@ pub(super) enum PostExecutionTactic {
     },
     Apply(TheoremApplication),
     Have(ProofHave),
+    /// A bare `transport`, which searches for its premises. A written
+    /// `transport using` is a leaf.
     Transport {
         source: ClickProposition,
         target: ClickProposition,
-        premises: Option<Vec<ClickProposition>>,
     },
     /// Surface-only control structure scheduled after terminal execution.
     /// The arms contain no semantic state: ordered finalization asks the
@@ -1664,14 +1665,7 @@ pub(super) fn post_execution_tactic_timing(
                 "control"
             },
         ),
-        PostExecutionTactic::Transport { premises, .. } => (
-            "transport",
-            if premises.is_some() {
-                "simple"
-            } else {
-                "smart"
-            },
-        ),
+        PostExecutionTactic::Transport { .. } => ("transport", "smart"),
         PostExecutionTactic::Simp | PostExecutionTactic::SimpUsing(_) => ("simp", "smart"),
         PostExecutionTactic::AutoClose => ("auto", "smart"),
         // `arithmetic()` searches for its certificate.
