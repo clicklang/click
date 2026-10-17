@@ -18880,13 +18880,13 @@ fn void_pointer_helper_selected_view_expands_and_checks() {
 }
 
 #[test]
-fn tidied_expansion_closers_prove_normalized_claims_with_one_normalize() {
+fn tidied_expansion_closers_prove_normalized_claims_in_goal_order() {
     let original = "int32 f() {\n    ensures result == 0;\n} by {\n    step();\n}\n";
     let expanded = "int32 f() {\n    ensures result == 0;\n} by {\n    step();\n    have result == 0 by {\n        normalize();\n    }\n    have p == q by {\n        assumption();\n    }\n    have r == s by {\n        normalize();\n    }\n    assumption();\n    assumption();\n    assumption();\n    assumption();\n}\n";
     assert_eq!(
         tidy_expansion_closers(original, expanded).as_deref(),
         Some(
-            "int32 f() {\n    ensures result == 0;\n} by {\n    step();\n    have p == q by {\n        assumption();\n    }\n    normalize();\n    assumption();\n    assumption();\n}\n"
+            "int32 f() {\n    ensures result == 0;\n} by {\n    step();\n    have p == q by {\n        assumption();\n    }\n    assumption();\n    normalize();\n    assumption();\n    normalize();\n}\n"
         )
     );
 }
@@ -18894,7 +18894,7 @@ fn tidied_expansion_closers_prove_normalized_claims_with_one_normalize() {
 #[test]
 fn tidied_expansion_closers_leave_other_closers_alone() {
     let original = "f by {\n    step();\n}\n";
-    // More normalized claims than closers.
+    // Fewer closers than claims.
     let short = "f by {\n    have a by {\n        normalize();\n    }\n    have b by {\n        normalize();\n    }\n    assumption();\n}\n";
     // A closer run that does not end its block.
     let continued =

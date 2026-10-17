@@ -22,5 +22,5 @@ int32 bump(int32 n) {
 ```
 
 ```expect
-fail: `arithmetic` did not prove any current proposition goal
+fail: `arithmetic` did not prove the current goal `result <= 101`
 ```

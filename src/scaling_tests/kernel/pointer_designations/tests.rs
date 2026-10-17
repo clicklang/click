@@ -32,7 +32,7 @@ fn typed_access_does_not_search_unrelated_address_equalities_or_ranges() {
     let a = value(870_001);
     let b = value(870_002);
     let mut samples = Vec::new();
-    for size in [16u64, 64, 256, 1024] {
+    for size in [4u64, 16, 64, 256] {
         let mut context = PureFactContext::new().assume_condition(
             ConditionTerm::pointer_equal(a.pointer().clone(), b.pointer().clone()),
             true,
@@ -70,6 +70,20 @@ fn typed_access_does_not_search_unrelated_address_equalities_or_ranges() {
         samples.push(work);
     }
     assert!(samples[3] <= samples[0] * 4 + 32, "{samples:?}");
+    {
+        let costs = samples.clone();
+        let indexed = |costs: &[usize]| costs.iter().all(|work| *work <= costs[0] + 64);
+        assert!(indexed(&costs), "indexed work: {costs:?}");
+        let scanned = costs
+            .iter()
+            .zip([4u64, 16, 64, 256])
+            .map(|(work, size)| work + usize::try_from(size).unwrap())
+            .collect::<Vec<_>>();
+        assert!(
+            !indexed(&scanned),
+            "the smaller fixture must detect a visit per unrelated item: {costs:?}"
+        );
+    }
 }
 
 #[test]

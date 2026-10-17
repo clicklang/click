@@ -1362,12 +1362,14 @@ fn checked_expanded_source(
 /// touched.
 ///
 /// A grouped closure proves each open claim in a `have` and then closes
-/// every obligation with its own `assumption();`. Where some of those
-/// `have`s are proved by `normalize();` alone and the run of closers ends
-/// its block, one `normalize();` proves those claims where they stand, and
-/// the other `have`s and the closers left over still close the rest. This
-/// is a candidate only: the caller keeps it when it verifies, and the
-/// expansion as generated otherwise.
+/// every goal with its own `assumption();`. Where some of those `have`s are
+/// proved by `normalize();` alone and the run of closers ends its block,
+/// those `have`s are dropped and their claims' closers become
+/// `normalize();`. A closer acts on the first open goal, so the closers stay
+/// one per goal: those for goals no `have` proves, such as held resources,
+/// first, as a contract usually lists its resource clauses first, then one
+/// per `have` in order. This is a candidate only: the caller keeps it when
+/// it verifies, and the expansion as generated otherwise.
 pub fn tidy_expansion_closers(original: &str, expanded: &str) -> Option<String> {
     let before = original.lines().collect::<Vec<_>>();
     let lines = expanded.lines().collect::<Vec<_>>();
@@ -1424,14 +1426,23 @@ pub fn tidy_expansion_closers(original: &str, expanded: &str) -> Option<String> 
             after.trim_start().starts_with('}') && indent_of(after) < indent.len()
         });
         let normalized = haves.iter().filter(|(_, normalized)| *normalized).count();
-        if normalized > 0 && closers >= normalized && ends_block && next + closers <= changed_end {
+        if normalized > 0 && closers >= haves.len() && ends_block && next + closers <= changed_end {
             for (range, normalized) in &haves {
                 if !normalized {
                     tidied.extend(lines[range.clone()].iter().map(|line| line.to_string()));
                 }
             }
-            tidied.push(format!("{indent}normalize();"));
-            tidied.extend(std::iter::repeat_n(closer, closers - normalized));
+            // One closer per goal, in contract order: the goals no `have`
+            // proves (held resources) first, then each `have`'s claim, by
+            // `normalize();` where its `have` was dropped.
+            tidied.extend(std::iter::repeat_n(closer.clone(), closers - haves.len()));
+            for (_, normalized) in &haves {
+                tidied.push(if *normalized {
+                    format!("{indent}normalize();")
+                } else {
+                    closer.clone()
+                });
+            }
             index = next + closers;
             shortened = true;
             continue;

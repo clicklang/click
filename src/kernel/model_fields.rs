@@ -102,6 +102,11 @@ thread_local! {
     static INSTANCE_FIELD_NAMES: std::cell::RefCell<
         std::collections::HashMap<(Variable, usize), Arc<str>>,
     > = std::cell::RefCell::new(std::collections::HashMap::new());
+    /// The population whose function-entry count each variable is, so a
+    /// diagnostic spells it `old(count(R(p, _)))`.
+    static POPULATION_ENTRY_COUNTS: std::cell::RefCell<
+        std::collections::HashMap<Variable, PopulationEntryCount>,
+    > = std::cell::RefCell::new(std::collections::HashMap::new());
 }
 
 /// Records one fresh field variable. One insert, at the site that already
@@ -175,6 +180,32 @@ pub(crate) fn model_field_spelling(variable: Variable) -> Option<String> {
     })
 }
 
+/// A population's function-entry count, as a diagnostic spells it: the
+/// family, its anchor pointer, and how many wildcard arguments follow it.
+#[derive(Clone, Debug)]
+pub(crate) struct PopulationEntryCount {
+    pub(crate) family: Arc<str>,
+    pub(crate) anchor: crate::kernel::Pointer,
+    pub(crate) wildcards: usize,
+}
+
+/// Records that `variable` is the function-entry count of a population.
+pub(crate) fn register_population_entry_count(variable: Variable, count: PopulationEntryCount) {
+    POPULATION_ENTRY_COUNTS.with(|registry| {
+        let mut registry = registry.borrow_mut();
+        if registry.len() >= MAX_REGISTERED {
+            registry.clear();
+        }
+        registry.insert(variable, count);
+    });
+}
+
+pub(crate) fn registered_population_entry_count(
+    variable: Variable,
+) -> Option<PopulationEntryCount> {
+    POPULATION_ENTRY_COUNTS.with(|registry| registry.borrow().get(&variable).cloned())
+}
+
 /// The model-field registry as one value a reusable session captures and
 /// restores.
 #[derive(Clone)]
@@ -182,6 +213,7 @@ pub(crate) struct ModelFieldRegistryState {
     variables: std::collections::HashMap<Variable, ModelFieldOrigin>,
     spellings: std::collections::HashMap<Variable, Arc<str>>,
     field_names: std::collections::HashMap<(Variable, usize), Arc<str>>,
+    entry_counts: std::collections::HashMap<Variable, PopulationEntryCount>,
 }
 
 pub(crate) fn capture_model_field_registry() -> ModelFieldRegistryState {
@@ -189,6 +221,7 @@ pub(crate) fn capture_model_field_registry() -> ModelFieldRegistryState {
         variables: MODEL_FIELD_VARIABLES.with(|registry| registry.borrow().clone()),
         spellings: INSTANCE_SPELLINGS.with(|registry| registry.borrow().clone()),
         field_names: INSTANCE_FIELD_NAMES.with(|registry| registry.borrow().clone()),
+        entry_counts: POPULATION_ENTRY_COUNTS.with(|registry| registry.borrow().clone()),
     }
 }
 
@@ -196,10 +229,12 @@ pub(crate) fn restore_model_field_registry(state: &ModelFieldRegistryState) {
     MODEL_FIELD_VARIABLES.with(|registry| *registry.borrow_mut() = state.variables.clone());
     INSTANCE_SPELLINGS.with(|registry| *registry.borrow_mut() = state.spellings.clone());
     INSTANCE_FIELD_NAMES.with(|registry| *registry.borrow_mut() = state.field_names.clone());
+    POPULATION_ENTRY_COUNTS.with(|registry| *registry.borrow_mut() = state.entry_counts.clone());
 }
 
 pub(crate) fn clear_model_field_registry() {
     MODEL_FIELD_VARIABLES.with(|registry| registry.borrow_mut().clear());
     INSTANCE_SPELLINGS.with(|registry| registry.borrow_mut().clear());
     INSTANCE_FIELD_NAMES.with(|registry| registry.borrow_mut().clear());
+    POPULATION_ENTRY_COUNTS.with(|registry| registry.borrow_mut().clear());
 }

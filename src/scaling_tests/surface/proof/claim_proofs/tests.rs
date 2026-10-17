@@ -50,11 +50,13 @@ fn check_return_claim_preparation_scaling(
             .map(|i| format!("owns marker({i});\n"))
             .collect::<String>();
         let ensures = "ensures result == x;\n".repeat(claims);
-        let closers = if closer == "normalize();" {
-            closer.to_string()
-        } else {
+        // One closer per goal, in contract order: each held resource
+        // first, then each proposition claim with the closer under test.
+        let closers = format!(
+            "{}{}",
+            "assumption();".repeat(resources),
             closer.repeat(claims)
-        };
+        );
         let source = format!(
             "resource marker(n: int32) {{ fact n == n; }}
          verifying \"echo.c\";
