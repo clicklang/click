@@ -498,6 +498,11 @@ pub(in crate::surface::proof) struct ExecutionProofPresentation {
     /// presentation-only provenance: the kernel's exact conjunct index remains
     /// the authority for extraction.
     pub(in crate::surface::proof) chosen_projection: Option<ChosenProjection>,
+    /// The fact list the last `loop` tactic on this path copied from the
+    /// proof's facts, as it was copied. The next `loop` extends it by the
+    /// facts the proof gained since (`PureFactList::extended_to_proof_facts`)
+    /// instead of copying and indexing every fact again.
+    pub(in crate::surface::proof) loop_fact_list: Option<crate::surface::PureFactList>,
     /// A surface-stated existential can retain spellings of its checked body
     /// leaves without referring to a numbered contract requirement.
     pub(in crate::surface::proof) existential_projection: Option<ExistentialProjection>,
@@ -675,6 +680,7 @@ impl ExecutionProofState {
                 generated_load_source_events: PersistentSequence::default(),
                 chosen_projection: None,
                 existential_projection: None,
+                loop_fact_list: None,
             },
         )
     }

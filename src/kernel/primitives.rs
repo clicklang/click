@@ -180,6 +180,10 @@ impl Variable {
 #[derive(Clone, Default)]
 pub(super) struct CExecutionEnvironmentVariableIndex {
     values: Arc<OnceLock<Arc<BTreeSet<Variable>>>>,
+    /// At least the greatest execution-range variable `values` holds or
+    /// would hold, when an owner bounds its variables without collecting
+    /// them (`LazyReservedVariables`).
+    execution_bound: Arc<OnceLock<Option<Variable>>>,
     #[cfg(test)]
     builds: Arc<std::sync::atomic::AtomicUsize>,
 }
@@ -197,6 +201,13 @@ impl CExecutionEnvironmentVariableIndex {
                 Arc::new(initialize())
             })
             .clone()
+    }
+
+    pub(super) fn execution_bound(
+        &self,
+        initialize: impl FnOnce() -> Option<Variable>,
+    ) -> Option<Variable> {
+        *self.execution_bound.get_or_init(initialize)
     }
 
     #[cfg(test)]
@@ -231,27 +242,146 @@ impl std::fmt::Debug for CExecutionEnvironmentVariableIndex {
 /// recursion anchor, and one for each verified loop rule. Each set is
 /// collected once and shared by every clone holding its part, so an
 /// environment that gains a loop rule collects that rule alone.
+///
+/// A part whose set is costly to collect, a loop rule whose prerequisite
+/// context is the whole path at its loop or the context a loop head is
+/// prepared under, is held as a [`LazyReservedVariables`]: an upper bound
+/// on the execution-range variables it holds, kept beside its facts, and
+/// the set itself, collected only when a query the bound cannot answer
+/// needs it.
 #[derive(Clone, Debug, Default)]
-pub(crate) struct ReservedVariableSets(Vec<Arc<BTreeSet<Variable>>>);
+pub(crate) struct ReservedVariableSets {
+    sets: Vec<Arc<BTreeSet<Variable>>>,
+    lazy: Vec<LazyReservedVariables>,
+}
 
 impl ReservedVariableSets {
     pub(crate) fn contains(&self, variable: &Variable) -> bool {
-        self.0.iter().any(|set| set.contains(variable))
+        self.sets.iter().any(|set| set.contains(variable))
+            || self.lazy.iter().any(|set| set.contains(variable))
     }
 
+    /// Every reserved variable; this collects every lazy part.
     pub(crate) fn iter(&self) -> impl Iterator<Item = &Variable> {
-        self.0.iter().flat_map(|set| set.iter())
+        self.sets
+            .iter()
+            .flat_map(|set| set.iter())
+            .chain(self.lazy.iter().flat_map(|set| set.collected().iter()))
     }
 
-    pub(super) fn push(&mut self, set: Arc<BTreeSet<Variable>>) {
-        self.0.push(set);
+    pub(super) fn push_lazy(&mut self, set: LazyReservedVariables) {
+        self.lazy.push(set);
     }
 }
 
 impl From<Arc<BTreeSet<Variable>>> for ReservedVariableSets {
     fn from(set: Arc<BTreeSet<Variable>>) -> Self {
-        Self(vec![set])
+        Self {
+            sets: vec![set],
+            lazy: Vec::new(),
+        }
     }
+}
+
+impl From<LazyReservedVariables> for ReservedVariableSets {
+    fn from(set: LazyReservedVariables) -> Self {
+        Self {
+            sets: Vec::new(),
+            lazy: vec![set],
+        }
+    }
+}
+
+/// A reserved variable set collected only when a query needs it.
+///
+/// An execution's fresh identities come from the execution range
+/// (`ExecutionBudget::KERNEL_VARIABLE_BASE` up to its ceiling), so the
+/// question a fresh-identity stream asks of a reservation is almost always
+/// whether it holds some execution-range variable above everything the
+/// stream has already skipped. `execution_bound` is at least the greatest
+/// execution-range variable the set holds (a fact context keeps exactly
+/// such a bound as it files facts, `PureFactContext::execution_variable_ceiling`),
+/// so an execution-range query above it is answered "no" without collecting.
+/// Any other query collects the set once, shared by every clone, and
+/// answers from it: the answer is always the collected set's.
+#[derive(Clone)]
+pub(crate) struct LazyReservedVariables {
+    execution_bound: Option<Variable>,
+    collect: Arc<dyn Fn() -> Arc<BTreeSet<Variable>> + Send + Sync>,
+    collected: Arc<OnceLock<Arc<BTreeSet<Variable>>>>,
+}
+
+impl std::fmt::Debug for LazyReservedVariables {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("LazyReservedVariables")
+            .field("execution_bound", &self.execution_bound)
+            .field("collected", &self.collected.get().is_some())
+            .finish()
+    }
+}
+
+#[cfg(test)]
+thread_local! {
+    /// Lazy reservation sets collected on this thread, for scaling tests.
+    static LAZY_RESERVATION_COLLECTIONS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+pub(crate) fn lazy_reservation_collections() -> usize {
+    LAZY_RESERVATION_COLLECTIONS.with(std::cell::Cell::get)
+}
+
+impl LazyReservedVariables {
+    /// `collect` must return a set none of whose execution-range variables
+    /// lies above `execution_bound`.
+    pub(super) fn new(
+        execution_bound: Option<Variable>,
+        collect: impl Fn() -> Arc<BTreeSet<Variable>> + Send + Sync + 'static,
+    ) -> Self {
+        Self {
+            execution_bound,
+            collect: Arc::new(collect),
+            collected: Arc::new(OnceLock::new()),
+        }
+    }
+
+    fn collected(&self) -> &BTreeSet<Variable> {
+        self.collected.get_or_init(|| {
+            #[cfg(test)]
+            LAZY_RESERVATION_COLLECTIONS.with(|count| count.set(count.get() + 1));
+            (self.collect)()
+        })
+    }
+
+    fn contains(&self, variable: &Variable) -> bool {
+        let execution_range = (crate::kernel::ExecutionBudget::KERNEL_VARIABLE_BASE
+            ..crate::kernel::ExecutionBudget::KERNEL_VARIABLE_CEILING)
+            .contains(&variable.0);
+        if execution_range && self.execution_bound.is_none_or(|bound| *variable > bound) {
+            #[cfg(debug_assertions)]
+            if lazy_reservation_check_enabled() {
+                assert!(
+                    !self.collected().contains(variable),
+                    "a lazy reservation's execution bound {:?} is below its variable {variable:?}",
+                    self.execution_bound,
+                );
+            }
+            return false;
+        }
+        self.collected().contains(variable)
+    }
+}
+
+/// Debug builds only: `CLICK_DEBUG_CHECK_LAZY_RESERVATIONS=1` collects every
+/// lazy reservation a bound answered and checks the bound's answer against
+/// it, for corpus validation. The check is uncharged and never decides.
+#[cfg(debug_assertions)]
+fn lazy_reservation_check_enabled() -> bool {
+    static ENABLED: OnceLock<bool> = OnceLock::new();
+    *ENABLED.get_or_init(|| {
+        std::env::var_os("CLICK_DEBUG_CHECK_LAZY_RESERVATIONS").is_some_and(|value| value == "1")
+    })
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]

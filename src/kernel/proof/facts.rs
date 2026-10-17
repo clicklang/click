@@ -917,6 +917,39 @@ impl ProofFacts {
         facts
     }
 
+    /// How `propositions` changed since `ancestor`, when these facts are
+    /// `ancestor`'s with further statement batches and ordered facts added:
+    /// the facts of the new batches, newest batch first, which
+    /// `propositions` yields before everything `ancestor` yields, and the
+    /// ordered facts appended since, which it yields after. Like
+    /// `propositions`, a reader keeps only the first copy of a fact. Visits
+    /// only what was added; `None` when `ancestor` is not an ancestor.
+    pub(crate) fn propositions_since(
+        &self,
+        ancestor: &Self,
+    ) -> Option<(Vec<Proposition>, Vec<Arc<Proposition>>)> {
+        let mut batches = Vec::new();
+        let mut current = self.prioritized.as_ref();
+        loop {
+            match (current, &ancestor.prioritized) {
+                (Some(node), Some(head)) if Arc::ptr_eq(node, head) => break,
+                (None, None) => break,
+                (Some(node), _) => {
+                    batches.push(node);
+                    current = node.parent.as_ref();
+                }
+                (None, Some(_)) => return None,
+            }
+        }
+        let appended = self.ordered.suffix_since(&ancestor.ordered)?;
+        let front = batches
+            .iter()
+            .flat_map(|batch| batch.facts.iter())
+            .map(crate::kernel::clone_proposition_iteratively)
+            .collect();
+        Some((front, appended))
+    }
+
     /// The direct-transport premises' context, when it is kept.
     pub(crate) fn direct_transport_assumptions(&self) -> Option<&PureFactContext> {
         self.direct_transport_assumptions.as_deref()

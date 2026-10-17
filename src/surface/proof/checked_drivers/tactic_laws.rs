@@ -199,9 +199,11 @@ pub(in crate::surface::proof) fn execute_frontier_local_loop(
     // proposition, and omit only predicate atoms whose names have explicitly
     // been unfolded on this path.
     let mut loop_pure_facts = available_pure_facts.clone();
-    loop_pure_facts.retain(|fact| {
-        !matches!(fact, Proposition::Predicate { name, .. } if unfolded_predicates.contains(name))
-    });
+    if !unfolded_predicates.is_empty() {
+        loop_pure_facts.retain(|fact| {
+            !matches!(fact, Proposition::Predicate { name, .. } if unfolded_predicates.contains(name))
+        });
+    }
     let exit_contexts = verify_execution_proofs_forward(
         expansion_capture,
         &current_loop,

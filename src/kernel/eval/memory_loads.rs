@@ -2626,6 +2626,19 @@ pub(crate) fn viewed_as_memory_load(term: &Bitvector32Term) -> Option<Bitvector3
 /// Cross-effect fact transport uses this to include facts written with load
 /// variables in rewriting, exactly as load-term facts are included by
 /// mentioning their snapshots.
+/// Whether `proposition` names a variable of the load range, registered
+/// or not: what [`proposition_mentions_registered_load_variable`] needs
+/// before it reads the registry, so a fact this rejects that one rejects at
+/// any later time too.
+pub(crate) fn proposition_mentions_load_variable(proposition: &Proposition) -> bool {
+    let mut variables = std::collections::BTreeSet::new();
+    crate::kernel::reasoning::variable_collection::collect_proposition_bitvector_variables(
+        proposition,
+        &mut variables,
+    );
+    variables.iter().any(is_load_variable)
+}
+
 pub(crate) fn proposition_mentions_registered_load_variable(proposition: &Proposition) -> bool {
     let mut variables = std::collections::BTreeSet::new();
     crate::kernel::reasoning::variable_collection::collect_proposition_bitvector_variables(

@@ -1441,15 +1441,54 @@ pub(in crate::kernel) fn execution_environment_variable_index(
             })
         }));
     for rule in environment.verified_loop_rules.iter() {
-        sets.push(rule.variable_index.get_or_init(|| {
-            suspending_memory_scope(|| {
-                let mut variables = BTreeSet::new();
-                collect_verified_loop_rule_variables(rule, &mut variables);
-                variables
-            })
-        }));
+        sets.push_lazy(verified_loop_rule_reserved_variables(rule));
     }
     sets
+}
+
+/// The variables a verified loop rule reserves, collected only when a
+/// query its execution bound cannot answer needs them. The rule's
+/// prerequisite context is the whole path context at its loop, so
+/// collecting it is linear in everything before the loop; the bound is
+/// that context's own execution ceiling, kept as its facts were filed,
+/// together with the ceiling of the rule's loop-local parts.
+fn verified_loop_rule_reserved_variables(
+    rule: &crate::kernel::CVerifiedLoopRule,
+) -> crate::kernel::LazyReservedVariables {
+    // Both answers are cached on the rule, so neither may skip a memory an
+    // enclosing `collecting_each_memory_once` scope already collected.
+    let bound = rule.variable_index.execution_bound(|| {
+        suspending_memory_scope(|| {
+            let (local, _) = execution_variable_ceiling(None, |variables| {
+                collect_verified_loop_rule_local_variables(rule, variables);
+            });
+            local.max(rule.required_assumptions.execution_variable_ceiling())
+        })
+    });
+    let rule = rule.clone();
+    crate::kernel::LazyReservedVariables::new(bound, move || {
+        rule.variable_index.get_or_init(|| {
+            suspending_memory_scope(|| {
+                let mut variables = BTreeSet::new();
+                collect_verified_loop_rule_variables(&rule, &mut variables);
+                variables
+            })
+        })
+    })
+}
+
+/// The variables of a rule's prerequisite context: its facts' free and
+/// bound variables. Execution-range binders are never minted (every binder
+/// producer has its own range), so the context's execution ceiling bounds
+/// the execution-range variables collected here.
+pub(in crate::kernel) fn collect_assumption_reserved_variables(
+    assumptions: &PureFactContext,
+    variables: &mut BTreeSet<Variable>,
+) {
+    collect_assumption_variables(assumptions, variables);
+    for fact in assumptions.pure_facts() {
+        collect_proposition_bound_variables(&fact, variables);
+    }
 }
 
 fn collect_execution_environment_variables_uncached(
@@ -1511,14 +1550,20 @@ fn collect_verified_loop_rule_variables(
     rule: &crate::kernel::CVerifiedLoopRule,
     variables: &mut BTreeSet<Variable>,
 ) {
+    collect_verified_loop_rule_local_variables(rule, variables);
+    collect_assumption_reserved_variables(&rule.required_assumptions, variables);
+}
+
+/// A rule's variables other than its prerequisite context's: its entry
+/// state, loop statement and certified paths.
+fn collect_verified_loop_rule_local_variables(
+    rule: &crate::kernel::CVerifiedLoopRule,
+    variables: &mut BTreeSet<Variable>,
+) {
     collect_c_state_bitvector_variables(&rule.symbolic_entry_state, variables);
     collect_c_state_bound_variables(&rule.symbolic_entry_state, variables);
     collect_c_statement_bitvector_variables(&rule.loop_statement, variables);
     collect_c_statement_bound_variables(&rule.loop_statement, variables);
-    collect_assumption_variables(&rule.required_assumptions, variables);
-    for fact in rule.required_assumptions.pure_facts() {
-        collect_proposition_bound_variables(&fact, variables);
-    }
     for path in &rule.paths {
         collect_c_statement_outcome_bitvector_variables(&path.outcome, variables);
         collect_statement_outcome_bound_variables(&path.outcome, variables);

@@ -80,6 +80,7 @@ pub(crate) use memory_loads::load_variable_for_exact_cell;
 pub(crate) use memory_loads::load_variable_for_term;
 pub(crate) use memory_loads::loaded_pointer_predates_block;
 pub(crate) use memory_loads::offsets_have_same_canonical_form;
+pub(crate) use memory_loads::proposition_mentions_load_variable;
 pub(crate) use memory_loads::proposition_mentions_registered_load_variable;
 pub(in crate::kernel) use memory_loads::record_load_access_width;
 #[cfg(test)]
