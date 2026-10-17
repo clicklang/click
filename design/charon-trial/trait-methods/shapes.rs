@@ -20,8 +20,8 @@ pub struct Circle {
 }
 
 impl Shape for Square {
-    fn area(&self, scale: i32) -> i32 {
-        scale + 1
+    fn area(&self, factor: i32) -> i32 {
+        factor + 1
     }
 }
 

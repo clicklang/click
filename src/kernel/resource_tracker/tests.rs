@@ -1050,7 +1050,11 @@ fn branch_join_preserves_uncached_reads_only_when_every_arm_agrees() {
             .store(other, CValue::Int32(Bitvector32Term::Constant(2)));
         let joined = first
             .clone()
-            .with_interface_memory_havoc(Variable(981001), &Default::default(), &[&first, &second])
+            .with_interface_memory_havoc(
+                Variable(981001),
+                &std::collections::BTreeSet::<crate::kernel::PointerBlock>::new(),
+                &[&first, &second],
+            )
             .unwrap();
         assert!(joined.known_value(&cell).is_none());
         assert_eq!(
@@ -1072,7 +1076,11 @@ fn branch_join_preserves_uncached_reads_only_when_every_arm_agrees() {
         );
         let bad = first
             .clone()
-            .with_interface_memory_havoc(Variable(981002), &Default::default(), &[&first, &changed])
+            .with_interface_memory_havoc(
+                Variable(981002),
+                &std::collections::BTreeSet::<crate::kernel::PointerBlock>::new(),
+                &[&first, &changed],
+            )
             .unwrap();
         assert_ne!(
             same(
@@ -1099,7 +1107,11 @@ fn branch_join_identity_retains_inputs_through_read_projection() {
         .store(other.clone(), CValue::Int32(Bitvector32Term::Constant(2)));
     let unchanged = a
         .clone()
-        .with_interface_memory_havoc(Variable(981010), &Default::default(), &[&a, &b])
+        .with_interface_memory_havoc(
+            Variable(981010),
+            &std::collections::BTreeSet::<crate::kernel::PointerBlock>::new(),
+            &[&a, &b],
+        )
         .unwrap();
     let c = a.store(
         cell.clone(),
@@ -1111,7 +1123,11 @@ fn branch_join_identity_retains_inputs_through_read_projection() {
     );
     let changed = c
         .clone()
-        .with_interface_memory_havoc(Variable(981010), &Default::default(), &[&c, &d])
+        .with_interface_memory_havoc(
+            Variable(981010),
+            &std::collections::BTreeSet::<crate::kernel::PointerBlock>::new(),
+            &[&c, &d],
+        )
         .unwrap();
     assert!(unchanged.known_value(&cell).is_none());
     assert!(changed.known_value(&cell).is_none());

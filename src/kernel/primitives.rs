@@ -66,6 +66,7 @@ pub(crate) use initialized_bytes::InitializedBytes;
 mod memory_state;
 pub(crate) use observed_population_families::ObservedPopulationFamilies;
 mod persistent_map;
+pub(crate) use memory_state::BlockMembership;
 pub(in crate::kernel) use memory_state::CallKeptOwnership;
 pub use memory_state::CallKeptRanges;
 pub(crate) use memory_state::{

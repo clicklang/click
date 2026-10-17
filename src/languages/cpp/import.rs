@@ -18,6 +18,7 @@ use super::schema::{
     CppStatement, EXPORT_SCHEMA, LANGUAGE, MAX_PREPROCESSOR_FILES, STANDARD, TARGET,
 };
 use crate::cli::write_file_atomically;
+use crate::languages::c::target::COptimization;
 use crate::languages::compiler_process::{CompilerLimits, run_compiler};
 
 const CONFIG_SCHEMA: u32 = 6;
@@ -1111,6 +1112,8 @@ pub(crate) struct UnitConfig {
     pub root: PathBuf,
     pub exceptions: bool,
     pub rtti: bool,
+    /// The project's optimization level, which every source is exported at.
+    pub optimization: COptimization,
     /// Click's own description of the build: arguments every source is
     /// compiled with, before its own.
     pub args: Vec<String>,
@@ -1133,6 +1136,14 @@ pub(crate) struct UnitSource {
 
 impl UnitConfig {
     fn config(&self, source: &UnitSource) -> Result<Config, String> {
+        validate_unit_args(&self.args, self.optimization)
+            .map_err(|error| format!("unit `{}`: {error}", self.unit_name))?;
+        validate_unit_args(&source.args, self.optimization).map_err(|error| {
+            format!(
+                "unit `{}` source `{}`: {error}",
+                self.unit_name, source.logical_source
+            )
+        })?;
         let config = Config {
             schema: CONFIG_SCHEMA,
             language: LANGUAGE.into(),
@@ -1195,7 +1206,11 @@ impl UnitConfig {
             }
             .into(),
             if self.rtti { "-frtti" } else { "-fno-rtti" }.into(),
+            self.optimization.flag().into(),
         ];
+        if self.optimization.optimizes() {
+            arguments.push("-fno-strict-aliasing".into());
+        }
         arguments.extend(self.args.iter().chain(&source.args).cloned());
         arguments.extend([
             "-c".into(),
@@ -1210,6 +1225,128 @@ impl UnitConfig {
         }]))
         .map_err(|error| format!("encode C++ compilation database: {error}"))
     }
+}
+
+/// The arguments Click sets itself for every C++ source; a unit may not name
+/// them.
+const FIXED_ARGUMENT_PREFIXES: &[&str] = &[
+    "-std=",
+    "--target=",
+    "-target",
+    "-x",
+    "-fexceptions",
+    "-fno-exceptions",
+    "-frtti",
+    "-fno-rtti",
+    "-fstrict-aliasing",
+    "-fno-strict-aliasing",
+];
+
+/// Spellings that are a preprocessor input, a semantic setting the exporter
+/// observes from Clang, or affect only code generation and diagnostics
+/// (`docs/reference/cli/import.md#c-unit-arguments`).
+const ACCEPTED_ARGUMENTS: &[&str] = &[
+    "-nostdinc",
+    "-nostdinc++",
+    "-funsigned-char",
+    "-fsigned-char",
+    "-ffreestanding",
+    "-g",
+    "-fstack-protector",
+    "-fstack-protector-strong",
+    "-fstack-protector-all",
+    "-fstack-clash-protection",
+    "-fcf-protection",
+    "-fcf-protection=full",
+    "-w",
+];
+
+/// Preprocessor options that take a value, either joined or as the next
+/// argument.
+const VALUE_ARGUMENTS: &[&str] = &["-D", "-U", "-I", "-iquote", "-isystem", "-include"];
+
+/// Checks a C++ unit's or source's arguments against the flag policy: each
+/// is a preprocessor input, a semantic setting the exporter observes, or an
+/// option affecting only code generation and diagnostics; Click itself sets
+/// the language, target, optimization level and aliasing rules. As for C, an
+/// argument may repeat the project's level but not name another.
+fn validate_unit_args(args: &[String], optimization: COptimization) -> Result<(), String> {
+    let mut index = 0;
+    while index < args.len() {
+        let argument = &args[index];
+        let position = index + 1;
+        index += 1;
+        if argument.is_empty() || argument.contains('\0') {
+            return Err(format!("argument {position} is empty or contains NUL"));
+        }
+        if argument == optimization.flag() {
+            continue;
+        }
+        if argument.starts_with("-O") {
+            return Err(format!(
+                "argument {position} `{argument}` names an optimization level; the project \
+                 verifies its units at `{}`, set by `optimization` in `click.project.json`",
+                optimization.flag()
+            ));
+        }
+        if FIXED_ARGUMENT_PREFIXES
+            .iter()
+            .any(|fixed| argument == fixed || (fixed.ends_with('=') && argument.starts_with(fixed)))
+        {
+            return Err(format!(
+                "argument {position} `{argument}` is set by Click for every C++ unit"
+            ));
+        }
+        if ACCEPTED_ARGUMENTS.contains(&argument.as_str())
+            || argument.starts_with("--sysroot=")
+            || argument.starts_with("-fmacro-prefix-map=")
+            || (argument.starts_with("-W")
+                && !["-Wa,", "-Wl,", "-Wp,"]
+                    .iter()
+                    .any(|pass| argument.starts_with(pass)))
+        {
+            continue;
+        }
+        if argument == "--sysroot" {
+            if index == args.len() {
+                return Err(format!(
+                    "missing value after argument {position} `{argument}`"
+                ));
+            }
+            index += 1;
+            continue;
+        }
+        let Some(option) = VALUE_ARGUMENTS
+            .iter()
+            .find(|option| argument.starts_with(**option))
+        else {
+            return Err(format!(
+                "unsupported C++ argument {position} `{argument}`; a unit accepts preprocessor \
+                 inputs, `-funsigned-char`, `-fsigned-char`, `-ffreestanding`, and options \
+                 affecting only code generation or diagnostics \
+                 (`docs/reference/cli/import.md#c-unit-arguments`)"
+            ));
+        };
+        let value = if argument.len() == option.len() {
+            if index == args.len() || args[index].is_empty() {
+                return Err(format!(
+                    "missing value after argument {position} `{argument}`"
+                ));
+            }
+            index += 1;
+            &args[index - 1]
+        } else {
+            &argument[option.len()..]
+        };
+        if matches!(*option, "-D" | "-U")
+            && value.split(['=', '(']).next().unwrap_or(value).trim() == "__OPTIMIZE__"
+        {
+            return Err(format!(
+                "argument {position} defines `__OPTIMIZE__`, which the optimization level sets"
+            ));
+        }
+    }
+    Ok(())
 }
 
 /// Exports every source of a project unit with the exporter at `exporter`:

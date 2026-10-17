@@ -149,6 +149,7 @@ pub(super) fn checked_access_mode_refinement_adapter(
         &post,
         "refinement",
         function,
+        &[],
         assumptions,
         budget,
     )? {

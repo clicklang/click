@@ -1444,13 +1444,28 @@ fn frontier_loop_binding_replaces_scope_without_merging_declarations() {
     assert_eq!(initial.structural_clauses().len(), 2);
     assert_eq!(rebound.structural_clauses(), repeated.structural_clauses());
     assert_eq!(repeated.structural_clauses().len(), 2);
-    assert_eq!(repeated.structural_clauses()[0], outer.bound_to_loop(0));
-    assert_eq!(repeated.structural_clauses()[1], inner.bound_to_loop(1));
-    assert_eq!(repeated.structural_clauses()[1].items().len(), 2);
-    assert_eq!(initial.structural_clauses()[1], outer.bound_to_loop(1));
+    assert_eq!(
+        repeated.structural_clauses().to_vec()[0],
+        outer.bound_to_loop(0)
+    );
+    assert_eq!(
+        repeated.structural_clauses().to_vec()[1],
+        inner.bound_to_loop(1)
+    );
+    assert_eq!(repeated.structural_clauses().to_vec()[1].items().len(), 2);
+    assert_eq!(
+        initial.structural_clauses().to_vec()[1],
+        outer.bound_to_loop(1)
+    );
     assert_ne!(
-        initial.structural_clauses()[1].resolved().unwrap().items(),
-        repeated.structural_clauses()[1].resolved().unwrap().items()
+        initial.structural_clauses().to_vec()[1]
+            .resolved()
+            .unwrap()
+            .items(),
+        repeated.structural_clauses().to_vec()[1]
+            .resolved()
+            .unwrap()
+            .items()
     );
 }
 
@@ -2759,4 +2774,105 @@ fn a_loop_snapshot_is_one_entry_under_every_spelling() {
         "each point is one entry, spelled by its loop's first label"
     );
     assert!(!snapshots.contains_key(&exit(CodeRegionRef::Label("inner".to_string()))));
+}
+
+/// The indexed clause list binds, orders and answers label, scope and
+/// rebinding questions exactly as the whole-list fold and walks it
+/// replaced, over a long sequence of binds that rebind loops, move labels
+/// between loops and change scopes.
+#[test]
+fn indexed_structural_clauses_agree_with_the_clause_list_walks() {
+    let parsed = parse(
+        r#"
+        verifying "count.c";
+        int32 count(int32 i) { ensures result >= 0; } by {
+            loop as a { invariant i >= 0; }
+            loop as b { invariant i >= 0; }
+            loop { invariant i >= bound; }
+        }
+    "#,
+    )
+    .unwrap();
+    let function = &parsed.function_blocks()[0];
+    let templates = function
+        .grouped_proof()
+        .unwrap()
+        .tactics()
+        .unwrap()
+        .iter()
+        .map(|tactic| match tactic {
+            ProofTactic::Loop(template) => template.clone(),
+            _ => panic!("expected loop templates"),
+        })
+        .collect::<Vec<_>>();
+    let value = |n| ContractExpression::CFragment(CExpression::Value(int32(n)));
+    let scoped = templates[2].with_scope(BTreeMap::from([("bound".to_string(), value(0))]));
+    let choices = [&templates[0], &templates[1], &templates[2], &scoped];
+    // The fold `with_bound_frontier_loop_clauses` made over a `Vec`.
+    let fold = |list: &[StructuralClause], clause: StructuralClause| {
+        let mut list = list.to_vec();
+        match list.iter().position(|existing| {
+            matches!(existing.region(), CodeRegion::Loop(_)) && existing.region() == clause.region()
+        }) {
+            Some(position) => list[position] = clause,
+            None => list.push(clause),
+        }
+        list
+    };
+    let mut block = function.clone();
+    let mut reference = Vec::<StructuralClause>::new();
+    let mut seed = 7u64;
+    for _ in 0..300 {
+        seed = seed
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
+        let template = choices[(seed >> 33) as usize % choices.len()];
+        let loop_index = (seed >> 40) as usize % 7;
+        let clause = template.bound_to_loop(loop_index);
+        reference = fold(&reference, clause.clone());
+        block = block.with_bound_frontier_loop_clauses(&[clause]);
+        let clauses = block.structural_clauses();
+        assert_eq!(clauses.to_vec(), reference);
+        for label in ["a", "b", "c"] {
+            assert_eq!(
+                clauses.labelled_region(label),
+                reference
+                    .iter()
+                    .find(|clause| clause.label() == Some(label))
+                    .map(|clause| clause.region()),
+                "label {label}"
+            );
+        }
+        let mut regions = BTreeMap::<&str, &CodeRegion>::new();
+        let rebound = reference.iter().any(|clause| {
+            clause.label().is_some_and(|label| {
+                regions
+                    .insert(label, clause.region())
+                    .is_some_and(|previous| previous != clause.region())
+            })
+        });
+        assert_eq!(clauses.has_rebound_label(), rebound);
+        assert_eq!(
+            clauses.any_scoped(),
+            reference.iter().any(|clause| !clause.scope.is_empty())
+        );
+        assert_eq!(
+            clauses.any_scoped_or_resourced(),
+            reference
+                .iter()
+                .any(|clause| !clause.scope.is_empty() || !clause.resources().is_empty())
+        );
+        // A check that refuses loops past a bound finds the first refused
+        // clause whether or not earlier clauses were checked before.
+        let loop_count = 1 + (seed >> 50) as usize % 7;
+        let check = |clause: &StructuralClause| match clause.region() {
+            CodeRegion::Loop(index) if *index >= loop_count => Err(*index),
+            _ => Ok(()),
+        };
+        let expected = reference.iter().try_for_each(check);
+        assert_eq!(
+            block.validate_structural_clauses(loop_count, check),
+            expected
+        );
+    }
 }

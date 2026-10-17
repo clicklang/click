@@ -64,13 +64,7 @@ int32 f(const uint8* bytes) { views bytes[0..8]; ensures result == 0; } by {
     rewrite(at(after_inner, outer) == 1); simp();
    }
   }
-  have cursor == bytes + (4 * outer) by {
-   rewrite(cursor == at(after_inner, cursor) + 4);
-   rewrite(at(after_inner, cursor) == bytes + (4 * at(after_inner, outer)));
-   rewrite((bytes + (4 * at(after_inner, outer))) + 4 == bytes + (4 * at(after_inner, outer) + 4));
-   rewrite(4 * at(after_inner, outer) + 4 == 4 * outer);
-   normalize();
-  }
+  have cursor == bytes + (4 * outer) by { assumption(); }
   have viewable(bytes[0..8]) by { transport(at(outer_head,viewable(bytes[0..8])),viewable(bytes[0..8])) using { at(outer_head,viewable(bytes[0..8])); bytes == old(bytes); 0 <= 8; }; }
   close_invariants() by { simp(); }
  }

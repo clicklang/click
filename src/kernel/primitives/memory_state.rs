@@ -1716,6 +1716,40 @@ impl CLocalEnvironment {
         self.slots.get(pointer).map(String::as_str)
     }
 
+    /// The names whose slots lie in `block`, found through the slot index:
+    /// pointers order by block first, so they are one run of slot keys.
+    pub(in crate::kernel) fn names_with_slot_in(&self, block: &PointerBlock) -> Vec<&str> {
+        let mut names = Vec::new();
+        let mut at = Pointer {
+            block: block.clone(),
+            offset: PointerOffsetTerm::Constant(i64::MIN),
+        };
+        if let Some(name) = self.slots.get(&at) {
+            names.push(name.as_str());
+        }
+        while let Some((pointer, name)) = self.slots.get_greater_than(&at) {
+            if &pointer.block != block {
+                break;
+            }
+            names.push(name.as_str());
+            at = pointer.clone();
+        }
+        names
+    }
+
+    /// The names bound differently in `self` and `other`, or bound in one
+    /// only, in ascending order. Bindings the two frames share are skipped
+    /// by identity, so frames derived from one another cost their changes.
+    pub(in crate::kernel) fn differing_names<'a>(
+        &'a self,
+        other: &'a Self,
+    ) -> impl Iterator<Item = &'a str> + 'a {
+        self.bindings.diff(&other.bindings).map(|(name, _, _)| {
+            crate::instrumentation::record_deterministic_work(1);
+            name.as_str()
+        })
+    }
+
     pub(in crate::kernel) fn is_array_object(&self, name: &str) -> bool {
         matches!(self.binding(name), Some(CLocalBinding::ArrayObject { .. }))
     }
@@ -2476,6 +2510,18 @@ fn call_write_set_marker(
     marker.into()
 }
 
+/// Membership in the blocks a memory join keeps: a set, or a query a join
+/// answers from the state's own indexes without listing every block.
+pub(crate) trait BlockMembership {
+    fn contains_block(&self, block: &PointerBlock) -> bool;
+}
+
+impl BlockMembership for BTreeSet<PointerBlock> {
+    fn contains_block(&self, block: &PointerBlock) -> bool {
+        self.contains(block)
+    }
+}
+
 /// Whether a havoc that preserves loans keeps the cell at this address: the
 /// one rule, asked by the loop head and by the interface join.
 ///
@@ -2493,10 +2539,10 @@ fn call_write_set_marker(
 fn loan_preserving_havoc_keeps_cell(
     pointer: &Pointer,
     byte_width: u32,
-    preserved_blocks: &BTreeSet<PointerBlock>,
+    preserved_blocks: &dyn BlockMembership,
     ledger: Option<&crate::kernel::loans::LoanLedger>,
 ) -> bool {
-    preserved_blocks.contains(&pointer.block)
+    preserved_blocks.contains_block(&pointer.block)
         || ledger.is_some_and(|ledger| {
             byte_width != 0
                 && ledger
@@ -2518,11 +2564,11 @@ fn loan_preserving_havoc_keeps_cell(
 /// width is its value's.
 fn loan_preserving_havoc_keeps_run(
     run: &CellRun,
-    preserved_blocks: &BTreeSet<PointerBlock>,
+    preserved_blocks: &dyn BlockMembership,
     ledger: Option<&crate::kernel::loans::LoanLedger>,
 ) -> (SlotSet, crate::kernel::primitives::RuleAnswer) {
     let exact = crate::kernel::primitives::RuleAnswer::Exact;
-    if preserved_blocks.contains(&run.base().block) {
+    if preserved_blocks.contains_block(&run.base().block) {
         return (SlotSet::All, exact);
     }
     let Some(ledger) = ledger else {
@@ -3741,7 +3787,7 @@ impl CMemory {
     pub(in crate::kernel) fn with_loop_memory_havoc_preserving_loans(
         mut self,
         variable: Variable,
-        preserved_blocks: &BTreeSet<PointerBlock>,
+        preserved_blocks: &dyn BlockMembership,
         mutable_ranges: Option<&[CMemoryRange]>,
         ledger: Option<&crate::kernel::loans::LoanLedger>,
     ) -> Self {
@@ -3796,7 +3842,7 @@ impl CMemory {
     /// The work is unchanged: one lookup per arm for each value visited.
     fn forget_loan_unprotected_values(
         &mut self,
-        preserved_blocks: &BTreeSet<PointerBlock>,
+        preserved_blocks: &dyn BlockMembership,
         ledger: Option<&crate::kernel::loans::LoanLedger>,
         agreeing: &[&CMemory],
     ) {
@@ -3883,7 +3929,7 @@ impl CMemory {
     pub(in crate::kernel) fn with_interface_memory_havoc(
         self,
         variable: Variable,
-        preserved_blocks: &BTreeSet<PointerBlock>,
+        preserved_blocks: &dyn BlockMembership,
         sibling_memories: &[&CMemory],
     ) -> Result<Self, String> {
         self.with_interface_memory_havoc_preserving_loans(
@@ -3897,7 +3943,7 @@ impl CMemory {
     pub(in crate::kernel) fn with_interface_memory_havoc_preserving_loans(
         mut self,
         variable: Variable,
-        preserved_blocks: &BTreeSet<PointerBlock>,
+        preserved_blocks: &dyn BlockMembership,
         sibling_memories: &[&CMemory],
         ledger: Option<&crate::kernel::loans::LoanLedger>,
     ) -> Result<Self, String> {
@@ -4002,13 +4048,13 @@ impl CMemory {
             let mut visited = 0usize;
             for (pointer, value) in local_block_entries(memory.cells.logical()) {
                 visited += 1;
-                if !preserved_blocks.contains(&pointer.block) {
+                if !preserved_blocks.contains_block(&pointer.block) {
                     record.record(pointer, value.byte_width());
                 }
             }
             for ((pointer, c_type), _) in local_block_entries(&memory.union_cells) {
                 visited += 1;
-                if !preserved_blocks.contains(&pointer.block) {
+                if !preserved_blocks.contains_block(&pointer.block) {
                     record.record(pointer, c_type.byte_width());
                 }
             }
@@ -6571,19 +6617,19 @@ impl CMemory {
     pub(in crate::kernel) fn differs_only_within(
         &self,
         other: &Self,
-        blocks: &BTreeSet<PointerBlock>,
+        blocks: &dyn BlockMembership,
     ) -> bool {
         self.forgotten == other.forgotten
             && self.heap == other.heap
             && self
                 .blocks
                 .diff(&other.blocks)
-                .all(|change| blocks.contains(change.key()))
+                .all(|change| blocks.contains_block(change.key()))
             && self.cells.differs_only_within(&other.cells, blocks)
             && self
                 .union_cells
                 .diff(&other.union_cells)
-                .all(|change| blocks.contains(&change.key().0.block))
+                .all(|change| blocks.contains_block(&change.key().0.block))
     }
 
     /// The automatic objects whose lifetimes this memory records as ended.

@@ -7593,30 +7593,43 @@ pub(in crate::surface) fn validate_region_proof_clauses(
 ) -> Result<(), ClickError> {
     let loop_count = count_loop_regions(parsed_function);
     for region_proof_clause in function_block.structural_clauses() {
-        match region_proof_clause.region() {
-            CodeRegion::Function => {
-                return Err(ClickError::new(
-                    "`for function` region proof blocks are not supported",
-                ));
-            }
-            CodeRegion::Loop(index) if *index >= loop_count => {
-                return Err(ClickError::new(format!(
-                    "`{}` has no `loop({index})` code region; it contains {loop_count} loop(s)",
-                    function_block.signature().name()
-                )));
-            }
-            CodeRegion::Statement(_) => {
-                return Err(ClickError::new(
-                    "internal frontier-loop proof was bound to a statement region",
-                ));
-            }
-            CodeRegion::Loop(_) => {}
-        }
-
-        validate_loop_phase_proof("initialize", region_proof_clause.initialize_proof())?;
-        validate_loop_phase_proof("preserve", region_proof_clause.preserve_proof())?;
+        validate_region_proof_clause(
+            function_block.signature().name(),
+            region_proof_clause,
+            loop_count,
+        )?;
     }
     Ok(())
+}
+
+/// One structural clause's check for [`validate_region_proof_clauses`]: it
+/// depends only on the clause and the function's loop count.
+pub(in crate::surface) fn validate_region_proof_clause(
+    function_name: &str,
+    region_proof_clause: &StructuralClause,
+    loop_count: usize,
+) -> Result<(), ClickError> {
+    match region_proof_clause.region() {
+        CodeRegion::Function => {
+            return Err(ClickError::new(
+                "`for function` region proof blocks are not supported",
+            ));
+        }
+        CodeRegion::Loop(index) if *index >= loop_count => {
+            return Err(ClickError::new(format!(
+                "`{function_name}` has no `loop({index})` code region; it contains {loop_count} loop(s)"
+            )));
+        }
+        CodeRegion::Statement(_) => {
+            return Err(ClickError::new(
+                "internal frontier-loop proof was bound to a statement region",
+            ));
+        }
+        CodeRegion::Loop(_) => {}
+    }
+
+    validate_loop_phase_proof("initialize", region_proof_clause.initialize_proof())?;
+    validate_loop_phase_proof("preserve", region_proof_clause.preserve_proof())
 }
 
 pub(in crate::surface) fn validate_loop_phase_proof(

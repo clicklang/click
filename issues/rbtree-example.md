@@ -1750,3 +1750,14 @@ Recursive pointer getters use those checked interfaces, with the existing
 termination checks, so `rb_min_parent` retains its model field's object class.
 All ten sidecars in the default `rbtree-model` project verify. This removes the
 getter typing blocker without adding proof steps to the affected theorem.
+
+The repeated-flip cursor and whole-tree restoration tactic now verify. The
+boundary sidecar checks both ways a chain stops: blackening the root or exiting
+beneath a black parent, in either ancestor orientation. It returns whole-tree
+ownership with the exact chain-result model, including through both augmented
+wrappers, without changing the Linux C. Applying restoration exposed a call
+boundary bug: named output arguments were evaluated before sibling produced
+memory clauses supplied their read authority. The fix constructs those primitive
+outputs once and carries the same facts into the return transition. A reduced
+regression covers user tactics and C calls, including reversed output order.
+The continuing LL/LR/RL/RR flip cases in the general C loop remain unfinished.

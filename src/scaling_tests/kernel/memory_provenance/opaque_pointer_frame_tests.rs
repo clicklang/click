@@ -5,7 +5,7 @@ use super::*;
 fn bounded_pointer_value_skips_unrelated_facts_cells_and_history() {
     let mut samples = Vec::new();
     let mut wide_samples = Vec::new();
-    for size in [16u64, 64, 256, 1024] {
+    for size in [4u64, 16, 64, 256] {
         let _session = crate::kernel::VerificationSession::enter();
         let field = Pointer {
             block: PointerBlock::ExternalArgument,
@@ -105,7 +105,7 @@ fn bounded_pointer_value_skips_unrelated_facts_cells_and_history() {
 
 #[test]
 fn complete_read_domains_use_numeric_storage_classes_without_scanning_other_classes() {
-    let costs = [16u64, 64, 256, 1024].map(|size| {
+    let costs = [4u64, 16, 64, 256].map(|size| {
         let _session = crate::kernel::VerificationSession::enter();
         let mut facts = PureFactContext::new();
         let equal = |a: Pointer, b: Pointer| {

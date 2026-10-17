@@ -9561,6 +9561,146 @@ pub(in crate::kernel) fn native_comparison_of_integer_observation(
     ))
 }
 
+/// The two Integer bounds a signed definedness fact is exactly equivalent
+/// to: `defined(a + b)` on `int32` holds exactly when
+/// `to_integer(a) + to_integer(b) <= 2147483647` and
+/// `to_integer(a) + to_integer(b) >= -2147483648`, and likewise for `-`
+/// and `*` and for `int64`. A refutation may read the definedness fact as
+/// these bounds (`definedness_of_integer_bound` checks a listed one).
+pub(crate) fn integer_bounds_of_definedness(proposition: &Proposition) -> Vec<Proposition> {
+    use crate::kernel::primitives::IntegerTerm;
+    let Proposition::ConditionIs(condition, false) = proposition else {
+        return Vec::new();
+    };
+    let (left, right, ty, operation): (_, _, _, fn(IntegerTerm, IntegerTerm) -> IntegerTerm) =
+        match condition {
+            ConditionTerm::Bitvector32SignedAddOverflows(left, right) => {
+                (left, right, MachineIntegerType::Int32, IntegerTerm::add)
+            }
+            ConditionTerm::Bitvector32SignedSubtractOverflows(left, right) => (
+                left,
+                right,
+                MachineIntegerType::Int32,
+                IntegerTerm::subtract,
+            ),
+            ConditionTerm::Bitvector32SignedMultiplyOverflows(left, right) => (
+                left,
+                right,
+                MachineIntegerType::Int32,
+                IntegerTerm::multiply,
+            ),
+            ConditionTerm::Bitvector64SignedAddOverflows(left, right) => {
+                (left, right, MachineIntegerType::Int64, IntegerTerm::add)
+            }
+            ConditionTerm::Bitvector64SignedSubtractOverflows(left, right) => (
+                left,
+                right,
+                MachineIntegerType::Int64,
+                IntegerTerm::subtract,
+            ),
+            ConditionTerm::Bitvector64SignedMultiplyOverflows(left, right) => (
+                left,
+                right,
+                MachineIntegerType::Int64,
+                IntegerTerm::multiply,
+            ),
+            _ => return Vec::new(),
+        };
+    let (Some(left), Some(right)) = (
+        IntegerTerm::from_machine(ty, left.as_ref().clone()),
+        IntegerTerm::from_machine(ty, right.as_ref().clone()),
+    ) else {
+        return Vec::new();
+    };
+    let (minimum, maximum) = match ty {
+        MachineIntegerType::Int32 => (i64::from(i32::MIN), i64::from(i32::MAX)),
+        _ => (i64::MIN, i64::MAX),
+    };
+    let exact = operation(left, right);
+    vec![
+        Proposition::ConditionIs(
+            ConditionTerm::integer_less_equal(exact.clone(), IntegerTerm::constant_i64(maximum)),
+            true,
+        ),
+        Proposition::ConditionIs(
+            ConditionTerm::integer_greater_equal(exact, IntegerTerm::constant_i64(minimum)),
+            true,
+        ),
+    ]
+}
+
+/// The definedness fact whose Integer bound (`integer_bounds_of_definedness`)
+/// is exactly `bound`, if any. The candidate is recomputed through the
+/// forward map, so only an exact reading is accepted.
+pub(crate) fn definedness_of_integer_bound(bound: &Proposition) -> Option<Proposition> {
+    use crate::kernel::primitives::IntegerTerm;
+    use num_traits::ToPrimitive;
+    let Proposition::ConditionIs(
+        ConditionTerm::IntegerLessEqual(first, second)
+        | ConditionTerm::IntegerGreaterEqual(first, second),
+        true,
+    ) = bound
+    else {
+        return None;
+    };
+    // The comparison constructors may put the constant on either side.
+    let operation = |term: &IntegerTerm| {
+        matches!(
+            term,
+            IntegerTerm::Add(..) | IntegerTerm::Subtract(..) | IntegerTerm::Multiply(..)
+        )
+    };
+    let exact = if operation(first) { first } else { second };
+    let (IntegerTerm::Add(left, right)
+    | IntegerTerm::Subtract(left, right)
+    | IntegerTerm::Multiply(left, right)) = &**exact
+    else {
+        return None;
+    };
+    // An operand is an observation of the machine type, or a constant,
+    // which the forward map produces for a literal operand such as `x + 1`.
+    let ty = match (&**left, &**right) {
+        (IntegerTerm::Machine(machine), _) | (_, IntegerTerm::Machine(machine)) => machine.ty(),
+        _ => return None,
+    };
+    let carrier = |side: &IntegerTerm| -> Option<Bitvector32Term> {
+        match side {
+            IntegerTerm::Machine(machine) if machine.ty() == ty => Some(machine.value().clone()),
+            IntegerTerm::Constant(_) => {
+                let value = side.as_const()?.to_i64()?;
+                match ty {
+                    MachineIntegerType::Int32 => {
+                        Some(Bitvector32Term::Constant(i32::try_from(value).ok()? as u32))
+                    }
+                    MachineIntegerType::Int64 => Some(Bitvector32Term::Int64Constant(value)),
+                    _ => None,
+                }
+            }
+            _ => None,
+        }
+    };
+    let (a, b) = (Box::new(carrier(left)?), Box::new(carrier(right)?));
+    let candidates = match ty {
+        MachineIntegerType::Int32 => [
+            ConditionTerm::Bitvector32SignedAddOverflows(a.clone(), b.clone()),
+            ConditionTerm::Bitvector32SignedSubtractOverflows(a.clone(), b.clone()),
+            ConditionTerm::Bitvector32SignedMultiplyOverflows(a, b),
+        ],
+        MachineIntegerType::Int64 => [
+            ConditionTerm::Bitvector64SignedAddOverflows(a.clone(), b.clone()),
+            ConditionTerm::Bitvector64SignedSubtractOverflows(a.clone(), b.clone()),
+            ConditionTerm::Bitvector64SignedMultiplyOverflows(a, b),
+        ],
+        _ => return None,
+    };
+    candidates.into_iter().find_map(|condition| {
+        let fact = Proposition::ConditionIs(condition, false);
+        integer_bounds_of_definedness(&fact)
+            .contains(bound)
+            .then_some(fact)
+    })
+}
+
 /// The Integer comparisons of exact observations whose native comparison
 /// (`native_comparison_of_integer_observation`) is exactly `proposition`,
 /// a native comparison fact: `1u32 <= x` gives `1 <= to_integer(x)`. Each
