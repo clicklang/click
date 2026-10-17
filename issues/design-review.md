@@ -9,9 +9,10 @@ without a known false acceptance. Each item that becomes a reproduced false acce
 
 Items P1–P4, W4 and W5 waited on the SMT-backed `auto`
 ([design/smt-auto-stage1.md](../design/smt-auto-stage1.md)), which landed;
-P3 and P4 are done, P2 (Integer-default specification arithmetic) moved
-to [standard-library.md](standard-library.md), and the others are ruled
-below. Also depends on [simplify-step.md](simplify-step.md), which now holds the
+P3 and P4 are done, W4 and W5 are closed in
+[design/proof-language-rulings.md](../design/proof-language-rulings.md), P2
+(Integer-default specification arithmetic) moved to
+[standard-library.md](standard-library.md), and P1 is below. Also depends on [simplify-step.md](simplify-step.md), which now holds the
 critique that "simple" `step()` is not simple (formerly W3).
 
 On 2026-10-12 Click was reviewed the way an expert launch audience would
@@ -133,31 +134,6 @@ Rewriting the erase-color arms with it waits on the object-class regression
 that keeps `rbtree-erase` from verifying. R4 and R5 remain.
 
 ## W. Proof workflow and tooling
-
-### W4. Expansion output is hard to read
-
-Done: `click expand` writes each repeated derivation of an arithmetic
-certificate once and leaves out derivations its conclusion does not use. A
-grouped closure whose claims `normalize();` proves is written as one
-`normalize();` before the remaining closers when that form verifies
-(`examples/vector-push/vector_push.click`). Committed expansions were tidied
-the same way where they still verify.
-
-Today: certificate nodes are still numbered, and sibling certificates under
-one `both` repeat the same premise and interval nodes, which one certificate
-cannot share with another (`mdtests/bubble_sort3_two_pass_sorted.md`).
-Closures that `normalize();` cannot shorten keep one `assumption();` per
-obligation, and older committed expansions keep restatements such as
-`have 0 == 0 by normalize();`.
-
-Proposed fix: named, deduplicated certificate nodes, and expansions that
-drop the noise.
-
-Decision: split (maintainer, 2026-10-15). Committing expansions is intended:
-expansion is how a slow smart site is made fast, so the certificate cache
-the review proposed instead is ruled out (see W5 in
-[design/proof-language-rulings.md](../design/proof-language-rulings.md)).
-That makes readable expansion output matter more; it stays open.
 
 ### W6. Some diagnostic lines still print kernel notation
 

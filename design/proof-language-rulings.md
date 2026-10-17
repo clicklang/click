@@ -28,6 +28,14 @@ only by the tests that read them.
   Expansion already does this: `click expand` turns a slow smart site into
   the simple steps it found, which check without search, and the expansion
   is committed. A cache would be a second, hidden copy of the same proof.
+- Expansion output stays as it is (closed 2026-10-17, launch review W4).
+  `click expand` already writes each repeated certificate derivation once,
+  drops derivations a conclusion does not use, and shortens grouped closers
+  `normalize();` proves. Certificate steps stay numbered: a certificate is a
+  short list of local steps read mostly by the checker, and names would add
+  syntax for text people rarely read. Marks name program points, not derived
+  facts, so they are not reused for this. Sibling certificates under one
+  `both` may repeat the same premise and interval steps.
 - `owns p` for a pointer is the pointer's own slot. `owns *p` is what it
   points at.
 - A separate tactic for conjunction and disjunction goals was dropped;
