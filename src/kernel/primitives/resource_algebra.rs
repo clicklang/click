@@ -4428,13 +4428,18 @@ impl ResourceContext {
         };
         let key = AtomicConnectionKey::Variable(variable);
         let (mut facts, _) = assumptions.atomic_facts_connected_to(&key, true);
-        // Authority and read permissions do not equate scalar addresses.
-        // Keep every other proposition conservatively, including model
-        // equalities whose projections may expose a pointer equality.
+        // Authority, read permissions, and subobject coverage do not equate
+        // scalar addresses. Keep other propositions conservatively, including
+        // model equalities whose projections may expose a pointer equality.
         let related = facts.any(|fact| {
             crate::instrumentation::record_deterministic_work(1);
             match fact {
                 AtomicConnectedFact::Condition(..) => true,
+                AtomicConnectedFact::Proposition(Proposition::Predicate { name, .. })
+                    if name.starts_with(crate::kernel::SUBOBJECT_COVERS_PREDICATE_PREFIX) =>
+                {
+                    false
+                }
                 AtomicConnectedFact::Proposition(proposition) => !matches!(
                     proposition,
                     Proposition::CResourceComposition(_)
