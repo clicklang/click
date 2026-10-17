@@ -2535,7 +2535,10 @@ impl ConditionTerm {
                 if let Some((pointer, alignment)) = condition.as_pointer_alignment() {
                     return Self::Bitvector64Equal(
                         Box::new(Bitvector32Term::UInt64BitwiseAnd(
-                            Box::new(Bitvector32Term::PointerAddress(Box::new(pointer.clone()))),
+                            Box::new(Bitvector32Term::PointerAddress(
+                                Box::new(pointer.clone()),
+                                crate::kernel::AddressObjectClass::NONE,
+                            )),
                             Box::new(Bitvector32Term::UInt64Constant(alignment - 1)),
                         )),
                         Box::new(Bitvector32Term::UInt64Constant(0)),
