@@ -1980,6 +1980,7 @@ pub(in crate::surface) fn elaborate_fixed_state_algebraic_expression(
         pointer_element_widths,
     );
     context.algebraic_values = algebraic_values.into_iter().collect();
+    lowerer.capture_referenced_names = Some(contract_expression_referenced_names(expression));
     lowerer.lower_contract_algebraic_to_spec(expression, &context)
 }
 
@@ -2197,9 +2198,9 @@ pub(in crate::surface) fn elaborate_fixed_state_expression_with_algebraic_and_in
             }
         }
     }
-    if !context.integer_values.is_empty() {
-        lowerer.capture_referenced_names = Some(names);
-    }
+    // A snapshot the expression enters reads only these names, as for a
+    // proposition, rather than every local the snapshot's state binds.
+    lowerer.capture_referenced_names = Some(names);
     lowerer.lower_contract_expression_to_spec(expression, &context)
 }
 
@@ -2878,6 +2879,22 @@ struct LoopLoweringRecord {
     /// Whether the walk's scoped bindings were empty once the loop was
     /// lowered, so the next loop starts from none.
     bindings_empty_after: bool,
+}
+
+/// [`parameter_pointer_element_widths`] for the parameters among `names`,
+/// found through the binding's index when it has one.
+pub(in crate::surface) fn parameter_pointer_element_widths_named(
+    parameter_binding: ParameterBinding<'_>,
+    names: &BTreeSet<String>,
+) -> BTreeMap<String, u32> {
+    let Some(index) = parameter_binding.index else {
+        return parameter_pointer_element_widths(parameter_binding.parameters);
+    };
+    parameter_pointer_element_widths(
+        names
+            .iter()
+            .filter_map(|name| Some(&parameter_binding.parameters[index.position(name)?])),
+    )
 }
 
 pub(in crate::surface) fn parameter_pointer_element_widths<'a>(

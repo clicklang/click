@@ -5591,6 +5591,10 @@ pub(crate) struct ParameterBinding<'a> {
     /// lowering that reads a few parameters then looks up only those
     /// instead of building a map over every parameter.
     pub(crate) index: Option<&'a ParameterIndex>,
+    /// Shared copies of these parameters and arguments, when the caller
+    /// built them: a diagnostic captured on every refused attempt keeps a
+    /// handle to them instead of copying both lists.
+    pub(crate) naming: Option<&'a std::sync::Arc<ParameterNaming>>,
 }
 
 impl<'a> ParameterBinding<'a> {
@@ -5599,6 +5603,7 @@ impl<'a> ParameterBinding<'a> {
             parameters,
             arguments,
             index: None,
+            naming: None,
         }
     }
 
@@ -5608,6 +5613,34 @@ impl<'a> ParameterBinding<'a> {
         Self {
             index: Some(index),
             ..self
+        }
+    }
+
+    /// This binding with `naming`, which must copy its parameters and
+    /// arguments.
+    pub(crate) fn with_naming(self, naming: &'a std::sync::Arc<ParameterNaming>) -> Self {
+        debug_assert_eq!(naming.parameters.len(), self.parameters.len());
+        debug_assert_eq!(naming.arguments.len(), self.arguments.len());
+        Self {
+            naming: Some(naming),
+            ..self
+        }
+    }
+}
+
+/// One copy of a proof's parameter declarations and argument expressions,
+/// shared by every diagnostic the proof captures.
+pub(crate) struct ParameterNaming {
+    pub(crate) parameters: std::sync::Arc<[syntax::C0Parameter]>,
+    pub(crate) arguments: std::sync::Arc<[CExpression]>,
+}
+
+impl ParameterNaming {
+    pub(crate) fn new(parameters: &[syntax::C0Parameter], arguments: &[CExpression]) -> Self {
+        crate::instrumentation::record_deterministic_work(parameters.len() + arguments.len());
+        Self {
+            parameters: parameters.into(),
+            arguments: arguments.into(),
         }
     }
 }

@@ -1807,6 +1807,7 @@ impl<'a> ClauseParameters<'a> {
                 parameters: self.parameters,
                 arguments: &[],
                 index: self.index,
+                naming: None,
             };
             array_refs_for_values(binding, self.values, self.memory)
         })
