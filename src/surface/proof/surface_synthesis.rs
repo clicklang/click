@@ -4185,6 +4185,30 @@ fn synthesize_surface_algebraic(
                         .or_else(|| {
                             synthesize_loaded_pointer_value(pointer, parameter_binding, state)
                         })
+                        .map(|expression| {
+                            // An address-only model field needs its void*
+                            // carrier, even when the source binding names a
+                            // struct pointer. Dropping this cast produces a
+                            // constructor that cannot lower back to the fact.
+                            if pointer.c_type() == CType::VoidPointer {
+                                ContractExpression::CUnary {
+                                    lowered: CExpression::Cast {
+                                        expression: Box::new(CExpression::Value(CValue::Pointer(
+                                            pointer.clone(),
+                                        ))),
+                                        target_type: CType::VoidPointer,
+                                        integer_mode: crate::kernel::CIntegerCastMode::Standard,
+                                        pointee_struct: None,
+                                        pointee_volatile: false,
+                                        pointee_constant: false,
+                                        explicit_qualification: false,
+                                    },
+                                    operand: Box::new(expression),
+                                }
+                            } else {
+                                expression
+                            }
+                        })
                     }
                     crate::kernel::AlgebraicValue::C(CValue::Int32(value)) => {
                         synthesize_surface_bitvector(

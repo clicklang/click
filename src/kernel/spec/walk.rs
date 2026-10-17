@@ -222,6 +222,9 @@ impl<'a> SpecNode<'a> {
                 SpecAlgebraicValue::Algebraic(algebraic) => visit(N::Algebraic(algebraic)),
             },
             N::Argument(argument) => match argument {
+                SpecPureFunctionArgument::ObjectPointer { argument, .. } => {
+                    visit(N::Argument(argument))
+                }
                 SpecPureFunctionArgument::Value(expression)
                 | SpecPureFunctionArgument::ArrayRef {
                     pointer: expression,

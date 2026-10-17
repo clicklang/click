@@ -1237,7 +1237,11 @@ fn c0_pointer_object_volatile_accesses_preserve_pointer_provenance() {
     let direct_execution = crate::kernel::prove_symbolic_c_function_execution_paths(
         crate::kernel::CState::new(),
         functions[0].to_kernel_function(),
-        vec![crate::kernel::CExpression::Value(node.clone())],
+        vec![crate::kernel::CExpression::Value(
+            node.clone().with_pointer_object_class(
+                functions[0].to_kernel_function().parameters()[0].pointee_class(),
+            ),
+        )],
         crate::kernel::PureFactContext::new(),
     );
     assert_eq!(direct_execution.paths().len(), 1);
@@ -5401,16 +5405,24 @@ fn c0_embedded_struct_field_access_lowers_to_nested_scalar_offset() {
     };
     let resources = own_memory_context(packet.clone(), 0, 4);
     let state = crate::kernel::CState::new()
-        .with_memory(crate::kernel::CMemory::new().with_block("packet", 8))
+        .with_memory(crate::kernel::CMemory::new().with_classed_block(
+            "packet".into(),
+            function.parameters()[0].pointee_class(),
+            8,
+        ))
         .with_resource_context(resources.clone());
     let final_state = crate::kernel::CState::new()
-        .with_memory(crate::kernel::CMemory::new().with_block("packet", 8).store(
-            crate::kernel::Pointer {
-                block: "packet".into(),
-                offset: crate::kernel::PointerOffsetTerm::Constant(4),
-            },
-            crate::kernel::int32(7),
-        ))
+        .with_memory(
+            crate::kernel::CMemory::new()
+                .with_classed_block("packet".into(), function.parameters()[0].pointee_class(), 8)
+                .store(
+                    crate::kernel::Pointer {
+                        block: "packet".into(),
+                        offset: crate::kernel::PointerOffsetTerm::Constant(4),
+                    },
+                    crate::kernel::int32(7),
+                ),
+        )
         .with_resource_context(resources);
     let arguments = vec![crate::kernel::c_pointer_value(packet)];
     let theorem = crate::kernel::prove_symbolic_c_function_execution(
@@ -5794,8 +5806,11 @@ fn c0_tagged_union_member_addresses_preserve_member_type_and_offset() {
         offset: crate::kernel::PointerOffsetTerm::Constant(0),
     };
     let theorem = crate::kernel::prove_symbolic_c_function_execution(
-        crate::kernel::CState::new()
-            .with_memory(crate::kernel::CMemory::new().with_block("packet", 16)),
+        crate::kernel::CState::new().with_memory(crate::kernel::CMemory::new().with_classed_block(
+            "packet".into(),
+            address_number.to_kernel_function().parameters()[0].pointee_class(),
+            16,
+        )),
         address_pointer,
         vec![crate::kernel::c_pointer_value(packet)],
         Default::default(),
@@ -5985,7 +6000,7 @@ fn c0_enum_field_comparison_lowers_named_constant() {
     let state = crate::kernel::CState::new()
         .with_memory(
             crate::kernel::CMemory::new()
-                .with_block("packet", 8)
+                .with_classed_block("packet".into(), function.parameters()[0].pointee_class(), 8)
                 .store(state_pointer, crate::kernel::int32(7)),
         )
         .with_resource_context(resources.clone());
@@ -6847,7 +6862,11 @@ fn c0_syntax_targets_kernel_struct_field_store() {
     };
     let resources = own_memory_context(pointer.clone(), 0, 1);
     let state = crate::kernel::CState::new()
-        .with_memory(crate::kernel::CMemory::new().with_block("object", 4))
+        .with_memory(crate::kernel::CMemory::new().with_classed_block(
+            "object".into(),
+            function.parameters()[0].pointee_class(),
+            4,
+        ))
         .with_resource_context(resources.clone());
     let arguments = vec![
         crate::kernel::c_pointer_value(pointer.clone()),
@@ -6856,7 +6875,7 @@ fn c0_syntax_targets_kernel_struct_field_store() {
     let final_state = crate::kernel::CState::new()
         .with_memory(
             crate::kernel::CMemory::new()
-                .with_block("object", 4)
+                .with_classed_block("object".into(), function.parameters()[0].pointee_class(), 4)
                 .store(pointer, crate::kernel::int32(5)),
         )
         .with_resource_context(resources);
@@ -6928,7 +6947,7 @@ fn c0_syntax_targets_kernel_multifield_struct_offset_load() {
         offset: crate::kernel::PointerOffsetTerm::Constant(4),
     };
     let memory = crate::kernel::CMemory::new()
-        .with_block("pair", 8)
+        .with_classed_block("pair".into(), function.parameters()[0].pointee_class(), 8)
         .store(second, crate::kernel::int32(7));
     let state = crate::kernel::CState::new()
         .with_memory(memory)
@@ -6997,7 +7016,7 @@ fn c0_syntax_targets_kernel_struct_pointer_field_roundtrip() {
     let state = crate::kernel::CState::new()
         .with_memory(
             crate::kernel::CMemory::new()
-                .with_block("owner", 16)
+                .with_classed_block("owner".into(), function.parameters()[0].pointee_class(), 16)
                 .with_block("data", 4),
         )
         .with_resource_context(resources);
@@ -8313,12 +8332,20 @@ fn c0_wide_scalar_struct_fields_execute_at_declared_widths() {
     };
     let resources = own_memory_context(packet.clone(), 0, 8);
     let state = crate::kernel::CState::new()
-        .with_memory(crate::kernel::CMemory::new().with_block("packet", 32))
+        .with_memory(crate::kernel::CMemory::new().with_classed_block(
+            "packet".into(),
+            function.parameters()[0].pointee_class(),
+            32,
+        ))
         .with_resource_context(resources.clone());
     let final_state = crate::kernel::CState::new()
         .with_memory(
             crate::kernel::CMemory::new()
-                .with_block("packet", 32)
+                .with_classed_block(
+                    "packet".into(),
+                    function.parameters()[0].pointee_class(),
+                    32,
+                )
                 .store(
                     crate::kernel::Pointer {
                         block: "packet".into(),
@@ -9148,12 +9175,20 @@ fn c0_struct_inline_scalar_array_field_supports_indexed_load_and_store() {
     };
     let resources = own_memory_context(packet.clone(), 0, 4);
     let state = crate::kernel::CState::new()
-        .with_memory(crate::kernel::CMemory::new().with_block("packet", 16))
+        .with_memory(crate::kernel::CMemory::new().with_classed_block(
+            "packet".into(),
+            function.parameters()[0].pointee_class(),
+            16,
+        ))
         .with_resource_context(resources.clone());
     let final_state = crate::kernel::CState::new()
         .with_memory(
             crate::kernel::CMemory::new()
-                .with_block("packet", 16)
+                .with_classed_block(
+                    "packet".into(),
+                    function.parameters()[0].pointee_class(),
+                    16,
+                )
                 .store(
                     crate::kernel::Pointer {
                         block: "packet".into(),
@@ -9209,12 +9244,20 @@ fn c0_struct_multidimensional_scalar_array_field_flattens_row_major() {
     };
     let resources = own_memory_context(packet.clone(), 0, 10);
     let state = crate::kernel::CState::new()
-        .with_memory(crate::kernel::CMemory::new().with_block("packet", 28))
+        .with_memory(crate::kernel::CMemory::new().with_classed_block(
+            "packet".into(),
+            function.parameters()[0].pointee_class(),
+            28,
+        ))
         .with_resource_context(resources.clone());
     let final_state = crate::kernel::CState::new()
         .with_memory(
             crate::kernel::CMemory::new()
-                .with_block("packet", 28)
+                .with_classed_block(
+                    "packet".into(),
+                    function.parameters()[0].pointee_class(),
+                    28,
+                )
                 .store(
                     crate::kernel::Pointer {
                         block: "packet".into(),
@@ -9348,13 +9391,21 @@ fn c0_struct_scalar_array_element_address_executes_at_element_width() {
     };
     let resources = own_memory_context(packet.clone(), 0, 10);
     let state = crate::kernel::CState::new()
-        .with_memory(crate::kernel::CMemory::new().with_block("packet", 28))
+        .with_memory(crate::kernel::CMemory::new().with_classed_block(
+            "packet".into(),
+            function.parameters()[0].pointee_class(),
+            28,
+        ))
         .with_resource_context(resources.clone());
     let final_state = crate::kernel::CState::new()
         .with_memory(
             crate::kernel::CMemory::new()
                 .with_block("local:value_pointer", 8)
-                .with_block("packet", 28)
+                .with_classed_block(
+                    "packet".into(),
+                    function.parameters()[0].pointee_class(),
+                    28,
+                )
                 .store(
                     local_value_pointer,
                     crate::kernel::CValue::pointer(value.clone()),
@@ -9424,13 +9475,17 @@ fn c0_struct_byte_array_element_address_executes_at_byte_width() {
     };
     let resources = own_memory_context(packet.clone(), 0, 2);
     let state = crate::kernel::CState::new()
-        .with_memory(crate::kernel::CMemory::new().with_block("packet", 8))
+        .with_memory(crate::kernel::CMemory::new().with_classed_block(
+            "packet".into(),
+            function.parameters()[0].pointee_class(),
+            8,
+        ))
         .with_resource_context(resources.clone());
     let final_state = crate::kernel::CState::new()
         .with_memory(
             crate::kernel::CMemory::new()
                 .with_block("local:byte_pointer", 8)
-                .with_block("packet", 8)
+                .with_classed_block("packet".into(), function.parameters()[0].pointee_class(), 8)
                 .store(
                     local_byte_pointer,
                     crate::kernel::CValue::typed_pointer(
@@ -9533,12 +9588,20 @@ fn c0_embedded_struct_array_field_preserves_stride_and_accesses_leaf() {
     };
     let resources = own_memory_context(packet.clone(), 0, 6);
     let state = crate::kernel::CState::new()
-        .with_memory(crate::kernel::CMemory::new().with_block("packet", 24))
+        .with_memory(crate::kernel::CMemory::new().with_classed_block(
+            "packet".into(),
+            function.parameters()[0].pointee_class(),
+            24,
+        ))
         .with_resource_context(resources.clone());
     let final_state = crate::kernel::CState::new()
         .with_memory(
             crate::kernel::CMemory::new()
-                .with_block("packet", 24)
+                .with_classed_block(
+                    "packet".into(),
+                    function.parameters()[0].pointee_class(),
+                    24,
+                )
                 .store(
                     crate::kernel::Pointer {
                         block: "packet".into(),
@@ -9635,12 +9698,20 @@ fn c0_multidimensional_embedded_struct_array_preserves_row_major_stride() {
     };
     let resources = own_memory_context(packet.clone(), 0, 10);
     let state = crate::kernel::CState::new()
-        .with_memory(crate::kernel::CMemory::new().with_block("packet", 40))
+        .with_memory(crate::kernel::CMemory::new().with_classed_block(
+            "packet".into(),
+            function.parameters()[0].pointee_class(),
+            40,
+        ))
         .with_resource_context(resources.clone());
     let final_state = crate::kernel::CState::new()
         .with_memory(
             crate::kernel::CMemory::new()
-                .with_block("packet", 40)
+                .with_classed_block(
+                    "packet".into(),
+                    function.parameters()[0].pointee_class(),
+                    40,
+                )
                 .store(
                     crate::kernel::Pointer {
                         block: "packet".into(),
@@ -11486,7 +11557,7 @@ fn c0_struct_function_pointer_fields_load_and_dispatch_known_targets() {
     let state = crate::kernel::CState::new()
         .with_memory(
             crate::kernel::CMemory::new()
-                .with_block("table", 8)
+                .with_classed_block("table".into(), apply.parameters()[0].pointee_class(), 8)
                 .store(table.clone(), callback),
         )
         .with_resource_context(own_memory_context(table.clone(), 0, 8));
@@ -11562,7 +11633,7 @@ fn c0_struct_function_pointer_fields_support_direct_calls() {
     let state = crate::kernel::CState::new()
         .with_memory(
             crate::kernel::CMemory::new()
-                .with_block("table", 8)
+                .with_classed_block("table".into(), apply.parameters()[0].pointee_class(), 8)
                 .store(table.clone(), callback),
         )
         .with_resource_context(own_memory_context(table.clone(), 0, 8));
@@ -12151,8 +12222,12 @@ fn c0_struct_pointer_indirection_updates_one_pointer_cell() {
     let state = crate::kernel::CState::new()
         .with_memory(
             crate::kernel::CMemory::new()
-                .with_block("root", 24)
-                .with_block("replacement", 24)
+                .with_classed_block("root".into(), function.parameters()[0].pointee_class(), 24)
+                .with_classed_block(
+                    "replacement".into(),
+                    function.parameters()[1].pointee_class(),
+                    24,
+                )
                 .store(
                     left.clone(),
                     crate::kernel::CValue::typed_pointer(
@@ -12167,8 +12242,12 @@ fn c0_struct_pointer_indirection_updates_one_pointer_cell() {
         .with_memory(
             crate::kernel::CMemory::new()
                 .with_block("local:link", 8)
-                .with_block("root", 24)
-                .with_block("replacement", 24)
+                .with_classed_block("root".into(), function.parameters()[0].pointee_class(), 24)
+                .with_classed_block(
+                    "replacement".into(),
+                    function.parameters()[1].pointee_class(),
+                    24,
+                )
                 .store(
                     crate::kernel::Pointer {
                         block: "local:link".into(),

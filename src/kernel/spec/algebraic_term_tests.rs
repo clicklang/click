@@ -661,6 +661,7 @@ fn pure_pointer_result_preserves_type_and_unsupported_results_are_explicit() {
             name: "select".into(),
             arguments: vec![],
             result_type,
+            pointer_result: None,
         };
         let result = evaluate_spec_expression_paths_with_loop_entry_in(
             &CState::new(),
@@ -699,6 +700,7 @@ fn pure_function_application_is_not_eagerly_evaluated() {
             int32(41),
         ))],
         result_type: CType::Int32,
+        pointer_result: None,
     };
     let paths = evaluate_spec_expression_paths_with_loop_entry_in(
         &CState::new(),
@@ -731,6 +733,7 @@ fn pure_function_application_retains_symbolic_algebraic_argument() {
             },
         )],
         result_type: CType::Int32,
+        pointer_result: None,
     };
     let paths = evaluate_spec_expression_paths_with_loop_entry_in(
         &CState::new(),
@@ -783,4 +786,103 @@ fn malformed_symbolic_match_is_rejected_before_term_construction() {
 #[cfg(test)]
 mod scaling_tests {
     include!("../../scaling_tests/kernel/spec/algebraic_term_tests.rs");
+}
+
+#[test]
+fn nominal_pointer_constructor_matches_preserve_the_checked_payload() {
+    use crate::kernel::effective_type::{CAccessClass, CStructClass};
+    use std::sync::Arc;
+    let class = CAccessClass::Struct(CStructClass::opaque("node"));
+    let field_type = AlgebraicValueType::ObjectPointer(CType::Int32Pointer, class.clone());
+    let arguments = vec![field_type.clone()];
+    let variants: Arc<[AlgebraicVariantType]> = vec![AlgebraicVariantType {
+        name: "At".to_string(),
+        fields: arguments.clone(),
+    }]
+    .into();
+    let ty = AlgebraicType {
+        rigid: false,
+        name: "Ref".to_string(),
+        arguments: arguments.clone(),
+        variants: variants.clone(),
+        schemas: Arc::new(AlgebraicSchemas::new(BTreeMap::from([(
+            AlgebraicValueType::Algebraic {
+                name: "Ref".to_string(),
+                arguments,
+            },
+            variants,
+        )]))),
+    };
+    for actual_class in [
+        Some(class.clone()),
+        Some(CAccessClass::Struct(CStructClass::opaque("other"))),
+        None,
+    ] {
+        let valid = actual_class.as_ref() == Some(&class);
+        let payload = CValue::typed_pointer(Pointer::symbolic(Variable(44)), CType::Int32Pointer)
+            .with_pointer_object_class(actual_class);
+        let constructor = SpecAlgebraicExpression {
+            algebraic_type: ty.clone(),
+            node: SpecAlgebraicExpressionNode::Constructor {
+                variant: "At".to_string(),
+                fields: vec![SpecAlgebraicValue::C(SpecExpression::Value(
+                    payload.clone(),
+                ))],
+            },
+        };
+        let scalar_match = SpecExpression::AlgebraicMatch {
+            scrutinee: Box::new(constructor.clone()),
+            arms: vec![SpecAlgebraicMatchArm {
+                variant: "At".to_string(),
+                bindings: vec!["p".to_string()],
+                binding_types: vec![field_type.clone()],
+                body: SpecExpression::CExpression(CExpression::Variable("p".to_string())),
+            }],
+        };
+        let paths = evaluate_spec_expression_paths_with_loop_entry_in(
+            &CState::new(),
+            &scalar_match,
+            None,
+            &PureFactContext::new(),
+            &mut SpecEvaluation::logical(&mut ExecutionBudget::new()),
+        )
+        .expect("typed pointer match");
+        assert_eq!(paths.len(), usize::from(valid));
+        if valid {
+            assert_eq!(paths[0].value, payload);
+        }
+        let model_match = SpecAlgebraicExpression {
+            algebraic_type: ty.clone(),
+            node: SpecAlgebraicExpressionNode::Match {
+                scrutinee: Box::new(constructor),
+                arms: vec![SpecAlgebraicResultMatchArm {
+                    variant: "At".to_string(),
+                    bindings: vec!["p".to_string()],
+                    binding_types: vec![field_type.clone()],
+                    binding_variables: vec![None],
+                    body: Box::new(SpecAlgebraicExpression {
+                        algebraic_type: ty.clone(),
+                        node: SpecAlgebraicExpressionNode::Constructor {
+                            variant: "At".to_string(),
+                            fields: vec![SpecAlgebraicValue::C(SpecExpression::CExpression(
+                                CExpression::Variable("p".to_string()),
+                            ))],
+                        },
+                    }),
+                }],
+            },
+        };
+        let paths = evaluate_spec_algebraic_at_state_in(
+            &CState::new(),
+            &model_match,
+            None,
+            &PureFactContext::new(),
+            &mut SpecEvaluation::logical(&mut ExecutionBudget::new()),
+        )
+        .expect("typed model match");
+        assert_eq!(paths.len(), usize::from(valid));
+        if valid {
+            assert!(paths[0].value.is_well_formed());
+        }
+    }
 }

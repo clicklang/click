@@ -4,6 +4,9 @@ The constructor fact in a callee's `ensures` clause must be available on the
 caller-side produced resource. The second call should be able to use that fact
 to select the matched resource arm without restating it with `have`.
 
+The logical pointer annotations below use `void*` for address identities;
+object access remains governed by the unchanged C types and resource ownership.
+
 ```c filename=shared_heap_produced_ensure_transport.c
 struct child {
     int32 value;
@@ -30,7 +33,7 @@ void caller(struct parent* p, struct child* kid) {
 ```click
 spec enum ParentLink {
     Empty,
-    Linked(struct child*),
+    Linked(void*),
 }
 
 resource parent(p: struct parent*) {
@@ -51,11 +54,11 @@ void parent_attach(struct parent* p, struct child* kid) {
     consumes p->kid;
     requires kid != 0;
     produces link: parent(p);
-    ensures link.link == ParentLink::Linked(kid);
+    ensures link.link == ParentLink::Linked((void*)kid);
     ensures p->kid == kid;
 } by {
     execute();
-    let link = fold(parent(p), { link: ParentLink::Linked(kid) });
+    let link = fold(parent(p), { link: ParentLink::Linked((void*)kid) });
     simp();
 }
 

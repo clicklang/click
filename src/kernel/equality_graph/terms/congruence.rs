@@ -601,6 +601,9 @@ impl TermClasses {
             crate::instrumentation::record_deterministic_work(1);
             let node = match work {
                 Work::Type(V::C(ty)) => Node::TypeC(*ty),
+                Work::Type(V::ObjectPointer(ty, class)) => {
+                    Node::TypeObjectPointer(*ty, class.clone())
+                }
                 Work::Type(V::Integer) => Node::TypeInteger,
                 Work::Type(V::Parameter(name)) => Node::TypeName(true, name.clone(), 0),
                 Work::Type(V::Algebraic { name, arguments }) => {

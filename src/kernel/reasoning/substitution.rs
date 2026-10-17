@@ -909,10 +909,12 @@ fn walk_c_statement<S: VariableSubstitution + ?Sized>(statement: &CStatement, s:
             target,
             bytes,
             zeroed,
+            object_type,
         } => CStatement::HeapAllocate {
             target: target.clone(),
             bytes: s.c_expression(bytes),
             zeroed: *zeroed,
+            object_type: object_type.clone(),
         },
         CStatement::HeapFree { pointer } => CStatement::HeapFree {
             pointer: s.c_expression(pointer),
@@ -3531,6 +3533,7 @@ fn validate_integer_pure_proposition(
                     | Sort::CInt64
                     | Sort::CMachineInteger(_)
                     | Sort::CPointer(_)
+                    | Sort::CObjectPointer(_, _)
             ) {
                 return Err(IntegerPureSubstitutionError::UnsupportedSort);
             }
@@ -3547,6 +3550,7 @@ fn validate_integer_pure_proposition(
                     | Sort::CInt64
                     | Sort::CMachineInteger(_)
                     | Sort::CPointer(_)
+                    | Sort::CObjectPointer(_, _)
             ) {
                 return Err(IntegerPureSubstitutionError::UnsupportedSort);
             }
@@ -3862,7 +3866,11 @@ fn queue_integer_quantifier_rewrite<'a>(
     let is_integer = *sort == Sort::Integer;
     let is_c = matches!(
         sort,
-        Sort::CInt32 | Sort::CInt64 | Sort::CMachineInteger(_) | Sort::CPointer(_)
+        Sort::CInt32
+            | Sort::CInt64
+            | Sort::CMachineInteger(_)
+            | Sort::CPointer(_)
+            | Sort::CObjectPointer(_, _)
     );
     if !is_integer && !is_c {
         return Err(IntegerPureSubstitutionError::UnsupportedSort);
@@ -5413,6 +5421,17 @@ fn substitute_bitvector_variable_in_memory_contents(
                     )
                 })
                 .collect(),
+            pending_object_classes: memory
+                .heap
+                .pending_object_classes
+                .iter()
+                .map(|(base, class)| {
+                    (
+                        substitute_bitvector_variable_in_pointer(base, from, to),
+                        class.clone(),
+                    )
+                })
+                .collect(),
             pending_allocations: memory
                 .heap
                 .pending_allocations
@@ -5552,7 +5571,9 @@ fn pointer_capture_avoiding_quantifier_body(
 ) -> (Proposition, Variable) {
     let mut replacement_variables = BTreeSet::new();
     collect_pointer_bound_variables(replacement, &mut replacement_variables);
-    if !replacement_variables.contains(&binder) || !matches!(sort, Sort::CPointer(_)) {
+    if !replacement_variables.contains(&binder)
+        || !matches!(sort, Sort::CPointer(_) | Sort::CObjectPointer(_, _))
+    {
         return (body.clone(), binder);
     }
     let mut reserved = crate::kernel::proposition_variables(body);
@@ -5562,7 +5583,7 @@ fn pointer_capture_avoiding_quantifier_body(
     let fresh = KernelVariableGenerator::fresh_for(0, reserved).next();
     let pointer = match sort {
         Sort::CPointer(CType::FunctionPointer(_)) => Pointer::symbolic_function(fresh),
-        Sort::CPointer(_) => Pointer::symbolic(fresh),
+        Sort::CPointer(_) | Sort::CObjectPointer(_, _) => Pointer::symbolic(fresh),
         _ => unreachable!("pointer capture avoidance only handles pointer binders"),
     };
     (
@@ -5967,6 +5988,17 @@ pub(crate) fn substitute_pointer_variable_in_memory(
                     )
                 })
                 .collect(),
+            pending_object_classes: memory
+                .heap
+                .pending_object_classes
+                .iter()
+                .map(|(base, class)| {
+                    (
+                        substitute_pointer_variable_in_pointer(base, from, to),
+                        class.clone(),
+                    )
+                })
+                .collect(),
             pending_allocations: memory
                 .heap
                 .pending_allocations
@@ -6311,6 +6343,7 @@ fn substitute_pointer_variable_in_spec_expression(
             name,
             arguments,
             result_type,
+            pointer_result,
         } => SpecExpression::PureFunctionApplication {
             name: name.clone(),
             arguments: arguments
@@ -6320,6 +6353,7 @@ fn substitute_pointer_variable_in_spec_expression(
                 })
                 .collect(),
             result_type: *result_type,
+            pointer_result: pointer_result.clone(),
         },
         SpecExpression::LoopEntrySnapshot(expression) => {
             SpecExpression::LoopEntrySnapshot(Box::new(
@@ -6370,6 +6404,15 @@ fn substitute_pointer_variable_in_spec_function_argument(
     to: &Pointer,
 ) -> SpecPureFunctionArgument {
     match argument {
+        SpecPureFunctionArgument::ObjectPointer {
+            argument,
+            object_class,
+        } => SpecPureFunctionArgument::ObjectPointer {
+            argument: Box::new(substitute_pointer_variable_in_spec_function_argument(
+                argument, from, to,
+            )),
+            object_class: object_class.clone(),
+        },
         SpecPureFunctionArgument::Integer(value) => SpecPureFunctionArgument::Integer(
             substitute_pointer_variable_in_spec_integer(value, from, to),
         ),

@@ -303,7 +303,16 @@ impl CGlobalAggregate {
             layout,
             initializers,
             constant: false,
+            declared_class: None,
         }
+    }
+
+    pub(crate) fn with_declared_class(
+        mut self,
+        class: Option<crate::kernel::effective_type::CAccessClass>,
+    ) -> Self {
+        self.declared_class = class;
+        self
     }
 
     pub fn source_name(&self) -> &str {
@@ -359,7 +368,16 @@ impl CGlobalAggregateArray {
             length,
             initializers,
             constant: false,
+            declared_class: None,
         }
+    }
+
+    pub(crate) fn with_declared_class(
+        mut self,
+        class: Option<crate::kernel::effective_type::CAccessClass>,
+    ) -> Self {
+        self.declared_class = class;
+        self
     }
 
     pub fn source_name(&self) -> &str {
@@ -750,6 +768,8 @@ impl CFunctionContractInterface {
             return_type,
             return_pointee_constant: false,
             return_pointee_class: None,
+            object_type_requirements: Default::default(),
+            return_object_type_guarantee: None,
             return_aggregate_layout: None,
             aggregate_return_mode: CAggregateReturnMode::Copy,
             construction_parameter: None,
@@ -777,6 +797,16 @@ impl CFunctionContractInterface {
             recursion_peers: Vec::new(),
             recursion_binder: None,
         }
+    }
+
+    fn refresh_object_types(&mut self) {
+        self.object_type_requirements = crate::kernel::object_types::declared_requirements(self);
+        self.return_object_type_guarantee =
+            crate::kernel::object_types::declared_return_class(self);
+    }
+
+    pub(crate) fn object_type_requirements(&self) -> &ObjectTypeRequirements {
+        &self.object_type_requirements
     }
 
     pub fn return_type(&self) -> CType {
@@ -833,6 +863,7 @@ impl CFunctionContractInterface {
     pub(crate) fn with_trailing_value_parameters(mut self, count: usize) -> Option<Self> {
         let call_count = self.parameters.len().checked_sub(count)?;
         self.value_parameters = self.parameters.split_off(call_count);
+        self.refresh_object_types();
         Some(self)
     }
 
@@ -842,6 +873,7 @@ impl CFunctionContractInterface {
         }
         let call_parameters = self.parameters.split_off(count);
         self.value_parameters = std::mem::replace(&mut self.parameters, call_parameters);
+        self.refresh_object_types();
         Some(self)
     }
 
@@ -1262,6 +1294,7 @@ impl CFunction {
     /// exceptional-result binding.
     pub(crate) fn with_exceptional_ensures(mut self, ensures: Vec<SpecProposition>) -> Self {
         self.contract_interface.exceptional_ensures = ensures;
+        self.contract_interface.refresh_object_types();
         self
     }
 
@@ -1284,6 +1317,7 @@ impl CFunction {
         self.contract_interface.resource_derived_mutable_frame = false;
         self.contract_interface.contract_claims = claims;
         self.contract_interface.opaque_contract_supported = opaque_supported;
+        self.contract_interface.refresh_object_types();
         self
     }
 

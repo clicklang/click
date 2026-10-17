@@ -133,14 +133,15 @@ impl EqualityGraph {
         for (condition, value) in self.admitted.congruence_conditions.iter() {
             classes.add_condition(condition, *value);
         }
-        let sources = self
-            .state
-            .lock()
-            .expect("equality graph")
-            .pointer_predicate_inputs
-            .clone();
-        for (_, source) in sources.iter() {
-            classes.adjust_pointer_predicate_source(source, true);
+        let sources = {
+            let state = self.state.lock().expect("equality graph");
+            (
+                state.pointer_fact_inputs.clone(),
+                state.condition_pointer_fact_inputs.clone(),
+            )
+        };
+        for (_, source) in sources.0.iter().chain(sources.1.iter()) {
+            classes.adjust_pointer_fact_source(source, true);
         }
         classes.admitted = self.admitted.clone();
         *self = classes;
@@ -317,17 +318,18 @@ impl EqualityGraph {
 
 impl EqualityGraph {
     pub(in crate::kernel) fn reset_closure(&mut self) {
-        let sources = self
-            .state
-            .lock()
-            .expect("equality graph")
-            .pointer_predicate_inputs
-            .clone();
+        let sources = {
+            let state = self.state.lock().expect("equality graph");
+            (
+                state.pointer_fact_inputs.clone(),
+                state.condition_pointer_fact_inputs.clone(),
+            )
+        };
         let admitted = std::mem::take(&mut self.admitted);
         *self = Self::default();
         self.admitted = admitted;
-        for (_, source) in sources.iter() {
-            self.adjust_pointer_predicate_source(source, true);
+        for (_, source) in sources.0.iter().chain(sources.1.iter()) {
+            self.adjust_pointer_fact_source(source, true);
         }
     }
 }

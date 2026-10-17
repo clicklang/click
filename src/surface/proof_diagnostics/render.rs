@@ -1401,6 +1401,9 @@ impl Renderer<'_> {
         self.depth += 1;
         match ty {
             AlgebraicValueType::Parameter(name) => self.push(name),
+            AlgebraicValueType::ObjectPointer(_, class) => {
+                self.push(&format!("{}*", class.spelling()))
+            }
             AlgebraicValueType::C(ty) => self.fmt(format_args!("{ty:?}")),
             AlgebraicValueType::Integer => self.push("Integer"),
             AlgebraicValueType::Algebraic { name, arguments } => {

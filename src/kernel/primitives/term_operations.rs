@@ -178,12 +178,12 @@ impl Bitvector32Term {
 
     pub(crate) fn object_pointer_address(
         pointer: Pointer,
-        class: Option<crate::kernel::effective_type::CAccessClass>,
+        class: Option<impl Into<ObjectTypeEvidence>>,
     ) -> Self {
         if pointer == Pointer::null() {
             Self::UInt64Constant(0)
         } else if let Some(class) = class {
-            Self::ObjectPointerAddress(Box::new(pointer), class)
+            Self::ObjectPointerAddress(Box::new(pointer), class.into())
         } else {
             Self::pointer_address(pointer)
         }
@@ -3434,6 +3434,43 @@ impl CValue {
     ) -> Self {
         match self {
             Self::Pointer(pointer) => Self::Pointer(pointer.with_object_class(object_class)),
+            value => value,
+        }
+    }
+
+    pub(crate) fn with_pointer_object_type_evidence(
+        self,
+        evidence: Option<ObjectTypeEvidence>,
+    ) -> Self {
+        match self {
+            Self::Pointer(pointer) => Self::Pointer(pointer.with_object_type_evidence(evidence)),
+            value => value,
+        }
+    }
+
+    pub(crate) fn with_contract_pointer_object_class(
+        self,
+        declared: Option<crate::kernel::effective_type::CAccessClass>,
+        required: Option<crate::kernel::effective_type::CAccessClass>,
+        parameter: usize,
+        scope: u64,
+    ) -> Self {
+        let checked = required.is_some();
+        match required.or(declared) {
+            Some(class) if super::super::object_types::nominal_class(&class) => self
+                .with_pointer_object_type_evidence(Some(ObjectTypeEvidence::parameter(
+                    class, parameter, scope, checked,
+                ))),
+            class => self.with_pointer_declared_object_class(class),
+        }
+    }
+
+    pub(crate) fn with_pointer_declared_object_class(
+        self,
+        class: Option<crate::kernel::effective_type::CAccessClass>,
+    ) -> Self {
+        match self {
+            Self::Pointer(pointer) => Self::Pointer(pointer.with_declared_object_class(class)),
             value => value,
         }
     }

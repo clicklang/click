@@ -58,16 +58,23 @@ pub(in crate::kernel) fn algebraic_constructor_case_equations(
         for field_type in &variant.fields {
             let variable = fresh();
             let (sort, field) = match field_type {
-                AlgebraicValueType::C(c_type) => {
+                AlgebraicValueType::C(c_type) | AlgebraicValueType::ObjectPointer(c_type, _) => {
                     let sort = match c_type {
                         CType::Int32 => Sort::CInt32,
                         CType::Int64 => Sort::CInt64,
-                        ty if ty.is_pointer() => Sort::CPointer(*ty),
+                        ty if ty.is_pointer() => match field_type.object_class() {
+                            Some(class) => Sort::CObjectPointer(*ty, class),
+                            None => Sort::CPointer(*ty),
+                        },
                         _ => return None,
                     };
                     (
                         sort,
-                        AlgebraicValue::C(symbolic_call_result(*c_type, variable)),
+                        AlgebraicValue::C(
+                            field_type
+                                .symbolic_c_value(variable)
+                                .expect("C model field"),
+                        ),
                     )
                 }
                 AlgebraicValueType::Integer => (

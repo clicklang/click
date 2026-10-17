@@ -1124,7 +1124,7 @@ pub(in crate::kernel) fn cast_c_value_to_type(
         }
         let address = Bitvector32Term::object_pointer_address(
             pointer.pointer().clone(),
-            pointer.object_class(),
+            pointer.object_address_evidence(),
         );
         return Ok(match target_type {
             CType::UInt64 => CValue::UInt64(address),
@@ -2520,7 +2520,7 @@ fn read_c_lvalue_paths_without_ranges(
                         {
                             *value = value
                                 .clone()
-                                .with_pointer_object_class(Some(pointee.clone()));
+                                .with_pointer_declared_object_class(Some(pointee.clone()));
                         }
                     }
                 }

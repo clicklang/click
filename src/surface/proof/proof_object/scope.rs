@@ -176,7 +176,8 @@ impl<'a> ProofScope<'a> {
                         | crate::kernel::Sort::CInt64
                         | crate::kernel::Sort::CMachineInteger(_)
                         | crate::kernel::Sort::Algebraic(_) => (false, false),
-                        crate::kernel::Sort::CPointer(_) => (true, false),
+                        crate::kernel::Sort::CPointer(_)
+                        | crate::kernel::Sort::CObjectPointer(_, _) => (true, false),
                         _ => {
                             return Err(self.root.step_error(
                                 "reported introductions use an unsupported `have` binder sort",

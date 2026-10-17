@@ -740,12 +740,9 @@ impl<'a> Proof<'a> {
                 .machine_integer_type()
                 .unwrap()
                 .symbolic_value(chosen_variable),
-            Sort::CPointer(c_type @ CType::FunctionPointer(_)) => {
-                CValue::typed_pointer(Pointer::symbolic_function(chosen_variable), c_type)
-            }
-            Sort::CPointer(c_type) => {
-                CValue::typed_pointer(Pointer::symbolic(chosen_variable), c_type)
-            }
+            sort if sort.pointer_type().is_some() => sort
+                .symbolic_pointer_value(chosen_variable)
+                .expect("pointer choice sort"),
             _ => return Err(self.step_error("unsupported existential choice sort")),
         };
         let chosen_fact = match &chosen {
@@ -884,17 +881,13 @@ impl<'a> Proof<'a> {
                         )),
                     );
                 }
-                Sort::CPointer(c_type) => {
-                    let pointer = if matches!(c_type, CType::FunctionPointer(_)) {
-                        Pointer::symbolic_function(variable)
-                    } else {
-                        Pointer::symbolic(variable)
-                    };
+                sort if sort.pointer_type().is_some() => {
                     locals.values = locals.values.with_inserted(
                         name.clone(),
-                        ContractExpression::CFragment(CExpression::Value(CValue::typed_pointer(
-                            pointer, c_type,
-                        ))),
+                        ContractExpression::CFragment(CExpression::Value(
+                            sort.symbolic_pointer_value(variable)
+                                .expect("pointer choice sort"),
+                        )),
                     );
                 }
                 Sort::Algebraic(algebraic_type) => {
@@ -941,7 +934,8 @@ impl<'a> Proof<'a> {
         // Every machine-integer witness projects as `int32` does: a C string's
         // `size_t` length is chosen the same way as an `int32` index.
         if let Some((chosen_body, variable, sort)) = first_opened
-            && (sort.machine_integer_type().is_some() || matches!(sort, Sort::CPointer(_)))
+            && (sort.machine_integer_type().is_some()
+                || matches!(sort, Sort::CPointer(_) | Sort::CObjectPointer(_, _)))
             && let Some(projection) =
                 self.build_existential_projection(binding, &chosen_body, variable, &sort)?
             && let Some(branch) = transition.branch.as_mut()
@@ -987,14 +981,9 @@ impl<'a> Proof<'a> {
                 .machine_integer_type()
                 .unwrap()
                 .symbolic_value(chosen_variable),
-            Sort::CPointer(c_type) => {
-                let pointer = if matches!(c_type, CType::FunctionPointer(_)) {
-                    Pointer::symbolic_function(chosen_variable)
-                } else {
-                    Pointer::symbolic(chosen_variable)
-                };
-                CValue::typed_pointer(pointer, *c_type)
-            }
+            sort if sort.pointer_type().is_some() => sort
+                .symbolic_pointer_value(chosen_variable)
+                .expect("pointer choice sort"),
             _ => return Ok(None),
         };
         let bound_names = BTreeMap::from([(chosen_variable, name.clone())]);
@@ -1499,7 +1488,12 @@ impl<'a> Proof<'a> {
                     ..
                 } => self.apply_pure_algebraic_witness(witness),
                 Proposition::Exists {
-                    sort: Sort::CInt32 | Sort::CInt64 | Sort::CMachineInteger(_) | Sort::CPointer(_),
+                    sort:
+                        Sort::CInt32
+                        | Sort::CInt64
+                        | Sort::CMachineInteger(_)
+                        | Sort::CPointer(_)
+                        | Sort::CObjectPointer(_, _),
                     ..
                 } => self.apply_pure_machine_witness(witness),
                 _ => self.apply_pure_integer_witness(witness),
@@ -1743,7 +1737,7 @@ impl<'a> Proof<'a> {
                     sort.machine_integer_type().unwrap().c_type()
                 }
                 Proposition::Exists {
-                    sort: Sort::CPointer(c_type),
+                    sort: Sort::CPointer(c_type) | Sort::CObjectPointer(c_type, _),
                     ..
                 } => *c_type,
                 _ => unreachable!("pure machine witness dispatch requires a C binder"),

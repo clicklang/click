@@ -33,6 +33,7 @@ pub(in crate::kernel::equality_graph) enum PointerFactKey {
     Predicate(u64),
     PredicateShape(String, usize, usize, crate::kernel::CType),
     FunctionContracts,
+    ObjectType(crate::kernel::effective_type::CAccessClass),
 }
 
 /// The type-erased source handle breaks the recursive Send/Sync type path
@@ -156,6 +157,10 @@ enum Node {
     Apply(u64, u64),
     TypeName(bool, String, usize),
     TypeC(crate::kernel::CType),
+    TypeObjectPointer(
+        crate::kernel::CType,
+        crate::kernel::effective_type::CAccessClass,
+    ),
     TypeInteger,
     IntegerAtom(crate::kernel::SharedIntegerTerm),
     MachineUnary(crate::kernel::BitvectorUnaryOp, crate::kernel::CarrierWidth),
@@ -466,9 +471,6 @@ impl std::hash::Hash for Int32MergeToken {
 }
 
 impl TermClasses {
-    pub(super) fn clear_pointer_facts(&mut self) {
-        self.pointer_facts = PersistentMap::default();
-    }
     pub(super) fn pointer_facts(&self, address: u64, key: &PointerFactKey) -> PointerFactBucket {
         crate::instrumentation::record_deterministic_work(1);
         self.pointer_facts

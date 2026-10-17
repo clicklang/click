@@ -18622,3 +18622,15 @@ fn branch_arm_source_selection_and_batch_expansion_follow_the_interface_rule() {
         verify_c0_sources(&batch.source, &c).unwrap();
     }
 }
+
+#[test]
+fn address_only_model_constructor_cast_expands_and_checks() {
+    let (source, c) = mdtest_sources("mdtests/model_pointer_address_constructor_preserves_cast.md");
+    let c = c
+        .iter()
+        .map(|(name, source)| (name.as_str(), source.as_str()))
+        .collect::<Vec<_>>();
+    let expanded = expand_c0_claim_source(&source, &c, "caller", CProofClaim::Grouped)
+        .unwrap_or_else(|error| panic!("{}", error.message()));
+    verify_c0_sources(&expanded, &c).unwrap_or_else(|error| panic!("{}", error.message()));
+}

@@ -22,7 +22,7 @@ use super::*;
 pub(in crate::kernel) struct TaggedAddress {
     pub(in crate::kernel) pointer: Pointer,
     pub(in crate::kernel) tag: Bitvector32Term,
-    pub(in crate::kernel) object_class: Option<crate::kernel::effective_type::CAccessClass>,
+    pub(in crate::kernel) object_class: Option<ObjectTypeEvidence>,
 }
 
 /// The exact facts a decision consulted, and whether every step could name
@@ -466,7 +466,8 @@ pub(in crate::kernel) fn cast_tagged_address_to_pointer(
         ConditionTerm::uint64_equal(form.tag.clone(), Bitvector32Term::UInt64Constant(0));
     match assumptions.decide(&tag_is_zero) {
         Some(true) => Ok(Some(
-            CPointerValue::new(form.pointer, target_type).with_object_class(form.object_class),
+            CPointerValue::new(form.pointer, target_type)
+                .with_object_type_evidence(form.object_class),
         )),
         Some(false) => Err(
             "integer-to-pointer cast of a tagged address requires the tag bits proven zero; \
@@ -487,7 +488,8 @@ pub(in crate::kernel) fn cast_tagged_address_to_pointer(
                 return Err(format!("{context}; they are refuted"));
             }
             Ok(Some(
-                CPointerValue::new(form.pointer, target_type).with_object_class(form.object_class),
+                CPointerValue::new(form.pointer, target_type)
+                    .with_object_type_evidence(form.object_class),
             ))
         }
     }

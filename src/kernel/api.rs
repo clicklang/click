@@ -2338,6 +2338,7 @@ pub fn c_heap_allocate_sized_with_zeroed(
         target: target.into(),
         bytes,
         zeroed,
+        object_type: None,
     }
 }
 
@@ -6294,7 +6295,7 @@ mod loan_authorization_tests {
     }
 }
 
-fn path_function_outcome(path: &SymbolicCExecutionPath) -> Option<&CFunctionOutcome> {
+pub(super) fn path_function_outcome(path: &SymbolicCExecutionPath) -> Option<&CFunctionOutcome> {
     let mut proposition = path.theorem.proposition();
     while let Proposition::Implies(_, body) = proposition {
         proposition = body;
@@ -6817,6 +6818,7 @@ pub fn prove_c_function_contract_execution_paths_with_checked_artifacts_and_pure
         applied_tactics.extend(artifact.applied_tactics.iter().cloned());
     }
     CFunctionContractExecution {
+        pointer_result: super::object_types::execution_pointer_result(&cases),
         cases,
         reuse_diagnostic,
         reuse_unauthorized_premise,
@@ -7861,11 +7863,16 @@ pub fn c_function_contract_refinement_context(
             .get_external_function_rule(target_name)?
             .function
     };
-    prepare_function_contract_refinement_context(
+    let mut context = prepare_function_contract_refinement_context(
         &contract,
         function,
         &mut ExecutionBudget::for_new_execution(),
-    )
+    )?;
+    context.object_type_requirements = function
+        .contract_interface()
+        .object_type_requirements()
+        .clone();
+    Some(context)
 }
 
 /// Whether `function`'s contract refines the named contract `contract_name`,
@@ -7884,6 +7891,7 @@ pub fn c_function_refines_named_contract(
     super::functions::function_refines_named_contract(
         contract,
         function,
+        function.contract_interface().object_type_requirements(),
         &mut ExecutionBudget::for_new_execution(),
     )
     .map_err(ExecutionLimit::describe)
@@ -7893,6 +7901,7 @@ pub fn c_function_refines_named_contract(
 /// verified against, as an override's must refine the virtual method's it
 /// overrides: the same judgment as a named contract's.
 pub fn c_function_refines_function_contract(
+    _environment: &CExecutionEnvironment,
     interface: &CFunction,
     function: &CFunction,
 ) -> Result<bool, String> {
@@ -7902,6 +7911,7 @@ pub fn c_function_refines_function_contract(
     super::functions::function_refines_named_contract(
         &contract,
         function,
+        function.contract_interface().object_type_requirements(),
         &mut ExecutionBudget::for_new_execution(),
     )
     .map_err(ExecutionLimit::describe)

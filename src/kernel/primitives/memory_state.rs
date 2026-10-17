@@ -2593,19 +2593,30 @@ impl CMemory {
     /// A fresh block whose object, or every element of it, has
     /// `declared_class` (`design/effective-types.md`). The class is part of
     /// the declaration, so the block-declared derivation covers it.
-    pub(in crate::kernel) fn with_classed_block(
+    pub(crate) fn with_classed_block(
         self,
         block: PointerBlock,
         declared_class: Option<crate::kernel::effective_type::CAccessClass>,
         size: u32,
     ) -> Self {
+        self.with_classed_block_or_read_only(block, declared_class, size, false)
+    }
+
+    pub(in crate::kernel) fn with_classed_block_or_read_only(
+        self,
+        block: PointerBlock,
+        declared_class: Option<crate::kernel::effective_type::CAccessClass>,
+        size: u32,
+        read_only: bool,
+    ) -> Self {
         let Some(declared_class) = declared_class else {
-            return self.with_block(block, size);
+            return self.with_block_or_read_only(block, size, read_only);
         };
         let mut memory = self;
         let base = intern_derivation_base(&mut memory);
         let mut declaration = CBlock::new(size);
         declaration.declared_class = Some(declared_class);
+        declaration.read_only = read_only;
         std::sync::Arc::make_mut(&mut memory.blocks).insert(block.clone(), declaration);
         record_c_memory_derivation(
             &mut memory,
@@ -3294,12 +3305,27 @@ impl CMemory {
     }
 
     pub(in crate::kernel) fn with_pending_heap_allocation(
-        mut self,
+        self,
         base: Pointer,
         bytes: Bitvector32Term,
         zeroed: bool,
     ) -> Self {
+        self.with_pending_typed_heap_allocation(base, bytes, zeroed, None)
+    }
+
+    pub(in crate::kernel) fn with_pending_typed_heap_allocation(
+        mut self,
+        base: Pointer,
+        bytes: Bitvector32Term,
+        zeroed: bool,
+        object_class: Option<crate::kernel::effective_type::CAccessClass>,
+    ) -> Self {
         let prior = Some(intern_derivation_base(&mut self));
+        if let Some(class) = object_class {
+            std::sync::Arc::make_mut(&mut self.heap)
+                .pending_object_classes
+                .insert(base.clone(), class);
+        }
         std::sync::Arc::make_mut(&mut self.heap)
             .pending_allocations
             .insert(base.clone(), bytes.clone());
@@ -3409,11 +3435,13 @@ impl CMemory {
         } else {
             Pointer::null()
         };
+        let object_class = std::sync::Arc::make_mut(&mut self.heap)
+            .pending_object_classes
+            .remove(base);
         if succeeds {
-            std::sync::Arc::make_mut(&mut self.blocks).insert(
-                resolved_base.block.clone(),
-                CBlock::with_symbolic_size(bytes.clone()),
-            );
+            let mut block = CBlock::with_symbolic_size(bytes.clone());
+            block.declared_class = object_class;
+            std::sync::Arc::make_mut(&mut self.blocks).insert(resolved_base.block.clone(), block);
             std::sync::Arc::make_mut(&mut self.heap)
                 .live_allocations
                 .insert(resolved_base.clone(), bytes.clone());
@@ -3727,6 +3755,13 @@ impl CMemory {
         {
             return Err("interface arms disagree on pending heap allocations".to_string());
         }
+        let pending_object_classes = first.heap.pending_object_classes.clone();
+        if sibling_memories
+            .iter()
+            .any(|memory| memory.heap.pending_object_classes != pending_object_classes)
+        {
+            return Err("interface arms disagree on pending heap object classes".to_string());
+        }
         let pending_reallocations = first.heap.pending_reallocations.clone();
         if sibling_memories
             .iter()
@@ -3954,6 +3989,7 @@ impl CMemory {
             live_allocations,
             deallocated_allocations,
             pending_allocations,
+            pending_object_classes,
             uninitialized_allocations,
             uninitialized_objects,
             initialized,

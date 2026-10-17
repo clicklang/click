@@ -2367,6 +2367,7 @@ fn a_view_lending_call_and_its_observation_ignore_unrelated_allocations() {
     let environment = CExecutionEnvironment::new()
         .with_function(helper.clone())
         .with_verified_function_rule(CVerifiedFunctionRule {
+            pointer_result: None,
             function: helper,
             loop_semantics: CLoopSemantics::Verify,
             checked_callees: None,

@@ -10,6 +10,9 @@ fn old_collect_pure_function_arguments(
 ) -> Result<(), UncollectedForm> {
     for argument in arguments {
         match argument {
+            SpecPureFunctionArgument::ObjectPointer { argument, .. } => {
+                old_collect_pure_function_arguments(std::slice::from_ref(argument.as_ref()), reads)?
+            }
             SpecPureFunctionArgument::Value(value) => {
                 old_collect_spec_expression_c_variables(value, reads)?
             }

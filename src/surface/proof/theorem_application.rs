@@ -897,9 +897,11 @@ pub(super) fn theorem_application_bindings(
                         ClickType::Algebraic(expected),
                         crate::kernel::AlgebraicValueType::Parameter(name),
                     ) => expected.rigid && expected.name == *name,
-                    (ClickType::C(expected), crate::kernel::AlgebraicValueType::C(actual)) => {
-                        expected.to_kernel_type() == *actual
-                    }
+                    (
+                        ClickType::C(expected),
+                        crate::kernel::AlgebraicValueType::C(actual)
+                        | crate::kernel::AlgebraicValueType::ObjectPointer(actual, _),
+                    ) => expected.to_kernel_type() == *actual,
                     (
                         ClickType::Algebraic(expected),
                         crate::kernel::AlgebraicValueType::Algebraic { name, arguments },
@@ -995,13 +997,34 @@ pub(super) fn theorem_application_bindings(
                     array_ref.element_type
                 ));
             }
-            values.insert(
-                parameter.name().to_string(),
+            let value = if let Some(class) = parameter.pointer_object_class() {
+                let mut value = evaluate_native_theorem_argument(
+                    argument,
+                    context,
+                    assumptions,
+                    spec_definitions,
+                    &active_functions,
+                )?;
+                if !crate::kernel::refine_object_pointer_argument(
+                    &mut value,
+                    &class,
+                    context.post_state.memory(),
+                    assumptions,
+                ) {
+                    return Err(format!(
+                        "theorem `{}` parameter `{}` requires original object class `{class}` or null",
+                        theorem.name(),
+                        parameter.name()
+                    ));
+                }
+                value.retag_pointer(parameter_type.to_kernel_type())
+            } else {
                 CValue::typed_pointer(
                     array_ref.pointer.clone(),
                     expected_element_type.pointer_to().unwrap(),
-                ),
-            );
+                )
+            };
+            values.insert(parameter.name().to_string(), value);
             array_refs.insert(parameter.name().to_string(), array_ref);
         } else {
             let value = evaluate_native_theorem_argument(

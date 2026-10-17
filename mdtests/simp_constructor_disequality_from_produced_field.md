@@ -1,11 +1,14 @@
 # simp proves a constructor disequality from a call-produced field
 
 `parent_attach` produces the instance `link` and ensures
-`link.link == ParentLink::Linked(kid)`. `simp` proves
+`link.link == ParentLink::Linked((void*)kid)`. `simp` proves
 `link.link != ParentLink::Empty` from it: synthesis spells the produced
 field and the constructor, the equality rewrites the goal, and
 normalization decides the two constructors differ. The same reasoning lets
 the implicit `auto` prove `parent_detach`'s precondition on its call step.
+
+The logical pointer annotations below use `void*` for address identities;
+object access remains governed by the unchanged C types and resource ownership.
 
 ```c filename=simp_constructor_disequality_from_produced_field.c
 struct child { int32 refs; };
@@ -30,7 +33,7 @@ int32 adopt(struct child* kid) {
 ```click
 spec enum ParentLink {
     Empty,
-    Linked(struct child*),
+    Linked(void*),
 }
 resource parent(p: struct parent*) {
     field link: ParentLink;
@@ -46,10 +49,10 @@ verifying "simp_constructor_disequality_from_produced_field.c";
 void parent_attach(struct parent* p, struct child* kid) {
     consumes p->kid;
     produces link: parent(p);
-    ensures link.link == ParentLink::Linked(kid);
+    ensures link.link == ParentLink::Linked((void*)kid);
 } by {
     step();
-    let link = fold(parent(p), { link: ParentLink::Linked(kid) });
+    let link = fold(parent(p), { link: ParentLink::Linked((void*)kid) });
     execute();
     simp();
 }

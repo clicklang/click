@@ -25,6 +25,9 @@ this rule and still does. The negative is
 [`fold_pointer_argument_body_fact_rejects_other_owner.md`](fold_pointer_argument_body_fact_rejects_other_owner.md),
 where the proposed owner is a pointer that is not provably the cell.
 
+The logical pointer annotations below use `void*` for address identities;
+object access remains governed by the unchanged C types and resource ownership.
+
 ```c filename=owner_cell.c
 struct cell {
     int32 value;
@@ -44,10 +47,10 @@ verifying "owner_cell.c";
 
 spec enum Owned {
     Free,
-    Held(struct cell*, int),
+    Held(void*, int),
 }
 
-function is_owner(t: Owned, q: struct cell*) -> int32 {
+function is_owner(t: Owned, q: void*) -> int32 {
     match t {
         Owned::Free => 1,
         Owned::Held(owner, v) => if owner == q { 1 } else { 0 },
@@ -78,12 +81,12 @@ void clear(struct cell* c) {
         Owned::Free => { contradiction(t.model == Owned::Free); },
         Owned::Held(owner, v) => {
             unfold(t);
-            have is_owner(Owned::Held(c, 0), c) == 1 by {
-                unfold(is_owner(Owned::Held(c, 0), c));
+            have is_owner(Owned::Held((void*)c, 0), c) == 1 by {
+                unfold(is_owner(Owned::Held((void*)c, 0), c));
                 normalize();
             }
             execute();
-            let u = fold(cell_at(c), { model: Owned::Held(c, 0) });
+            let u = fold(cell_at(c), { model: Owned::Held((void*)c, 0) });
             simp();
         },
     }

@@ -390,7 +390,7 @@ pub(super) fn apply_witness_tactic(
         sort if sort.machine_integer_type().is_some() => {
             Some(sort.machine_integer_type().unwrap().c_type())
         }
-        Sort::CPointer(c_type) => Some(*c_type),
+        Sort::CPointer(c_type) | Sort::CObjectPointer(c_type, _) => Some(*c_type),
         _ => None,
     };
     if let Some(expected) = expected
@@ -421,6 +421,14 @@ pub(super) fn apply_witness_tactic(
         )));
     }
 
+    if let Sort::CObjectPointer(ty, class) = &sort
+        && !crate::kernel::AlgebraicValueType::ObjectPointer(*ty, class.clone())
+            .accepts_c_value(&witness_value)
+    {
+        return Err(ClickError::new(
+            "pointer witness lacks the required original object class",
+        ));
+    }
     let result = match (sort, witness_value) {
         (sort, value) if sort.machine_integer_type().is_some() => {
             let value = match value {
@@ -429,9 +437,10 @@ pub(super) fn apply_witness_tactic(
             };
             substitute_int32_variable_in_proposition(&body, var, value)
         }
-        (Sort::CPointer(expected), CValue::Pointer(pointer))
-            if expected.accepts(&CValue::Pointer(pointer.clone())) =>
-        {
+        (
+            Sort::CPointer(expected) | Sort::CObjectPointer(expected, _),
+            CValue::Pointer(pointer),
+        ) if expected.accepts(&CValue::Pointer(pointer.clone())) => {
             crate::kernel::substitute_pointer_variable_in_proposition(&body, var, pointer.pointer())
         }
         _ => {

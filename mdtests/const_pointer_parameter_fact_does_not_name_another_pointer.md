@@ -7,6 +7,9 @@ with a second `const` parameter `q`. The instance at `p` publishes
 address in it, so that fact is not a fact about `q`, and `assumption` does
 not find `same(q, q) == 1`.
 
+The logical pointer annotations below use `void*` for address identities;
+object access remains governed by the unchanged C types and resource ownership.
+
 ```c filename=const_parameter_other.c
 struct node { int32 shade; };
 
@@ -19,7 +22,7 @@ int32 peek(const struct node* p, const struct node* q) {
 ```click
 verifying "const_parameter_other.c";
 
-function same(a: struct node*, b: struct node*) -> int32 {
+function same(a: void*, b: void*) -> int32 {
     if a == b { 1 } else { 0 }
 }
 

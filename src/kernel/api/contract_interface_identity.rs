@@ -452,6 +452,7 @@ impl Names {
     }
     fn argument(&mut self, argument: &mut SpecPureFunctionArgument) {
         match argument {
+            SpecPureFunctionArgument::ObjectPointer { argument, .. } => self.argument(argument),
             SpecPureFunctionArgument::Value(e)
             | SpecPureFunctionArgument::ArrayRef { pointer: e, .. } => self.expression(e),
             SpecPureFunctionArgument::Integer(_) => {}

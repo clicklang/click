@@ -8,7 +8,7 @@ premise.
 The application used to be refused: the premise was reported unavailable
 although the `have` immediately above it had recorded exactly that proposition.
 The theorem's requirement instantiated to
-`holds(Box::Box(p), array-ref(snapshot#1, p))`: the occurrence of `p` inside
+`holds(Box::Box((void*)p), array-ref(snapshot#1, p))`: the occurrence of `p` inside
 the constructor was the loop head's value, and the occurrence passed directly
 as a pointer argument was read at function entry. A pointer parameter has two
 entries in a proof-side environment, its value and the array reference a
@@ -19,6 +19,9 @@ reference is read through the variable, like the value.
 With the assignment `p = q` removed from the C body the proof always verified,
 and `old(p)` still names the entry pointer. The unchanged Linux `rb_next`
 reassigns its `node` parameter in both walks and applies theorems to it in each.
+
+The logical pointer annotations below use `void*` for address identities;
+object access remains governed by the unchanged C types and resource ownership.
 
 ```c filename=skip.c
 struct node { int32 value; };
@@ -35,18 +38,18 @@ struct node *skip(struct node *p, struct node *q, int32 n) {
 ```click
 verifying "skip.c";
 
-spec enum Box { Box(struct node*) }
+spec enum Box { Box(void*) }
 
-function holds(b: Box, p: struct node*) -> int32 {
+function holds(b: Box, p: void*) -> int32 {
     match b {
         Box::Box(q) => if q == p { 1 } else { 0 },
     }
 }
 
-theorem holds_is_nonzero(p: struct node*) {
-    requires holds(Box::Box(p), p) == 1;
-    ensures holds(Box::Box(p), p) != 0 by {
-        rewrite(holds(Box::Box(p), p) == 1);
+theorem holds_is_nonzero(p: void*) {
+    requires holds(Box::Box((void*)p), p) == 1;
+    ensures holds(Box::Box((void*)p), p) != 0 by {
+        rewrite(holds(Box::Box((void*)p), p) == 1);
         normalize();
     }
 }
@@ -61,13 +64,13 @@ struct node* skip(struct node* p, struct node* q, int32 n) {
 
         initialize by simp();
         preserve by {
-            have holds(Box::Box(p), p) == 1 by {
-                unfold(holds(Box::Box(p), p));
+            have holds(Box::Box((void*)p), p) == 1 by {
+                unfold(holds(Box::Box((void*)p), p));
                 normalize();
             }
-            have holds(Box::Box(p), p) != 0 by {
+            have holds(Box::Box((void*)p), p) != 0 by {
                 apply(holds_is_nonzero(p)) using {
-                    holds(Box::Box(p), p) == 1;
+                    holds(Box::Box((void*)p), p) == 1;
                 };
                 assumption();
             }

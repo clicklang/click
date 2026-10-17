@@ -54,6 +54,28 @@ or the required pointer alias removes the conclusion. The
 `pointer_comparison_evidence_work_ignores_unrelated_facts` regressions cover
 registration order, early queries, premise withdrawal, and ambient scaling.
 
+## Checked object-type evidence
+
+Admitted equations, predicates, and true model-equality conditions retain the
+checked object classes on direct pointer values and constructor payloads. The graph indexes those
+sources under `(address class, object class)`, using the same supported-fact
+buckets as pointer predicates and callback witnesses. A late address merge
+moves the support with the class; type lookup reads one selected bucket.
+Matching a typed model identity and proving `p == identity` therefore lets a
+model constructor or typed helper use `p` without repeating a type argument.
+This supplies no ownership or read permission.
+
+Query registration does not admit type evidence. Opaque call arguments can
+retain annotations from another interning context and are never used as type
+support. Alternative arms, binder bodies, snapshots, weak C declaration
+metadata, and destination casts do not
+supply positive support. Branches fork the persistent index. Removing a source
+removes its support, while removing an equality rebuilds the classes from the
+remaining inputs. Condition and proposition sources have separate indexes so
+clearing one partition does not scan the other. The regressions live in
+`src/kernel/equality_graph/object_type_tests.rs`, with deterministic scaling
+controls beside the other graph scaling tests.
+
 ## Typed algebraic model values
 
 Checked equalities of algebraic model values enter the same persistent term
@@ -1747,3 +1769,19 @@ ranges add no anchor evidence. C condition decisions and proof-side known-fact
 lookup (including `assumption()`) share this indexed rule. The latter also
 handles negated pointer equality and retains the exact separation premise;
 it performs no owned-composition scan, alias search, or unfolding.
+
+### Resource logical call domains
+
+Opening an active selected resource body retains the nominal pointer domains of
+its logical calls as explicit `object_type[CLASS](pointer)` facts. These facts
+use the existing supported pointer-type buckets and their ordinary scope and
+withdrawal rules. They are produced along the selected lowering path, rather
+than recovered from annotations in opaque interned call arguments. An inactive
+body exports none. Folding uses ordinary lowering: it must establish every
+nominal call domain before the proposed resource can be constructed. Merely
+naming a struct pointer parameter in an empty resource supplies no evidence.
+
+The executable controls are `model_pointer_resource_call_domains.md`,
+`model_pointer_resource_fold_requires_call_domains.md`,
+`model_pointer_empty_resource_does_not_type_parameter.md`, and
+`model_pointer_resource_inactive_call_domains.md` in `mdtests/`.

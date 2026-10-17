@@ -189,6 +189,13 @@ fn old_collect_argument_body_reads(
 ) -> Result<(), UninspectedForm> {
     for argument in arguments {
         match argument {
+            SpecPureFunctionArgument::ObjectPointer { argument, .. } => {
+                old_collect_argument_body_reads(
+                    std::slice::from_ref(argument.as_ref()),
+                    bound,
+                    reads,
+                )?
+            }
             // An array reference carries its own snapshot as an argument;
             // only the pointer expression is a read of this body's scope.
             SpecPureFunctionArgument::Value(value)

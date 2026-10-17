@@ -35,7 +35,8 @@ pub(super) fn with_contract_interface_argument_views(
             .expect("function arguments were type-checked before building contract views");
         let value = value
             .with_pointer_pointee_volatile(parameter.pointee_is_volatile())
-            .with_pointer_pointee_constant(parameter.pointee_is_constant());
+            .with_pointer_pointee_constant(parameter.pointee_is_constant())
+            .with_pointer_declared_object_class(parameter.pointee_class());
         state.locals.set_typed_with_all_qualifiers(
             parameter.name().to_string(),
             value.clone(),
@@ -110,7 +111,7 @@ pub(super) fn set_contract_result(
         C_CONTRACT_RESULT_NAME.to_string(),
         value
             .with_pointer_pointee_constant(interface.return_pointee_is_constant())
-            .with_pointer_object_class(interface.return_pointee_class()),
+            .with_pointer_declared_object_class(interface.return_pointee_class()),
         interface.return_type(),
         false,
         false,
@@ -222,6 +223,7 @@ pub(super) fn incompatible_pointer_argument(
     function_name: &str,
     interface: &CFunctionContractInterface,
     values: &[CValue],
+    assumptions: &PureFactContext,
 ) -> Option<CRuntimeError> {
     interface
         .parameters()
@@ -236,7 +238,17 @@ pub(super) fn incompatible_pointer_argument(
                 .memory()
                 .declared_class(pointer.pointer())
                 .or_else(|| pointer.object_class())?;
-            (!pointee.may_designate(&object)).then(|| {
+            if pointee.may_designate(&object) || pointer.is_null() {
+                return None;
+            }
+            if assumptions.decide(&ConditionTerm::pointer_equal(
+                pointer.pointer().clone(),
+                Pointer::null(),
+            )) == Some(true)
+            {
+                return None;
+            }
+            Some({
                 CRuntimeError::FunctionContract(format!(
                     "call to `{function_name}` passes an object of type `{}` to parameter \
                      `{}`, which points to `{}`: the callee accesses it through that type, \
@@ -257,6 +269,7 @@ pub(super) fn incompatible_pointer_return(
     state: &CState,
     function: &CFunction,
     value: &CValue,
+    assumptions: &PureFactContext,
 ) -> Option<CRuntimeError> {
     let pointee = function.contract_interface().return_pointee_class()?;
     let CValue::Pointer(pointer) = value else {
@@ -266,7 +279,17 @@ pub(super) fn incompatible_pointer_return(
         .memory()
         .declared_class(pointer.pointer())
         .or_else(|| pointer.object_class())?;
-    (!pointee.may_designate(&object)).then(|| {
+    if pointee.may_designate(&object) || pointer.is_null() {
+        return None;
+    }
+    if assumptions.decide(&ConditionTerm::pointer_equal(
+        pointer.pointer().clone(),
+        Pointer::null(),
+    )) == Some(true)
+    {
+        return None;
+    }
+    Some({
         CRuntimeError::FunctionContract(format!(
             "`{}` returns a pointer to an object of type `{}` as a pointer to `{}`: its \
              callers access the object through that type, and an object may be accessed \
@@ -359,7 +382,7 @@ pub(super) fn symbolic_contract_result(
     }
     symbolic_call_result(interface.return_type(), variable)
         .with_pointer_pointee_constant(interface.return_pointee_is_constant())
-        .with_pointer_object_class(interface.return_pointee_class())
+        .with_pointer_declared_object_class(interface.return_pointee_class())
 }
 
 pub(crate) fn symbolic_call_result(c_type: CType, variable: Variable) -> CValue {
@@ -1020,7 +1043,7 @@ pub(in crate::kernel) fn bind_c_function_arguments(
         let value = coerce_c_function_argument_without_obligations(value, parameter)?
             .with_pointer_pointee_volatile(parameter.pointee_is_volatile())
             .with_pointer_pointee_constant(parameter.pointee_is_constant())
-            .with_pointer_object_class(parameter.pointee_class());
+            .with_pointer_declared_object_class(parameter.pointee_class());
         if address_taken_parameters.contains(parameter.name()) {
             let slot = CMemory::frame_local_pointer(frame, parameter.name());
             register_block_alignment(&slot.block, parameter.c_type().abi_alignment());
@@ -1163,7 +1186,7 @@ pub(super) fn bind_c_contract_arguments(
         let value = coerce_c_function_argument_without_obligations(value, parameter)?
             .with_pointer_pointee_volatile(parameter.pointee_is_volatile())
             .with_pointer_pointee_constant(parameter.pointee_is_constant())
-            .with_pointer_object_class(parameter.pointee_class());
+            .with_pointer_declared_object_class(parameter.pointee_class());
         callee_state.locals.set_typed_qualified_with_all_qualifiers(
             parameter.name().to_string(),
             value,

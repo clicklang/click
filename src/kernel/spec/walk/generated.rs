@@ -168,6 +168,7 @@ impl Gen {
                 name: "f".into(),
                 arguments: vec![self.arg(d), self.arg(d)],
                 result_type: CType::Int32,
+                pointer_result: None,
             },
             11 => SpecExpression::PointerOffset {
                 pointer: Box::new(self.expr(d)),
@@ -329,7 +330,13 @@ impl Gen {
     }
 
     pub(in crate::kernel) fn arg(&mut self, depth: u32) -> SpecPureFunctionArgument {
-        match self.pick(4) {
+        match self.pick(if depth > 0 { 5 } else { 4 }) {
+            4 => SpecPureFunctionArgument::ObjectPointer {
+                argument: Box::new(self.arg(depth - 1)),
+                object_class: crate::kernel::effective_type::CAccessClass::Struct(
+                    crate::kernel::effective_type::CStructClass::opaque("node"),
+                ),
+            },
             0 => SpecPureFunctionArgument::Value(self.expr(depth)),
             1 => SpecPureFunctionArgument::Integer(self.int(depth)),
             2 => SpecPureFunctionArgument::Algebraic(self.alg(depth)),

@@ -1508,6 +1508,7 @@ fn verified_function_rule_applies_contract_without_executing_body() {
     let environment = CExecutionEnvironment::new()
         .with_function(helper.clone())
         .with_verified_function_rule(CVerifiedFunctionRule {
+            pointer_result: None,
             function: helper,
             loop_semantics: CLoopSemantics::Verify,
             checked_callees: None,
@@ -1609,6 +1610,7 @@ fn verified_function_rule_coerces_null_constants_in_contract_views() {
     let environment = CExecutionEnvironment::new()
         .with_function(helper.clone())
         .with_verified_function_rule(CVerifiedFunctionRule {
+            pointer_result: None,
             function: helper,
             loop_semantics: CLoopSemantics::Verify,
             checked_callees: None,
@@ -1682,6 +1684,7 @@ fn verified_function_rule_does_not_publish_one_spec_alias_path() {
     let environment = CExecutionEnvironment::new()
         .with_function(helper.clone())
         .with_verified_function_rule(CVerifiedFunctionRule {
+            pointer_result: None,
             function: helper,
             loop_semantics: CLoopSemantics::Verify,
             checked_callees: None,
@@ -1741,6 +1744,7 @@ fn opaque_pointer_result_can_alias_its_argument() {
     let environment = CExecutionEnvironment::new()
         .with_function(helper.clone())
         .with_verified_function_rule(CVerifiedFunctionRule {
+            pointer_result: None,
             function: helper,
             loop_semantics: CLoopSemantics::Verify,
             checked_callees: None,
@@ -1811,6 +1815,7 @@ fn verified_immutable_calls_allocate_distinct_results() {
     let environment = CExecutionEnvironment::new()
         .with_function(helper.clone())
         .with_verified_function_rule(CVerifiedFunctionRule {
+            pointer_result: None,
             function: helper,
             loop_semantics: CLoopSemantics::Verify,
             checked_callees: None,
@@ -1871,6 +1876,7 @@ fn separate_statement_verification_calls_preserve_fresh_identity_progress() {
     let environment = CExecutionEnvironment::new()
         .with_function(helper.clone())
         .with_verified_function_rule(CVerifiedFunctionRule {
+            pointer_result: None,
             function: helper,
             loop_semantics: CLoopSemantics::Verify,
             checked_callees: None,
@@ -3375,6 +3381,7 @@ fn body_safety_claim_rejects_an_unproved_execution_condition() {
         loan_evidence: crate::kernel::loans::empty_checked_loan_evidence_sequence(),
     };
     let execution = CFunctionContractExecution {
+        pointer_result: None,
         cases: vec![vec![CContractPathSet {
             paths: vec![path],
             checked_resource_claims: vec![Vec::new()],
@@ -3488,6 +3495,7 @@ fn contract_claims_are_judged_over_each_path_set_of_a_case() {
             &function,
             CFunctionContractClaimKey::BodySafety,
             &CFunctionContractExecution {
+                pointer_result: None,
                 cases,
                 reuse_diagnostic: None,
                 reuse_unauthorized_premise: None,
@@ -3568,6 +3576,7 @@ fn body_safety_claim_uses_path_facts_for_verification_conditions() {
         loan_evidence: crate::kernel::loans::empty_checked_loan_evidence_sequence(),
     };
     let execution = CFunctionContractExecution {
+        pointer_result: None,
         cases: vec![vec![CContractPathSet {
             paths: vec![path],
             checked_resource_claims: vec![Vec::new()],
@@ -4834,6 +4843,7 @@ fn call_requirement_obligations_carry_their_lowering_record() {
     let environment = CExecutionEnvironment::new()
         .with_function(helper.clone())
         .with_verified_function_rule(CVerifiedFunctionRule {
+            pointer_result: None,
             function: helper,
             loop_semantics: CLoopSemantics::Verify,
             checked_callees: None,
@@ -4917,6 +4927,7 @@ fn opaque_rule_environment(function: CFunction) -> CExecutionEnvironment {
     CExecutionEnvironment::new()
         .with_function(function.clone())
         .with_verified_function_rule(CVerifiedFunctionRule {
+            pointer_result: None,
             function,
             loop_semantics: CLoopSemantics::Verify,
             checked_callees: None,
@@ -5036,6 +5047,7 @@ fn an_anchor_ranks_only_calls_to_the_function_it_names() {
         opaque_rule_environment(drain.clone())
             .with_function(other.clone())
             .with_verified_function_rule(CVerifiedFunctionRule {
+                pointer_result: None,
                 function: other,
                 loop_semantics: CLoopSemantics::Verify,
                 checked_callees: None,

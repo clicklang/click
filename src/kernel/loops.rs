@@ -3647,7 +3647,25 @@ fn abstract_loop_exit_locals(
         // So do exits that agree on the class of the object it designates.
         let fresh = match held.iter().map(c_value_object_class).collect::<Vec<_>>() {
             classes if classes[1..].iter().all(|class| *class == classes[0]) => {
+                let mut evidence = None::<ObjectTypeEvidence>;
+                let mut complete = true;
+                for value in &held {
+                    if let CValue::Pointer(pointer) = value
+                        && !pointer.is_null()
+                    {
+                        match pointer.object_type_evidence() {
+                            Some(next) => {
+                                evidence = Some(match evidence {
+                                    Some(previous) => previous.merge(next),
+                                    None => next.clone(),
+                                })
+                            }
+                            None => complete = false,
+                        }
+                    }
+                }
                 with_retained_object_class(fresh, held.first())
+                    .with_pointer_object_type_evidence(complete.then_some(evidence).flatten())
             }
             _ => fresh,
         };
@@ -8956,7 +8974,9 @@ fn c_value_object_class(value: &CValue) -> Option<crate::kernel::effective_type:
 /// `fresh` with the class of the object the pointer value it abstracts
 /// designates.
 fn with_retained_object_class(fresh: CValue, previous: Option<&CValue>) -> CValue {
-    fresh.with_pointer_object_class(previous.and_then(c_value_object_class))
+    // A fresh loop-head value retains C access typing, not a premise about
+    // the original object of the previous value.
+    fresh.with_pointer_declared_object_class(previous.and_then(c_value_object_class))
 }
 
 /// `fresh` with the subobject extent of the pointer value it abstracts.

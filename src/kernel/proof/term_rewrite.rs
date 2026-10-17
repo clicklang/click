@@ -184,9 +184,7 @@ fn typed_binding_variable(
         (AlgebraicValueType::Integer, AlgebraicValue::Integer(IntegerTerm::Variable(variable))) => {
             Some((BindingCarrier::Integer, *variable))
         }
-        (AlgebraicValueType::C(expected), AlgebraicValue::C(value))
-            if value.c_type() == *expected =>
-        {
+        (expected, AlgebraicValue::C(value)) if expected.accepts_c_value(value) => {
             c_value_declaration_variable(value).map(|variable| (BindingCarrier::C, variable))
         }
         (
@@ -3107,7 +3105,7 @@ impl<'a> TermRewrite<'a> {
         let mut integer_replacements = BTreeMap::new();
         let mut algebraic_replacements = BTreeMap::new();
         for ((binding, field), expected) in arm.bindings.iter().zip(fields).zip(&schema.fields) {
-            if field.value_type() != *expected {
+            if !field.has_type(expected) {
                 return None;
             }
             let (carrier, variable) = typed_binding_variable(expected, binding)?;
@@ -3173,7 +3171,7 @@ impl<'a> TermRewrite<'a> {
         let mut integer_replacements = BTreeMap::new();
         let mut algebraic_replacements = BTreeMap::new();
         for ((binding, field), expected) in arm.bindings.iter().zip(fields).zip(&schema.fields) {
-            if field.value_type() != *expected {
+            if !field.has_type(expected) {
                 return None;
             }
             let (carrier, variable) = typed_binding_variable(expected, binding)?;
@@ -3239,7 +3237,7 @@ impl<'a> TermRewrite<'a> {
         let mut integer_replacements = BTreeMap::new();
         let mut algebraic_replacements = BTreeMap::new();
         for ((binding, field), expected) in arm.bindings.iter().zip(fields).zip(&schema.fields) {
-            if field.value_type() != *expected {
+            if !field.has_type(expected) {
                 return None;
             }
             let (carrier, variable) = typed_binding_variable(expected, binding)?;

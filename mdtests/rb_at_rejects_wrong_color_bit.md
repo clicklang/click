@@ -5,6 +5,9 @@ set, so the only `RbTree::Node` model the node can carry is the one whose color
 is `Black`. Proposing `Red` makes `(p->__rb_parent_color & 1) == color_bit(color)`
 false, and the fold is refused rather than the color being taken on trust.
 
+The logical pointer annotations below use `void*` for address identities;
+object access remains governed by the unchanged C types and resource ownership.
+
 ```c filename=rbtree.h
 #ifndef RBTREE_H
 #define RBTREE_H
@@ -39,7 +42,7 @@ spec enum Color { Red, Black }
 
 spec enum RbTree {
     Empty,
-    Node(struct rb_node*, struct rb_node*, Color, RbTree, RbTree),
+    Node(struct rb_node*, void*, Color, RbTree, RbTree),
 }
 
 function color_bit(color: Color) -> int {
@@ -87,7 +90,7 @@ void set_parent_black(struct rb_node* node, struct rb_node* old_parent, struct r
             }
             execute();
             let u = fold(rb_at(node), {
-                model: RbTree::Node(identity, parent, Color::Red, left_model, right_model)
+                model: RbTree::Node(identity, (void*)parent, Color::Red, left_model, right_model)
             }, { left: l, right: r });
             simp();
         },

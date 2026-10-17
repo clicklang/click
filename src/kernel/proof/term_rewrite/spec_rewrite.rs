@@ -188,7 +188,7 @@ fn collect_spec_integer_carriers(
                             AlgebraicValueType::Integer => {
                                 variables.integer.insert(*variable);
                             }
-                            AlgebraicValueType::C(_) => {
+                            AlgebraicValueType::C(_) | AlgebraicValueType::ObjectPointer(_, _) => {
                                 variables.c.insert(*variable);
                             }
                             AlgebraicValueType::Algebraic { .. }
@@ -500,6 +500,9 @@ fn collect_spec_argument_carriers(
         return;
     }
     match argument {
+        SpecPureFunctionArgument::ObjectPointer { argument, .. } => {
+            collect_spec_argument_carriers(argument, variables, integer_seen)
+        }
         SpecPureFunctionArgument::Value(value) => {
             collect_spec_expression_carriers(value, variables, integer_seen)
         }
@@ -1146,6 +1149,7 @@ impl<'a> TermRewrite<'a> {
                 name,
                 arguments,
                 result_type,
+                pointer_result,
             } => SpecExpression::PureFunctionApplication {
                 name: name.clone(),
                 arguments: arguments
@@ -1153,6 +1157,7 @@ impl<'a> TermRewrite<'a> {
                     .map(|argument| self.rewrite_spec_argument(argument))
                     .collect::<Result<Vec<_>, _>>()?,
                 result_type: *result_type,
+                pointer_result: pointer_result.clone(),
             },
             SpecExpression::LoopEntrySnapshot(value) => {
                 SpecExpression::LoopEntrySnapshot(Box::new(self.rewrite_spec_expression(value)?))
@@ -1478,6 +1483,13 @@ impl<'a> TermRewrite<'a> {
         argument: &SpecPureFunctionArgument,
     ) -> Result<SpecPureFunctionArgument, SpecRewriteError> {
         Ok(match argument {
+            SpecPureFunctionArgument::ObjectPointer {
+                argument,
+                object_class,
+            } => SpecPureFunctionArgument::ObjectPointer {
+                argument: Box::new(self.rewrite_spec_argument(argument)?),
+                object_class: object_class.clone(),
+            },
             SpecPureFunctionArgument::Value(value) => {
                 SpecPureFunctionArgument::Value(self.rewrite_spec_expression(value)?)
             }

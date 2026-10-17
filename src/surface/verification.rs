@@ -6025,9 +6025,11 @@ fn check_trait_method_implementations(
         let mut refines = true;
         for contract in contracts {
             refines &= match (contract, verified_interface) {
-                (None, Some(interface)) => {
-                    crate::kernel::c_function_refines_function_contract(interface, implementation)
-                }
+                (None, Some(interface)) => crate::kernel::c_function_refines_function_contract(
+                    environment,
+                    interface,
+                    implementation,
+                ),
                 (contract, _) => crate::kernel::c_function_refines_named_contract(
                     environment,
                     contract.unwrap_or(interface),

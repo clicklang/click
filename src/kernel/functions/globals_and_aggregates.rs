@@ -166,8 +166,9 @@ pub(super) fn initialize_c_function_globals_owned(
         let slot = CMemory::global_pointer(global_aggregate.kernel_name());
         register_block_alignment(&slot.block, global_aggregate.layout().alignment_bytes());
         if !state.memory.has_block(&slot.block) {
-            state.set_memory(state.memory.clone().with_block_or_read_only(
+            state.set_memory(state.memory.clone().with_classed_block_or_read_only(
                 slot.block.clone(),
+                global_aggregate.declared_class.clone(),
                 global_aggregate.layout().size_bytes(),
                 global_aggregate.is_constant(),
             ));
@@ -218,8 +219,9 @@ pub(super) fn initialize_c_function_globals_owned(
             .checked_mul(global_aggregate_array.layout().size_bytes())
             .expect("validated C global aggregate array size");
         if !state.memory.has_block(&slot.block) {
-            state.set_memory(state.memory.clone().with_block_or_read_only(
+            state.set_memory(state.memory.clone().with_classed_block_or_read_only(
                 slot.block.clone(),
+                global_aggregate_array.declared_class.clone(),
                 bytes,
                 global_aggregate_array.is_constant(),
             ));

@@ -5,8 +5,11 @@ The negative for
 Anchoring a memory-free pure function's pointer arguments to one canonical
 snapshot makes the body fact's term *stable*; it does not make the fact free.
 Here the proposed model names `other`, a second pointer the contract never
-relates to `c`, so `is_owner(Owned::Held(other, 0), c) == 1` is not available
+relates to `c`, so `is_owner(Owned::Held((void*)other, 0), c) == 1` is not available
 and the fold refuses.
+
+The logical pointer annotations below use `void*` for address identities;
+object access remains governed by the unchanged C types and resource ownership.
 
 ```c filename=owner_cell.c
 struct cell {
@@ -23,10 +26,10 @@ verifying "owner_cell.c";
 
 spec enum Owned {
     Free,
-    Held(struct cell*, int),
+    Held(void*, int),
 }
 
-function is_owner(t: Owned, q: struct cell*) -> int32 {
+function is_owner(t: Owned, q: void*) -> int32 {
     match t {
         Owned::Free => 1,
         Owned::Held(owner, v) => if owner == q { 1 } else { 0 },
@@ -56,7 +59,7 @@ void clear(struct cell* c, struct cell* other) {
         Owned::Held(owner, v) => {
             unfold(t);
             execute();
-            let u = fold(cell_at(c), { model: Owned::Held(other, 0) });
+            let u = fold(cell_at(c), { model: Owned::Held((void*)other, 0) });
             simp();
         },
     }
