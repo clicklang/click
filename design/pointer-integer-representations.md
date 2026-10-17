@@ -1,11 +1,10 @@
 # Pointer bounds through integer representations
 
 Status: the policy below was accepted in the task conversation on 2026-10-15.
-The draft implementation uses a hidden record for unchanged complete C integers. On 2026-10-16 the user also approved cast-based contracts
+The implementation uses a hidden record for unchanged complete C integers. On 2026-10-16 the user also approved cast-based contracts
 for full packed-pointer relationships, using existing syntax such as
 `requires ((struct node*)(word & ~1)) == p;`. Their implementation and checked tagged-word transport are in
-[draft PR #1245](https://github.com/clicklang/click/pull/1245); affected nightly
-compatibility remains under investigation. No new `represents` predicate is approved.
+[PR #1245](https://github.com/clicklang/click/pull/1245). No new `represents` predicate is approved.
 This extends [pointer subobject extents](pointer-subobject-extents.md)
 and does not close its tracked bug.
 
@@ -21,7 +20,7 @@ C11 leaves integer-to-pointer conversion implementation-defined. This is
 Click's conservative LP64 verification policy, not a claim that C specifies
 one universal provenance model.
 
-## Minimal implementation being tested
+## Implementation
 
 `CValue::PointerInteger` separates an ordinary signed or unsigned LP64 numeric
 value from its original complete pointer. Direct casts back recover that
@@ -74,13 +73,12 @@ as approved on 2026-10-16. Other authored pointer-to-character casts and every
 authored cast to `void*`, including identity casts, widen to the enclosing
 object. Compiler-inserted conversions preserve the incoming view.
 
-After integrating master `9f1e4db6a`, all 803 scaling tests pass. The ordinary
-library run passed 4,958 cases; its two merge integration failures were fixed
-and pass targeted reruns, bringing the checked total to 4,960. The seven
-pointer fixtures pass fresh, expanded and retained checking on the merged tree.
-The preceding checkpoint passed all 42 documentation tests, 4,272 ordinary
-Markdown fixtures and 51 ordinary example projects; CI reruns the broad gate
-on each published checkpoint. Clippy for all targets passes on this tree.
+Validation covers the ordinary library, deterministic scaling, Markdown and
+reference-documentation suites. Seven cast/copy fixtures also check fresh,
+expanded and retained verification. The affected nightly coverage is selected
+by name: the complete `rbtree-erase` project and four parent/sibling-link
+mutation refusal controls. The full nightly suite is not a
+per-PR check; the PR records the exact completed checks.
 
 Typed reads recover complete stored pointers once, at the load producer.
 Entry normalization then adopts explicit full-pointer premises without repeating
@@ -89,25 +87,24 @@ that memory-history search. Its scaling regression keeps work bounded beside
 repeated pointer query in the same live environment and tries other names;
 a small-stack regression checks cyclic candidates and a later valid local.
 
-The complete minimized `__rb_erase_augmented` proof and rotation-helper proof
-pass with full cast relationships in packed-parent resources. Their adaptations
-are committed. The color-repair adaptation remains local: after the saved-link
-fix it reaches hypothetical resource-arm preparation that exceeds the work
-budget. Retaining one call-frame range lookup gets beyond that unfold, to a
-later instance-body evaluation budget. After the latest master integration,
-a numeric address rewrite fails earlier because canonical masks and annotated
-address equalities disagree; that reduction is being investigated. No budget was raised. The existing
-erase-color budget report also identifies resource-arm refutation costs.
-The C implementation is preserved. The full nightly suite has not been run,
-following repository policy. This remains an incomplete Phase B checkpoint and
-does not close the parent bug.
+The complete general erase and rotation-helper proofs retain full cast
+relationships in packed-parent resources. The color-repair sidecar verifies all
+38 selected proofs within the default budgets. Its mirrored rotations carry
+unchanged full-pointer field relationships explicitly. The engine reuses
+checked statement effects, indexed constructor contexts, and checked exit
+contexts instead of deriving them again. Predicate refutation uses indexed
+scalar comparisons instead of searching unrelated memory equations. Each
+performance change has a deterministic scaling regression.
+
+The C implementation and verification limits are preserved. The parent bounds
+bug remains open for the staged work on pointers of unseen formation (Phase C).
 
 ## Reproduced escape
 
 `mdtests/a_pointer_integer_round_trip_keeps_its_subobject.md` converts
 `&pair->first` to `unsigned long`, casts back, and reads element one. The
 upstream implementation accepts this undefined dereference. The ordinary
-mdtest expects rejection and now passes in the working prototype. Keep the original C and both
+mdtest expects rejection and now passes. Keep the original C and both
 field permissions in the regression.
 
 The existing `PointerAddress(Box<Pointer>)` records only a physical address.
@@ -135,7 +132,7 @@ historical values, selected scalar bounds, and explicit modular postconditions.
 The basic incoming-word, member-read and modular-call claims also expand and
 verify independently. Recursive resource witnesses use the same cast equality;
 the original marked-list project now verifies without C changes. The loop case and numeric-observer compatibility checks now pass the ordinary
-suite. The wider Phase B example compatibility work remains open.
+suite. The packed-parent rbtree proofs use the same relationship.
 
 Logical caches retain numeric observations. Complete reads construct their
 opaque word identity from the actual eight-byte source, so caching does not
@@ -223,5 +220,4 @@ a producer's output in the same session.
 Run these in fresh, expanded, rewritten and retained checking. Add deterministic
 multi-size tests for selected word-origin lookup and withdrawal beside unrelated
 words, facts and memory ranges. Run all ordinary scaling tests and affected
-pointer-tag/rbtree fixtures. Do not close the parent bug until integer transport
-and the remaining Phase B gates pass.
+pointer-tag/rbtree fixtures. Keep the parent bug open until its remaining Phase C acceptance criteria pass.

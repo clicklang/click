@@ -35,16 +35,16 @@ pointer relationship.
 The Phase B investigation also reproduced an integer escape: converting
 `&pair->first` to `unsigned long` and back lets an element-one read reach the
 sibling. The regression is
-`mdtests/a_pointer_integer_round_trip_keeps_its_subobject.md`. The working
-prototype now rejects it and retains valid direct and stored-word member reads.
+`mdtests/a_pointer_integer_round_trip_keeps_its_subobject.md`. The implementation
+rejects it and retains valid direct and stored-word member reads.
 A hidden complete-value record preserves the original pointer; mathematical
 integer observations cannot supply that record. The
 [integer representation notes](../design/pointer-integer-representations.md)
-record the implementation and the approved cast-based contract/tag support. This is
-still a draft prototype: the full Phase B compatibility and scaling
-checks must pass before closing this bug.
+record the implementation and the approved cast-based contract/tag support.
+The color-repair sidecar now verifies within default budgets. This bug remains
+open for the remaining Phase C work on pointers of unseen formation.
 Additional complete programs recorded on master `44eacfde1` appear under
-*Pointers of unseen formation* below. The prototype now rejects both complete
+*Pointers of unseen formation* below. The implementation rejects both complete
 programs at the undefined callee read.
 The regressions are
 `mdtests/a_loaded_member_pointer_keeps_its_subobject_in_a_callee.md` and
