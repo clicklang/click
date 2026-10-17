@@ -121,6 +121,8 @@ fn scalar_width(left: &CValue, right: &CValue) -> Option<ScalarWidth> {
 // variable is not a null pointer constant, and boolean pointer arithmetic is
 // outside the supported C0 subset.
 fn promote_c_bool_scalar_operands(left: CValue, right: CValue) -> (CValue, CValue) {
+    let left = left.numeric_value().clone();
+    let right = right.numeric_value().clone();
     if scalar_width(&left, &right).is_none() {
         return (left, right);
     }
@@ -327,6 +329,45 @@ fn fold_c_int32_constant_increment(mut path: CExpressionPath) -> CExpressionPath
     path
 }
 
+/// Preserve only a producer-retained carrier through checked tag operations.
+/// The numeric address graph may justify bit identities but cannot supply it.
+fn retain_tagged_representation(
+    mut paths: Vec<CExpressionPath>,
+    record: Option<PointerIntegerValue>,
+    assumptions: &PureFactContext,
+) -> Vec<CExpressionPath> {
+    let Some(mut record) = record else {
+        return paths;
+    };
+    for path in &mut paths {
+        let CExpressionOutcome::Value(value) = &path.outcome else {
+            continue;
+        };
+        if !matches!(value, CValue::Int64(_) | CValue::UInt64(_)) {
+            continue;
+        }
+        if !matches!(record.kind, PointerIntegerKind::Word { .. }) {
+            let Some(bits) = crate::kernel::spec::c_value_bitvector_term(value) else {
+                continue;
+            };
+            let mut used = super::pointer_tags::UsedFacts::new();
+            let Some(form) =
+                super::pointer_tags::tagged_address_form(&bits, assumptions, &mut used)
+            else {
+                continue;
+            };
+            if &form.pointer != record.pointer.pointer() {
+                continue;
+            }
+            record.kind = PointerIntegerKind::Tagged;
+        }
+        let mut retained = record.clone();
+        retained.numeric = Box::new(value.clone());
+        path.outcome = CExpressionOutcome::Value(CValue::PointerInteger(retained));
+    }
+    paths
+}
+
 pub(in crate::kernel) fn apply_c_add(
     state: &CState,
     left: CValue,
@@ -349,9 +390,35 @@ pub(in crate::kernel) fn apply_c_add(
             obligations,
         );
     }
+    // A checked positive tag changes only a cleared low-bit prefix. Zero
+    // additions and arithmetic with an unproved carry still lose the carrier.
+    let tag_source = match (&left, &right) {
+        (CValue::PointerInteger(record), tag) | (tag, CValue::PointerInteger(record)) => {
+            promote_c_uint64_path_value(tag.clone())
+                .and_then(|bits| bits.uint64_as_const())
+                .filter(|tag| *tag > 0 && *tag < 8)
+                .and_then(|tag| {
+                    let mut retained = record.clone();
+                    if let PointerIntegerKind::Word { changed_bits } = &mut retained.kind {
+                        let word = promote_c_uint64_path_value(record.numeric.as_ref().clone())?;
+                        let mask = (tag + 1).next_power_of_two() - 1;
+                        if !word_low_bits_clear(&word, mask, assumptions) {
+                            return None;
+                        }
+                        *changed_bits |= tag;
+                    }
+                    Some(retained)
+                })
+        }
+        _ => None,
+    };
     let (left, right) = promote_c_bool_scalar_operands(left, right);
     if let Some(width @ (ScalarWidth::Int64 | ScalarWidth::UInt64)) = scalar_width(&left, &right) {
-        return WideArithmetic::Add.apply(left, right, width, facts, obligations, assumptions);
+        return retain_tagged_representation(
+            WideArithmetic::Add.apply(left, right, width, facts, obligations, assumptions),
+            tag_source,
+            assumptions,
+        );
     }
     match (left, right) {
         (
@@ -1349,14 +1416,115 @@ pub(in crate::kernel) fn apply_c_remainder(
     }
 }
 
+fn word_low_bits_clear(word: &Bitvector32Term, mask: u64, assumptions: &PureFactContext) -> bool {
+    let clear = ConditionTerm::uint64_equal(
+        Bitvector32Term::uint64_bitwise_and(word.clone(), Bitvector32Term::UInt64Constant(mask)),
+        Bitvector32Term::UInt64Constant(0),
+    );
+    clear == ConditionTerm::Constant(true)
+        || [clear.clone(), clear.flipped()].iter().any(|condition| {
+            crate::instrumentation::record_deterministic_work(1);
+            assumptions.condition_facts.get(condition) == Some(&true)
+        })
+}
+
+/// Clear a bounded tag without changing the C operation's numeric spelling.
+/// Addition also needs the original word's low-bit prefix proved clear.
+fn clear_bounded_uint64_tag(
+    left: Bitvector32Term,
+    right: Bitvector32Term,
+    assumptions: &PureFactContext,
+) -> Bitvector32Term {
+    let value = Bitvector32Term::uint64_bitwise_and(left, right);
+    if let Bitvector32Term::UInt64BitwiseAnd(inner, mask) = &value
+        && let Some(mask) = mask.uint64_as_const()
+    {
+        let (a, b, addition) = match inner.as_ref() {
+            Bitvector32Term::UInt64BitwiseOr(a, b) => (a, b, false),
+            Bitvector32Term::UInt64Add(a, b) => (a, b, true),
+            _ => return value,
+        };
+        for (word, tag) in [(a, b), (b, a)] {
+            let Some(bits) = super::pointer_tags::tag_bound_citing(
+                tag,
+                assumptions,
+                &mut super::pointer_tags::UsedFacts::new(),
+            ) else {
+                continue;
+            };
+            if bits & mask != 0 {
+                continue;
+            }
+            if addition {
+                let Some(alignment) = bits.checked_add(1).and_then(u64::checked_next_power_of_two)
+                else {
+                    continue;
+                };
+                if !word_low_bits_clear(word, alignment - 1, assumptions) {
+                    continue;
+                }
+            }
+            return Bitvector32Term::uint64_bitwise_and(
+                word.as_ref().clone(),
+                Bitvector32Term::UInt64Constant(mask),
+            );
+        }
+    }
+    value
+}
+
 pub(in crate::kernel) fn apply_c_bitwise_binary(
     left: CValue,
     right: CValue,
     facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
-    _assumptions: &PureFactContext,
+    assumptions: &PureFactContext,
     operation: CBitwiseOperation,
 ) -> Vec<CExpressionPath> {
+    let tag_source = |value: &CValue, mask: &CValue| match value {
+        CValue::PointerInteger(record) => {
+            let mask = promote_c_uint64_path_value(mask.clone()).and_then(|bits| {
+                bits.uint64_as_const().or_else(|| {
+                    matches!(operation, CBitwiseOperation::Or)
+                        .then(|| {
+                            super::pointer_tags::tag_bound_citing(
+                                &bits,
+                                assumptions,
+                                &mut super::pointer_tags::UsedFacts::new(),
+                            )
+                        })
+                        .flatten()
+                })
+            });
+            let supported = match (operation, mask) {
+                (CBitwiseOperation::And, Some(mask)) => {
+                    (!mask).checked_add(1).is_some_and(u64::is_power_of_two)
+                }
+                (CBitwiseOperation::Or, Some(mask)) if mask < 8 => true,
+                (CBitwiseOperation::Or, _)
+                    if !matches!(record.kind, PointerIntegerKind::Word { .. }) =>
+                {
+                    true
+                }
+                _ => false,
+            };
+            supported.then(|| {
+                let mut retained = record.clone();
+                if let PointerIntegerKind::Word { changed_bits } = &mut retained.kind {
+                    let mask = mask.expect("opaque words only retain bounded tag operations");
+                    match operation {
+                        CBitwiseOperation::And => *changed_bits &= mask,
+                        CBitwiseOperation::Or => *changed_bits |= mask,
+                        CBitwiseOperation::Xor => unreachable!(),
+                    }
+                }
+                retained
+            })
+        }
+        _ => None,
+    };
+    // Either operand can carry the pointer; a bounded tag may itself be an opaque word.
+    let tag_sources = [tag_source(&left, &right), tag_source(&right, &left)];
     let (left, right) = promote_c_bool_scalar_operands(left, right);
     if let Some(width @ (ScalarWidth::Int64 | ScalarWidth::UInt64)) = scalar_width(&left, &right) {
         let facts = facts;
@@ -1374,7 +1542,7 @@ pub(in crate::kernel) fn apply_c_bitwise_binary(
                 Bitvector32Term::int64_bitwise_xor(left, right)
             }
             (ScalarWidth::UInt64, CBitwiseOperation::And) => {
-                Bitvector32Term::uint64_bitwise_and(left, right)
+                clear_bounded_uint64_tag(left, right, assumptions)
             }
             (ScalarWidth::UInt64, CBitwiseOperation::Or) => {
                 Bitvector32Term::uint64_bitwise_or(left, right)
@@ -1384,7 +1552,7 @@ pub(in crate::kernel) fn apply_c_bitwise_binary(
             }
             (ScalarWidth::Int32 | ScalarWidth::UInt32, _) => unreachable!(),
         };
-        return vec![CExpressionPath {
+        let paths = vec![CExpressionPath {
             outcome: CExpressionOutcome::Value(match width {
                 ScalarWidth::Int64 => CValue::Int64(value),
                 ScalarWidth::UInt64 => CValue::UInt64(value),
@@ -1393,6 +1561,9 @@ pub(in crate::kernel) fn apply_c_bitwise_binary(
             facts,
             obligations,
         }];
+        return tag_sources.into_iter().fold(paths, |paths, source| {
+            retain_tagged_representation(paths, source, assumptions)
+        });
     }
     let scalar_left = matches!(left, crate::kernel::integer32_c_value!(_));
     let scalar_right = matches!(right, crate::kernel::integer32_c_value!(_));
@@ -1427,7 +1598,7 @@ pub(in crate::kernel) fn apply_c_bitwise_not(
     facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
 ) -> Vec<CExpressionPath> {
-    match value {
+    match value.numeric_value().clone() {
         CValue::Bool(value) => vec![CExpressionPath {
             outcome: CExpressionOutcome::Value(int32(Bitvector32Term::bitwise_not(value))),
             facts,
@@ -2144,7 +2315,8 @@ fn pointer_index_term(
     facts: &(impl ExecutionFactSource + ?Sized),
     assumptions: &PureFactContext,
 ) -> Option<(Bitvector32Term, bool, bool)> {
-    match value {
+    match value.numeric_value().clone() {
+        CValue::PointerInteger(_) => unreachable!("numeric projection"),
         value @ (CValue::Bool(_)
         | CValue::Int8(_)
         | CValue::Int16(_)
@@ -3568,7 +3740,8 @@ fn apply_c_uint32_division_like(
 }
 
 fn promote_c_shift_count(value: CValue) -> Option<(Bitvector32Term, bool, bool)> {
-    match value {
+    match value.numeric_value().clone() {
+        CValue::PointerInteger(_) => unreachable!("numeric projection"),
         CValue::Bool(value) => Some((value, false, false)),
         CValue::UInt32(value) => Some((value, true, false)),
         CValue::Int32(value) => Some((value, false, false)),
@@ -3598,7 +3771,8 @@ pub(in crate::kernel) fn apply_c_shift_left(
     let Some((right, unsigned_count, right_is_64_bit)) = promote_c_shift_count(right) else {
         return vec![c_type_mismatch_expression_path(facts, obligations)];
     };
-    match left {
+    match left.numeric_value().clone() {
+        CValue::PointerInteger(_) => unreachable!("numeric projection"),
         CValue::Int64(left) => apply_c_int64_with_valid_shift_count(
             left,
             right,
@@ -3709,7 +3883,8 @@ pub(in crate::kernel) fn apply_c_shift_right(
     let Some((right, unsigned_count, right_is_64_bit)) = promote_c_shift_count(right) else {
         return vec![c_type_mismatch_expression_path(facts, obligations)];
     };
-    match left {
+    match left.numeric_value().clone() {
+        CValue::PointerInteger(_) => unreachable!("numeric projection"),
         CValue::Int64(left) => apply_c_int64_with_valid_shift_count(
             left,
             right,
@@ -4962,10 +5137,12 @@ fn subobject_extent_proven(
             });
         return covered;
     }
-    if let Some(guards) = subobject_extent_guards(pointer, extent, bytes) {
-        return guards.iter().all(|guard| {
+    if let Some(guards) = subobject_extent_guards(pointer, extent, bytes)
+        && guards.iter().all(|guard| {
             decide_with_facts(assumptions, facts, &guard.condition) == Some(guard.value)
-        });
+        })
+    {
+        return true;
     }
     assumptions_with_path_context(assumptions, facts, obligations).pointer_access_in_range(
         pointer,
@@ -5059,26 +5236,24 @@ fn subobject_formation_guards(
     let Some(extent) = value.extent() else {
         return Ok(Vec::new());
     };
-    // Formation through an opaque extent is not checked: what the extent
-    // covers is known only from evidence, and an access through the result
-    // is checked against it (`subobject_access_refusal`).
+    // Unknown extents are checked through coverage evidence at access.
     if extent.is_opaque() {
+        return Ok(Vec::new());
+    }
+    // Address equality establishes position without changing the extent.
+    if subobject_extent_proven(
+        result,
+        extent,
+        0,
+        facts,
+        obligations,
+        assumptions,
+        resources,
+    ) {
         return Ok(Vec::new());
     }
     match subobject_extent_guards(result, extent, 0) {
         Some(guards) => Ok(guards),
-        None if subobject_extent_proven(
-            result,
-            extent,
-            0,
-            facts,
-            obligations,
-            assumptions,
-            resources,
-        ) =>
-        {
-            Ok(Vec::new())
-        }
         None => Err(()),
     }
 }
@@ -5156,6 +5331,69 @@ mod wide_range_reader_tests {
             &PureFactContext::new(),
             &ExecutionFacts::new()
         ));
+    }
+}
+
+#[cfg(test)]
+mod word_tag_tests {
+    use super::*;
+
+    fn word() -> (Bitvector32Term, CValue) {
+        let bits =
+            Bitvector32Term::UInt64From32(Box::new(Bitvector32Term::Variable(Variable(997_070))));
+        let value =
+            CValue::UInt64(bits.clone()).complete_word(Pointer::symbolic(Variable(997_071)));
+        (bits, value)
+    }
+
+    #[test]
+    fn checked_word_tag_addition_retains_the_carrier_and_numeric_addition() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let (bits, value) = word();
+        let clear = ConditionTerm::uint64_equal(
+            Bitvector32Term::uint64_bitwise_and(bits.clone(), Bitvector32Term::UInt64Constant(1)),
+            Bitvector32Term::UInt64Constant(0),
+        );
+        let context = PureFactContext::new().assume_condition(clear, true);
+        for (tag, assumptions, retained) in [
+            (1, &context, true),
+            (0, &context, false),
+            (2, &context, false),
+            (1, &PureFactContext::new(), false),
+        ] {
+            let paths = apply_c_add(
+                &CState::new(),
+                value.clone(),
+                CValue::UInt64(Bitvector32Term::UInt64Constant(tag)),
+                None,
+                None,
+                Vec::new().into(),
+                Vec::new(),
+                assumptions,
+            );
+            assert_eq!(paths.len(), 1);
+            let CExpressionOutcome::Value(result) = &paths[0].outcome else {
+                panic!("word addition");
+            };
+            assert_eq!(matches!(result, CValue::PointerInteger(_)), retained);
+            if let CValue::PointerInteger(record) = result {
+                assert!(matches!(
+                    record.kind,
+                    PointerIntegerKind::Word { changed_bits: 1 }
+                ));
+                assert_eq!(
+                    record.numeric.as_ref(),
+                    &CValue::UInt64(Bitvector32Term::uint64_add(
+                        bits.clone(),
+                        Bitvector32Term::UInt64Constant(1),
+                    ))
+                );
+            }
+        }
+    }
+
+    mod scaling_tests {
+        include!("../../scaling_tests/kernel/eval/operators/word_tag_tests.rs");
     }
 }
 

@@ -2936,8 +2936,9 @@ pub(in crate::surface) fn validate_void_pointer_cast_source(
     context: &str,
 ) -> Result<(), ClickError> {
     let actual = infer_c_expression_type(operand, variables);
-    if actual.is_some_and(|ty| !ty.is_object_pointer())
-        || matches!(operand, CExpression::FunctionAddress(_))
+    if actual.is_some_and(|ty| {
+        !ty.is_object_pointer() && !matches!(ty, C0Type::Int64(_) | C0Type::UInt64(_))
+    }) || matches!(operand, CExpression::FunctionAddress(_))
     {
         return Err(ClickError::new(format!(
             "contract void-pointer cast in {context} expects an object pointer operand, got {actual:?}"
@@ -2959,6 +2960,14 @@ fn validate_pointer_cast_operands(
             ..
         } => {
             if target_type.is_pointer() {
+                if !matches!(target_type, CType::FunctionPointer(_))
+                    && matches!(
+                        infer_c_expression_type(operand, variables),
+                        Some(C0Type::Int64(_) | C0Type::UInt64(_))
+                    )
+                {
+                    return validate_pointer_cast_operands(operand, variables, context);
+                }
                 if *target_type == CType::VoidPointer {
                     validate_void_pointer_cast_source(operand, variables, context)?;
                     return validate_pointer_cast_operands(operand, variables, context);
@@ -3022,11 +3031,18 @@ fn validate_pointer_cast_operands(
     }
 }
 
-fn infer_c_expression_type(
+pub(in crate::surface) fn infer_c_expression_type(
     expression: &CExpression,
     variables: &BTreeMap<String, C0Type>,
 ) -> Option<C0Type> {
     match expression {
+        CExpression::Value(CValue::PointerInteger(_)) => infer_c_expression_type(
+            &CExpression::Value(match expression {
+                CExpression::Value(v) => v.numeric_value().clone(),
+                _ => unreachable!(),
+            }),
+            variables,
+        ),
         CExpression::Value(CValue::Int128(_)) => Some(C0Type::Int128),
         CExpression::Value(CValue::UInt128(_)) => Some(C0Type::UInt128),
 

@@ -96,7 +96,8 @@ pub(in crate::kernel) struct ContainingIntegerCell {
 
 /// The byte width of an integer cell, or `None` for a cell with no byte view.
 fn integer_cell_width(value: &CValue) -> Option<u32> {
-    match value {
+    match value.numeric_value() {
+        CValue::PointerInteger(_) => unreachable!("numeric projection"),
         CValue::Int8(_) | CValue::UInt8(_) => Some(1),
         CValue::Int16(_) | CValue::UInt16(_) => Some(2),
         CValue::Int32(_) | CValue::UInt32(_) => Some(4),
@@ -178,6 +179,7 @@ pub(in crate::kernel) fn containing_integer_cell(
 /// Byte `byte` of an integer cell's little-endian representation, as the
 /// zero-extended 32-bit term of an `unsigned char`: `(v >> 8k) & 0xFF`.
 pub(in crate::kernel) fn integer_cell_byte(value: &CValue, byte: u32) -> Option<Bitvector32Term> {
+    let value = value.numeric_value();
     let width = integer_cell_width(value)?;
     if byte >= width {
         return None;
@@ -264,7 +266,7 @@ pub(in crate::kernel) fn integer_cell_with_byte(
             Bitvector32Term::unsigned_shift_left(byte.clone(), Bitvector32Term::Constant(shift)),
         )
     };
-    Some(match &cell.value {
+    Some(match cell.value.numeric_value() {
         CValue::UInt16(term) => CValue::UInt16(update32(term)),
         CValue::Int32(term) => CValue::Int32(update32(term)),
         CValue::UInt32(term) => CValue::UInt32(update32(term)),

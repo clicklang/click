@@ -164,6 +164,7 @@ pub(super) struct ExecutionLogicalCasesSplit {
 /// in-`Proof` sibling join both reduce their arms to this view, so the
 /// merge law has one implementation.
 struct CheckedExecutionJoinArm<'v> {
+    branch_id: BranchId,
     certificate: ProofCertificate,
     facts: &'v ProofFacts,
     execution: &'v ExecutionProofState,
@@ -991,7 +992,8 @@ struct ProofDiagnosticProofState(
 );
 
 fn diagnostic_value_variable(value: &CValue) -> Option<Variable> {
-    match value {
+    match value.numeric_value() {
+        CValue::PointerInteger(_) => unreachable!("numeric projection"),
         crate::kernel::arithmetic_c_value!(term) => match term {
             Bitvector32Term::Variable(variable) => Some(*variable),
             _ => None,

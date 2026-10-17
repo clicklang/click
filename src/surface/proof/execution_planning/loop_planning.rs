@@ -1578,12 +1578,11 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
             // there. The loop rule joins it with every other exit into the
             // single successor, so nothing about this path is dropped and
             // nothing about it is assumed to satisfy the invariants.
-            let (state, exit_facts) = preservation.restored_exit(
+            let state = preservation.restored_exit_state(
                 &checked_execution.core.state,
-                checked.facts(),
                 &assumptions_from_propositions(checked.facts()),
             );
-            let exit = CLoopBreakExit::new(state, exit_facts)
+            let exit = CLoopBreakExit::from_proof_facts(state, checked.facts())
                 .with_loan_evidence(checked_execution.core.loan_evidence().clone());
             if seen_break_exits.is_new(exit.state(), exit.pure_facts(), &break_exits, &exit) {
                 break_exits.push(exit);

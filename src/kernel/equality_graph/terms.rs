@@ -168,6 +168,8 @@ enum Node {
     IntegerOperation(IntegerOperation),
     IntegerFunction(crate::kernel::SharedPureApplication, usize),
     PointerFunction(crate::kernel::SharedPureApplication, usize),
+    PointerFunctionValue(crate::kernel::SharedPureApplication, usize),
+    PointerFunctionIdentity(crate::kernel::SharedPureApplication),
     AlgebraicVariable(crate::kernel::SharedPureApplication, Variable),
     AlgebraicConstructor(crate::kernel::SharedPureApplication, String, usize),
     AlgebraicFunction(crate::kernel::SharedPureApplication, String, usize),
@@ -185,6 +187,7 @@ enum Node {
     UInt64Read((u32, u32), u64),
     Address(u64, u64),
     AddressShift(u64, i64),
+    AddressOffset(u64, u64),
     PointerRead((u32, u32), u64, crate::kernel::LoadKind),
     Footprint(u64, u64),
     Int32(MachineAtom),
@@ -209,6 +212,7 @@ enum Application {
     UInt64Read((u32, u32), u64),
     Address(u64, u64),
     AddressShift(u64, i64),
+    AddressOffset(u64, u64),
     PointerRead((u32, u32), u64, crate::kernel::LoadKind),
     Footprint(u64, u64),
     Add(u64, u64),
@@ -230,6 +234,7 @@ impl Application {
             | Self::UInt64Binary(_, left, right)
             | Self::Int32Add(left, right)
             | Self::Int32Binary(_, left, right)
+            | Self::AddressOffset(left, right)
             | Self::Footprint(left, right) => [Some(left), Some(right)],
             Self::Int32Unary(_, value)
             | Self::Address(_, value)
@@ -251,7 +256,9 @@ impl Application {
                 let (mut left, mut right) = (classes.root(left), classes.root(right));
                 if matches!(
                     kind,
-                    congruence::ConditionKind::PointerEq | congruence::ConditionKind::OffsetEq
+                    congruence::ConditionKind::PointerEq
+                        | congruence::ConditionKind::PointerValueEq
+                        | congruence::ConditionKind::OffsetEq
                 ) && left > right
                 {
                     std::mem::swap(&mut left, &mut right);
@@ -267,6 +274,9 @@ impl Application {
             }
             Self::Address(block, offset) => Self::Address(block, classes.root(offset)),
             Self::AddressShift(address, bytes) => Self::AddressShift(classes.root(address), bytes),
+            Self::AddressOffset(address, offset) => {
+                Self::AddressOffset(classes.root(address), classes.root(offset))
+            }
             Self::PointerRead(snapshot, address, kind) => {
                 Self::PointerRead(snapshot, classes.root(address), kind)
             }
@@ -394,6 +404,11 @@ pub(super) struct TermClasses {
     // One zero-offset pointer read or pure-call value per class. Congruence emits only
     // newly identified pairs for the legacy affine/index projection.
     pointer_value_witnesses: PersistentMap<u64, PointerBlock>,
+    pointer_values: PersistentMap<u64, crate::kernel::CPointerValue>,
+    extent_values: PersistentMap<u64, crate::kernel::CPointerValue>,
+    read_domains: crate::kernel::pointer_designations::ValueClasses<Pointer>,
+    read_designation_nodes: PersistentMap<Pointer, u64>,
+    read_extent_nodes: PersistentMap<Pointer, u64>,
     pointer_value_merges: imbl::Vector<(PointerBlock, PointerBlock)>,
     nodes: PersistentMap<Node, u64>,
     load_blocks: PersistentMap<PointerBlock, u64>,
@@ -402,6 +417,7 @@ pub(super) struct TermClasses {
     // this worklist iterative handles loads used as indices of further loads.
     pending_loads: Vec<(u64, crate::kernel::SharedCMemory, crate::kernel::Pointer)>,
     pending_pointer_calls: Vec<(u64, crate::kernel::SharedPureApplication)>,
+    pending_pointer_identities: Vec<(u64, crate::kernel::SharedPureApplication)>,
     registering_dependencies: bool,
     // Weight counts class members plus registered parent uses. Moving the
     // lighter side bounds both root depth and reindexing, including a class
@@ -656,7 +672,7 @@ impl TermClasses {
                 .registered_address_shifts
                 .contains(&(address, raw_offset))
         {
-            let base = self.address_without_shift(block, base).0;
+            let base = self.address_without_shift(block.clone(), base).0;
             let shifted = self.intern_node(Node::AddressShift(base, bytes));
             self.close_with_affine_definition(vec![(address, shifted)], true);
             if !self.numeric_shifts.contains_key(&address) {
@@ -665,6 +681,31 @@ impl TermClasses {
             self.registered_address_shifts = self
                 .registered_address_shifts
                 .with_value((address, raw_offset));
+        }
+        if let PointerOffsetTerm::Add(base, displacement) = &offset
+            && displacement.as_const().is_none()
+            && !self
+                .registered_address_shifts
+                .contains(&(address, raw_offset))
+            && let Some(block_id) = self.load_blocks.get(&block).copied()
+        {
+            // Only a retained typed-read base needs this extra application:
+            // ordinary affine coordinates already share offset congruence.
+            // Query the selected prefix without creating unrelated addresses.
+            let base_offset = self.intern(base);
+            if let Some(base) = self
+                .registered_addresses
+                .get(&(block_id, base_offset))
+                .copied()
+                && self.pointer_value_witnesses.contains_key(&self.root(base))
+            {
+                let displacement = self.intern(displacement);
+                let shifted = self.intern_node(Node::AddressOffset(base, displacement));
+                self.close_with_affine_definition(vec![(address, shifted)], true);
+                self.registered_address_shifts = self
+                    .registered_address_shifts
+                    .with_value((address, raw_offset));
+            }
         }
         (address, new)
     }
@@ -1279,6 +1320,10 @@ impl TermClasses {
                 self.address_nodes = self.address_nodes.with_value(id);
                 Some(Application::AddressShift(*address, *bytes))
             }
+            Node::AddressOffset(address, offset) => {
+                self.address_nodes = self.address_nodes.with_value(id);
+                Some(Application::AddressOffset(*address, *offset))
+            }
             Node::PointerRead(snapshot, address, kind) => {
                 Some(Application::PointerRead(*snapshot, *address, *kind))
             }
@@ -1358,6 +1403,12 @@ impl TermClasses {
                     self.root(value),
                     PointerBlock::PureFunctionApplication(application),
                 );
+                continue;
+            }
+            if let Some((identity, application)) = self.pending_pointer_identities.pop() {
+                crate::instrumentation::record_deterministic_work(1);
+                let value = self.intern_pointer_call_identity(&application);
+                self.close_with_affine_definition(vec![(identity, value)], true);
                 continue;
             }
             let Some((id, memory, pointer)) = self.pending_loads.pop() else {
@@ -1853,6 +1904,20 @@ impl TermClasses {
                 self.pointer_value_witnesses.remove(&moved);
                 self.retain_pointer_value_witness(kept, witness);
             }
+            if let Some(value) = self.pointer_values.get(&moved).cloned() {
+                self.pointer_values.remove(&moved);
+                self.retain_pointer_value(kept, value);
+            }
+            if let Some(value) = self.extent_values.get(&moved).cloned() {
+                self.extent_values.remove(&moved);
+                let witness = self
+                    .extent_values
+                    .get(&kept)
+                    .map_or(value.clone(), |previous| {
+                        crate::kernel::pointer_designations::prefer_pointer(previous, &value)
+                    });
+                self.extent_values.insert(kept, witness);
+            }
             self.merge_affine_applications(moved, kept);
             let weight = self.weight(kept) + self.weight(moved);
             self.merge_address_offsets(moved, kept, &mut pending);
@@ -2287,6 +2352,30 @@ mod tests {
         let twice = once.without_exact_fact(&Proposition::ConditionIs(ba, true));
         assert!(!twice.equality_graph.are_offsets_equal(&a, &c));
         assert!(twice.equality_graph.are_offsets_equal(&b, &c));
+    }
+
+    #[test]
+    fn complete_pointer_identity_tracks_symbolic_extent_widths() {
+        use crate::kernel::{CPointerValue, CType, SubobjectExtent};
+        let _session = crate::kernel::VerificationSession::enter();
+        let pointer = Pointer::symbolic(Variable(942_001));
+        let width = Bitvector32Term::Variable(Variable(942_002));
+        let bounded = |width| {
+            CPointerValue::new(pointer.clone(), CType::Int32Pointer).with_extent(Some(
+                SubobjectExtent {
+                    start: pointer.clone(),
+                    width,
+                },
+            ))
+        };
+        let dynamic = bounded(width.clone());
+        let four = bounded(4u32.into());
+        let eight = bounded(8u32.into());
+        let mut classes = TermClasses::default();
+        assert!(!classes.pointer_values_equal(&dynamic, &four));
+        classes.add_int32_equality(&width, &Bitvector32Term::Constant(4));
+        assert!(classes.pointer_values_equal(&dynamic, &four));
+        assert!(!classes.pointer_values_equal(&dynamic, &eight));
     }
 
     #[cfg(test)]

@@ -8656,3 +8656,37 @@ transport(at(filled, dst[0]) == 7, dst[0] == 7);
         );
     }
 }
+
+#[test]
+fn branch_interface_fact_publication_extends_one_indexed_context() {
+    let c_source = "struct cell { int32 value; }; int32 bump(struct cell* p, int32 x, int32 flag) { p->value = flag; return 0; }";
+    let mut samples = Vec::new();
+    for size in [16usize, 32, 64, 128] {
+        let exported = (1..=size)
+            .map(|i| format!("fact x <= {i};\n"))
+            .collect::<String>();
+        let required = exported.replace("fact", "requires");
+        let click_source = format!(
+            r#"
+            verifying "joins.c";
+            resource slot(p: struct cell*) {{ field model: int32; owns p->value; fact p->value == model; }}
+            int32 bump(struct cell* p, int32 x, int32 flag) {{
+                requires p != 0; {required} owns c: slot(p); ensures result == 0;
+            }} by {{
+                if flag == 0 ensuring {{ owns c: slot(p); {exported} }} then {{
+                    unfold(c); step(); let c = fold(slot(p), {{ model: 0 }});
+                }} else {{
+                    unfold(c); step(); let c = fold(slot(p), {{ model: flag }});
+                }}
+                step(); simp();
+            }}
+        "#
+        );
+        let (verified, sample) = scaling_sample(size, || {
+            verify_c0_sources(&click_source, &[("joins.c", c_source)])
+        });
+        verified.unwrap_or_else(|error| panic!("{}", error.message()));
+        samples.push(sample);
+    }
+    assert_near_linear_scaling("branch interface exported facts", &samples);
+}

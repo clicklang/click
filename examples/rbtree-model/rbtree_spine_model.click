@@ -1,6 +1,6 @@
 // Exact left-only path from a deeper successor to the original right child.
 import "rbtree_erase_child.click";
-import "rbtree_resources.click";
+import "rbtree_model.click";
 
 spec enum EraseSpine {
     Top,

@@ -757,12 +757,9 @@ int32 vector_fill(struct vector* owner, int32 value) {
     loop as fill_cells {
         decreases owner->len - i;
         invariant i >= 0 and i <= owner->len;
+        invariant owner->data == old(owner->data);
         owns owner->data[0..owner->len];
-        initialize by {
-            have i >= 0 and i <= owner->len by {
-                assumption();
-            }
-        }
+        initialize by simp();
         preserve by {
             step();
             step();

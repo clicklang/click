@@ -21,7 +21,7 @@ spec enum PackedLink { At(struct other_node*), }
 resource model_link(p: struct model_node*) {
     field word: uint64;
     field model: PackedLink;
-    match model { PackedLink::At(q) => { owns p->parent_word; fact p->parent_word == word; fact q == p; fact word == address(q); }, }
+    match model { PackedLink::At(q) => { owns p->parent_word; fact p->parent_word == word; fact q == p; fact word == address(q); fact ((struct model_node*)p->parent_word) == q; }, }
 }
 void follow_model(struct model_node* p, int32 more) {
     owns held: model_link(p);

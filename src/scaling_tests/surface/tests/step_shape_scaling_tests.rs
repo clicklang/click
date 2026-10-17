@@ -765,7 +765,7 @@ fn a_partial_borrow_call_ignores_unrelated_owned_objects() {
     assert_flat_across(
         "partial_borrow_beside_objects",
         partial_borrow_beside_objects,
-        [1, 3],
+        [1, 8],
         "touch_half(data);",
     );
 }
