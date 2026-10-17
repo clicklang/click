@@ -247,9 +247,9 @@ that writes `int32` for such a source already writes the source's spelling.
    whose destruction runs none. A defining class's `const` method views its
    memory, so its callers keep every field. Remaining for C++: overriding a
    defining class's method, base destructors with effects, constructing
-   objects whose base has fields or a constructor, and keeping fields
-   across a `const Shape&` conversion, which needs a stable view backed by
-   several owned pieces.
+   objects whose base has fields or a constructor. A `const Shape&`
+   conversion keeps the object's memory lent until the call returns, so its
+   caller keeps every field too.
 
 ## Intended regressions
 

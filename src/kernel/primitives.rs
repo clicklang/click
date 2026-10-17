@@ -4324,7 +4324,9 @@ pub struct CFunction {
     pub(super) body: CStatement,
     pub(super) source_body: CStatement,
     pub(super) control_targets: std::sync::Arc<BTreeMap<CControlTargetId, CControlTarget>>,
-    pub(super) contract_interface: CFunctionContractInterface,
+    /// Shared: every claim and theorem a proof issues carries the function,
+    /// and the contract spans every parameter.
+    pub(super) contract_interface: Arc<CFunctionContractInterface>,
     pub(super) global_variables: Vec<CGlobal>,
     pub(super) global_arrays: Vec<CGlobalArray>,
     pub(super) static_variables: Vec<CStaticLocal>,
@@ -4521,8 +4523,10 @@ pub(crate) const C_EXCEPTIONAL_RESULT_NAME: &str = "__click_exception";
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct CFunctionSpecification {
     pub(super) state: CState,
-    pub(super) arguments: Vec<CExpression>,
-    pub(super) requires: Vec<Proposition>,
+    /// Shared: every theorem a proof issues carries the specification, and
+    /// both lists span every parameter.
+    pub(super) arguments: Arc<[CExpression]>,
+    pub(super) requires: Arc<[Proposition]>,
     pub(super) outcome: CFunctionOutcome,
 }
 

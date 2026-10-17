@@ -565,3 +565,59 @@ fn active_memory_candidates_ignore_unrelated_live_loans() {
         );
     }
 }
+
+/// A view no single owner covers, over owned pieces of different element
+/// widths that tile it, is lent from the pieces joined into one owner. The
+/// join reads only the pieces under the view, never the unrelated owners
+/// beside them.
+#[test]
+fn mixed_width_view_backing_joins_only_its_own_pieces() {
+    let (ledger, caller, callee) = participants();
+    let piece = |start: u32, end: u32, width: u32| {
+        CResourceFact::own_memory(crate::kernel::CMemoryRange::new_with_element_width(
+            crate::kernel::Pointer {
+                block: "buffer".into(),
+                offset: crate::kernel::PointerOffsetTerm::Constant(0),
+            },
+            crate::kernel::Bitvector32Term::Constant(start),
+            crate::kernel::Bitvector32Term::Constant(end),
+            width,
+        ))
+    };
+    let required = checked(memory(0, 4, false));
+    let facts = PureFactContext::new();
+    let mut samples = Vec::new();
+    for count in [16, 64, 256, 1024] {
+        // Bytes 0..8 as bytes, then bytes 8..16 as two int32 cells.
+        let mut resources = ResourceContext::new()
+            .unchecked_with_fact(piece(0, 8, 1))
+            .unchecked_with_fact(piece(2, 4, 4));
+        for index in 0..count {
+            resources =
+                resources.unchecked_with_fact(memory(8192 + index * 2, 8193 + index * 2, true));
+        }
+        let ((plan, work), map_work) = crate::persistent::measure_persistent_work(|| {
+            crate::instrumentation::measure_deterministic_work(|| {
+                plan_stable_view_transfer(
+                    &resources,
+                    std::slice::from_ref(&required),
+                    &facts,
+                    &ledger,
+                    caller,
+                    callee,
+                )
+                .unwrap()
+            })
+        });
+        assert_eq!(plan.stable_views().len(), 1);
+        samples.push((work, map_work));
+    }
+    assert!(
+        samples[3].0 <= samples[0].0 * 2 + 64,
+        "ambient ownership scan: {samples:?}"
+    );
+    assert!(
+        samples[3].1 <= samples[0].1 * 4 + 256,
+        "ambient index scan: {samples:?}"
+    );
+}

@@ -2728,3 +2728,35 @@ fn nested_loop_cursor_views_refuse_forged_ranges_and_expand() {
     let expanded = expand_c0_claim_source(&click, &sources, "f", CProofClaim::Grouped).unwrap();
     verify_c0_sources(&expanded, &sources).unwrap();
 }
+
+#[test]
+fn a_loop_snapshot_is_one_entry_under_every_spelling() {
+    let exit = |region| ProgramPointRef {
+        region,
+        kind: ProgramPointKind::Exit,
+    };
+    let state = CState::new();
+    let mut snapshots = RecordedSnapshots::new();
+    // Recorded before the proof labels the loop: the label adopts the entry.
+    snapshots.insert(exit(CodeRegionRef::Loop(0)), state.clone());
+    snapshots.label_loop(0, "outer");
+    snapshots.label_loop(0, "also_outer");
+    snapshots.insert(exit(CodeRegionRef::Loop(1)), state.clone());
+    for spelling in [
+        CodeRegionRef::Loop(0),
+        CodeRegionRef::Label("outer".to_string()),
+        CodeRegionRef::Label("also_outer".to_string()),
+    ] {
+        assert!(snapshots.contains_key(&exit(spelling)));
+    }
+    let keys = snapshots.keys().cloned().collect::<Vec<_>>();
+    assert_eq!(
+        keys,
+        [
+            SnapshotSelector::ProgramPoint(exit(CodeRegionRef::Loop(1))),
+            SnapshotSelector::ProgramPoint(exit(CodeRegionRef::Label("outer".to_string()))),
+        ],
+        "each point is one entry, spelled by its loop's first label"
+    );
+    assert!(!snapshots.contains_key(&exit(CodeRegionRef::Label("inner".to_string()))));
+}

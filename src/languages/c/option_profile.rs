@@ -76,7 +76,6 @@ pub(crate) const LINUX_KBUILD: OptionProfile = OptionProfile {
         // Source semantics no weaker than Click's.
         "-fno-common",
         "-fno-delete-null-pointer-checks",
-        "-fno-strict-aliasing",
         "-fno-strict-overflow",
         "-fshort-wchar",
         "-fstrict-flex-arrays=3",
@@ -113,26 +112,8 @@ pub(crate) const LINUX_KBUILD: OptionProfile = OptionProfile {
         "-mpreferred-stack-boundary=3",
         "-mskip-rax-setup",
         "-mtune=generic",
-        // Optimization, with the safety options below and with the
-        // frontend refusing the attributes GCC trusts as promises.
-        "-O2",
     ],
     requires: &[
-        (
-            "-O2",
-            "-fno-strict-aliasing",
-            "without it GCC optimizes with type-based alias assumptions, which Click neither makes nor checks",
-        ),
-        (
-            "-O2",
-            "-fno-strict-overflow",
-            "without it GCC optimizes on the assumption that signed and pointer arithmetic never overflow",
-        ),
-        (
-            "-O2",
-            "-fno-delete-null-pointer-checks",
-            "without it GCC deletes null checks after dereferences and after `returns_nonnull` calls",
-        ),
         (
             "-mno-sse",
             "-mno-80387",
@@ -172,15 +153,6 @@ impl OptionProfile {
             ));
         }
         Ok(profile)
-    }
-
-    /// Whether the profile accepts an optimization level. A compiler import
-    /// under such a profile refuses the attributes GCC's optimizer trusts as
-    /// unchecked promises; see `syntax::PromiseAttributes`.
-    pub(crate) fn optimizes(&self) -> bool {
-        self.accepted
-            .iter()
-            .any(|spelling| spelling.starts_with("-O"))
     }
 
     /// Whether `argument` is one of this profile's exact accepted spellings.

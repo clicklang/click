@@ -210,7 +210,15 @@ allowed cases:
     rewriting and premise matching.
   - Generic type arguments (`List<struct T*>`), quantified pointer binders,
     and resource fields of C pointer type still carry no class.
-- **Step 3b (heap effective types):** next.
+- **Step 4 (project optimization level):** done, with one exception the
+  maintainer approved on 2026-10-17. A project names `optimization`, `-O2` by
+  default, and every C unit is prepared at it; the Linux profile no longer
+  requires `-fno-strict-overflow` or `-fno-delete-null-pointer-checks`, and
+  the promise attributes are refused at any optimizing level. An optimizing
+  level still adds `-fno-strict-aliasing` until the check covers globals and
+  heap objects. The remaining order: globals, then step 3b, then dropping
+  that flag.
+- **Step 3b (heap effective types):** after globals.
 
 ## Validation
 

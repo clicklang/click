@@ -626,6 +626,7 @@ fn single_base_inventory_walks_have_linear_work_and_reject_cycles() {
                     base_declaration_id: format!("r{}", index + 1),
                     base_name: format!("R{}", index + 1),
                     span: cleanup_span(),
+                    is_const: false,
                 },
             })
             .collect::<Vec<_>>();

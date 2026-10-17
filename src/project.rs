@@ -31,7 +31,7 @@ use sha2::{Digest, Sha256};
 
 use crate::languages::PreparedProgram;
 use crate::languages::c::compiler_import::{self, PreparedCImport, UnitConfig, UnitSource};
-use crate::languages::c::target::CTarget;
+use crate::languages::c::target::{COptimization, CTarget};
 use crate::languages::cpp::{self as cpp_import, CppExceptionBehavior, CppLibraryAssertion};
 use crate::languages::rust::{self as rust_import, CrateConfig};
 
@@ -135,6 +135,7 @@ pub struct Project {
     /// The project root: the project file's directory.
     root: PathBuf,
     target: CTarget,
+    optimization: COptimization,
     units: BTreeMap<String, Unit>,
 }
 
@@ -182,6 +183,8 @@ impl Project {
         };
         let target = CTarget::from_parts(setting("target")?, setting("mode")?)
             .map_err(|error| format!("{error} in `{}`", file.display()))?;
+        let optimization = COptimization::from_setting(setting("optimization")?)
+            .map_err(|error| format!("{error} in `{}`", file.display()))?;
         let mut units = BTreeMap::new();
         if let Some(described) = value.get("units") {
             let described = described
@@ -215,6 +218,7 @@ impl Project {
             file,
             root,
             target,
+            optimization,
             units,
         })
     }
@@ -244,6 +248,7 @@ impl Project {
             serde_json::to_vec(&serde_json::json!({
                 "target": CTarget::TRIPLE,
                 "mode": self.target.mode(),
+                "optimization": self.optimization.flag(),
                 "unit": unit.description,
             }))
         } else {
@@ -272,6 +277,7 @@ impl Project {
             unit_name: name.to_string(),
             unit_digest: self.unit_digest(name)?,
             target: self.target,
+            optimization: self.optimization,
             compiler: PathBuf::from(compiler),
             root: unit.spec.root.clone(),
             environment: unit.spec.env.clone(),

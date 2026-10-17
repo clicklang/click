@@ -499,11 +499,18 @@ impl LoweringContext<'_> {
         let mut derived_place = place.clone();
         derived_place.projections.truncate(derived_path.len());
         let address = c_cast(self.lower_place(&derived_place)?, CType::Int32Pointer);
-        self.pending_coercions.push((
-            crate::languages::cpp::names::object_pack_name(&derived, &base.base_name),
-            crate::languages::cpp::names::object_unpack_name(&derived, &base.base_name),
-            address,
-        ));
+        let (pack, unpack) = if base.is_const {
+            (
+                crate::languages::cpp::names::object_const_pack_name(&derived, &base.base_name),
+                crate::languages::cpp::names::object_const_unpack_name(&derived, &base.base_name),
+            )
+        } else {
+            (
+                crate::languages::cpp::names::object_pack_name(&derived, &base.base_name),
+                crate::languages::cpp::names::object_unpack_name(&derived, &base.base_name),
+            )
+        };
+        self.pending_coercions.push((pack, unpack, address));
         self.object_coercions
             .borrow_mut()
             .insert((derived, base.base_name.clone()));

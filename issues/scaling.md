@@ -167,9 +167,15 @@ instead of from what the step changed.
    these passes read only the parameters a segment, memory clause or
    requirement names (`entry_setup_is_linear_in_owned_parameters`).
    `objects_and_calls` at N = 128: 9.06 to 8.59 billion instructions, its
-   entry context 1.33 to 0.90 billion. Still superlinear for wide
-   functions, outside entry: finishing a proof clones each verified
-   theorem, and each carries the whole contract.
+   entry context 1.33 to 0.90 billion. Also fixed: a proof issues a
+   theorem per path and claim, and each claim and theorem cloned the
+   function's contract and its specification's argument and requirement
+   lists. Those are now shared (`Arc`), so a clone copies none of them
+   (`cloned_functions_and_specifications_share_their_contracts`);
+   `objects_and_calls` at N = 128, 8.59 to 8.17 billion instructions.
+   Still superlinear for wide functions: building a proof's fact set from
+   its entry facts (`ProofFacts::from_source`, `from_ordered`) grows x3 to
+   x4 from N = 64 to 128 in a single call.
 9. **Fixed: comparing equal resource contexts walked every fact.** A call
    that takes the caller's ownership and returns it rebuilds a context with
    the same facts in fresh storage. Contexts order by content hash first, so

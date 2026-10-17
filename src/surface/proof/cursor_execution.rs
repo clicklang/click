@@ -1158,7 +1158,17 @@ pub(super) fn record_code_region_program_snapshot_state(
 ) {
     let point_region = match region {
         CodeRegion::Function => CodeRegionRef::Function,
-        CodeRegion::Loop(index) => CodeRegionRef::Loop(index),
+        CodeRegion::Loop(index) => {
+            for label in function_block
+                .structural_clauses()
+                .iter()
+                .filter(|clause| clause.region() == &region)
+                .filter_map(StructuralClause::label)
+            {
+                recorded_snapshots.label_loop(index, label);
+            }
+            CodeRegionRef::Loop(index)
+        }
         CodeRegion::Statement(index) => CodeRegionRef::Statement(index),
     };
     recorded_snapshots.insert(
@@ -1166,22 +1176,8 @@ pub(super) fn record_code_region_program_snapshot_state(
             region: point_region,
             kind,
         },
-        state.clone(),
+        state,
     );
-    for label in function_block
-        .structural_clauses()
-        .iter()
-        .filter(|clause| clause.region() == &region)
-        .filter_map(StructuralClause::label)
-    {
-        recorded_snapshots.insert(
-            ProgramPointRef {
-                region: CodeRegionRef::Label(label.to_string()),
-                kind,
-            },
-            state.clone(),
-        );
-    }
 }
 
 pub(super) const SNAPSHOT_ANNOTATION_DEPTH_LIMIT: usize = 32;

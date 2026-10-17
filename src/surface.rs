@@ -2853,6 +2853,17 @@ impl<'a> ContractEnvironment<'a> {
 #[derive(Clone)]
 struct RecordedSnapshots {
     version: std::sync::Arc<RecordedSnapshotVersion>,
+    /// The labels the proof gave loops on this path. A program point is
+    /// recorded once, under its loop's first label when it has one and as
+    /// `loop(N)` otherwise; a lookup by either spelling, or by another label
+    /// of the same loop, reads that one entry.
+    loop_labels: Option<std::sync::Arc<LoopLabels>>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+struct LoopLabels {
+    loops: BTreeMap<String, usize>,
+    preferred: BTreeMap<usize, String>,
 }
 
 struct RecordedSnapshotVersion {
@@ -2869,6 +2880,7 @@ impl Default for RecordedSnapshots {
                 history: None,
                 origin: std::sync::Arc::new(()),
             }),
+            loop_labels: None,
         }
     }
 }
@@ -3005,6 +3017,86 @@ impl RecordedSnapshots {
     }
 
     fn get<K: RecordedSnapshotKey + ?Sized>(&self, key: &K) -> Option<&CState> {
+        if self.loop_labels.is_some() {
+            let selector = self.recorded_spelling(key.to_selector());
+            return self.get_exact(&selector);
+        }
+        self.get_exact(key)
+    }
+
+    /// The program point `selector` names, spelled as it is recorded: under
+    /// its loop's first label when the loop has one.
+    fn recorded_spelling(&self, selector: SnapshotSelector) -> SnapshotSelector {
+        let Some(labels) = &self.loop_labels else {
+            return selector;
+        };
+        let SnapshotSelector::ProgramPoint(ProgramPointRef { region, kind }) = &selector else {
+            return selector;
+        };
+        let index = match region {
+            CodeRegionRef::Loop(index) => *index,
+            CodeRegionRef::Label(label) => match labels.loops.get(label) {
+                Some(index) => *index,
+                None => return selector,
+            },
+            _ => return selector,
+        };
+        match labels.preferred.get(&index) {
+            Some(label) => SnapshotSelector::ProgramPoint(ProgramPointRef {
+                region: CodeRegionRef::Label(label.clone()),
+                kind: *kind,
+            }),
+            None => SnapshotSelector::ProgramPoint(ProgramPointRef {
+                region: CodeRegionRef::Loop(index),
+                kind: *kind,
+            }),
+        }
+    }
+
+    /// Records that the proof calls loop `index` `label` on this path.
+    /// Record a loop's labels before its first snapshot.
+    fn label_loop(&mut self, index: usize, label: &str) {
+        if self
+            .loop_labels
+            .as_ref()
+            .is_some_and(|labels| labels.loops.get(label) == Some(&index))
+        {
+            return;
+        }
+        let mut labels = self.loop_labels.as_deref().cloned().unwrap_or_default();
+        labels.loops.insert(label.to_string(), index);
+        let first = !labels.preferred.contains_key(&index);
+        labels
+            .preferred
+            .entry(index)
+            .or_insert_with(|| label.to_string());
+        // A snapshot recorded before the loop had a label moves to the
+        // label's spelling, so it stays the one entry for its point.
+        let unlabeled = if first {
+            [ProgramPointKind::Entry, ProgramPointKind::Exit]
+                .into_iter()
+                .filter_map(|kind| {
+                    let point = ProgramPointRef {
+                        region: CodeRegionRef::Loop(index),
+                        kind,
+                    };
+                    let state = self.get_exact(&point)?.clone();
+                    Some((point, state))
+                })
+                .collect::<Vec<_>>()
+        } else {
+            Vec::new()
+        };
+        for (point, _) in &unlabeled {
+            self.remove(point);
+        }
+        self.loop_labels = Some(std::sync::Arc::new(labels));
+        for (point, state) in unlabeled {
+            self.insert(point, state);
+        }
+    }
+
+    fn get_exact<K: RecordedSnapshotKey + ?Sized>(&self, key: &K) -> Option<&CState> {
         let mut node = self.version.root.as_deref();
         while let Some(current) = node {
             match key.compare(&current.selector) {
@@ -3021,7 +3113,7 @@ impl RecordedSnapshots {
     }
 
     fn insert(&mut self, selector: impl Into<SnapshotSelector>, state: CState) -> Option<CState> {
-        let selector = selector.into();
+        let selector = self.recorded_spelling(selector.into());
         let prior = self.get(&selector).cloned();
         self.version = std::sync::Arc::new(RecordedSnapshotVersion {
             root: Some(recorded_snapshot_insert(
@@ -3066,7 +3158,7 @@ impl RecordedSnapshots {
     }
 
     fn remove<K: RecordedSnapshotKey + ?Sized>(&mut self, key: &K) -> Option<CState> {
-        let selector = key.to_selector();
+        let selector = self.recorded_spelling(key.to_selector());
         let prior = self.get(key).cloned();
         if prior.is_some() {
             self.version = std::sync::Arc::new(RecordedSnapshotVersion {
@@ -3125,6 +3217,10 @@ impl RecordedSnapshots {
             return None;
         }
         let mut common = ancestor.clone();
+        // Labels both arms agree on stay; an arm's own labels end at the join.
+        if self.loop_labels == other.loop_labels {
+            common.loop_labels = self.loop_labels.clone();
+        }
         for selector in changed {
             match (self.get(&selector), other.get(&selector)) {
                 (Some(left), Some(right)) if left == right => {
@@ -3203,6 +3299,7 @@ impl RecordedSnapshots {
 
     fn retain(&mut self, mut keep: impl FnMut(&SnapshotSelector, &mut CState) -> bool) {
         let mut retained = Self::new();
+        retained.loop_labels = self.loop_labels.clone();
         for (selector, state) in self.iter() {
             let mut state = state.clone();
             if keep(selector, &mut state) {

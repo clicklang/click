@@ -6392,6 +6392,58 @@ impl ResourceContext {
         Some(selected)
     }
 
+    /// Join the owned memory pieces that together cover `view`'s concrete
+    /// range, when no single piece does, into byte-granular owners in place:
+    /// the same join `without_fact_incrementally` composes to consume such a
+    /// footprint, kept rather than consumed, so one owner can then be lent
+    /// for a view that must stay lent. `None` when the range is symbolic,
+    /// one piece already covers it, the pieces leave a gap, or a piece is
+    /// loan-bound or projected. Proportional to the selected pieces.
+    pub(crate) fn with_coalesced_owned_memory(
+        &self,
+        view: &CResourceFact,
+        assumptions: &PureFactContext,
+    ) -> Option<Self> {
+        let CResource::Memory(range) = view.resource() else {
+            return None;
+        };
+        if range.constant_start().is_none() || range.constant_end().is_none() {
+            return None;
+        }
+        let owned = CResourceFact::own_memory(range.clone());
+        let candidates = self.memory_fact_candidates(range, true, assumptions);
+        // Fewer than two pieces, or a bound one, joins nothing.
+        let joined = self.normalized_memory_suppliers(
+            &candidates.entries.iter().collect::<Vec<_>>(),
+            &candidates,
+            range.base(),
+            assumptions,
+        )?;
+        let support = joined.memory_fact_candidates(range, true, assumptions);
+        let covered = support.entries.iter().any(|entry| {
+            support.requirement(entry, &owned).is_some_and(|required| {
+                joined.clone().consume_fact_from_candidates(
+                    &required,
+                    assumptions,
+                    std::iter::once(entry),
+                )
+            })
+        });
+        if !covered {
+            return None;
+        }
+        let mut coalesced = self.clone();
+        for entry in candidates.entries.iter() {
+            if coalesced.storage.facts.contains_key(&entry) {
+                coalesced.remove_entry(entry);
+            }
+        }
+        for piece in joined.iter() {
+            coalesced.insert_fact(piece.clone());
+        }
+        Some(coalesced)
+    }
+
     /// Join only the suppliers selected for the explicit footprint. Loan-bound
     /// observations keep their original occurrences and cannot be coalesced.
     /// This is proportional to selected input, never the ambient context.
