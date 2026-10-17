@@ -1047,3 +1047,76 @@ fn interface_lowering_retention_shares_unrelated_history() {
         "retention scanned unrelated history: {samples:?}"
     );
 }
+
+/// A fold publishes the resource exchange and its evidence in the operation
+/// that derives it. Recording must not lower the same written clauses again.
+#[test]
+fn constructing_an_instance_fold_pays_for_its_body_once() {
+    use crate::kernel::{ResourceFieldSchema, ResourceFieldType, ResourceInstance};
+    let mut samples = Vec::new();
+    for size in [4u32, 8, 16, 32] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let schema =
+            ResourceFieldSchema::new(vec![("tag".into(), ResourceFieldType::C(CType::Int32))])
+                .unwrap();
+        let instance = ResourceInstance::new(
+            Variable(995_800),
+            "cell".into(),
+            vec![].into(),
+            schema.clone(),
+            vec![int32(7).into()].into(),
+        )
+        .unwrap();
+        let clauses = (0..size)
+            .map(|index| crate::kernel::SpecProposition::Comparison {
+                left: crate::kernel::SpecExpression::CExpression(CExpression::Value(int32(index))),
+                operator: crate::kernel::CComparisonOperator::Equal,
+                right: crate::kernel::SpecExpression::CExpression(CExpression::Value(int32(index))),
+            })
+            .collect();
+        let definition =
+            CCompositeResourceDefinition::new("cell", vec![], None, false, vec![], clauses)
+                .with_instance_schema(Some(schema));
+        let function = c_function(
+            CType::Void,
+            "test",
+            vec![],
+            CStatement::Return(CExpression::Value(CValue::Void)),
+        )
+        .with_composite_resource_definitions(vec![definition.clone()]);
+        let before = CState::new();
+        let facts = ProofFacts::default();
+        let (_, direct) = crate::instrumentation::measure_deterministic_work(|| {
+            crate::kernel::rewrite_resource_instance_selecting_children(
+                &before,
+                &instance,
+                &definition,
+                function.composite_resource_definitions(),
+                facts.assumptions(),
+                false,
+                None,
+            )
+            .unwrap()
+        });
+        let (folded, total) = crate::instrumentation::measure_deterministic_work(|| {
+            let mut core =
+                ExecutionProofCore::at_entry(before.clone(), ExecutionFrontier::default());
+            let (result, _) = core
+                .fold_resource_instance_with_children(&function, &[], &facts, &instance, None)
+                .unwrap();
+            result
+        });
+        assert!(
+            folded
+                .state
+                .resources()
+                .owned_instance(instance.identity())
+                .is_some()
+        );
+        samples.push((direct, total));
+    }
+    assert!(
+        samples.iter().all(|(direct, total)| *total <= direct + 128),
+        "[direct derivation, construction and recording]: {samples:?}"
+    );
+}

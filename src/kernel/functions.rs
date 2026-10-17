@@ -14238,8 +14238,8 @@ fn rewrite_resource_instance_selecting_children_unspelled(
     // Holding an instance lets C read the cells its body owns. A fold makes
     // the instance, so it publishes that read authority here, attached to
     // the new occurrence: it retires when the instance is unfolded, consumed
-    // or freed. The checker derives the rewrite again and gets the same
-    // views, so a checked execution and its record agree.
+    // or freed. These views belong to the constructed successor and travel
+    // with the resource exchange's retained evidence.
     if !unfold && let Some(folded) = next.resources.owned_instance(instance.identity).cloned() {
         let owner = CResourceFact::own(CResource::Instance(folded.clone()));
         if let Some((occurrence, _)) = next.resources.unique_owned_occurrence_for_fact(&owner) {

@@ -9738,6 +9738,81 @@ impl ExecutionProofCore {
         Ok(entry_successor)
     }
 
+    /// Derive an ordinary instance fold and retain its checked event together.
+    /// The caller supplies the instance and child choices, never a proposed
+    /// successor or fact delta that would require replaying the fold.
+    pub(crate) fn fold_resource_instance_with_children(
+        &mut self,
+        function: &CFunction,
+        arguments: &[CExpression],
+        before_facts: &ProofFacts,
+        instance: &crate::kernel::ResourceInstance,
+        selected_children: Option<Arc<[(String, Variable)]>>,
+    ) -> Result<
+        (
+            crate::kernel::functions::ResourceInstanceRewriteResult,
+            ProofFacts,
+        ),
+        crate::kernel::ResourceRewriteRefusal,
+    > {
+        if self.evidence_completed {
+            return Err("a resource rewrite was recorded after the trace completed".into());
+        }
+        let definition = function
+            .proof_composite_resource_definition(instance.name())
+            .ok_or("instance definition is not registered on the function")?;
+        if definition.reaches_population() {
+            return Err("population instances require their checked custody exchange".into());
+        }
+        let _load_capture = crate::kernel::CheckedLoadEqualityCapture::start_with_call_events(
+            &self.checked_call_events,
+        );
+        let result = crate::kernel::rewrite_resource_instance_selecting_children(
+            &self.state,
+            instance,
+            definition,
+            function.composite_resource_definitions(),
+            before_facts.assumptions(),
+            false,
+            selected_children.as_deref(),
+        )?;
+        let after_facts = result
+            .semantic_facts
+            .iter()
+            .fold(before_facts.clone(), |facts, fact| {
+                facts.with_kernel_checked_fact(fact.clone())
+            });
+        let mut rewrite = CheckedResourceRewrite {
+            before_state: (*self.state).clone(),
+            after_state: result.state.clone(),
+            before_facts: before_facts.clone(),
+            after_facts: after_facts.clone(),
+            definition: definition.clone(),
+            consumption_contract: None,
+            return_context: None,
+            instance: Some(instance.clone()),
+            selected_children,
+            return_presentation: None,
+            return_observation: None,
+        };
+        if self.frontier.is_at_function_entry() && !self.frontier.entry_member_prefix {
+            rewrite.before_state =
+                crate::kernel::c_function_entry_state(&rewrite.before_state, function, arguments)
+                    .ok_or("resource rewrite could not bind the function entry state")?;
+            rewrite.after_state =
+                crate::kernel::c_function_entry_state(&rewrite.after_state, function, arguments)
+                    .ok_or("resource rewrite could not bind its successor entry state")?;
+        }
+        if self.evidence_state.is_some() {
+            self.evidence_state = Some(rewrite.after_state.clone());
+        }
+        for trace in self.execution_evidence.iter_mut() {
+            trace.push(CheckedExecutionEvent::ResourceRewrite(rewrite.clone()));
+        }
+        self.state = result.state.clone().into();
+        Ok((result, after_facts))
+    }
+
     pub(crate) fn record_resource_rewrite_with_children(
         &mut self,
         function: &CFunction,

@@ -75,6 +75,16 @@ where the input genuinely comes from outside the session, such as expansion
 checks, audits, and certificates read back from disk, which run off the
 simple-checking path.
 
+Ordinary named-instance folds construct their successor, checked facts, and
+execution event together in `ExecutionProofCore::fold_resource_instance_with_children`.
+The Surface supplies the instance and selected children and uses those returned
+facts directly; recording never lowers that fold's body again. Population
+custody and post-return exchanges retain their separate operations. The
+`constructing_an_instance_fold_pays_for_its_body_once` regression compares the
+complete construction with one direct body derivation at 4, 8, 16, and 32
+clauses, allowing only constant recording overhead. Independent certificate
+checks still reject proposed successors with unrelated state or facts.
+
 Existing produce-then-check code is a defect, tracked in
 `issues/scaling.md` cause 4. The review question for any
 change is: does this re-validate something the same session produced? If so,
