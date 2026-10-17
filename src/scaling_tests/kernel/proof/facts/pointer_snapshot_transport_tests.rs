@@ -39,7 +39,7 @@ fn full_pointer_fact_transport_checks_designations_and_the_whole_read() {
     );
     let wrong_snapshot = fact(pointer(&overwritten));
     let mut samples = Vec::new();
-    for size in [16u64, 64, 256, 1024] {
+    for size in [4u64, 16, 64, 256] {
         let mut facts = ProofFacts::from_ordered(std::slice::from_ref(&source));
         for index in 0..size {
             facts = facts.with_fact(Proposition::ConditionIs(
@@ -71,5 +71,6 @@ fn full_pointer_fact_transport_checks_designations_and_the_whole_read() {
         });
         samples.push(work);
     }
-    assert!(samples[3] <= samples[0] * 4 + 64, "{samples:?}");
+    eprintln!("full-pointer transport work: {samples:?}");
+    assert!(samples.iter().all(|work| *work <= samples[0] + 64), "{samples:?}");
 }

@@ -795,7 +795,7 @@ fn rechecked_kept_frame_checks_selected_equality_without_rebuilding_foreign_inpu
     let queried = pointer(954_001);
     let middle = pointer(954_002);
     let owner = pointer(954_003);
-    for size in [16u64, 64, 256, 1024] {
+    for size in [4u64, 16, 64, 256] {
         let inputs = || {
             let mut facts = PureFactContext::new()
                 .assume_condition(

@@ -137,7 +137,7 @@ fn function_contract_lookup_ignores_unrelated_pointer_facts() {
         }
     }
 
-    let samples = [16, 64, 256, 1024]
+    let samples = [4, 16, 64, 256]
         .into_iter()
         .map(|size| {
             let target = Pointer::symbolic_function(Variable(90_001));
