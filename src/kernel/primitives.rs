@@ -377,7 +377,7 @@ impl LazyReservedVariables {
 /// lazy reservation a bound answered and checks the bound's answer against
 /// it, for corpus validation. The check is uncharged and never decides.
 #[cfg(debug_assertions)]
-fn lazy_reservation_check_enabled() -> bool {
+pub(crate) fn lazy_reservation_check_enabled() -> bool {
     static ENABLED: OnceLock<bool> = OnceLock::new();
     *ENABLED.get_or_init(|| {
         std::env::var_os("CLICK_DEBUG_CHECK_LAZY_RESERVATIONS").is_some_and(|value| value == "1")

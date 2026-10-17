@@ -1434,11 +1434,9 @@ pub(in crate::kernel) fn execution_environment_variable_index(
 ) -> crate::kernel::ReservedVariableSets {
     let mut sets =
         crate::kernel::ReservedVariableSets::from(environment.variable_index.get_or_init(|| {
-            suspending_memory_scope(|| {
-                let mut variables = BTreeSet::new();
-                collect_execution_environment_variables_uncached(environment, &mut variables);
-                variables
-            })
+            let mut variables = BTreeSet::new();
+            collect_execution_environment_variables_uncached(environment, &mut variables);
+            variables
         }));
     if let Some(rules) = environment.verified_loop_rules.reserved_variables() {
         sets.push_lazy(rules);
@@ -1453,15 +1451,11 @@ pub(in crate::kernel) fn execution_environment_variable_index(
 pub(in crate::kernel) fn verified_loop_rule_execution_bound(
     rule: &crate::kernel::CVerifiedLoopRule,
 ) -> Option<Variable> {
-    // Cached on the rule, so it may not skip a memory an enclosing
-    // `collecting_each_memory_once` scope already collected.
     rule.variable_index.execution_bound(|| {
-        suspending_memory_scope(|| {
-            let (local, _) = execution_variable_ceiling(None, |variables| {
-                collect_verified_loop_rule_local_variables(rule, variables);
-            });
-            local.max(rule.required_assumptions.execution_variable_ceiling())
-        })
+        let (local, _) = execution_variable_ceiling(None, |variables| {
+            collect_verified_loop_rule_local_variables(rule, variables);
+        });
+        local.max(rule.required_assumptions.execution_variable_ceiling())
     })
 }
 
@@ -1472,11 +1466,9 @@ pub(in crate::kernel) fn verified_loop_rule_variables(
     rule: &crate::kernel::CVerifiedLoopRule,
 ) -> std::sync::Arc<BTreeSet<Variable>> {
     rule.variable_index.get_or_init(|| {
-        suspending_memory_scope(|| {
-            let mut variables = BTreeSet::new();
-            collect_verified_loop_rule_variables(rule, &mut variables);
-            variables
-        })
+        let mut variables = BTreeSet::new();
+        collect_verified_loop_rule_variables(rule, &mut variables);
+        variables
     })
 }
 
@@ -1618,55 +1610,6 @@ fn checked_collection_checkpoint() -> bool {
     crate::instrumentation::record_checked_collection_attempt();
     crate::instrumentation::record_deterministic_work(1);
     crate::instrumentation::checked_collection_exhausted()
-}
-
-thread_local! {
-    /// The interned memories whose variables the enclosing
-    /// [`collecting_each_memory_once`] scope has already collected.
-    static COLLECTED_MEMORIES: std::cell::RefCell<Option<BTreeSet<(u32, u32)>>> =
-        const { std::cell::RefCell::new(None) };
-}
-
-/// Runs `operation` collecting each interned memory's variables at most once.
-/// A caller that unions the variables of many propositions, such as a fact
-/// set reserving every variable its facts mention, adds a snapshot several
-/// facts share once rather than once per fact. Collections inside the scope
-/// therefore return only variables not already added by an earlier one.
-pub(crate) fn collecting_each_memory_once<R>(operation: impl FnOnce() -> R) -> R {
-    struct Restore(Option<BTreeSet<(u32, u32)>>);
-    impl Drop for Restore {
-        fn drop(&mut self) {
-            COLLECTED_MEMORIES.with(|collected| *collected.borrow_mut() = self.0.take());
-        }
-    }
-    let _restore = Restore(
-        COLLECTED_MEMORIES.with(|collected| collected.borrow_mut().replace(BTreeSet::new())),
-    );
-    operation()
-}
-
-/// Runs `operation` outside any [`collecting_each_memory_once`] scope, for a
-/// collection whose result is cached and so must hold every variable.
-fn suspending_memory_scope<R>(operation: impl FnOnce() -> R) -> R {
-    struct Restore(Option<BTreeSet<(u32, u32)>>);
-    impl Drop for Restore {
-        fn drop(&mut self) {
-            COLLECTED_MEMORIES.with(|collected| *collected.borrow_mut() = self.0.take());
-        }
-    }
-    let _restore = Restore(COLLECTED_MEMORIES.with(|collected| collected.borrow_mut().take()));
-    operation()
-}
-
-/// Whether an enclosing [`collecting_each_memory_once`] scope already
-/// collected this memory; marks it collected otherwise.
-fn already_collected_memory(identity: (u32, u32)) -> bool {
-    COLLECTED_MEMORIES.with(|collected| {
-        collected
-            .borrow_mut()
-            .as_mut()
-            .is_some_and(|collected| !collected.insert(identity))
-    })
 }
 
 thread_local! {
@@ -4851,11 +4794,162 @@ pub(in crate::kernel) fn collect_shared_memory_bitvector_variables(
         return;
     }
 
-    variables.extend(
-        shared_memory_variable_counts(memory, WholeCount::Charged)
-            .keys()
-            .copied(),
-    );
+    extend_with_snapshot_variables(memory, WholeCount::Charged, variables);
+}
+
+/// The snapshots a fact set already reserves, while it reserves one more
+/// fact's variables (`proposition_variables_reserving`), and the snapshots
+/// that fact's collection met.
+struct SnapshotReservation {
+    reserved: crate::persistent::PersistentSet<(u32, u32)>,
+    met: BTreeSet<(u32, u32)>,
+}
+
+thread_local! {
+    static SNAPSHOT_RESERVATION: std::cell::RefCell<Option<SnapshotReservation>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// How far back a snapshot's derivation is followed for one whose
+/// variables are already reserved.
+const RESERVED_SNAPSHOT_HOPS: usize = 64;
+
+/// Adds `memory`'s variables, as its remembered counts list them. While a
+/// fact set reserves a fact's variables, a snapshot it already reserves adds
+/// none, and one derived from such a snapshot adds the variables of the
+/// entries the two differ on: every variable of `memory` is one of those or
+/// one of the reserved snapshot's, and every one of those is `memory`'s, so
+/// the reserved variables come out as they would from its whole counts.
+fn extend_with_snapshot_variables(
+    memory: &SharedCMemory,
+    whole: WholeCount,
+    variables: &mut BTreeSet<Variable>,
+) {
+    let Some(mut reservation) = SNAPSHOT_RESERVATION.with(|cell| cell.borrow_mut().take()) else {
+        variables.extend(shared_memory_variable_counts(memory, whole).keys().copied());
+        return;
+    };
+    let id = memory.arena_id();
+    let known = |reservation: &SnapshotReservation, id: &(u32, u32)| {
+        reservation.reserved.contains(id) || reservation.met.contains(id)
+    };
+    if !known(&reservation, &id) {
+        let mut current = memory.clone();
+        let mut reserved_base = None;
+        for _ in 0..RESERVED_SNAPSHOT_HOPS {
+            let Some(derivation) = current.derivation() else {
+                break;
+            };
+            let base = derivation.base().clone();
+            if known(&reservation, &base.arena_id()) {
+                reserved_base = Some(base);
+                break;
+            }
+            current = base;
+        }
+        reservation.met.insert(id);
+        match reserved_base {
+            Some(base) => {
+                // The entries' own loads may reach further snapshots; the
+                // reservation stays in force for those.
+                SNAPSHOT_RESERVATION.with(|cell| *cell.borrow_mut() = Some(reservation));
+                variables.extend(variables_entering(base.memory(), memory.memory()));
+                reservation = SNAPSHOT_RESERVATION
+                    .with(|cell| cell.borrow_mut().take())
+                    .expect("the reservation survives its own collection");
+            }
+            // Counting is shared by the whole session, so it runs without
+            // the reservation.
+            None => variables.extend(shared_memory_variable_counts(memory, whole).keys().copied()),
+        }
+    }
+    SNAPSHOT_RESERVATION.with(|cell| *cell.borrow_mut() = Some(reservation));
+}
+
+/// The variables of every entry `memory` holds that `base` does not hold
+/// the same, by the diffs `counts_from_base` reads: together with `base`'s
+/// variables they include all of `memory`'s, and each is one of `memory`'s.
+fn variables_entering(base: &CMemory, memory: &CMemory) -> BTreeSet<Variable> {
+    let mut variables = BTreeSet::new();
+    for change in base.blocks.diff(&memory.blocks) {
+        let block = change.key();
+        if let Some(contents) = memory.blocks.get(block) {
+            variables.extend(block_variables(block, contents));
+        }
+    }
+    for (before, after) in [
+        (
+            &base.heap.uninitialized_objects,
+            &memory.heap.uninitialized_objects,
+        ),
+        (
+            base.heap.initialized.as_map(),
+            memory.heap.initialized.as_map(),
+        ),
+    ] {
+        for change in before.diff(after) {
+            let pointer = change.key();
+            if after.contains_key(pointer) {
+                variables.extend(object_address_variables(pointer));
+            }
+        }
+    }
+    for change in base.cells.concrete().diff(memory.cells.concrete()) {
+        let pointer = change.key();
+        if let Some(value) = memory.cells.concrete().get(pointer) {
+            variables.extend(cell_variables(pointer, value));
+        }
+    }
+    for (_, after) in base.cells.run_diff(&memory.cells) {
+        let Some(run) = after else {
+            continue;
+        };
+        match run_representative_variables(run) {
+            Some(shared) => variables.extend(shared),
+            None => {
+                for index in run.live_indexes() {
+                    variables.extend(run_slot_variables(run, index));
+                }
+            }
+        }
+    }
+    for change in base.union_cells.diff(&memory.union_cells) {
+        let key = change.key();
+        if let Some(value) = memory.union_cells.get(key) {
+            variables.extend(cell_variables(&key.0, value));
+        }
+    }
+    variables
+}
+
+/// `proposition_variables(proposition)` for a fact set whose reserved
+/// variables already include every variable of the snapshots `reserved`
+/// names: the variables to reserve beyond those, and the snapshots the
+/// collection met, whose variables the reserved ones then include.
+pub(in crate::kernel) fn proposition_variables_reserving(
+    proposition: &Proposition,
+    reserved: &crate::persistent::PersistentSet<(u32, u32)>,
+) -> (BTreeSet<Variable>, BTreeSet<(u32, u32)>) {
+    struct Restore(Option<SnapshotReservation>);
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            SNAPSHOT_RESERVATION.with(|cell| *cell.borrow_mut() = self.0.take());
+        }
+    }
+    let previous = SNAPSHOT_RESERVATION.with(|cell| {
+        cell.borrow_mut().replace(SnapshotReservation {
+            reserved: reserved.clone(),
+            met: BTreeSet::new(),
+        })
+    });
+    let restore = Restore(previous);
+    let variables = crate::kernel::proposition_variables(proposition);
+    let met = SNAPSHOT_RESERVATION
+        .with(|cell| cell.borrow_mut().take())
+        .map(|reservation| reservation.met)
+        .unwrap_or_default();
+    drop(restore);
+    (variables, met)
 }
 
 /// Whether counting a snapshot of the chain whole is charged; see
@@ -5220,13 +5314,8 @@ pub(in crate::kernel) fn collect_memory_bitvector_variables(
     // counted snapshot and the entries they changed are charged, as are the
     // snapshots its cells' loads reach.
     if let Some(shared) = crate::kernel::primitives::interned_storage_of(memory) {
-        if already_collected_memory(shared.arena_id()) {
-            return;
-        }
-        let counts = suspending_memory_scope(|| {
-            shared_memory_variable_counts(&shared, WholeCount::Uncharged)
-        });
         if EXECUTION_CEILING_ONLY.with(std::cell::Cell::get) {
+            let counts = shared_memory_variable_counts(&shared, WholeCount::Uncharged);
             variables.extend(
                 counts
                     .get_less_than(&Variable(
@@ -5236,7 +5325,7 @@ pub(in crate::kernel) fn collect_memory_bitvector_variables(
             );
             return;
         }
-        variables.extend(counts.keys().copied());
+        extend_with_snapshot_variables(&shared, WholeCount::Uncharged, variables);
         return;
     }
     collect_memory_bitvector_variables_whole(memory, variables);

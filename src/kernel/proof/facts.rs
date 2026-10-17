@@ -152,6 +152,43 @@ pub(crate) fn take_statement_priority_entries() -> (usize, usize, usize) {
     )
 }
 
+/// `reserved` and `snapshots` once `fact`'s variables are reserved too:
+/// every variable `proposition_variables(fact)` lists is then in the
+/// reserved set, and every snapshot named in `snapshots` has all its
+/// variables there.
+fn reserve_fact_variables(
+    fact: &Proposition,
+    mut reserved: PersistentSet<Variable>,
+    mut snapshots: PersistentSet<(u32, u32)>,
+) -> (PersistentSet<Variable>, PersistentSet<(u32, u32)>) {
+    #[cfg(debug_assertions)]
+    let before = crate::kernel::primitives::lazy_reservation_check_enabled()
+        .then(|| (reserved.clone(), crate::kernel::proposition_variables(fact)));
+    let (variables, met) =
+        crate::kernel::reasoning::variable_collection::proposition_variables_reserving(
+            fact, &snapshots,
+        );
+    for variable in variables {
+        if !reserved.contains(&variable) {
+            reserved = reserved.with_value(variable);
+        }
+    }
+    for snapshot in met {
+        snapshots = snapshots.with_value(snapshot);
+    }
+    #[cfg(debug_assertions)]
+    if let Some((earlier, whole)) = before {
+        assert!(
+            whole.iter().all(|variable| reserved.contains(variable))
+                && reserved
+                    .iter()
+                    .all(|variable| earlier.contains(variable) || whole.contains(variable)),
+            "a fact's reserved variables differ from its whole collection"
+        );
+    }
+    (reserved, snapshots)
+}
+
 /// Persistent semantic fact state shared by every checked proof kind.
 ///
 /// The exact index serves local proof-step queries and `assumptions` retains
@@ -161,6 +198,10 @@ pub(crate) fn take_statement_priority_entries() -> (usize, usize, usize) {
 pub(crate) struct ProofFacts {
     ordered: PersistentSequence<Arc<Proposition>>,
     reserved_variables: PersistentSet<Variable>,
+    /// The interned snapshots whose every variable `reserved_variables`
+    /// holds, so a fact naming one again, or naming a snapshot derived from
+    /// one, reserves only what differs (`proposition_variables_reserving`).
+    reserved_snapshots: PersistentSet<(u32, u32)>,
     prioritized: Option<Arc<PrioritizedProofFacts>>,
     top_level_exact: PersistentSet<Arc<Proposition>>,
     exact: PersistentSet<Arc<Proposition>>,
@@ -627,6 +668,7 @@ impl ProofFacts {
     pub(crate) fn from_source(facts: &(impl PropositionSource + ?Sized)) -> Self {
         let mut ordered = PersistentSequence::default();
         let mut reserved_variables = PersistentSet::default();
+        let mut reserved_snapshots = PersistentSet::default();
         let mut top_level_exact = PersistentSet::default();
         let mut exact = PersistentSet::default();
         let mut proper_conjuncts = PersistentSet::default();
@@ -644,18 +686,9 @@ impl ProofFacts {
         let assumptions = facts.pure_context();
         let mut implicit_transport_assumptions = PureFactContext::new();
         let mut by_predicate = PersistentMap::default();
-        // Many facts read one entry memory: reserve its variables once.
-        let collected_variables = crate::kernel::reasoning::collecting_each_memory_once(|| {
-            let mut variables = BTreeSet::new();
-            for fact in facts.propositions() {
-                variables.extend(crate::kernel::proposition_variables(fact));
-            }
-            variables
-        });
-        for variable in collected_variables {
-            reserved_variables = reserved_variables.with_value(variable);
-        }
         for fact in facts.propositions() {
+            (reserved_variables, reserved_snapshots) =
+                reserve_fact_variables(fact, reserved_variables, reserved_snapshots);
             if top_level_exact.contains(fact) {
                 continue;
             }
@@ -719,6 +752,7 @@ impl ProofFacts {
         Self {
             ordered,
             reserved_variables,
+            reserved_snapshots,
             prioritized: None,
             top_level_exact,
             exact,
@@ -859,13 +893,15 @@ impl ProofFacts {
             self.implicit_transport_assumptions.clone(),
             fact.as_ref(),
         );
-        let mut reserved_variables = self.reserved_variables.clone();
-        for variable in crate::kernel::proposition_variables(fact.as_ref()) {
-            reserved_variables = reserved_variables.with_value(variable);
-        }
+        let (reserved_variables, reserved_snapshots) = reserve_fact_variables(
+            fact.as_ref(),
+            self.reserved_variables.clone(),
+            self.reserved_snapshots.clone(),
+        );
         Self {
             ordered,
             reserved_variables,
+            reserved_snapshots,
             prioritized: self.prioritized.clone(),
             top_level_exact: self.top_level_exact.with_value(Arc::clone(&fact)),
             exact,
