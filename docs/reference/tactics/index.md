@@ -356,6 +356,23 @@ limit. Use `step()` to finish a continuing arm and `execute()` after the join.
 
 **Checked examples:** [`execute_branch_arm_stops_at_shared_continuation.md`](https://github.com/clicklang/click/blob/master/mdtests/execute_branch_arm_stops_at_shared_continuation.md), [`tactic_execute.md`](https://github.com/clicklang/click/blob/master/mdtests/tactic_execute.md)
 
+### Goals after execution
+
+When execution reaches function exit, each path's open goals are the
+contract's claims in the order the contract writes them: every `ensures`, and
+every `owns` and `produces` clause, whose goal is that the path still holds the
+instance. `views` and `consumes` clauses make no claim. A closer (`assumption`,
+`normalize`, `arithmetic`, `both`) acts on the first open goal, and a refusal
+names that goal; it does not look further down the list for a claim it could
+close (`mdtests/a_closer_after_execution_acts_on_the_first_open_claim.md`).
+`assumption()` closes a resource goal whose instance the path holds
+(`mdtests/closers_after_execution_close_a_resource_goal_first.md`). A closer
+written when every goal on the path is closed is refused
+(`mdtests/a_closer_with_no_open_goal_is_refused.md`). `fold`, `apply`, `have`
+and the other tactics that change the path's facts or resources act on the path
+and leave the goal list alone; the implicit `auto` at the end of the script
+closes the goals still open.
+
 ### Execution to a program point
 
 **Form:** `execute_until(statement(N))`

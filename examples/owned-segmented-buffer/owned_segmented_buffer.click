@@ -175,6 +175,7 @@ int32 owned_segmented_buffer_swap(struct owned_segmented_buffer* owner) {
         };
         assumption();
     }
+    assumption();
     normalize();
     assumption();
     assumption();
