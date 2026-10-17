@@ -783,43 +783,6 @@ pub(in crate::surface) fn standard_library_function_block(
         .cloned())
 }
 
-/// Every matched-arm child slot of `definition`, mapped to the resource it
-/// declares. A slot two arms spell with different resources maps to `None`;
-/// the proof's own `fold` spelling then decides, and this pass checks
-/// nothing about it.
-fn matched_arm_child_slots(definition: &ResourceDefinition) -> BTreeMap<String, Option<String>> {
-    let mut slots: BTreeMap<String, Option<String>> = BTreeMap::new();
-    let Some(body) = definition.composite_body() else {
-        return slots;
-    };
-    // An unmatched body's named children are its slots as well.
-    let bodies = std::iter::once(body).chain(
-        body.matched
-            .iter()
-            .flat_map(|matched| &matched.arms)
-            .map(|arm| &arm.body),
-    );
-    for body in bodies {
-        for clause in &body.contains {
-            let ResourceClause::Named { binding, resource } = clause else {
-                continue;
-            };
-            let ResourceClause::Declared { name, .. } = resource.as_ref() else {
-                continue;
-            };
-            slots
-                .entry(binding.name.clone())
-                .and_modify(|existing| {
-                    if existing.as_deref() != Some(name.as_str()) {
-                        *existing = None;
-                    }
-                })
-                .or_insert_with(|| Some(name.clone()));
-        }
-    }
-    slots
-}
-
 /// The standard library's expansion. The field schemas and family rules need
 /// the library itself, so it applies neither; every verification unit's
 /// expansion below applies both.
@@ -913,7 +876,12 @@ fn expand_declared_resource_clauses_with_rules(
                     } else {
                         ResourceKind::Token
                     },
-                    child_slots: std::sync::Arc::new(matched_arm_child_slots(definition)),
+                    child_slots: std::sync::Arc::new(
+                        definition
+                            .composite_body()
+                            .map(CompositeResourceBody::child_slot_resources)
+                            .unwrap_or_default(),
+                    ),
                 },
             ))
         })
