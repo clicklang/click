@@ -223,9 +223,8 @@ pub(super) fn instantiate_theorem_application_with_assumptions(
     unfolded_predicates: &[String],
 ) -> Result<Vec<Proposition>, ClickError> {
     let evidence_context = std::cell::OnceCell::new();
-    let evidence_assumptions = || {
-        evidence_context.get_or_init(|| assumptions_from_propositions(available))
-    };
+    let evidence_assumptions =
+        || evidence_context.get_or_init(|| assumptions_from_propositions(available));
     if is_integer_range_fold_theorem_name(&application.name) {
         return instantiate_integer_range_fold_theorem_application(
             application,
