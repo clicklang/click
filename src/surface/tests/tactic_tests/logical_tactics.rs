@@ -1,6 +1,31 @@
 use super::*;
 
 #[test]
+fn fixed_state_simp_closes_from_false_without_leaking_into_other_contracts() {
+    let c_source = "int32 f(int32 x) { return x; }\n";
+    let source = r#"
+        verifying "f.c";
+        int32 f(int32 x) {
+            requires false;
+            ensures result == 0;
+        } by {
+            execute();
+            simp();
+        }
+    "#;
+    verify_c0_sources(source, &[("f.c", c_source)])
+        .expect("the fixed-state goal follows from its explicit false premise");
+    assert!(
+        verify_c0_sources(
+            &source.replace("requires false;", "requires true;"),
+            &[("f.c", c_source)],
+        )
+        .is_err(),
+        "a different contract must still prove its actual return value"
+    );
+}
+
+#[test]
 fn simp_rewrites_constructor_equality_before_disequality() {
     let click_source = r#"
             spec enum Mark { Clear, Set }
