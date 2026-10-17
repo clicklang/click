@@ -10676,6 +10676,12 @@ fn prepare_contract_resource_transfer_unexplained(
                         .resources()
                         .view_occurrences_for_fact(&requirement.fact, assumptions)
                         .is_empty()
+                    // Owned pieces that together cover the range supply it:
+                    // the planner joins them into one owner and lends that.
+                    && caller_state
+                        .resources()
+                        .with_coalesced_owned_memory(&requirement.fact, assumptions)
+                        .is_none()
             };
             matches!(
                 requirement.fact.resource(),

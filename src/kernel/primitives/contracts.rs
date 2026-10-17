@@ -149,7 +149,29 @@ impl CGlobal {
             pointee_volatile: false,
             constant: false,
             pointee_constant: false,
+            declared_class: None,
         }
+    }
+
+    /// Records the class the frontend gives the object.
+    pub fn with_declared_class(
+        mut self,
+        class: Option<crate::kernel::effective_type::CAccessClass>,
+    ) -> Self {
+        // A class the kernel type already gives is not stored, so a
+        // declaration lowered with and without the frontend's knowledge
+        // stays one declaration.
+        let derived = crate::kernel::effective_type::CAccessClass::of_kernel_type(self.c_type);
+        self.declared_class = class.filter(|class| derived.as_ref() != Some(class));
+        self
+    }
+
+    /// The class the object's block records: the frontend's, or what the
+    /// kernel type gives.
+    pub fn declared_class(&self) -> Option<crate::kernel::effective_type::CAccessClass> {
+        self.declared_class
+            .clone()
+            .or_else(|| crate::kernel::effective_type::CAccessClass::of_kernel_type(self.c_type))
     }
 
     pub fn name(&self) -> &str {
@@ -249,7 +271,30 @@ impl CGlobalArray {
             length,
             initial_values,
             constant: false,
+            declared_class: None,
         }
+    }
+
+    /// Records the class the frontend gives the object.
+    pub fn with_declared_class(
+        mut self,
+        class: Option<crate::kernel::effective_type::CAccessClass>,
+    ) -> Self {
+        // A class the kernel type already gives is not stored, so a
+        // declaration lowered with and without the frontend's knowledge
+        // stays one declaration.
+        let derived =
+            crate::kernel::effective_type::CAccessClass::of_kernel_type(self.element_type);
+        self.declared_class = class.filter(|class| derived.as_ref() != Some(class));
+        self
+    }
+
+    /// The class the object's block records: the frontend's, or what the
+    /// kernel type gives.
+    pub fn declared_class(&self) -> Option<crate::kernel::effective_type::CAccessClass> {
+        self.declared_class.clone().or_else(|| {
+            crate::kernel::effective_type::CAccessClass::of_kernel_type(self.element_type)
+        })
     }
 
     pub fn name(&self) -> &str {
@@ -303,7 +348,23 @@ impl CGlobalAggregate {
             layout,
             initializers,
             constant: false,
+            declared_class: None,
         }
+    }
+
+    /// Records the class the frontend gives the object.
+    pub fn with_declared_class(
+        mut self,
+        class: Option<crate::kernel::effective_type::CAccessClass>,
+    ) -> Self {
+        self.declared_class = class;
+        self
+    }
+
+    /// The class the object's block records: the frontend's, or what the
+    /// kernel type gives.
+    pub fn declared_class(&self) -> Option<crate::kernel::effective_type::CAccessClass> {
+        self.declared_class.clone()
     }
 
     pub fn source_name(&self) -> &str {
@@ -359,7 +420,23 @@ impl CGlobalAggregateArray {
             length,
             initializers,
             constant: false,
+            declared_class: None,
         }
+    }
+
+    /// Records the class the frontend gives the object.
+    pub fn with_declared_class(
+        mut self,
+        class: Option<crate::kernel::effective_type::CAccessClass>,
+    ) -> Self {
+        self.declared_class = class;
+        self
+    }
+
+    /// The class the object's block records: the frontend's, or what the
+    /// kernel type gives.
+    pub fn declared_class(&self) -> Option<crate::kernel::effective_type::CAccessClass> {
+        self.declared_class.clone()
     }
 
     pub fn source_name(&self) -> &str {
@@ -1097,7 +1174,7 @@ impl CFunction {
             source_body: body.clone(),
             body,
             control_targets: std::sync::Arc::new(BTreeMap::new()),
-            contract_interface: CFunctionContractInterface::new(return_type, parameters),
+            contract_interface: Arc::new(CFunctionContractInterface::new(return_type, parameters)),
             global_variables: Vec::new(),
             global_arrays: Vec::new(),
             static_variables: Vec::new(),
@@ -1240,20 +1317,21 @@ impl CFunction {
         requires: Vec<CResourceSpec>,
         ensures: Vec<CResourceSpec>,
     ) -> Self {
-        self.contract_interface.resource_requires = requires;
-        self.contract_interface.resource_ensures = ensures;
+        Arc::make_mut(&mut self.contract_interface).resource_requires = requires;
+        Arc::make_mut(&mut self.contract_interface).resource_ensures = ensures;
         self
     }
 
     pub fn with_resource_constructors(mut self, constructors: Vec<CResourceSpec>) -> Self {
-        self.contract_interface.resource_constructors = constructors;
+        Arc::make_mut(&mut self.contract_interface).resource_constructors = constructors;
         self
     }
 
     /// Internal staging hook for importers and tests. No source frontend opts
     /// into the exceptional channel yet.
     pub(crate) fn with_int32_exceptional_outcome(mut self) -> Self {
-        self.contract_interface.exceptional_signature = CExceptionalSignature::Int32;
+        Arc::make_mut(&mut self.contract_interface).exceptional_signature =
+            CExceptionalSignature::Int32;
         self
     }
 
@@ -1261,7 +1339,7 @@ impl CFunction {
     /// payload is available to these propositions through the kernel's
     /// exceptional-result binding.
     pub(crate) fn with_exceptional_ensures(mut self, ensures: Vec<SpecProposition>) -> Self {
-        self.contract_interface.exceptional_ensures = ensures;
+        Arc::make_mut(&mut self.contract_interface).exceptional_ensures = ensures;
         self
     }
 
@@ -1273,17 +1351,17 @@ impl CFunction {
         claims: Vec<CFunctionContractClaim>,
         opaque_supported: bool,
     ) -> Self {
-        self.contract_interface.contract_requires = requires;
-        self.contract_interface.contract_requirement_sources =
+        Arc::make_mut(&mut self.contract_interface).contract_requires = requires;
+        Arc::make_mut(&mut self.contract_interface).contract_requirement_sources =
             ContractRequirementSources(vec![None; self.contract_interface.contract_requires.len()]);
-        self.contract_interface.contract_ensures = ensures;
-        self.contract_interface.contract_mutable = mutable;
-        self.contract_interface.resource_derived_frame_mixed = false;
-        self.contract_interface.contract_effect_claim_required =
+        Arc::make_mut(&mut self.contract_interface).contract_ensures = ensures;
+        Arc::make_mut(&mut self.contract_interface).contract_mutable = mutable;
+        Arc::make_mut(&mut self.contract_interface).resource_derived_frame_mixed = false;
+        Arc::make_mut(&mut self.contract_interface).contract_effect_claim_required =
             !self.contract_interface.contract_mutable.is_empty();
-        self.contract_interface.resource_derived_mutable_frame = false;
-        self.contract_interface.contract_claims = claims;
-        self.contract_interface.opaque_contract_supported = opaque_supported;
+        Arc::make_mut(&mut self.contract_interface).resource_derived_mutable_frame = false;
+        Arc::make_mut(&mut self.contract_interface).contract_claims = claims;
+        Arc::make_mut(&mut self.contract_interface).opaque_contract_supported = opaque_supported;
         self
     }
 
@@ -1294,7 +1372,7 @@ impl CFunction {
     /// to it, names the function that declared the measure, and a function
     /// that declares none is a different `CFunction`.
     pub fn with_recursion_measure(mut self, measure: Vec<CRankingComponent>) -> Self {
-        self.contract_interface.recursion_measure = measure;
+        Arc::make_mut(&mut self.contract_interface).recursion_measure = measure;
         self
     }
 
@@ -1304,7 +1382,7 @@ impl CFunction {
     /// exactly these functions.
     /// Declares a structural `decreases t` measure ranked at each call.
     pub fn with_recursion_binder(mut self, binder: Option<String>) -> Self {
-        self.contract_interface.recursion_binder = binder;
+        Arc::make_mut(&mut self.contract_interface).recursion_binder = binder;
         self
     }
 
@@ -1312,7 +1390,7 @@ impl CFunction {
         peers.sort();
         peers.dedup();
         peers.retain(|peer| peer != &self.name);
-        self.contract_interface.recursion_peers = peers;
+        Arc::make_mut(&mut self.contract_interface).recursion_peers = peers;
         self
     }
 
@@ -1322,13 +1400,14 @@ impl CFunction {
             self.contract_interface.contract_requires.len(),
             "contract requirement source map must match lowered requirements"
         );
-        self.contract_interface.contract_requirement_sources = ContractRequirementSources(sources);
+        Arc::make_mut(&mut self.contract_interface).contract_requirement_sources =
+            ContractRequirementSources(sources);
         self
     }
 
     #[cfg(test)]
     pub(crate) fn without_test_contract_requirement_sources(mut self) -> Self {
-        self.contract_interface.contract_requirement_sources =
+        Arc::make_mut(&mut self.contract_interface).contract_requirement_sources =
             ContractRequirementSources::default();
         self
     }
@@ -1345,10 +1424,10 @@ impl CFunction {
     /// a resource-derived frame is a mixed interface, refused when the
     /// projection is asked for.
     pub(crate) fn with_resource_derived_mutable_frame(mut self) -> Self {
-        self.contract_interface.contract_effect_claim_required = false;
-        self.contract_interface.resource_derived_frame_mixed =
+        Arc::make_mut(&mut self.contract_interface).contract_effect_claim_required = false;
+        Arc::make_mut(&mut self.contract_interface).resource_derived_frame_mixed =
             !self.contract_interface.contract_mutable.is_empty();
-        self.contract_interface.resource_derived_mutable_frame = true;
+        Arc::make_mut(&mut self.contract_interface).resource_derived_mutable_frame = true;
         self
     }
 
@@ -1359,7 +1438,7 @@ impl CFunction {
         definitions.sort_by(|left, right| left.name().cmp(right.name()));
         super::super::thread_confinement::propagate_thread_confinement(&mut definitions);
         super::super::owned_footprint_reach::propagate_owned_footprint_reach(&mut definitions);
-        self.contract_interface.composite_resource_definitions = definitions;
+        Arc::make_mut(&mut self.contract_interface).composite_resource_definitions = definitions;
         self
     }
 
@@ -1384,12 +1463,12 @@ impl CFunction {
     pub fn with_ordinary_abstract_families(mut self, mut families: Vec<String>) -> Self {
         families.sort();
         families.dedup();
-        self.contract_interface.ordinary_abstract_families = families;
+        Arc::make_mut(&mut self.contract_interface).ordinary_abstract_families = families;
         self
     }
 
     pub fn with_predicate_unfoldings(mut self, unfoldings: Vec<CPredicateUnfolding>) -> Self {
-        self.contract_interface.predicate_unfoldings = unfoldings;
+        Arc::make_mut(&mut self.contract_interface).predicate_unfoldings = unfoldings;
         self
     }
 
@@ -1398,7 +1477,7 @@ impl CFunction {
     }
 
     pub fn with_return_pointee_constant(mut self, constant: bool) -> Self {
-        self.contract_interface.return_pointee_constant = constant;
+        Arc::make_mut(&mut self.contract_interface).return_pointee_constant = constant;
         self
     }
 
@@ -1406,7 +1485,7 @@ impl CFunction {
         mut self,
         class: Option<crate::kernel::effective_type::CAccessClass>,
     ) -> Self {
-        self.contract_interface.return_pointee_class = class;
+        Arc::make_mut(&mut self.contract_interface).return_pointee_class = class;
         self
     }
 
@@ -1419,16 +1498,18 @@ impl CFunction {
     }
 
     pub fn with_return_aggregate_layout(mut self, layout: CAggregateLayout) -> Self {
-        self.contract_interface.return_aggregate_layout = Some(layout);
-        self.contract_interface.aggregate_return_mode = CAggregateReturnMode::Copy;
+        Arc::make_mut(&mut self.contract_interface).return_aggregate_layout = Some(layout);
+        Arc::make_mut(&mut self.contract_interface).aggregate_return_mode =
+            CAggregateReturnMode::Copy;
         self
     }
 
     /// Selects completion into a separately supplied call destination. The
     /// contract must describe its actual storage authority and write effects.
     pub fn with_construction_return(mut self, layout: CAggregateLayout) -> Self {
-        self.contract_interface.return_aggregate_layout = Some(layout);
-        self.contract_interface.aggregate_return_mode = CAggregateReturnMode::Construction;
+        Arc::make_mut(&mut self.contract_interface).return_aggregate_layout = Some(layout);
+        Arc::make_mut(&mut self.contract_interface).aggregate_return_mode =
+            CAggregateReturnMode::Construction;
         self
     }
 
@@ -1436,7 +1517,7 @@ impl CFunction {
     /// by this ordinary pointer parameter. Binding grants no storage or authority.
     /// Checked summaries retain the initialization established by the body.
     pub fn with_construction_parameter(mut self, index: usize, layout: CAggregateLayout) -> Self {
-        self.contract_interface.construction_parameter = Some((index, layout));
+        Arc::make_mut(&mut self.contract_interface).construction_parameter = Some((index, layout));
         self
     }
 
@@ -1458,7 +1539,7 @@ impl CFunction {
     }
 
     pub(crate) fn pop_parameter(&mut self) -> Option<CParameter> {
-        self.contract_interface.parameters.pop()
+        Arc::make_mut(&mut self.contract_interface).parameters.pop()
     }
 
     /// This function with its last `count` parameters as contract value
@@ -1468,9 +1549,9 @@ impl CFunction {
         if count == 0 {
             return Some(self);
         }
-        self.contract_interface = self
-            .contract_interface
-            .with_trailing_value_parameters(count)?;
+        self.contract_interface = Arc::new(
+            Arc::unwrap_or_clone(self.contract_interface).with_trailing_value_parameters(count)?,
+        );
         Some(self)
     }
 
@@ -1543,7 +1624,9 @@ impl CFunction {
     }
 
     pub(crate) fn pop_contract_requirement(&mut self) -> Option<SpecProposition> {
-        self.contract_interface.contract_requires.pop()
+        Arc::make_mut(&mut self.contract_interface)
+            .contract_requires
+            .pop()
     }
 
     pub fn contract_ensures(&self) -> &[SpecProposition] {
@@ -3208,8 +3291,8 @@ impl CFunctionSpecification {
     ) -> Self {
         Self {
             state,
-            arguments,
-            requires,
+            arguments: arguments.into(),
+            requires: requires.into(),
             outcome,
         }
     }

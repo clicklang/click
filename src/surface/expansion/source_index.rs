@@ -141,6 +141,32 @@ impl ProofSourceIndex {
         Ok(result)
     }
 
+    /// Every written proof block the lexical index found, with the start of
+    /// each tactic in it, for comparison with the parser's own spans.
+    #[cfg(test)]
+    pub(in crate::surface) fn written_blocks(
+        &self,
+    ) -> Vec<(SourcePosition, SourcePosition, Vec<SourcePosition>)> {
+        let mut blocks = self
+            .blocks
+            .iter()
+            .filter(|(open, _)| !self.tokens[**open].span.is_empty())
+            .map(|(open, children)| {
+                let close = self.pairs[*open].expect("balanced block");
+                (
+                    self.positions[*open].clone(),
+                    self.positions[close].clone(),
+                    children
+                        .iter()
+                        .map(|child| self.positions[*child].clone())
+                        .collect(),
+                )
+            })
+            .collect::<Vec<_>>();
+        blocks.sort_by_key(|(open, _, _)| (open.line, open.column));
+        blocks
+    }
+
     fn position_at(&self, offset: usize) -> SourcePosition {
         let character = self.characters.partition_point(|&start| start < offset);
         let line = self.lines.partition_point(|&start| start <= character) - 1;

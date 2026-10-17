@@ -1480,10 +1480,17 @@ the class's own (`mdtests/cpp_polymorphic_destructor_runs_its_body.md`,
 `mdtests/cpp_polymorphic_destructor_rejects_overclaim.md`). It is reached by
 reference or built in a local by its explicit constructor, `Square sq(3);`.
 The compiler's setting of the vtable pointer is trusted; the constructor's
-contract owns and establishes only the class's own fields. While the object
+contract owns and establishes the object's fields. While the object
 constructs its dynamic type changes, so such a constructor initializes its
-members without reading `this` and has an empty body, and its base, if any,
-has no fields, bases or constructor of its own. Copies, objects returned by
+members without reading `this` and has an empty body. Its base, if any, has
+no base of its own, and is built first: by its own non-default constructor,
+named first in the initializer list, `Square(int s) : Shape(7), side(s)`,
+which the importer calls on the base subobject before the members, or, for a
+base with no fields and no constructor, implicitly. The derived
+constructor's contract owns the base's fields as `this->base.tag` and lends
+them to the base's constructor
+(`mdtests/cpp_polymorphic_base_construction.md`,
+`mdtests/cpp_polymorphic_base_construction_rejects_overclaim.md`). Copies, objects returned by
 value, base destructors with effects, covariant results and a pure
 virtual method with a definition remain unsupported
 (`mdtests/cpp_virtual_override_rejects_narrower_requires.md`,
@@ -1537,10 +1544,15 @@ passing a `Square` therefore knows the object's `size` is its `side`, and
 after lending it as a `Shape&` that its `side` is the object's new `size`
 and nothing of the `side` it lent
 (`mdtests/cpp_class_object_state_mutable_reference_returns_new_state.md`).
-After a `const Shape&` conversion it likewise knows only the definitions:
-its other fields are forgotten, since keeping the memory lent for the call
-needs one view backed by the several owned pieces of a polymorphic object,
-which stable views do not yet support.
+Where the conversion is to `const Shape&`, the importer places
+`Square__click_pack_const__Shape` and `Square__click_unpack_const__Shape`
+instead: the pack views the memory and produces, beside the object, the
+resource `Square__click_lent__Shape(object) { views *object; }`, which keeps
+the memory lent until the unpack consumes both. Nothing can change the
+memory meanwhile, so the caller keeps every field, and the same object
+cannot also be handed over in that call as a mutable reference
+(`mdtests/cpp_class_const_reference_keeps_fields.md`,
+`mdtests/cpp_class_const_reference_lends_the_object.md`).
 
 Limits:
 - An override in a class without a defining `class` block is refused.

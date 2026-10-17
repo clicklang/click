@@ -6484,4 +6484,6 @@ fn indent_replacement(source: &str, start: usize, replacement: &str) -> String {
 }
 
 #[cfg(test)]
+mod span_tests;
+#[cfg(test)]
 mod tests;

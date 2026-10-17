@@ -499,11 +499,18 @@ impl LoweringContext<'_> {
         let mut derived_place = place.clone();
         derived_place.projections.truncate(derived_path.len());
         let address = c_cast(self.lower_place(&derived_place)?, CType::Int32Pointer);
-        self.pending_coercions.push((
-            crate::languages::cpp::names::object_pack_name(&derived, &base.base_name),
-            crate::languages::cpp::names::object_unpack_name(&derived, &base.base_name),
-            address,
-        ));
+        let (pack, unpack) = if base.is_const {
+            (
+                crate::languages::cpp::names::object_const_pack_name(&derived, &base.base_name),
+                crate::languages::cpp::names::object_const_unpack_name(&derived, &base.base_name),
+            )
+        } else {
+            (
+                crate::languages::cpp::names::object_pack_name(&derived, &base.base_name),
+                crate::languages::cpp::names::object_unpack_name(&derived, &base.base_name),
+            )
+        };
+        self.pending_coercions.push((pack, unpack, address));
         self.object_coercions
             .borrow_mut()
             .insert((derived, base.base_name.clone()));
@@ -768,6 +775,32 @@ impl LoweringContext<'_> {
                         .iter()
                         .map(super::schema::CppProjection::as_ref)
                         .chain(std::iter::once(super::schema::ProjectionRef::Field(field))),
+                )?;
+                let destination = c_cast(
+                    c_pointer_offset_bytes(c_variable(self.variable_name(object)), offset),
+                    CType::Int32Pointer,
+                );
+                let mut lowered = vec![destination];
+                lowered.extend(self.lower_call_arguments(arguments)?);
+                Ok(self.coerced(c_call(self.callee_name(callee)?, lowered)))
+            }
+            CppStatement::BaseConstruct {
+                object,
+                base,
+                callee,
+                arguments,
+                ..
+            } => {
+                // The base subobject's address: the base constructor runs on
+                // it, before the class's own members.
+                let place = self.place(object)?;
+                let (_, offset) = self.records.resolve_path(
+                    &place.value_type,
+                    object
+                        .projections
+                        .iter()
+                        .map(super::schema::CppProjection::as_ref)
+                        .chain(std::iter::once(super::schema::ProjectionRef::Base(base))),
                 )?;
                 let destination = c_cast(
                     c_pointer_offset_bytes(c_variable(self.variable_name(object)), offset),

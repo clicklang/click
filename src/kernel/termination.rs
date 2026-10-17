@@ -6438,9 +6438,7 @@ mod local_descent_tests {
     #[test]
     fn a_diverging_named_contract_refuses_the_pointer_call_that_applies_it() {
         let mut applies = pointer_rule("applies", &[], Some("callback"), &[]);
-        applies
-            .function
-            .contract_interface
+        Arc::make_mut(&mut applies.function.contract_interface)
             .contract_requires
             .push(SpecProposition::Predicate {
                 resource_state_dependent: true,

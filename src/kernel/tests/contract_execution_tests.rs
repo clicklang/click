@@ -6508,3 +6508,41 @@ fn a_produced_composite_is_certified_only_when_the_exit_establishes_its_body_fac
     );
     assert!(certified(0), "a store of 0 establishes the body fact");
 }
+
+/// A proof issues a theorem per path and claim, and each carries the
+/// function and its specification, so cloning them shares the contract and
+/// the specification's argument and requirement lists rather than copying
+/// lists that span every parameter once per claim (issues/scaling.md,
+/// cause 8).
+#[test]
+fn cloned_functions_and_specifications_share_their_contracts() {
+    let parameters = (0..8)
+        .map(|index| c_parameter(format!("p{index}"), CType::Int32Pointer))
+        .collect::<Vec<_>>();
+    let function = c_function(
+        CType::Int32,
+        "wide",
+        parameters,
+        c_return(c_int32_literal(0)),
+    );
+    let copy = function.clone();
+    assert!(Arc::ptr_eq(
+        &function.contract_interface,
+        &copy.contract_interface
+    ));
+
+    let specification = c_function_specification(
+        CState::new(),
+        (0..8)
+            .map(|index| CExpression::Value(int32(index)))
+            .collect(),
+        vec![Proposition::ConditionIs(ConditionTerm::Constant(true), true); 8],
+        CFunctionOutcome::Return {
+            value: int32(0),
+            state: Box::new(CState::new()),
+        },
+    );
+    let copy = specification.clone();
+    assert!(Arc::ptr_eq(&specification.arguments, &copy.arguments));
+    assert!(Arc::ptr_eq(&specification.requires, &copy.requires));
+}
