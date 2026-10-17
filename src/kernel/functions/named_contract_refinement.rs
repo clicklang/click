@@ -987,6 +987,11 @@ pub(super) fn function_refines_named_contract_in_case(
         return Ok(false);
     }
     preconditions = assumptions_with_propositions(&preconditions, case_assumptions);
+    // Both interfaces are evaluated over the same parameter values, and the
+    // contract's clauses are its callers' to establish: what a clause of
+    // either side designates is what the contract's own clauses do
+    // (`compatible_resource_and_effect_interfaces`).
+    preconditions = preconditions.assume_entry_clause_extents();
     if !prove_contract_propositions(
         &function_entry,
         &function_entry,
