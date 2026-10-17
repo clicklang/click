@@ -231,6 +231,36 @@ pub(in crate::surface) struct ProofBlockSpan {
     pub(in crate::surface) tactics: Vec<SourcePosition>,
 }
 
+/// Where the parser read a declaration's clauses: the position of the brace
+/// that opens them. It records where the declaration was read, not what it
+/// declares, so it never makes two declarations unequal.
+#[derive(Clone, Debug, Default)]
+pub struct DeclarationBody(pub(in crate::surface) Option<SourcePosition>);
+
+impl PartialEq for DeclarationBody {
+    fn eq(&self, _: &Self) -> bool {
+        true
+    }
+}
+
+impl Eq for DeclarationBody {}
+
+/// Where the parser read a file's proofs, in that file's own text. Like
+/// [`DeclarationBody`], it records where the file was read, not what it
+/// declares, so it never makes two files unequal.
+#[derive(Clone, Debug, Default)]
+pub(in crate::surface) struct SourceSpans {
+    pub(in crate::surface) proof_blocks: Vec<ProofBlockSpan>,
+}
+
+impl PartialEq for SourceSpans {
+    fn eq(&self, _: &Self) -> bool {
+        true
+    }
+}
+
+impl Eq for SourceSpans {}
+
 /// The braced proof blocks of `source`, as the parser reads them.
 #[cfg(test)]
 pub(in crate::surface) fn proof_block_spans(
@@ -239,8 +269,11 @@ pub(in crate::surface) fn proof_block_spans(
 ) -> Result<Vec<ProofBlockSpan>, ClickError> {
     let mut parser = Parser::with_program_layouts(source, layouts, None)?;
     parser.plain_char = Some(crate::languages::c::target::CTarget::SUPPORTED.plain_char());
-    parser.parse_file_items()?;
-    Ok(parser.proof_block_spans)
+    Ok(parser
+        .parse_file_items()?
+        .source_spans()
+        .proof_blocks
+        .clone())
 }
 
 pub(super) fn parse_with_layouts_and_aggregate_objects(
@@ -324,7 +357,7 @@ pub(super) fn parse_file_items_for_module(
     imported_callees: &[ImportedCallee<'_>],
     imported_resources: &[&ResourceDefinition],
     layouts: ProgramLayouts,
-) -> Result<(ClickFile, Vec<ProofBlockSpan>), ClickError> {
+) -> Result<ClickFile, ClickError> {
     let mut parser = Parser::with_program_layouts(
         source,
         layouts,
@@ -400,8 +433,7 @@ pub(super) fn parse_file_items_for_module(
             );
         }
     }
-    let file = parser.parse_file_items()?;
-    Ok((file, parser.proof_block_spans))
+    parser.parse_file_items()
 }
 
 /// The names of the standard library's pure functions, read from its tokens
@@ -1712,6 +1744,9 @@ impl Parser {
             tactic_definitions,
             declaration_owners: BTreeMap::new(),
             entry_module: None,
+            source_spans: std::sync::Arc::new(SourceSpans {
+                proof_blocks: std::mem::take(&mut self.proof_block_spans),
+            }),
         };
         Ok(file)
     }
@@ -3236,6 +3271,7 @@ impl Parser {
             None
         };
         let mut target_instances = Vec::new();
+        let body_open = self.here();
         self.expect(Token::LBrace)?;
 
         let parameter_names = parsed_parameters
@@ -3475,8 +3511,8 @@ impl Parser {
             })
             .collect();
         let ensure_claim_ids = flattened_claim_ids(&ensure_kinds, &ensure_source_clauses);
-
         Ok(TheoremDefinition {
+            body: DeclarationBody(body_open),
             name,
             type_parameters,
             parameters: parsed_parameters.parameters,
@@ -3545,6 +3581,7 @@ impl Parser {
                 reference_params.insert(name.clone());
             }
         }
+        let body_open = self.here();
         self.expect(Token::LBrace)?;
 
         let parameter_names = signature
@@ -4224,6 +4261,7 @@ impl Parser {
             signature.parameters = parameters;
         }
         Ok(FunctionBlock {
+            body: DeclarationBody(body_open),
             c_object_names,
             recursion_peers,
             signature,

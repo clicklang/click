@@ -548,6 +548,7 @@ mod tests {
         parameter_names: &[&str],
     ) -> FunctionBlock {
         FunctionBlock {
+            body: Default::default(),
             c_object_names: Default::default(),
             recursion_peers: Vec::new(),
             signature: FunctionSignature {
