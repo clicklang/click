@@ -68,3 +68,73 @@ fn cli_watchdog_stops_a_verifier_that_does_not_poll() {
         String::from_utf8_lossy(&output.stderr)
     );
 }
+
+#[test]
+fn audit_run_deadline_prints_summary_and_resume() {
+    let directory = tempfile::tempdir().unwrap();
+    let source = (0..5000)
+        .map(|index| format!("theorem identity_{index}() {{ ensures 0 == 0 by simp(); }}\n"))
+        .collect::<String>();
+    std::fs::write(directory.path().join("unit.click"), source).unwrap();
+
+    for cursor in [None, Some("unit.click:1:1")] {
+        let mut command = Command::new(env!("CARGO_BIN_EXE_click"));
+        command.current_dir(directory.path()).args([
+            "audit",
+            "--time-limit",
+            "1ms",
+            "--session-time-limit",
+            "5s",
+        ]);
+        command.env_remove("CLICK_DEBUG_BLOCK_VERIFIER");
+        if let Some(cursor) = cursor {
+            command.args(["--start-at", cursor]);
+        }
+        command.arg("unit.click");
+        let output = bounded_output(command);
+        assert_eq!(output.status.code(), Some(1));
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(stdout.contains("SUMMARY:"), "{stdout}\n{stderr}");
+        assert!(stdout.contains("RESUME:"), "{stdout}\n{stderr}");
+        if let Some(cursor) = cursor {
+            assert!(stdout.contains(&format!("--start-at {cursor}")), "{stdout}");
+        } else {
+            assert!(!stdout.contains("--start-at"), "{stdout}");
+        }
+        assert!(stderr.contains("audit stopped at its"), "{stderr}");
+        assert!(
+            !stderr.contains("stopped by wall-clock crash-containment bound"),
+            "{stderr}"
+        );
+    }
+}
+
+#[test]
+fn audit_watchdog_keeps_its_configured_phase_bound() {
+    let directory = tempfile::tempdir().unwrap();
+    std::fs::write(
+        directory.path().join("unit.click"),
+        "theorem identity() { ensures 0 == 0 by simp(); }\n",
+    )
+    .unwrap();
+    let mut command = Command::new(env!("CARGO_BIN_EXE_click"));
+    command
+        .current_dir(directory.path())
+        .args([
+            "audit",
+            "--time-limit",
+            "1s",
+            "--session-time-limit",
+            "2s",
+            "unit.click",
+        ])
+        .env("CLICK_DEBUG_BLOCK_VERIFIER", "1");
+    let output = bounded_output(command);
+    assert_eq!(output.status.code(), Some(1));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("stopped by wall-clock crash-containment bound after 2.000s"),
+        "{stderr}"
+    );
+}

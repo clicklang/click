@@ -62,9 +62,10 @@ machine under any load. The performance comparison fails when the rewritten
 proof's cold verification spends both more than twice the original's work and
 more than the configured slack beyond it. Each phase also fails when it spends
 more than its work budget. Wall-clock times are reported as information only.
-A phase time limit is a crash-containment bound for a hung or starved run, and
-the whole-run time limit stops at a resumable cursor. Verification inside each
-phase keeps the per-tactic work budgets [`click verify`](verify.md#deterministic-verdicts) applies; no tactic has a wall-clock limit.
+A phase time limit is a crash-containment bound for a hung or starved run.
+The whole-run deadline interrupts phases cooperatively; the process watchdog
+retains the configured phase limit rather than the time left in the run.
+Verification inside each phase keeps the per-tactic work budgets [`click verify`](verify.md#deterministic-verdicts) applies; no tactic has a wall-clock limit.
 
 ## Options and defaults
 
@@ -95,9 +96,13 @@ ambiguous claim across sidecars are errors.
 ## Output and exit behavior
 
 Passing progress is one row per claim; `--verbose` includes its phase costs. A bounded or
-timed-out run prints a resumable `--start-at` command with the active selection
-and output mode. The summary distinguishes passing sites, site failures, claim failures,
-session failures, and incomplete work.
+timed-out run prints a resumable command with the active selection and output
+mode. After inventory, its `--start-at` cursor retries the unfinished site
+inclusively. If preparation is interrupted before sites are known, the summary
+reports that no sites were audited and the command restarts the same selection,
+retaining an existing cursor if one was supplied. The summary distinguishes
+passing sites, site failures, claim failures, session failures, and incomplete
+work.
 
 The command exits with status 1 for any audit failure or exhausted hard limit.
 A full audit is a manual release gate for expansion integrity and performance,

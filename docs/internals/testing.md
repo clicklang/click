@@ -5,6 +5,9 @@ The debug-only `CLICK_DEBUG_BLOCK_VERIFIER` hook parks the verifier after its
 containment scope opens, without polling a deadline. The child must exit with
 a containment message; an independent outer test bound kills a broken child.
 A normal verification also checks cancellation of a long-lived watchdog.
+Audit regressions distinguish its whole-run pacing deadline from a phase's
+crash bound: a short healthy run prints a summary and resume command, while
+a deliberately blocked phase retains its configured watchdog duration.
 The hook is omitted from release builds, and library tests retain cooperative
 limits without process termination.
 
@@ -1388,11 +1391,13 @@ runs are warm.
 
 A phase's wall-clock limit is crash containment only (default 10 minutes
 each), for a hung or CPU-starved run. The whole run is also bounded by
-`--time-limit` (default 10 minutes). Every blocking phase is capped by the
-time remaining in that deadline, including session initialization and cold
-verification. Reaching it stops at the current inclusive cursor, prints one
-resume command, and exits unsuccessfully without counting deadline exhaustion
-as a Click check failure.
+`--time-limit` (default 10 minutes). Every blocking phase observes the
+remaining whole-run time cooperatively, including session initialization and
+cold verification. Each phase's process watchdog retains its configured crash
+bound. Reaching the whole-run deadline stops at the current inclusive cursor,
+prints a summary and resume command, and exits unsuccessfully without counting
+deadline exhaustion as a Click check failure. An interruption during preparation
+prints a restart of the same selection, preserving any supplied cursor.
 
 ### Time limits and resuming
 

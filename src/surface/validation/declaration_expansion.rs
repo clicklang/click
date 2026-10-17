@@ -509,7 +509,6 @@ fn empty_library_file() -> Result<ClickFile, ClickError> {
         &[],
         Default::default(),
     )
-    .map(|(file, _)| file)
 }
 
 /// Parses each module in library order with the declarations of the modules
@@ -540,7 +539,7 @@ fn load_library_modules(modules: &[(&str, &str)]) -> Result<Vec<LibraryModule>, 
             )
             .collect::<Vec<_>>();
         let resources = context.resource_definitions().iter().collect::<Vec<_>>();
-        let (module, _) = parser::parse_file_items_for_module(
+        let module = parser::parse_file_items_for_module(
             source,
             identity,
             0,
@@ -1387,13 +1386,11 @@ fn expand_declared_resource_structural_clause(
     mut clause: StructuralClause,
     resource_definitions: &DeclaredResourceScope,
 ) -> Result<StructuralClause, ClickError> {
-    clause.items = clause
-        .items
+    clause.items = std::mem::take(&mut clause.items)
         .into_iter()
         .map(|item| expand_declared_resource_structural_item(item, resource_definitions))
         .collect::<Result<Vec<_>, _>>()?;
-    clause.resources = clause
-        .resources
+    clause.resources = std::mem::take(&mut clause.resources)
         .into_iter()
         .map(|resource| expand_declared_resource_clause(resource, resource_definitions))
         .collect::<Result<Vec<_>, _>>()?;

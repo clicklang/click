@@ -610,6 +610,18 @@ pub(crate) fn separation_candidate_cross_checks_enabled() -> bool {
     *ENABLED.get_or_init(|| std::env::var_os("CLICK_DEBUG_CHECK_SEPARATION_CANDIDATES").is_some())
 }
 
+/// Opt-in debug-build cross-check: `CLICK_DEBUG_CHECK_LAZY_RESERVATIONS=1`
+/// collects every lazy reservation a kernel execution bound answered and
+/// checks the bound's answer against it, for corpus validation. The flag is
+/// read here, outside the kernel; the check is uncharged and never decides.
+#[cfg(debug_assertions)]
+pub(crate) fn lazy_reservation_cross_checks_enabled() -> bool {
+    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ENABLED.get_or_init(|| {
+        std::env::var_os("CLICK_DEBUG_CHECK_LAZY_RESERVATIONS").is_some_and(|value| value == "1")
+    })
+}
+
 /// Whether the caller runs inside an [`uncharged_debug_check`]. A rule that
 /// collects side results from a predicate the check re-invokes skips them
 /// there, so a debug build collects exactly what a release build does.

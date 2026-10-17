@@ -96,7 +96,7 @@ defaults:
   --session-time-limit 10m         crash containment for inventory or session initialization
   --expansion-time-limit 10m       crash containment for one expansion
   --verification-time-limit 10m    crash containment for one verification
-  --time-limit 10m                 whole-run wall clock; prints the resume cursor
+  --time-limit 10m                 whole-run wall clock; prints a resume command
 
 options:
   --session-work-limit <UNITS>
@@ -142,6 +142,8 @@ struct Arguments {
 struct PhaseLimit {
     work: usize,
     time: Duration,
+    /// The whole-run cooperative deadline; never shortens the phase watchdog.
+    deadline: Option<Instant>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -160,14 +162,17 @@ impl Default for AuditLimits {
             session: PhaseLimit {
                 work: DEFAULT_SESSION_WORK_LIMIT,
                 time: DEFAULT_SESSION_LIMIT,
+                deadline: None,
             },
             expansion: PhaseLimit {
                 work: DEFAULT_EXPANSION_WORK_LIMIT,
                 time: DEFAULT_EXPANSION_LIMIT,
+                deadline: None,
             },
             verification: PhaseLimit {
                 work: DEFAULT_VERIFICATION_WORK_LIMIT,
                 time: DEFAULT_VERIFICATION_LIMIT,
+                deadline: None,
             },
             performance_slack: DEFAULT_PERFORMANCE_SLACK,
         }
@@ -175,13 +180,23 @@ impl Default for AuditLimits {
 }
 
 impl PhaseLimit {
-    /// This limit with its crash bound capped by what remains of the
-    /// whole-run `deadline`.
+    /// Attach the whole-run stopping point while retaining the configured
+    /// phase crash bound, including when sent to the session worker.
     fn within(self, deadline: Instant) -> Result<Self, String> {
-        Ok(Self {
-            work: self.work,
-            time: remaining_phase_limit(deadline, self.time)?,
-        })
+        let limit = Self {
+            deadline: Some(self.deadline.map_or(deadline, |outer| outer.min(deadline))),
+            ..self
+        };
+        if limit.deadline_exceeded() {
+            Err(RUN_LIMIT_EXHAUSTED.to_string())
+        } else {
+            Ok(limit)
+        }
+    }
+
+    fn deadline_exceeded(self) -> bool {
+        self.deadline
+            .is_some_and(|deadline| Instant::now() >= deadline)
     }
 }
 
@@ -211,18 +226,25 @@ fn run_phase<R>(
     limit: PhaseLimit,
     operation: impl FnOnce() -> Result<R, String>,
 ) -> Result<(R, PhaseCost), String> {
+    if limit.deadline_exceeded() {
+        return Err(RUN_LIMIT_EXHAUSTED.to_string());
+    }
     let time_limit = limit.time;
     let started = Instant::now();
     let (result, work) = click::instrumentation::measure_deterministic_work(|| {
-        cli::within_run_limits(
-            cli::RunLimits {
-                work: limit.work,
-                time: time_limit,
-            },
-            operation,
-        )
+        let bounds = cli::RunLimits {
+            work: limit.work,
+            time: time_limit,
+        };
+        match limit.deadline {
+            Some(deadline) => cli::within_run_limits_until(bounds, deadline, operation),
+            None => cli::within_run_limits(bounds, operation),
+        }
     });
     let elapsed = started.elapsed();
+    if limit.deadline_exceeded() {
+        return Err(RUN_LIMIT_EXHAUSTED.to_string());
+    }
     if elapsed >= time_limit {
         return Err(format!(
             "{label} crossed its {} crash-containment bound after {} ({work} work units); \
@@ -653,9 +675,13 @@ fn parse_work_units(source: &str) -> Result<usize, String> {
         .map_err(|_| format!("work-unit count `{source}` is too large"))
 }
 
-fn run_audit(arguments: Arguments) -> Result<(), String> {
-    let started = Instant::now();
-    let deadline = started + arguments.time_limit;
+struct AuditInventory {
+    sites: Vec<AuditSite>,
+    scoped_sites: Vec<AuditSite>,
+    discovery_failures: Vec<String>,
+}
+
+fn prepare_audit(arguments: &Arguments, deadline: Instant) -> Result<AuditInventory, String> {
     let sources = without_excluded(audit_targets(&arguments.path)?, &arguments.exclude)?;
     println!("INVENTORY");
     let inventory_limit = arguments.limits.session.within(deadline)?;
@@ -743,6 +769,43 @@ fn run_audit(arguments: Arguments) -> Result<(), String> {
     } else {
         claim_sites
     };
+
+    Ok(AuditInventory {
+        sites,
+        scoped_sites,
+        discovery_failures,
+    })
+}
+
+fn run_audit(arguments: Arguments) -> Result<(), String> {
+    let started = Instant::now();
+    let deadline = started + arguments.time_limit;
+    let inventory = prepare_audit(&arguments, deadline);
+    if Instant::now() >= deadline {
+        // Before inventory finishes there is no safe site cursor to invent.
+        // Keep the user's cursor, or the first selected site if it is known.
+        let resume_at = arguments.start_at.clone().or_else(|| {
+            inventory
+                .as_ref()
+                .ok()
+                .and_then(|inventory| inventory.scoped_sites.first())
+                .map(site_location)
+        });
+        println!("\nSUMMARY: 0 sites passed; audit preparation stopped");
+        println!("RESUME:");
+        println!("  {}", resume_command(&arguments, resume_at.as_ref()));
+        let _ = std::io::stdout().flush();
+        return Err(format!(
+            "audit stopped at its {} wall-clock run bound before auditing any sites \
+             ({RUN_LIMIT_EXHAUSTED}); resume with the command above",
+            format_duration(arguments.time_limit),
+        ));
+    }
+    let AuditInventory {
+        sites,
+        scoped_sites,
+        discovery_failures,
+    } = inventory?;
 
     let start_at = arguments
         .start_at
@@ -1363,6 +1426,9 @@ fn implicit_auto_sites(
     let mut sites = Vec::new();
     let mut failures = Vec::new();
     for source_path in sources {
+        if limit.deadline_exceeded() {
+            return Err(RUN_LIMIT_EXHAUSTED.to_string());
+        }
         let canonical_path = fs::canonicalize(source_path)
             .map_err(|error| format!("failed to resolve `{}`: {error}", source_path.display()))?;
         if is_expected_failure_mdtest(&canonical_path)? {
@@ -1403,6 +1469,9 @@ fn implicit_auto_sites(
             // A source with smart sites is verified again by its session,
             // which reports the failure; for one without, this is the check.
             Err(message) => {
+                if limit.deadline_exceeded() {
+                    return Err(RUN_LIMIT_EXHAUSTED.to_string());
+                }
                 if !smart_claims.iter().any(|(path, _)| path == &canonical_path) {
                     failures.push(format!("{}: {message}", canonical_path.display()));
                 }
@@ -1751,11 +1820,14 @@ fn format_location(location: &SourceLocation) -> String {
 
 fn print_resume(arguments: &Arguments, site: &AuditSite) {
     println!("RESUME:");
-    println!("  {}", resume_command(arguments, &site_location(site)));
+    println!(
+        "  {}",
+        resume_command(arguments, Some(&site_location(site)))
+    );
     let _ = std::io::stdout().flush();
 }
 
-fn resume_command(arguments: &Arguments, location: &SourceLocation) -> String {
+fn resume_command(arguments: &Arguments, location: Option<&SourceLocation>) -> String {
     let limits = &arguments.limits;
     let mut words = vec![
         "click".to_string(),
@@ -1799,22 +1871,16 @@ fn resume_command(arguments: &Arguments, location: &SourceLocation) -> String {
         words.push("--max-sites".to_string());
         words.push(max_sites.to_string());
     }
-    words.push("--start-at".to_string());
-    words.push(format_location(location));
+    if let Some(location) = location {
+        words.push("--start-at".to_string());
+        words.push(format_location(location));
+    }
     words.push(arguments.path.display().to_string());
     words
         .into_iter()
         .map(|word| shell_quote(&word))
         .collect::<Vec<_>>()
         .join(" ")
-}
-
-fn remaining_phase_limit(deadline: Instant, configured: Duration) -> Result<Duration, String> {
-    let remaining = deadline
-        .checked_duration_since(Instant::now())
-        .filter(|remaining| !remaining.is_zero())
-        .ok_or_else(|| RUN_LIMIT_EXHAUSTED.to_string())?;
-    Ok(configured.min(remaining))
 }
 
 /// The cost of each check of one site audited alone.

@@ -274,11 +274,11 @@ pub fn expand_c0_claim_source(
 ) -> Result<String, ClickError> {
     let sources = CSourceContext::bundle(c_sources);
     let tokens = proof_source_tokens(click_source)?;
-    let function = find_function(&tokens, function_name)?;
     let file = parse_source_with_c_layouts(click_source, c_sources)?;
     let function_block = proof_function_blocks(&file)
         .find(|function| function.signature().name() == function_name)
         .ok_or_else(|| ClickError::new(format!("unknown function `{function_name}`")))?;
+    let function = DeclarationSources::new(click_source, &tokens).function(function_block)?;
     let claim = covering_claim(function_block, claim);
     let edit = if claim == CProofClaim::Grouped {
         find_grouped_proof_edit(&tokens, &function, function_block)?
@@ -330,7 +330,8 @@ pub fn expand_verified_function_claim_source_by_label(
     };
     let function_name = function_block.signature().name();
     let tokens = proof_source_tokens(click_source)?;
-    let Ok(function) = find_function(&tokens, function_name) else {
+    let Ok(function) = DeclarationSources::new(click_source, &tokens).function(function_block)
+    else {
         return Ok(None);
     };
     let claim = covering_claim(function_block, claim);
@@ -374,10 +375,10 @@ fn expand_project_claim_source(
     let sources = CSourceContext::of(inputs)?.with_click_project(project);
     let file = resolve_click_project_context(project, &sources)?;
     let tokens = proof_source_tokens(click_source)?;
-    let function = find_function(&tokens, function_name)?;
     let function_block = proof_function_blocks(&file)
         .find(|function| function.signature().name() == function_name)
         .ok_or_else(|| ClickError::new(format!("unknown function `{function_name}`")))?;
+    let function = DeclarationSources::new(click_source, &tokens).function(function_block)?;
     let claim = covering_claim(function_block, claim);
     let edit = if claim == CProofClaim::Grouped {
         find_grouped_proof_edit(&tokens, &function, function_block)?
@@ -424,11 +425,11 @@ fn expand_c0_prepared_claim_source(
 ) -> Result<String, ClickError> {
     let sources = CSourceContext::prepared(imports);
     let tokens = proof_source_tokens(click_source)?;
-    let function = find_function(&tokens, function_name)?;
     let file = parse_source_with_c_layouts_context(click_source, &sources)?;
     let function_block = proof_function_blocks(&file)
         .find(|function| function.signature().name() == function_name)
         .ok_or_else(|| ClickError::new(format!("unknown function `{function_name}`")))?;
+    let function = DeclarationSources::new(click_source, &tokens).function(function_block)?;
     let claim = covering_claim(function_block, claim);
     let edit = if claim == CProofClaim::Grouped {
         find_grouped_proof_edit(&tokens, &function, function_block)?
@@ -668,10 +669,10 @@ fn expand_program_prepared_claim_source_context(
     let sources = CSourceContext::program(import)?;
     let file = parse_source_with_c_layouts_context(click_source, &sources)?;
     let tokens = proof_source_tokens(click_source)?;
-    let function = find_function(&tokens, function_name)?;
     let function_block = proof_function_blocks(&file)
         .find(|function| function.signature().name() == function_name)
         .ok_or_else(|| ClickError::new(format!("unknown function `{function_name}`")))?;
+    let function = DeclarationSources::new(click_source, &tokens).function(function_block)?;
     let claim = covering_claim(function_block, claim);
     let edit = if claim == CProofClaim::Grouped {
         find_grouped_proof_edit(&tokens, &function, function_block)?
@@ -1240,11 +1241,12 @@ pub(in crate::surface) fn verification_target_at_file(
 ) -> Result<VerificationTarget, ClickError> {
     let wanted = offset_at_position(click_source, line, column)?;
     let tokens = proof_source_tokens(click_source)?;
+    let declarations = DeclarationSources::new(click_source, &tokens);
     for theorem in file.theorem_definitions() {
         if !file.theorem_is_selected(theorem.name()) {
             continue;
         }
-        let source = find_theorem(&tokens, theorem.name())?;
+        let source = declarations.theorem(theorem)?;
         if tokens[source.body_open].span.start <= wanted
             && wanted <= tokens[source.body_close].span.end
         {
@@ -1253,7 +1255,7 @@ pub(in crate::surface) fn verification_target_at_file(
     }
     for function in proof_function_blocks(file) {
         let function_name = function.signature().name();
-        let source = find_function(&tokens, function_name)?;
+        let source = declarations.function(function)?;
         let in_body = tokens[source.body_open].span.start <= wanted
             && wanted <= tokens[source.body_close].span.end;
         let in_grouped_proof = function.grouped_proof().is_some()
@@ -1947,7 +1949,8 @@ fn rewrite_verified_pure_theorem(
             ))
         })?;
     let replacement = theorem.expanded_proof_source()?;
-    let source = find_theorem(&tokens, theorem_name)?;
+    let source =
+        DeclarationSources::new(click_source, &tokens).theorem(&theorem.theorem_definition)?;
     let edit = find_ensure_proof_edit(&tokens, source.body_open, source.body_close, ensure_index)?;
     let span = edit.span();
     let replacement = indent_replacement(click_source, span.start, &replacement);
@@ -2064,6 +2067,87 @@ use super::parser::SourceToken;
 struct FunctionSource {
     body_open: usize,
     body_close: usize,
+}
+
+/// Finds the bodies the parser recorded for declarations among the tokens
+/// of the source it read. Line starts are found only as far as the latest
+/// line asked for, so locating an early declaration reads no later source;
+/// each recorded brace is then one binary search among the tokens.
+struct DeclarationSources<'a> {
+    source: &'a str,
+    tokens: &'a [SourceToken],
+    line_starts: std::cell::RefCell<Vec<usize>>,
+}
+
+impl<'a> DeclarationSources<'a> {
+    fn new(source: &'a str, tokens: &'a [SourceToken]) -> Self {
+        Self {
+            source,
+            tokens,
+            line_starts: std::cell::RefCell::new(vec![0]),
+        }
+    }
+
+    /// The byte offset where one-based `line` starts.
+    fn line_start(&self, line: usize) -> Option<usize> {
+        let mut starts = self.line_starts.borrow_mut();
+        while starts.len() < line {
+            let last = *starts.last().expect("line 1 starts at 0");
+            let newline = self.source[last..].find('\n')?;
+            crate::instrumentation::record_deterministic_work(newline + 1);
+            starts.push(last + newline + 1);
+        }
+        starts.get(line.checked_sub(1)?).copied()
+    }
+
+    /// The written brace `text` at `position`. An implicit proof block's
+    /// zero-width brace can share a token's start, so the written one is
+    /// chosen among the tokens there.
+    fn brace_at(&self, position: &SourcePosition, text: &str) -> Option<usize> {
+        let start = self.line_start(position.line)?;
+        let byte = self.source[start..]
+            .char_indices()
+            .nth(position.column.checked_sub(1)?)?
+            .0;
+        let offset = start + byte;
+        crate::instrumentation::record_deterministic_work(position.column);
+        let first = self
+            .tokens
+            .partition_point(|token| token.span.start < offset);
+        self.tokens[first..]
+            .iter()
+            .take_while(|token| token.span.start == offset)
+            .position(|token| token.text == text && !token.span.is_empty())
+            .map(|found| first + found)
+    }
+
+    /// The braces around the clauses of the declaration `name`: the one the
+    /// parser read them from, and the brace that closes it.
+    fn body(
+        &self,
+        name: &str,
+        body: &parser::DeclarationBody,
+    ) -> Result<FunctionSource, ClickError> {
+        let open = body
+            .0
+            .as_ref()
+            .ok_or_else(|| ClickError::new(format!("`{name}` was not read from source text")))?;
+        let body_open = self
+            .brace_at(open, "{")
+            .ok_or_else(|| ClickError::new(format!("could not locate the source of `{name}`")))?;
+        Ok(FunctionSource {
+            body_open,
+            body_close: matching_delimiter(self.tokens, body_open, "{", "}")?,
+        })
+    }
+
+    fn function(&self, block: &FunctionBlock) -> Result<FunctionSource, ClickError> {
+        self.body(block.signature().name(), block.parsed_body())
+    }
+
+    fn theorem(&self, theorem: &TheoremDefinition) -> Result<FunctionSource, ClickError> {
+        self.body(theorem.name(), theorem.parsed_body())
+    }
 }
 
 fn proof_source_tokens(source: &str) -> Result<Vec<SourceToken>, ClickError> {
@@ -2229,124 +2313,6 @@ fn proof_function_blocks(file: &ClickFile) -> impl Iterator<Item = &FunctionBloc
         .filter(|block| !block.is_external())
 }
 
-/// The token after a Rust signature's return type, `-> T` or `-> ()`, when
-/// one starts at `index`; `index` itself otherwise.
-fn after_rust_return_type(tokens: &[SourceToken], index: usize) -> usize {
-    let text = |at: usize| tokens.get(at).map(|token| token.text.as_str());
-    if text(index) != Some("->") {
-        return index;
-    }
-    if text(index + 1) == Some("(") {
-        index + 3
-    } else {
-        index + 2
-    }
-}
-
-/// The token range of the `impl Type { ... }` or `impl Trait for Type { ... }`
-/// block whose methods are the functions `Type_name`, and the method's own
-/// name, when `name` is such a function.
-fn rust_impl_method<'a>(
-    tokens: &[SourceToken],
-    name: &'a str,
-) -> Result<Option<(Range<usize>, &'a str)>, ClickError> {
-    let mut index = 0;
-    while index < tokens.len() {
-        if tokens[index].text != "impl" {
-            index += 1;
-            continue;
-        }
-        let Some(open) = (index..tokens.len()).find(|at| tokens[*at].text == "{") else {
-            return Ok(None);
-        };
-        let close = matching_delimiter(tokens, open, "{", "}")?;
-        let impl_type = tokens[open - 1].text.as_str();
-        // A trait with a type argument, `impl MulAssign<u32> for Type`,
-        // names its method `Type_mul_assign_u32`: the method's own name is
-        // then a prefix of what follows the type. Several blocks may
-        // implement for one type, so the block has to hold the method.
-        let has_argument = tokens[index..open].iter().any(|token| token.text == "<");
-        if let Some(rest) = name
-            .strip_prefix(impl_type)
-            .and_then(|rest| rest.strip_prefix('_'))
-        {
-            for at in open + 1..close {
-                if tokens[at].text != "fn" {
-                    continue;
-                }
-                let Some(method) = tokens.get(at + 1).map(|token| token.text.as_str()) else {
-                    continue;
-                };
-                let named = if has_argument {
-                    rest.strip_prefix(method)
-                        .is_some_and(|suffix| suffix.starts_with('_'))
-                } else {
-                    rest == method
-                };
-                if named {
-                    return Ok(Some((open + 1..close, &rest[..method.len()])));
-                }
-            }
-        }
-        index = close + 1;
-    }
-    Ok(None)
-}
-
-fn find_function(tokens: &[SourceToken], name: &str) -> Result<FunctionSource, ClickError> {
-    if let Some((block, method)) = rust_impl_method(tokens, name)? {
-        let found = find_function(&tokens[block.clone()], method)?;
-        return Ok(FunctionSource {
-            body_open: found.body_open + block.start,
-            body_close: found.body_close + block.start,
-        });
-    }
-    for (index, token) in tokens.iter().enumerate() {
-        if token.text != name || tokens.get(index + 1).map(|token| token.text.as_str()) != Some("(")
-        {
-            continue;
-        }
-        // `theorem t() executes f(...) { ... }` names the function it
-        // executes; its block is the theorem's. A C++ head spells the
-        // function as a declarator, `Rec::f(`, so such a theorem can be the
-        // only literal `f(` in the source.
-        if index
-            .checked_sub(1)
-            .is_some_and(|before| tokens[before].text == "executes")
-        {
-            continue;
-        }
-        let parameters_close = matching_delimiter(tokens, index + 1, "(", ")")?;
-        let mut body_open = after_rust_return_type(tokens, parameters_close + 1);
-        if tokens.get(body_open).map(|token| token.text.as_str()) == Some("throws") {
-            body_open += 2;
-        }
-        if tokens.get(body_open).map(|token| token.text.as_str()) == Some("diverges") {
-            body_open += 1;
-        }
-        if tokens.get(body_open).map(|token| token.text.as_str()) != Some("{") {
-            continue;
-        }
-        let body_close = matching_delimiter(tokens, body_open, "{", "}")?;
-        return Ok(FunctionSource {
-            body_open,
-            body_close,
-        });
-    }
-    // A Rust path, or a method of an `impl` block for one, is named as the
-    // parser names it; the declaration index reads those spellings.
-    let mut declarations = declaration_source_index(tokens)?;
-    if let Some(found) = declarations
-        .remove(name)
-        .or_else(|| declarations.remove(&rust_inherent_method_in_its_type_module(name)?))
-    {
-        return Ok(found);
-    }
-    Err(ClickError::new(format!(
-        "could not locate Click function block `{name}`"
-    )))
-}
-
 /// An imported inherent method's name as the source index spells it. The
 /// importer names the method by the module its `impl` block is in; a
 /// sidecar writes `impl path::Type { fn method }` with no module, and the
@@ -2493,67 +2459,6 @@ fn rust_path_ending_at(tokens: &[SourceToken], end: usize) -> Vec<&str> {
         at -= 2;
     }
     segments
-}
-
-/// The `tactic name(...) { ... }` declaration of `name`. Only the declaration
-/// has the `tactic` keyword before the name; an application `name(..., { ... })`
-/// inside a proof is never matched.
-fn find_tactic(tokens: &[SourceToken], name: &str) -> Result<FunctionSource, ClickError> {
-    for (index, token) in tokens.iter().enumerate() {
-        if token.text != "tactic"
-            || tokens.get(index + 1).map(|token| token.text.as_str()) != Some(name)
-            || tokens.get(index + 2).map(|token| token.text.as_str()) != Some("(")
-        {
-            continue;
-        }
-        let parameters_close = matching_delimiter(tokens, index + 2, "(", ")")?;
-        let body_open = parameters_close + 1;
-        if tokens.get(body_open).map(|token| token.text.as_str()) != Some("{") {
-            continue;
-        }
-        let body_close = matching_delimiter(tokens, body_open, "{", "}")?;
-        return Ok(FunctionSource {
-            body_open,
-            body_close,
-        });
-    }
-    Err(ClickError::new(format!(
-        "could not locate Click tactic `{name}`"
-    )))
-}
-
-fn find_theorem(tokens: &[SourceToken], name: &str) -> Result<FunctionSource, ClickError> {
-    for (index, token) in tokens.iter().enumerate() {
-        if token.text != "theorem"
-            || tokens.get(index + 1).map(|token| token.text.as_str()) != Some(name)
-        {
-            continue;
-        }
-        let mut parameters_open = index + 2;
-        if tokens.get(parameters_open).map(|token| token.text.as_str()) == Some("<") {
-            parameters_open = matching_delimiter(tokens, parameters_open, "<", ">")? + 1;
-        }
-        if tokens.get(parameters_open).map(|token| token.text.as_str()) != Some("(") {
-            continue;
-        }
-        let parameters_close = matching_delimiter(tokens, parameters_open, "(", ")")?;
-        let mut body_open = parameters_close + 1;
-        if tokens.get(body_open).map(|token| token.text.as_str()) == Some("executes") {
-            let arguments_open = body_open + 2;
-            body_open = matching_delimiter(tokens, arguments_open, "(", ")")? + 1;
-        }
-        if tokens.get(body_open).map(|token| token.text.as_str()) != Some("{") {
-            continue;
-        }
-        let body_close = matching_delimiter(tokens, body_open, "{", "}")?;
-        return Ok(FunctionSource {
-            body_open,
-            body_close,
-        });
-    }
-    Err(ClickError::new(format!(
-        "could not locate Click theorem `{name}`"
-    )))
 }
 
 fn find_ensure_proof_edit(
@@ -5205,7 +5110,7 @@ fn c0_tactic_source_position_file(
     source_index: usize,
 ) -> Result<SourcePosition, ClickError> {
     let tokens = proof_source_tokens(click_source)?;
-    let offsets = c0_tactic_source_offsets_with_tokens(file, claim_label, &tokens)?;
+    let offsets = c0_tactic_source_offsets_with_tokens(file, click_source, claim_label, &tokens)?;
     offsets
         .get(source_index)
         .map(|offset| positions_at_offsets(click_source, [*offset])[0].clone())
@@ -5287,7 +5192,7 @@ fn c0_tactic_source_positions_file(
     claim_label: &str,
 ) -> Result<Vec<SourcePosition>, ClickError> {
     let tokens = proof_source_tokens(click_source)?;
-    let offsets = c0_tactic_source_offsets_with_tokens(file, claim_label, &tokens)?;
+    let offsets = c0_tactic_source_offsets_with_tokens(file, click_source, claim_label, &tokens)?;
     Ok(positions_at_offsets(click_source, offsets))
 }
 
@@ -5297,21 +5202,22 @@ fn c0_tactic_source_positions_with_tokens(
     claim_label: &str,
     tokens: &[SourceToken],
 ) -> Result<Vec<SourcePosition>, ClickError> {
-    let offsets = c0_tactic_source_offsets_with_tokens(file, claim_label, tokens)?;
+    let offsets = c0_tactic_source_offsets_with_tokens(file, click_source, claim_label, tokens)?;
     Ok(positions_at_offsets(click_source, offsets))
 }
 
 fn c0_tactic_source_offsets_with_tokens(
     file: &ClickFile,
+    click_source: &str,
     claim_label: &str,
     tokens: &[SourceToken],
 ) -> Result<Vec<usize>, ClickError> {
     let claim_label = &*resolve_source_claim_label(file, claim_label);
+    let declarations = DeclarationSources::new(click_source, tokens);
     for theorem in file.theorem_definitions() {
         if !file.theorem_is_selected(theorem.name()) {
             continue;
         }
-        let source = find_theorem(tokens, theorem.name())?;
         for (ensure_index, ensure) in theorem.ensures().iter().enumerate() {
             let execution_claim = theorem.executes.is_some()
                 && ensure_index == 0
@@ -5319,6 +5225,7 @@ fn c0_tactic_source_offsets_with_tokens(
             if theorem.ensure_claim_label(ensure_index) != claim_label && !execution_claim {
                 continue;
             }
+            let source = declarations.theorem(theorem)?;
             let edit =
                 find_ensure_proof_edit(tokens, source.body_open, source.body_close, ensure_index)?;
             return proof_source_offsets(
@@ -5341,7 +5248,7 @@ fn c0_tactic_source_offsets_with_tokens(
         if claim_label != tactic.function_block().contract_claim_label() {
             continue;
         }
-        let function = find_tactic(tokens, tactic.name())?;
+        let function = declarations.function(tactic.function_block())?;
         return proof_source_offsets(
             tokens,
             Some(&find_grouped_proof_span(tokens, &function)?),
@@ -5351,8 +5258,6 @@ fn c0_tactic_source_offsets_with_tokens(
         );
     }
     for function_block in proof_function_blocks(file) {
-        let function_name = function_block.signature().name();
-        let function = find_function(tokens, function_name)?;
         let selected = function_block
             .claim_by_label(claim_label)
             .and_then(|claim| match claim {
@@ -5369,6 +5274,7 @@ fn c0_tactic_source_offsets_with_tokens(
         let Some((claim, proof)) = selected else {
             continue;
         };
+        let function = declarations.function(function_block)?;
         let fallback = match claim {
             CProofClaim::Grouped => tokens[function.body_close].span.start,
             CProofClaim::Ensure(_) | CProofClaim::ExceptionalEnsure(_) => {

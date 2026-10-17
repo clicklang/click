@@ -5467,6 +5467,7 @@ impl<'a> Proof<'a> {
             self.execution_proposition_fixed_state_view()
                 .and_then(|view| {
                     view.requirement_facts
+                        .as_slice()
                         .iter()
                         .zip(view.original_requirements)
                         .find(|(fact, _)| *fact == kernel)
