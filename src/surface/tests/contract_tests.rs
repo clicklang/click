@@ -1,6 +1,60 @@
 use super::*;
 
 #[test]
+fn inline_array_element_addresses_are_logical_without_granting_access() {
+    let source = r#"
+        struct packet { int32 values[4]; uint8 bytes[4]; };
+        void logical(struct packet* p) {}
+        uint8* byte_at(struct packet* p, uint32 i) { return &p->bytes[i]; }
+        int32 read(struct packet* p) { return p->values[0]; }
+    "#;
+    let inputs = [("addresses.c", source)];
+    let proof = r#"verifying "addresses.c";
+        void logical(struct packet* p) {
+            ensures &p->values[0] == p->values;
+        } by { execute(); simp(); }
+        uint8* byte_at(struct packet* p, uint32 i) {
+            views p->bytes[0..4];
+            requires i < 4u32;
+            ensures result == &p->bytes[i];
+            ensures result == &p->bytes[0] + i;
+        } by { execute(); simp(); }
+    "#;
+    verify_c0_sources(proof, &inputs).unwrap();
+    for name in ["logical", "byte_at"] {
+        let expanded = expand_c0_claim_source(proof, &inputs, name, CProofClaim::Grouped).unwrap();
+        verify_c0_sources(&expanded, &inputs).unwrap();
+    }
+    assert!(
+        verify_c0_sources(
+            &proof.replace("&p->values[0] ==", "&p->values[1] =="),
+            &inputs
+        )
+        .is_err()
+    );
+    assert!(
+        verify_c0_sources(
+            &proof.replace("result == &p->bytes[i]", "result == &p->bytes[0]"),
+            &inputs
+        )
+        .is_err()
+    );
+    for expression in ["defined(&p->values[5])", "defined(old(&p->values[5]))"] {
+        let false_definedness = proof.replace("&p->values[0] == p->values", expression);
+        assert!(
+            verify_c0_sources(&false_definedness, &inputs).is_err(),
+            "{expression}"
+        );
+    }
+    let missing_view = r#"verifying "addresses.c";
+        int32 read(struct packet* p) {
+            ensures &p->values[0] == p->values;
+        } by { execute(); simp(); }
+    "#;
+    assert!(verify_c0_sources(missing_view, &inputs).is_err());
+}
+
+#[test]
 fn historical_wide_view_bound_reads_the_marked_counter() {
     let c = "unsigned long f(const unsigned char *p, unsigned n) { n = n - 1; return 0; }";
     for extent in [16, 32] {
