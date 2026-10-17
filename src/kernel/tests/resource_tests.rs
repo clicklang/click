@@ -4033,7 +4033,8 @@ fn folded_composite_body_cells_supply_dependent_entry_arguments_without_opening(
         &state,
         &clauses,
         &[definition],
-        &PureFactContext::new(),
+        // Match the function-entry API: the caller establishes these extents.
+        &PureFactContext::new().assume_entry_clause_extents(),
         &mut ExecutionBudget::default(),
     )
     .unwrap()
