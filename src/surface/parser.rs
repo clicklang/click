@@ -223,6 +223,9 @@ pub(in crate::surface) struct ProgramLayouts {
     /// by their sidecar names: without a contract of its own, it has the
     /// method's.
     pub(in crate::surface) virtual_dispatches: Vec<(String, String)>,
+    /// The instances of each generic crate trait the import declares an
+    /// interface of, by the trait's importer name.
+    pub(in crate::surface) rust_trait_instances: BTreeMap<String, BTreeSet<Vec<String>>>,
     /// Each C++ function's calls of methods on a receiver that may be an
     /// object of a derived class, by sidecar names: the function called, and
     /// the reference parameter the receiver is, or `None` for `this`.
@@ -793,6 +796,18 @@ struct Parser {
     /// trait bounds, `T` of `<T: traits::Shape>`: a reference to one is a
     /// reference to a value of a type the function does not know.
     rust_trait_type_parameters: BTreeSet<String>,
+    /// Each generic crate trait's block, `trait traits::Scale<T> { ... }`,
+    /// by the trait's importer name: its type parameters and its tokens.
+    rust_generic_traits: BTreeMap<String, (Vec<String>, std::ops::Range<usize>)>,
+    /// Each instance block of a generic crate trait, `trait
+    /// traits::Scale<i32> { ... }`, by the trait's importer name and its type
+    /// arguments: its tokens.
+    rust_instance_traits: BTreeMap<(String, Vec<String>), std::ops::Range<usize>>,
+    /// The instances of each generic crate trait the import uses, by the
+    /// trait's importer name.
+    rust_trait_instances: BTreeMap<String, BTreeSet<Vec<String>>>,
+    /// Whether the trait block being read is an instance the parser built.
+    rust_instantiating: bool,
     /// Each crate trait method implementation read, by name, with the
     /// interface it inherits.
     rust_trait_implementations: Vec<(String, String)>,
@@ -1162,6 +1177,7 @@ impl Parser {
         parser.qualified_functions = layouts.qualified_functions;
         parser.local_struct_pointers_by_function = layouts.local_struct_pointers;
         parser.closure_captures = layouts.closure_captures;
+        parser.rust_trait_instances = layouts.rust_trait_instances;
         parser.plain_char = layouts.plain_char;
         parser.int64_t_rank = layouts.int64_t_rank.unwrap_or(LongRank::Long);
         parser.c_typedefs = layouts.c_typedefs;
@@ -1290,6 +1306,10 @@ impl Parser {
             rust_impl_trait: None,
             rust_trait_interface: None,
             rust_trait_type_parameters: BTreeSet::new(),
+            rust_generic_traits: BTreeMap::new(),
+            rust_instance_traits: BTreeMap::new(),
+            rust_trait_instances: BTreeMap::new(),
+            rust_instantiating: false,
             rust_trait_implementations: Vec::new(),
             cpp_dispatches: Vec::new(),
             cpp_receiver_calls: BTreeMap::new(),
@@ -1656,6 +1676,9 @@ impl Parser {
                     definition.name
                 )));
             }
+        }
+        if self.language == SourceLanguage::Rust {
+            self.instantiate_rust_generic_traits(&mut function_blocks)?;
         }
         // A crate trait method's implementation, or a C++ override, inherits
         // its interface, which the sidecar may declare before or after it: a

@@ -4,6 +4,24 @@
 
 use super::*;
 
+type Spanned = (Token, SourcePosition);
+
+/// The scalar types a generic crate trait's instance is taken at, as the
+/// importer takes them.
+const RUST_INSTANCE_SCALARS: [&str; 6] = ["i32", "u8", "u16", "u32", "usize", "bool"];
+
+/// The importer name of the crate trait at `path` with type `arguments`:
+/// `traits::Shape`, or `traits::Scale<i32>`.
+fn trait_instance_name(path: &[String], arguments: &[String]) -> String {
+    let mut name = crate::languages::rust::names::path_name(
+        &path.iter().map(String::as_str).collect::<Vec<_>>(),
+    );
+    for argument in arguments {
+        crate::languages::rust::names::push_type_argument(&mut name, argument);
+    }
+    name
+}
+
 impl Parser {
     /// A Rust sidecar states its signature as Rust does:
     /// `fn name(a: T, b: U) -> R`, with references, slices, and methods in
@@ -233,6 +251,13 @@ impl Parser {
     ) -> Result<(), ClickError> {
         self.expect_ident_spelling("impl")?;
         let mut impl_path = self.expect_rust_path("type name")?;
+        // A crate trait's instance, `traits::Scale<i32>`, is named with its
+        // type arguments; the standard library's operator traits take one.
+        let instance = if impl_path.len() > 1 {
+            self.parse_rust_type_arguments()?
+        } else {
+            Vec::new()
+        };
         let suffix = self.parse_rust_trait_argument()?;
         let mut inherent = true;
         // A crate trait is named by its path, as a crate type is; the
@@ -241,13 +266,11 @@ impl Parser {
         if self.peek_ident() == Some("for") {
             self.position += 1;
             if suffix.is_none() && impl_path.len() > 1 {
-                impl_trait = Some(crate::languages::rust::names::path_name(
-                    &impl_path.iter().map(String::as_str).collect::<Vec<_>>(),
-                ));
+                impl_trait = Some(trait_instance_name(&impl_path, &instance));
             }
             impl_path = self.expect_rust_path("type name")?;
             inherent = false;
-        } else if suffix.is_some() {
+        } else if suffix.is_some() || !instance.is_empty() {
             return Err(self.error("a trait with a type argument is implemented `for` a type"));
         }
         self.expect(Token::LBrace)?;
@@ -342,6 +365,7 @@ impl Parser {
         &mut self,
         function_blocks: &mut Vec<FunctionBlock>,
     ) -> Result<(), ClickError> {
+        let start = self.position;
         self.expect_ident_spelling("trait")?;
         let path = self.expect_rust_path("trait name")?;
         if path.len() < 2 {
@@ -349,9 +373,49 @@ impl Parser {
                 "a crate trait is named by its path, as the crate writes it: `trait crate_name::Shape`",
             ));
         }
-        let interface = crate::languages::rust::names::path_name(
-            &path.iter().map(String::as_str).collect::<Vec<_>>(),
-        );
+        let arguments = self.parse_rust_type_arguments()?;
+        let interface = trait_instance_name(&path, &arguments);
+        // A generic trait's block, `trait traits::Scale<T>`, and an instance's,
+        // `trait traits::Scale<i32>`, are read once every block is known: each
+        // instance is the generic block at its arguments with the instance
+        // block's clauses added.
+        if !arguments.is_empty() && !self.rust_instantiating {
+            let open = self.position;
+            self.expect(Token::LBrace)?;
+            let end = self.matching_brace(open)? + 1;
+            let trait_name = trait_instance_name(&path, &[]);
+            let scalars = arguments
+                .iter()
+                .filter(|argument| RUST_INSTANCE_SCALARS.contains(&argument.as_str()))
+                .count();
+            if scalars == arguments.len() {
+                if self
+                    .rust_instance_traits
+                    .insert((trait_name, arguments), start..end)
+                    .is_some()
+                {
+                    return Err(self.error("a crate trait's instance has two `trait` blocks"));
+                }
+            } else if scalars == 0
+                && arguments.iter().collect::<BTreeSet<_>>().len() == arguments.len()
+            {
+                if self
+                    .rust_generic_traits
+                    .insert(trait_name, (arguments, start..end))
+                    .is_some()
+                {
+                    return Err(self.error("a generic crate trait has two `trait` blocks"));
+                }
+            } else {
+                return Err(self.error(
+                    "a crate trait's `trait` block names its type parameters, `trait \
+                     crate_name::Scale<T>`, or an instance's scalar types, `trait \
+                     crate_name::Scale<i32>`",
+                ));
+            }
+            self.position = end;
+            return Ok(());
+        }
         self.expect(Token::LBrace)?;
         let previous = self.rust_trait_interface.replace(interface);
         let mut result = Ok(());
@@ -390,6 +454,201 @@ impl Parser {
         result?;
         self.expect(Token::RBrace)?;
         Ok(())
+    }
+
+    /// A generic crate trait's or a path's type arguments, `<i32>` or `<T,
+    /// U>`, each a name; none when no `<` follows.
+    pub(super) fn parse_rust_type_arguments(&mut self) -> Result<Vec<String>, ClickError> {
+        let mut arguments = Vec::new();
+        if self.peek() != Some(&Token::LessThan) {
+            return Ok(arguments);
+        }
+        self.position += 1;
+        loop {
+            arguments.push(self.expect_ident("type argument")?);
+            match self.peek() {
+                Some(Token::Comma) => self.position += 1,
+                _ => break,
+            }
+        }
+        // `>>` closes this list and the one around it, `<S: traits::Scale<i32>>`.
+        if self.peek() == Some(&Token::ShiftRight) {
+            self.tokens[self.position] = Token::GreaterThan;
+            return Ok(arguments);
+        }
+        self.expect(Token::GreaterThan)?;
+        Ok(arguments)
+    }
+
+    /// The index of the brace closing the one at `open`.
+    fn matching_brace(&self, open: usize) -> Result<usize, ClickError> {
+        let mut depth = 0usize;
+        for (index, token) in self.tokens.iter().enumerate().skip(open) {
+            match token {
+                Token::LBrace => depth += 1,
+                Token::RBrace => {
+                    depth -= 1;
+                    if depth == 0 {
+                        return Ok(index);
+                    }
+                }
+                _ => {}
+            }
+        }
+        Err(self.error("unterminated `trait` block"))
+    }
+
+    /// Reads each instance of the generic crate traits: the import's
+    /// instances of a trait with a generic block, and each instance with a
+    /// block of its own. An instance's interface is the generic block's
+    /// clauses at its arguments, then its own block's.
+    pub(super) fn instantiate_rust_generic_traits(
+        &mut self,
+        function_blocks: &mut Vec<FunctionBlock>,
+    ) -> Result<(), ClickError> {
+        let generic = std::mem::take(&mut self.rust_generic_traits);
+        let written = std::mem::take(&mut self.rust_instance_traits);
+        let mut instances = BTreeSet::new();
+        for (trait_name, (parameters, _)) in &generic {
+            for arguments in self
+                .rust_trait_instances
+                .get(trait_name)
+                .into_iter()
+                .flatten()
+            {
+                if arguments.len() == parameters.len() {
+                    instances.insert((trait_name.clone(), arguments.clone()));
+                }
+            }
+        }
+        instances.extend(written.keys().cloned());
+        for (trait_name, arguments) in instances {
+            let generic_block = generic.get(&trait_name);
+            let instance_block = written.get(&(trait_name.clone(), arguments.clone()));
+            let header = generic_block
+                .map(|(_, range)| range.start)
+                .or_else(|| instance_block.map(|range| range.start))
+                .expect("an instance has a block");
+            let position = self.positions[header].clone();
+            // `trait` and the trait's path, then the instance's arguments.
+            let mut tokens = Vec::new();
+            let mut index = header;
+            while self.tokens[index] != Token::LessThan {
+                tokens.push((self.tokens[index].clone(), self.positions[index].clone()));
+                index += 1;
+            }
+            tokens.push((Token::LessThan, position.clone()));
+            for (at, argument) in arguments.iter().enumerate() {
+                if at > 0 {
+                    tokens.push((Token::Comma, position.clone()));
+                }
+                tokens.push((Token::Ident(argument.clone()), position.clone()));
+            }
+            tokens.push((Token::GreaterThan, position.clone()));
+            tokens.push((Token::LBrace, position.clone()));
+            let mut items = generic_block
+                .map(|(parameters, range)| {
+                    let substitution = parameters
+                        .iter()
+                        .cloned()
+                        .zip(arguments.iter().cloned())
+                        .collect::<BTreeMap<_, _>>();
+                    self.trait_block_items(range.clone())
+                        .into_iter()
+                        .map(|(name, item)| {
+                            let item = item
+                                .into_iter()
+                                .map(|(token, position)| match token {
+                                    Token::Ident(word) if substitution.contains_key(&word) => {
+                                        (Token::Ident(substitution[&word].clone()), position)
+                                    }
+                                    token => (token, position),
+                                })
+                                .collect::<Vec<_>>();
+                            (name, item)
+                        })
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_default();
+            // The instance's own clauses join the generic method's, before
+            // its clause block closes.
+            for (name, item) in instance_block
+                .map(|range| self.trait_block_items(range.clone()))
+                .unwrap_or_default()
+            {
+                match items.iter_mut().find(|(generic, _)| *generic == name) {
+                    Some((_, generic_item)) => {
+                        let open = item
+                            .iter()
+                            .position(|(token, _)| *token == Token::LBrace)
+                            .expect("a method's clause block");
+                        let close = generic_item
+                            .iter()
+                            .rposition(|(token, _)| *token == Token::RBrace)
+                            .expect("a method's clause block");
+                        let own = item[open + 1..item.len() - 1].to_vec();
+                        generic_item.splice(close..close, own);
+                    }
+                    None => items.push((name, item)),
+                }
+            }
+            for (_, item) in items {
+                tokens.extend(item);
+            }
+            tokens.push((Token::RBrace, position));
+            let (tokens, positions): (Vec<_>, Vec<_>) = tokens.into_iter().unzip();
+            let matching = validate_parenthesis_nesting(&tokens, &positions)?;
+            let saved_tokens = std::mem::replace(&mut self.tokens, tokens);
+            let saved_positions = std::mem::replace(&mut self.positions, positions);
+            let saved_matching = std::mem::replace(&mut self.matching_parentheses, matching);
+            let saved_position = std::mem::replace(&mut self.position, 0);
+            self.rust_instantiating = true;
+            let result = self.parse_rust_trait_block(function_blocks);
+            self.rust_instantiating = false;
+            self.tokens = saved_tokens;
+            self.positions = saved_positions;
+            self.matching_parentheses = saved_matching;
+            self.position = saved_position;
+            result?;
+        }
+        Ok(())
+    }
+
+    /// The `fn` items of the `trait` block at `range`, by method name, each
+    /// its tokens: the signature and clause block, without a proof, which a
+    /// generic trait's method has none of.
+    fn trait_block_items(&self, range: std::ops::Range<usize>) -> Vec<(String, Vec<Spanned>)> {
+        let open = (range.start..range.end)
+            .find(|&index| self.tokens[index] == Token::LBrace)
+            .expect("a `trait` block");
+        let mut items = Vec::new();
+        let mut index = open + 1;
+        while index + 1 < range.end {
+            let start = index;
+            let name = match self.tokens.get(index + 1) {
+                Some(Token::Ident(name)) => name.clone(),
+                _ => String::new(),
+            };
+            let mut depth = 0usize;
+            while index < range.end {
+                match self.tokens[index] {
+                    Token::LParen => depth += 1,
+                    Token::RParen => depth -= 1,
+                    Token::LBrace if depth == 0 => break,
+                    _ => {}
+                }
+                index += 1;
+            }
+            let close = self.matching_brace(index).unwrap_or(range.end - 1);
+            items.push((
+                name,
+                (start..=close)
+                    .map(|at| (self.tokens[at].clone(), self.positions[at].clone()))
+                    .collect(),
+            ));
+            index = close + 1;
+        }
+        items
     }
 
     /// Whether the trait method at the parser's position is written with a
@@ -512,6 +771,7 @@ impl Parser {
                 // `T: traits::Shape`: a crate trait, named by its path.
                 if self.peek_ident() != Some("Fn") && self.peek_next() == Some(&Token::ColonColon) {
                     self.expect_rust_path("trait name")?;
+                    self.parse_rust_type_arguments()?;
                     if callable.contains_key(&name) || !self.rust_trait_type_parameters.insert(name)
                     {
                         return Err(self.error("a type parameter is declared twice"));
@@ -709,6 +969,7 @@ impl Parser {
         if dyn_trait {
             self.position += 1;
             self.expect_rust_path("trait name")?;
+            self.parse_rust_type_arguments()?;
         }
         if dyn_trait
             || matches!(self.peek_ident(), Some(name) if self.rust_trait_type_parameters.contains(name))
