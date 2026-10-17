@@ -12291,7 +12291,15 @@ impl Parser {
                 lowered: CExpression::Cast {
                     expression: Box::new(expression),
                     target_type,
-                    integer_mode: crate::kernel::CIntegerCastMode::CConversion,
+                    // This cast was written in the contract. Pointer targets
+                    // use the specification cast rule, not the C conversion
+                    // marker also used for inserted pointer coercions. Authored
+                    // void and byte casts select the enclosing-object view.
+                    integer_mode: if target_type.is_pointer() {
+                        crate::kernel::CIntegerCastMode::Standard
+                    } else {
+                        crate::kernel::CIntegerCastMode::CConversion
+                    },
                     pointee_struct: None,
                     pointee_volatile: false,
                     pointee_constant: false,
