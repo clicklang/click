@@ -90,6 +90,8 @@ pub(super) fn summarize(function: &CFunction, summary: &mut AddressTakenSummary)
                 expressions.extend([(target, false), (source, false)]);
             }
             CStatement::Seq(sequence) => {
+                // The pair nodes beyond the first the tree held.
+                crate::instrumentation::record_deterministic_work(sequence.len() - 2);
                 statements.extend(sequence.iter().map(|statement| statement.as_ref()))
             }
             CStatement::TryCatchInt32 {

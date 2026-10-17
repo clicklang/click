@@ -2978,6 +2978,8 @@ fn collect_local_pointer_element_types(body: &CStatement, types: &mut BTreeMap<S
                 }
             }
             CStatement::Seq(statements) => {
+                // The pair nodes beyond the first the tree held.
+                crate::instrumentation::record_deterministic_work(statements.len() - 2);
                 pending.extend(statements.iter().map(|statement| statement.as_ref()))
             }
             CStatement::If {
