@@ -41,7 +41,7 @@ impl Adapter<'_> {
         };
         if decl.is_unsafe
             || !matches!(decl.src, a::TraitDeclSource::Normal)
-            || decl.generics.types.len() != 1
+            || decl.generics.types.is_empty()
             || !decl.generics.const_generics.is_empty()
             || !decl.consts.is_empty()
             || !decl.types.is_empty()
@@ -55,20 +55,125 @@ impl Adapter<'_> {
     }
 
     /// The external function that stands for method `method` of crate trait
-    /// `id`: the trait's path, then the method, `traits::Shape::area`.
+    /// `id` at the type arguments `generics` names after `Self`: the
+    /// trait's path, its arguments, then the method, `traits::Shape::area` or
+    /// `traits::Scale<i32>::scale`.
     pub(super) fn interface_name(
         &self,
         id: a::TraitDeclId,
         method: a::TraitMethodId,
+        generics: &a::GenericArgs,
     ) -> Result<String, String> {
         let decl = &self.krate.trait_decls[id];
         let method = decl
             .methods
             .get(method)
             .ok_or_else(|| unsupported("missing trait method"))?;
-        let mut name = self.qualified_function_name(&decl.item_meta.name)?;
-        super::super::names::push_path_segment(&mut name, &method.skip_binder.name.0);
+        self.interface_name_at(
+            id,
+            &method.skip_binder.name.0,
+            self.instance_arguments(generics)?,
+        )
+    }
+
+    /// The interface function of method `method` of crate trait `id`'s
+    /// instance at `arguments`, which the import then declares.
+    fn interface_name_at(
+        &self,
+        id: a::TraitDeclId,
+        method: &str,
+        arguments: Vec<a::Ty>,
+    ) -> Result<String, String> {
+        let instance = self.trait_instance_name(id, &arguments)?;
+        let mut name = instance.clone();
+        super::super::names::push_path_segment(&mut name, method);
+        self.trait_instances
+            .borrow_mut()
+            .entry(id)
+            .or_default()
+            .insert(instance, arguments);
         Ok(name)
+    }
+
+    /// The type arguments of a crate trait's instance, after `Self`. A
+    /// generic trait is taken at scalar types.
+    pub(super) fn instance_arguments(
+        &self,
+        generics: &a::GenericArgs,
+    ) -> Result<Vec<a::Ty>, String> {
+        let arguments = generics.types.iter().skip(1).cloned().collect::<Vec<_>>();
+        for argument in &arguments {
+            self.instance_argument_spelling(argument)?;
+        }
+        Ok(arguments)
+    }
+
+    /// The Rust spelling of a generic trait instance's type argument.
+    fn instance_argument_spelling(&self, argument: &a::Ty) -> Result<&'static str, String> {
+        let refused = || {
+            unsupported(
+                "crate trait instance at a type other than i32, u8, u16, u32, usize or bool",
+            )
+        };
+        if matches!(argument.kind(), a::TyKind::TypeVar(_)) {
+            return Err(refused());
+        }
+        Ok(match self.ty(argument).map_err(|_| refused())? {
+            Type::I32 => "i32",
+            Type::U8 => "u8",
+            Type::U16 => "u16",
+            Type::U32 => "u32",
+            Type::Usize => "usize",
+            Type::Bool => "bool",
+            _ => return Err(refused()),
+        })
+    }
+
+    /// The importer name of crate trait `id` at `arguments`: its path, then
+    /// each argument, `traits::Scale<i32>`.
+    pub(super) fn trait_instance_name(
+        &self,
+        id: a::TraitDeclId,
+        arguments: &[a::Ty],
+    ) -> Result<String, String> {
+        let mut name = self.qualified_function_name(&self.krate.trait_decls[id].item_meta.name)?;
+        for argument in arguments {
+            super::super::names::push_type_argument(
+                &mut name,
+                self.instance_argument_spelling(argument)?,
+            );
+        }
+        Ok(name)
+    }
+
+    /// The instances of crate trait `id` the crate uses: for a generic
+    /// trait, those an implementation or a call names. A trait with no type
+    /// parameter but `Self` has one instance.
+    fn trait_instances(&self, id: a::TraitDeclId) -> Result<BTreeMap<String, Vec<a::Ty>>, String> {
+        if self.krate.trait_decls[id].generics.types.len() == 1 {
+            return Ok(BTreeMap::from([(
+                self.trait_instance_name(id, &[])?,
+                Vec::new(),
+            )]));
+        }
+        Ok(self
+            .trait_instances
+            .borrow()
+            .get(&id)
+            .cloned()
+            .unwrap_or_default())
+    }
+
+    /// `ty` in a method of a trait instance whose type arguments after
+    /// `Self` are `arguments`.
+    fn instance_ty(&self, ty: &a::Ty, arguments: &[a::Ty]) -> Result<Type, String> {
+        if let a::TyKind::TypeVar(a::DeBruijnVar::Bound(_, var) | a::DeBruijnVar::Free(var)) =
+            ty.kind()
+            && let Some(argument) = var.index().checked_sub(1).and_then(|at| arguments.get(at))
+        {
+            return self.ty(argument);
+        }
+        self.ty(ty)
     }
 
     /// The interface function of each method of crate trait `id`. Its first
@@ -79,71 +184,79 @@ impl Adapter<'_> {
         id: a::TraitDeclId,
     ) -> Result<Vec<out::Function>, String> {
         let decl = &self.krate.trait_decls[id];
+        let generic = decl.generics.types.len() > 1;
         let mut functions = Vec::new();
-        for (method_id, method) in decl.methods.iter_indexed() {
-            let binder = &method.skip_binder;
-            let signature = &binder.signature;
-            if !method.params.types.is_empty()
-                || !method.params.const_generics.is_empty()
-                || signature.is_unsafe
-                || signature.is_variadic
-                || signature.abi != a::Abi::Rust
-            {
-                return Err(unsupported("generic, unsafe, or foreign trait method"));
-            }
-            let Some((receiver, inputs)) = signature.inputs.split_first() else {
-                return Err(unsupported("trait method without a receiver"));
-            };
-            let a::TyKind::Ref(_, pointee, kind) = receiver.kind() else {
-                return Err(unsupported(
-                    "trait method receiver other than `&self` or `&mut self`",
-                ));
-            };
-            if !matches!(pointee.kind(), a::TyKind::TypeVar(a::DeBruijnVar::Bound(_, id)) if id.index() == 0)
-            {
-                return Err(unsupported(
-                    "trait method receiver other than `&self` or `&mut self`",
-                ));
-            }
-            let mut parameters = vec![out::Place {
-                name: "__rust_arg_0".into(),
-                value_type: Type::Reference {
-                    mutable: *kind == a::RefKind::Mut,
-                    pointee: Box::new(Type::TraitObject),
-                },
-                span: span(binder.item_meta.span),
-            }];
-            for (index, ty) in inputs.iter().enumerate() {
-                let value_type = self.ty(ty)?;
-                if !closures::callable_scalar(&value_type) {
-                    return Err(unsupported("trait method parameter other than a scalar"));
+        for (instance, arguments) in self.trait_instances(id)? {
+            for method in decl.methods.iter() {
+                let binder = &method.skip_binder;
+                let signature = &binder.signature;
+                if !method.params.types.is_empty()
+                    || !method.params.const_generics.is_empty()
+                    || signature.is_unsafe
+                    || signature.is_variadic
+                    || signature.abi != a::Abi::Rust
+                {
+                    return Err(unsupported("generic, unsafe, or foreign trait method"));
                 }
-                parameters.push(out::Place {
-                    name: format!("__rust_arg_{}", index + 1),
-                    value_type,
+                let Some((receiver, inputs)) = signature.inputs.split_first() else {
+                    return Err(unsupported("trait method without a receiver"));
+                };
+                let a::TyKind::Ref(_, pointee, kind) = receiver.kind() else {
+                    return Err(unsupported(
+                        "trait method receiver other than `&self` or `&mut self`",
+                    ));
+                };
+                if !matches!(pointee.kind(), a::TyKind::TypeVar(a::DeBruijnVar::Bound(_, id)) if id.index() == 0)
+                {
+                    return Err(unsupported(
+                        "trait method receiver other than `&self` or `&mut self`",
+                    ));
+                }
+                let mut parameters = vec![out::Place {
+                    name: "__rust_arg_0".into(),
+                    value_type: Type::Reference {
+                        mutable: *kind == a::RefKind::Mut,
+                        pointee: Box::new(Type::TraitObject),
+                    },
+                    span: span(binder.item_meta.span),
+                }];
+                for (index, ty) in inputs.iter().enumerate() {
+                    let value_type = self.instance_ty(ty, &arguments)?;
+                    if !closures::callable_scalar(&value_type) {
+                        return Err(unsupported("trait method parameter other than a scalar"));
+                    }
+                    parameters.push(out::Place {
+                        name: format!("__rust_arg_{}", index + 1),
+                        value_type,
+                        span: span(binder.item_meta.span),
+                    });
+                }
+                let return_type = self.instance_ty(&signature.output, &arguments)?;
+                if !closures::callable_scalar(&return_type) && return_type != Type::Unit {
+                    return Err(unsupported("trait method result other than a scalar or ()"));
+                }
+                // A default method's body defines its interface function, as
+                // the crate function the trait's default names.
+                if binder.default.is_some() {
+                    if generic {
+                        return Err(unsupported("default method of a generic crate trait"));
+                    }
+                    continue;
+                }
+                let mut name = instance.clone();
+                super::super::names::push_path_segment(&mut name, &binder.name.0);
+                functions.push(out::Function {
+                    name,
+                    return_type,
+                    parameters,
+                    body: vec![],
+                    mir: None,
+                    external: true,
+                    captures: 0,
+                    implements: None,
                     span: span(binder.item_meta.span),
                 });
             }
-            let return_type = self.ty(&signature.output)?;
-            if !closures::callable_scalar(&return_type) && return_type != Type::Unit {
-                return Err(unsupported("trait method result other than a scalar or ()"));
-            }
-            // A default method's body defines its interface function, as
-            // the crate function the trait's default names.
-            if binder.default.is_some() {
-                continue;
-            }
-            functions.push(out::Function {
-                name: self.interface_name(id, method_id)?,
-                return_type,
-                parameters,
-                body: vec![],
-                mir: None,
-                external: true,
-                captures: 0,
-                implements: None,
-                span: span(binder.item_meta.span),
-            });
         }
         Ok(functions)
     }
@@ -197,8 +310,10 @@ impl Adapter<'_> {
         let record = self.record_id(receiver).map_err(|_| {
             unsupported("crate trait implemented for a type other than a crate struct")
         })?;
-        let trait_name =
-            self.qualified_function_name(&self.krate.trait_decls[trait_id].item_meta.name)?;
+        let trait_name = self.trait_instance_name(
+            trait_id,
+            &self.instance_arguments(&imp.impl_trait.generics)?,
+        )?;
         let method_name = &self.krate.trait_decls[trait_id].methods[method]
             .skip_binder
             .name
@@ -209,7 +324,7 @@ impl Adapter<'_> {
                 &trait_name,
                 method_name,
             ),
-            self.interface_name(trait_id, method)?,
+            self.interface_name(trait_id, method, &imp.impl_trait.generics)?,
         ))
     }
 
@@ -229,7 +344,8 @@ impl Adapter<'_> {
         if !pointer.generics.types.is_empty() || !pointer.generics.const_generics.is_empty() {
             return Err(unsupported("generic trait method call"));
         }
-        self.interface_name(id, *method).map(Some)
+        self.interface_name(id, *method, &trait_ref.trait_decl_ref.skip_binder.generics)
+            .map(Some)
     }
 
     /// The interface function a call through a `dyn` vtable's method field
@@ -276,7 +392,18 @@ impl Adapter<'_> {
                 "call through a vtable of a trait other than a crate trait",
             ));
         };
-        self.interface_name(id, *method).map(Some)
+        // The vtable's type is generic over the trait's arguments after
+        // `Self`, which the reference's type gives it.
+        let name = &self.krate.trait_decls[id].methods[*method]
+            .skip_binder
+            .name
+            .0;
+        self.interface_name_at(
+            id,
+            name,
+            vtable_type.generics.types.iter().cloned().collect(),
+        )
+        .map(Some)
     }
 }
 
@@ -701,6 +828,85 @@ mod tests {
                 &coercion.name
             ));
         }
+    }
+
+    // A generic crate trait has an interface function for each instance an
+    // implementation or a call names, its signature at that instance's
+    // arguments, and each is named with them.
+    #[test]
+    fn charon_generic_traits_import_an_interface_per_instance() {
+        const GENERIC: &[u8] = include_bytes!(
+            "../../../../design/charon-trial/generic-traits/.click/generic_traits/shapes.rs.ullbc"
+        );
+        const GENERIC_SOURCE: &[u8] =
+            include_bytes!("../../../../design/charon-trial/generic-traits/shapes.rs");
+        let artifact: ExtractionArtifact = serde_json::from_slice(GENERIC).unwrap();
+        let sources = [("shapes.rs".into(), GENERIC_SOURCE.to_vec())]
+            .into_iter()
+            .collect();
+        let export = decode_crate(
+            &serde_json::to_vec(&artifact).unwrap(),
+            "shapes.rs",
+            GENERIC_SOURCE,
+            artifact.crate_config.as_ref(),
+            Some(&sources),
+        )
+        .unwrap();
+        let display = |name: &str| super::super::super::names::rust_display_name(name).unwrap();
+        let named = |path: &str| {
+            export
+                .functions
+                .iter()
+                .find(|f| {
+                    super::super::super::names::rust_display_name(&f.name).as_deref() == Some(path)
+                })
+                .unwrap_or_else(|| panic!("{path}"))
+        };
+        for (interface, scalar) in [
+            ("generic_traits::Scale<i32>::scale", Type::I32),
+            ("generic_traits::Scale<u32>::scale", Type::U32),
+        ] {
+            let function = named(interface);
+            assert!(function.external);
+            assert_eq!(function.parameters[1].value_type, scalar);
+            assert_eq!(function.return_type, scalar);
+        }
+        assert_eq!(
+            named("<generic_traits::Square as generic_traits::Scale<i32>>::scale")
+                .implements
+                .as_deref()
+                .map(display)
+                .as_deref(),
+            Some("generic_traits::Scale<i32>::scale")
+        );
+        for (caller, interface) in [
+            ("generic_traits::total", "generic_traits::Scale<i32>::scale"),
+            (
+                "generic_traits::dynamic",
+                "generic_traits::Scale<i32>::scale",
+            ),
+            (
+                "generic_traits::wide_total",
+                "generic_traits::Scale<u32>::scale",
+            ),
+        ] {
+            assert_eq!(
+                calls(named(caller))
+                    .into_iter()
+                    .map(display)
+                    .collect::<Vec<_>>(),
+                [interface]
+            );
+        }
+        assert_eq!(
+            super::super::super::names::interface_instance(
+                &named("generic_traits::Scale<i32>::scale").name
+            ),
+            Some((
+                super::super::super::names::qualified_name(["generic_traits", "Scale"]),
+                vec!["i32".to_string()]
+            ))
+        );
     }
 
     // Every implementation a call through the trait can reach must be

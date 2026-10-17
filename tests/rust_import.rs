@@ -4171,6 +4171,8 @@ mod closures;
 mod extern_functions;
 #[path = "rust_import/function_pointers.rs"]
 mod function_pointers;
+#[path = "rust_import/generic_traits.rs"]
+mod generic_traits;
 #[path = "rust_import/impl_fn.rs"]
 mod impl_fn;
 #[path = "rust_import/parameterized_contracts.rs"]

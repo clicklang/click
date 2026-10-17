@@ -820,7 +820,7 @@ fn walk_c_state<S: VariableSubstitution + ?Sized>(state: &CState, s: &S) -> CSta
         .map(|(pointer, name)| (s.local_slot(pointer), name.clone()))
         .collect();
     CState {
-        locals: CLocalEnvironment { bindings, slots },
+        locals: CLocalEnvironment::from_parts(bindings, slots),
         aggregate_destination: state.aggregate_destination.as_ref().map(|destination| {
             std::sync::Arc::new(CAggregateDestination {
                 pointer: s.pointer(&destination.pointer),

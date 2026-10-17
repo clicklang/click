@@ -444,7 +444,8 @@ fn offset_alias_overlap_uses_exact_bytes_and_ignores_unrelated_facts() {
         4,
     );
     let mut samples = Vec::new();
-    for size in [8, 32, 128, 512] {
+    let sizes = [4u64, 16, 64, 256];
+    for size in sizes {
         let mut assumptions = PureFactContext::new();
         for index in 0..size {
             assumptions = assumptions.assume_condition(
@@ -486,6 +487,17 @@ fn offset_alias_overlap_uses_exact_bytes_and_ignores_unrelated_facts() {
     assert!(
         samples.iter().all(|work| *work <= samples[0] * 2 + 16),
         "overlap query scanned unrelated facts: {samples:?}"
+    );
+    let indexed = |costs: &[usize]| costs.iter().all(|work| *work <= costs[0] + 32);
+    assert!(indexed(&samples), "{samples:?}");
+    let rescanned = samples
+        .iter()
+        .zip(sizes)
+        .map(|(work, size)| work + usize::try_from(size).unwrap())
+        .collect::<Vec<_>>();
+    assert!(
+        !indexed(&rescanned),
+        "the smaller overlap fixture must detect unrelated fact visits: {samples:?}"
     );
 }
 
