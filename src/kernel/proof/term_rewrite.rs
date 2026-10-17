@@ -2881,13 +2881,19 @@ impl<'a> TermRewrite<'a> {
                     .with_designation(std::sync::Arc::new(designation))
                     .with_opaque_extent(opaque_extent);
                 if retain_view && let Some((from, _)) = shifted_source {
-                    // The numeric consequence can move another view's address;
-                    // it cannot replace an identity the source view did not name.
-                    if v.designation() != from.designation() {
+                    // The numeric consequence cannot identify the base's own
+                    // domain with a different view's domain. Nested reads still
+                    // substitute their arguments through the equality.
+                    if v.designation() != from.designation()
+                        && v.designation().block == from.pointer().block
+                    {
                         mapped =
                             mapped.with_designation(std::sync::Arc::new(v.designation().clone()));
                     }
-                    if from.extent_is_known() || v.opaque_extent() != from.opaque_extent() {
+                    if (from.extent_is_known() || v.opaque_extent() != from.opaque_extent())
+                        && v.opaque_extent()
+                            .is_some_and(|origin| origin.block == from.pointer().block)
+                    {
                         mapped = mapped.with_opaque_extent(
                             v.opaque_extent().cloned().map(std::sync::Arc::new),
                         );
