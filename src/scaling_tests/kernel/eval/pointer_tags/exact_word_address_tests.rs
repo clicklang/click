@@ -59,7 +59,10 @@ fn compound_word_address_lookup_skips_unrelated_equalities() {
         let fact = Proposition::ConditionIs(
             ConditionTerm::uint64_equal(
                 expression.clone(),
-                Bitvector32Term::PointerAddress(Box::new(pointer.clone()), crate::kernel::AddressObjectClass::NONE),
+                Bitvector32Term::PointerAddress(
+                    Box::new(pointer.clone()),
+                    crate::kernel::AddressObjectClass::NONE,
+                ),
             ),
             true,
         );

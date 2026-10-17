@@ -13,7 +13,10 @@ fn fold_copied_wide_word_preserves_scope_width_and_scales() {
     let word = Bitvector32Term::Variable(Variable(710_000));
     let copied = Bitvector32Term::Variable(Variable(710_001));
     let changed = Bitvector32Term::Variable(Variable(710_002));
-    let address = Bitvector32Term::PointerAddress(Box::new(Pointer::symbolic(Variable(710_003))), crate::kernel::AddressObjectClass::NONE);
+    let address = Bitvector32Term::PointerAddress(
+        Box::new(Pointer::symbolic(Variable(710_003))),
+        crate::kernel::AddressObjectClass::NONE,
+    );
     let packed = |word: &Bitvector32Term| {
         Proposition::ConditionIs(
             ConditionTerm::Bitvector64Equal(
@@ -90,7 +93,10 @@ fn a_narrow_equality_between_wide_words_is_not_an_alias() {
     let _session = crate::kernel::VerificationSession::enter();
     let word = Bitvector32Term::Variable(Variable(730_000));
     let copied = Bitvector32Term::Variable(Variable(730_001));
-    let address = Bitvector32Term::PointerAddress(Box::new(Pointer::symbolic(Variable(730_003))), crate::kernel::AddressObjectClass::NONE);
+    let address = Bitvector32Term::PointerAddress(
+        Box::new(Pointer::symbolic(Variable(730_003))),
+        crate::kernel::AddressObjectClass::NONE,
+    );
     let packed = |word: &Bitvector32Term| {
         Proposition::ConditionIs(
             ConditionTerm::Bitvector64Equal(
