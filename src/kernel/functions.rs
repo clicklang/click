@@ -14615,6 +14615,15 @@ pub(super) fn expand_composite_resource_fact_with_children(
     if definition.parameters().len() != arguments.len() {
         return None;
     }
+    // A possibly empty owned head supplies no body cell. Empty token
+    // populations have no body authority to expose, so their symbolic
+    // quantities still participate in ordinary transfer planning.
+    if !definition.contains().is_empty()
+        && !composite.is_view()
+        && !composite.has_proven_positive_quantity(assumptions)
+    {
+        return Some((context.clone(), Vec::new(), Vec::new()));
+    }
     // A viewed composite carries its loan dependency on the folded
     // occurrence.  Expansion must transfer that exact bundle to only the
     // newly inserted child occurrences; equal children in the ambient frame
@@ -16472,38 +16481,12 @@ pub(in crate::kernel) fn resource_clause_section_supply(
     // still readable through the folded clause, independently of that ledger.
     // Publish only views of those cells, never the authority or body ownership.
     for fact in supplied {
-        if !fact.is_view() && !fact.has_proven_positive_quantity(assumptions) {
-            continue;
-        }
-        let CResource::Composite { name, .. } = fact.resource() else {
-            continue;
-        };
-        let Ok(index) = definitions.binary_search_by(|definition| {
-            crate::instrumentation::record_deterministic_work(1);
-            definition.name().cmp(name)
-        }) else {
-            continue;
-        };
-        if let Some(loadable) = evaluate_composite_resource_loadable_propositions(
+        views.extend(resource_clause_composite_memory_views(
             fact,
-            &definitions[index..=index],
-            state.memory(),
+            definitions,
+            state,
             assumptions,
-        ) {
-            views.extend(loadable.into_iter().filter_map(|proposition| {
-                let Proposition::CMemoryLoadable { base, bytes, .. } = proposition else {
-                    return None;
-                };
-                Some(CResourceFact::view_memory(
-                    CMemoryRange::new_with_element_width(
-                        base,
-                        Bitvector32Term::Constant(0),
-                        bytes,
-                        1,
-                    ),
-                ))
-            }));
-        }
+        ));
     }
     // A field-bearing instance one of this section's own clauses supplied
     // publishes the cells its unconditional, unmatched body owns, the way a
@@ -17509,6 +17492,39 @@ fn spec_proposition_mentions_any_name(fact: &SpecProposition, names: &BTreeSet<S
     })
 }
 
+// Read-only cells declared by one positive folded composite. Both the
+// initial supply and a newly resolved dependent clause publish the same
+// projections, even when generic ownership expansion cannot open its head.
+fn resource_clause_composite_memory_views(
+    fact: &CResourceFact,
+    definitions: &[CCompositeResourceDefinition],
+    state: &CState,
+    assumptions: &PureFactContext,
+) -> Vec<CResourceFact> {
+    if !fact.is_view() && !fact.has_proven_positive_quantity(assumptions) {
+        return Vec::new();
+    }
+    let CResource::Composite { name, .. } = fact.resource() else {
+        return Vec::new();
+    };
+    let Ok(index) = definitions.binary_search_by(|definition| {
+        crate::instrumentation::record_deterministic_work(1);
+        definition.name().cmp(name)
+    }) else {
+        return Vec::new();
+    };
+    evaluate_composite_resource_memory_ranges(
+        fact,
+        &definitions[index..=index],
+        state.memory(),
+        assumptions,
+    )
+    .unwrap_or_default()
+    .into_iter()
+    .map(CResourceFact::view_memory)
+    .collect()
+}
+
 /// Incrementally exposes the memory cells beneath one newly evaluated
 /// composite clause.  The outer section supply already expanded all facts
 /// from the previous pass; walking only this fact and its nested children
@@ -17544,6 +17560,12 @@ fn resource_clause_supply_with_fact(
     }
     if !matches!(fact.resource(), CResource::Composite { .. }) {
         return (supply, added);
+    }
+    for view in resource_clause_composite_memory_views(&fact, definitions, state, assumptions) {
+        if !supply.facts().contains(&view) {
+            supply = supply.unchecked_with_fact(view.clone());
+            added.push(view);
+        }
     }
     let mut pending = VecDeque::from([fact]);
     let mut seen = BTreeSet::new();
