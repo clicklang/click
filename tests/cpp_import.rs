@@ -11012,7 +11012,7 @@ fn wide_contracts_refuse_signedness_and_width_mismatches() {
 
 #[test]
 #[ignore = "nightly: 0.6s in the parallel gate"]
-fn wide_contracts_nested_calls_report_pending_observer_chains() {
+fn wide_contracts_nested_calls_compose_observer_chains() {
     let project = Project::with_fixture("wide.cpp", "nested", WIDE_CONTRACTS_SOURCE);
     refresh_import(&project.config()).unwrap();
     let import = load_import(&project.config()).unwrap();
@@ -11021,15 +11021,23 @@ int128 identity(int128 value) { ensures to_integer(result) == to_integer(value);
 int128 nested(int128 value) { ensures to_integer(result) == to_integer(result); } by { execute(); simp(); }
 "#;
     check_return_call_sidecar(&project, &import, proof);
-    // Bounded simp recognizes exact Integer equalities, not equality chains.
+    // The caller composes both identity contracts through the observer chain.
     let stronger = proof.replace(
         "int128 nested(int128 value) { ensures to_integer(result) == to_integer(result); }",
         "int128 nested(int128 value) { ensures to_integer(result) == to_integer(value); }",
     );
+    check_return_call_sidecar(&project, &import, &stronger);
+    let false_result = stronger.replace(
+        "int128 nested(int128 value) { ensures to_integer(result) == to_integer(value); }",
+        "int128 nested(int128 value) { ensures to_integer(result) == to_integer(value) + 1; }",
+    );
+    assert_ne!(false_result, stronger);
     let sidecar = project.directory.join("nested.click");
-    fs::write(&sidecar, &stronger).unwrap();
-    let parsed = read_click_project(&sidecar, &stronger).unwrap();
-    let error = verify_program_prepared_project(&parsed, &import).unwrap_err();
+    fs::write(&sidecar, &false_result).unwrap();
+    let parsed = read_click_project(&sidecar, &false_result).unwrap();
+    let error = verify_program_prepared_project(&parsed, &import)
+        .err()
+        .expect("composing identity calls must not prove an off-by-one result");
     assert!(
         error.message().contains("unclosed goal"),
         "{}",
