@@ -6,7 +6,8 @@ The negative twin of
 the terminator `src[n] == '\0'`. The bytes alone are not a C string of length
 `n`, so the call cannot assemble the view its callee requires and is refused.
 Assembling is a fold, so the refusal names the instance and the missing body
-fact, as a refused `fold` does.
+fact, as a refused `fold` does. The written terminator clause is accompanied
+by its `p = src` and `len = n` call bindings.
 
 ```c filename=cstr_at_call_assembly_needs_the_terminator_fact.c
 uint64 string_length(const uint8 *s, uint64 n);
@@ -40,5 +41,5 @@ uint64 measure(uint8* src, uint64 n) {
 ```
 
 ```expect
-fail: assembling `views cstr_at(src, n)` from owned pieces requires an exact body fact: missing pure fact: old(src[n]) == 0
+fail: assembling `views cstr_at(src, n)` from owned pieces requires an exact body fact: missing pure fact: `p[len] == 0u8` (with p = src, len = n)
 ```
