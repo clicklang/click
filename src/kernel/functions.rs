@@ -17033,14 +17033,29 @@ fn predicate_fact_refutes_constructor(
         return false;
     };
     let condition = if fact.wide {
-        ConditionTerm::int64_equal(value, fact.constant.clone())
+        ConditionTerm::int64_equal(value.clone(), fact.constant.clone())
     } else {
-        ConditionTerm::equal(value, fact.constant.clone())
+        ConditionTerm::equal(value.clone(), fact.constant.clone())
     };
     // The premise fixes the application's value; the arm is refuted when the
     // body's value at this constructor cannot be that one.
     let refutation = Proposition::ConditionIs(condition, !fact.equal);
-    if required_obligation_is_exactly_discharged(arm_assumptions, &refutation) {
+    // Refutation consumes indexed scalar evidence; a failed comparison must
+    // not resolve unrelated memory equations in the ambient path context.
+    let indexed_comparison = if fact.wide {
+        arm_assumptions
+            .wide_constant_from_equalities(&value)
+            .zip(arm_assumptions.wide_constant_from_equalities(fact.constant))
+            .map(|(left, right)| left == right)
+    } else {
+        arm_assumptions.decide_bitvector_equality_shallow(&value, fact.constant)
+    };
+    if indexed_comparison == Some(!fact.equal)
+        || super::reasoning::path_facts::call_input_fact_is_already_known(
+            arm_assumptions,
+            &refutation,
+        )
+    {
         super::assumptions::record_reasoning_provenance(arm_assumptions, premise);
         return true;
     }

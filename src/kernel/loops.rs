@@ -2600,6 +2600,7 @@ fn join_loop_exits(
         ExecutionFacts,
         Vec<ProofObligation>,
         CheckedLoanCallEvidenceSequence,
+        Option<PureFactContext>,
     )>,
     assumptions: &PureFactContext,
     variables: &mut KernelVariableGenerator,
@@ -2608,7 +2609,7 @@ fn join_loop_exits(
     let exit_state = exits.first()?.0.clone();
     let states = exits
         .iter()
-        .map(|(state, _, _, _)| state)
+        .map(|(state, _, _, _, _)| state)
         .collect::<Vec<_>>();
     let unchanged = || vec![LoopExitRestatement::default(); exits.len()];
     let invariant_state_unchanged = states[1..].iter().all(|other| **other == exit_state);
@@ -2617,7 +2618,11 @@ fn join_loop_exits(
     } else {
         let facts = exits
             .iter()
-            .map(|(_, facts, _, _)| facts)
+            .map(|(_, facts, _, _, _)| facts)
+            .collect::<Vec<_>>();
+        let contexts = exits
+            .iter()
+            .map(|(_, _, _, _, context)| context.clone())
             .collect::<Vec<_>>();
         match abstract_loop_exit_states(
             head,
@@ -2625,6 +2630,7 @@ fn join_loop_exits(
             binders,
             &states,
             &facts,
+            &contexts,
             assumptions,
             variables,
             budget,
@@ -2637,7 +2643,7 @@ fn join_loop_exits(
         exits
             .into_iter()
             .zip(restatements)
-            .map(|((_, facts, obligations, loan_evidence), restatement)| {
+            .map(|((_, facts, obligations, loan_evidence, _), restatement)| {
                 restatement.restate(facts, obligations, loan_evidence)
             })
             .collect(),
@@ -2748,6 +2754,7 @@ fn abstract_loop_exit_states(
     binders: &[CLoopBinder],
     states: &[&CState],
     exit_facts: &[&ExecutionFacts],
+    retained_contexts: &[Option<PureFactContext>],
     assumptions: &PureFactContext,
     variables: &mut KernelVariableGenerator,
     budget: &mut ExecutionBudget,
@@ -2755,7 +2762,12 @@ fn abstract_loop_exit_states(
     // This join already restates and exports each exit's facts. Index that
     // explicit input once per exit, shared by all binder equality checks;
     // never rebuild the path context for each binder or argument.
-    let contexts = loop_exit_argument_contexts(exit_facts, assumptions, !binders.is_empty());
+    let contexts = loop_exit_argument_contexts(
+        exit_facts,
+        retained_contexts,
+        assumptions,
+        !binders.is_empty(),
+    );
     let mut rebound = Vec::with_capacity(states.len());
     for (index, state) in states.iter().enumerate() {
         match c_loop_state_with_loop_binders_rebound(
@@ -2842,6 +2854,7 @@ fn abstract_loop_exit_states(
 
 fn loop_exit_argument_contexts(
     facts: &[&ExecutionFacts],
+    retained_contexts: &[Option<PureFactContext>],
     assumptions: &PureFactContext,
     has_binders: bool,
 ) -> Vec<PureFactContext> {
@@ -2850,7 +2863,35 @@ fn loop_exit_argument_contexts(
     }
     facts
         .iter()
-        .map(|facts| {
+        .enumerate()
+        .map(|(index, facts)| {
+            if let Some(Some(context)) = retained_contexts.get(index) {
+                let mut retained = context.clone();
+                for change in context
+                    .execution_fact_projection
+                    .diff(&assumptions.execution_fact_projection)
+                {
+                    crate::instrumentation::record_deterministic_work(1);
+                    // The exit is later than the incoming context. Preserve
+                    // its recorded truth when both name the same condition.
+                    if let imbl::ordmap::DiffItem::Add(_, fact) = change {
+                        retained = retained.assume_execution_pure_fact(fact);
+                    }
+                }
+                if !context
+                    .resource_compositions
+                    .shares_root_with(&assumptions.resource_compositions)
+                {
+                    for composition in assumptions.resource_compositions.iter() {
+                        if !retained.resource_compositions.contains(composition) {
+                            retained = retained.assume_proposition(
+                                Proposition::CResourceComposition(composition.clone()),
+                            );
+                        }
+                    }
+                }
+                return retained;
+            }
             crate::instrumentation::record_deterministic_work(facts.len());
             assumptions_with_path_context(assumptions, *facts, &[])
         })
@@ -4398,6 +4439,7 @@ fn execute_c_while_exit_paths(
                         .collect(),
                     obligations,
                     candidate.loan_evidence().clone(),
+                    None,
                 ));
                 continue;
             }
@@ -4460,6 +4502,7 @@ fn execute_c_while_exit_paths(
                     facts,
                     obligations,
                     loan_evidence,
+                    None,
                 ));
             }
         }
@@ -4510,6 +4553,7 @@ fn execute_c_while_exit_paths(
                     .collect::<ExecutionFacts>(),
                 loop_check_obligations.clone(),
                 exit.loan_evidence().clone(),
+                exit.fact_context().cloned(),
             )
         })
         .chain(candidate_exit_entries)
@@ -4578,7 +4622,7 @@ fn execute_c_while_exit_paths(
             let exits = exits
                 .into_iter()
                 .map(|(facts, obligations, loan_evidence)| {
-                    (top_state.clone(), facts, obligations, loan_evidence)
+                    (top_state.clone(), facts, obligations, loan_evidence, None)
                 })
                 .chain(break_exit_entries.iter().cloned())
                 .collect::<Vec<_>>();

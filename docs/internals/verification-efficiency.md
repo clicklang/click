@@ -320,7 +320,16 @@ charged to visible semantic output rather than hidden ambient state:
   rule; construction charges each fact and the rule charges each copied exit
   handle. `checked_loop_exit_copies_share_their_fact_storage` checks both
   exit forms at 4, 64, and 1,024 facts, alongside the full loop-exit scaling
-  regression.
+  regression. Break exits produced by a checked proof also retain its indexed
+  fact context. Binder checks at the exit join reuse that context and add only
+  incoming facts absent from it; they do not admit the exit's facts again.
+  `exit_argument_checks_reuse_the_checked_path_context` varies the shared
+  prefix and checks both the selected exit's facts and an incoming-only fact.
+- Constructor refutation compares a declared predicate's value using indexed
+  scalar equalities, exact facts, and intrinsic decisions. An unknown value
+  does not start memory resolution across unrelated path equations.
+  `predicate_constructor_comparison_ignores_unrelated_load_facts` measures
+  failed decisions at four sizes and retains known-value positive controls.
 - A loop exit join reconciles contract-call epochs through changed marker
   entries, retaining common history and one fresh marker. It does not union
   every branch's epoch into a successor that every exit must then scan. The

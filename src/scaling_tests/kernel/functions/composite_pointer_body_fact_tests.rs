@@ -449,3 +449,119 @@ fn numeric_resource_facts_do_not_repeat_the_canonical_read_walk() {
         "[canonical, hypothetical, published]: {costs:?}"
     );
 }
+
+// A failed predicate comparison must not search unrelated memory equations.
+#[test]
+fn predicate_constructor_comparison_ignores_unrelated_load_facts() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let variants: Arc<[AlgebraicVariantType]> = vec![AlgebraicVariantType {
+        name: "Empty".into(),
+        fields: vec![],
+    }]
+    .into();
+    let ty = AlgebraicType {
+        rigid: false,
+        name: "ComparisonModel".into(),
+        arguments: vec![],
+        variants: variants.clone(),
+        schemas: Arc::new(AlgebraicSchemas::new(BTreeMap::from([(
+            AlgebraicValueType::Algebraic {
+                name: "ComparisonModel".into(),
+                arguments: vec![],
+            },
+            variants,
+        )]))),
+    };
+    let variable = Variable(740_000);
+    let model = AlgebraicTerm {
+        algebraic_type: ty.clone(),
+        node: AlgebraicTermNode::Variable(variable),
+    };
+    let constructor = AlgebraicTerm {
+        algebraic_type: ty.clone(),
+        node: AlgebraicTermNode::Constructor {
+            variant: "Empty".into(),
+            fields: vec![],
+        },
+    };
+    crate::kernel::register_pure_function_definition(crate::kernel::CPureFunctionDefinition::new(
+        "comparison_value",
+        vec![
+            crate::kernel::CPureFunctionParameter::algebraic("model", ty),
+            crate::kernel::CPureFunctionParameter::c("value", CType::Int32),
+        ],
+        SpecExpression::CExpression(CExpression::Variable("value".into())),
+    ))
+    .unwrap();
+    let value = Bitvector32Term::Variable(Variable(740_001));
+    let premise = Proposition::ConditionIs(
+        ConditionTerm::equal(
+            Bitvector32Term::ClickFunctionApplication {
+                name: "comparison_value".into(),
+                arguments: vec![
+                    PureFunctionArgument::Algebraic(model),
+                    PureFunctionArgument::Value(CValue::Int32(value.clone())),
+                ],
+            },
+            Bitvector32Term::Constant(1),
+        ),
+        true,
+    );
+    let mut costs = Vec::new();
+    for count in [4u64, 8, 16, 32] {
+        let mut assumptions = PureFactContext::new();
+        for index in 0..count {
+            assumptions = assumptions.assume_proposition(Proposition::ConditionIs(
+                ConditionTerm::equal(
+                    Bitvector32Term::MemoryLoad(
+                        intern_c_memory_ref(&CMemory::new()),
+                        Box::new(Pointer::symbolic(Variable(741_000 + index))),
+                        LoadKind::Bits32,
+                    ),
+                    Bitvector32Term::Constant(index as u32 + 2),
+                ),
+                true,
+            ));
+        }
+        assumptions.build_stated_proposition_index();
+        let (refuted, work) = crate::instrumentation::measure_deterministic_work(|| {
+            predicate_fact_refutes_constructor(
+                &premise,
+                &variable,
+                &constructor,
+                &assumptions,
+                &mut ExecutionBudget::beside_live_state(),
+            )
+        });
+        assert!(!refuted, "unrelated loads cannot settle the predicate");
+        costs.push(work);
+        let known = assumptions
+            .clone()
+            .assume_proposition(Proposition::ConditionIs(
+                ConditionTerm::equal(value.clone(), Bitvector32Term::Constant(0)),
+                true,
+            ));
+        assert!(predicate_fact_refutes_constructor(
+            &premise,
+            &variable,
+            &constructor,
+            &known,
+            &mut ExecutionBudget::beside_live_state()
+        ));
+        let possible = assumptions.assume_proposition(Proposition::ConditionIs(
+            ConditionTerm::equal(value.clone(), Bitvector32Term::Constant(1)),
+            true,
+        ));
+        assert!(!predicate_fact_refutes_constructor(
+            &premise,
+            &variable,
+            &constructor,
+            &possible,
+            &mut ExecutionBudget::beside_live_state()
+        ));
+    }
+    assert!(
+        costs.iter().all(|work| *work <= costs[0] + 16),
+        "predicate comparison searched unrelated load equations: {costs:?}"
+    );
+}
