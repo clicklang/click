@@ -37,7 +37,11 @@ fn branch_join_read_query_does_not_scan_unrelated_cached_cells() {
         );
         let joined = first
             .clone()
-            .with_interface_memory_havoc(Variable(981003), &std::collections::BTreeSet::<crate::kernel::PointerBlock>::new(), &[&first, &second])
+            .with_interface_memory_havoc(
+                Variable(981003),
+                &std::collections::BTreeSet::<crate::kernel::PointerBlock>::new(),
+                &[&first, &second],
+            )
             .unwrap();
         // Warm only the common prefix. The query below must inspect the
         // new branch delta, not repeat all of that prefix's work.
