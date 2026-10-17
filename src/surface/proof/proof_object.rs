@@ -164,6 +164,7 @@ pub(super) struct ExecutionLogicalCasesSplit {
 /// in-`Proof` sibling join both reduce their arms to this view, so the
 /// merge law has one implementation.
 struct CheckedExecutionJoinArm<'v> {
+    branch_id: BranchId,
     certificate: ProofCertificate,
     facts: &'v ProofFacts,
     execution: &'v ExecutionProofState,

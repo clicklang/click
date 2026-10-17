@@ -248,6 +248,10 @@ grows with the recorded trace. Redirect a long trace when useful:
 click verify --trace-proof my_proof entry.click > trace.txt 2>&1
 ```
 
+A rejected `branch ensuring` or `match ensuring` interface names the written
+fact and retains the failing arm's checked prefix and guard. This also covers
+a branch with only one feasible arm.
+
 The trace option requires one
 C sidecar file and cannot be combined with location or incremental selection,
 or `--allow-sorry`. A trace run does not record a full verification baseline.

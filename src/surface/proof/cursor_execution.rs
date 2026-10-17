@@ -63,7 +63,8 @@ pub(super) fn apply_branch_interface_with_proof_facts(
                     .record_lowering(written_fact, &fact)?;
                 if !crate::kernel::proof::checked_branch_fact_is_available(&concrete_facts, &fact) {
                     return Err(ClickError::new(format!(
-                        "`{claim_label}` tactic {tactic_index}: `branch ensuring` did not establish fact: {}",
+                        "`{claim_label}` tactic {tactic_index}: `branch ensuring` did not establish fact `{}`: {}",
+                        describe_click_proposition(written_fact),
                         describe_missing_pure_fact(
                             &fact,
                             &concrete_facts.to_vec(),
@@ -71,7 +72,11 @@ pub(super) fn apply_branch_interface_with_proof_facts(
                             parameter_binding,
                             &[]
                         )
-                    )));
+                    )).with_spelled_requirement(
+                        fact,
+                        written_fact.clone(),
+                        "`branch ensuring` fact".into(),
+                    ));
                 }
                 if !concrete_facts.contains_top_level(&fact) {
                     concrete_facts = concrete_facts.with_kernel_checked_fact(fact);
