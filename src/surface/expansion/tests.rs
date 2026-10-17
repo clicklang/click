@@ -1523,7 +1523,7 @@ int32 caller() {
 }
 
 #[test]
-fn grouped_simp_expansion_preserves_each_claim_closer() {
+fn grouped_simp_expansion_closes_only_the_first_open_claim() {
     let c_source = "int32 identity(int32 x) { return x; }";
     let click_source = r#"
 verifying "identity.c";
@@ -1534,10 +1534,13 @@ int32 identity(int32 x) {
 } by {
     execute();
     simp();
+    simp();
 }
 "#;
     let sources = [("identity.c", c_source)];
 
+    // `simp` acts on the first open goal, so each `simp` expands to the
+    // closure of one claim and the second still has its own goal.
     let expanded = expand_top_level_tactic_for_test(
         click_source,
         &sources,
@@ -1549,11 +1552,12 @@ int32 identity(int32 x) {
 
     assert_eq!(
         expanded.matches("\n    assumption();").count(),
-        2,
-        "each grouped claim should retain one top-level closer:\n{expanded}"
+        1,
+        "the first simp should close only its own claim:\n{expanded}"
     );
+    assert!(expanded.contains("\n    simp();"), "{expanded}");
     verify_c0_sources(&expanded, &sources)
-        .expect("each grouped claim closer should survive expansion");
+        .expect("the second simp should still have its goal after expansion");
 }
 
 #[test]

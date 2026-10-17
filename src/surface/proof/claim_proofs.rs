@@ -3751,6 +3751,13 @@ pub(super) fn finish_ordered_proof<'a>(
                                 {
                                     continue;
                                 }
+                                // `simp` acts on the first open goal;
+                                // `auto` is the catch-all that closes every
+                                // goal still open.
+                                let main_claim = main_goal_claim(&closures);
+                                let acts_on = |claim_index: usize| {
+                                    auto_closer || Some(claim_index) == main_claim
+                                };
                                 let capturing_this_tactic = path_capture
                                     .is_some_and(|capture| capture.tactic_index == *tactic_index);
                                 // Read the outcome's resources through the
@@ -3874,7 +3881,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                         ))
                                     })?;
                                     for (claim_index, closure) in closures.iter_mut().enumerate() {
-                                        if closure.is_closed() {
+                                        if closure.is_closed() || !acts_on(claim_index) {
                                             continue;
                                         }
                                         *closure = ClaimClosure::vacuous(
@@ -3919,7 +3926,9 @@ pub(super) fn finish_ordered_proof<'a>(
                                     let mut direct_resource_claims = Vec::new();
                                     let mut direct_resource_evidence = BTreeMap::new();
                                     for (claim_index, claim) in claims.iter().enumerate() {
-                                        if closures[claim_index].is_closed() {
+                                        if closures[claim_index].is_closed()
+                                            || !acts_on(claim_index)
+                                        {
                                             continue;
                                         }
                                         {
@@ -4370,7 +4379,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                 }
                                 let mut reasons = Vec::new();
                                 for (claim_index, claim) in claims.iter().enumerate() {
-                                    if closures[claim_index].is_closed() {
+                                    if closures[claim_index].is_closed() || !acts_on(claim_index) {
                                         continue;
                                     }
                                     let Some(root) = outcome_proof.as_ref() else {
