@@ -666,7 +666,6 @@ fn flat_post_execution_tactic(tactic: &ProofTactic) -> Option<PostExecutionTacti
             target: target.clone(),
             premises: Some(premises.clone()),
         }),
-        ProofTactic::Rewrite(equality) => Some(PostExecutionTactic::Rewrite(equality.clone())),
         ProofTactic::Simp => Some(PostExecutionTactic::Simp),
         ProofTactic::AutoClose => Some(PostExecutionTactic::AutoClose),
         ProofTactic::SimpUsing(simp) => Some(PostExecutionTactic::SimpUsing(simp.clone())),

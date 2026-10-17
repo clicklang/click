@@ -1323,7 +1323,6 @@ pub(super) enum PostExecutionTactic {
         target: ClickProposition,
         premises: Option<Vec<ClickProposition>>,
     },
-    Rewrite(ClickProposition),
     /// Surface-only control structure scheduled after terminal execution.
     /// The arms contain no semantic state: ordered finalization asks the
     /// focused outcome `Proof` to decide the condition, then applies only the
@@ -1682,7 +1681,6 @@ pub(super) fn post_execution_tactic_timing(
         PostExecutionTactic::Leaf(tactic) => (tactic_name(tactic), "simple"),
         PostExecutionTactic::FoldProved(_) => ("fold", "control"),
         PostExecutionTactic::CloseOpen { .. } => ("open", "control"),
-        PostExecutionTactic::Rewrite(_) => ("rewrite", "simple"),
         PostExecutionTactic::If { .. } => ("if", "control"),
         PostExecutionTactic::CallOutcomes { .. } => ("outcomes", "control"),
     }
