@@ -1168,6 +1168,20 @@ impl SubobjectExtent {
         {
             return None;
         }
+        Self::identity(pointer).map(|identity| {
+            Self::opaque(Variable(Self::OPAQUE_VARIABLE_BASE + identity.0))
+        })
+    }
+
+    /// The variable naming the designation of the pointer variable
+    /// `variable` ([`Self::unseen`]), if it has one.
+    pub(crate) fn designation_variable(variable: Variable) -> Option<Variable> {
+        (variable.0 < Self::OPAQUE_VARIABLE_BASE)
+            .then(|| Variable(Self::OPAQUE_VARIABLE_BASE + variable.0))
+    }
+
+    /// The identity variable of a pointer of unseen formation at `pointer`.
+    fn identity(pointer: &Pointer) -> Option<Variable> {
         let identity = match (&pointer.block, &pointer.offset) {
             (PointerBlock::Symbolic(variable), PointerOffsetTerm::Constant(0)) => *variable,
             (PointerBlock::ExternalArgument, PointerOffsetTerm::Int32Scaled { value, .. }) => {
@@ -1181,8 +1195,17 @@ impl SubobjectExtent {
                 _ => return None,
             },
         };
-        (identity.0 < Self::OPAQUE_VARIABLE_BASE)
-            .then(|| Self::opaque(Variable(Self::OPAQUE_VARIABLE_BASE + identity.0)))
+        (identity.0 < Self::OPAQUE_VARIABLE_BASE).then_some(identity)
+    }
+
+    /// The start of the designation a typed object pointer at `address`
+    /// carries when nothing else is known of it: its own opaque extent's,
+    /// or its complete object's.
+    pub(crate) fn designation_start(address: &Pointer) -> Pointer {
+        match Self::identity(address) {
+            Some(identity) => Pointer::symbolic(Variable(Self::OPAQUE_VARIABLE_BASE + identity.0)),
+            None => Self::complete_object_designation(address),
+        }
     }
 
     /// The identity variable whose unseen extent `variable` names, if it

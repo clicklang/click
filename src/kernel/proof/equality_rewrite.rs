@@ -72,10 +72,18 @@ impl ProofFacts {
         goal: &Proposition,
         equality: &Proposition,
     ) -> Result<CheckedEqualityRewrite, String> {
+        let admitted_one = |equality: &Proposition| {
+            self.materialization_available(equality)
+                || reverse_equality(equality)
+                    .is_some_and(|reverse| self.materialization_available(&reverse))
+        };
+        // A pointer value equality is admitted part by part, each in either
+        // orientation.
         let admitted = equality_is_vacuous(equality)
-            || self.materialization_available(equality)
-            || reverse_equality(equality)
-                .is_some_and(|reverse| self.materialization_available(&reverse));
+            || admitted_one(equality)
+            || designated_pointer_equality(equality).is_some_and(|(address, designation)| {
+                admitted_one(address) && designation.into_iter().all(admitted_one)
+            });
         if !admitted {
             return Err(
                 "`rewrite` requires its equality to be an exact available fact".to_string(),
@@ -199,7 +207,9 @@ pub(crate) fn rewrite_proposition_by_exact_equality(
     // must be available; the address part rewrites, and the extent of the
     // value it rewrites follows its address.
     if let Some((address, designation)) = designated_pointer_equality(equality) {
-        if !designation.iter().all(|fact| is_available(fact)) {
+        if !designation.iter().all(|fact| {
+            is_available(fact) || reverse_equality(fact).as_ref().is_some_and(is_available)
+        }) {
             return Err(
                 "`rewrite` requires its equality to be an exact available fact".to_string(),
             );

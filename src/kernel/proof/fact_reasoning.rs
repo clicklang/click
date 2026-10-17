@@ -1012,11 +1012,7 @@ pub(crate) fn quantified_binder_equivalent(left: &Proposition, right: &Propositi
             },
         ) => {
             left_sort == right_sort
-                && substitute_int32_variable_in_proposition(
-                    left_body,
-                    *left_var,
-                    Bitvector32Term::Variable(*right_var),
-                ) == **right_body
+                && rename_binder(left_body, left_sort, *left_var, *right_var) == **right_body
         }
         (
             Proposition::Exists {
@@ -1033,13 +1029,25 @@ pub(crate) fn quantified_binder_equivalent(left: &Proposition, right: &Propositi
             },
         ) => {
             left_sort == right_sort
-                && substitute_int32_variable_in_proposition(
-                    left_body,
-                    *left_var,
-                    Bitvector32Term::Variable(*right_var),
-                ) == **right_body
+                && rename_binder(left_body, left_sort, *left_var, *right_var) == **right_body
         }
         _ => false,
+    }
+}
+
+/// `body` with the binder `from` renamed `to`, and for a pointer binder the
+/// designation it names renamed with it.
+fn rename_binder(body: &Proposition, sort: &Sort, from: Variable, to: Variable) -> Proposition {
+    let renamed = substitute_int32_variable_in_proposition(body, from, Bitvector32Term::Variable(to));
+    match (
+        sort,
+        crate::kernel::SubobjectExtent::designation_variable(from),
+        crate::kernel::SubobjectExtent::designation_variable(to),
+    ) {
+        (Sort::CPointer(_), Some(from), Some(to)) => {
+            substitute_int32_variable_in_proposition(&renamed, from, Bitvector32Term::Variable(to))
+        }
+        _ => renamed,
     }
 }
 

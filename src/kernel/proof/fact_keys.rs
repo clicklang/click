@@ -3074,6 +3074,16 @@ fn alpha_proposition_key_with_bindings<const ALLOW_LOADS: bool>(
                 body
             } else {
                 let prior = bindings.bitvector.insert(*var, ordinal);
+                // A pointer binder also binds the designation it names.
+                let designation = match sort {
+                    Sort::CPointer(_) => {
+                        let variable = crate::kernel::SubobjectExtent::designation_variable(*var)?;
+                        let ordinal = *next_binder;
+                        *next_binder = (*next_binder).checked_add(1)?;
+                        Some((variable, bindings.bitvector.insert(variable, ordinal)))
+                    }
+                    _ => None,
+                };
                 let parent_scope = bindings.bitvector_scope;
                 let bitvector_scope = bindings.next_scope_id;
                 bindings.next_scope_id = bindings.next_scope_id.checked_add(1)?;
@@ -3081,6 +3091,13 @@ fn alpha_proposition_key_with_bindings<const ALLOW_LOADS: bool>(
                 let body =
                     alpha_proposition_key_with_bindings::<ALLOW_LOADS>(body, bindings, next_binder);
                 bindings.bitvector_scope = parent_scope;
+                if let Some((variable, prior)) = designation {
+                    if let Some(prior) = prior {
+                        bindings.bitvector.insert(variable, prior);
+                    } else {
+                        bindings.bitvector.remove(&variable);
+                    }
+                }
                 if let Some(prior) = prior {
                     bindings.bitvector.insert(*var, prior);
                 } else {
@@ -3112,6 +3129,16 @@ fn alpha_proposition_key_with_bindings<const ALLOW_LOADS: bool>(
                 body
             } else {
                 let prior = bindings.bitvector.insert(*var, ordinal);
+                // A pointer binder also binds the designation it names.
+                let designation = match sort {
+                    Sort::CPointer(_) => {
+                        let variable = crate::kernel::SubobjectExtent::designation_variable(*var)?;
+                        let ordinal = *next_binder;
+                        *next_binder = (*next_binder).checked_add(1)?;
+                        Some((variable, bindings.bitvector.insert(variable, ordinal)))
+                    }
+                    _ => None,
+                };
                 let parent_scope = bindings.bitvector_scope;
                 let bitvector_scope = bindings.next_scope_id;
                 bindings.next_scope_id = bindings.next_scope_id.checked_add(1)?;
@@ -3119,6 +3146,13 @@ fn alpha_proposition_key_with_bindings<const ALLOW_LOADS: bool>(
                 let body =
                     alpha_proposition_key_with_bindings::<ALLOW_LOADS>(body, bindings, next_binder);
                 bindings.bitvector_scope = parent_scope;
+                if let Some((variable, prior)) = designation {
+                    if let Some(prior) = prior {
+                        bindings.bitvector.insert(variable, prior);
+                    } else {
+                        bindings.bitvector.remove(&variable);
+                    }
+                }
                 if let Some(prior) = prior {
                     bindings.bitvector.insert(*var, prior);
                 } else {

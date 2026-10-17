@@ -5723,6 +5723,13 @@ fn substitute_pointer_variable_in_pointer(
         };
         return result.into_pointer();
     }
+    // The designation of the pointer `from` names follows it to `to`.
+    if SubobjectExtent::opaque_start(pointer)
+        .and_then(SubobjectExtent::unseen_identity)
+        .is_some_and(|identity| identity == from)
+    {
+        return SubobjectExtent::designation_start(to);
+    }
     if matches!(pointer.block, PointerBlock::ExternalObject(variable) if variable == from) {
         let identity = to.object_identity();
         return Pointer {
