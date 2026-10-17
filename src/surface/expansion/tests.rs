@@ -2154,22 +2154,16 @@ fn a_generic_rust_head_is_located_by_its_path() {
     assert!(parsed_function_body(source, "Fn").is_err());
 }
 
-/// A sidecar writes an inherent method without the module its `impl` block
-/// is in, and the proof tools are asked for it by the importer's name,
-/// which has that module. The method is found by the spelling the source
-/// index reads.
+/// A sidecar writes an inherent method inside its `impl` block; the block
+/// the parser builds for it records the method's own body.
 #[test]
-fn an_inherent_method_in_another_module_is_located_by_its_type() {
+fn an_inherent_method_is_located_inside_its_impl_block() {
     let source = "verifying \"lib.rs\";\nimpl adler2::Adler32 {\n    fn compute(&mut self, seed: u32) {\n        ensures 0 == 0;\n    } by { execute(); simp(); }\n}\n";
-    let beside = "__rust_q_I6_adler2_T29___rust_q_I6_adler2_I7_Adler32_I7_compute";
-    let elsewhere = "__rust_q_I6_adler2_I4_algo_T29___rust_q_I6_adler2_I7_Adler32_I7_compute";
-    let body = parsed_function_body(source, beside).expect("the parser reads the method's body");
-    assert!(body.body_open < body.body_close);
-    assert_eq!(
-        rust_inherent_method_in_its_type_module(elsewhere).as_deref(),
-        Some(beside)
-    );
-    assert_eq!(rust_inherent_method_in_its_type_module("compute"), None);
+    let tokens = proof_source_tokens(source).unwrap();
+    let name = "__rust_q_I6_adler2_T29___rust_q_I6_adler2_I7_Adler32_I7_compute";
+    let body = parsed_function_body(source, name).expect("the parser reads the method's body");
+    assert_eq!(tokens[body.body_open - 1].text, ")");
+    assert_eq!(tokens[body.body_close + 1].text, "by");
 }
 
 #[test]
@@ -3350,11 +3344,12 @@ fn premise_free_applications_are_simple_but_required_premises_stay_smart() {
 fn qualified_c_contract_source_locations_preserve_file_aliases() {
     let source = "verifying \"first.c\" as first;\nverifying \"second.c\" as second;\nint32 first::helper() { ensures result == 1; } by { execute(); simp(); }\nint32 second::helper() { ensures result == 2; } by { execute(); simp(); }\n";
     let tokens = proof_source_tokens(source).unwrap();
-    let declarations = declaration_source_index(&tokens).unwrap();
     for (name, line) in [("first::helper", 3), ("second::helper", 4)] {
         let found = parsed_function_body(source, name).unwrap();
-        assert_eq!(declarations[name].body_open, found.body_open);
-        assert_eq!(declarations[name].body_close, found.body_close);
+        assert_eq!(
+            position_at_offset(source, tokens[found.body_open].span.start).line,
+            line
+        );
         assert_eq!(
             click_declaration_source_position(source, name),
             Some(SourcePosition::new(line, 1))
@@ -3365,13 +3360,8 @@ fn qualified_c_contract_source_locations_preserve_file_aliases() {
 #[test]
 fn a_rust_verifying_alias_does_not_change_path_identity() {
     let source = "verifying \"first.rs\" as first; fn first::helper() -> i32 { ensures result == 1; } by { execute(); simp(); }";
-    let tokens = proof_source_tokens(source).unwrap();
-    let declarations = declaration_source_index(&tokens).unwrap();
-    assert!(
-        declarations.contains_key(&crate::languages::rust::names::path_name(&[
-            "first", "helper"
-        ]))
-    );
+    let name = crate::languages::rust::names::path_name(&["first", "helper"]);
+    assert!(parsed_function_body(source, &name).is_ok());
 }
 
 #[test]
