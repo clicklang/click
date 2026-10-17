@@ -150,6 +150,26 @@ own `args`, `dependencies`, `library_assertions` and `exception_behavior`
 }
 ```
 
+### C++ unit arguments
+
+Click sets the standard, target, exception and RTTI modes, the project's
+[optimization level](#optimization-level), and at an optimizing level
+`-fno-strict-aliasing`, as for C. A unit's or source's `args` may not name
+them, except that, as for C, they may repeat the project's level. Each other argument must be one of these, and any other is refused with
+its position and spelling:
+
+| Arguments | Class | Reason |
+| --- | --- | --- |
+| `-D`, `-U`, `-I`, `-iquote`, `-isystem`, `-include` (joined or separate value), `--sysroot`, `-nostdinc`, `-nostdinc++` | Preprocessor input | Inventoried by the lock like every file the exporter reads. A `-D` or `-U` of `__OPTIMIZE__` is refused: the level sets it. |
+| `-funsigned-char`, `-fsigned-char` | Checked semantic setting | The exporter records each type's signedness as Clang resolves it. |
+| `-ffreestanding` | Checked semantic setting | Removes Clang's knowledge of hosted library functions; a call still needs a declaration the exporter accepts. |
+| `-g`, `-W…` (not `-Wa,`, `-Wl,`, `-Wp,`), `-w`, `-fmacro-prefix-map=…` | Diagnostics or debug information | No effect on the semantics. |
+| `-fstack-protector`, `-fstack-protector-strong`, `-fstack-protector-all`, `-fstack-clash-protection`, `-fcf-protection`, `-fcf-protection=full` | Hardening code generation | Adds checks that abort only where the program already has undefined behavior, which Click refuses to prove. |
+
+`-D_FORTIFY_SOURCE` is an ordinary define: glibc's fortified wrappers live in
+system headers, and the program reaches library functions only through the
+axiomatic boundary of the [C++ standard library](#c-standard-library).
+
 `click import lock` runs the pinned exporter named by `CLICK_CPP_EXPORTER`,
 which supplies its pinned Clang's resource directory (the builtin headers such
 as `<stddef.h>`) to a command that names none, so `args` never states a
@@ -1677,14 +1697,15 @@ lock records with the target and mode.
 ### Optimization level
 
 A project names one optimization level, `-O2` by default, and every C unit
-is preprocessed with it, so `__OPTIMIZE__` and the headers that test it read
-as the optimized build sees them. A unit's arguments may repeat the level but
+is preprocessed with it, and every C++ unit exported at it, so `__OPTIMIZE__`
+and the headers that test it read as the optimized build sees them. A unit's arguments may repeat the level but
 not name another. At `-O2`, GCC assumes the program never overflows signed
 arithmetic, never dereferences null, never accesses an object through an
 incompatible type, and keeps the promises of the attributes it trusts. Click
 proves the first two, checks the third
 ([undefined behavior](../language/c.md#undefined-behavior)), and refuses the
-attributes ([Optimizer promises](#optimizer-promises)), so a verified claim
+attributes ([Optimizer promises](#optimizer-promises)); C++ follows the same
+policy ([C++ unit arguments](#c-unit-arguments)), so a verified claim
 holds for the `-O2` build without `-fno-strict-overflow` or
 `-fno-delete-null-pointer-checks`. An optimizing level still adds
 `-fno-strict-aliasing`, because the check does not see the effective types a
@@ -1931,6 +1952,16 @@ does not act on them and they are accepted and ignored.
 | `cold`, `hot`, `noinline`, `warn_unused_result`, `nonstring` | Refused in every mode | Harmless to the optimizer's semantics (layout, inlining, and diagnostics only), but not supported by the frontend. |
 | `always_inline`, `gnu_inline`, `nothrow`, `weak`, `deprecated`, `unused`, `no_instrument_function` | Accepted | Inlining choice, linkage, or diagnostics; C has no exceptions for `nothrow` to promise about. |
 | `__builtin_expect` | Accepted | A branch-probability hint; its value is its first operand. |
+
+A C++ unit refuses, at an optimizing level, `nonnull` (on the function or a
+parameter), `returns_nonnull`, `const`, `pure`, `leaf`, `noreturn` (also as
+`[[noreturn]]`), `returns_twice`, `malloc`, `alloc_size`, `alloc_align` and
+`assume_aligned` on every declaration of a function it exports from the
+project; `restrict`, and statement attributes other than `likely` and
+`unlikely`, are refused in every mode. A function declared in a system
+header is an axiom whose contract Click supplies, so its attributes are not
+refused (`tests/cpp_import.rs`,
+`cpp_optimizer_promises_are_refused_at_an_optimizing_level`).
 
 The list comes from GCC 13's attribute documentation and from these
 measurements with the recorded `x86_64-linux-gnu-gcc-13`. Each lying

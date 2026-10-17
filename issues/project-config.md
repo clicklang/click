@@ -257,9 +257,16 @@ C++ items were chosen explicitly; the rest are the recommended defaults.
   `-fno-strict-aliasing`, as the maintainer decided on 2026-10-17
   (`design/effective-types.md`). The committed C locks
   were re-locked with byte-identical artifacts.
+- **C++ flag policy.** A C++ unit is exported at the project's
+  `optimization`, with `-fno-strict-aliasing` at an optimizing level; its
+  arguments are classified as preprocessor inputs, checked semantic
+  settings, or diagnostic and hardening options, and any other is refused by
+  name. At an optimizing level the exporter refuses the optimizer-promise
+  attributes on the project's functions. `examples/basic-cpp` and the
+  Bitcoin integration were re-locked at `-O2`; Bitcoin keeps its own `-O2`
+  argument, which repeats the level.
 - **Remaining:** the module root still comes
-  from imports rather than the project file; the shared lock envelope;
-  the C++ side of the flag policy.
+  from imports rather than the project file; the shared lock envelope.
 
 ## Intended regressions
 
