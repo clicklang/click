@@ -145,21 +145,58 @@ clause copied the function block, and the block held the claim's whole
 proof script, two tactics per loop. The block now shares it. N = 192
 verifies in 5.3 s instead of 5.7 s.
 
-What remains is uncharged time linear in the earlier loops at each loop, so
-the 192nd loop clause takes about 40 ms where the second takes 14 ms:
+The uncharged linear terms are gone, except a few pointer walks. Each
+named cause is now indexed, and five more that profiling at 64, 128 and 512
+loops found beside them (see "Sequential loop clauses" in
+`docs/internals/verification-efficiency.md`):
 
-- Collecting the variables of the whole path context, for fresh-variable
-  reservations: once when a loop's rule first joins an environment
-  (`collect_verified_loop_rule_variables`), at the loop head's fresh locals
-  (`statement_kernel_variables`), and for the preservation contexts
-  (`c_loop_preservation_contexts_with_mode`); about 8% of N = 192. An exact
-  fix keeps a variable index beside the context's facts.
-- Applying the loop's verified rule checks its whole required context,
-  which is the path's context at the loop (`applicable_verified_loop_rule`).
-- The loop step copies the path's facts into flat lists
-  (`PureFactList::from_proof_facts` and its clones) and every earlier rule
-  into its environment, and re-annotates the whole function
-  (`annotated_function_with_assumptions`, about 0.5 ms at every N).
+- Fresh-variable reservations (`collect_verified_loop_rule_variables`,
+  `statement_kernel_variables`, `c_loop_preservation_contexts_with_mode`)
+  hold a context's variables as `LazyReservedVariables`, answered from the
+  context's execution ceiling and collected only below it; an
+  environment's rules are a persistent `VerifiedLoopRules` with one
+  reservation and a statement index, kept across loops.
+- `applicable_verified_loop_rule` finds the rule through that index, and a
+  rule applied under the context it was certified under compares the two
+  fact sets by identity.
+- The loop's fact list is a persistent `PureFactList` extended from the
+  previous loop's copy, with indexed conflicts, exact prerequisites and
+  transport candidates; the whole-function re-annotation runs once per
+  claim and later loops lower only their own loop
+  (`annotated_loop_function_extending`).
+- Also found: `ProofFacts::with_fact` re-collected every snapshot's
+  variables (the memory keeps a havoc marker per loop), now reserved
+  through already reserved snapshots; the frontier flattened and rebuilt
+  every statement after the loop; `frontier_premise_anchor` materialized
+  every recorded snapshot; the fixed-state initialization phase copied the
+  list flat; function blocks deep-copied every clause; and termination's
+  rule deduplication compared every pair of rules.
+
+Measured with callgrind, one more loop costs about 40, 42 and 44 million
+instructions near 40, 120 and 248 loops, where it cost 52 million near 40
+and 200 million near 248; N = 192 verifies in 5.1 s instead of 8.4 s, and its last clause
+takes 21 ms against 16 ms for the second (47 against 19 before). Clause
+work is flat as before, nine units higher per clause from counting the
+snapshots a fact's changed entries reach. The verdict and output of every
+mdtest, nightly included, are unchanged.
+
+What remains:
+
+- `sequential_loops_build_the_same_context_entries_each` now also counts
+  flat fact copies, fact index entries, transport-candidacy tests,
+  reservation collections, reserved fact variables and annotation walks
+  per loop, and the list's indexed answers have unit tests against the
+  pairwise rules they replace (`src/surface/pure_fact_list.rs`). None of
+  these has run: the session's disk fell below its 2 GB floor before the
+  test build, and neither has the full gate. Run them, and fix forward a
+  count that is not constant.
+- Pointer walks linear in the earlier loops with a small constant: binding
+  the frontier clauses into the function block
+  (`FunctionBlock::with_bound_frontier_loop_clauses`, whose clauses are a
+  `Vec`), the label and scope checks over its clauses, and finding the
+  loop's node in the source and kernel bodies (`c0_loop_by_index`,
+  `kernel_loop_by_index`). A persistent clause map keyed by region would
+  remove them.
 
 Acceptance: a multi-size regression over `loops` shows each loop clause's
 work and time constant in the number of earlier loops, up to logarithmic
