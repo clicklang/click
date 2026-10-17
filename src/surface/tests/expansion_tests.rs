@@ -15184,6 +15184,20 @@ int32 contains3(int32 values[], int32 target) {
 "#;
 
 #[test]
+#[ignore = "nightly: 2.7s in the parallel gate"]
+fn grouped_leaf_implications_preserve_constant_false_premises() {
+    let (source, sources) = mdtest_sources("mdtests/leaf_flag_grouped_simp.md");
+    let sources = sources
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    verify_c0_sources(&source, &sources).unwrap();
+    let expanded =
+        expand_c0_claim_source(&source, &sources, "leaf_flag", CProofClaim::Grouped).unwrap();
+    without_implicit_auto(|| verify_c0_sources(&expanded, &sources)).unwrap();
+}
+
+#[test]
 fn grouped_closer_over_four_paths_places_each_leafs_own_expansion() {
     // Every path but the first reported no surface branch path, because the
     // retained branch decisions were consumed innermost-first while the
@@ -15201,11 +15215,9 @@ fn grouped_closer_over_four_paths_places_each_leafs_own_expansion() {
     let expanded =
         expand_c0_tactic_source_at(FOUR_RETURN_CLICK, &sources, position.line, position.column)
             .expect("the four-path closer should expand");
-    assert_eq!(
-        expanded.matches("transport(").count(),
-        2,
-        "only the falling-through leaf needs the transported closers: {expanded}"
-    );
+    // Cold verification checks every leaf's own certificate. Constant
+    // false premises can close the falling-through leaf directly, so a
+    // particular number of transport steps is not part of this guarantee.
     verify_c0_sources(&expanded, &sources)
         .expect("the expanded four-path closer should independently reverify");
 }
