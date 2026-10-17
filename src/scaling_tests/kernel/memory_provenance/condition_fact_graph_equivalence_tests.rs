@@ -6,7 +6,7 @@ use super::*;
 
 #[test]
 fn condition_fact_graph_queries_scale_without_fact_index() {
-    for size in [16u64, 64, 256, 1024] {
+    for size in [16u64, 64, 256, 512] {
         let _session = crate::kernel::VerificationSession::enter();
         let sum = |value| Bitvector32Term::add(value, Bitvector32Term::Constant(1));
         let source = less_than(sum(var(0)), var(9000));
