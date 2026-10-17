@@ -10,25 +10,20 @@ pub(in crate::surface::proof) fn verify_execution_proofs_forward(
     verified_loop_rules: &mut Vec<CVerifiedLoopRule>,
 ) -> Result<Vec<PlanningExecutionContext>, ClickError> {
     match statement {
-        CStatement::Seq(first, second) => {
-            let contexts = verify_execution_proofs_forward(
-                expansion_capture.as_deref_mut(),
-                first,
-                contexts,
-                next_statement_index,
-                next_loop_index,
-                environment,
-                verified_loop_rules,
-            )?;
-            verify_execution_proofs_forward(
-                expansion_capture.as_deref_mut(),
-                second,
-                contexts,
-                next_statement_index,
-                next_loop_index,
-                environment,
-                verified_loop_rules,
-            )
+        CStatement::Seq(statements) => {
+            let mut contexts = contexts;
+            for statement in statements.iter() {
+                contexts = verify_execution_proofs_forward(
+                    expansion_capture.as_deref_mut(),
+                    statement,
+                    contexts,
+                    next_statement_index,
+                    next_loop_index,
+                    environment,
+                    verified_loop_rules,
+                )?;
+            }
+            Ok(contexts)
         }
         CStatement::If {
             condition,

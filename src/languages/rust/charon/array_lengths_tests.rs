@@ -89,7 +89,13 @@ fn charon_scalar_array_length_metadata_has_bounded_shape_and_proof_work() {
     use crate::kernel::CStatement;
     fn nodes(statement: &CStatement) -> usize {
         match statement {
-            CStatement::Seq(a, b) => 1 + nodes(a) + nodes(b),
+            CStatement::Seq(sequence) => {
+                sequence.len() - 1
+                    + sequence
+                        .iter()
+                        .map(|statement| nodes(statement))
+                        .sum::<usize>()
+            }
             CStatement::DeclareAggregate { .. } => panic!("length must not materialize elements"),
             _ => 1,
         }
