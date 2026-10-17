@@ -54,6 +54,22 @@ or the required pointer alias removes the conclusion. The
 `pointer_comparison_evidence_work_ignores_unrelated_facts` regressions cover
 registration order, early queries, premise withdrawal, and ambient scaling.
 
+A full pointer-value query also registers its two numeric addresses against
+the current affine block representatives before checking value congruence.
+Earlier address nodes may predate a block alias; without these bridges, the
+query can miss an established equality depending on premise admission order.
+Designation and retained extent remain separate value operands: refreshing
+addresses does not establish either identity. The cursor-chain regressions in
+`src/kernel/equality_graph/fact_congruence_tests.rs` combine symbolic loop
+values, a native argument, signed prefix counts and native lengths, with
+missing-premise, displacement and address-only controls. Its scaling test
+keeps query work bounded while unrelated conditions grow.
+
+Conditional normalization admits cited conditions and their mirrored forms in
+source order while retaining an indexed map for condition lookup. Bounded
+pointer closure can retain different coordinates after a block merge; a hash
+table's iteration order must not choose whether an emitted certificate checks.
+
 ## Checked object-type evidence
 
 Admitted equations, predicates, and true model-equality conditions retain the

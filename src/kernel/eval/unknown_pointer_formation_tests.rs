@@ -19,9 +19,23 @@ fn permits(
     facts: &PureFactContext,
     resources: &ResourceContext,
 ) -> bool {
-    subobject_formation_guards(
+    permits_at(
         value,
         &value.pointer().offset_by_bytes(bytes),
+        facts,
+        resources,
+    )
+}
+
+fn permits_at(
+    value: &CPointerValue,
+    position: &Pointer,
+    facts: &PureFactContext,
+    resources: &ResourceContext,
+) -> bool {
+    subobject_formation_guards(
+        value,
+        position,
         &ExecutionFacts::new(),
         &[],
         facts,
@@ -240,4 +254,75 @@ fn native_coverage_keeps_high_bits_and_interior_bytes() {
         PureFactContext::new().assume_proposition(p.opaque_coverage_fact(&record).unwrap());
     assert!(context.opaque_pointer_covers(&p, &p.pointer().offset_by_bytes(4), 4));
     assert!(!context.opaque_pointer_covers(&p, &p.pointer().offset_by_bytes(31), 4));
+}
+
+fn split_formation_fixture() -> (
+    CPointerValue,
+    Pointer,
+    PureFactContext,
+    ResourceContext,
+    CResourceFact,
+) {
+    let p = CPointerValue::new(
+        Pointer {
+            block: PointerBlock::ExternalArgument,
+            offset: PointerOffsetTerm::scale_int32(Bitvector32Term::Variable(Variable(930_999)), 4),
+        },
+        CType::Int32Pointer,
+    );
+    let from = Bitvector32Term::Variable(Variable(930_601));
+    let to = Bitvector32Term::Variable(Variable(930_602));
+    let i = Bitvector32Term::Variable(Variable(930_603));
+    let facts = PureFactContext::new()
+        .assume_condition(
+            ConditionTerm::signed_less_than(0u32.into(), from.clone()),
+            true,
+        )
+        .assume_condition(
+            ConditionTerm::signed_less_equal(from.clone(), i.clone()),
+            true,
+        )
+        .assume_condition(ConditionTerm::signed_less_than(i.clone(), to.clone()), true)
+        .assume_condition(
+            ConditionTerm::signed_less_equal(to.clone(), 8u32.into()),
+            true,
+        );
+    let position = p.pointer().offset_by_elements(i, 4);
+    let owner = CResourceFact::own_memory(CMemoryRange::from_pointer_value(
+        &p,
+        from.clone(),
+        to.clone(),
+        4,
+    ));
+    let resources = ResourceContext::new_with_equalities(&facts)
+        .unchecked_with_fact(CResourceFact::view_memory(
+            CMemoryRange::from_pointer_value(&p, 0u32.into(), from.clone(), 4),
+        ))
+        .unchecked_with_fact(owner.clone())
+        .unchecked_with_fact(CResourceFact::view_memory(
+            CMemoryRange::from_pointer_value(&p, to, 8u32.into(), 4),
+        ));
+    resources.synchronize_memory_equalities(&facts);
+    (p, position, facts, resources, owner)
+}
+
+#[test]
+fn formation_selects_the_containing_symbolic_piece_beside_prefix_and_suffix_views() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let (p, position, facts, resources, owner) = split_formation_fixture();
+    assert!(
+        permits_at(&p, &position, &facts, &resources),
+        "the owned middle piece contains the queried position"
+    );
+    let zero = resources
+        .clone()
+        .without_exact_representation(&owner)
+        .unwrap()
+        .unchecked_with_fact(CResourceFact::own_quantity(
+            owner.resource().clone(),
+            0u32.into(),
+        ));
+    zero.synchronize_memory_equalities(&facts);
+    assert!(!permits_at(&p, &position, &facts, &zero));
+    assert!(permits_at(&p, &position, &facts, &resources));
 }
