@@ -120,7 +120,11 @@ Decision: fix (maintainer, 2026-10-14), starting with R2.
 R2 is done (2026-10-14): general `__rb_erase_augmented` and `rb_erase`
 contracts replace 16 per-case sidecars of `examples/rbtree-erase`; see
 [design/proof-reuse.md](../design/proof-reuse.md#r2-one-general-contract-per-function).
-R3, R4 and R5 remain.
+R3 is in: `simp` evaluates recursive specification functions over known
+constructors to a fixed fuel (see the status under R3 in
+[design/proof-reuse.md](../design/proof-reuse.md#r3-automatic-unfolding-of-recursive-specification-functions)).
+Rewriting the erase-color arms with it waits on the object-class regression
+that keeps `rbtree-erase` from verifying. R4 and R5 remain.
 
 ## W. Proof workflow and tooling
 

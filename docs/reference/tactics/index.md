@@ -802,6 +802,15 @@ citing the constant order and equality facts of that width indexed under each
 operand; the rule, not the selection, decides whether the operands' ranges
 exclude overflow.
 
+A recursive specification function applied to a known constructor is
+evaluated: `simp` unfolds it, then keeps unfolding the recursive calls the
+definition exposes while their arguments select one arm, rewriting an argument
+by a constructor equation (a supplied premise or a connected fact such as
+`u == Tree::Node(..)`) when that exposes one, for at most eight checked steps.
+An argument nothing fixes stays folded
+([`simp_evaluates_a_recursive_function_over_known_constructors.md`](https://github.com/clicklang/click/blob/master/mdtests/simp_evaluates_a_recursive_function_over_known_constructors.md),
+[`simp_does_not_evaluate_a_recursive_function_past_an_unknown_argument.md`](https://github.com/clicklang/click/blob/master/mdtests/simp_does_not_evaluate_a_recursive_function_past_an_unknown_argument.md)).
+
 A disequality between an algebraic value and a constructor closes from an exact
 equality fixing that value to a different constructor: the equality rewrites the
 goal and normalization decides the constructors differ

@@ -3611,6 +3611,10 @@ impl<'a> Proof<'a> {
         };
         let applications =
             pure_theorems::click_function_applications(surface_goal, introduced_surfaces);
+        if applications.is_empty() {
+            return Ok(None);
+        }
+        let mut unfolded_any = false;
         let mut proof = self.clone();
         for application in applications {
             let attempted = proof.apply_step(ProofStep::UnfoldFunction(application));
@@ -3618,12 +3622,19 @@ impl<'a> Proof<'a> {
                 continue;
             };
             proof = unfolded;
+            unfolded_any = true;
             // The unfold can close the goal itself: the refreshed goal may
             // already be an available fact, which leaves no goal to search.
             if proof.is_complete() {
                 return Ok(Some(proof));
             }
             if let Some(closed) = proof.try_direct_logical_closure()? {
+                return Ok(Some(closed));
+            }
+            // A recursive definition over a known constructor exposes its
+            // recursive call on a smaller argument. Evaluate those calls to a
+            // fixed fuel before searching.
+            if let Some(closed) = proof.try_constructor_evaluation_closure(introduced_surfaces)? {
                 return Ok(Some(closed));
             }
             if let Some(closed) = proof
@@ -3633,6 +3644,103 @@ impl<'a> Proof<'a> {
                     false,
                 )?
             {
+                return Ok(Some(closed));
+            }
+        }
+        // No application unfolds as it stands, as when its argument is a
+        // variable a fact equates to a constructor: evaluate from a rewrite.
+        if !unfolded_any {
+            return self.try_constructor_evaluation_closure(introduced_surfaces);
+        }
+        Ok(None)
+    }
+
+    /// Evaluate a goal's recursive applications over known constructors, at
+    /// most `CONSTRUCTOR_EVALUATION_FUEL` checked steps. Each step is the
+    /// first that applies of: an `unfold` of an application in the goal
+    /// (which the kernel accepts only when its argument selects one
+    /// definition arm), or a `rewrite` by a supplied equation whose right
+    /// side is a constructor, exposing one for the next unfold. There is no
+    /// branching: one candidate per step, and the goal is checked for
+    /// closure after each. Nothing is kept unless the goal closes.
+    fn try_constructor_evaluation_closure(
+        &self,
+        introduced_surfaces: &[ClickProposition],
+    ) -> Result<Option<Self>, ClickError> {
+        let is_constructor_equation = |surface: &ClickProposition| {
+            matches!(
+                surface,
+                ClickProposition::Comparison {
+                    operator: ComparisonOperator::Equal,
+                    right: ContractExpression::AlgebraicConstructor { .. },
+                    ..
+                }
+            )
+        };
+        let mut constructor_equations: Vec<ClickProposition> = introduced_surfaces
+            .iter()
+            .filter(|surface| is_constructor_equation(surface))
+            .cloned()
+            .collect();
+        let mut fact_equations_gathered = false;
+        let mut proof = self.clone();
+        for _ in 0..CONSTRUCTOR_EVALUATION_FUEL {
+            check_verification_deadline()?;
+            let Some(surface_goal) = proof.surface_goal() else {
+                return Ok(None);
+            };
+            let mut next = None;
+            for application in pure_theorems::click_function_applications(surface_goal, &[]) {
+                if let Some(unfolded) = attempt::candidate_outcome(
+                    proof.apply_step(ProofStep::UnfoldFunction(application)),
+                )? {
+                    next = Some(unfolded);
+                    break;
+                }
+            }
+            if next.is_none() && !fact_equations_gathered {
+                // A constructor equation among the facts connected to the
+                // goal, such as a requirement `u == Tree::Node(..)`, read
+                // once and only when nothing supplied applies.
+                fact_equations_gathered = true;
+                if let Some(goal) = proof.goal()
+                    && let Some(equalities) =
+                        crate::surface::planning::proposition_search::solver_connected_equalities(
+                            proof.facts().assumptions(),
+                            goal,
+                        )
+                {
+                    for equality in equalities.iter().take(CONSTRUCTOR_EVALUATION_FACTS) {
+                        if let Some((_, surface)) = proof
+                            .resolve_simp_premises(std::slice::from_ref(equality), &[])
+                            .and_then(|mut spelled| spelled.pop())
+                            && is_constructor_equation(&surface)
+                            && !constructor_equations.contains(&surface)
+                        {
+                            constructor_equations.push(surface);
+                        }
+                    }
+                }
+            }
+            if next.is_none() {
+                for equation in &constructor_equations {
+                    if let Some(rewritten) = attempt::candidate_outcome(
+                        proof.apply_step(ProofStep::Rewrite(equation.clone())),
+                    )? && rewritten.surface_goal() != proof.surface_goal()
+                    {
+                        next = Some(rewritten);
+                        break;
+                    }
+                }
+            }
+            let Some(next) = next else {
+                return Ok(None);
+            };
+            proof = next;
+            if proof.is_complete() {
+                return Ok(Some(proof));
+            }
+            if let Some(closed) = proof.try_direct_logical_closure()? {
                 return Ok(Some(closed));
             }
         }
@@ -9869,6 +9977,13 @@ impl Drop for SimpFallbackScope {
         ACTIVE_SIMP_FALLBACKS.with(|active| active.set(active.get() & !(self.0 as u8)));
     }
 }
+
+/// The checked unfold and rewrite steps one constructor evaluation may take.
+const CONSTRUCTOR_EVALUATION_FUEL: usize = 8;
+
+/// The connected facts one constructor evaluation reads for constructor
+/// equations once it is stuck.
+const CONSTRUCTOR_EVALUATION_FACTS: usize = 16;
 
 /// How deeply one upper-bound split may nest inside another's arms.
 const MAX_UPPER_BOUND_SPLIT_DEPTH: usize = 2;
