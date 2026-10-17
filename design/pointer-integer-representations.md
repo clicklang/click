@@ -96,8 +96,9 @@ contexts instead of deriving them again. Predicate refutation uses indexed
 scalar comparisons instead of searching unrelated memory equations. Each
 performance change has a deterministic scaling regression.
 
-The C implementation and verification limits are preserved. The parent bounds
-bug remains open for the staged work on pointers of unseen formation (Phase C).
+The C implementation and verification limits are preserved. The remaining
+unseen-pointer formation checks are described in
+[Phase C](pointer-subobject-extents.md#phase-c-pointers-of-unseen-formation).
 
 ## Reproduced escape
 
@@ -220,4 +221,5 @@ a producer's output in the same session.
 Run these in fresh, expanded, rewritten and retained checking. Add deterministic
 multi-size tests for selected word-origin lookup and withdrawal beside unrelated
 words, facts and memory ranges. Run all ordinary scaling tests and affected
-pointer-tag/rbtree fixtures. Keep the parent bug open until its remaining Phase C acceptance criteria pass.
+pointer-tag/rbtree fixtures. Phase C adds formation and selection checks for
+unseen pointers using the complete identities this phase preserves.

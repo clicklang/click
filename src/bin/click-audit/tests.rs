@@ -43,14 +43,17 @@ fn parses_arguments_and_duration_units() {
             session: PhaseLimit {
                 work: 7_000,
                 time: Duration::from_secs(30),
+                deadline: None,
             },
             expansion: PhaseLimit {
                 work: 8_000,
                 time: Duration::from_millis(250),
+                deadline: None,
             },
             verification: PhaseLimit {
                 work: 9_000,
                 time: Duration::from_secs(120),
+                deadline: None,
             },
             performance_slack: 1_000,
         }
@@ -251,14 +254,17 @@ fn resume_command_retries_the_cursor_inclusively() {
             session: PhaseLimit {
                 work: 7_000,
                 time: Duration::from_secs(30),
+                deadline: None,
             },
             expansion: PhaseLimit {
                 work: 8_000,
                 time: Duration::from_secs(2),
+                deadline: None,
             },
             verification: PhaseLimit {
                 work: 9_000,
                 time: Duration::from_secs(3),
+                deadline: None,
             },
             performance_slack: 1_000,
         },
@@ -277,7 +283,7 @@ fn resume_command_retries_the_cursor_inclusively() {
         column: 34,
     };
     assert_eq!(
-        resume_command(&arguments, &location),
+        resume_command(&arguments, Some(&location)),
         "click audit --session-work-limit 7000 --expansion-work-limit 8000 \
              --verification-work-limit 9000 --performance-slack 1000 \
              --session-time-limit 30s --expansion-time-limit 2s \
@@ -423,17 +429,34 @@ fn an_audit_under_cpu_load_spends_the_same_work() {
 }
 
 #[test]
-fn whole_run_deadline_caps_each_phase() {
+fn whole_run_deadline_keeps_the_phase_crash_bound() {
+    let configured = PhaseLimit {
+        work: 100,
+        time: Duration::from_secs(30),
+        deadline: None,
+    };
     let deadline = Instant::now() + Duration::from_secs(1);
-    let limit = remaining_phase_limit(deadline, Duration::from_secs(30)).unwrap();
-    assert!(limit <= Duration::from_secs(1));
-    assert!(limit > Duration::ZERO);
-
+    let limit = configured.within(deadline).unwrap();
+    assert_eq!(limit.time, configured.time);
+    assert_eq!(limit.deadline, Some(deadline));
     let expired = Instant::now()
         .checked_sub(Duration::from_millis(1))
         .unwrap();
     assert_eq!(
-        remaining_phase_limit(expired, Duration::from_secs(30)),
+        configured.within(expired),
+        Err(RUN_LIMIT_EXHAUSTED.to_string())
+    );
+    assert_eq!(
+        run_phase(
+            "expired phase",
+            PhaseLimit {
+                deadline: Some(expired),
+                ..configured
+            },
+            || -> Result<(), String> {
+                panic!("an expired phase must not start");
+            }
+        ),
         Err(RUN_LIMIT_EXHAUSTED.to_string())
     );
 }

@@ -521,23 +521,28 @@ fn describe_context_facts_labeled(
     execution_pure_facts: &(impl ExecutionFactSource + ?Sized),
     labels: &mut crate::surface::proof_diagnostics::render::SnapshotLabels,
 ) -> String {
-    let total = pure_facts.len() + execution_pure_facts.len();
-    if total == 0 {
-        return "[]".to_string();
-    }
     let item_limit = diagnostic_item_limit();
-    let mut entries = pure_facts
-        .iter()
-        .chain(
-            execution_pure_facts
-                .fact_iter()
-                .map(ExecutionPureFact::proposition),
-        )
-        .take(item_limit)
-        .map(|fact| {
-            crate::surface::proof_diagnostics::render::render_proposition_labeled(fact, labels)
-        })
-        .collect::<Vec<_>>();
+    let mut total = 0;
+    let mut entries = Vec::new();
+    for fact in pure_facts.iter().chain(
+        execution_pure_facts
+            .fact_iter()
+            .map(ExecutionPureFact::proposition),
+    ) {
+        // Internal bounds evidence has no authored proof syntax. Keep the
+        // context's existing source facts visible beside the actual refusal.
+        if matches!(fact, Proposition::Predicate { name, .. }
+            if name.starts_with(crate::kernel::SUBOBJECT_COVERS_PREDICATE_PREFIX))
+        {
+            continue;
+        }
+        total += 1;
+        if entries.len() < item_limit {
+            entries.push(
+                crate::surface::proof_diagnostics::render::render_proposition_labeled(fact, labels),
+            );
+        }
+    }
     compact_unspelled_facts(&mut entries);
     if total > item_limit {
         entries.push(format!("… {} more omitted", total - item_limit));

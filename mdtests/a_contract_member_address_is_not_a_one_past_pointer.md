@@ -16,9 +16,11 @@ int32* second(struct Pair* p) { return &p->second; }
 ```click
 verifying "member_address.c";
 int32* one_past(struct Pair* p) {
+    views *p;
     ensures result == &p->second;
 } by { execute(); simp(); }
 int32* second(struct Pair* p) {
+    views *p;
     ensures result == &p->second;
 } by { execute(); simp(); }
 ```

@@ -32,5 +32,5 @@ int32 top(struct Pair* p) {
 ```
 
 ```expect
-fail: missing resource fact `views q[1]`
+fail: pointer arithmetic left the pointed-to object
 ```

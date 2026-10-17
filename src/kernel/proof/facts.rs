@@ -13,6 +13,31 @@ use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
 #[cfg(test)]
+mod constant_truth_tests {
+    use super::*;
+
+    #[test]
+    fn equivalent_false_polarities_are_available_only_in_their_scope() {
+        let positive_false = Proposition::ConditionIs(ConditionTerm::Constant(false), true);
+        let negative_true = Proposition::ConditionIs(ConditionTerm::Constant(true), false);
+        let root = ProofFacts::from_ordered(&[]);
+        let true_branch = root.with_fact(Proposition::ConditionIs(
+            ConditionTerm::Constant(true),
+            true,
+        ));
+        for (held, requested) in [
+            (&positive_false, &negative_true),
+            (&negative_true, &positive_false),
+        ] {
+            let branch = root.with_fact(held.clone());
+            assert!(branch.pure_assumption_available(requested));
+            assert!(!root.pure_assumption_available(requested));
+            assert!(!true_branch.pure_assumption_available(requested));
+        }
+    }
+}
+
+#[cfg(test)]
 mod disjunction_projection_tests {
     use super::*;
 
@@ -152,6 +177,75 @@ pub(crate) fn take_statement_priority_entries() -> (usize, usize, usize) {
     )
 }
 
+#[cfg(test)]
+thread_local! {
+    static RESERVED_FACT_VARIABLES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+/// The variables facts handed to their fact sets' reservations on this
+/// thread so far, beyond those of snapshots already reserved.
+#[cfg(test)]
+pub(crate) fn reserved_fact_variable_entries() -> usize {
+    RESERVED_FACT_VARIABLES.with(std::cell::Cell::get)
+}
+
+/// Adds `fact`'s variables to `pending` and the snapshots they reserve to
+/// `snapshots`: afterwards every variable `proposition_variables(fact)`
+/// lists is in `reserved` or `pending`, and every snapshot named in
+/// `snapshots` has all its variables there. Several facts accumulate into
+/// one plain set, so a variable many of them mention costs one persistent
+/// insertion when the caller commits `pending`.
+fn reserve_fact_variables(
+    fact: &Proposition,
+    reserved: &PersistentSet<Variable>,
+    pending: &mut BTreeSet<Variable>,
+    snapshots: &mut PersistentSet<(u32, u32)>,
+) {
+    #[cfg(debug_assertions)]
+    let before = crate::instrumentation::lazy_reservation_cross_checks_enabled().then(|| {
+        let mut whole = BTreeSet::new();
+        crate::instrumentation::uncharged_debug_check(|| {
+            whole = crate::kernel::proposition_variables(fact);
+        });
+        (pending.clone(), whole)
+    });
+    let (variables, met) =
+        crate::kernel::reasoning::variable_collection::proposition_variables_reserving(
+            fact, snapshots,
+        );
+    #[cfg(test)]
+    RESERVED_FACT_VARIABLES.with(|count| count.set(count.get() + variables.len()));
+    pending.extend(variables);
+    for snapshot in met {
+        *snapshots = snapshots.with_value(snapshot);
+    }
+    #[cfg(debug_assertions)]
+    if let Some((earlier, whole)) = before {
+        assert!(
+            whole
+                .iter()
+                .all(|variable| reserved.contains(variable) || pending.contains(variable))
+                && pending
+                    .iter()
+                    .all(|variable| earlier.contains(variable) || whole.contains(variable)),
+            "a fact's reserved variables differ from its whole collection"
+        );
+    }
+}
+
+/// `reserved` with every variable of `pending` added.
+fn commit_reserved_variables(
+    mut reserved: PersistentSet<Variable>,
+    pending: BTreeSet<Variable>,
+) -> PersistentSet<Variable> {
+    for variable in pending {
+        if !reserved.contains(&variable) {
+            reserved = reserved.with_value(variable);
+        }
+    }
+    reserved
+}
+
 /// Persistent semantic fact state shared by every checked proof kind.
 ///
 /// The exact index serves local proof-step queries and `assumptions` retains
@@ -161,6 +255,10 @@ pub(crate) fn take_statement_priority_entries() -> (usize, usize, usize) {
 pub(crate) struct ProofFacts {
     ordered: PersistentSequence<Arc<Proposition>>,
     reserved_variables: PersistentSet<Variable>,
+    /// The interned snapshots whose every variable `reserved_variables`
+    /// holds, so a fact naming one again, or naming a snapshot derived from
+    /// one, reserves only what differs (`proposition_variables_reserving`).
+    reserved_snapshots: PersistentSet<(u32, u32)>,
     prioritized: Option<Arc<PrioritizedProofFacts>>,
     top_level_exact: PersistentSet<Arc<Proposition>>,
     exact: PersistentSet<Arc<Proposition>>,
@@ -626,7 +724,8 @@ impl ProofFacts {
     /// Uncached sources build their context once through PropositionSource.
     pub(crate) fn from_source(facts: &(impl PropositionSource + ?Sized)) -> Self {
         let mut ordered = PersistentSequence::default();
-        let mut reserved_variables = PersistentSet::default();
+        let reserved_variables = PersistentSet::default();
+        let mut reserved_snapshots = PersistentSet::default();
         let mut top_level_exact = PersistentSet::default();
         let mut exact = PersistentSet::default();
         let mut proper_conjuncts = PersistentSet::default();
@@ -644,18 +743,16 @@ impl ProofFacts {
         let assumptions = facts.pure_context();
         let mut implicit_transport_assumptions = PureFactContext::new();
         let mut by_predicate = PersistentMap::default();
-        // Many facts read one entry memory: reserve its variables once.
-        let collected_variables = crate::kernel::reasoning::collecting_each_memory_once(|| {
-            let mut variables = BTreeSet::new();
-            for fact in facts.propositions() {
-                variables.extend(crate::kernel::proposition_variables(fact));
-            }
-            variables
-        });
-        for variable in collected_variables {
-            reserved_variables = reserved_variables.with_value(variable);
-        }
+        // Many facts read one entry memory: its variables are reserved once,
+        // and the facts' variables are committed together after the loop.
+        let mut pending_variables = BTreeSet::new();
         for fact in facts.propositions() {
+            reserve_fact_variables(
+                fact,
+                &reserved_variables,
+                &mut pending_variables,
+                &mut reserved_snapshots,
+            );
             if top_level_exact.contains(fact) {
                 continue;
             }
@@ -716,9 +813,11 @@ impl ProofFacts {
             implicit_transport_assumptions =
                 index_implicit_transport_context(implicit_transport_assumptions, fact.as_ref());
         }
+        let reserved_variables = commit_reserved_variables(reserved_variables, pending_variables);
         Self {
             ordered,
             reserved_variables,
+            reserved_snapshots,
             prioritized: None,
             top_level_exact,
             exact,
@@ -760,7 +859,13 @@ impl ProofFacts {
 
     /// Semantic availability for checking a requested premise or goal.
     pub(crate) fn available(&self, fact: &Proposition) -> bool {
-        self.contains(fact) || self.assumptions.contains_known(fact)
+        self.contains(fact)
+            || self.assumptions.contains_known(fact)
+            // Introduction and normalization can retain opposite constant
+            // polarities for the same truth claim. This is one equivalent
+            // fact, not a search for an arbitrary contradiction.
+            || matches!(fact, Proposition::ConditionIs(ConditionTerm::Constant(value), truth)
+                if self.contains(&Proposition::ConditionIs(ConditionTerm::Constant(!value), !truth)))
     }
 
     pub(crate) fn contains_top_level(&self, fact: &Proposition) -> bool {
@@ -859,13 +964,20 @@ impl ProofFacts {
             self.implicit_transport_assumptions.clone(),
             fact.as_ref(),
         );
-        let mut reserved_variables = self.reserved_variables.clone();
-        for variable in crate::kernel::proposition_variables(fact.as_ref()) {
-            reserved_variables = reserved_variables.with_value(variable);
-        }
+        let mut pending_variables = BTreeSet::new();
+        let mut reserved_snapshots = self.reserved_snapshots.clone();
+        reserve_fact_variables(
+            fact.as_ref(),
+            &self.reserved_variables,
+            &mut pending_variables,
+            &mut reserved_snapshots,
+        );
+        let reserved_variables =
+            commit_reserved_variables(self.reserved_variables.clone(), pending_variables);
         Self {
             ordered,
             reserved_variables,
+            reserved_snapshots,
             prioritized: self.prioritized.clone(),
             top_level_exact: self.top_level_exact.with_value(Arc::clone(&fact)),
             exact,
@@ -915,6 +1027,39 @@ impl ProofFacts {
             ));
         }
         facts
+    }
+
+    /// How `propositions` changed since `ancestor`, when these facts are
+    /// `ancestor`'s with further statement batches and ordered facts added:
+    /// the facts of the new batches, newest batch first, which
+    /// `propositions` yields before everything `ancestor` yields, and the
+    /// ordered facts appended since, which it yields after. Like
+    /// `propositions`, a reader keeps only the first copy of a fact. Visits
+    /// only what was added; `None` when `ancestor` is not an ancestor.
+    pub(crate) fn propositions_since(
+        &self,
+        ancestor: &Self,
+    ) -> Option<(Vec<Proposition>, Vec<Arc<Proposition>>)> {
+        let mut batches = Vec::new();
+        let mut current = self.prioritized.as_ref();
+        loop {
+            match (current, &ancestor.prioritized) {
+                (Some(node), Some(head)) if Arc::ptr_eq(node, head) => break,
+                (None, None) => break,
+                (Some(node), _) => {
+                    batches.push(node);
+                    current = node.parent.as_ref();
+                }
+                (None, Some(_)) => return None,
+            }
+        }
+        let appended = self.ordered.suffix_since(&ancestor.ordered)?;
+        let front = batches
+            .iter()
+            .flat_map(|batch| batch.facts.iter())
+            .map(crate::kernel::clone_proposition_iteratively)
+            .collect();
+        Some((front, appended))
     }
 
     /// The direct-transport premises' context, when it is kept.

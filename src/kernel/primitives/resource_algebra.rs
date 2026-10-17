@@ -5672,7 +5672,7 @@ impl ResourceContext {
     }
 
     /// Select folded composites without materializing unrelated memory facts.
-    pub(in crate::kernel) fn composite_facts(&self) -> impl Iterator<Item = &CResourceFact> {
+    pub(crate) fn composite_facts(&self) -> impl Iterator<Item = &CResourceFact> {
         let entries = self
             .storage
             .index
@@ -6154,6 +6154,37 @@ impl ResourceContext {
                 }
             }
             return false;
+        }
+        false
+    }
+
+    /// Bounds evidence for a position, including the one-past endpoint.
+    /// Zero bytes select intervals without claiming a readable element.
+    pub(in crate::kernel) fn permits_designated_pointer_position(
+        &self,
+        pointer: &Pointer,
+        operand: &Pointer,
+        designation: (&Pointer, Option<&Pointer>),
+        assumptions: &PureFactContext,
+    ) -> bool {
+        let Some(mut entries) = self.read_access_entries(pointer, 0, assumptions) else {
+            return false;
+        };
+        while let Some(entry) = entries.next() {
+            crate::instrumentation::record_deterministic_work(1);
+            let address = entries.address(entry).unwrap_or_else(|| pointer.clone());
+            let Some(range) = resource_fact_read_core_range(self.fact(entry)) else {
+                continue;
+            };
+            if !assumptions.access_designations_match(designation, &range) {
+                continue;
+            }
+            if pointer_formation_in_range(&address, operand, &range, assumptions)
+                || (address != *pointer
+                    && pointer_formation_in_range(pointer, operand, &range, assumptions))
+            {
+                return true;
+            }
         }
         false
     }
@@ -9306,6 +9337,90 @@ fn memory_range_in_element_width(range: &CMemoryRange, width: u32) -> Option<CMe
     )
 }
 
+/// Bounds geometry shared by held ranges and opaque-domain coverage facts.
+/// This constructs no read authority and includes the one-past position.
+pub(in crate::kernel) fn pointer_formation_in_range(
+    pointer: &Pointer,
+    operand: &Pointer,
+    range: &CMemoryRange,
+    assumptions: &PureFactContext,
+) -> bool {
+    let width = range.element_width();
+    let nonempty = match range.wide_bounds() {
+        Some((start, end)) => ConditionTerm::uint64_less_than(start.clone(), end.clone()),
+        None => ConditionTerm::signed_less_than(range.start().clone(), range.end().clone()),
+    };
+    // Re-spell only checked nonnegative endpoints. This does not
+    // truncate a native index or a native range into 32 bits.
+    let wide = if range.wide_bounds().is_some() {
+        Some(range.clone())
+    } else {
+        checked_native_range_endpoint(range.start(), assumptions)
+            .zip(checked_native_range_endpoint(range.end(), assumptions))
+            .map(|(start, end)| CMemoryRange::new_wide(range.base().clone(), start, end, width))
+    };
+    let narrow = if range.wide_bounds().is_none() {
+        Some(range.clone())
+    } else {
+        range.wide_bounds().and_then(|(start, end)| {
+            let (start, end) = start.uint64_as_const().zip(end.uint64_as_const())?;
+            (start <= end && end <= i32::MAX as u64 / u64::from(width)).then(|| {
+                CMemoryRange::new_with_element_width(
+                    range.base().clone(),
+                    Bitvector32Term::Constant(start as u32),
+                    Bitvector32Term::Constant(end as u32),
+                    width,
+                )
+            })
+        })
+    };
+    let wide_window = |base: &Pointer, start: u64, end: u64| {
+        wide.as_ref().is_some_and(|range| {
+            let (_, limit) = range.wide_bounds().expect("wide spelling");
+            assumptions.decide(&ConditionTerm::uint64_less_equal(
+                limit.clone(),
+                Bitvector32Term::UInt64Constant(i64::MAX as u64 / u64::from(width)),
+            )) == Some(true)
+                && wide_memory_range_covers(
+                    range,
+                    &CMemoryRange::new_wide(
+                        base.clone(),
+                        Bitvector32Term::UInt64Constant(start),
+                        Bitvector32Term::UInt64Constant(end),
+                        width,
+                    ),
+                    assumptions,
+                )
+        })
+    };
+    let narrow_contains = |position: &Pointer, bytes| {
+        narrow
+            .as_ref()
+            .is_some_and(|range| assumptions.pointer_access_in_held_range(position, bytes, range))
+    };
+    let contains = |position: &Pointer| {
+        narrow_contains(position, 0)
+            || narrow_contains(position, 1)
+            || wide_window(position, 0, 0)
+            || position
+                .offset_from_base(operand)
+                .and_then(|offset| offset.as_const())
+                .filter(|bytes| *bytes >= 0)
+                .is_some_and(|bytes| {
+                    let elements = (bytes / i64::from(width)) as u64;
+                    let last = elements + u64::from(bytes % i64::from(width) != 0);
+                    wide_window(operand, elements, last)
+                })
+    };
+    // An empty range can justify only the same contained position.
+    contains(pointer)
+        && (contains(operand)
+            || assumptions.decide(&nonempty) == Some(true)
+            || narrow_contains(pointer, 1)
+            || narrow_contains(pointer, width)
+            || wide_window(pointer, 0, 1))
+}
+
 pub(in crate::kernel) fn memory_range_covers(
     available: &CMemoryRange,
     required: &CMemoryRange,
@@ -9624,7 +9739,6 @@ fn wide_memory_range_covers_window(
         .unwrap_or_else(|| selected.clone());
     let covers_index = |index: Bitvector32Term| {
         if let Bitvector32Term::UInt64Subtract(whole, taken) = &index
-            && first.uint64_as_const() == Some(0)
             && (assumptions.decide(&ConditionTerm::uint64_equal(
                 last.clone(),
                 taken.as_ref().clone(),
@@ -10590,6 +10704,33 @@ impl CResourceFact {
                 int32(bytes.into()),
             ],
         )
+    }
+
+    /// Allocation identity supplies bounds, independently of read authority.
+    pub(in crate::kernel) fn allocation_bounds_fact(
+        &self,
+        assumptions: &PureFactContext,
+    ) -> Option<Proposition> {
+        if !self.has_proven_positive_quantity(assumptions) {
+            return None;
+        }
+        self.allocation()?;
+        let CResource::Token { arguments, .. } = self.resource() else {
+            return None;
+        };
+        let [
+            AlgebraicValue::C(CValue::Pointer(base)),
+            AlgebraicValue::C(CValue::Int32(bytes)),
+        ] = arguments.as_ref()
+        else {
+            return None;
+        };
+        base.opaque_coverage_fact(&CMemoryRange::from_pointer_value(
+            base,
+            0u32.into(),
+            bytes.clone(),
+            1,
+        ))
     }
 
     pub fn allocation(&self) -> Option<(&Pointer, &Bitvector32Term)> {

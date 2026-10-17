@@ -21,16 +21,14 @@ pub fn resolve_click_project(
         &source_context,
         super::selected_project_c_target(project)?,
     )?;
-    resolve_click_project_with_layouts(project, "", layouts).map(|(file, _)| file)
+    resolve_click_project_with_layouts(project, "", layouts)
 }
 
-/// Resolves the project, with the braced proof blocks the entry module's
-/// parse read.
 pub(in crate::surface) fn resolve_click_project_with_layouts(
     project: &ClickProject,
     library_contracts: &str,
     layouts: parser::ProgramLayouts,
-) -> Result<(ClickFile, Vec<parser::ProofBlockSpan>), ClickError> {
+) -> Result<ClickFile, ClickError> {
     let modules = project
         .modules()
         .iter()
@@ -66,7 +64,6 @@ pub(in crate::surface) fn resolve_click_project_with_layouts(
 
     let mut locals = BTreeMap::<String, ClickFile>::new();
     let mut entry_combined = None;
-    let mut entry_proof_blocks = Vec::new();
     for identity in &order {
         let module = modules[identity];
         let imported_ids = transitive_imports(identity, &modules)?;
@@ -126,7 +123,7 @@ pub(in crate::surface) fn resolve_click_project_with_layouts(
         } else {
             module.source()
         };
-        let (mut local, proof_blocks) = parser::parse_file_items_for_module(
+        let mut local = parser::parse_file_items_for_module(
             source,
             identity,
             module.line_offset(),
@@ -143,9 +140,6 @@ pub(in crate::surface) fn resolve_click_project_with_layouts(
                 module.imports().len(),
                 local.imports().len()
             )));
-        }
-        if identity == project.entry() {
-            entry_proof_blocks = proof_blocks;
         }
         assign_local_owners(&mut local, identity)?;
         locals.insert(identity.clone(), local);
@@ -194,7 +188,7 @@ pub(in crate::surface) fn resolve_click_project_with_layouts(
         }
     }
     reject_theorem_justification_cycles(&combined)?;
-    Ok((combined, entry_proof_blocks))
+    Ok(combined)
 }
 
 #[derive(Clone, Copy, Eq, PartialEq)]
@@ -367,6 +361,10 @@ fn merge_modules(
         tactic_definitions: Vec::new(),
         declaration_owners: BTreeMap::new(),
         entry_module: Some(entry.to_string()),
+        source_spans: locals
+            .get(entry)
+            .map(|file| file.source_spans.clone())
+            .unwrap_or_default(),
     };
     for identity in identities {
         let local = locals

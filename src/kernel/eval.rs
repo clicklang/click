@@ -91,6 +91,7 @@ pub(crate) use memory_loads::registered_load_for_variable;
 pub(crate) use memory_loads::registered_load_origin_for_variable;
 pub(crate) use memory_loads::terms_have_same_canonical_form;
 pub(crate) use memory_loads::viewed_as_memory_load;
+pub(crate) use memory_loads::{LOAD_VARIABLE_RANGE, proposition_mentions_load_variable};
 pub(crate) use memory_loads::{
     LoadRegistryState, begin_load_origin_epoch, capture_load_variable_registry,
     clear_load_canonicalization_caches, clear_load_variable_registry,

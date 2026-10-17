@@ -2718,6 +2718,14 @@ impl<'a> Proof<'a> {
             return Err(self.step_error("`transport` requires an execution-frontier proof"));
         };
         let claim_label = context.claim_label;
+        if self.focused_outcome_data().is_some() {
+            return self.apply_planned_outcome_fact_transport(
+                surface_source,
+                surface_target,
+                tactic_index,
+                source_refusal,
+            );
+        }
         let premises = {
             let view = self.planning_execution_view()?;
             let (state, frontier, facts) = (view.state, view.frontier, &view.facts.to_vec());
@@ -2813,6 +2821,82 @@ impl<'a> Proof<'a> {
         })
     }
 
+    /// [`Self::apply_planned_fact_transport`] on a focused function outcome:
+    /// the same premise planner, reading the path's effects, the returned
+    /// state and the outcome's facts.
+    fn apply_planned_outcome_fact_transport(
+        &self,
+        surface_source: &ClickProposition,
+        surface_target: &ClickProposition,
+        tactic_index: usize,
+        source_refusal: Option<&ClickError>,
+    ) -> Result<Self, ClickError> {
+        let ProofContext::Execution(context) = self.context.as_ref() else {
+            return Err(self.step_error("`transport` requires an execution proof"));
+        };
+        let claim_label = context.claim_label;
+        let (Some(data), Some(execution)) = (self.focused_outcome_data(), self.execution()) else {
+            return Err(self.step_error("`transport` lost its focused function outcome"));
+        };
+        let source = self.lower_surface_proposition_direct(surface_source, "`transport` source")?;
+        if self
+            .facts()
+            .assumptions()
+            .derive_proposition(&source)
+            .is_none()
+        {
+            let facts = self.facts().to_vec();
+            return Err(ClickError::new(format!(
+                "`{claim_label}` tactic {tactic_index}: `transport` requires a source derivable from its ambient facts: {}",
+                describe_missing_pure_fact(
+                    &source,
+                    &facts,
+                    data.core.state.resources().facts(),
+                    context.parameter_binding(),
+                    &data.core.effect_facts,
+                )
+            )));
+        }
+        let target = self.lower_surface_proposition_direct(surface_target, "`transport` target")?;
+        let transition_facts = super::super::cursor_execution::fact_transport_transition_facts(
+            &data.core.effect_facts,
+            &source,
+        );
+        let view = ExecutionView::new(
+            &execution.core.frontier,
+            &data.core.effect_facts,
+            &data.recorded_snapshots,
+            &data.surface_propositions,
+            context.constants.function_entry_state.as_ref(),
+        );
+        let premises = plan_explicit_fact_transport(
+            surface_source,
+            &source,
+            &target,
+            self.facts(),
+            &transition_facts,
+            context.parameter_binding(),
+            view,
+            &data.core.state,
+            context.spec_definitions,
+        )
+        .map_err(|error| {
+            let reason = fact_transport_planning_failure(
+                surface_source,
+                surface_target,
+                &execution.core.unfolded_predicates,
+                &error,
+                source_refusal,
+            );
+            ClickError::new(format!("`{claim_label}` tactic {tactic_index}: {reason}"))
+        })?;
+        self.apply_step(ProofStep::TransportUsing {
+            source: surface_source.clone(),
+            target: surface_target.clone(),
+            premises,
+        })
+    }
+
     /// Records where the checked `close_invariants` tactic sat, so the
     /// kernel re-derivation its caller performs at the bundle check can be
     /// timed against that tactic's identity. Cursor metadata only.
@@ -2894,7 +2978,16 @@ impl<'a> Proof<'a> {
         // proof keeps their transport context from here on, so a later loop
         // extends it by the facts added since instead of rebuilding it.
         let source_facts = self.facts().with_direct_transport_assumptions();
-        let mut facts = PureFactList::from_proof_facts(&source_facts);
+        let mut facts = execution
+            .presentation
+            .loop_fact_list
+            .as_ref()
+            .and_then(|base| PureFactList::extended_to_proof_facts(base, &source_facts))
+            .unwrap_or_else(|| PureFactList::from_proof_facts(&source_facts));
+        // The next loop extends this copy; the indexes it builds here are
+        // the ones every copy of it shares.
+        facts.prepare_indexes();
+        execution.presentation.loop_fact_list = Some(facts.clone());
         let base_facts = facts.len();
         let capture_this_tactic = begin_tactic_expansion_capture(
             expansion_capture.as_deref_mut(),
@@ -2941,7 +3034,7 @@ impl<'a> Proof<'a> {
             finish_tactic_expansion_capture(expansion_capture, &expansion, false);
         }
         debug_assert!(facts.len() >= base_facts);
-        let added = facts[base_facts..].to_vec();
+        let added = facts.facts_after(base_facts);
         let mut proof_facts = source_facts;
         for fact in &added {
             proof_facts = proof_facts.with_kernel_checked_fact(fact.clone());

@@ -45,5 +45,5 @@ void poke(int32* data, int32* occupied, int32 capacity, int32 index) {
 ```
 
 ```expect
-fail: missing resource
+fail: pointer arithmetic left the pointed-to object
 ```

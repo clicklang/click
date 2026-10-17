@@ -673,7 +673,10 @@ fn call_passes_witness_child(
     let mut budget = ExecutionBudget::for_new_execution();
     let entry_assumptions = PureFactContext::new()
         .allow_symbolic_contract_loads()
-        .prefer_symbolic_external_loads();
+        .prefer_symbolic_external_loads()
+        // This scope compares symbolic child identities. The ordinary
+        // contract execution separately checks the call and its accesses.
+        .assume_entry_clause_extents();
     let mut parameter_state = CState::new();
     for (index, parameter) in function.parameters().iter().enumerate() {
         let variable = Variable(PARAMETER_VARIABLE_BASE + index as u64);

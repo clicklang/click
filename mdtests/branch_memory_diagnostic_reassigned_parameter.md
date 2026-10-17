@@ -17,6 +17,7 @@ int32 probe(struct cell* cursor, struct cell* replacement) {
 verifying "probe.c";
 int32 probe(struct cell* cursor, struct cell* replacement) {
     requires replacement != 0;
+    owns allocation(replacement, sizeof(struct cell));
     ensures result == 0 or result == 1;
 } by { execute(); simp(); }
 ```

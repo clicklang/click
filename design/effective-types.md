@@ -128,6 +128,15 @@ The one decision beyond the principle:
   rather than allowed. GCC has no such rule; it is the conservative choice
   where Click's knowledge runs out.
 
+**Optimizing builds keep `-fno-strict-aliasing`.** The maintainer decided
+this on 2026-10-17, after step 3b. The check refuses the accesses it can
+see, but heap cells written by a callee or copied by `memcpy` carry no
+recorded effective type: the record holds only while a cell keeps the value
+its store wrote, and a call leaves the cells it may write unknown. Closing
+that would need effective types in contracts, new specification syntax and
+kernel work for a small optimization gain. So the check catches 6.5p7 bugs,
+and the `-O2` build does not rely on it.
+
 **Staging.** Each step is one PR with regressions for the refused and the
 allowed cases:
 
@@ -137,9 +146,10 @@ allowed cases:
    `container_of`, then `int *` classes and local byte arrays;
 3. heap effective types and the call boundary;
 4. the project optimization level, `-O2` by default. The Linux profile then
-   stops requiring `-fno-strict-aliasing`, `-fno-strict-overflow` and
+   stops requiring `-fno-strict-overflow` and
    `-fno-delete-null-pointer-checks`, and the promise attributes are refused
-   in every project.
+   in every project. `-fno-strict-aliasing` stays (see
+   [Decisions](#decisions)).
 
 ## Status
 
@@ -225,9 +235,8 @@ allowed cases:
   default, and every C unit is prepared at it; the Linux profile no longer
   requires `-fno-strict-overflow` or `-fno-delete-null-pointer-checks`, and
   the promise attributes are refused at any optimizing level. An optimizing
-  level still adds `-fno-strict-aliasing` until the check covers globals and
-  heap objects. The remaining order: globals, then step 3b, then dropping
-  that flag.
+  level still adds `-fno-strict-aliasing`, permanently (see
+  [Decisions](#decisions)).
 - **Globals:** done. A global scalar, array, struct or array of structs
   records its declared class on its block when the block is first created
   at a function's entry, as a local does; a struct pointer global's class
@@ -256,7 +265,8 @@ allowed cases:
   - `one_classed_heap_store_and_read_are_logarithmic_in_recorded_effective_types`
     measures one classed store and one checked read against up to 1024
     unrelated recorded entries: both stay constant.
-- **Next:** drop `-fno-strict-aliasing` from optimizing builds.
+- **`-fno-strict-aliasing`:** kept permanently; the maintainer decided on
+  2026-10-17 (see [Decisions](#decisions)). The plan is complete.
 
 ## Validation
 

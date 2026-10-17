@@ -20,5 +20,5 @@ uint8 read(const uint8* bytes, const uint8* base, uint64 length, uint64 index, i
 ```
 
 ```expect
-fail: stable-view
+fail: pointer arithmetic left the pointed-to object
 ```

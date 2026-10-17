@@ -6,7 +6,7 @@ Soundness: incomplete. A caller that binds a callee's reference parameter to
 call is refused; no false acceptance is involved. It verified on master
 `3573f404f`, before the subobject-extent Phase C work
 (`design/pointer-subobject-extents.md`) and the contract pointer-equality
-designation rule (D2), and is refused on master `8d8a621cc`.
+designation rule (D2), and is refused on master `8d8a621cc` and `4d4407570`.
 
 ## Reproduction
 

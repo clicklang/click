@@ -1024,8 +1024,7 @@ pub(in crate::surface::proof) fn frontier_premise_anchor(
             execution
                 .presentation
                 .recorded_snapshots
-                .keys()
-                .rev()
+                .keys_newest_first()
                 .find_map(|selector| match selector {
                     SnapshotSelector::ProgramPoint(point) => Some(point.clone()),
                     SnapshotSelector::Mark(_) => None,

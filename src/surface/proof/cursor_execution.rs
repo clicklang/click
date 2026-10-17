@@ -2873,7 +2873,8 @@ fn execute_step_from_frontier_position_selecting_path(
                     &[]
                 )
             ))
-            .with_kind(kind));
+            .with_kind(kind)
+            .with_runtime_missing_resource(error));
         }
         let path_case_split = statement_successors_are_path_cases(&transitions);
         let split_condition = if path_case_split {
@@ -3545,7 +3546,8 @@ fn execute_step_from_frontier_position_selecting_path(
                     &execution_pure_facts
                 )
             ))
-            .with_kind(kind));
+            .with_kind(kind)
+            .with_runtime_missing_resource(&error));
         }
     }
     execution
@@ -3783,22 +3785,7 @@ pub(super) fn split_next_source_operation(
     }
 }
 
-pub(super) fn flatten_top_level_sequence(
-    statement: &CStatement,
-    statements: &mut Vec<CStatement>,
-) -> Result<(), String> {
-    match statement {
-        CStatement::Seq(first, second) => {
-            flatten_top_level_sequence(first, statements)?;
-            flatten_top_level_sequence(second, statements)
-        }
-        statement => {
-            statements.push(statement.clone());
-            Ok(())
-        }
-    }
-}
-
+#[cfg(test)]
 pub(super) fn sequence_from_statements(statements: &[CStatement]) -> Option<CStatement> {
     let mut level = statements.to_vec();
     while level.len() > 1 {

@@ -8,9 +8,7 @@ cannot establish `update`'s `h->value == p`. Otherwise `update` would read
 through `h->value` with the permission `p` carries.
 
 The C and contract are the original counterexample from
-the scalar-subobject bug
-(`bugs/pointer-arithmetic-crosses-scalar-subobject.md`, closed 2026-10-17),
-unchanged.
+the scalar-subobject reproduction recorded in `design/pointer-subobject-extents.md`, unchanged.
 
 ```c filename=fields.c
 struct Pair { int first; int second; };

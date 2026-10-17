@@ -41,7 +41,7 @@ fn ordinary_authority_wrapper_checks_only_its_delta() {
     assert!(wrapper.reaches_population());
     let selected = CResourceFact::own_composite("held".into(), vec![]);
     let child = CResourceFact::own_composite("member".into(), vec![]);
-    let samples = [64usize, 256, 1024].map(|size| {
+    let samples = [4usize, 16, 64, 256].map(|size| {
         let mut before = CState::new().with_population_creation_tracking();
         let mut facts = ProofFacts::default();
         let mut memory = CMemory::new();

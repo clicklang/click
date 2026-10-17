@@ -15,6 +15,7 @@ int32 probe(struct Pair* p) { int32* q = first(p); return second_of(q); }
 ```click
 verifying "returned_member.c";
 int32* first(struct Pair* p) {
+    views p->first;
     ensures result == &p->first;
 } by { execute(); simp(); }
 

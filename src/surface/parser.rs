@@ -231,6 +231,40 @@ pub(in crate::surface) struct ProofBlockSpan {
     pub(in crate::surface) tactics: Vec<SourcePosition>,
 }
 
+/// Where the parser read a declaration's clauses: the brace that opens them,
+/// and the first token of each written claim clause (`ensures`, `owns` or
+/// `produces`, in source order). It records where the declaration was read,
+/// not what it declares, so it never makes two declarations unequal.
+#[derive(Clone, Debug, Default)]
+pub struct DeclarationBody {
+    pub(in crate::surface) open: Option<SourcePosition>,
+    pub(in crate::surface) clauses: Vec<Option<SourcePosition>>,
+}
+
+impl PartialEq for DeclarationBody {
+    fn eq(&self, _: &Self) -> bool {
+        true
+    }
+}
+
+impl Eq for DeclarationBody {}
+
+/// Where the parser read a file's proofs, in that file's own text. Like
+/// [`DeclarationBody`], it records where the file was read, not what it
+/// declares, so it never makes two files unequal.
+#[derive(Clone, Debug, Default)]
+pub(in crate::surface) struct SourceSpans {
+    pub(in crate::surface) proof_blocks: Vec<ProofBlockSpan>,
+}
+
+impl PartialEq for SourceSpans {
+    fn eq(&self, _: &Self) -> bool {
+        true
+    }
+}
+
+impl Eq for SourceSpans {}
+
 /// The braced proof blocks of `source`, as the parser reads them.
 #[cfg(test)]
 pub(in crate::surface) fn proof_block_spans(
@@ -239,8 +273,11 @@ pub(in crate::surface) fn proof_block_spans(
 ) -> Result<Vec<ProofBlockSpan>, ClickError> {
     let mut parser = Parser::with_program_layouts(source, layouts, None)?;
     parser.plain_char = Some(crate::languages::c::target::CTarget::SUPPORTED.plain_char());
-    parser.parse_file_items()?;
-    Ok(parser.proof_block_spans)
+    Ok(parser
+        .parse_file_items()?
+        .source_spans()
+        .proof_blocks
+        .clone())
 }
 
 pub(super) fn parse_with_layouts_and_aggregate_objects(
@@ -324,7 +361,7 @@ pub(super) fn parse_file_items_for_module(
     imported_callees: &[ImportedCallee<'_>],
     imported_resources: &[&ResourceDefinition],
     layouts: ProgramLayouts,
-) -> Result<(ClickFile, Vec<ProofBlockSpan>), ClickError> {
+) -> Result<ClickFile, ClickError> {
     let mut parser = Parser::with_program_layouts(
         source,
         layouts,
@@ -400,8 +437,7 @@ pub(super) fn parse_file_items_for_module(
             );
         }
     }
-    let file = parser.parse_file_items()?;
-    Ok((file, parser.proof_block_spans))
+    parser.parse_file_items()
 }
 
 /// The names of the standard library's pure functions, read from its tokens
@@ -1712,6 +1748,9 @@ impl Parser {
             tactic_definitions,
             declaration_owners: BTreeMap::new(),
             entry_module: None,
+            source_spans: std::sync::Arc::new(SourceSpans {
+                proof_blocks: std::mem::take(&mut self.proof_block_spans),
+            }),
         };
         Ok(file)
     }
@@ -3236,6 +3275,7 @@ impl Parser {
             None
         };
         let mut target_instances = Vec::new();
+        let body_open = self.here();
         self.expect(Token::LBrace)?;
 
         let parameter_names = parsed_parameters
@@ -3268,7 +3308,9 @@ impl Parser {
         let mut requires = Vec::new();
         let mut ensures = Vec::new();
         let mut ensure_kinds = Vec::new();
+        let mut clause_positions = Vec::new();
         while self.peek() != Some(&Token::RBrace) {
+            let clause_start = self.here();
             match self.peek_ident() {
                 Some("let") => {
                     let binding = self.parse_contract_let_binding()?;
@@ -3339,6 +3381,7 @@ impl Parser {
                         .map_err(|message| self.error(message))?,
                     );
                     ensure_kinds.push(ClaimClauseKind::Owns);
+                    clause_positions.push(clause_start.clone());
                     ensures.push(
                         apply_contract_lets_to_ensure_clause(
                             EnsureClause {
@@ -3383,6 +3426,7 @@ impl Parser {
                     let resource = self.parse_owned_resource_binding()?;
                     let proof = self.parse_proof_clause_or_default()?;
                     ensure_kinds.push(ClaimClauseKind::Produces);
+                    clause_positions.push(clause_start.clone());
                     ensures.push(
                         apply_contract_lets_to_ensure_clause(
                             EnsureClause {
@@ -3426,6 +3470,7 @@ impl Parser {
                         self.parse_ensure_clause()?
                     };
                     ensure_kinds.push(ClaimClauseKind::Ensures);
+                    clause_positions.push(clause_start.clone());
                     ensures.push(
                         apply_contract_lets_to_ensure_clause(ensure, &contract_lets)
                             .map_err(|message| self.error(message))?,
@@ -3475,8 +3520,11 @@ impl Parser {
             })
             .collect();
         let ensure_claim_ids = flattened_claim_ids(&ensure_kinds, &ensure_source_clauses);
-
         Ok(TheoremDefinition {
+            body: DeclarationBody {
+                open: body_open,
+                clauses: clause_positions,
+            },
             name,
             type_parameters,
             parameters: parsed_parameters.parameters,
@@ -3545,6 +3593,7 @@ impl Parser {
                 reference_params.insert(name.clone());
             }
         }
+        let body_open = self.here();
         self.expect(Token::LBrace)?;
 
         let parameter_names = signature
@@ -3570,6 +3619,7 @@ impl Parser {
         // The kind each written postcondition clause was written as, which
         // its claim label counts it among.
         let mut ensure_kinds = Vec::new();
+        let mut clause_positions = Vec::new();
         let mut exceptional_ensures = Vec::new();
         // A local of struct-pointer type is a memory base in this function's
         // proof just as a parameter is. The signature wins a shared spelling.
@@ -3649,6 +3699,7 @@ impl Parser {
             signature.returns_reference(),
         );
         while self.peek() != Some(&Token::RBrace) {
+            let clause_start = self.here();
             match self.peek_ident() {
                 Some("let") => {
                     let binding = self.parse_contract_let_binding()?;
@@ -3740,6 +3791,7 @@ impl Parser {
                                 "conditional function contracts currently accept only `produces`, got `{keyword}`"
                             )));
                         }
+                        let produces_start = self.here();
                         self.position += 1;
                         let resource = self.parse_owned_resource_binding()?;
                         if matches!(resource, ResourceClause::Named { .. }) {
@@ -3749,6 +3801,7 @@ impl Parser {
                         }
                         let proof = self.parse_proof_clause_or_default()?;
                         ensure_kinds.push(ClaimClauseKind::Produces);
+                        clause_positions.push(produces_start.clone());
                         ensures.push(
                             apply_contract_lets_to_ensure_clause(
                                 EnsureClause {
@@ -3848,6 +3901,7 @@ impl Parser {
                         .map_err(|message| self.error(message))?,
                     );
                     ensure_kinds.push(ClaimClauseKind::Owns);
+                    clause_positions.push(clause_start.clone());
                     ensures.push(
                         apply_contract_lets_to_ensure_clause(
                             EnsureClause {
@@ -3928,6 +3982,7 @@ impl Parser {
                         CalleeResourceBinderKind::Produced,
                     );
                     ensure_kinds.push(ClaimClauseKind::Produces);
+                    clause_positions.push(clause_start.clone());
                     ensures.push(
                         apply_contract_lets_to_ensure_clause(
                             EnsureClause {
@@ -3964,6 +4019,7 @@ impl Parser {
                         }
                     }
                     ensure_kinds.push(ClaimClauseKind::Ensures);
+                    clause_positions.push(clause_start.clone());
                     ensures.push(
                         apply_contract_lets_to_ensure_clause(ensure, &contract_lets)
                             .map_err(|message| self.error(message))?,
@@ -4224,6 +4280,10 @@ impl Parser {
             signature.parameters = parameters;
         }
         Ok(FunctionBlock {
+            body: DeclarationBody {
+                open: body_open,
+                clauses: clause_positions,
+            },
             c_object_names,
             recursion_peers,
             signature,
@@ -8708,19 +8768,21 @@ impl Parser {
                 return Err(self
                     .error("`loop` block must contain at least one item or a `decreases` clause"));
             }
-            return Ok(ProofTactic::Loop(StructuralClause {
-                // The actual loop identity is bound from the execution
-                // frontier during check.  This sentinel is never lowered.
-                region: CodeRegion::Loop(usize::MAX),
-                label,
-                decreases,
-                diverges,
-                items,
-                resources,
-                initialize_proof,
-                preserve_proof,
-                scope: BTreeMap::new(),
-            }));
+            return Ok(ProofTactic::Loop(StructuralClause::from(
+                StructuralClauseData {
+                    // The actual loop identity is bound from the execution
+                    // frontier during check.  This sentinel is never lowered.
+                    region: CodeRegion::Loop(usize::MAX),
+                    label,
+                    decreases,
+                    diverges,
+                    items,
+                    resources,
+                    initialize_proof,
+                    preserve_proof,
+                    scope: BTreeMap::new(),
+                },
+            )));
         }
         self.parse_named_proof_tactic(name)
     }
@@ -12291,7 +12353,15 @@ impl Parser {
                 lowered: CExpression::Cast {
                     expression: Box::new(expression),
                     target_type,
-                    integer_mode: crate::kernel::CIntegerCastMode::CConversion,
+                    // This cast was written in the contract. Pointer targets
+                    // use the specification cast rule, not the C conversion
+                    // marker also used for inserted pointer coercions. Authored
+                    // void and byte casts select the enclosing-object view.
+                    integer_mode: if target_type.is_pointer() {
+                        crate::kernel::CIntegerCastMode::Standard
+                    } else {
+                        crate::kernel::CIntegerCastMode::CConversion
+                    },
                     pointee_struct: None,
                     pointee_volatile: false,
                     pointee_constant: false,
@@ -12364,10 +12434,10 @@ impl Parser {
                 if let CExpression::TypedLoad { value_type, .. } = lowered
                     && value_type.pointer_to().is_some()
                 {
-                    return Ok(crate::surface::lowering::contract_c_unary(
-                        expression.clone(),
-                        CExpression::AddressOf(Box::new(contract_member_lvalue(lowered))),
-                    ));
+                    return Ok(ContractExpression::CUnary {
+                        operand: Box::new(expression.clone()),
+                        lowered: CExpression::AddressOf(Box::new(contract_member_lvalue(lowered))),
+                    });
                 }
                 let source_base = (**base).clone();
                 let Some(base) = contract_expression_as_c_fragment(base) else {

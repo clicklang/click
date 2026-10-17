@@ -1126,16 +1126,6 @@ pub(in crate::surface) fn resolve_click_project_context(
     project: &ClickProject,
     sources: &CSourceContext<'_>,
 ) -> Result<ClickFile, ClickError> {
-    resolve_click_project_context_with_proof_blocks(project, sources).map(|(file, _)| file)
-}
-
-/// The resolved project, with the braced proof blocks its entry module's
-/// parse read. Library contracts the frontend appends after the entry text
-/// contribute blocks past its last line.
-pub(in crate::surface) fn resolve_click_project_context_with_proof_blocks(
-    project: &ClickProject,
-    sources: &CSourceContext<'_>,
-) -> Result<(ClickFile, Vec<parser::ProofBlockSpan>), ClickError> {
     let _timing = VerificationTimingPhase::new("source resolution");
     let click_source = project
         .entry_source()
@@ -2811,11 +2801,25 @@ fn verify_c0_sources_in_context(
             ))
             .or_default();
         let checked_executions = distinct_checked_executions(&function_verified);
+        // Rules for different loops are never equal, so each rule is
+        // compared only with the kept rules for its own loop.
+        let mut kept_by_loop = BTreeMap::<Option<usize>, Vec<usize>>::new();
+        for (position, rule) in function_termination_loop_rules.iter().enumerate() {
+            kept_by_loop
+                .entry(rule.loop_index())
+                .or_default()
+                .push(position);
+        }
         for rule in function_verified
             .iter()
             .flat_map(|theorem| theorem.frontier_loop_rules.iter())
         {
-            if !function_termination_loop_rules.contains(rule) {
+            let kept = kept_by_loop.entry(rule.loop_index()).or_default();
+            if !kept
+                .iter()
+                .any(|position| function_termination_loop_rules[*position] == *rule)
+            {
+                kept.push(function_termination_loop_rules.len());
                 function_termination_loop_rules.push(rule.clone());
             }
         }

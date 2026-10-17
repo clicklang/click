@@ -11,11 +11,17 @@ impl CParameter {
             constant: false,
             pointee_constant: false,
             pointee_class: None,
+            slice_length_parameter: None,
         }
     }
 
     pub fn name(&self) -> &str {
         &self.name
+    }
+
+    pub(crate) fn with_slice_length_parameter(mut self, parameter: usize) -> Self {
+        self.slice_length_parameter = Some(parameter);
+        self
     }
 
     pub fn c_type(&self) -> CType {
@@ -2255,6 +2261,7 @@ impl CMemoryRange {
             element_width,
             kind: RangeIndexKind::Int32,
             extent_claims: Default::default(),
+            formation_coverage: Default::default(),
         }
     }
 
@@ -2333,6 +2340,7 @@ impl CMemoryRange {
     pub(in crate::kernel) fn with_carrier_of(mut self, source: &Self) -> Self {
         self.designation = source.designation.clone();
         self.extent_claims = source.extent_claims;
+        self.formation_coverage = source.formation_coverage.clone();
         self.typed_carrier = source.typed_carrier;
         self.opaque_extent = source.opaque_extent.clone();
         self.carrier_extent_known = source.carrier_extent_known;
@@ -2523,6 +2531,7 @@ impl CMemoryRange {
         Self {
             kind: self.kind,
             extent_claims: self.extent_claims,
+            formation_coverage: self.formation_coverage.clone(),
             designation: self.designation.clone(),
             typed_carrier: self.typed_carrier,
             opaque_extent: self.opaque_extent.clone(),
@@ -3190,6 +3199,19 @@ pub(crate) fn memory_range_extent_guard_spellings(range: &CMemoryRange) -> Vec<P
     guards
 }
 
+/// Intrinsic bounds of a resource footprint whose admission was established.
+/// A merely stated viewability/separation condition grants no domain evidence.
+pub(crate) fn admitted_memory_range_extent_facts(range: &CMemoryRange) -> Vec<Proposition> {
+    let mut guards = memory_range_extent_guard_spellings(range);
+    guards.extend(range.formation_coverage.iter().cloned());
+    if range.typed_carrier
+        && let Some(coverage) = range.pointer_carrier().opaque_coverage_fact(range)
+    {
+        guards.push(coverage);
+    }
+    guards
+}
+
 /// Proof-facing bounds included in a separation proposition. Assuming it and
 /// proving it use the same list; neither direction may drop a bound.
 /// Bound variables under quantifiers or implications stay in their own scope.
@@ -3707,7 +3729,9 @@ impl CExecutionEnvironment {
     ) -> Self {
         // Loop rules keep their own variable indexes, so the environment's
         // index of its other parts stays valid.
-        std::sync::Arc::make_mut(&mut self.verified_loop_rules).extend(rules);
+        for rule in rules {
+            self.verified_loop_rules.push(rule);
+        }
         self
     }
 
@@ -3795,7 +3819,9 @@ impl CExecutionEnvironment {
     #[cfg(test)]
     pub(crate) fn shares_all_storage_with(&self, other: &Self) -> bool {
         self.shares_project_storage_with(other)
-            && std::sync::Arc::ptr_eq(&self.verified_loop_rules, &other.verified_loop_rules)
+            && self
+                .verified_loop_rules
+                .shares_storage_with(&other.verified_loop_rules)
             && self
                 .variable_index
                 .shares_storage_with(&other.variable_index)
@@ -3841,14 +3867,23 @@ impl CExecutionEnvironment {
         statement: &CStatement,
         assumptions: &PureFactContext,
     ) -> Option<&CVerifiedLoopRule> {
-        self.verified_loop_rules.iter().find(|rule| {
-            // Every rule this environment holds is a candidate; only the one
-            // for this loop statement is worth checking further. The checks
-            // below read the rule's whole prerequisite context and state.
+        self.verified_loop_rules.for_statement(statement).find(|rule| {
+            // Every rule for this loop statement is a candidate, found through
+            // the rules' statement index, in the order the rules were added.
+            // The checks below read the rule's whole prerequisite context and
+            // state.
             if rule.loop_statement != *statement || !self.loop_rule_answers_for_recursion(rule) {
                 return false;
             }
-            let assumptions_match = || rule
+            // A rule stepped under the very context it was certified under
+            // finds each prerequisite exactly there: the two hold the same
+            // fact sets by identity. Asking each still records reasoning
+            // provenance, so a capture asks them all.
+            let same_context = || {
+                !crate::kernel::assumptions::implicit_reasoning_provenance_capturing()
+                    && rule.required_assumptions.holds_the_facts_of(assumptions)
+            };
+            let assumptions_match = || same_context() || rule
                 .required_assumptions
                 .pure_facts()
                 .iter()
@@ -3914,6 +3949,10 @@ impl CVerifiedLoopRule {
             .0
             .as_deref()
             .unwrap_or_default()
+    }
+
+    pub(crate) fn loop_index(&self) -> Option<usize> {
+        self.loop_index
     }
 
     pub(crate) fn with_loop_index(mut self, loop_index: usize) -> Self {

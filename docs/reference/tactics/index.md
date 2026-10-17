@@ -118,6 +118,18 @@ Source-premise selection skips synthesized candidates whose rendered
 propositions do not tokenize as Click, rather than counting a route through an
 unnamed kernel value as a successful expandable proof.
 
+When `auto` (or a written `execute()`) executes a C store or read that is
+refused because the place lies inside a folded resource the frontier owns,
+it unfolds the one owned resource whose body holds that place and retries
+the operation, one layer per refused access. It never chooses between
+resources: when no owned resource's body holds the place, or more than one
+does, the refusal stands. Expansion writes each opening as an explicit
+`unfold(...)`. The contract's resource transition folds the resource again
+at function exit. A written `step()` never opens a resource. See
+[`auto_opens_a_folded_resource_to_store_through_it.md`](https://github.com/clicklang/click/blob/master/mdtests/auto_opens_a_folded_resource_to_store_through_it.md)
+and
+[`a_written_step_does_not_open_a_folded_resource.md`](https://github.com/clicklang/click/blob/master/mdtests/a_written_step_does_not_open_a_folded_resource.md).
+
 A failed execution `have P by auto();` names `auto` and the written `P`,
 rather than an internal search step or subgoal. Exhausted verification
 budgets keep their budget diagnostic. See
@@ -332,7 +344,12 @@ explicit steps, splits, and branches, and profiling attributes them to the
 tactic. Automatic path selectors must re-lower to the exact checked condition;
 their native load widths and short-circuit operand facts are preserved.
 
-**Checked examples:** [`tactic_execute.md`](https://github.com/clicklang/click/blob/master/mdtests/tactic_execute.md)
+Inside an explicit `branch` arm, `execute()` can succeed when the arm reaches
+function exit, for example through a `return`. A continuing arm must stop at
+its shared continuation; an unsuccessful `execute()` there names that arm
+limit. Use `step()` to finish a continuing arm and `execute()` after the join.
+
+**Checked examples:** [`execute_branch_arm_stops_at_shared_continuation.md`](https://github.com/clicklang/click/blob/master/mdtests/execute_branch_arm_stops_at_shared_continuation.md), [`tactic_execute.md`](https://github.com/clicklang/click/blob/master/mdtests/tactic_execute.md)
 
 ### Execution to a program point
 

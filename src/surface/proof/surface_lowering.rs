@@ -276,7 +276,9 @@ impl<'a> Proof<'a> {
                 if !proposition_contains_old_expression(&surface)
                     && let Some(recorded) = context
                         .surface_propositions
-                        .available_kernel(&surface, context.lowering_context.as_ref())
+                        .available_kernel_matching(&surface, |kernel| {
+                            context.lowering_context.contains_top_level(kernel)
+                        })
                 {
                     return Ok(recorded.clone());
                 }
