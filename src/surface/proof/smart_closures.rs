@@ -5163,7 +5163,18 @@ impl<'a> Proof<'a> {
         premise_anchor: Option<&ProgramPointRef>,
         kernel: &Proposition,
     ) -> Option<ClickProposition> {
-        let surface = self.available_surface_fact_raw(surface_facts, premise_anchor, kernel)?;
+        let surface = self
+            .available_surface_fact_raw(surface_facts, premise_anchor, kernel)
+            .or_else(|| {
+                // The address equality of a pointer value equality is
+                // spelled by the whole equality, which `rewrite` reads by its
+                // addresses.
+                let whole = pointer_value_equality_of_address(kernel)?;
+                self.facts()
+                    .available(&whole)
+                    .then(|| self.available_surface_fact_raw(surface_facts, premise_anchor, &whole))
+                    .flatten()
+            })?;
         self.named_returned_pointer_surface_fact(&surface, kernel)
             .or(Some(surface))
     }
@@ -11073,4 +11084,22 @@ fn flattened_disjuncts(proposition: &Proposition) -> Vec<&Proposition> {
         }
     }
     disjuncts
+}
+
+/// The pointer value equality whose address part is `address`, for two
+/// pointers that carry the designations their addresses name.
+fn pointer_value_equality_of_address(address: &Proposition) -> Option<Proposition> {
+    let Proposition::ConditionIs(ConditionTerm::PointerEqual(left, right), true) = address else {
+        return None;
+    };
+    Some(Proposition::And(
+        Box::new(address.clone()),
+        Box::new(Proposition::ConditionIs(
+            ConditionTerm::PointerEqual(
+                Box::new(crate::kernel::SubobjectExtent::designation_start(left)),
+                Box::new(crate::kernel::SubobjectExtent::designation_start(right)),
+            ),
+            true,
+        )),
+    ))
 }
