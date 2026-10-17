@@ -966,3 +966,60 @@ fn entry_setup_is_linear_in_owned_parameters() {
     let second = samples[2].1 - samples[1].1;
     assert!(second * 2 <= first * 5, "{samples:?}");
 }
+
+/// A function of `n` parameters whose proof states one fact about one of
+/// them: the `have` reads `s` and `a0` and nothing else.
+fn many_parameters(n: usize) -> (String, String) {
+    let params = (0..n)
+        .map(|i| format!("int32 a{i}"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let c = format!(
+        "int32 caller({params}) {{
+    int32 s;
+    s = a0;
+    return s;
+}}"
+    );
+    let click = format!(
+        "verifying \"hunt.c\";
+
+int32 caller({params}) {{
+    ensures result == a0 by {{
+        step();
+        step();
+        have s == a0 by {{ simp(); }}
+        step();
+        simp();
+    }}
+}}"
+    );
+    (c, click)
+}
+
+// Lowering a proof-side proposition must build the environment of the names
+// it reads, not of every parameter and local: a function of N parameters and
+// N such steps otherwise costs N^2.
+#[test]
+fn a_have_ignores_unrelated_parameters() {
+    let work = [2, 32].map(|n| {
+        let (c, click) = many_parameters(n);
+        let (result, samples) = crate::instrumentation::collect_tactic_work(|| {
+            verify_c0_sources(&click, &[("hunt.c", c.as_str())])
+        });
+        result.unwrap_or_else(|error| panic!("many_parameters at {n}: {}", error.message()));
+        samples
+            .iter()
+            .filter(|sample| sample.tactic.tactic_name == "have")
+            .map(|sample| sample.work)
+            .max()
+            .expect("the `have` reports its work")
+    });
+    assert!(
+        work[1] <= work[0] + band(work[0]),
+        "many_parameters: the `have` grows from {} to {} between 2 and 32 parameters \
+         (issues/scaling.md)",
+        work[0],
+        work[1]
+    );
+}
