@@ -218,7 +218,11 @@ allowed cases:
   level still adds `-fno-strict-aliasing` until the check covers globals and
   heap objects. The remaining order: globals, then step 3b, then dropping
   that flag.
-- **Step 3b (heap effective types):** after globals.
+- **Globals:** done. A global scalar, array, struct or array of structs
+  records its declared class on its block when the block is first created
+  at a function's entry, as a local does; a struct pointer global's class
+  names its struct by tag.
+- **Step 3b (heap effective types):** next.
 
 ## Validation
 
