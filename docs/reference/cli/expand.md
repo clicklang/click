@@ -204,6 +204,17 @@ a `branch` arm whose C path verification proved infeasible expands the same
 way: the arm never runs, so the rewrite removes the tactic rather than
 reporting a missing source occurrence.
 
+The written certificate is kept short where verification allows. An
+`arithmetic_certificate` writes each repeated derivation once and leaves out
+derivations its conclusion does not use; premises and a refutation's
+`negated_goal` stay. A grouped closure proves each open claim in a `have` and
+then closes every obligation with its own `assumption();`. When some of those
+`have`s are proved by `normalize();` alone and their run of closers ends the
+block, the command drops those `have`s, writes one `normalize();` before the
+closers, and drops one `assumption();` for each `have` it dropped. It keeps
+that shorter form only when it verifies; otherwise it writes the closure as
+generated, at the cost of one more check.
+
 The command exits with status 1 and writes no requested artifact when
 selection, expansion extraction, or rewritten proof verification fails, a
 work budget is exhausted, the crash-containment bound stops the run, or file

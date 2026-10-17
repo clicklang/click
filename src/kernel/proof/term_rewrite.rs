@@ -714,8 +714,7 @@ fn collect_bitvector_carriers(term: &Bitvector32Term, variables: &mut CarrierVar
         Bitvector32Term::MemoryLoad(_, pointer, _) => {
             collect_pointer_carriers(pointer, variables);
         }
-        Bitvector32Term::PointerAddress(pointer)
-        | Bitvector32Term::ObjectPointerAddress(pointer, _) => {
+        Bitvector32Term::PointerAddress(pointer, _) => {
             collect_pointer_carriers(pointer, variables);
         }
         Bitvector32Term::IntegerToMachine { value, .. } => {
@@ -4253,11 +4252,8 @@ impl<'a> TermRewrite<'a> {
             Bitvector32Term::MemoryLoad(memory, pointer, kind) => {
                 Bitvector32Term::MemoryLoad(memory.clone(), Box::new(self.pointer(pointer)), *kind)
             }
-            Bitvector32Term::PointerAddress(pointer) => {
-                Bitvector32Term::pointer_address(self.pointer(pointer))
-            }
-            Bitvector32Term::ObjectPointerAddress(pointer, class) => {
-                Bitvector32Term::object_pointer_address(self.pointer(pointer), Some(class.clone()))
+            Bitvector32Term::PointerAddress(pointer, class) => {
+                Bitvector32Term::object_pointer_address(self.pointer(pointer), class.class())
             }
             Bitvector32Term::IntegerToMachine { value, destination } => {
                 Bitvector32Term::IntegerToMachine {

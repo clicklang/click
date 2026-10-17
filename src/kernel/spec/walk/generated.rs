@@ -168,6 +168,7 @@ impl Gen {
                 name: "f".into(),
                 arguments: vec![self.arg(d), self.arg(d)],
                 result_type: CType::Int32,
+                result_object_class: None,
             },
             11 => SpecExpression::PointerOffset {
                 pointer: Box::new(self.expr(d)),

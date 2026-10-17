@@ -666,18 +666,6 @@ fn flat_post_execution_tactic(tactic: &ProofTactic) -> Option<PostExecutionTacti
             target: target.clone(),
             premises: Some(premises.clone()),
         }),
-        ProofTactic::Assumption => Some(PostExecutionTactic::Assumption),
-        ProofTactic::Normalize => Some(PostExecutionTactic::Normalize),
-        ProofTactic::NormalizeUsing(premises) => {
-            Some(PostExecutionTactic::NormalizeUsing(premises.clone()))
-        }
-        ProofTactic::ArithmeticUsing(premises) => {
-            Some(PostExecutionTactic::ArithmeticUsing(premises.clone()))
-        }
-        ProofTactic::ArithmeticCertificate(certificate) => Some(
-            PostExecutionTactic::ArithmeticCertificate(certificate.clone()),
-        ),
-        ProofTactic::Rewrite(equality) => Some(PostExecutionTactic::Rewrite(equality.clone())),
         ProofTactic::Simp => Some(PostExecutionTactic::Simp),
         ProofTactic::AutoClose => Some(PostExecutionTactic::AutoClose),
         ProofTactic::SimpUsing(simp) => Some(PostExecutionTactic::SimpUsing(simp.clone())),

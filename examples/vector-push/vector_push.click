@@ -53,28 +53,5 @@ int32 vector_push(struct vector* owner, int32 value) {
             at(statement(5).entry, owner->len) < at(statement(5).entry, owner->cap);
         };
     }
-    have 0 == 0 by {
-        normalize();
-    }
-    have result == (old(owner->len) + 1) by {
-        normalize();
-    }
-    have owner->len == (old(owner->len) + 1) by {
-        normalize();
-    }
-    have owner->data[old(owner->len)] == value by {
-        normalize();
-    }
-    have owner->cap == old(owner->cap) by {
-        normalize();
-    }
-    have owner->data == old(owner->data) by {
-        normalize();
-    }
-    assumption();
-    assumption();
-    assumption();
-    assumption();
-    assumption();
-    assumption();
+    normalize();
 }

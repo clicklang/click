@@ -130,10 +130,19 @@ that keeps `rbtree-erase` from verifying. R4 and R5 remain.
 
 ### W4. Expansion output is hard to read
 
-Today: expanded arithmetic certificates use numbered nodes and repeat
-identical blocks (`mdtests/bubble_sort3_two_pass_sorted.md`); committed
-expansions keep noise such as `have 0 == 0 by normalize();` and runs of
-`assumption();` (`examples/vector-push/vector_push.click`).
+Done: `click expand` writes each repeated derivation of an arithmetic
+certificate once and leaves out derivations its conclusion does not use. A
+grouped closure whose claims `normalize();` proves is written as one
+`normalize();` before the remaining closers when that form verifies
+(`examples/vector-push/vector_push.click`). Committed expansions were tidied
+the same way where they still verify.
+
+Today: certificate nodes are still numbered, and sibling certificates under
+one `both` repeat the same premise and interval nodes, which one certificate
+cannot share with another (`mdtests/bubble_sort3_two_pass_sorted.md`).
+Closures that `normalize();` cannot shorten keep one `assumption();` per
+obligation, and older committed expansions keep restatements such as
+`have 0 == 0 by normalize();`.
 
 Proposed fix: named, deduplicated certificate nodes, and expansions that
 drop the noise.
@@ -160,27 +169,25 @@ local held at a recorded statement boundary as that local there
 (`at(statement(1).exit, r)`, `at(statement(2).exit, buf)`), and a read of a
 recorded snapshot's memory through that snapshot's locals. A pure theorem's
 `Integer` binder prints as its name in a conversion-condition refusal, and a
-memory-history sentence names a struct-typed global's field (`g.b`) where
-exactly one scalar field occupies exactly the bytes accessed. What remains:
+memory-history sentence, a goal and an evaluated side name a struct-typed
+global's or local's field (`g.b`, `s.b`) where exactly one scalar field
+occupies exactly the bytes accessed. An address inside an allocation a local
+held is spelled from that local (`*((char *)at(statement(2).exit, p) + 5)`),
+and the goal and premise lines of a refusal name what locals held at
+recorded points, as its proof context does. What remains:
 
 - A callee's result that no local ever held, as in `return value() + 1;`,
   prints as `<unnamed A>`. Its only spelling is a translation temporary: the
   C call `value()` is not a Click expression, and re-evaluating it would be
   another call.
-- An address no local held exactly at a recorded snapshot, such as an
-  element `buf + u` of an allocation, prints as `<pointer A>`; so do the
-  `recent premises` lines, which are rendered without the execution's
-  snapshot names.
-- A store at a constant offset into a struct-typed local prints as `s+8`:
-  the function's table of local struct types is keyed by source spelling,
-  while a local's block carries its kernel name, so a shadowing declaration
-  of another type could hold the block that spelling would find. Union
-  members sharing an offset and width keep the offset by design
-  (`mdtests/global_union_members_sharing_bytes_keep_the_offset.md`).
+- A cell at a quantified binder's index, `dst[k]` in a frame refusal,
+  prints as `*<pointer A>`: the report has no name for the binder `k`
+  (`mdtests/bare_transport_names_its_uncarried_leaf.md`).
 
-Proposed fix: carry each struct-typed local's layout with its kernel block
-name; spell an address inside an allocation as an offset from the local that
-held its base; give the `recent premises` lines the report's snapshot names.
+Union members sharing an offset and width keep the offset by design
+(`mdtests/global_union_members_sharing_bytes_keep_the_offset.md`).
+
+Proposed fix: name a quantified binder's cell by the binder.
 
 Decision: in progress.
 
@@ -190,19 +197,18 @@ Decision: in progress.
 
 Today: Rust sidecars write Rust types, `*const u8`, `as` and `bool` in pure
 functions, predicates and theorems, a parenthesized comparison is a `bool`
-value, and a C or C++ `bool` parameter is a claim. What remains: a pure
-function cannot take a slice (`bytes: &[u8]` with its own `.len()`), so it
-takes `*const u8` and a `usize` length; Rust literal spellings without a
-Click equivalent (`4usize`, `4i32`, `1_000`) are refused; the shared lemma
+value, a C or C++ `bool` parameter is a claim, and Rust literal spellings
+(`4usize`, `4i32`, `1_000`) are accepted, and a pure function takes a slice
+(`bytes: &[u8]` with its own `.len()`). What remains: the shared lemma
 library is named by C types (`uint64_less_than_to_integer`); and the
 archived Charon-trial sidecars under `design/charon-trial` keep the C
 spellings they were written in.
 
-Proposed fix: slice parameters for pure functions, passed as the slice; the
-remaining literal suffixes; Rust-spelled aliases or names for the lemmas a
-Rust proof applies.
+Proposed fix: Rust-spelled aliases or names for the lemmas a Rust proof
+applies, after P2's Integer-default specification arithmetic settles which
+lemmas remain.
 
-Decision: fix (maintainer, 2026-10-13), after L2: Rust types, `as` and `bool` throughout Rust sidecars. Types, `as` and `bool` done; the items above remain.
+Decision: fix (maintainer, 2026-10-13), after L2: Rust types, `as` and `bool` throughout Rust sidecars. Types, `as`, `bool`, literal suffixes and pure-function slices done; the items above remain.
 
 ## M. Memory model, semantics and trust
 

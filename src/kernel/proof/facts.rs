@@ -2544,8 +2544,7 @@ fn collect_bitvector_atoms(term: &Bitvector32Term, atoms: &mut BTreeSet<Bitvecto
         Bitvector32Term::MemoryLoad(_, pointer, _) => {
             collect_pointer_bitvector_atoms(pointer, atoms)
         }
-        Bitvector32Term::PointerAddress(pointer)
-        | Bitvector32Term::ObjectPointerAddress(pointer, _) => {
+        Bitvector32Term::PointerAddress(pointer, _) => {
             collect_pointer_bitvector_atoms(pointer, atoms)
         }
         // A load variable names one read; the atoms of the address it read

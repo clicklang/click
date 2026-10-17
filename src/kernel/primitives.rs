@@ -431,6 +431,52 @@ impl LoadKind {
     }
 }
 
+/// The object class an address term retains from the pointer it was formed
+/// from (`design/effective-types.md`). Like a pointer value's class, it is
+/// not part of the value's identity: it compares equal to every other
+/// annotation, hashes to nothing, and orders as equal, so equality, fact
+/// lookup, rewriting and premise matching see one address however it is
+/// annotated. Only an integer-to-pointer cast reads it, and the destination
+/// type of that cast never supplies it.
+#[derive(Clone, Debug, Default)]
+pub struct AddressObjectClass(Option<crate::kernel::effective_type::CAccessClass>);
+
+impl AddressObjectClass {
+    pub const NONE: Self = Self(None);
+
+    pub(crate) fn new(class: Option<crate::kernel::effective_type::CAccessClass>) -> Self {
+        Self(class)
+    }
+
+    pub(crate) fn class(&self) -> Option<crate::kernel::effective_type::CAccessClass> {
+        self.0.clone()
+    }
+}
+
+impl PartialEq for AddressObjectClass {
+    fn eq(&self, _: &Self) -> bool {
+        true
+    }
+}
+
+impl Eq for AddressObjectClass {}
+
+impl std::hash::Hash for AddressObjectClass {
+    fn hash<H: std::hash::Hasher>(&self, _: &mut H) {}
+}
+
+impl PartialOrd for AddressObjectClass {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for AddressObjectClass {
+    fn cmp(&self, _: &Self) -> std::cmp::Ordering {
+        std::cmp::Ordering::Equal
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum Bitvector32Term {
     Constant(u32),
@@ -504,10 +550,12 @@ pub enum Bitvector32Term {
     /// (a C pointer comparison states only the latter).  No arithmetic on the term
     /// is interpreted as address arithmetic; tag bits are handled by checked
     /// rewrites on top of this term.
-    PointerAddress(Box<Pointer>),
-    /// The same numeric address with checked source object-class evidence.
-    /// The destination type of a later cast never supplies this class.
-    ObjectPointerAddress(Box<Pointer>, crate::kernel::effective_type::CAccessClass),
+    ///
+    /// The second field is the checked object class of the pointer the
+    /// address was formed from, when one is known. It is evidence for a
+    /// later integer-to-pointer cast, never part of the term's identity: a
+    /// classed and a bare spelling of one address are the same term.
+    PointerAddress(Box<Pointer>, AddressObjectClass),
     IntegerToMachine {
         value: SharedIntegerTerm,
         destination: MachineIntegerType,
@@ -2398,6 +2446,9 @@ pub enum SpecExpression {
         name: String,
         arguments: Vec<SpecPureFunctionArgument>,
         result_type: CType,
+        /// The class of the object a pointer result designates, from the
+        /// function's declared return type (`design/effective-types.md`).
+        result_object_class: Option<crate::kernel::effective_type::CAccessClass>,
     },
     LoopEntrySnapshot(Box<SpecExpression>),
     PointerOffset {
@@ -2680,12 +2731,29 @@ pub struct AlgebraicVariantType {
 /// algebraic type family. Groundedness is computed once when the graph is
 /// formed so checking each constructor or variable does not rescan schemas
 /// unrelated to that term.
+///
+/// The schemas also record, beside the field types, the object class a
+/// pointer field's declaration gives the object it designates
+/// (`design/effective-types.md`). A field's kernel type spells every struct
+/// pointer as an `int32` pointer, so this is where a symbolic value of the
+/// field gets the class a parameter of the declared type would have. Like a
+/// pointer value's class it is not part of the type's identity: two types
+/// that differ only in it are equal, and only fresh symbolic field values
+/// read it.
 #[derive(Debug)]
 pub struct AlgebraicSchemas {
     variants:
         std::collections::BTreeMap<AlgebraicValueType, std::sync::Arc<[AlgebraicVariantType]>>,
     grounded: std::collections::BTreeSet<AlgebraicValueType>,
+    object_classes: std::collections::BTreeMap<AlgebraicValueType, AlgebraicFieldObjectClasses>,
 }
+
+/// The declared object class of each field of each constructor of one
+/// algebraic type, by constructor name; a field without one is `None`.
+pub(crate) type AlgebraicFieldObjectClasses = std::collections::BTreeMap<
+    String,
+    std::sync::Arc<[Option<crate::kernel::effective_type::CAccessClass>]>,
+>;
 
 impl AlgebraicSchemas {
     pub(crate) fn new(
@@ -2713,7 +2781,22 @@ impl AlgebraicSchemas {
                 break;
             }
         }
-        Self { variants, grounded }
+        Self {
+            variants,
+            grounded,
+            object_classes: std::collections::BTreeMap::new(),
+        }
+    }
+
+    /// These schemas with the declared object classes of pointer fields.
+    /// Entries for types or constructors without a classed field may be
+    /// omitted.
+    pub(crate) fn with_object_classes(
+        mut self,
+        object_classes: std::collections::BTreeMap<AlgebraicValueType, AlgebraicFieldObjectClasses>,
+    ) -> Self {
+        self.object_classes = object_classes;
+        self
     }
 
     pub(crate) fn get(
@@ -2977,6 +3060,46 @@ impl AlgebraicType {
             variants: self.schemas.get(value_type)?.clone(),
             schemas: self.schemas.clone(),
         })
+    }
+
+    /// The object class the declaration of field `index` of constructor
+    /// `variant` gives the object a pointer stored there designates. A type
+    /// without classed fields answers without building its lookup key.
+    pub(crate) fn field_object_class(
+        &self,
+        variant: &str,
+        index: usize,
+    ) -> Option<crate::kernel::effective_type::CAccessClass> {
+        if self.rigid || self.schemas.object_classes.is_empty() {
+            return None;
+        }
+        self.schemas
+            .object_classes
+            .get(&self.value_type())?
+            .get(variant)?
+            .get(index)?
+            .clone()
+    }
+
+    /// A fresh symbolic value for field `index` of constructor `variant`,
+    /// of kernel type `c_type`, carrying the class its declaration gives a
+    /// pointer field's object.
+    pub(crate) fn symbolic_c_field_value(
+        &self,
+        variant: &str,
+        index: usize,
+        c_type: CType,
+        variable: Variable,
+    ) -> CValue {
+        let value = crate::kernel::symbolic_call_result(c_type, variable);
+        match c_type
+            .is_pointer()
+            .then(|| self.field_object_class(variant, index))
+            .flatten()
+        {
+            Some(class) => value.with_pointer_object_class(Some(class)),
+            None => value,
+        }
     }
 
     pub(in crate::kernel) fn has_consistent_root_schema(&self) -> bool {

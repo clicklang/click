@@ -659,7 +659,10 @@ fn run_audit(arguments: Arguments) -> Result<(), String> {
     let sources = without_excluded(audit_targets(&arguments.path)?, &arguments.exclude)?;
     println!("INVENTORY");
     let inventory_limit = arguments.limits.session.within(deadline)?;
-    let (mut sites, _) = run_phase("smart-site inventory", inventory_limit, || {
+    let ((sources, mut sites), _) = run_phase("smart-site inventory", inventory_limit, || {
+        // Negative fixtures are not audit inputs: reject them before runtime
+        // discovery can prepare their imports or parse their invalid Click.
+        let sources = without_expected_failure_mdtests(sources)?;
         for path in &sources {
             let source = load_audit_source(path)?;
             let runtime = match &source.project {
@@ -671,7 +674,8 @@ fn run_audit(arguments: Arguments) -> Result<(), String> {
                 println!("  {} runtime assumption: {assumption}", path.display());
             }
         }
-        inventory_sites(&sources)
+        let sites = inventory_sites(&sources)?;
+        Ok((sources, sites))
     })?;
     let inventory_claims = sites
         .iter()
@@ -1263,19 +1267,38 @@ fn load_audit_source_from_text(
     })
 }
 
+/// Read only the container expectation; never prepare its program inputs or
+/// parse the Click source of a deliberately invalid fixture.
+fn is_expected_failure_mdtest(path: &Path) -> Result<bool, String> {
+    if !looks_like_mdtest(path) {
+        return Ok(false);
+    }
+    let markdown = fs::read_to_string(path)
+        .map_err(|error| format!("failed to read `{}`: {error}", path.display()))?;
+    let mdtest = cli::parse_mdtest(path, &markdown)?;
+    Ok(matches!(
+        mdtest.expectation,
+        Some(MdTestExpectation::FailContains(_))
+    ))
+}
+
+fn without_expected_failure_mdtests(sources: Vec<PathBuf>) -> Result<Vec<PathBuf>, String> {
+    let mut kept = Vec::new();
+    for source in sources {
+        if !is_expected_failure_mdtest(&source)? {
+            kept.push(source);
+        }
+    }
+    Ok(kept)
+}
+
 fn inventory_sites(sources: &[PathBuf]) -> Result<Vec<AuditSite>, String> {
     let mut sites = BTreeMap::new();
     for source_path in sources {
         let canonical_path = fs::canonicalize(source_path)
             .map_err(|error| format!("failed to resolve `{}`: {error}", source_path.display()))?;
-        if looks_like_mdtest(&canonical_path) {
-            let markdown = fs::read_to_string(&canonical_path).map_err(|error| {
-                format!("failed to read `{}`: {error}", canonical_path.display())
-            })?;
-            let mdtest = cli::parse_mdtest(&canonical_path, &markdown)?;
-            if matches!(mdtest.expectation, Some(MdTestExpectation::FailContains(_))) {
-                continue;
-            }
+        if is_expected_failure_mdtest(&canonical_path)? {
+            continue;
         }
         let source = load_audit_source(&canonical_path)?;
         let AuditSource {
@@ -1342,14 +1365,8 @@ fn implicit_auto_sites(
     for source_path in sources {
         let canonical_path = fs::canonicalize(source_path)
             .map_err(|error| format!("failed to resolve `{}`: {error}", source_path.display()))?;
-        if looks_like_mdtest(&canonical_path) {
-            let markdown = fs::read_to_string(&canonical_path).map_err(|error| {
-                format!("failed to read `{}`: {error}", canonical_path.display())
-            })?;
-            let mdtest = cli::parse_mdtest(&canonical_path, &markdown)?;
-            if matches!(mdtest.expectation, Some(MdTestExpectation::FailContains(_))) {
-                continue;
-            }
+        if is_expected_failure_mdtest(&canonical_path)? {
+            continue;
         }
         let source = load_audit_source(&canonical_path)?;
         // The kernel's tables are thread-local, as in a session.

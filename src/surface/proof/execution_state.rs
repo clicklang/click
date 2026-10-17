@@ -1323,21 +1323,6 @@ pub(super) enum PostExecutionTactic {
         target: ClickProposition,
         premises: Option<Vec<ClickProposition>>,
     },
-    Assumption,
-    Normalize,
-    NormalizeUsing(Vec<ClickProposition>),
-    /// `arithmetic() using { ... }`: the explicit simple closer for an
-    /// int32 comparison claim, written where `simp()` would otherwise
-    /// search. It closes a focused claim goal from exactly its listed
-    /// premises, so it belongs to the same post-execution closer family as
-    /// `normalize`.
-    ArithmeticUsing(Vec<ClickProposition>),
-    /// A retained checked arithmetic certificate, emitted when expanding a
-    /// smart `arithmetic() using` closer.  This is deliberately a separate
-    /// post-execution operation so rechecking the expansion applies exactly
-    /// the supplied certificate and never invokes a planner.
-    ArithmeticCertificate(ArithmeticCertificate),
-    Rewrite(ClickProposition),
     /// Surface-only control structure scheduled after terminal execution.
     /// The arms contain no semantic state: ordered finalization asks the
     /// focused outcome `Proof` to decide the condition, then applies only the
@@ -1689,15 +1674,13 @@ pub(super) fn post_execution_tactic_timing(
         ),
         PostExecutionTactic::Simp | PostExecutionTactic::SimpUsing(_) => ("simp", "smart"),
         PostExecutionTactic::AutoClose => ("auto", "smart"),
+        // `arithmetic()` searches for its certificate.
+        PostExecutionTactic::Leaf(tactic @ ProofTactic::ArithmeticUsing(_)) => {
+            (tactic_name(tactic), "smart")
+        }
         PostExecutionTactic::Leaf(tactic) => (tactic_name(tactic), "simple"),
         PostExecutionTactic::FoldProved(_) => ("fold", "control"),
         PostExecutionTactic::CloseOpen { .. } => ("open", "control"),
-        PostExecutionTactic::Assumption => ("assumption", "simple"),
-        PostExecutionTactic::Normalize => ("normalize", "simple"),
-        PostExecutionTactic::NormalizeUsing(_) => ("normalize", "simple"),
-        PostExecutionTactic::ArithmeticUsing(_) => ("arithmetic", "smart"),
-        PostExecutionTactic::ArithmeticCertificate(_) => ("arithmetic_certificate", "simple"),
-        PostExecutionTactic::Rewrite(_) => ("rewrite", "simple"),
         PostExecutionTactic::If { .. } => ("if", "control"),
         PostExecutionTactic::CallOutcomes { .. } => ("outcomes", "control"),
     }

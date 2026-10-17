@@ -16209,7 +16209,34 @@ fn authority_population_certification_expands_every_smart_site() {
             position.column,
         )
         .unwrap();
-        verify_c0_project(&project_for(&expanded), &c_sources).unwrap_or_else(|error| {
+        let owner = site.claim_label.rsplit_once('.').unwrap().0;
+        // Only this function's proof body may change. The full original check above
+        // already covers every untouched declaration; cold-check the complete
+        // rewritten owner, including all of its postconditions and paths.
+        let body_extent = |text: &str| {
+            let start = text.find(&format!(" {owner}(")).unwrap();
+            let body = start + text[start..].find("} by {").unwrap() + "} by {".len();
+            let end = body + text[body..].find("\n}").unwrap() + "\n}".len();
+            (body, end)
+        };
+        let (before_start, before_end) = body_extent(source);
+        let (after_start, after_end) = body_extent(&expanded);
+        assert_eq!(
+            &source[..before_start],
+            &expanded[..after_start],
+            "{owner}: changed prefix"
+        );
+        assert_eq!(
+            &source[before_end..],
+            &expanded[after_end..],
+            "{owner}: changed suffix"
+        );
+        let verified = verify_project_functions(
+            &project_for(&expanded),
+            &ProgramInputs::Bundle(c_sources.to_vec()),
+            [owner.to_string()],
+        )
+        .unwrap_or_else(|error| {
             panic!(
                 "{} site {} ({}) lost its checked resource transition: {}",
                 site.claim_label,
@@ -16218,6 +16245,12 @@ fn authority_population_certification_expands_every_smart_site() {
                 error.message()
             )
         });
+        assert!(!verified.is_empty(), "{owner}: no proof was checked");
+        assert!(
+            verified
+                .iter()
+                .all(|proof| proof.function_block.signature().name() == owner)
+        );
     }
 }
 
@@ -18621,4 +18654,38 @@ fn branch_arm_source_selection_and_batch_expansion_follow_the_interface_rule() {
         let batch = expand_c0_tactics_source_at(&source, &c, &positions).unwrap();
         verify_c0_sources(&batch.source, &c).unwrap();
     }
+}
+
+#[test]
+fn tidied_expansion_closers_prove_normalized_claims_with_one_normalize() {
+    let original = "int32 f() {\n    ensures result == 0;\n} by {\n    step();\n}\n";
+    let expanded = "int32 f() {\n    ensures result == 0;\n} by {\n    step();\n    have result == 0 by {\n        normalize();\n    }\n    have p == q by {\n        assumption();\n    }\n    have r == s by {\n        normalize();\n    }\n    assumption();\n    assumption();\n    assumption();\n    assumption();\n}\n";
+    assert_eq!(
+        tidy_expansion_closers(original, expanded).as_deref(),
+        Some(
+            "int32 f() {\n    ensures result == 0;\n} by {\n    step();\n    have p == q by {\n        assumption();\n    }\n    normalize();\n    assumption();\n    assumption();\n}\n"
+        )
+    );
+}
+
+#[test]
+fn tidied_expansion_closers_leave_other_closers_alone() {
+    let original = "f by {\n    step();\n}\n";
+    // More normalized claims than closers.
+    let short = "f by {\n    have a by {\n        normalize();\n    }\n    have b by {\n        normalize();\n    }\n    assumption();\n}\n";
+    // A closer run that does not end its block.
+    let continued =
+        "f by {\n    have a by {\n        normalize();\n    }\n    assumption();\n    step();\n}\n";
+    // No claim proved by `normalize();` alone.
+    let simplified = "f by {\n    have a by {\n        simp();\n    }\n    assumption();\n}\n";
+    for expanded in [short, continued, simplified] {
+        assert_eq!(
+            tidy_expansion_closers(original, expanded),
+            None,
+            "{expanded}"
+        );
+    }
+    // Text the expansion left as it was is never rewritten.
+    let written = "f by {\n    have a by {\n        normalize();\n    }\n    assumption();\n}\n";
+    assert_eq!(tidy_expansion_closers(written, written), None);
 }

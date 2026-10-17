@@ -1515,7 +1515,10 @@ field. A `const` method or `const Shape&` keeps it, so an `ensures` reads it
 as it was at entry; a mutable one may change it, which its `ensures` reads as
 new and `old(size(this))` as at entry
 (`mdtests/cpp_class_object_state_mutable.md`). A method of `Square` is stated on `Square`'s memory, `owns *this`, with
-`size(this)` read as the definition. An override of a `Shape` method
+`size(this)` read as the definition; a `const` one only views it, `views
+*this`, so a caller of it keeps every field of the object, not only the
+definitions (`mdtests/cpp_class_const_method_keeps_fields.md`,
+`mdtests/cpp_class_const_method_keeps_fields_rejects_overclaim.md`). An override of a `Shape` method
 inherits that method's clauses read the same way, labeled
 `Square::area.interface_ensures_0`. Its refinement is checked against the
 `contract` named for it with `_iface` that states them on that memory. Where a
@@ -1528,6 +1531,10 @@ passing a `Square` therefore knows the object's `size` is its `side`, and
 after lending it as a `Shape&` that its `side` is the object's new `size`
 and nothing of the `side` it lent
 (`mdtests/cpp_class_object_state_mutable_reference_returns_new_state.md`).
+After a `const Shape&` conversion it likewise knows only the definitions:
+its other fields are forgotten, since keeping the memory lent for the call
+needs one view backed by the several owned pieces of a polymorphic object,
+which stable views do not yet support.
 
 Limits:
 - An override in a class without a defining `class` block is refused.

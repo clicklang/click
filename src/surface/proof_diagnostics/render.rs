@@ -230,6 +230,25 @@ impl SnapshotLabels {
         self.snapshot_pointers.get(pointer).map(String::as_str)
     }
 
+    /// A name for a pointer into `pointer`'s block at offset zero, when a
+    /// local held one at the current state or at a recorded snapshot: the
+    /// base an address inside an allocation is spelled from. The current
+    /// state's locals are preferred, then the shortest snapshot name, so the
+    /// choice does not depend on map order.
+    pub(crate) fn block_base_name(&self, pointer: &Pointer) -> Option<&str> {
+        fn shortest<'a>(names: &'a HashMap<Pointer, String>, pointer: &Pointer) -> Option<&'a str> {
+            names
+                .iter()
+                .filter(|(base, _)| {
+                    base.block == pointer.block && base.offset == PointerOffsetTerm::Constant(0)
+                })
+                .map(|(_, name)| name.as_str())
+                .min_by(|left, right| left.len().cmp(&right.len()).then(left.cmp(right)))
+        }
+        shortest(&self.pointer_sources, pointer)
+            .or_else(|| shortest(&self.snapshot_pointers, pointer))
+    }
+
     /// A report-local `<pointer A>`, whatever else names the address.
     pub(crate) fn placeholder_pointer(&mut self, pointer: &Pointer) -> String {
         let next = self.unnamed_pointers.len();
@@ -1961,8 +1980,7 @@ impl Renderer<'_> {
                 }
                 self.push(" }");
             }
-            Bitvector32Term::PointerAddress(pointer)
-            | Bitvector32Term::ObjectPointerAddress(pointer, _) => {
+            Bitvector32Term::PointerAddress(pointer, _) => {
                 self.push("address(");
                 self.pointer(pointer);
                 self.push(")");

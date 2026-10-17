@@ -1529,8 +1529,7 @@ fn hash_memory_blind_bitvector<H: std::hash::Hasher>(term: &Bitvector32Term, has
             std::hash::Hash::hash(kind, hasher);
             hash_memory_blind_pointer(pointer, hasher)
         }
-        Bitvector32Term::PointerAddress(pointer)
-        | Bitvector32Term::ObjectPointerAddress(pointer, _) => {
+        Bitvector32Term::PointerAddress(pointer, _) => {
             std::hash::Hash::hash("address", hasher);
             hash_memory_blind_pointer(pointer, hasher)
         }
@@ -1652,8 +1651,7 @@ fn collect_bitvector_memory_load_keys(
             ));
             collect_pointer_offset_memory_load_keys(&pointer.offset, keys);
         }
-        Bitvector32Term::PointerAddress(pointer)
-        | Bitvector32Term::ObjectPointerAddress(pointer, _) => {
+        Bitvector32Term::PointerAddress(pointer, _) => {
             collect_pointer_offset_memory_load_keys(&pointer.offset, keys);
         }
         Bitvector32Term::If {
@@ -1911,8 +1909,7 @@ fn collect_bitvector_memory_loads_with_width(
                 seen_integers,
             )
         }
-        Bitvector32Term::PointerAddress(pointer)
-        | Bitvector32Term::ObjectPointerAddress(pointer, _) => collect_pointer_offset_memory_loads(
+        Bitvector32Term::PointerAddress(pointer, _) => collect_pointer_offset_memory_loads(
             &pointer.offset,
             current_memory,
             loads,

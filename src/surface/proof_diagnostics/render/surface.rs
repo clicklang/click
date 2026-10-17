@@ -1377,7 +1377,7 @@ impl Printer<'_> {
                     spelled_arms.join(", ")
                 )))
             }
-            B::PointerAddress(pointer) | B::ObjectPointerAddress(pointer, _) => {
+            B::PointerAddress(pointer, _) => {
                 let pointer = self.pointer(pointer, depth)?;
                 Some(cast("uint64", pointer))
             }
@@ -1593,6 +1593,16 @@ impl Printer<'_> {
                 .is_some_and(names_result)
         {
             return Some(atom(self.labels.placeholder_pointer(pointer)));
+        }
+        // An address inside an allocation a local held is spelled from that
+        // local: `(char *)at(statement(2).exit, p) + k * 4`.
+        if self.labels.snapshot_pointer_name(pointer).is_none()
+            && pointer.offset != PointerOffsetTerm::Constant(0)
+            && let Some(base) = self.labels.block_base_name(pointer).map(str::to_owned)
+            && base.len() <= 256
+        {
+            let offset = self.offset(&pointer.offset, depth);
+            return Some(spelled(format!("(char *){base} + {offset}"), 0));
         }
         Some(atom(self.labels.unnamed_pointer(pointer)))
     }

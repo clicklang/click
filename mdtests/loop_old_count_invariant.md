@@ -87,12 +87,11 @@ int32 loop_old_count_invariant(int32 p[3]) {
                             interval_subtract 2, 5 2 (-2) (0);
                             interval_atom (2) (2) (2);
                             interval_add_bounded 6, 7 (0) (2);
-                            interval_subtract 2, 5 2 (-2) (0);
                             interval_atom (3) (3) (3);
-                            interval_add_bounded 9, 10 (1) (3);
+                            interval_add_bounded 6, 9 (1) (3);
                             trivial => 0 <= 0;
-                            affine_conclusion_pair 12 8 11 => ((0 - at(statement(3).entry, i)) + 2) < ((0 - at(statement(3).entry, i)) + 3);
-                            conclusion 13;
+                            affine_conclusion_pair 11 8 10 => ((0 - at(statement(3).entry, i)) + 2) < ((0 - at(statement(3).entry, i)) + 3);
+                            conclusion 12;
                         }
                     }
                 }
