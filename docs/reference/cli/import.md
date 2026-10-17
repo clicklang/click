@@ -1474,10 +1474,17 @@ same kind, `virtual ~Shape() = default;`, only resets the vtable pointer and
 runs no code a proof sees (`mdtests/cpp_polymorphic_virtual_destructor.md`).
 A class may write its own destructor with a body, virtual or not, verified
 against its contract as any destructor is, when its fields have trivial
-destruction and its base's destruction runs no code: base destructors are
-not executed. A local's destructor is called directly, so its contract is
-the class's own (`mdtests/cpp_polymorphic_destructor_runs_its_body.md`,
-`mdtests/cpp_polymorphic_destructor_rejects_overclaim.md`). It is reached by
+destruction. A local's destructor is called directly, so its contract is the
+class's own (`mdtests/cpp_polymorphic_destructor_runs_its_body.md`,
+`mdtests/cpp_polymorphic_destructor_rejects_overclaim.md`). A base whose own
+written destructor runs code is destroyed by the class's written destructor,
+which may then have an empty body: after the body the importer calls the
+base's destructor on the base subobject, as C++ destroys an object, and the
+class's destructor contract owns the base's fields as `this->base.log` and
+ensures what the base destructor ensures. A class over such a base that
+writes no destructor of its own is refused
+(`mdtests/cpp_polymorphic_base_destructor_runs_after.md`,
+`mdtests/cpp_polymorphic_base_destructor_runs_after_rejects_overclaim.md`). It is reached by
 reference or built in a local by its explicit constructor, `Square sq(3);`.
 The compiler's setting of the vtable pointer is trusted; the constructor's
 contract owns and establishes the object's fields. While the object
@@ -1491,7 +1498,7 @@ constructor's contract owns the base's fields as `this->base.tag` and lends
 them to the base's constructor
 (`mdtests/cpp_polymorphic_base_construction.md`,
 `mdtests/cpp_polymorphic_base_construction_rejects_overclaim.md`). Copies, objects returned by
-value, base destructors with effects, covariant results and a pure
+value, covariant results and a pure
 virtual method with a definition remain unsupported
 (`mdtests/cpp_virtual_override_rejects_narrower_requires.md`,
 `mdtests/cpp_virtual_override_keeps_the_inherited_guarantee.md`,

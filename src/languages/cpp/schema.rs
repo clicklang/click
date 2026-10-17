@@ -1094,6 +1094,14 @@ pub enum CppStatement {
         arguments: Vec<CppCallArgument>,
         span: CppSpan,
     },
+    /// A polymorphic class's destructor's last statement: its base's
+    /// written destructor on the base subobject, run after its own body.
+    BaseDestruct {
+        object: CppPlaceReference,
+        base: CppBaseReference,
+        callee: CppFunctionReference,
+        span: CppSpan,
+    },
     /// A resolved prvalue constructor whose body satisfies copy equivalence.
     ReturnConstruct {
         callee: CppFunctionReference,
@@ -1682,11 +1690,11 @@ pub(super) fn record_layout_order<'a>(
     for (id, record) in records {
         crate::instrumentation::record_deterministic_work(1);
         let mut count = 0;
-        for value_type in record
+        for (value_type, is_base) in record
             .fields
             .iter()
-            .map(|field| &field.value_type)
-            .chain(record.base.iter().map(|base| &base.value_type))
+            .map(|field| (&field.value_type, false))
+            .chain(record.base.iter().map(|base| (&base.value_type, true)))
         {
             crate::instrumentation::record_deterministic_work(1);
             if let CppType::Record {
@@ -1696,7 +1704,10 @@ pub(super) fn record_layout_order<'a>(
             } = value_type
             {
                 let child = validate_record_reference(records, declaration_id, name)?;
-                if *is_const || child.destructor.is_some() {
+                // A polymorphic base's destructor runs from the class's own.
+                let destroyed_by_owner =
+                    is_base && record.polymorphic && record.destructor.is_some();
+                if *is_const || (child.destructor.is_some() && !destroyed_by_owner) {
                     return Err("embedded C++ record fields require mutable, trivially destructible records".into());
                 }
                 count += 1;
@@ -1837,9 +1848,9 @@ impl CppRecord {
     }
 
     /// A polymorphic class constructed in place: its own fields after the
-    /// vtable pointer, and at most one polymorphic base with no fields,
-    /// bases, or destructor, whose construction and destruction only set
-    /// the vtable pointer. Its own destructor, if any, runs its body.
+    /// vtable pointer, and at most one polymorphic base with no base of its
+    /// own, built first by its constructor and destroyed last by its
+    /// destructor, each run from the class's own.
     fn require_polymorphic_construction_layout(
         &self,
         records: &BTreeMap<String, &CppRecord>,
@@ -1874,9 +1885,9 @@ impl CppRecord {
         let base_record = validate_record_reference(records, declaration_id, name)?;
         if !base_record.polymorphic
             || base_record.base.is_some()
-            || base_record.destructor.is_some()
+            || (base_record.destructor.is_some() && self.destructor.is_none())
         {
-            return Err("a C++ constructor builds only a polymorphic base with no base or destructor of its own".into());
+            return Err("a C++ constructor builds only a polymorphic base with no base of its own, whose destructor, if any, the class's own destructor runs".into());
         }
         Ok(())
     }
@@ -1988,13 +1999,13 @@ impl CppRecord {
             };
             let child = validate_record_reference(records, declaration_id, name)?;
             // A polymorphic class extends its polymorphic base: the whole base,
-            // vtable pointer first, then its own fields. Its own destructor
-            // may run code; the base's destruction runs none.
+            // vtable pointer first, then its own fields. A base destructor
+            // that runs code runs from the class's own destructor.
             if self.polymorphic || child.polymorphic {
                 if !self.polymorphic
                     || !child.polymorphic
                     || base.span.file != self.span.file
-                    || child.destructor.is_some()
+                    || (child.destructor.is_some() && self.destructor.is_none())
                     || base.offset_bytes != 0
                     || base.size_bytes != child.size_bytes
                     || self.size_bytes < child.size_bytes
@@ -2607,6 +2618,90 @@ impl CppFunction {
                 }
             }
         }
+        // A polymorphic class's destructor ends by running its base's
+        // written destructor on the base subobject, and only it does.
+        let mut base_destruct_index = None;
+        if let Some((
+            index,
+            CppStatement::BaseDestruct {
+                object,
+                base: reference,
+                callee,
+                span,
+            },
+        )) = self
+            .body
+            .iter()
+            .enumerate()
+            .find(|(_, statement)| matches!(statement, CppStatement::BaseDestruct { .. }))
+        {
+            let CppFunctionKind::Destructor {
+                record_declaration_id,
+                record_name,
+            } = &self.function_kind
+            else {
+                return Err("C++ base destruction outside a destructor".into());
+            };
+            let record = validate_record_reference(records, record_declaration_id, record_name)?;
+            let self_parameter = &self.parameters[0];
+            let base_record = match &record.base {
+                Some(CppBase {
+                    value_type:
+                        CppType::Record {
+                            declaration_id,
+                            name,
+                            ..
+                        },
+                    ..
+                }) if record.polymorphic => {
+                    validate_record_reference(records, declaration_id, name)?
+                }
+                _ => return Err("C++ base destruction needs a polymorphic base".into()),
+            };
+            if index + 1 != self.body.len()
+                || base_record.destructor.is_none()
+                || object.declaration_id != self_parameter.declaration_id
+                || object.name != self_parameter.name
+                || !object.projections.is_empty()
+                || reference.record_declaration_id != *record_declaration_id
+                || reference.base_declaration_id != base_record.declaration_id
+                || base_record
+                    .destructor
+                    .as_ref()
+                    .is_some_and(|destructor| destructor.declaration_id != callee.declaration_id)
+            {
+                return Err(format!(
+                    "C++ destructor `{}` has an invalid base destruction",
+                    self.name
+                ));
+            }
+            span.validate(logical_source)?;
+            base_destruct_index = Some(index);
+        } else if let CppFunctionKind::Destructor {
+            record_declaration_id,
+            record_name,
+        } = &self.function_kind
+        {
+            let record = validate_record_reference(records, record_declaration_id, record_name)?;
+            if let Some(CppBase {
+                value_type:
+                    CppType::Record {
+                        declaration_id,
+                        name,
+                        ..
+                    },
+                ..
+            }) = &record.base
+                && validate_record_reference(records, declaration_id, name)?
+                    .destructor
+                    .is_some()
+            {
+                return Err(format!(
+                    "C++ destructor `{}` does not run its base's destructor",
+                    self.name
+                ));
+            }
+        }
         if self.body.is_empty() {
             return Err("supported C++ function has no executable statements".into());
         }
@@ -2638,6 +2733,10 @@ impl CppFunction {
         let mut has_conditional_cleanup_scope = false;
         let mut has_exception_cleanup_scope = false;
         for (statement_index, statement) in self.body.iter().enumerate() {
+            if Some(statement_index) == base_destruct_index {
+                // Checked above, with the destructor's record.
+                continue;
+            }
             if let CppStatement::Declare {
                 local,
                 initializer,
@@ -3114,6 +3213,7 @@ impl CppStatement {
         match self {
             Self::MemberConstruct { .. } => Err("C++ embedded construction is only supported in the constructor member-initializer prefix".into()),
             Self::BaseConstruct { .. } => Err("C++ base construction is only supported first in a polymorphic class's constructor".into()),
+            Self::BaseDestruct { .. } => Err("C++ base destruction is only supported last in a polymorphic class's destructor".into()),
             Self::Unreachable { span } => span.validate(logical_source),
             Self::AssignConstructionCall { target, callee, arguments, value_type, span } => {
                 let root = validate_root_reference(target, places, logical_source)?;
@@ -4658,6 +4758,7 @@ impl CppStatement {
             | Self::MemberStore { .. }
             | Self::MemberConstruct { .. }
             | Self::BaseConstruct { .. }
+            | Self::BaseDestruct { .. }
             | Self::TrivialCopy { .. }
             | Self::AssignConstructionCall { .. }
             | Self::Assume { .. }
@@ -4754,7 +4855,8 @@ fn validate_reachable_calls(
             | CollectedCall::BaseConstructor {
                 callee, arguments, ..
             } => (*callee, *arguments),
-            CollectedCall::Destructor { callee, .. } => (*callee, &[][..]),
+            CollectedCall::Destructor { callee, .. }
+            | CollectedCall::BaseDestructor { callee, .. } => (*callee, &[][..]),
             CollectedCall::ConstantEvaluationObservation { .. } => {
                 unreachable!("observation handled above")
             }
@@ -4933,6 +5035,15 @@ fn validate_reachable_calls(
                     records,
                 )?;
             }
+            CollectedCall::BaseDestructor { base, .. } => {
+                if !matches!(&target.function_kind, CppFunctionKind::Destructor {
+                    record_declaration_id, record_name,
+                } if *record_declaration_id == base.base_declaration_id
+                    && *record_name == base.base_name)
+                {
+                    return Err("C++ base destruction does not call its base's destructor".into());
+                }
+            }
             CollectedCall::Destructor { object, .. } => {
                 let CppFunctionKind::Destructor {
                     record_declaration_id,
@@ -5042,6 +5153,10 @@ enum CollectedCall<'a> {
         callee: &'a CppFunctionReference,
         arguments: &'a [CppCallArgument],
     },
+    BaseDestructor {
+        base: &'a CppBaseReference,
+        callee: &'a CppFunctionReference,
+    },
     Destructor {
         object: &'a CppPlaceReference,
         callee: &'a CppFunctionReference,
@@ -5141,6 +5256,9 @@ fn collect_calls<'a>(statements: &'a [CppStatement], calls: &mut Vec<CollectedCa
                     arguments,
                 });
                 collect_nested_calls(arguments, calls);
+            }
+            CppStatement::BaseDestruct { base, callee, .. } => {
+                calls.push(CollectedCall::BaseDestructor { base, callee });
             }
             CppStatement::Declare {
                 local,
@@ -5873,6 +5991,7 @@ fn validate_statement_constant_references(
         match statement {
             CppStatement::Unreachable { .. }
             | CppStatement::TrivialCopy { .. }
+            | CppStatement::BaseDestruct { .. }
             | CppStatement::ReturnRecord { .. } => {}
             CppStatement::Declare { initializer, .. } => {
                 initializer.validate_constant_references(

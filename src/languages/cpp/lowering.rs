@@ -784,6 +784,31 @@ impl LoweringContext<'_> {
                 lowered.extend(self.lower_call_arguments(arguments)?);
                 Ok(self.coerced(c_call(self.callee_name(callee)?, lowered)))
             }
+            CppStatement::BaseDestruct {
+                object,
+                base,
+                callee,
+                ..
+            } => {
+                // The base subobject's address: the base destructor runs on
+                // it after the class's own destructor body.
+                let place = self.place(object)?;
+                let (_, offset) = self.records.resolve_path(
+                    &place.value_type,
+                    object
+                        .projections
+                        .iter()
+                        .map(super::schema::CppProjection::as_ref)
+                        .chain(std::iter::once(super::schema::ProjectionRef::Base(base))),
+                )?;
+                Ok(c_call(
+                    self.callee_name(callee)?,
+                    vec![c_cast(
+                        c_pointer_offset_bytes(c_variable(self.variable_name(object)), offset),
+                        CType::Int32Pointer,
+                    )],
+                ))
+            }
             CppStatement::BaseConstruct {
                 object,
                 base,
