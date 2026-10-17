@@ -641,18 +641,10 @@ x: T) -> T; }`. Each instance the crate implements or calls through,
 may state every instance's interface once, in a block naming the type
 parameters, and an instance's in a block naming its types; an instance's
 interface is the generic block's clauses with its types for the
-parameters, then its own block's:
-
-<!-- verified-example: design/charon-trial/generic-traits/shapes.click -->
-```click
-trait generic_traits::Scale<T> {
-    fn scale(&self, x: T) -> T {
-        ensures result != x;
-    }
-}
-```
-
-An implementation inherits and refines its instance's interface, labeled
+parameters, then its own block's. `trait generic_traits::Scale<T> { fn
+scale(&self, x: T) -> T { ensures result != x; } }` binds every instance,
+and `trait generic_traits::Scale<i32>` adds `requires 0 <= x and x <= 1000;
+ensures x < result;` at `i32`. An implementation inherits and refines its instance's interface, labeled
 `interface_ensures_0` onward in that order, and a call through `S:
 generic_traits::Scale<i32>` or `&dyn generic_traits::Scale<i32>` assumes
 it. The generic block is read at each instance the import declares; it is
