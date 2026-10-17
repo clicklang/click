@@ -519,7 +519,9 @@ fn logical_field_coordinates_keep_symbolic_offsets_without_scanning_aliases() {
                 true,
             );
         }
-        context.composition_object_resources.advance_memory_equalities(&context);
+        context
+            .composition_object_resources
+            .advance_memory_equalities(&context);
         let ((selected, work), map_work) = crate::persistent::measure_persistent_work(|| {
             crate::instrumentation::measure_deterministic_work(|| {
                 context
