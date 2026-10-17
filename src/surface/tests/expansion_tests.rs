@@ -1,6 +1,27 @@
 use super::*;
 
 #[test]
+#[ignore = "nightly: 5.3s in the parallel gate"]
+fn machine_population_count_rewrites_keep_their_type_in_integer_files() {
+    let (source, sources) =
+        mdtest_sources("mdtests/a_consumed_member_bound_on_an_entry_count_is_cited.md");
+    let source_refs = sources
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    verify_c0_sources(&source, &source_refs).unwrap();
+    let expanded = expand_claim_by_label(
+        None,
+        &source,
+        &ProgramInputs::Bundle(source_refs.clone()),
+        "pool_checkout.contract",
+        None,
+    )
+    .unwrap();
+    without_implicit_auto(|| verify_c0_sources(&expanded.source, &source_refs)).unwrap();
+}
+
+#[test]
 fn record_pointer_identity_preserves_local_storage_in_all_proof_modes() {
     let (source, sources) =
         mdtest_sources("mdtests/c_record_pointer_identity_preserves_local_storage.md");

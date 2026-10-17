@@ -18,6 +18,38 @@ pub(super) enum PropositionSpelling {
     Refusal,
 }
 
+// Population counts are int32 values. An unobserved machine comparison
+// must keep that type when reparsed in a file using `arithmetic "integer"`;
+// that directive otherwise promotes a comparison containing `count(...)`.
+fn comparison_operand(expression: &ContractExpression, mode: PropositionSpelling) -> String {
+    fn typed_count_reference(expression: &ContractExpression) -> Option<String> {
+        match expression {
+            ContractExpression::ResourceCount(_) => Some(format!(
+                "((int32){})",
+                describe_contract_expression(expression)
+            )),
+            ContractExpression::Old(inner) => {
+                Some(format!("old({})", typed_count_reference(inner)?))
+            }
+            ContractExpression::At {
+                selector,
+                expression,
+            } => Some(format!(
+                "at({}, {})",
+                describe_snapshot_selector(selector),
+                typed_count_reference(expression)?,
+            )),
+            _ => None,
+        }
+    }
+    if mode == PropositionSpelling::Source
+        && let Some(rendered) = typed_count_reference(expression)
+    {
+        return rendered;
+    }
+    describe_contract_expression(expression)
+}
+
 pub(super) fn print_proposition(
     proposition: &ClickProposition,
     mode: PropositionSpelling,
@@ -44,8 +76,8 @@ pub(super) fn print_proposition(
             right,
         } => format!(
             "{} {operator} {}",
-            describe_contract_expression(left),
-            describe_contract_expression(right)
+            comparison_operand(left, mode),
+            comparison_operand(right, mode)
         ),
         ClickProposition::FloatClassification {
             expression,
@@ -1983,6 +2015,41 @@ pub(super) fn spell_source_names(context: &str, source: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn population_count_comparisons_preserve_their_numeric_type_when_reparsed() {
+        fn requirement(source: &str) -> ClickProposition {
+            let parsed = parser::parse(source).unwrap();
+            let Requirement::Proposition(proposition) = &parsed.function_blocks()[0].requires()[0]
+            else {
+                panic!("expected a comparison requirement");
+            };
+            proposition.clone()
+        }
+        for count in [
+            "count(token())",
+            "old(count(token()))",
+            "at(function.entry, count(token()))",
+        ] {
+            for arithmetic in ["", "arithmetic \"integer\";"] {
+                let original = requirement(&format!(
+                    "{arithmetic} authorized resource token() {{}} void f(int32 value) {{ requires value == {count}; ensures value == value; }}"
+                ));
+                let rendered = source_click_proposition(&original);
+                let reparsed = requirement(&format!(
+                    "arithmetic \"integer\"; authorized resource token() {{}} void f(int32 value) {{ requires {rendered}; ensures value == value; }}"
+                ));
+                let (
+                    ClickProposition::Comparison { left: original, .. },
+                    ClickProposition::Comparison { left: reparsed, .. },
+                ) = (original, reparsed)
+                else {
+                    panic!("expected comparisons before and after printing");
+                };
+                assert_eq!(original, reparsed, "{rendered}");
+            }
+        }
+    }
 
     fn certificate_variable(name: &str) -> ContractExpression {
         ContractExpression::CFragment(CExpression::Variable(name.into()))
