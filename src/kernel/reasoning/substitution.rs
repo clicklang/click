@@ -1564,11 +1564,21 @@ fn walk_c_memory_range<S: VariableSubstitution + ?Sized>(
     range: &CMemoryRange,
     s: &S,
 ) -> CMemoryRange {
-    range.with_bounds(
-        s.pointer(&range.base),
-        s.bitvector(range.bound_terms().0),
-        s.bitvector(range.bound_terms().1),
-    )
+    // A designation the range was named through follows the pointer it
+    // belongs to; one that no longer names an opaque extent is dropped,
+    // which loses only evidence.
+    let designations = range.designations().map(|designation| {
+        designation.and_then(|variable| {
+            SubobjectExtent::opaque_start(&s.pointer(&Pointer::symbolic(variable)))
+        })
+    });
+    range
+        .with_bounds(
+            s.pointer(&range.base),
+            s.bitvector(range.bound_terms().0),
+            s.bitvector(range.bound_terms().1),
+        )
+        .with_designations(designations)
 }
 
 #[cfg(test)]

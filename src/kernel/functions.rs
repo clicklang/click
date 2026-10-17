@@ -16349,24 +16349,28 @@ pub(in crate::kernel) fn resource_clause_section_supply(
         }) else {
             continue;
         };
-        if let Some(loadable) = evaluate_composite_resource_loadable_propositions(
+        if let Some(loadable) = super::functions::composite_expansion::evaluate_composite_resource_loadable_ranges(
             fact,
             &definitions[index..=index],
             state.memory(),
             assumptions,
         ) {
-            views.extend(loadable.into_iter().filter_map(|proposition| {
-                let Proposition::CMemoryLoadable { base, bytes, .. } = proposition else {
-                    return None;
-                };
-                Some(CResourceFact::view_memory(
-                    CMemoryRange::new_with_element_width(
-                        base,
-                        Bitvector32Term::Constant(0),
-                        bytes,
-                        1,
-                    ),
-                ))
+            // Each view keeps the designations its clause was named through.
+            views.extend(loadable.into_iter().flat_map(|(clause, designations)| {
+                clause.into_iter().filter_map(move |proposition| {
+                    let Proposition::CMemoryLoadable { base, bytes, .. } = proposition else {
+                        return None;
+                    };
+                    Some(CResourceFact::view_memory(
+                        CMemoryRange::new_with_element_width(
+                            base,
+                            Bitvector32Term::Constant(0),
+                            bytes,
+                            1,
+                        )
+                        .with_designations(designations),
+                    ))
+                })
             }));
         }
     }

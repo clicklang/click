@@ -515,6 +515,25 @@ pub(in crate::kernel) fn evaluate_composite_resource_loadable_propositions(
     memory: &CMemory,
     assumptions: &PureFactContext,
 ) -> Option<Vec<Proposition>> {
+    evaluate_composite_resource_loadable_ranges(composite, definitions, memory, assumptions).map(
+        |ranges| {
+            ranges
+                .into_iter()
+                .flat_map(|(propositions, _)| propositions)
+                .collect()
+        },
+    )
+}
+
+/// [`evaluate_composite_resource_loadable_propositions`], grouped by the
+/// body clause each comes from, with the designations that clause's range
+/// was named through: the loadability fact is last in each group.
+pub(in crate::kernel) fn evaluate_composite_resource_loadable_ranges(
+    composite: &CResourceFact,
+    definitions: &[CCompositeResourceDefinition],
+    memory: &CMemory,
+    assumptions: &PureFactContext,
+) -> Option<Vec<(Vec<Proposition>, [Option<Variable>; 2])>> {
     let CResource::Composite { name, arguments } = composite.resource() else {
         return None;
     };
@@ -573,8 +592,9 @@ pub(in crate::kernel) fn evaluate_composite_resource_loadable_propositions(
         if range.element_width() != segment.element_width() {
             return None;
         }
-        propositions.extend(crate::kernel::memory_range_extent_guard_spellings(range));
-        propositions.push(range.loadable_fact(memory));
+        let mut clause = crate::kernel::memory_range_extent_guard_spellings(range);
+        clause.push(range.loadable_fact(memory));
+        propositions.push((clause, range.designations()));
     }
     Some(propositions)
 }
