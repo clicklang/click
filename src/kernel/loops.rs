@@ -6143,12 +6143,16 @@ pub(super) fn prepare_loop_top_state(
         }
     }
 
-    framed_memory.record_diagnostic_transform(
-        "retain checked loop frame",
-        vec![top_state.memory().clone(), entry_state.memory().clone()],
-        Vec::new(),
-    );
     if framed_memory != *top_state.memory() {
+        // Restoring checked stable cells observes the abstract head's bytes;
+        // it does not write them. Retain that edge so a complete pointer read
+        // can follow the loop's checked footprint back to its entry origin.
+        record_c_memory_derivation(
+            &mut framed_memory,
+            CMemoryDerivation::CellObserved {
+                base: intern_c_memory_ref(top_state.memory()),
+            },
+        );
         top_state = top_state.with_memory(framed_memory);
         summaries = collect_whole_loop_effect_summaries(entry_state, &top_state, &effect_ranges);
     }
