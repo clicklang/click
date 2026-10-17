@@ -46,5 +46,5 @@ int32 any_zero(int32 *a, int32 n, int32 m) {
 ```
 
 ```expect
-fail: the read requires `views a[i]`, which is not available
+fail: pointer arithmetic left the pointed-to object
 ```

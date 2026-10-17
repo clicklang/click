@@ -286,15 +286,19 @@ fn lower_function(
             slices.insert(p.name.clone(), (length.clone(), !mutable));
             parameters.push(
                 C0Parameter::new(C0Type::UInt8Pointer, p.name.clone(), None)
-                    .with_pointee_constant(!mutable),
+                    .with_pointee_constant(!mutable)
+                    .with_slice_length_parameter(1),
             );
             parameters.push(C0Parameter::new(
                 C0Type::UInt64(LongRank::Long),
                 length.clone(),
                 None,
             ));
-            kernel_parameters
-                .push(c_parameter(&p.name, CType::UInt8Pointer).with_pointee_constant(!mutable));
+            kernel_parameters.push(
+                c_parameter(&p.name, CType::UInt8Pointer)
+                    .with_pointee_constant(!mutable)
+                    .with_slice_length_parameter(1),
+            );
             kernel_parameters.push(c_parameter(length, CType::UInt64));
             continue;
         }
@@ -316,15 +320,21 @@ fn lower_function(
                 p.name.clone(),
                 (length.clone(), scalar_type(element)?.to_kernel_type()),
             );
-            parameters
-                .push(C0Parameter::new(pointer, p.name.clone(), None).with_pointee_constant(true));
+            parameters.push(
+                C0Parameter::new(pointer, p.name.clone(), None)
+                    .with_pointee_constant(true)
+                    .with_slice_length_parameter(1),
+            );
             parameters.push(C0Parameter::new(
                 C0Type::UInt64(LongRank::Long),
                 length.clone(),
                 None,
             ));
-            kernel_parameters
-                .push(c_parameter(&p.name, pointer.to_kernel_type()).with_pointee_constant(true));
+            kernel_parameters.push(
+                c_parameter(&p.name, pointer.to_kernel_type())
+                    .with_pointee_constant(true)
+                    .with_slice_length_parameter(1),
+            );
             kernel_parameters.push(c_parameter(length, CType::UInt64));
             continue;
         }

@@ -1577,6 +1577,9 @@ pub(in crate::kernel) fn collect_c_memory_range_bitvector_variables(
     range: &CMemoryRange,
     variables: &mut BTreeSet<Variable>,
 ) {
+    for fact in range.formation_coverage.iter() {
+        collect_proposition_bitvector_variables(fact, variables);
+    }
     collect_pointer_bitvector_variables(&range.base, variables);
     collect_bitvector_variables(range.bound_terms().0, variables);
     collect_bitvector_variables(range.bound_terms().1, variables);

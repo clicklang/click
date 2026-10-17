@@ -11,6 +11,7 @@ uint32* next(uint32* p) { return p + 1; }
 verifying "contract_byte_pointer_casts.c";
 
 uint32* next(uint32* p) {
+    views p[0..1];
     ensures (uint8*)result == old((uint8*)(p + 1));
     ensures (uint8*)result == (uint8*)p + 4;
 } by { execute(); simp(); }

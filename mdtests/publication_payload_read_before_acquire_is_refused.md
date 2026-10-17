@@ -30,5 +30,5 @@ int32 peek(struct channel* channel) {
 ```
 
 ```expect
-fail: missing resource fact `views channel->payload`
+fail: pointer arithmetic left the pointed-to object
 ```

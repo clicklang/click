@@ -49,5 +49,5 @@ int32 run(struct cell *cell) {
 ```
 
 ```expect
-fail: views
+fail: access outside the subobject the pointer designates
 ```

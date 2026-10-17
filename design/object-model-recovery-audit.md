@@ -322,7 +322,7 @@ expanded source in both fresh and retained state.
 ## P1 soundness recheck
 
 The ordinary C reproduction in
-[the scalar-subobject bug](../bugs/pointer-arithmetic-crosses-scalar-subobject.md)
+[the scalar-subobject bug](https://github.com/clicklang/click/blob/8d8a621cc2fbbab3d9af29af22530fea8af8c26b/bugs/pointer-arithmetic-crosses-scalar-subobject.md)
 still verifies incorrectly on both `325f9f604` and `e3d84a785`:
 
 ```c
@@ -1138,7 +1138,7 @@ raised.
 The broader archive
 `c_declared_member_domains_reject_scalar_sibling_traversal` control still fails
 by accepting `*(&pair->first + 1)`. This is the separately tracked
-[scalar-subobject defect](../bugs/pointer-arithmetic-crosses-scalar-subobject.md),
+[scalar-subobject defect](https://github.com/clicklang/click/blob/8d8a621cc2fbbab3d9af29af22530fea8af8c26b/bugs/pointer-arithmetic-crosses-scalar-subobject.md),
 not a passing domain check or a full green-gate verdict.
 
 On upstream-based `b1af9a1b2`, the three new rejection fixtures and four

@@ -7426,10 +7426,13 @@ fn unmatched_instance_body_ownership(
     // body as the evaluation's resources and its observable facts assumed.
     let mut body_facts = body_resources.observable_facts_assuming_valid(assumptions);
     for fact in body_resources.facts() {
+        if let Some(coverage) = fact.allocation_bounds_fact(assumptions) {
+            body_facts.push(coverage);
+        }
         let Some(range) = fact.memory_range() else {
             continue;
         };
-        body_facts.extend(crate::kernel::memory_range_extent_guard_spellings(range));
+        body_facts.extend(crate::kernel::admitted_memory_range_extent_facts(range));
         body_facts.push(range.loadable_fact(&state.memory));
     }
     body_facts.push(Proposition::CResourceComposition(body_resources.clone()));
@@ -7507,7 +7510,9 @@ fn open_unmatched_instance_body<'a>(
     let evaluation_assumptions = assumptions
         .clone()
         .allow_symbolic_contract_loads()
-        .prefer_symbolic_external_loads();
+        .prefer_symbolic_external_loads()
+        // This opens a held body's established footprint, as unfold does.
+        .assume_entry_clause_extents();
     let mut budget = ExecutionBudget::beside_live_state();
     let Ok(Ok(body_resources)) = evaluate_function_resource_context_with_normalization(
         &evaluation,
@@ -9360,6 +9365,9 @@ fn apply_verified_heap_allocation_delta(
     // of the caller's untouched resources exposes was the caller's before
     // the call, so this call has nothing to claim for it.
     for fact in output.facts() {
+        if let Some(coverage) = fact.allocation_bounds_fact(&allocation_assumptions) {
+            effects.push(ExecutionPureFact::new(coverage));
+        }
         let Some((base, bytes)) = fact.allocation() else {
             continue;
         };
@@ -14133,10 +14141,13 @@ fn rewrite_resource_instance_selecting_children_unspelled(
     let mut facts = body.observable_facts_assuming_valid(assumptions);
     facts.extend(opening_facts.iter().cloned());
     for fact in body.facts() {
+        if let Some(coverage) = fact.allocation_bounds_fact(assumptions) {
+            facts.push(coverage);
+        }
         let Some(range) = fact.memory_range() else {
             continue;
         };
-        facts.extend(crate::kernel::memory_range_extent_guard_spellings(range));
+        facts.extend(crate::kernel::admitted_memory_range_extent_facts(range));
         facts.push(range.loadable_fact(&state.memory));
     }
     // What a fold consumes is what holding the folded instance lets C read.
@@ -16671,7 +16682,9 @@ fn resource_clause_memory_views(
     let evaluation_assumptions = assumptions
         .clone()
         .allow_symbolic_contract_loads()
-        .prefer_symbolic_external_loads();
+        .prefer_symbolic_external_loads()
+        // These are the established clauses of the held instance.
+        .assume_entry_clause_extents();
     let mut budget = ExecutionBudget::beside_live_state();
     let Ok(Ok(body_resources)) = evaluate_function_resource_context_with_normalization(
         evaluation,

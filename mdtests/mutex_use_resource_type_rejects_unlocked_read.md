@@ -21,5 +21,5 @@ uint32 read_counter(struct counter *counter) {
 ```
 
 ```expect
-fail: missing resource fact `views counter->value`
+fail: pointer arithmetic left the pointed-to object
 ```
