@@ -5002,7 +5002,7 @@ pub(in crate::kernel) fn subobject_access_refusal(
     {
         return None;
     }
-    (!subobject_extent_proven(
+    let refused = !subobject_extent_proven(
         pointer,
         extent,
         bytes,
@@ -5010,8 +5010,8 @@ pub(in crate::kernel) fn subobject_access_refusal(
         obligations,
         assumptions,
         resources,
-    ))
-    .then_some(CUndefinedBehavior::SubobjectAccess)
+    );
+    refused.then_some(CUndefinedBehavior::SubobjectAccess)
 }
 
 /// The strict-aliasing check of an access through `lvalue` at `pointer`

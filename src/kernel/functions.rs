@@ -3494,11 +3494,14 @@ fn execute_verified_function_applications_with_suspension(
             // Each argument keeps its declared snapshot. In particular, an
             // `old(...)` argument uses entry read authority, not the fresh
             // post-call memory used for current arguments.
+            // A produced instance's arguments are the callee's guarantee, so
+            // what they designate is assumed
+            // (`PureFactContext::assume_entry_clause_extents`).
             let (name, arguments) = match evaluate_function_resource_spec_with_entry(
                 &entry_contract_state,
                 argument_state,
                 &instance_resource,
-                &effective_assumptions,
+                &effective_assumptions.clone().assume_entry_clause_extents(),
                 budget,
             )? {
                 Ok(CResourceFact::Own(CResource::Composite { name, arguments }, quantity))
@@ -3941,7 +3944,7 @@ fn execute_verified_function_applications_with_suspension(
                         &entry_contract_state,
                         &post_state,
                         member_spec,
-                        &effective_assumptions,
+                        &effective_assumptions.clone().assume_entry_clause_extents(),
                         budget,
                     )? {
                         Ok(fact) => Some(fact),
@@ -4494,7 +4497,7 @@ fn execute_verified_function_applications_with_suspension(
                         &entry_contract_state,
                         &post_state,
                         resource,
-                        &effective_assumptions,
+                        &effective_assumptions.clone().assume_entry_clause_extents(),
                         budget,
                     )? {
                         Ok(fact) => fact,
