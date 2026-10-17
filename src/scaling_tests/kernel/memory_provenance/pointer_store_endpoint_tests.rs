@@ -27,7 +27,8 @@ fn selected_pointer_store_endpoint_preserves_width_history_and_scales() {
         path: Vec::new(),
     };
     let mut samples = Vec::new();
-    for count in [16u64, 64, 256, 1024] {
+    let sizes = [4u64, 16, 64, 256];
+    for count in sizes {
         let mut context = PureFactContext::new().assume_proposition(alias.clone());
         let mut memory = CMemory::new();
         for index in 0..count {
@@ -121,4 +122,15 @@ fn selected_pointer_store_endpoint_preserves_width_history_and_scales() {
         }
     }
     assert!(samples[3] <= samples[0] * 4 + 64, "{samples:?}");
+    let indexed = |costs: &[usize]| costs.iter().all(|work| *work <= costs[0] + 64);
+    assert!(indexed(&samples), "{samples:?}");
+    let rescanned = samples
+        .iter()
+        .zip(sizes)
+        .map(|(work, size)| work + usize::try_from(size).unwrap())
+        .collect::<Vec<_>>();
+    assert!(
+        !indexed(&rescanned),
+        "the smaller endpoint fixture must detect an ambient scan: {samples:?}"
+    );
 }
