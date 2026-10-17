@@ -265,14 +265,18 @@ pub(in crate::surface::proof) fn execute_frontier_local_loop(
             .map(|certificate| certificate.to_proof_tactics().to_vec())
             .unwrap_or_else(|| vec![ProofTactic::Assumption]),
     ));
-    let local_function_environment = function_environment.clone().with_verified_loop_rules(
-        execution
-            .core
-            .frontier_loop_rules
-            .iter()
-            .cloned()
-            .chain(std::iter::once(loop_rule.clone())),
-    );
+    // The claim's environment with every frontier rule before this one,
+    // extended from the one the previous loop on this path built.
+    let earlier_rules = Arc::new(LoopRuleEnvironment::extending(
+        execution.presentation.loop_rule_environment.as_deref(),
+        function_environment,
+        &execution.core.frontier_loop_rules,
+    ));
+    let local_function_environment = earlier_rules
+        .environment
+        .clone()
+        .with_verified_loop_rules(std::iter::once(loop_rule.clone()));
+    execution.presentation.loop_rule_environment = Some(earlier_rules);
 
     if let FrontierPosition::StatementEntry { remaining } = &execution.core.frontier.position {
         let (_, tail) = split_next_source_operation(remaining).map_err(|message| {

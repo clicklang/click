@@ -1440,39 +1440,42 @@ pub(in crate::kernel) fn execution_environment_variable_index(
                 variables
             })
         }));
-    for rule in environment.verified_loop_rules.iter() {
-        sets.push_lazy(verified_loop_rule_reserved_variables(rule));
+    if let Some(rules) = environment.verified_loop_rules.reserved_variables() {
+        sets.push_lazy(rules);
     }
     sets
 }
 
-/// The variables a verified loop rule reserves, collected only when a
-/// query its execution bound cannot answer needs them. The rule's
-/// prerequisite context is the whole path context at its loop, so
-/// collecting it is linear in everything before the loop; the bound is
-/// that context's own execution ceiling, kept as its facts were filed,
-/// together with the ceiling of the rule's loop-local parts.
-fn verified_loop_rule_reserved_variables(
+/// At least the greatest execution-range variable a verified loop rule
+/// reserves, without collecting its prerequisite context: that context
+/// keeps such a bound as its facts are filed, and only the rule's
+/// loop-local parts are read here, once per rule.
+pub(in crate::kernel) fn verified_loop_rule_execution_bound(
     rule: &crate::kernel::CVerifiedLoopRule,
-) -> crate::kernel::LazyReservedVariables {
-    // Both answers are cached on the rule, so neither may skip a memory an
-    // enclosing `collecting_each_memory_once` scope already collected.
-    let bound = rule.variable_index.execution_bound(|| {
+) -> Option<Variable> {
+    // Cached on the rule, so it may not skip a memory an enclosing
+    // `collecting_each_memory_once` scope already collected.
+    rule.variable_index.execution_bound(|| {
         suspending_memory_scope(|| {
             let (local, _) = execution_variable_ceiling(None, |variables| {
                 collect_verified_loop_rule_local_variables(rule, variables);
             });
             local.max(rule.required_assumptions.execution_variable_ceiling())
         })
-    });
-    let rule = rule.clone();
-    crate::kernel::LazyReservedVariables::new(bound, move || {
-        rule.variable_index.get_or_init(|| {
-            suspending_memory_scope(|| {
-                let mut variables = BTreeSet::new();
-                collect_verified_loop_rule_variables(&rule, &mut variables);
-                variables
-            })
+    })
+}
+
+/// Every variable a verified loop rule reserves, collected once and shared
+/// by the rule's clones. Its prerequisite context is the whole path context
+/// at its loop, so this is linear in everything before the loop.
+pub(in crate::kernel) fn verified_loop_rule_variables(
+    rule: &crate::kernel::CVerifiedLoopRule,
+) -> std::sync::Arc<BTreeSet<Variable>> {
+    rule.variable_index.get_or_init(|| {
+        suspending_memory_scope(|| {
+            let mut variables = BTreeSet::new();
+            collect_verified_loop_rule_variables(rule, &mut variables);
+            variables
         })
     })
 }

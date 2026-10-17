@@ -4959,6 +4959,106 @@ pub enum ByteOrder {
     Big,
 }
 
+/// An environment's verified loop rules, in the order they were added, with
+/// the indexes stepping a loop reads: the rules filed under a fingerprint
+/// of their loop statement, so finding the rule for a loop compares only
+/// rules for that statement, and the reservation of every rule's variables
+/// behind one execution bound (`LazyReservedVariables`). All of it is
+/// persistent: an environment that gains a rule shares every earlier rule
+/// and index entry with the one it was built from.
+#[derive(Clone, Default)]
+pub(super) struct VerifiedLoopRules {
+    rules: imbl::Vector<Arc<CVerifiedLoopRule>>,
+    by_statement: imbl::OrdMap<u64, imbl::Vector<usize>>,
+    execution_bound: Option<Variable>,
+    reservation: Arc<OnceLock<LazyReservedVariables>>,
+}
+
+impl PartialEq for VerifiedLoopRules {
+    fn eq(&self, other: &Self) -> bool {
+        self.rules == other.rules
+    }
+}
+
+impl Eq for VerifiedLoopRules {}
+
+impl std::fmt::Debug for VerifiedLoopRules {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.debug_list().entries(self.rules.iter()).finish()
+    }
+}
+
+impl VerifiedLoopRules {
+    fn statement_key(statement: &CStatement) -> u64 {
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        statement.hash(&mut hasher);
+        hasher.finish()
+    }
+
+    pub(super) fn push(&mut self, rule: CVerifiedLoopRule) {
+        let bound = crate::kernel::reasoning::variable_collection::verified_loop_rule_execution_bound(
+            &rule,
+        );
+        self.execution_bound = self.execution_bound.max(bound);
+        self.by_statement
+            .entry(Self::statement_key(&rule.loop_statement))
+            .or_default()
+            .push_back(self.rules.len());
+        self.rules.push_back(Arc::new(rule));
+        self.reservation = Arc::new(OnceLock::new());
+    }
+
+    pub(super) fn iter(&self) -> impl Iterator<Item = &CVerifiedLoopRule> {
+        self.rules.iter().map(Arc::as_ref)
+    }
+
+    /// The rules for `statement`, in order: every rule whose loop statement
+    /// is `statement` is among them.
+    pub(super) fn for_statement(
+        &self,
+        statement: &CStatement,
+    ) -> impl Iterator<Item = &CVerifiedLoopRule> {
+        self.by_statement
+            .get(&Self::statement_key(statement))
+            .into_iter()
+            .flat_map(|positions| positions.iter())
+            .map(|position| self.rules[*position].as_ref())
+    }
+
+    /// Every rule's reserved variables, collected only when a query the
+    /// rules' common execution bound cannot answer needs them.
+    pub(super) fn reserved_variables(&self) -> Option<LazyReservedVariables> {
+        if self.rules.is_empty() {
+            return None;
+        }
+        Some(
+            self.reservation
+                .get_or_init(|| {
+                    let rules = self.rules.clone();
+                    LazyReservedVariables::new(self.execution_bound, move || {
+                        let mut variables = BTreeSet::new();
+                        for rule in &rules {
+                            variables.extend(
+                                crate::kernel::reasoning::variable_collection::verified_loop_rule_variables(
+                                    rule,
+                                )
+                                .iter()
+                                .copied(),
+                            );
+                        }
+                        Arc::new(variables)
+                    })
+                })
+                .clone(),
+        )
+    }
+
+    #[cfg(test)]
+    pub(super) fn shares_storage_with(&self, other: &Self) -> bool {
+        self.rules.ptr_eq(&other.rules)
+    }
+}
+
 #[derive(Clone, Default)]
 pub struct CExecutionEnvironment {
     // A proof-local rule choice. This is not installed in the project environment.
@@ -4995,7 +5095,7 @@ pub struct CExecutionEnvironment {
     /// access inside a wider integer cell reads or updates that cell's
     /// representation; see `crate::kernel::eval::byte_view`.
     pub(super) byte_order: ByteOrder,
-    pub(super) verified_loop_rules: std::sync::Arc<Vec<CVerifiedLoopRule>>,
+    pub(super) verified_loop_rules: VerifiedLoopRules,
     /// The function currently being certified, when it declares an expression
     /// `decreases` measure. It is part of this environment's identity below,
     /// so a checked execution recorded without it is not reused to certify a

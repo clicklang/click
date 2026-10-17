@@ -503,6 +503,11 @@ pub(in crate::surface::proof) struct ExecutionProofPresentation {
     /// facts the proof gained since (`PureFactList::extended_to_proof_facts`)
     /// instead of copying and indexing every fact again.
     pub(in crate::surface::proof) loop_fact_list: Option<crate::surface::PureFactList>,
+    /// The environment the last `loop` tactic on this path stepped its rule
+    /// under, before that rule: its claim's environment holding the frontier
+    /// loop rules of `rules`. The next `loop` adds the rules since instead
+    /// of copying every earlier rule into a new environment.
+    pub(in crate::surface::proof) loop_rule_environment: Option<Arc<LoopRuleEnvironment>>,
     /// A surface-stated existential can retain spellings of its checked body
     /// leaves without referring to a numbered contract requirement.
     pub(in crate::surface::proof) existential_projection: Option<ExistentialProjection>,
@@ -681,8 +686,40 @@ impl ExecutionProofState {
                 chosen_projection: None,
                 existential_projection: None,
                 loop_fact_list: None,
+                loop_rule_environment: None,
             },
         )
+    }
+}
+
+/// A claim's execution environment extended by a path's frontier loop
+/// rules (`ExecutionProofPresentation::loop_rule_environment`).
+pub(in crate::surface::proof) struct LoopRuleEnvironment {
+    pub(in crate::surface::proof) base: CExecutionEnvironment,
+    pub(in crate::surface::proof) rules: PersistentSequence<crate::kernel::CVerifiedLoopRule>,
+    pub(in crate::surface::proof) environment: CExecutionEnvironment,
+}
+
+impl LoopRuleEnvironment {
+    /// `base` holding `rules` in order, built from `cached` when that holds
+    /// an earlier prefix of `rules` over the same base.
+    pub(in crate::surface::proof) fn extending(
+        cached: Option<&Self>,
+        base: &CExecutionEnvironment,
+        rules: &PersistentSequence<crate::kernel::CVerifiedLoopRule>,
+    ) -> Self {
+        let environment = cached
+            .filter(|cached| cached.base == *base)
+            .and_then(|cached| {
+                let added = rules.suffix_since(&cached.rules)?;
+                Some(cached.environment.clone().with_verified_loop_rules(added))
+            })
+            .unwrap_or_else(|| base.clone().with_verified_loop_rules(rules.iter().cloned()));
+        Self {
+            base: base.clone(),
+            rules: rules.clone(),
+            environment,
+        }
     }
 }
 
@@ -1733,7 +1770,7 @@ pub(in crate::surface::proof) struct FixedStateOperationView<'p> {
     pub(in crate::surface::proof) spec_definitions: SpecDefinitions<'p>,
     pub(in crate::surface::proof) theorem_environment: &'p TheoremEnvironment,
     pub(in crate::surface::proof) original_requirements: &'p [Requirement],
-    pub(in crate::surface::proof) requirement_facts: &'p [Proposition],
+    pub(in crate::surface::proof) requirement_facts: FixedStateFacts<'p>,
 }
 
 impl<'p> FixedStateOperationView<'p> {

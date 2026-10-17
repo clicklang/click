@@ -2900,6 +2900,9 @@ impl<'a> Proof<'a> {
             .as_ref()
             .and_then(|base| PureFactList::extended_to_proof_facts(base, &source_facts))
             .unwrap_or_else(|| PureFactList::from_proof_facts(&source_facts));
+        // The next loop extends this copy; the indexes it builds here are
+        // the ones every copy of it shares.
+        facts.prepare_indexes();
         execution.presentation.loop_fact_list = Some(facts.clone());
         let base_facts = facts.len();
         let capture_this_tactic = begin_tactic_expansion_capture(

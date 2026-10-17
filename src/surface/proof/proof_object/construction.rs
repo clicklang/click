@@ -52,7 +52,7 @@ impl<'a> Proof<'a> {
         Self::for_fixed_state(
             claim_label,
             0,
-            &[],
+            FixedStateFacts::Slice(&[]),
             |state| OpenBranch::surface_proposition_in(state, goal, surface_goal),
             parameter_binding,
             FixedStateFrame::new(
@@ -358,7 +358,7 @@ impl<'a> Proof<'a> {
         Self::for_fixed_state(
             claim_label,
             tactic_index,
-            available,
+            FixedStateFacts::Slice(available),
             |context| OpenBranch::proposition_in(context, goal),
             parameter_binding,
             FixedStateFrame::new(pre_state, state, None, recorded_snapshots),
@@ -394,7 +394,7 @@ impl<'a> Proof<'a> {
         Self::for_fixed_state(
             claim_label,
             tactic_index,
-            available,
+            FixedStateFacts::Slice(available),
             |context| OpenBranch::surface_proposition_in(context, goal, surface_goal),
             parameter_binding,
             FixedStateFrame::new(pre_state, state, None, recorded_snapshots),
@@ -462,7 +462,7 @@ impl<'a> Proof<'a> {
         Self::for_fixed_state(
             claim_label,
             tactic_index,
-            available,
+            FixedStateFacts::Slice(available),
             goal,
             parameter_binding,
             fixed_state,
@@ -494,7 +494,7 @@ impl<'a> Proof<'a> {
         Self::for_fixed_state(
             claim_label,
             tactic_index,
-            available,
+            FixedStateFacts::Slice(available),
             OpenBranch::frontier,
             parameter_binding,
             fixed_state,
@@ -528,7 +528,7 @@ impl<'a> Proof<'a> {
         Self::for_fixed_state(
             claim_label,
             tactic_index,
-            available,
+            FixedStateFacts::List(available),
             OpenBranch::frontier,
             parameter_binding,
             fixed_state,
@@ -546,7 +546,7 @@ impl<'a> Proof<'a> {
     pub(super) fn for_fixed_state(
         claim_label: &'a str,
         tactic_index: usize,
-        available: &'a [Proposition],
+        available: FixedStateFacts<'a>,
         goal: impl FnOnce(BranchState) -> OpenBranch,
         parameter_binding: ParameterBinding<'a>,
         fixed_state: FixedStateFrame<'a>,
@@ -559,12 +559,9 @@ impl<'a> Proof<'a> {
         original_requirements: &'a [Requirement],
         indexed: Option<ProofFacts>,
     ) -> Self {
-        let facts = indexed.unwrap_or_else(|| ProofFacts::from_ordered(available));
-        let lowering_context = resource_context_observable_facts_for_proof(
-            fixed_state.state.resources(),
-            facts.clone(),
-        )
-        .to_vec();
+        let facts = indexed.unwrap_or_else(|| ProofFacts::from_ordered(available.as_slice()));
+        let lowering_context =
+            resource_context_observable_facts_for_proof(fixed_state.state.resources(), facts.clone());
         let goal = goal(BranchState {
             facts,
             unfolded_predicates: PersistentOrderedSet::default(),
@@ -594,7 +591,7 @@ impl<'a> Proof<'a> {
                 theorem_environment,
                 unfolded_predicates,
                 effect_facts: effect_facts.persistent_facts(),
-                lowering_context: Arc::new(lowering_context),
+                lowering_context,
                 original_requirements,
                 requirement_facts: available,
                 nested_tactic_capture: None,

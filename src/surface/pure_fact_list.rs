@@ -584,6 +584,20 @@ impl PureFactList {
             .collect()
     }
 
+    /// Builds the exact index and evaluates transport candidacy for every
+    /// fact now, so copies made from this list before they change share
+    /// both instead of each building its own.
+    pub(crate) fn prepare_indexes(&self) {
+        self.exact_index();
+        let mut transport = self
+            .transport
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        transport
+            .get_or_insert_with(TransportCandidates::default)
+            .refresh(&self.facts, self.next);
+    }
+
     fn exact_index(&self) -> &ExactFactIndex {
         self.exact.get_or_init(|| {
             let mut index = ExactFactIndex::default();
