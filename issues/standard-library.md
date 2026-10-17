@@ -329,21 +329,20 @@ lemmas removed; the next blocker is population counts, which are still
 machine `+` or `-` is the Integer operation (`integer_operation_identity`),
 using native comparisons as Integer facts and machine type ranges, so
 `ensures result == x - 1;` verifies from `requires 1 <= x;` with no bridge
-lemma. A count with ruled-out overflow observes as the exact Integer sum or
-difference, count comparisons widen under the directive, `simp` selects
-Integer equalities as rewrites, and an Integer equality over 32-bit
-observations files its wrapped word equality for built-in checks.
-`pool_init`, `pool_destroy` and `pool_zero_pipeline` now verify under the
-directive. `auto` also reads native bounds such as the consumed-member
-`count >= 1` as Integer facts, proves a machine comparison through its
-Integer reading, and cites callee postconditions at their call sites. In a
-draft of `bounded-pool` under the directive, `pool_checkout`, `pool_return`,
-`pool_shrink` and `pool_grow` also verify with their bridge lemmas and
-helper theorems removed (`pool_checkout` drops from 28 proof lines to 7).
-The other pipelines are blocked: `step()` does not hand a call precondition
-such as `a < 100` to `auto`, which would prove it from Integer facts. Next:
-that hand-off, the rest of the pool, then the migration file by file and the
-flip.
+lemma. Count comparisons widen under the directive, `simp` selects Integer
+equalities as rewrites, and an Integer equality over 32-bit observations files
+its wrapped word equality for built-in checks. `auto` reads native bounds
+such as the consumed-member `count >= 1`, and signed definedness facts, as
+Integer facts, proves a machine comparison through its Integer reading, and
+cites callee postconditions at their call sites; a population's entry count
+and any unwritten observation are spelled from the proof's state. A count is
+read as an ordinary `int32` observation (an earlier exact view of count sums
+was removed: it read a count differently from the same value passed as an
+argument). `examples/bounded-pool` now uses the directive: all eleven
+functions verify with the five helper theorems and both library imports
+removed, the sidecar falls from 437 to 304 lines, and verification takes
+about 4 s instead of 2.5 s. Next: the migration of the other examples file by
+file, then the flip.
 
 Sequencing with the library: most of the 110 width lemmas exist only to
 bridge machine arithmetic, so once the default flips they are deleted rather

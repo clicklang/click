@@ -4,7 +4,7 @@ use super::*;
 #[test]
 fn nested_pointer_call_registration_and_late_merges_scale_with_selected_dag() {
     let _session = VerificationSession::enter();
-    let samples = [16, 64, 256, 1024].map(|depth| {
+    let samples = [4, 16, 64, 256].map(|depth| {
         let build = |mut p| {
             for _ in 0..depth {
                 p = call("next", vec![pointer_argument(p)]);

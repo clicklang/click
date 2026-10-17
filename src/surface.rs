@@ -1065,6 +1065,9 @@ pub struct CallBinderBinding {
     instance: String,
     /// The caller's instance identity.
     identity: Variable,
+    /// The resource a produced instance is, from the callee's contract;
+    /// `None` for an instance the caller supplies.
+    family: Option<String>,
 }
 
 impl CallBinderBinding {
@@ -1082,6 +1085,10 @@ impl CallBinderBinding {
 
     pub(crate) fn identity(&self) -> Variable {
         self.identity
+    }
+
+    pub(crate) fn family(&self) -> Option<&str> {
+        self.family.as_deref()
     }
 }
 
@@ -6741,6 +6748,40 @@ impl ResourceDefinition {
 }
 
 impl CompositeResourceBody {
+    /// The named child slots of this body, its unmatched part and every
+    /// match arm, each with the resource it owns, or `None` when two arms
+    /// give one slot name different resources. A child may name another
+    /// declared resource, so a slot's resource is a property of the
+    /// definition, which the parser and declaration expansion both read.
+    pub(in crate::surface) fn child_slot_resources(&self) -> BTreeMap<String, Option<String>> {
+        let mut slots: BTreeMap<String, Option<String>> = BTreeMap::new();
+        let bodies = std::iter::once(self).chain(
+            self.matched
+                .iter()
+                .flat_map(|matched| &matched.arms)
+                .map(|arm| &arm.body),
+        );
+        for body in bodies {
+            for clause in &body.contains {
+                let ResourceClause::Named { binding, resource } = clause else {
+                    continue;
+                };
+                let ResourceClause::Declared { name, .. } = resource.as_ref() else {
+                    continue;
+                };
+                slots
+                    .entry(binding.name.clone())
+                    .and_modify(|existing| {
+                        if existing.as_deref() != Some(name.as_str()) {
+                            *existing = None;
+                        }
+                    })
+                    .or_insert_with(|| Some(name.clone()));
+            }
+        }
+        slots
+    }
+
     pub fn condition(&self) -> Option<&ClickProposition> {
         self.condition.as_ref()
     }
@@ -6917,8 +6958,8 @@ impl FunctionBlock {
     /// contract: its `ensures`, which the implementation's proof establishes
     /// with its own, each named `interface_ensures_<i>`, and its `requires`
     /// when the implementation writes none. A clause the implementation
-    /// already states is not repeated. The implementation names its
-    /// parameters as the interface does, so the clauses read the same.
+    /// already states is not repeated. The interface's clauses are read with
+    /// the implementation's names for its parameters.
     pub(in crate::surface) fn inherit_interface(
         &mut self,
         interface: &FunctionBlock,
@@ -6932,13 +6973,36 @@ impl FunctionBlock {
                 .map(|parameter| parameter.name().to_string())
                 .collect::<Vec<_>>()
         };
-        if names(self) != names(interface) {
+        let (own, theirs) = (names(self), names(interface));
+        if own.len() != theirs.len() {
             return Err(format!(
-                "an implementation names its parameters as {source} does, ({}), \
-                 so the interface's clauses read the same in it",
-                names(interface).join(", ")
+                "an implementation takes the parameters {source} does, ({})",
+                theirs.join(", ")
             ));
         }
+        let renames = theirs
+            .iter()
+            .zip(&own)
+            .filter(|(from, to)| from != to)
+            .map(|(from, to)| {
+                (
+                    from.clone(),
+                    ContractExpression::CFragment(crate::kernel::c_variable(to.clone())),
+                )
+            })
+            .collect::<BTreeMap<_, _>>();
+        let renamed;
+        let interface = if renames.is_empty() {
+            interface
+        } else {
+            renamed = interface.renamed(&renames).map_err(|message| {
+                format!(
+                    "{source}'s clauses cannot be read with the implementation's parameter \
+                     names: {message}"
+                )
+            })?;
+            &renamed
+        };
         if self.requires.is_empty() {
             self.requires = interface.requires.clone();
             self.requirement_source_clauses = interface.requirement_source_clauses.clone();
@@ -6981,6 +7045,47 @@ impl FunctionBlock {
         alias.external = true;
         alias.grouped_proof = None;
         alias
+    }
+
+    /// This contract's clauses with each parameter in `renames` read as the
+    /// expression it maps to.
+    fn renamed(&self, renames: &BTreeMap<String, ContractExpression>) -> Result<Self, String> {
+        let mut renamed = self.clone();
+        renamed.requires = self
+            .requires
+            .iter()
+            .map(|requirement| {
+                Ok(match requirement {
+                    Requirement::Proposition(proposition) => Requirement::Proposition(
+                        lowering::substitute_click_proposition(proposition, renames)?,
+                    ),
+                    Requirement::Resource(resource) => Requirement::Resource(
+                        verification::substitute_resource_clause_for_summary(resource, renames)?,
+                    ),
+                    Requirement::LoadableSegment { segment } => Requirement::LoadableSegment {
+                        segment: verification::substitute_contract_segment(
+                            segment,
+                            &renames.into(),
+                        )?,
+                    },
+                })
+            })
+            .collect::<Result<_, String>>()?;
+        for clause in &mut renamed.ensures {
+            clause.ensure = match &clause.ensure {
+                Ensure::Proposition(proposition) => Ensure::Proposition(
+                    lowering::substitute_click_proposition(proposition, renames)?,
+                ),
+                Ensure::Resource(resource) => Ensure::Resource(
+                    verification::substitute_resource_clause_for_summary(resource, renames)?,
+                ),
+            };
+            if let Some(condition) = &clause.condition {
+                clause.condition =
+                    Some(lowering::substitute_click_proposition(condition, renames)?);
+            }
+        }
+        Ok(renamed)
     }
 
     pub fn parameter_struct_casts(&self) -> &BTreeMap<String, String> {

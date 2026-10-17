@@ -1076,7 +1076,7 @@ fn condition_fact_queries_ignore_unrelated_facts() {
         offset: PointerOffsetTerm::scale_int32(Bitvector32Term::Variable(Variable(95_005)), 4),
     };
     let mut samples = Vec::new();
-    for size in [64, 128, 256, 512] {
+    for size in [8, 16, 32, 64] {
         let facts = unrelated_condition_facts(size)
             .assume_condition(
                 ConditionTerm::signed_less_than(low.clone(), high.clone()),

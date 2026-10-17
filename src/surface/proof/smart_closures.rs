@@ -878,13 +878,26 @@ fn reads_result_before_return(proposition: &ClickProposition) -> bool {
     found
 }
 
-/// `premises` followed by the Integer reading of each native comparison
-/// among them (`1u32 <= x` read as `1 <= to_integer(x)`), each once.
+/// The Integer readings of a native fact: a native comparison read as an
+/// Integer one (`1u32 <= x` as `1 <= to_integer(x)`), and a signed
+/// definedness fact read as the two bounds of its exact result
+/// (`defined(a + b)` as `to_integer(a) + to_integer(b) <= 2147483647` and
+/// `>= -2147483648`).
+fn integer_readings_of_native_fact(premise: &Proposition) -> Vec<Proposition> {
+    let mut readings =
+        crate::kernel::assumptions::integer_observations_of_native_comparison(premise);
+    readings.extend(crate::kernel::assumptions::integer_bounds_of_definedness(
+        premise,
+    ));
+    readings
+}
+
+/// `premises` followed by the Integer readings of each native fact among
+/// them (`integer_readings_of_native_fact`), each once.
 fn with_native_comparisons_as_integer(premises: &[Proposition]) -> Vec<Proposition> {
     let mut extended = premises.to_vec();
     for premise in premises {
-        for lifted in crate::kernel::assumptions::integer_observations_of_native_comparison(premise)
-        {
+        for lifted in integer_readings_of_native_fact(premise) {
             if !extended.contains(&lifted) {
                 extended.push(lifted);
             }
@@ -2366,18 +2379,45 @@ impl<'a> Proof<'a> {
             .iter()
             .filter(|premise| !candidates.contains(premise))
         {
-            let Some(source) = candidates.iter().find(|candidate| {
-                crate::kernel::assumptions::integer_observations_of_native_comparison(candidate)
-                    .contains(premise)
-            }) else {
+            let Some(source) = candidates
+                .iter()
+                .find(|candidate| integer_readings_of_native_fact(candidate).contains(premise))
+            else {
                 continue;
             };
-            let Some((_, ClickProposition::Comparison { left, right, .. })) = self
+            let Some((_, source)) = self
                 .resolve_simp_premises(std::slice::from_ref(source), &[])
                 .and_then(|mut spelled| spelled.pop())
             else {
                 continue;
             };
+            // `defined(a + b)` spells by its operation's operands, and a
+            // fact spelled at a snapshot keeps that snapshot on each.
+            let (selector, source) = match source {
+                ClickProposition::At {
+                    selector,
+                    proposition,
+                } => (Some(selector), *proposition),
+                source => (None, source),
+            };
+            let (left, right) = match source {
+                ClickProposition::Comparison { left, right, .. } => (left, right),
+                ClickProposition::Defined {
+                    expression:
+                        ContractExpression::Add(left, right)
+                        | ContractExpression::Subtract(left, right)
+                        | ContractExpression::Multiply(left, right),
+                } => (*left, *right),
+                _ => continue,
+            };
+            let at = |side: ContractExpression| match &selector {
+                Some(selector) => ContractExpression::At {
+                    selector: selector.clone(),
+                    expression: Box::new(side),
+                },
+                None => side,
+            };
+            let (left, right) = (at(left), at(right));
             for side in [left, right] {
                 if matches!(side, ContractExpression::IntegerLiteral(_)) {
                     continue;
@@ -2597,6 +2637,12 @@ impl<'a> Proof<'a> {
             (ConditionTerm::IntegerLessThan(left, right), true) => {
                 (left, ComparisonOperator::LessThan, right)
             }
+            (ConditionTerm::IntegerGreaterEqual(left, right), true) => {
+                (left, ComparisonOperator::GreaterEqual, right)
+            }
+            (ConditionTerm::IntegerGreaterThan(left, right), true) => {
+                (left, ComparisonOperator::GreaterThan, right)
+            }
             (ConditionTerm::IntegerEqual(left, right), true) => {
                 (left, ComparisonOperator::Equal, right)
             }
@@ -2612,8 +2658,11 @@ impl<'a> Proof<'a> {
         })
     }
 
-    /// The written expression of `term` among `written`, or its literal
-    /// when it is a constant.
+    /// The written expression of `term` among `written`, its literal when
+    /// it is a constant, or, for `+`, `-`, `*` and negation, the same
+    /// operation over its spelled operands. The checked step that cites the
+    /// spelling lowers it again, so a spelling that names another term is
+    /// refused there.
     fn spell_integer_observation(
         &self,
         term: &crate::kernel::IntegerTerm,
@@ -2622,6 +2671,51 @@ impl<'a> Proof<'a> {
         if let Some(value) = term.as_const() {
             return Some(surface_signed_integer_literal(value));
         }
+        if let Some(spelled) = self.spell_written_integer_observation(term, written) {
+            return Some(spelled);
+        }
+        // An observation nothing written names, such as a population's
+        // count at entry, is spelled from its value at the proof's state.
+        if let crate::kernel::IntegerTerm::Machine(machine) = term
+            && machine.ty() == crate::kernel::MachineIntegerType::Int32
+            && let Some(view) = self.premise_fixed_state_view()
+            && let Some(value) = crate::surface::proof::surface_synthesis::synthesize_surface_value(
+                &CValue::Int32(machine.value().clone()),
+                view.parameter_binding,
+                view.fixed_state.state,
+            )
+        {
+            return Some(ContractExpression::Call {
+                name: "to_integer".into(),
+                arguments: vec![value],
+            });
+        }
+        let operand = |inner: &crate::kernel::SharedIntegerTerm| {
+            self.spell_integer_observation(inner, written).map(Box::new)
+        };
+        match term {
+            crate::kernel::IntegerTerm::Add(left, right) => {
+                Some(ContractExpression::Add(operand(left)?, operand(right)?))
+            }
+            crate::kernel::IntegerTerm::Subtract(left, right) => Some(
+                ContractExpression::Subtract(operand(left)?, operand(right)?),
+            ),
+            crate::kernel::IntegerTerm::Multiply(left, right) => Some(
+                ContractExpression::Multiply(operand(left)?, operand(right)?),
+            ),
+            crate::kernel::IntegerTerm::Negate(inner) => {
+                Some(ContractExpression::Negate(operand(inner)?))
+            }
+            _ => None,
+        }
+    }
+
+    /// The written expression among `written` that lowers to `term`.
+    fn spell_written_integer_observation(
+        &self,
+        term: &crate::kernel::IntegerTerm,
+        written: &[ContractExpression],
+    ) -> Option<ContractExpression> {
         written
             .iter()
             .find(|expression| {

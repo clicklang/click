@@ -597,8 +597,8 @@ any method is. It inherits the interface: the interface's `ensures` join its
 own, labeled `<trait_methods::Circle as
 trait_methods::Shape>::area.interface_ensures_0`, and its proof establishes
 them all; an implementation that writes no `requires` takes the
-interface's. It names its parameters as the interface does, so the
-inherited clauses read the same. It may accept more calls than the
+interface's. The inherited clauses are read with the implementation's own
+names for its parameters: `Square`'s `area` names `scale` as `factor`. It may accept more calls than the
 interface, a wider precondition, and its `requires` are checked to follow
 from the interface's by the check that forms a named contract at `&f`,
 which reads each clause exactly or decides a bare comparison: `requires 0
@@ -627,11 +627,31 @@ resources, except its trait's object state (below), so an implementation whose c
 fields does not refine it. Every implementation a call can reach is in the
 import, since a generic call names its instance's implementation and a
 `dyn` coercion its vtable, and each one is checked. The importer refuses a
-crate trait with generics, associated items, or supertraits, a method
+crate trait with const generics, associated items, or supertraits, a method
 that is generic or takes no `&self` or `&mut self`,
 non-scalar parameters or results, an implementation for anything but a
 crate struct, and a generic implementation
 ([`design/charon-trial/trait-methods`](https://github.com/clicklang/click/blob/master/design/charon-trial/trait-methods/shapes.click)).
+
+A crate trait may have type parameters, `trait Scale<T> { fn scale(&self,
+x: T) -> T; }`. Each instance the crate implements or calls through,
+`Scale<i32>`, is its own interface: its methods are the interface functions
+`generic_traits::Scale<i32>::scale`, and its implementations are
+`<generic_traits::Square as generic_traits::Scale<i32>>::scale`. A sidecar
+may state every instance's interface once, in a block naming the type
+parameters, and an instance's in a block naming its types; an instance's
+interface is the generic block's clauses with its types for the
+parameters, then its own block's. `trait generic_traits::Scale<T> { fn
+scale(&self, x: T) -> T { ensures result != x; } }` binds every instance,
+and `trait generic_traits::Scale<i32>` adds `requires 0 <= x and x <= 1000;
+ensures x < result;` at `i32`. An implementation inherits and refines its instance's interface, labeled
+`interface_ensures_0` onward in that order, and a call through `S:
+generic_traits::Scale<i32>` or `&dyn generic_traits::Scale<i32>` assumes
+it. The generic block is read at each instance the import declares; it is
+not checked once for every type. An instance is taken at `i32`, `u8`,
+`u16`, `u32`, `usize` or `bool`, and the importer refuses a default method
+of a generic trait
+([`design/charon-trial/generic-traits`](https://github.com/clicklang/click/blob/master/design/charon-trial/generic-traits/shapes.click)).
 
 ### Trait object state
 

@@ -1685,6 +1685,14 @@ impl<'a> TermRewrite<'a> {
         // A full value equality also rewrites raw addresses in loadability,
         // memory endpoints and other address-only propositions.
         rewrite.pointer_exact = Some((from.pointer(), to.pointer()));
+        // Native C arguments share a numeric block. Their base pointer is
+        // an offset subterm of a displaced copy, rather than its own block.
+        // A full equality also establishes this same-block offset equality.
+        if from.pointer().block == PointerBlock::ExternalArgument
+            && to.pointer().block == PointerBlock::ExternalArgument
+        {
+            rewrite.pointer_offset_exact = Some((&from.pointer().offset, &to.pointer().offset));
+        }
         rewrite.enforce_integer_work_limit = true;
         rewrite
     }
@@ -2767,7 +2775,24 @@ impl<'a> TermRewrite<'a> {
                     self.changed = true;
                     return CValue::Pointer(to.clone());
                 }
-                let replacement = match &v.pointer().block {
+                let shifted_source = self.pointer_value_exact.filter(|(from, to)| {
+                    !self.source_disabled
+                        && v.pointer() != from.pointer()
+                        && v.pointer().block == from.pointer().block
+                        && ((matches!(from.pointer().block, PointerBlock::Symbolic(_))
+                            && from.pointer().offset == PointerOffsetTerm::Constant(0))
+                            || (from.pointer().block == PointerBlock::ExternalArgument
+                                && to.pointer().block == PointerBlock::ExternalArgument))
+                });
+                let shifted_replacement = shifted_source.and_then(|(from, to)| {
+                    (v.designation() == from.designation()
+                        && v.extent() == from.extent()
+                        && v.extent_is_known() == from.extent_is_known()
+                        && v.opaque_extent() == from.opaque_extent())
+                    .then(|| to.clone())
+                });
+                let retain_view = shifted_source.is_some() && shifted_replacement.is_none();
+                let replacement = shifted_replacement.or_else(|| match &v.pointer().block {
                     PointerBlock::Symbolic(variable) | PointerBlock::FunctionSymbolic(variable) => {
                         (!self.scope.c.contains_key(variable))
                             .then_some(())
@@ -2790,7 +2815,7 @@ impl<'a> TermRewrite<'a> {
                     // Lexical substitution replaces a complete formal value.
                     // Address-equality rewrites use a separate constructor.
                     Some(CPointerValue::new(to.clone(), v.c_type()))
-                });
+                }));
                 let adopted = if !v.extent_is_known() {
                     replacement.as_ref().and_then(|p| p.extent().cloned())
                 } else {
@@ -2851,10 +2876,29 @@ impl<'a> TermRewrite<'a> {
                 if self.pointer_value_exact.is_some() {
                     self.resolve_registered_loads = true;
                 }
-                let mapped = v
+                let mut mapped = v
                     .map_pointers(|address| self.pointer(address))
                     .with_designation(std::sync::Arc::new(designation))
                     .with_opaque_extent(opaque_extent);
+                if retain_view && let Some((from, _)) = shifted_source {
+                    // The numeric consequence cannot identify the base's own
+                    // domain with a different view's domain. Nested reads still
+                    // substitute their arguments through the equality.
+                    if v.designation() != from.designation()
+                        && v.designation().block == from.pointer().block
+                    {
+                        mapped =
+                            mapped.with_designation(std::sync::Arc::new(v.designation().clone()));
+                    }
+                    if (from.extent_is_known() || v.opaque_extent() != from.opaque_extent())
+                        && v.opaque_extent()
+                            .is_some_and(|origin| origin.block == from.pointer().block)
+                    {
+                        mapped = mapped.with_opaque_extent(
+                            v.opaque_extent().cloned().map(std::sync::Arc::new),
+                        );
+                    }
+                }
                 self.resolve_registered_loads = previous_load_resolution;
                 CValue::Pointer(match adopted {
                     Some(extent) => mapped.with_extent(Some(extent)),
@@ -4063,6 +4107,25 @@ impl<'a> TermRewrite<'a> {
                 offset: PointerOffsetTerm::add(replacement.offset.clone(), offset),
             };
         }
+        // A loop snapshot's pointer value is a symbolic base plus its
+        // displacement. Rewriting the complete base value also respells
+        // displaced addresses; the value path retains their selected bounds.
+        if let Some((from, to)) = self.pointer_value_exact
+            && !self.source_disabled
+            && matches!(from.pointer().block, PointerBlock::Symbolic(_))
+            && from.pointer().offset == PointerOffsetTerm::Constant(0)
+            && p.block == from.pointer().block
+        {
+            self.changed = true;
+            let offset = self.offset(&p.offset);
+            if self.checked_work_exhausted() {
+                return exhausted_pointer();
+            }
+            return Pointer {
+                block: to.pointer().block.clone(),
+                offset: PointerOffsetTerm::add(to.pointer().offset.clone(), offset),
+            };
+        }
         if let Some((from, to)) = self.pointer_variable
             && matches!(&p.block, PointerBlock::Symbolic(variable) | PointerBlock::FunctionSymbolic(variable) if *variable == from)
         {
@@ -4128,6 +4191,7 @@ impl<'a> TermRewrite<'a> {
     fn offset(&mut self, v: &PointerOffsetTerm) -> PointerOffsetTerm {
         if let Some((from, to)) = self.pointer_offset_exact
             && v == from
+            && (self.pointer_value_exact.is_none() || !self.source_disabled)
         {
             self.changed = true;
             return to.clone();

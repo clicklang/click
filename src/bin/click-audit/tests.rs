@@ -1083,7 +1083,10 @@ struct node* unpack(struct node* node) {
     unfold(packed(node));
     execute();
     fold(packed(node));
-    simp();
+    arithmetic() using {
+        aligned(result, 8);
+        node->word == address(result) + (node->word & 1);
+    };
 }
 "#;
     let click_path = directory.join("witness.click");
@@ -1094,7 +1097,7 @@ struct node* unpack(struct node* node) {
 
     let closer_line = click_source
         .lines()
-        .position(|line| line.trim() == "simp();")
+        .position(|line| line.trim() == "arithmetic() using {")
         .expect("proof should contain the closer")
         + 1;
     let sites = inventory_sites(std::slice::from_ref(&click_path)).unwrap();
@@ -1603,7 +1606,7 @@ fn callers_with_seeded_array_requirements_audit_every_site() {
 fn resource_proof_expansions_audit_every_site() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     for (relative, expected_sites) in [
-        ("mdtests/resource_witness_unfold_fold.md", 2),
+        ("mdtests/resource_witness_unfold_fold.md", 3),
         ("mdtests/rb_parent_family.md", 18),
         ("mdtests/population_count_states_its_transition.md", 2),
     ] {

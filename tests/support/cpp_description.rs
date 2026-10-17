@@ -67,6 +67,14 @@ pub fn describe_project(description: &Path) -> Result<(PathBuf, PathBuf, String)
         fs::canonicalize(&root).unwrap_or(root.clone()),
     ]
     .map(|prefix| format!("{}/", prefix.to_string_lossy().trim_end_matches("/.")));
+    // A description's command names its own optimization level, and one
+    // naming none was built at `-O0`.
+    let optimization = words
+        .iter()
+        .rev()
+        .find(|word| word.starts_with("-O"))
+        .cloned()
+        .unwrap_or_else(|| "-O0".into());
     let mut words = words.into_iter().skip(1);
     let mut args = Vec::new();
     while let Some(word) = words.next() {
@@ -117,8 +125,11 @@ pub fn describe_project(description: &Path) -> Result<(PathBuf, PathBuf, String)
     let project_file = directory.join(click::project::FILE_NAME);
     fs::write(
         &project_file,
-        serde_json::to_vec_pretty(&serde_json::json!({"units": {unit_name(description): unit}}))
-            .unwrap(),
+        serde_json::to_vec_pretty(&serde_json::json!({
+            "optimization": optimization,
+            "units": {unit_name(description): unit},
+        }))
+        .unwrap(),
     )
     .unwrap();
     let exporter = directory.join(config["exporter"].as_str().unwrap());
