@@ -675,16 +675,6 @@ fn flat_post_execution_tactic(tactic: &ProofTactic) -> Option<PostExecutionTacti
         ProofTactic::Transport { source, target } => Some(PostExecutionTactic::Transport {
             source: source.clone(),
             target: target.clone(),
-            premises: None,
-        }),
-        ProofTactic::TransportUsing {
-            source,
-            target,
-            premises,
-        } => Some(PostExecutionTactic::Transport {
-            source: source.clone(),
-            target: target.clone(),
-            premises: Some(premises.clone()),
         }),
         ProofTactic::Simp => Some(PostExecutionTactic::Simp),
         ProofTactic::AutoClose => Some(PostExecutionTactic::AutoClose),
@@ -927,9 +917,17 @@ fn apply_frontier_source_tactic<'a>(
         match proof.try_execute_to_exit()? {
             Some(executed) => executed,
             None => {
-                return Err(proof.step_error(
-                    "`execute()` found no checked path from this frontier to function exit",
-                ));
+                // Terminal arms can succeed above. A continuing arm cannot
+                // consume its parent's continuation to reach function exit.
+                let message = if !proof.is_at_function_exit()
+                    && proof.execution().is_some_and(|execution| {
+                        execution.core.frontier.region == ExecutionRegionKind::BranchArm
+                    }) {
+                    "`execute()` cannot reach function exit from a continuing branch arm; an arm of `branch` must stop at the shared continuation"
+                } else {
+                    "`execute()` found no checked path from this frontier to function exit"
+                };
+                return Err(proof.step_error(message));
             }
         }
     } else if let ProofTactic::Loop(clause) = &indexed.tactic {

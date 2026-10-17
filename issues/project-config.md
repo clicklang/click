@@ -253,13 +253,13 @@ C++ items were chosen explicitly; the rest are the recommended defaults.
   naming another level, or defining `__OPTIMIZE__`, is refused. The Linux
   profile no longer requires `-fno-strict-overflow` or
   `-fno-delete-null-pointer-checks`, and the optimizer-promise attributes are
-  refused at any optimizing level. Until the strict-aliasing check covers
-  globals and heap objects, an optimizing level still adds
-  `-fno-strict-aliasing` (`design/effective-types.md`). The committed C locks
+  refused at any optimizing level. An optimizing level keeps
+  `-fno-strict-aliasing`, as the maintainer decided on 2026-10-17
+  (`design/effective-types.md`). The committed C locks
   were re-locked with byte-identical artifacts.
 - **Remaining:** the module root still comes
   from imports rather than the project file; the shared lock envelope;
-  dropping `-fno-strict-aliasing`; the C++ side of the flag policy.
+  the C++ side of the flag policy.
 
 ## Intended regressions
 

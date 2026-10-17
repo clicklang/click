@@ -1474,10 +1474,17 @@ same kind, `virtual ~Shape() = default;`, only resets the vtable pointer and
 runs no code a proof sees (`mdtests/cpp_polymorphic_virtual_destructor.md`).
 A class may write its own destructor with a body, virtual or not, verified
 against its contract as any destructor is, when its fields have trivial
-destruction and its base's destruction runs no code: base destructors are
-not executed. A local's destructor is called directly, so its contract is
-the class's own (`mdtests/cpp_polymorphic_destructor_runs_its_body.md`,
-`mdtests/cpp_polymorphic_destructor_rejects_overclaim.md`). It is reached by
+destruction. A local's destructor is called directly, so its contract is the
+class's own (`mdtests/cpp_polymorphic_destructor_runs_its_body.md`,
+`mdtests/cpp_polymorphic_destructor_rejects_overclaim.md`). A base whose own
+written destructor runs code is destroyed by the class's written destructor,
+which may then have an empty body: after the body the importer calls the
+base's destructor on the base subobject, as C++ destroys an object, and the
+class's destructor contract owns the base's fields as `this->base.log` and
+ensures what the base destructor ensures. A class over such a base that
+writes no destructor of its own is refused
+(`mdtests/cpp_polymorphic_base_destructor_runs_after.md`,
+`mdtests/cpp_polymorphic_base_destructor_runs_after_rejects_overclaim.md`). It is reached by
 reference or built in a local by its explicit constructor, `Square sq(3);`.
 The compiler's setting of the vtable pointer is trusted; the constructor's
 contract owns and establishes the object's fields. While the object
@@ -1491,7 +1498,7 @@ constructor's contract owns the base's fields as `this->base.tag` and lends
 them to the base's constructor
 (`mdtests/cpp_polymorphic_base_construction.md`,
 `mdtests/cpp_polymorphic_base_construction_rejects_overclaim.md`). Copies, objects returned by
-value, base destructors with effects, covariant results and a pure
+value, covariant results and a pure
 virtual method with a definition remain unsupported
 (`mdtests/cpp_virtual_override_rejects_narrower_requires.md`,
 `mdtests/cpp_virtual_override_keeps_the_inherited_guarantee.md`,
@@ -1629,9 +1636,9 @@ proves the first two, checks the third
 ([undefined behavior](../language/c.md#undefined-behavior)), and refuses the
 attributes ([Optimizer promises](#optimizer-promises)), so a verified claim
 holds for the `-O2` build without `-fno-strict-overflow` or
-`-fno-delete-null-pointer-checks`. Until the strict-aliasing check also covers
-heap objects and globals, an optimizing level adds `-fno-strict-aliasing`
-(`design/effective-types.md`). `"optimization": "-O0"` prepares the units
+`-fno-delete-null-pointer-checks`. An optimizing level still adds
+`-fno-strict-aliasing`, because the check does not see the effective types a
+callee or `memcpy` gives heap cells (`design/effective-types.md`). `"optimization": "-O0"` prepares the units
 unoptimized and accepts the promise attributes, which GCC does not act on at
 `-O0`.
 
@@ -1815,7 +1822,7 @@ source.
 | `-Wno-unused-const-variable` (twice) | Accepted | Diagnostics only. |
 | `-fno-common` | Accepted | GCC 13's default; a tentative definition is one zero-initialized definition, as Click models it. |
 | `-fno-delete-null-pointer-checks` | Accepted | Stops GCC assuming that a dereferenced pointer is not null; Click refuses any access through a possibly null pointer. |
-| `-fno-strict-aliasing` | Fixed | Added at an optimizing level until the strict-aliasing check covers heap objects and globals (`design/effective-types.md`). |
+| `-fno-strict-aliasing` | Fixed | Added at an optimizing level: the strict-aliasing check does not see the effective types a callee or `memcpy` gives heap cells (`design/effective-types.md`). |
 | `-fno-strict-overflow` | Accepted | Makes signed and pointer overflow wrap; Click treats both as undefined, which is stricter. |
 | `-fshort-wchar` | Accepted | Changes `wchar_t` and the wide-literal element type; the predefines are in the artifact and Click has no wide literals. |
 | `-fstrict-flex-arrays=3` | Accepted | Only `[]` is a flexible member; Click has no flexible or zero-length members and bounds every struct array by its declared length. |

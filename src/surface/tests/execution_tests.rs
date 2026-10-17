@@ -1163,6 +1163,59 @@ fn verified_loop_summary_completes_without_a_body_rerun() {
 }
 
 #[test]
+fn linear_execute_checks_the_branch_arm_refusal_program() {
+    let markdown =
+        include_str!("../../../mdtests/execute_branch_arm_stops_at_shared_continuation.md");
+    let mdtest = crate::cli::parse_mdtest(std::path::Path::new("branch-arm.md"), markdown).unwrap();
+    let source = mdtest.click_source.as_deref().unwrap();
+    let linear = source.replace(
+        "    branch {\n        execute();\n    } else {\n        execute();\n    }",
+        "    execute();",
+    );
+    assert_ne!(
+        linear, source,
+        "the control must replace the explicit branch"
+    );
+    let sources = mdtest
+        .c_sources
+        .iter()
+        .map(|(name, source)| (name.as_str(), source.as_str()))
+        .collect::<Vec<_>>();
+    verify_c0_sources(&linear, &sources)
+        .expect("linear execution may follow the same C arms into their continuation");
+}
+
+#[test]
+fn execute_in_loop_preservation_keeps_the_function_exit_miss() {
+    let c = "void countdown(int32 more) { while (more > 0) { more = more - 1; } }";
+    let source = r#"
+        verifying "countdown.c";
+        void countdown(int32 more) {
+            requires 0 <= more;
+            ensures 1 == 1;
+        } by {
+            loop {
+                decreases more;
+                invariant 0 <= more;
+                initialize by simp();
+                preserve by { execute(); }
+            }
+            execute();
+        }
+    "#;
+    let error = verify_c0_sources(source, &[("countdown.c", c)])
+        .expect_err("a loop preservation region cannot execute to function exit");
+    assert!(
+        error
+            .message()
+            .contains("`execute()` found no checked path from this frontier to function exit"),
+        "{}",
+        error.message()
+    );
+    assert!(!error.message().contains("an arm of `branch`"));
+}
+
+#[test]
 fn bounded_execute_resumes_and_explores_symbolic_branches() {
     let c_source = r#"
             int32 choose_after_init(int32 x) {
