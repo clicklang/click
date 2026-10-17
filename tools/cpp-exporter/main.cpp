@@ -3036,6 +3036,10 @@ private:
     reference["name"] =
         method != nullptr ? method_name(method) : function_name(definition);
     reference["span"] = span(call->getCallee()->getSourceRange());
+    // A qualified call of a virtual method runs that method, whatever the
+    // receiver's dynamic type.
+    if (qualified && method != nullptr && method->isVirtual())
+      reference["qualified"] = true;
 
     Json call_span = span(call->getSourceRange());
     if (!state_.error.empty()) {

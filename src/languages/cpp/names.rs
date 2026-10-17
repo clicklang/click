@@ -205,6 +205,14 @@ pub(crate) fn object_const_unpack_name(derived: &str, base: &str) -> String {
     format!("{derived}__click_unpack_const__{base}")
 }
 
+/// The function a call through a reference to `class` names for its method
+/// `method` when another class derives from `class`: it runs whichever
+/// override the object's class selects. Without a sidecar contract of its
+/// own, its contract is the method's.
+pub(crate) fn object_dispatch_name(class: &str, method: &str) -> String {
+    format!("{class}__click_dispatch__{}", path_name(&[method]))
+}
+
 /// Whether `name` is one of those functions.
 pub(crate) fn is_object_coercion(name: &str) -> bool {
     [

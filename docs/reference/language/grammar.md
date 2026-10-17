@@ -227,7 +227,72 @@ them, and an exhaustive `match` may inspect an unknown variant and return a
 common C or algebraic type. Algebraic-valued `if` expressions are not supported;
 select an algebraic result with an exhaustive `match` instead. Declaration
 validation rejects unsupported conditionals even when their branches are pure
-function calls:
+function calls.
+
+Pure function definitions check every return branch against the declared result
+type, including definitions with no callers. C-valued returns use the existing
+numeric conversions and null-pointer-constant rule; a pointer is not an integer
+return value. Bool results require bool values rather than implicit truth tests.
+
+A model field declared `struct tag*` retains its nominal pointee class.
+Constructing the model requires a null pointer or checked evidence that the
+pointer's original object class is `struct tag`; matching the model recovers
+that evidence. A pointer proved equal to the typed identity can use that
+evidence in the current context. Pure helper parameters declared `struct tag*` require the same
+evidence at calls. Helper bodies check their model constructors and calls
+against the declared input types. A pure function returning `struct tag*` must
+also establish that its body returns null or a pointer with that original
+object class. Calls use this checked return type, including recursive calls;
+recursive definitions still require the existing termination check. Untyped
+and generic pointer getters preserve evidence from their actual return sources.
+A destination cast cannot manufacture original-class evidence. C access
+typing retains its existing declaration metadata separately. Memory access
+still requires the relevant resource permissions.
+
+A model field or pure-helper parameter declared `void*` accepts an object
+pointer through implicit coercion: its carrier changes to `void*`, preserving
+its designation, bounds, qualifiers, and object-type evidence. Opaque helper
+calls and unfolded bodies use this same argument conversion. Function pointers
+are excluded. An authored `(void*)p` remains an explicit cast and selects the
+root view according to C cast semantics. Address-only models should use `void*`
+without inserting explicit casts that would change saved pointer views. See
+`mdtests/model_pointer_void_helper_preserves_selected_view.md` and
+`mdtests/a_saved_pointer_link_keeps_its_bounds_through_an_outer_alias_update.md`.
+
+The written C contract is the complete callable interface. Typed model
+constructors and typed pure-helper calls in its clauses determine the required
+original object classes of its input pointers. For example,
+`ensures held.model == NodeRef::At(p)` exposes the nominal type required of
+`p`. Imported, recursive, and completed calls check the same declaration-derived
+requirements. Contract value parameters carry these requirements too.
+A proof cannot silently add a type precondition by choosing `NodeRef::At(p)`
+while proving only an abstract output and `ensures true`. It must obtain type
+evidence from the declared inputs, owned model fields, or actual declared and
+allocated objects. Ordinary C casts and address-only return contracts keep
+their existing behavior; a C pointer declaration alone supplies access typing,
+not the stronger original-object evidence needed by a model constructor.
+
+A pointer return also retains the nullable object class exposed by a direct
+typed use of `result` in a postcondition, either unconditionally or under the
+exact guard `result != 0`. Imported and opaque calls use that declaration-backed
+guarantee. The function's own proof must establish it on its actual return;
+its C return declaration alone supplies none. Uses under other guards and
+branching expressions do not establish an unconditional return class.
+
+Opening a held resource recovers the nominal argument requirements of the
+logical calls in its active selected body. Folding must establish those
+requirements; an empty resource or an inactive body confers no pointer type.
+The recovered requirements are explicit scoped facts, independent of opaque
+call interning and of C access permissions.
+
+A `malloc` or `calloc` result bound directly to a complete struct pointer
+establishes that struct's class when the checked allocation extent contains
+the object and the allocator guarantees its alignment. The success branch
+records the class on both the pointer and its storage; the failure branch is
+null. Insufficient storage establishes no class. Casting an existing object,
+including an allocated object of another struct type, preserves its original
+class. This does not initialize `malloc` storage or grant additional access
+permissions.
 
 Pure functions, predicates, and theorems may declare Rust-like type parameters
 after their name. Calls and theorem applications infer each type argument from

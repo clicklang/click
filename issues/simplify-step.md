@@ -13,8 +13,7 @@ The 2026-10-12 launch design review (critique W3, moved here) found that
 visible" (`docs/reference/tactics/index.md`), while the work to make it simple
 was paused. A launch audience reading the tactic reference would take the
 simple/smart split at its word. The review proposed finishing this issue or
-reclassifying `step()` as smart; [design-review.md](design-review.md) depends on
-this issue for that critique.
+reclassifying `step()` as smart.
 
 ## Decision
 

@@ -279,9 +279,8 @@ Each step is a separate PR that leaves every example verifying:
 
 ### Integer-default specification arithmetic
 
-Moved here from the launch design review (formerly item P2 of
-[design-review.md](design-review.md)), since it decides which library
-lemmas survive.
+Moved here from the launch design review (formerly its item P2), since it
+decides which library lemmas survive.
 
 
 Today: `+` in a specification is the C operation and is partial
@@ -358,6 +357,23 @@ does not touch lemmas about to disappear.
 - A module that C code brings without an import, such as `click::bytes`
   through a C string call, is not in scope by its short name; such a file
   writes the full `click::` path, or imports the module.
+
+
+### Rust names for the surviving lemmas
+
+Moved here from the launch design review (formerly its item L4, "Rust and C++
+specs still read like C"; decision: fix, maintainer, 2026-10-13). Rust
+sidecars already write Rust types, `as`, `bool`, Rust literal spellings and
+slice parameters in pure functions. What remains is the shared lemma
+library: its lemmas are named by C types (`uint64_less_than_to_integer`), so
+a Rust proof applies C-spelled lemmas. Give the lemmas a Rust proof applies
+Rust-spelled names or aliases once Integer-default specification arithmetic
+settles which lemmas survive; naming the width lemmas first would name
+lemmas that are about to be removed. The archived Charon-trial sidecars under
+`design/charon-trial` keep the C spellings they were written in.
+
+Done when the lemmas a Rust example applies have Rust spellings and a Rust
+fixture applies them by those names.
 
 ## Intended regression
 

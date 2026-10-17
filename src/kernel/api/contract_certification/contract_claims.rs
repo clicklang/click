@@ -2672,6 +2672,7 @@ pub(crate) fn c_verified_function_contract_claims_with_checked_propositions(
             }
             let load_equalities = load_equality_capture.finish();
             holds.then(|| CVerifiedFunctionContractClaim {
+                pointer_result: contract_execution.pointer_result.clone(),
                 function: function.clone(),
                 key: claim.key().clone(),
                 load_equalities,
@@ -2977,6 +2978,9 @@ pub fn c_verified_function_rule(
         CLoopSemantics::Verify
     };
     Some(CVerifiedFunctionRule {
+        pointer_result: crate::kernel::object_types::merge_pointer_results(
+            proofs.iter().map(|proof| proof.pointer_result.as_deref()),
+        ),
         function,
         loop_semantics,
         checked_callees: crate::kernel::termination::merge_checked_callees(
@@ -3040,12 +3044,15 @@ pub(crate) fn c_recursive_function_contract_hypothesis(
         && function.verified_direct_contract_supported()
         && !function.contract_claims().is_empty()
         && function_contract_claims_are_complete(&function))
-    .then_some(CVerifiedFunctionRule {
-        function,
-        // A hypothesis certified nothing, so it says nothing about loops.
-        loop_semantics: CLoopSemantics::Verify,
-        checked_callees: None,
-        applied_tactics: Default::default(),
+    .then(|| {
+        CVerifiedFunctionRule {
+            pointer_result: None,
+            function,
+            // A hypothesis certified nothing, so it says nothing about loops.
+            loop_semantics: CLoopSemantics::Verify,
+            checked_callees: None,
+            applied_tactics: Default::default(),
+        }
     })
 }
 

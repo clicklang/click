@@ -3,6 +3,9 @@
 The proposed model changes the parent identity to `q`. Folding must prove
 that new equality; the opening rule cannot grant facts of a proposed model.
 
+The logical pointer annotations below use `void*` for address identities;
+object access remains governed by the unchanged C types and resource ownership.
+
 ```c filename=probe.c
 struct node { unsigned long tag; struct node *other; struct node *next; };
 void helper(struct node *q) { q->tag = 0; }
@@ -11,7 +14,7 @@ void probe(struct node *p, struct node *q) { helper(q); }
 
 ```click
 verifying "probe.c";
-spec enum Tag { At(struct node*, Child) }
+spec enum Tag { At(void*, Child) }
 spec enum Child { Empty }
 resource child(p: struct node*) { field model: Child; owns p->tag; }
 resource frame(p: struct node*) {

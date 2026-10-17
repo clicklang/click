@@ -230,6 +230,7 @@ fn many_ranked_loops_in_one_function_cost_linear_termination_work() {
                 .collect::<Vec<_>>(),
         )]);
         let rules = [CVerifiedFunctionRule {
+            pointer_result: None,
             function,
             loop_semantics: CLoopSemantics::ApplyVerifiedRules,
             checked_callees: None,

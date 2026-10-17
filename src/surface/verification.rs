@@ -5354,6 +5354,13 @@ impl parser::ProgramLayouts {
                     .virtual_overrides
                     .push((function.source_name().to_string(), interface.to_string()));
             }
+            if let Some(method) = function.dispatched_method()
+                && let Some(method) = source_names.get(method)
+            {
+                tables
+                    .virtual_dispatches
+                    .push((function.source_name().to_string(), method.to_string()));
+            }
             tables.local_struct_pointers.insert(
                 function.source_name().to_string(),
                 parser::FunctionLocals {
@@ -5996,20 +6003,16 @@ fn check_trait_method_implementations(
         let interface_name = interface_source;
         // A trait or class whose object carries state states each
         // implementation's interface on that implementation's own memory. A
-        // C++ override of a method that is itself stated so also refines that
-        // method's own contract: a call through it may reach the override.
+        // C++ override of a defining class's method refines only that: a call
+        // through a reference to a class another derives from is checked
+        // against the object class's interface, never the method's own
+        // contract.
         let iface = crate::surface::parser::implementation_interface_contract(function.name());
         let on_memory = environment.get_function_contract(&iface).is_some();
-        let overridden_on_memory = environment
-            .get_function_contract(&crate::surface::parser::implementation_interface_contract(
-                interface,
-            ))
-            .is_some();
         let mut contracts = Vec::new();
         if on_memory {
             contracts.push(Some(iface.as_str()));
-        }
-        if !on_memory || (!rust && overridden_on_memory) {
+        } else {
             contracts.push(verified_interface.is_none().then_some(interface));
         }
         // An implementation without its own contract is never verified, so
@@ -6039,9 +6042,11 @@ fn check_trait_method_implementations(
         let mut refines = true;
         for contract in contracts {
             refines &= match (contract, verified_interface) {
-                (None, Some(interface)) => {
-                    crate::kernel::c_function_refines_function_contract(interface, implementation)
-                }
+                (None, Some(interface)) => crate::kernel::c_function_refines_function_contract(
+                    environment,
+                    interface,
+                    implementation,
+                ),
                 (contract, _) => crate::kernel::c_function_refines_named_contract(
                     environment,
                     contract.unwrap_or(interface),

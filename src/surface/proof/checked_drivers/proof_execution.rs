@@ -654,6 +654,29 @@ fn frontier_have(tactic: &ProofTactic) -> Option<std::borrow::Cow<'_, ProofHave>
     }
 }
 
+/// A written `apply`, in any context that admits it. It is a commitment,
+/// not a speculative search: its refusal is the premise it was missing,
+/// named with the `apply` as written, not a declined shape.
+pub(in crate::surface::proof) fn apply_written_theorem<'a>(
+    proof: &Proof<'a>,
+    application: &TheoremApplication,
+) -> Result<Proof<'a>, ClickError> {
+    proof
+        .apply_theorem_application(application)
+        .map_err(|error| {
+            if crate::instrumentation::deadline_exceeded() {
+                return error;
+            }
+            let written = crate::surface::printing::format_partial_tactic_sequence(
+                std::slice::from_ref(&ProofTactic::ApplyTheorem(application.clone())),
+            );
+            error.with_context(format!(
+                "`{}` was refused",
+                written.trim().trim_end_matches(';')
+            ))
+        })
+}
+
 fn flat_post_execution_tactic(tactic: &ProofTactic) -> Option<PostExecutionTactic> {
     if SourceContext::PostExecution.leaf_step(tactic).is_some() {
         return Some(PostExecutionTactic::Leaf(tactic.clone()));
@@ -845,22 +868,7 @@ fn apply_frontier_source_tactic<'a>(
     } else if let ProofTactic::LetSatisfy(binding) = &indexed.tactic {
         proof.apply_step_at(ProofStep::LetSatisfy(binding.clone()), indexed.source_index)?
     } else if let ProofTactic::ApplyTheorem(application) = &indexed.tactic {
-        // A written `apply` is a commitment, not a speculative search: its
-        // refusal is the premise it was missing, not a declined shape.
-        proof
-            .apply_theorem_application(application)
-            .map_err(|error| {
-                if crate::instrumentation::deadline_exceeded() {
-                    return error;
-                }
-                let written = crate::surface::printing::format_partial_tactic_sequence(
-                    std::slice::from_ref(&indexed.tactic),
-                );
-                error.with_context(format!(
-                    "`{}` was refused",
-                    written.trim().trim_end_matches(';')
-                ))
-            })?
+        apply_written_theorem(&proof, application)?
     } else if let ProofTactic::Transport { source, target } = &indexed.tactic {
         match proof.try_execution_fact_transport_or_refusal(source, target)? {
             Ok(transported) => transported,

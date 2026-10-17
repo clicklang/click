@@ -69,6 +69,33 @@ pub(in crate::kernel) fn named_contract_refinement_theorem_skeleton(
             .collect::<Vec<_>>()
             .join(", ")
     };
+    let aliases: BTreeMap<_, _> = implementation_binders
+        .iter()
+        .zip(&introduced)
+        .map(|(binder, name)| (binder.as_str(), name.as_str()))
+        .collect();
+    let inputs = declared_instance_binder_names(&[function.resource_requires()]);
+    let outputs = function
+        .resource_ensures()
+        .iter()
+        .filter(|spec| spec.role() == CResourceTransferRole::Produce)
+        .filter_map(|spec| spec.instance_binder())
+        .collect::<Vec<_>>();
+    let input_map = inputs
+        .iter()
+        .map(|binder| format!("{binder}: {}", aliases[binder.as_str()]))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let output_map = outputs
+        .iter()
+        .map(|binder| format!("{binder}: {}", aliases[binder]))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let binding = if outputs.is_empty() {
+        String::new()
+    } else {
+        format!("let {{ {output_map} }} = ")
+    };
     let arguments = function
         .parameters()
         .iter()
@@ -78,14 +105,15 @@ pub(in crate::kernel) fn named_contract_refinement_theorem_skeleton(
     format!(
         "theorem {theorem}() executes {function}({parameters}) {{\n    \
          ensures {contract}(&{function}) as {{ {target} }} by {{\n        \
-         step({function}({arguments}), {{ {implementation} }});\n        \
+         {binding}step({function}({arguments}), {{ {input_map} }});\n        \
          simp();\n    \
          }}\n\
          }}",
         contract = contract.name(),
         function = function.name(),
         target = map(&target_binders),
-        implementation = map(&implementation_binders),
+        binding = binding,
+        input_map = input_map,
     )
 }
 
@@ -213,18 +241,21 @@ pub(crate) fn c_type_spelling(c_type: CType) -> &'static str {
 pub(in crate::kernel) fn function_refines_named_contract(
     contract: &CFunctionContract,
     function: &CFunction,
+    object_type_requirements: &ObjectTypeRequirements,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<bool> {
-    if contract.exactly_matches(function) {
+    if object_type_requirements.is_empty() && contract.exactly_matches(function) {
         return Ok(true);
     }
     if !contract.has_same_predicate_unfoldings(function) {
         return Ok(false);
     }
-    let Some(context) = prepare_automatic_contract_refinement_context(contract, function, budget)
+    let Some(mut context) =
+        prepare_automatic_contract_refinement_context(contract, function, budget)
     else {
         return Ok(false);
     };
+    context.object_type_requirements = object_type_requirements.clone();
     function_refines_named_contract_in_case(&context, &[], &BTreeSet::new(), false, None, budget)
 }
 
@@ -313,11 +344,18 @@ pub(in crate::kernel) fn contract_refinement_context_for_interface(
     budget: &mut ExecutionBudget,
 ) -> Option<CFunctionContractRefinementContext> {
     let mut argument_values = Vec::with_capacity(function_interface.parameters().len());
-    for parameter in function_interface.parameters() {
+    for (index, parameter) in function_interface.parameters().iter().enumerate() {
         let variable = budget.allocate_kernel_variable().ok()?;
         argument_values.push(
             symbolic_call_result(parameter.c_type(), variable)
-                .complete_word(Pointer::symbolic(variable)),
+                .complete_word(Pointer::symbolic(variable))
+                .with_pointer_object_class(
+                    contract
+                        .interface()
+                        .object_type_requirements()
+                        .get(&index)
+                        .cloned(),
+                ),
         );
     }
     let result_variable = budget.allocate_kernel_variable().ok()?;
@@ -336,6 +374,7 @@ pub(in crate::kernel) fn contract_refinement_context_for_interface(
         };
     let pointer_type = contract.function_pointer_type();
     Some(CFunctionContractRefinementContext {
+        object_type_requirements: function_interface.object_type_requirements().clone(),
         contract,
         function_interface: function_interface.clone(),
         function_name: function_name.to_string(),
@@ -434,6 +473,19 @@ pub(in crate::kernel) fn prepare_contract_refinement_obligations(
         &mut budget,
     )
     .ok()?
+    {
+        return None;
+    }
+    let mut type_arguments = context.argument_values.clone();
+    if crate::kernel::object_types::check_requirements(
+        &context.function_name,
+        source.parameters(),
+        &context.object_type_requirements,
+        &mut type_arguments,
+        entry.memory(),
+        &assumptions,
+    )
+    .is_some()
     {
         return None;
     }
@@ -988,6 +1040,19 @@ pub(super) fn function_refines_named_contract_in_case(
         return Ok(false);
     }
     preconditions = assumptions_with_propositions(&preconditions, case_assumptions);
+    let mut type_arguments = context.argument_values.clone();
+    if crate::kernel::object_types::check_requirements(
+        &context.function_name,
+        function_interface.parameters(),
+        &context.object_type_requirements,
+        &mut type_arguments,
+        contract_entry.memory(),
+        &preconditions,
+    )
+    .is_some()
+    {
+        return Ok(false);
+    }
     if !prove_contract_propositions(
         &function_entry,
         &function_entry,
