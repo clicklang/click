@@ -191,7 +191,6 @@ pub(in crate::surface::proof) fn check_fixed_state_theorem_application_using_fac
         }
     }
 
-    let evidence_assumptions = assumptions_from_propositions(&explicit_premises);
     let values = parameter_values(parameter_binding).map_err(|error| {
         ClickError::new(format!(
             "`{claim_label}` tactic {tactic_index}: {}",
@@ -223,7 +222,6 @@ pub(in crate::surface::proof) fn check_fixed_state_theorem_application_using_fac
         None,
         tactic_index,
         &explicit_premises,
-        &evidence_assumptions,
         &lowering_assumptions,
         &application_context,
         spec_definitions,
