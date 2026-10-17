@@ -50,5 +50,5 @@ void v() {
 ```
 
 ```expect
-fail: the memory-history check could not establish that the store to `s` is separate from this read.
+fail: the memory-history check could not establish that the store to `s.first` is separate from this read.
 ```
