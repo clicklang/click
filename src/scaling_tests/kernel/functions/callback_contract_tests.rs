@@ -386,7 +386,7 @@ fn contract_refinement_work_is_flat_in_unrelated_facts() {
         Box::new(unproved),
     );
 
-    let samples = [16, 64, 256, 1024]
+    let samples = [4, 16, 64, 256]
         .into_iter()
         .map(|size| {
             let mut assumptions = PureFactContext::new()

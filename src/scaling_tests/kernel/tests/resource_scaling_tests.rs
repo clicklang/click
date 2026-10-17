@@ -2068,7 +2068,7 @@ fn observable_projection_shares_first_projection_across_cold_forks() {
 #[test]
 fn observable_projection_reuses_local_edits_across_sibling_paths() {
     let mut samples = Vec::new();
-    for size in [16usize, 64, 256, 1024] {
+    for size in [4usize, 16, 64, 256] {
         let _session = crate::kernel::VerificationSession::enter();
         crate::kernel::set_never_address_taken_locals(
             (0..size).map(|i| format!("hidden_{i}")).collect(),

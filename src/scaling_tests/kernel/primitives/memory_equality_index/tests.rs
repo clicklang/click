@@ -139,7 +139,7 @@ fn checked_read_endpoint_selects_framed_ranges_without_ambient_scan() {
 #[test]
 fn wide_read_keeps_full_buffer_index_beside_a_batch_cursor() {
     let mut samples = Vec::new();
-    for count in [0_u64, 16, 64, 256, 1024] {
+    for count in [0_u64, 4, 16, 64, 256] {
         let _session = crate::kernel::VerificationSession::enter();
         let base = Pointer {
             block: PointerBlock::ExternalArgument,
@@ -220,6 +220,20 @@ fn wide_read_keeps_full_buffer_index_beside_a_batch_cursor() {
         samples[4] <= samples[1] * 3 + 128,
         "batch read alignment scanned aliases: {samples:?}"
     );
+    {
+        let costs = samples.clone();
+        let indexed = |costs: &[usize]| costs.iter().all(|work| *work <= costs[0] + 64);
+        assert!(indexed(&costs), "indexed work: {costs:?}");
+        let scanned = costs
+            .iter()
+            .zip([0u64, 4, 16, 64, 256])
+            .map(|(work, size)| work + usize::try_from(size).unwrap())
+            .collect::<Vec<_>>();
+        assert!(
+            !indexed(&scanned),
+            "the smaller fixture must detect a visit per unrelated item: {costs:?}"
+        );
+    }
 }
 
 #[test]

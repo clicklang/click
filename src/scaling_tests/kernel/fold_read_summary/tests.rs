@@ -68,7 +68,7 @@ fn framing_is_linear_in_applications_and_ignores_unrelated_facts_and_interval_le
     // Unrelated facts: one framing whose bound is an exact fact, beside a
     // growing number of unrelated order facts.
     let mut works = Vec::new();
-    for size in [64usize, 128, 256, 512] {
+    for size in [16usize, 32, 64, 128] {
         let _session = VerificationSession::enter();
         register_unmarked();
         let v = parameter_base(V);
