@@ -1225,6 +1225,16 @@ impl Printer<'_> {
                 if let Some(field) = crate::kernel::model_fields::model_field_spelling(*variable) {
                     return Some(atom(field));
                 }
+                if let Some(count) =
+                    crate::kernel::model_fields::registered_population_entry_count(*variable)
+                    && let Some(anchor) = self.pointer(&count.anchor, depth + 1)
+                {
+                    let wildcards = ", _".repeat(count.wildcards);
+                    return Some(atom(format!(
+                        "old(count({}({}{wildcards})))",
+                        count.family, anchor.text
+                    )));
+                }
                 return self.placeholder(|printer| printer.unnamed_variable(*variable));
             }
             B::MemoryLoad(memory, pointer, kind) => {
