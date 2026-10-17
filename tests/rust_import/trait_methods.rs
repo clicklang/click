@@ -21,8 +21,8 @@ fn charon_trait_method_implementations_refine_their_interface() {
     C0VerificationSession::new_program_prepared(SIDECAR, &prepared)
         .unwrap_or_else(|error| panic!("{error:?}"));
     for (edits, expected) in [
-        // An implementation inherits the interface's guarantee, which its
-        // proof must establish.
+        // An implementation inherits the interface's guarantee, read with
+        // its own parameter names, which its proof must establish.
         (
             &[(
                 "        ensures scale < result and result <= 3001;\n    }\n    fn twice",
@@ -30,19 +30,11 @@ fn charon_trait_method_implementations_refine_their_interface() {
             )][..],
             "`<trait_methods::Square as trait_methods::Shape>::area.interface_ensures_0`",
         ),
-        // Its clauses read the same only under the interface's names.
-        (
-            &[(
-                "    fn area(&self, scale: i32) -> i32 {\n        ensures result == scale + scale + 1;",
-                "    fn area(&self, s: i32) -> i32 {\n        ensures result == s + s + 1;",
-            )][..],
-            "`<trait_methods::Circle as trait_methods::Shape>::area` cannot inherit its trait's interface: an implementation names its parameters as the trait's interface does",
-        ),
         // An implementation that refuses a call the interface allows.
         (
             &[(
-                "        requires scale <= 2000;\n",
-                "        requires scale <= 500;\n",
+                "        requires factor <= 2000;\n",
+                "        requires factor <= 500;\n",
             )][..],
             "`<trait_methods::Square as trait_methods::Shape>::area` does not refine",
         ),

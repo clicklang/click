@@ -20,12 +20,13 @@ trait trait_methods::Shape {
 // Each implementation inherits the interface's guarantees, which its own
 // proof establishes with what it states itself. It may accept more calls
 // than the interface, here a wider range; one that writes no `requires`
-// takes the interface's.
+// takes the interface's. It may name its parameters otherwise: the
+// interface's clauses read `scale` as `factor` here.
 impl trait_methods::Shape for trait_methods::Square {
-    fn area(&self, scale: i32) -> i32 {
-        requires 0 <= scale;
-        requires scale <= 2000;
-        ensures result == scale + 1;
+    fn area(&self, factor: i32) -> i32 {
+        requires 0 <= factor;
+        requires factor <= 2000;
+        ensures result == factor + 1;
     } by { execute(); simp(); }
 }
 
