@@ -1,6 +1,25 @@
 use super::*;
 
 #[test]
+fn member_pointer_addresses_retain_subobject_extents_through_expansion() {
+    for (fixture, function) in [
+        ("egraph_resource_pointer_load_alias", "check"),
+        ("egraph_resource_pointer_load_same_address", "check"),
+        ("model_pointer_alias_nonzero_field_load", "probe"),
+    ] {
+        let (source, sources) = mdtest_sources(&format!("mdtests/{fixture}.md"));
+        let sources = sources
+            .iter()
+            .map(|(name, text)| (name.as_str(), text.as_str()))
+            .collect::<Vec<_>>();
+        verify_c0_sources(&source, &sources).unwrap();
+        let expanded =
+            expand_c0_claim_source(&source, &sources, function, CProofClaim::Grouped).unwrap();
+        without_implicit_auto(|| verify_c0_sources(&expanded, &sources)).unwrap();
+    }
+}
+
+#[test]
 fn record_pointer_identity_preserves_local_storage_in_all_proof_modes() {
     let (source, sources) =
         mdtest_sources("mdtests/c_record_pointer_identity_preserves_local_storage.md");

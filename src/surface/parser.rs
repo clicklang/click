@@ -12372,10 +12372,10 @@ impl Parser {
                 if let CExpression::TypedLoad { value_type, .. } = lowered
                     && value_type.pointer_to().is_some()
                 {
-                    return Ok(crate::surface::lowering::contract_c_unary(
-                        expression.clone(),
-                        CExpression::AddressOf(Box::new(contract_member_lvalue(lowered))),
-                    ));
+                    return Ok(ContractExpression::CUnary {
+                        operand: Box::new(expression.clone()),
+                        lowered: CExpression::AddressOf(Box::new(contract_member_lvalue(lowered))),
+                    });
                 }
                 let source_base = (**base).clone();
                 let Some(base) = contract_expression_as_c_fragment(base) else {
