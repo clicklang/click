@@ -2462,7 +2462,7 @@ pub(crate) fn resolve_pending_heap_allocations(
                 })
                 .collect::<Vec<_>>();
             for (name, binding) in rebound {
-                state.locals.bindings.insert(name, binding);
+                state.locals.insert_binding(name, binding);
             }
             if !is_null {
                 let old_allocation = CResourceFact::own_allocation(
@@ -2535,7 +2535,7 @@ pub(crate) fn resolve_pending_heap_allocations(
             })
             .collect::<Vec<_>>();
         for (name, binding) in rebound {
-            state.locals.bindings.insert(name, binding);
+            state.locals.insert_binding(name, binding);
         }
         if !is_null {
             let (element_count, range_width) = heap_range_element_count(&bytes, element_width);
