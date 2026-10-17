@@ -345,7 +345,7 @@ fn child_expressions<'a>(
 }
 
 /// The immediate subexpressions and substatements of one statement.
-fn child_statements<'a>(
+pub(crate) fn child_statements<'a>(
     statement: &'a C0Statement,
     expressions: &mut Vec<&'a C0Expression>,
     statements: &mut Vec<&'a C0Statement>,
