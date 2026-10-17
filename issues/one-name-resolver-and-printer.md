@@ -76,8 +76,15 @@ Before, a name that had held a child kept the child's resource after `step`
 bound it to another instance, so `x.v` read the wrong field and a false claim
 verified
 (`mdtests/a_produced_instance_reusing_a_child_name_does_not_read_the_child_resource.md`).
-Resource bindings are not scoped to proof blocks, so one name bound in two
-match arms to children of different resources is still refused.
+What expansion has fixed about an instance is now kept per proof path: each
+arm of an `if`, `match`, `cases`, `branch` or induction starts from the state
+before the arms, and afterwards an instance the arms gave different resources
+is refused where it is used
+(`mdtests/one_name_may_bind_children_of_different_resources_in_two_arms.md`).
+The parser still records a child under its parent's resource, so an `unfold`
+of that child decides "field or child slot" from the parent and can refuse a
+correct pattern; and a slot whose resource differs between the parent's arms
+fixes no resource for its child.
 
 The complete scoped table for parameters, fields, binders, constructors,
 resources, program points and project modules remains open. Proof inventories
