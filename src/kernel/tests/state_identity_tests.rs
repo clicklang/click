@@ -240,13 +240,8 @@ fn abstract_join_keeps_one_shared_view_root_and_drops_its_occurrence_sidecar() {
     let (arm, binding) = arm_with_view_binding(&ledger, owner, reader, "shared");
     let sibling = arm.clone();
 
-    let abstraction = abstract_c_state_for_interface_join_across(
-        &arm,
-        &[&arm, &sibling],
-        &std::collections::BTreeMap::new(),
-        0,
-    )
-    .expect("arms holding the same root have one deterministic abstraction");
+    let abstraction = abstract_c_state_for_interface_join_across(&arm, &[&arm, &sibling], 0)
+        .expect("arms holding the same root have one deterministic abstraction");
     let abstraction = abstraction.state;
 
     // The root survives the join; the bookkeeping of the discarded resource
@@ -278,13 +273,8 @@ fn abstract_join_rejects_a_changed_view_root_on_one_ledger() {
     // Same ledger root and same holder: only the checked occurrence binding
     // moved, and a join must not pick one arm's authority for the successor.
     assert_eq!(arm.loan_ledger(), sibling.loan_ledger());
-    let error = abstract_c_state_for_interface_join_across(
-        &arm,
-        &[&arm, &sibling],
-        &std::collections::BTreeMap::new(),
-        0,
-    )
-    .expect_err("a changed view root must not be silently selected");
+    let error = abstract_c_state_for_interface_join_across(&arm, &[&arm, &sibling], 0)
+        .expect_err("a changed view root must not be silently selected");
     assert!(error.contains("stable-view occurrence bindings"));
 }
 
@@ -302,13 +292,8 @@ fn abstract_join_rejects_an_arm_that_dropped_its_view_root() {
         );
 
     assert_eq!(dropped.loan_view_bindings().iter().count(), 0);
-    let error = abstract_c_state_for_interface_join_across(
-        &arm,
-        &[&arm, &dropped],
-        &std::collections::BTreeMap::new(),
-        0,
-    )
-    .expect_err("an arm that dropped its root must not inherit the other arm's");
+    let error = abstract_c_state_for_interface_join_across(&arm, &[&arm, &dropped], 0)
+        .expect_err("an arm that dropped its root must not inherit the other arm's");
     assert!(error.contains("stable-view occurrence bindings"));
 }
 
@@ -385,11 +370,10 @@ fn interface_join_does_not_visit_cells_its_arms_share() {
     let work_for = |known: u32| {
         let (split, [then_state, else_state]) = arms_beside_known_cells(known);
         let siblings = [&then_state, &else_state];
-        let stable = std::collections::BTreeMap::new();
         let ((from_then, from_else), work) =
             crate::instrumentation::measure_deterministic_work(|| {
                 let abstract_arm = |state: &CState| {
-                    abstract_c_state_for_interface_join_across(state, &siblings, &stable, 0)
+                    abstract_c_state_for_interface_join_across(state, &siblings, 0)
                         .expect("the arms join")
                 };
                 let from_then = abstract_arm(&then_state);
@@ -417,6 +401,45 @@ fn interface_join_does_not_visit_cells_its_arms_share() {
     );
 }
 
+// An interface join abstracts the locals its arms disagree on. The locals and
+// parameters every arm holds alike keep their bindings unvisited, so a join
+// in a function of many parameters costs what the branch changed.
+#[test]
+fn interface_join_does_not_visit_locals_its_arms_share() {
+    let work_for = |kept: usize| {
+        let split = (0..kept).fold(CState::new(), |state, index| {
+            state.with_local(format!("kept{index}"), int32(index as u32))
+        });
+        let then_state = split.clone().with_local("picked", int32(1));
+        let else_state = split.clone().with_local("picked", int32(2));
+        let siblings = [&then_state, &else_state];
+        let ((from_then, from_else), work) =
+            crate::instrumentation::measure_deterministic_work(|| {
+                let abstract_arm = |state: &CState| {
+                    abstract_c_state_for_interface_join_across(state, &siblings, 0)
+                        .expect("the arms join")
+                };
+                (abstract_arm(&then_state), abstract_arm(&else_state))
+            });
+        assert!(
+            from_then
+                .state
+                .eq_with_memories_from(&from_else.state, split.memory())
+        );
+        // The shared locals keep their values; the one the arms disagree on
+        // is abstracted.
+        assert_eq!(from_then.state.locals().get("kept0"), Some(&int32(0)));
+        assert_ne!(from_then.state.locals().get("picked"), Some(&int32(1)));
+        work
+    };
+    let small = work_for(4);
+    let large = work_for(1024);
+    assert!(
+        large <= small + 64,
+        "joining beside 1024 shared locals cost {large} work units against {small} beside 4"
+    );
+}
+
 #[test]
 fn interface_join_provenance_uses_checked_arms_before_marker_union() {
     let _session = crate::kernel::VerificationSession::enter();
@@ -436,9 +459,8 @@ fn interface_join_provenance_uses_checked_arms_before_marker_union() {
             .with_block("havoc:8", 0),
     );
     let siblings = [&then_state, &else_state];
-    let stable = std::collections::BTreeMap::new();
     let abstract_arm = |state| {
-        abstract_c_state_for_interface_join_across(state, &siblings, &stable, 9)
+        abstract_c_state_for_interface_join_across(state, &siblings, 9)
             .expect("the checked arms can be abstracted")
     };
     let left = abstract_arm(&then_state);

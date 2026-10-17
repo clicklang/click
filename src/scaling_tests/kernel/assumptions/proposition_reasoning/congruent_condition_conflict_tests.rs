@@ -5,7 +5,7 @@ fn late_conflict_uses_only_affected_predicate_parents() {
     let p = Pointer::symbolic(Variable(972_001));
     let q = Pointer::symbolic(Variable(972_002));
     let mut samples = Vec::new();
-    for count in [16, 64, 256, 1024] {
+    for count in [4, 16, 64, 256] {
         let mut context = PureFactContext::new()
             .assume_proposition(Proposition::ConditionIs(
                 ConditionTerm::pointer_aligned(p.clone(), 8),

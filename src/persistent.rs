@@ -64,6 +64,22 @@ impl<K: Ord, V> PersistentMap<K, V> {
         None
     }
 
+    pub(crate) fn get_key_value<Q: Ord + ?Sized>(&self, key: &Q) -> Option<(&K, &V)>
+    where
+        K: Borrow<Q>,
+    {
+        let mut node = self.root.as_ref();
+        while let Some(current) = node {
+            record_persistent_work(1);
+            match key.cmp(current.key.as_ref().borrow()) {
+                Ordering::Less => node = current.left.as_ref(),
+                Ordering::Equal => return Some((current.key.as_ref(), current.value.as_ref())),
+                Ordering::Greater => node = current.right.as_ref(),
+            }
+        }
+        None
+    }
+
     pub(crate) fn contains_key<Q: Ord + ?Sized>(&self, key: &Q) -> bool
     where
         K: Borrow<Q>,
@@ -164,6 +180,118 @@ impl<K: Ord, V> PersistentMap<K, V> {
             _ => false,
         }
     }
+
+    /// The entries on which `self` and `other` differ, in ascending key
+    /// order: a key with its value on each side, `None` where that side
+    /// lacks it.
+    ///
+    /// Subtrees and values the two maps share are skipped by identity, so
+    /// for maps derived from one another, or from one base, by `k` updates
+    /// the walk is proportional to the `k` changed paths, not to the maps.
+    pub(crate) fn diff<'a>(&'a self, other: &'a Self) -> PersistentMapDiff<'a, K, V>
+    where
+        V: PartialEq,
+    {
+        PersistentMapDiff {
+            left: self.root.iter().map(DiffItem::Tree).collect(),
+            right: other.root.iter().map(DiffItem::Tree).collect(),
+        }
+    }
+}
+
+/// One side of a [`PersistentMap::diff`] walk: a stack whose top is the
+/// next unvisited part of the map in key order, either a whole subtree or
+/// one entry.
+enum DiffItem<'a, K, V> {
+    Tree(&'a Arc<Node<K, V>>),
+    Entry(&'a Node<K, V>),
+}
+
+pub(crate) struct PersistentMapDiff<'a, K, V> {
+    left: Vec<DiffItem<'a, K, V>>,
+    right: Vec<DiffItem<'a, K, V>>,
+}
+
+fn expand<K, V>(stack: &mut Vec<DiffItem<'_, K, V>>) {
+    let Some(DiffItem::Tree(node)) = stack.pop() else {
+        unreachable!("only a subtree expands")
+    };
+    record_persistent_work(1);
+    if let Some(right) = &node.right {
+        stack.push(DiffItem::Tree(right));
+    }
+    stack.push(DiffItem::Entry(node));
+    if let Some(left) = &node.left {
+        stack.push(DiffItem::Tree(left));
+    }
+}
+
+impl<'a, K: Ord, V: PartialEq> Iterator for PersistentMapDiff<'a, K, V> {
+    type Item = (&'a K, Option<&'a V>, Option<&'a V>);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        loop {
+            match (self.left.last(), self.right.last()) {
+                (None, None) => return None,
+                // Both walks stand at one shared subtree: it holds the same
+                // entries on both sides at the same position.
+                (Some(DiffItem::Tree(left)), Some(DiffItem::Tree(right)))
+                    if Arc::ptr_eq(left, right) =>
+                {
+                    self.left.pop();
+                    self.right.pop();
+                }
+                // Open the taller subtree first, so a subtree the other side
+                // shares comes to the top on both.
+                (Some(DiffItem::Tree(left)), Some(DiffItem::Tree(right))) => {
+                    let (left_height, right_height) = (left.height, right.height);
+                    if left_height >= right_height {
+                        expand(&mut self.left);
+                    }
+                    if right_height >= left_height {
+                        expand(&mut self.right);
+                    }
+                }
+                (Some(DiffItem::Tree(_)), _) => expand(&mut self.left),
+                (_, Some(DiffItem::Tree(_))) => expand(&mut self.right),
+                (Some(DiffItem::Entry(left)), Some(DiffItem::Entry(right))) => {
+                    let (left, right) = (*left, *right);
+                    match left.key.as_ref().cmp(right.key.as_ref()) {
+                        Ordering::Less => {
+                            self.left.pop();
+                            return Some((left.key.as_ref(), Some(left.value.as_ref()), None));
+                        }
+                        Ordering::Greater => {
+                            self.right.pop();
+                            return Some((right.key.as_ref(), None, Some(right.value.as_ref())));
+                        }
+                        Ordering::Equal => {
+                            self.left.pop();
+                            self.right.pop();
+                            if !Arc::ptr_eq(&left.value, &right.value) && left.value != right.value
+                            {
+                                return Some((
+                                    left.key.as_ref(),
+                                    Some(left.value.as_ref()),
+                                    Some(right.value.as_ref()),
+                                ));
+                            }
+                        }
+                    }
+                }
+                (Some(DiffItem::Entry(left)), None) => {
+                    let left = *left;
+                    self.left.pop();
+                    return Some((left.key.as_ref(), Some(left.value.as_ref()), None));
+                }
+                (None, Some(DiffItem::Entry(right))) => {
+                    let right = *right;
+                    self.right.pop();
+                    return Some((right.key.as_ref(), None, Some(right.value.as_ref())));
+                }
+            }
+        }
+    }
 }
 
 impl<K: Ord, V> FromIterator<(K, V)> for PersistentMap<K, V> {
@@ -193,9 +321,10 @@ impl<'a, K: Ord, V> IntoIterator for &'a PersistentMap<K, V> {
 
 impl<K: Ord + PartialEq, V: PartialEq> PartialEq for PersistentMap<K, V> {
     /// O(1) for maps sharing a root (a clone, or a context compared with
-    /// itself through a fact-context memo); elementwise otherwise.
+    /// itself through a fact-context memo); otherwise proportional to the
+    /// parts the two maps do not share (see [`PersistentMap::diff`]).
     fn eq(&self, other: &Self) -> bool {
-        self.len == other.len && (self.shares_root_with(other) || self.iter().eq(other.iter()))
+        self.len == other.len && (self.shares_root_with(other) || self.diff(other).next().is_none())
     }
 }
 
@@ -675,6 +804,92 @@ pub(crate) fn measure_persistent_work<R>(operation: impl FnOnce() -> R) -> (R, u
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn expected_diff(
+        left: &std::collections::BTreeMap<u32, u32>,
+        right: &std::collections::BTreeMap<u32, u32>,
+    ) -> Vec<(u32, Option<u32>, Option<u32>)> {
+        left.keys()
+            .chain(right.keys())
+            .collect::<std::collections::BTreeSet<_>>()
+            .into_iter()
+            .map(|key| (*key, left.get(key).copied(), right.get(key).copied()))
+            .filter(|(_, left, right)| left != right)
+            .collect()
+    }
+
+    #[test]
+    fn diff_reports_exactly_the_differing_entries_of_derived_maps() {
+        let mut base = PersistentMap::default();
+        let mut base_model = std::collections::BTreeMap::new();
+        for key in 0..200u32 {
+            base.insert(key * 3, key);
+            base_model.insert(key * 3, key);
+        }
+        // Each side derives from the base by its own inserts, overwrites
+        // (some with an equal value) and removals, and both rebalance.
+        let edit = |seed: u32| {
+            let mut map = base.clone();
+            let mut model = base_model.clone();
+            for step in 0..40u32 {
+                let key = (step * 37 + seed * 11) % 650;
+                match (step + seed) % 4 {
+                    0 => {
+                        map.insert(key, step);
+                        model.insert(key, step);
+                    }
+                    1 => {
+                        map.remove(&key);
+                        model.remove(&key);
+                    }
+                    2 => {
+                        if let Some(value) = model.get(&key).copied() {
+                            map.insert(key, value);
+                        }
+                    }
+                    _ => {
+                        map.insert(key + 1, seed);
+                        model.insert(key + 1, seed);
+                    }
+                }
+            }
+            (map, model)
+        };
+        let (left, left_model) = edit(1);
+        let (right, right_model) = edit(2);
+        for (one, one_model, other, other_model) in [
+            (&left, &left_model, &right, &right_model),
+            (&base, &base_model, &left, &left_model),
+            (
+                &right,
+                &right_model,
+                &PersistentMap::default(),
+                &Default::default(),
+            ),
+        ] {
+            let actual = one
+                .diff(other)
+                .map(|(key, left, right)| (*key, left.copied(), right.copied()))
+                .collect::<Vec<_>>();
+            assert_eq!(actual, expected_diff(one_model, other_model));
+            assert_eq!(one == other, one_model == other_model);
+        }
+        assert!(left.diff(&left.clone()).next().is_none());
+    }
+
+    #[test]
+    fn diff_of_one_change_walks_one_path() {
+        let mut base = PersistentMap::default();
+        for key in 0..4096u32 {
+            base.insert(key, key);
+        }
+        let changed = base.with_inserted(1234, 0);
+        let (differences, work) =
+            measure_persistent_work(|| base.diff(&changed).collect::<Vec<_>>().len());
+        assert_eq!(differences, 1);
+        // The changed path on each side, not the 4096 entries.
+        assert!(work <= 4 * 13, "a one-key diff opened {work} subtrees");
+    }
 
     #[test]
     fn persistent_map_forks_and_updates_scale_logarithmically() {

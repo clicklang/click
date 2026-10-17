@@ -3486,7 +3486,6 @@ impl CheckedProofCaseJoin {
         arms: [(&ExecutionProofCore, &ProofFacts); 2],
         function: &CFunction,
         arguments: &[CExpression],
-        stable_join_locals: &BTreeMap<String, CValue>,
         interface_specs: &[SpecProposition],
         interface_resource_specs: &[CResourceSpec],
         arm_effect_facts: [&(impl ExecutionFactSource + ?Sized); 2],
@@ -3529,7 +3528,6 @@ impl CheckedProofCaseJoin {
             parent,
             arm_cores,
             arm_facts,
-            stable_join_locals,
             interface_specs,
             interface_resource_specs,
             joined_state,
@@ -3836,23 +3834,12 @@ fn construct_interface_abstraction(
     parent: &ExecutionProofCore,
     arms: [&ExecutionProofCore; 2],
     arm_facts: [&ProofFacts; 2],
-    stable_join_locals: &BTreeMap<String, CValue>,
     interface_specs: &[SpecProposition],
     interface_resource_specs: &[CResourceSpec],
     joined_state: &CState,
     successor_facts: &ProofFacts,
     old_reference: Option<&CState>,
 ) -> Result<CheckedInterfaceAbstraction, &'static str> {
-    let expected_stable_locals = arms[0]
-        .state
-        .locals()
-        .object_values()
-        .filter(|(name, value)| arms[1].reached_state().locals().get(name) == Some(*value))
-        .map(|(name, value)| (name.to_string(), value.clone()))
-        .collect::<BTreeMap<_, _>>();
-    if &expected_stable_locals != stable_join_locals {
-        return Err("the interface stable-local set is not exact");
-    }
     let sibling_states = [arms[0].reached_state(), arms[1].reached_state()];
     // Both arms abstract from the same counter, the higher of the two, so
     // the abstraction is the same whichever arm allocated more and neither
@@ -3863,14 +3850,12 @@ fn construct_interface_abstraction(
     let abstract_then = crate::kernel::abstract_c_state_for_interface_join_across(
         arms[0].reached_state(),
         &sibling_states,
-        stable_join_locals,
         join_next_kernel_variable,
     )
     .map_err(|_| "the then interface state could not be abstracted")?;
     let abstract_else = crate::kernel::abstract_c_state_for_interface_join_across(
         arms[1].reached_state(),
         &sibling_states,
-        stable_join_locals,
         join_next_kernel_variable,
     )
     .map_err(|_| "the else interface state could not be abstracted")?;
@@ -4223,7 +4208,6 @@ impl CheckedExecutionBranch {
         arms: [&ExecutionProofCore; 2],
         function: &CFunction,
         arguments: &[CExpression],
-        stable_join_locals: &BTreeMap<String, CValue>,
         interface_specs: &[SpecProposition],
         interface_resource_specs: &[CResourceSpec],
         arm_effect_facts: [&(impl ExecutionFactSource + ?Sized); 2],
@@ -4267,7 +4251,6 @@ impl CheckedExecutionBranch {
             parent,
             arms,
             arm_facts,
-            stable_join_locals,
             interface_specs,
             interface_resource_specs,
             joined_state,
@@ -8921,7 +8904,6 @@ impl ExecutionProofCore {
         arms: [(&ExecutionProofCore, &ProofFacts); 2],
         function: &CFunction,
         arguments: &[CExpression],
-        stable_join_locals: &BTreeMap<String, CValue>,
         interface_specs: &[SpecProposition],
         interface_resource_specs: &[CResourceSpec],
         arm_effect_facts: [&(impl ExecutionFactSource + ?Sized); 2],
@@ -8935,7 +8917,6 @@ impl ExecutionProofCore {
             arms,
             function,
             arguments,
-            stable_join_locals,
             interface_specs,
             interface_resource_specs,
             arm_effect_facts,
@@ -10371,7 +10352,6 @@ impl ExecutionProofCore {
         arms: [&ExecutionProofCore; 2],
         function: &CFunction,
         arguments: &[CExpression],
-        stable_join_locals: &BTreeMap<String, CValue>,
         interface_specs: &[SpecProposition],
         interface_resource_specs: &[CResourceSpec],
         arm_effect_facts: [&(impl ExecutionFactSource + ?Sized); 2],
@@ -10392,7 +10372,6 @@ impl ExecutionProofCore {
             arms,
             function,
             arguments,
-            stable_join_locals,
             interface_specs,
             interface_resource_specs,
             arm_effect_facts,

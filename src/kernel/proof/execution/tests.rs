@@ -1920,14 +1920,10 @@ fn checked_join_effects_require_exact_arm_deltas_and_summarize_alternatives() {
         supplied,
     ));
 
-    let joined = crate::kernel::abstract_c_state_for_interface_join_across(
-        &left,
-        &[&left, &right],
-        &BTreeMap::new(),
-        0,
-    )
-    .expect("alternative memories should have one deterministic abstraction")
-    .state;
+    let joined =
+        crate::kernel::abstract_c_state_for_interface_join_across(&left, &[&left, &right], 0)
+            .expect("alternative memories should have one deterministic abstraction")
+            .state;
     let facts = ProofFacts::default();
     let summaries = checked_interface_effect_facts(
         &before,
@@ -2107,14 +2103,9 @@ fn conditional_heap_free_is_checked_as_a_guarded_lifetime_join() {
     freed_core.effect_facts.push(free_effect.clone());
     let retained_core = parent.clone();
     let siblings = [&freed, &retained];
-    let joined = crate::kernel::abstract_c_state_for_interface_join_across(
-        &freed,
-        &siblings,
-        &BTreeMap::new(),
-        0,
-    )
-    .expect("the conditional heap states should abstract")
-    .state;
+    let joined = crate::kernel::abstract_c_state_for_interface_join_across(&freed, &siblings, 0)
+        .expect("the conditional heap states should abstract")
+        .state;
     let facts = ProofFacts::default();
     let summaries = checked_interface_effect_facts(
         &before,
@@ -2820,11 +2811,6 @@ fn interface_branch_constructs_resources_and_rejects_unproved_facts() {
         .expect("the else condition decides the frontier's `if`");
     else_arm.frontier.region = ExecutionRegionKind::BranchArm;
     else_arm.frontier.position = FrontierPosition::RegionBoundary;
-    let stable_join_locals = state
-        .locals()
-        .object_values()
-        .map(|(name, value)| (name.to_string(), value.clone()))
-        .collect::<BTreeMap<_, _>>();
     let spec = SpecProposition::Comparison {
         left: SpecExpression::CExpression(CExpression::Variable("x".to_string())),
         operator: CComparisonOperator::Equal,
@@ -2845,7 +2831,6 @@ fn interface_branch_constructs_resources_and_rejects_unproved_facts() {
         [&then_arm, &else_arm],
         &function,
         &[],
-        &stable_join_locals,
         std::slice::from_ref(&spec),
         &[],
         [&[], &[]],
@@ -2898,7 +2883,6 @@ fn interface_branch_constructs_resources_and_rejects_unproved_facts() {
             [&then_arm, &else_arm],
             &function,
             &[],
-            &stable_join_locals,
             std::slice::from_ref(&spec),
             &[],
             [&[], &[]],
@@ -2923,7 +2907,6 @@ fn interface_branch_constructs_resources_and_rejects_unproved_facts() {
         [&then_arm, &else_arm],
         &function,
         &[],
-        &stable_join_locals,
         std::slice::from_ref(&spec),
         &[],
         [&[], &[]],

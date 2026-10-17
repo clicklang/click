@@ -559,7 +559,6 @@ impl<'a> Proof<'a> {
             &mut execution,
             context,
             &mut facts,
-            &BTreeMap::new(),
             None,
             join_next_kernel_variable,
             false,
@@ -869,16 +868,6 @@ impl<'a> Proof<'a> {
             "interface execution join",
         )?;
 
-        let mut stable_join_locals = arms[0]
-            .execution
-            .core
-            .state
-            .locals()
-            .object_values()
-            .map(|(name, value)| (name.to_string(), value.clone()))
-            .collect::<BTreeMap<_, _>>();
-        stable_join_locals
-            .retain(|name, value| arms[1].execution.core.state.locals().get(name) == Some(value));
         let sibling_join_states: [&CState; 2] =
             [&arms[0].execution.core.state, &arms[1].execution.core.state];
         // Both arms abstract from the higher of their two counters: their
@@ -907,7 +896,6 @@ impl<'a> Proof<'a> {
                 &mut execution,
                 context,
                 &mut facts,
-                &stable_join_locals,
                 Some(&sibling_join_states),
                 join_next_kernel_variable,
                 true)
@@ -1079,7 +1067,6 @@ impl<'a> Proof<'a> {
                     [&arms[0].execution.core, &arms[1].execution.core],
                     context.function,
                     context.arguments,
-                    &stable_join_locals,
                     &interface_specs,
                     &interface_resource_specs,
                     arm_effect_facts,
@@ -1097,7 +1084,6 @@ impl<'a> Proof<'a> {
                 ],
                 context.function,
                 context.arguments,
-                &stable_join_locals,
                 &interface_specs,
                 &interface_resource_specs,
                 arm_effect_facts,

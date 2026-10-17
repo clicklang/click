@@ -5229,13 +5229,37 @@ fn a_rust_trait_implementation_inherits_its_interface() {
             "<shapes::Circle as shapes::Shape>::area.interface_ensures_0"
         );
     }
+    // An implementation naming its parameters otherwise reads the
+    // interface's clauses with its own names.
     let renamed = implementation.replace("scale", "s");
-    let error = parser::parse(&format!("verifying \"shapes.rs\"; {interface} {renamed}"))
-        .expect_err("an implementation renaming its parameters cannot inherit");
+    let file = parser::parse(&format!("verifying \"shapes.rs\"; {interface} {renamed}"))
+        .expect("an implementation renaming its parameters inherits");
+    let expected = parser::parse(&format!(
+        "verifying \"shapes.rs\"; {}",
+        interface.replace("scale", "s")
+    ))
+    .expect("the renamed interface parses");
+    let expected = expected
+        .function_blocks()
+        .iter()
+        .find(|block| block.is_external())
+        .unwrap();
+    let circle = file
+        .function_blocks()
+        .iter()
+        .find(|block| !block.is_external())
+        .unwrap();
+    assert_eq!(circle.requires(), expected.requires());
+    assert_eq!(circle.ensures()[1].ensure(), expected.ensures()[0].ensure());
+    let error = parser::parse(&format!(
+        "verifying \"shapes.rs\"; {interface} {}",
+        implementation.replace("scale: i32", "scale: i32, extra: i32")
+    ))
+    .expect_err("an implementation with other parameters cannot inherit");
     assert!(
         error
             .message()
-            .contains("names its parameters as the trait's interface does"),
+            .contains("takes the parameters the trait's interface does"),
         "{}",
         error.message()
     );
