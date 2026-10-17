@@ -537,6 +537,9 @@ pub struct ClickFile {
     /// The module whose proofs this resolved file selects. Imported modules
     /// contribute declarations, never executable proof targets.
     entry_module: Option<String>,
+    /// Where the parser read the entry module's declarations and proofs, so
+    /// a tool addresses the source through what the parser read.
+    source_spans: std::sync::Arc<parser::SourceSpans>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -957,6 +960,8 @@ impl ResourceWitness {
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct TheoremDefinition {
+    /// Where the parser read this theorem's clauses.
+    body: parser::DeclarationBody,
     name: String,
     type_parameters: Vec<String>,
     parameters: Vec<FunctionParameter>,
@@ -1315,6 +1320,8 @@ struct ClickFunctionType {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct FunctionBlock {
+    /// Where the parser read this block's clauses.
+    body: parser::DeclarationBody,
     /// C objects visible in this declaration, supplied by the source frontend.
     c_object_names: std::sync::Arc<BTreeSet<String>>,
     signature: FunctionSignature,
@@ -2334,6 +2341,7 @@ pub(crate) fn clone_theorem_definition_iteratively(
     #[cfg(test)]
     THEOREM_DEFINITION_COPIES.with(|copies| copies.set(copies.get() + 1));
     TheoremDefinition {
+        body: theorem.body.clone(),
         name: theorem.name.clone(),
         type_parameters: theorem.type_parameters.clone(),
         parameters: theorem.parameters.clone(),
@@ -6379,6 +6387,11 @@ impl ClickFile {
         &self.library_imports
     }
 
+    /// Where the parser read the entry module's declarations and proofs.
+    pub(in crate::surface) fn source_spans(&self) -> &parser::SourceSpans {
+        &self.source_spans
+    }
+
     pub(crate) fn entry_module(&self) -> Option<&str> {
         self.entry_module.as_deref()
     }
@@ -6613,6 +6626,11 @@ impl CompositeResourceBody {
 }
 
 impl TheoremDefinition {
+    /// Where the parser read this theorem's clauses.
+    pub(in crate::surface) fn parsed_body(&self) -> &parser::DeclarationBody {
+        &self.body
+    }
+
     pub fn name(&self) -> &str {
         &self.name
     }
@@ -6743,6 +6761,11 @@ impl ContractDefinition {
 }
 
 impl FunctionBlock {
+    /// Where the parser read this block's clauses.
+    pub(in crate::surface) fn parsed_body(&self) -> &parser::DeclarationBody {
+        &self.body
+    }
+
     pub fn signature(&self) -> &FunctionSignature {
         &self.signature
     }

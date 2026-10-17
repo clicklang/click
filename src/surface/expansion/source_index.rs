@@ -53,11 +53,11 @@ impl ProofSourceIndex {
         inputs: &ProgramInputs<'_>,
     ) -> Result<Self, ClickError> {
         let sources = CSourceContext::of(inputs)?.with_click_project(project);
-        let (file, blocks) = resolve_click_project_context_with_proof_blocks(project, &sources)?;
+        let file = resolve_click_project_context(project, &sources)?;
         let source = project.entry_source().ok_or_else(|| {
             ClickError::new(format!("missing entry module `{}`", project.entry()))
         })?;
-        let mut index = Self::build(source, Some(&blocks))?;
+        let mut index = Self::build(source, Some(&file.source_spans().proof_blocks))?;
         index.file = Some(file);
         Ok(index)
     }

@@ -509,7 +509,6 @@ fn empty_library_file() -> Result<ClickFile, ClickError> {
         &[],
         Default::default(),
     )
-    .map(|(file, _)| file)
 }
 
 /// Parses each module in library order with the declarations of the modules
@@ -540,7 +539,7 @@ fn load_library_modules(modules: &[(&str, &str)]) -> Result<Vec<LibraryModule>, 
             )
             .collect::<Vec<_>>();
         let resources = context.resource_definitions().iter().collect::<Vec<_>>();
-        let (module, _) = parser::parse_file_items_for_module(
+        let module = parser::parse_file_items_for_module(
             source,
             identity,
             0,
