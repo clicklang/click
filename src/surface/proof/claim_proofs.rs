@@ -3541,7 +3541,12 @@ pub(super) fn finish_ordered_proof<'a>(
                                     );
                                 }
                             }
-                            PostExecutionTactic::Rewrite(surface_equality) => {
+                            PostExecutionTactic::Leaf(
+                                tactic @ ProofTactic::Rewrite(surface_equality),
+                            ) => {
+                                let rewrite_step = SourceContext::PostExecution
+                                    .leaf_step(tactic)
+                                    .expect("a post-execution leaf converts to its checked step");
                                 let CFunctionOutcome::Return { .. } = &outcome else {
                                     return Err(ClickError::new(format!(
                                         "`{proof_label}` path {path_index}, tactic {tactic_index}: `rewrite` requires a return outcome"
@@ -3608,9 +3613,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                     if let Some((rewritten, checkpoint)) =
                                         &rewritten_claim_proofs[claim_index]
                                     {
-                                        match rewritten.apply_step(ProofStep::Rewrite(
-                                            surface_equality.clone(),
-                                        )) {
+                                        match rewritten.apply_step(rewrite_step.clone()) {
                                             Ok(proof) => {
                                                 let certificate =
                                                     proof.certificate_since(checkpoint)?;
@@ -3625,9 +3628,10 @@ pub(super) fn finish_ordered_proof<'a>(
                                     } else {
                                         let evolving = required_outcome(&outcome_proof)?;
                                         for goal in &goal_candidates {
-                                            match goal.focus(evolving, surface_goal)?.apply_step(
-                                                ProofStep::Rewrite(surface_equality.clone()),
-                                            ) {
+                                            match goal
+                                                .focus(evolving, surface_goal)?
+                                                .apply_step(rewrite_step.clone())
+                                            {
                                                 Ok(proof) => {
                                                     let certificate = proof.certificate();
                                                     rewritten_result = Some((
