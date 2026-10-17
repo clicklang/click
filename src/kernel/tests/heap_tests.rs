@@ -1074,20 +1074,12 @@ fn interface_heap_join_retains_potential_live_allocation() {
             .expect("the retained arm should be able to free the allocation"),
     );
     let siblings = [&freed, &retained];
-    let freed_join = crate::kernel::abstract_c_state_for_interface_join_across(
-        &freed,
-        &siblings,
-        &BTreeMap::new(),
-        0,
-    )
-    .expect("the freed arm should abstract");
-    let retained_join = crate::kernel::abstract_c_state_for_interface_join_across(
-        &retained,
-        &siblings,
-        &BTreeMap::new(),
-        0,
-    )
-    .expect("the retained arm should abstract");
+    let freed_join =
+        crate::kernel::abstract_c_state_for_interface_join_across(&freed, &siblings, 0)
+            .expect("the freed arm should abstract");
+    let retained_join =
+        crate::kernel::abstract_c_state_for_interface_join_across(&retained, &siblings, 0)
+            .expect("the retained arm should abstract");
 
     assert_eq!(freed_join, retained_join);
     let freed_join = freed_join.state;
