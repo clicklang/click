@@ -84,6 +84,11 @@ impl SourceContext {
                     | ProofTactic::Witness(_)
                     | ProofTactic::Intro
                     | ProofTactic::IntroAs(_)
+                    | ProofTactic::Assumption
+                    | ProofTactic::Normalize
+                    | ProofTactic::NormalizeUsing(_)
+                    | ProofTactic::ArithmeticUsing(_)
+                    | ProofTactic::ArithmeticCertificate(_)
             ),
         }
     }

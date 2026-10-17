@@ -2368,17 +2368,21 @@ pub(super) fn finish_ordered_proof<'a>(
                             outcome_proof =
                                 outcome_proof.map(|proof| proof.with_surface_local_scope(bindings));
                         }
-                        if !matches!(deferred.tactic, PostExecutionTactic::Assumption) {
+                        if !matches!(
+                            deferred.tactic,
+                            PostExecutionTactic::Leaf(ProofTactic::Assumption)
+                        ) {
                             assumption_transition_attempted = false;
                         }
                         if !matches!(
                             deferred.tactic,
-                            PostExecutionTactic::Assumption
-                                | PostExecutionTactic::Normalize
-                                | PostExecutionTactic::NormalizeUsing(_)
-                                | PostExecutionTactic::ArithmeticUsing(_)
-                                | PostExecutionTactic::ArithmeticCertificate(_)
-                                | PostExecutionTactic::Both(_)
+                            PostExecutionTactic::Leaf(
+                                ProofTactic::Assumption
+                                    | ProofTactic::Normalize
+                                    | ProofTactic::NormalizeUsing(_)
+                                    | ProofTactic::ArithmeticUsing(_)
+                                    | ProofTactic::ArithmeticCertificate(_)
+                            ) | PostExecutionTactic::Both(_)
                         ) {
                             return_claim_context = None;
                         }
@@ -2525,78 +2529,6 @@ pub(super) fn finish_ordered_proof<'a>(
                                     *tactic_index,
                                     tactic.clone(),
                                 );
-                            }
-                            PostExecutionTactic::Leaf(tactic) => {
-                                // A predicate unfold and a theorem application
-                                // read the returned value.
-                                let return_operation = match tactic {
-                                    ProofTactic::UnfoldPredicate(_) => Some("predicate unfolding"),
-                                    ProofTactic::ApplyTheoremUsing { .. } => {
-                                        Some("theorem application")
-                                    }
-                                    _ => None,
-                                };
-                                if let Some(operation) = return_operation
-                                    && !matches!(outcome, CFunctionOutcome::Return { .. })
-                                {
-                                    return Err(ClickError::new(format!(
-                                        "`{proof_label}` path {path_index}, tactic {tactic_index}: {operation} requires a return outcome"
-                                    )));
-                                }
-                                let step = SourceContext::PostExecution
-                                    .leaf_step(tactic)
-                                    .expect("a post-execution leaf converts to its checked step");
-                                let evolving = outcome_proof.take().ok_or_else(|| ClickError::new(
-                                    format!("`{proof_label}` path {path_index}, tactic {tactic_index}: the typed outcome goal for this path is unavailable")
-                                ))?;
-                                let before = evolving.checkpoint();
-                                let applied = evolving.apply_step(step)?;
-                                if matches!(
-                                    tactic,
-                                    ProofTactic::FoldResource(_) | ProofTactic::UnfoldResource(_)
-                                ) {
-                                    has_return_resource_rewrite |=
-                                        applied.execution().is_some_and(|execution| {
-                                            execution
-                                                .core
-                                                .has_checked_return_resource_rewrite(path_index)
-                                        });
-                                }
-                                // A resource operation changes the outcome's
-                                // resources; the other leaves only add facts.
-                                if matches!(
-                                    tactic,
-                                    ProofTactic::FoldResource(_)
-                                        | ProofTactic::UnfoldResource(_)
-                                        | ProofTactic::ConstructResource(_)
-                                ) {
-                                    outcome = applied.focused_outcome_snapshot()?;
-                                }
-                                if let ProofTactic::UnfoldPredicate(name) = tactic
-                                    && !unfolded_predicates.contains(name)
-                                {
-                                    unfolded_predicates.push(name.clone());
-                                }
-                                // `apply using` keeps its written spelling in
-                                // the expansion; every other leaf records its
-                                // checked certificate.
-                                let surface_tactics =
-                                    if matches!(tactic, ProofTactic::ApplyTheoremUsing { .. }) {
-                                        vec![tactic.clone()]
-                                    } else {
-                                        applied.certificate_since(&before)?.to_proof_tactics()
-                                    };
-                                outcome_proof = Some(applied);
-                                for tactic in surface_tactics {
-                                    record_post_execution_surface_tactic(
-                                        &mut path_surface_post_tactics,
-                                        &mut path_deferred_capture_tactics,
-                                        path_capture,
-                                        post_execution_index,
-                                        *tactic_index,
-                                        tactic,
-                                    );
-                                }
                             }
                             PostExecutionTactic::CloseOpen {
                                 resource,
@@ -2929,7 +2861,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                     );
                                 }
                             }
-                            PostExecutionTactic::Assumption => {
+                            PostExecutionTactic::Leaf(ProofTactic::Assumption) => {
                                 if continue_claim_existence_proof(
                                     &mut existence_proof,
                                     &mut introduced_claim_scope,
@@ -3223,45 +3155,31 @@ pub(super) fn finish_ordered_proof<'a>(
                                     );
                                 }
                             }
-                            PostExecutionTactic::Normalize
-                            | PostExecutionTactic::NormalizeUsing(_)
-                            | PostExecutionTactic::ArithmeticUsing(_)
-                            | PostExecutionTactic::ArithmeticCertificate(_)
+                            PostExecutionTactic::Leaf(
+                                ProofTactic::Normalize
+                                | ProofTactic::NormalizeUsing(_)
+                                | ProofTactic::ArithmeticUsing(_)
+                                | ProofTactic::ArithmeticCertificate(_),
+                            )
                             | PostExecutionTactic::Both(_) => {
                                 let closer_name = match post_tactic {
                                     PostExecutionTactic::Both(_) => "both",
-                                    PostExecutionTactic::ArithmeticUsing(_) => "arithmetic",
-                                    PostExecutionTactic::ArithmeticCertificate(_) => {
-                                        "arithmetic_certificate"
-                                    }
-                                    _ => "normalize",
+                                    PostExecutionTactic::Leaf(tactic) => tactic_name(tactic),
+                                    _ => unreachable!("matched a closer above"),
                                 };
-                                let normalization_step = match post_tactic {
-                                    PostExecutionTactic::NormalizeUsing(premises) => {
-                                        ProofStep::NormalizeUsing(premises.clone())
-                                    }
-                                    PostExecutionTactic::ArithmeticUsing(premises) => {
-                                        ProofStep::ArithmeticUsing(premises.clone())
-                                    }
-                                    PostExecutionTactic::ArithmeticCertificate(certificate) => {
-                                        ProofStep::ArithmeticCertificate(certificate.clone())
-                                    }
-                                    _ => ProofStep::Normalize,
-                                };
-                                let continued_tactic = match post_tactic {
-                                    PostExecutionTactic::NormalizeUsing(premises) => {
-                                        ProofTactic::NormalizeUsing(premises.clone())
-                                    }
-                                    PostExecutionTactic::ArithmeticUsing(premises) => {
-                                        ProofTactic::ArithmeticUsing(premises.clone())
-                                    }
-                                    PostExecutionTactic::ArithmeticCertificate(certificate) => {
-                                        ProofTactic::ArithmeticCertificate(certificate.clone())
-                                    }
+                                // The step this closer applies, and the tactic
+                                // that records it, are the written tactic's.
+                                let (normalization_step, continued_tactic) = match post_tactic {
+                                    PostExecutionTactic::Leaf(tactic) => (
+                                        SourceContext::PostExecution.leaf_step(tactic).expect(
+                                            "a post-execution leaf converts to its checked step",
+                                        ),
+                                        tactic.clone(),
+                                    ),
                                     PostExecutionTactic::Both(both) => {
-                                        ProofTactic::Both(both.clone())
+                                        (ProofStep::Normalize, ProofTactic::Both(both.clone()))
                                     }
-                                    _ => ProofTactic::Normalize,
+                                    _ => unreachable!("matched a closer above"),
                                 };
                                 if continue_claim_existence_proof(
                                     &mut existence_proof,
@@ -3452,8 +3370,8 @@ pub(super) fn finish_ordered_proof<'a>(
                                             focused
                                                 .at_source_tactic(*source_index)
                                                 .apply_both_source(both)
-                                        } else if let PostExecutionTactic::ArithmeticUsing(
-                                            surface_premises,
+                                        } else if let PostExecutionTactic::Leaf(
+                                            ProofTactic::ArithmeticUsing(surface_premises),
                                         ) = post_tactic
                                         {
                                             let kernels = surface_premises
@@ -4471,6 +4389,81 @@ pub(super) fn finish_ordered_proof<'a>(
                                 return Err(ClickError::new(format!(
                                     "`{proof_label}` path {path_index}, tactic {tactic_index}: checked outcome `simp` did not retain a complete transition for every pending claim{detail}",
                                 )));
+                            }
+                            // Every other leaf advances the path's outcome
+                            // proof; the leaves that refine or close a claim
+                            // have their own arms above.
+                            PostExecutionTactic::Leaf(tactic) => {
+                                // A predicate unfold and a theorem application
+                                // read the returned value.
+                                let return_operation = match tactic {
+                                    ProofTactic::UnfoldPredicate(_) => Some("predicate unfolding"),
+                                    ProofTactic::ApplyTheoremUsing { .. } => {
+                                        Some("theorem application")
+                                    }
+                                    _ => None,
+                                };
+                                if let Some(operation) = return_operation
+                                    && !matches!(outcome, CFunctionOutcome::Return { .. })
+                                {
+                                    return Err(ClickError::new(format!(
+                                        "`{proof_label}` path {path_index}, tactic {tactic_index}: {operation} requires a return outcome"
+                                    )));
+                                }
+                                let step = SourceContext::PostExecution
+                                    .leaf_step(tactic)
+                                    .expect("a post-execution leaf converts to its checked step");
+                                let evolving = outcome_proof.take().ok_or_else(|| ClickError::new(
+                                    format!("`{proof_label}` path {path_index}, tactic {tactic_index}: the typed outcome goal for this path is unavailable")
+                                ))?;
+                                let before = evolving.checkpoint();
+                                let applied = evolving.apply_step(step)?;
+                                if matches!(
+                                    tactic,
+                                    ProofTactic::FoldResource(_) | ProofTactic::UnfoldResource(_)
+                                ) {
+                                    has_return_resource_rewrite |=
+                                        applied.execution().is_some_and(|execution| {
+                                            execution
+                                                .core
+                                                .has_checked_return_resource_rewrite(path_index)
+                                        });
+                                }
+                                // A resource operation changes the outcome's
+                                // resources; the other leaves only add facts.
+                                if matches!(
+                                    tactic,
+                                    ProofTactic::FoldResource(_)
+                                        | ProofTactic::UnfoldResource(_)
+                                        | ProofTactic::ConstructResource(_)
+                                ) {
+                                    outcome = applied.focused_outcome_snapshot()?;
+                                }
+                                if let ProofTactic::UnfoldPredicate(name) = tactic
+                                    && !unfolded_predicates.contains(name)
+                                {
+                                    unfolded_predicates.push(name.clone());
+                                }
+                                // `apply using` keeps its written spelling in
+                                // the expansion; every other leaf records its
+                                // checked certificate.
+                                let surface_tactics =
+                                    if matches!(tactic, ProofTactic::ApplyTheoremUsing { .. }) {
+                                        vec![tactic.clone()]
+                                    } else {
+                                        applied.certificate_since(&before)?.to_proof_tactics()
+                                    };
+                                outcome_proof = Some(applied);
+                                for tactic in surface_tactics {
+                                    record_post_execution_surface_tactic(
+                                        &mut path_surface_post_tactics,
+                                        &mut path_deferred_capture_tactics,
+                                        path_capture,
+                                        post_execution_index,
+                                        *tactic_index,
+                                        tactic,
+                                    );
+                                }
                             }
                         }
                         if crate::instrumentation::deadline_exceeded() {
