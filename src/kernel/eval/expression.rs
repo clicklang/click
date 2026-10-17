@@ -485,12 +485,16 @@ pub(in crate::kernel) fn evaluate_c_expression(
 thread_local! {
     /// How many specification-fragment evaluations enclose the current read.
     static SPECIFICATION_READS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+    /// How many evaluations of a specification's C operands, such as a
+    /// resource argument, enclose the current read.
+    static SPECIFICATION_ACCESSES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
 }
 
 /// Marks the reads made while it lives as specification reads. A
 /// specification names values the program produced; reading one states
-/// nothing new about it, so it files no range and gains no guard.
-pub(in crate::kernel) struct SpecificationReadScope(());
+/// nothing new about it, so it files no range and gains no guard. Its reads
+/// are also specification accesses ([`SpecificationAccessScope`]).
+pub(in crate::kernel) struct SpecificationReadScope(SpecificationAccessScope);
 
 impl SpecificationReadScope {
     pub(in crate::kernel) fn is_active() -> bool {
@@ -499,13 +503,38 @@ impl SpecificationReadScope {
 
     pub(in crate::kernel) fn enter() -> Self {
         SPECIFICATION_READS.with(|depth| depth.set(depth.get() + 1));
-        Self(())
+        Self(SpecificationAccessScope::enter())
     }
 }
 
 impl Drop for SpecificationReadScope {
     fn drop(&mut self) {
         SPECIFICATION_READS.with(|depth| depth.set(depth.get() - 1));
+    }
+}
+
+/// Marks the reads made while it lives as a specification's, such as the
+/// reads of a resource argument or a contract's memory operand. Only C
+/// accesses carry an access type: a specification reads memory as a value,
+/// so the strict-aliasing check does not apply to it
+/// (`design/effective-types.md`). The C program's own accesses are checked
+/// where it makes them.
+pub(in crate::kernel) struct SpecificationAccessScope(());
+
+impl SpecificationAccessScope {
+    pub(in crate::kernel) fn enter() -> Self {
+        SPECIFICATION_ACCESSES.with(|depth| depth.set(depth.get() + 1));
+        Self(())
+    }
+
+    fn is_active() -> bool {
+        SPECIFICATION_ACCESSES.with(|depth| depth.get() > 0)
+    }
+}
+
+impl Drop for SpecificationAccessScope {
+    fn drop(&mut self) {
+        SPECIFICATION_ACCESSES.with(|depth| depth.set(depth.get() - 1));
     }
 }
 
@@ -2707,8 +2736,11 @@ fn read_c_lvalue_paths_without_ranges(
                     assumptions,
                     state.resources(),
                 )
-                .or_else(|| effective_type_refusal(&state.memory, pointer, &lvalue))
-                {
+                .or_else(|| {
+                    (!SpecificationAccessScope::is_active())
+                        .then(|| effective_type_refusal(&state.memory, pointer, &lvalue))
+                        .flatten()
+                }) {
                     return Ok(vec![CExpressionPath {
                         outcome: CExpressionOutcome::UndefinedBehavior(refusal),
                         facts,

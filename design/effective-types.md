@@ -210,6 +210,16 @@ allowed cases:
     rewriting and premise matching.
   - Generic type arguments (`List<struct T*>`), quantified pointer binders,
     and resource fields of C pointer type still carry no class.
+- **Specification reads:** done.
+  - A contract operand the kernel evaluates as a C expression, such as a
+    resource argument or a memory operand, is evaluated under
+    `SpecificationAccessScope`, and so is a C fragment of a specification
+    proposition. Its loads skip the check. Before, such a load carried no
+    access class, and the kernel's fallback gave it its kernel type's class:
+    `((struct sized_node*)(void*)old)->size` as a resource argument read as
+    `int` and was refused against the `struct rb_node` its parameter
+    designates, which stopped `examples/rbtree-augmented` wherever a contract
+    names a node's cached count.
 - **Step 4 (project optimization level):** done, with one exception the
   maintainer approved on 2026-10-17. A project names `optimization`, `-O2` by
   default, and every C unit is prepared at it; the Linux profile no longer
