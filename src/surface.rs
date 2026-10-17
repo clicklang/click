@@ -2776,7 +2776,7 @@ pub enum ContractExpression {
     SequenceConcat(Box<ContractExpression>, Box<ContractExpression>),
     /// A C expression fragment appearing inside Surface Click.
     CFragment(CExpression),
-    /// A C unary operation whose operand retains explicit binding syntax.
+    /// A C unary operation whose operand retains source and binding syntax.
     /// Scalar casts and typed loads may also wrap a pure or historical expression. `operand` is authoritative;
     /// in that case `lowered` retains the cast metadata with a placeholder, and
     /// conversion back to a C fragment must rebuild from `operand` or refuse.
