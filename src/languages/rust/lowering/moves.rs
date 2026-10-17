@@ -1005,7 +1005,13 @@ mod tests {
         use crate::languages::rust::schema::{Field, Place, Span};
         fn count(s: &CStatement) -> usize {
             match s {
-                CStatement::Seq(a, b) => 1 + count(a) + count(b),
+                CStatement::Seq(statements) => {
+                    statements.len() - 1
+                        + statements
+                            .iter()
+                            .map(|statement| count(statement))
+                            .sum::<usize>()
+                }
                 CStatement::If {
                     then_branch,
                     else_branch,
@@ -1178,7 +1184,10 @@ mod tests {
             assert!(emitted.iter().all(|b| *b));
             fn assertions(s: &CStatement) -> usize {
                 match s {
-                    CStatement::Seq(a, b) => assertions(a) + assertions(b),
+                    CStatement::Seq(statements) => statements
+                        .iter()
+                        .map(|statement| assertions(statement))
+                        .sum(),
                     CStatement::If {
                         then_branch,
                         else_branch,

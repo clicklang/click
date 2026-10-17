@@ -993,9 +993,9 @@ fn candidate_nested_body_call_retains_inner_and_outer_evidence() {
         CType::Int32,
         "candidate_nested_outer",
         vec![c_parameter("p", CType::Int32Pointer)],
-        CStatement::Seq(
+        CStatement::seq(
             Arc::new(c_declare("result", CType::Int32)),
-            Arc::new(CStatement::Seq(
+            Arc::new(CStatement::seq(
                 Arc::new(c_call_assign("result", inner.name(), vec![c_variable("p")])),
                 Arc::new(c_return(c_variable("result"))),
             )),

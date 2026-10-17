@@ -1763,7 +1763,7 @@ pub(super) fn prepare_call_outcome_split(
     prepared.core.frontier.execution_start_state = Some(execution_start_state.clone());
     prepared.core.frontier.position = FrontierPosition::StatementEntry {
         remaining: match remaining.clone() {
-            Some(tail) => Arc::new(CStatement::Seq(Arc::new(statement.clone()), Arc::new(tail))),
+            Some(tail) => Arc::new(CStatement::seq(Arc::new(statement.clone()), Arc::new(tail))),
             None => Arc::new(statement.clone()),
         },
     };
@@ -2284,10 +2284,11 @@ fn execute_step_from_frontier_position_selecting_path(
                 execution.core.frontier.position,
                 FrontierPosition::FunctionEntry
             )
-            && let CStatement::Seq(call, tail) = &step_statement
-            && matches!(tail.as_ref(), CStatement::Return(_))
+            && let CStatement::Seq(statements) = &step_statement
+            && statements.len() == 2
+            && matches!(statements.rest().as_ref(), CStatement::Return(_))
         {
-            call.as_ref()
+            statements.first().as_ref()
         } else {
             &step_statement
         };
@@ -3762,11 +3763,14 @@ pub(super) fn split_next_source_operation(
     statement: &CStatement,
 ) -> Result<(CStatement, Option<CStatement>), String> {
     match statement {
-        CStatement::Seq(first, second) => {
-            let (source_statement, first_remaining) = split_next_source_operation(first)?;
+        CStatement::Seq(statements) => {
+            let (source_statement, first_remaining) =
+                split_next_source_operation(statements.first())?;
             let remaining = match first_remaining {
-                Some(first_remaining) => c_seq(first_remaining, second.as_ref().clone()),
-                None => second.as_ref().clone(),
+                Some(first_remaining) => {
+                    CStatement::Seq(statements.with_statement(0, Arc::new(first_remaining)))
+                }
+                None => statements.rest().as_ref().clone(),
             };
             Ok((source_statement, Some(remaining)))
         }
@@ -3906,7 +3910,7 @@ fn describe_call_bindings(statement: &CStatement, environment: &CExecutionEnviro
 /// condition, a body by its operation.
 pub(super) fn describe_statement_head(statement: &CStatement) -> String {
     match statement {
-        CStatement::Seq(first, _) => describe_statement_head(first),
+        CStatement::Seq(statements) => describe_statement_head(statements.first()),
         CStatement::EndScalarReference(_) => "borrow end".to_string(),
         CStatement::ScalarReferenceScope(_) => "borrow scope".to_string(),
         CStatement::Skip => "skip".to_string(),

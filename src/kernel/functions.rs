@@ -2310,8 +2310,9 @@ pub(crate) enum TacticApplicationRefusal {
 fn body_runs_no_code(body: &CStatement) -> bool {
     match body {
         CStatement::Return(CExpression::Value(CValue::Void)) => true,
-        CStatement::Seq(first, second) => {
-            matches!(first.as_ref(), CStatement::Skip) && body_runs_no_code(second)
+        CStatement::Seq(statements) => {
+            matches!(statements.first().as_ref(), CStatement::Skip)
+                && body_runs_no_code(&statements.rest())
         }
         _ => false,
     }
@@ -8481,9 +8482,12 @@ pub(crate) fn establish_resource_derived_loop_frames(
     };
     fn rewrite(statement: &mut CStatement, ranges: &[CMemoryRange]) {
         match statement {
-            CStatement::Seq(first, second) => {
-                rewrite(std::sync::Arc::make_mut(first), ranges);
-                rewrite(std::sync::Arc::make_mut(second), ranges);
+            CStatement::Seq(statements) => {
+                *statements = statements.map(|statement| {
+                    let mut statement = statement.clone();
+                    rewrite(std::sync::Arc::make_mut(&mut statement), ranges);
+                    statement
+                });
             }
             CStatement::If {
                 then_branch,
@@ -8530,9 +8534,9 @@ pub(crate) fn validate_resource_derived_loop_frames(
 ) -> ExecutionResult<Result<(), String>> {
     fn has_inherited_loop_frame(statement: &CStatement) -> bool {
         match statement {
-            CStatement::Seq(first, second) => {
-                has_inherited_loop_frame(first) || has_inherited_loop_frame(second)
-            }
+            CStatement::Seq(statements) => statements
+                .iter()
+                .any(|statement| has_inherited_loop_frame(statement)),
             CStatement::If {
                 then_branch,
                 else_branch,
@@ -8579,11 +8583,11 @@ pub(crate) fn validate_resource_derived_loop_frames(
             Ok(Ok(()))
         };
         match statement {
-            CStatement::Seq(first, second) => {
-                if let Err(error) = check_statement(first)? {
+            CStatement::Seq(statements) => {
+                if let Err(error) = check_statement(statements.first())? {
                     return Ok(Err(error));
                 }
-                check_statement(second)
+                check_statement(&statements.rest())
             }
             CStatement::If {
                 then_branch,
