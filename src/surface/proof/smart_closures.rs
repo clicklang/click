@@ -7820,10 +7820,24 @@ impl<'a> Proof<'a> {
                 // composition authority, so use the same checked availability
                 // query without publishing unrelated member pairs.
                 (proof.facts().available_across_effects(&kernel, &[])
+                    || proof.facts().listed_premise_available(&kernel, &[], true)
                     || normalizes_context_free(&kernel))
                 .then_some((kernel, surface.clone()))
             })
             .collect::<Option<Vec<_>>>()?;
+        // A listed pointer value equality is planned with as its address
+        // equality: no goal here names a designation, and the steps a plan
+        // writes re-lower the whole equality, part by part available.
+        let premise_pairs = premise_pairs
+            .into_iter()
+            .map(|(kernel, surface)| {
+                match crate::kernel::proof::equality_rewrite::pointer_value_equality_address(&kernel)
+                {
+                    Some(address) => (address.clone(), surface),
+                    None => (kernel, surface),
+                }
+            })
+            .collect::<Vec<_>>();
         // A listed equality under a definedness guard the list does not
         // state: prove the guard from the other listed premises, extract the
         // consequent, and continue from the list with the consequent in the
@@ -7872,14 +7886,15 @@ impl<'a> Proof<'a> {
         if crate::kernel::proof::fact_reasoning::is_single_normalization_condition(goal)
             || !crate::kernel::proof::term_rewrite::TermRewrite::conditional_guards(goal).is_empty()
         {
+            let condition = |kernel: &Proposition| !condition_polarity_forms(kernel).is_empty();
             let conditions = premise_pairs
                 .iter()
-                .filter(|&(kernel, _surface)| !condition_polarity_forms(kernel).is_empty())
+                .filter(|&(kernel, _surface)| condition(kernel))
                 .map(|(_kernel, surface)| surface.clone())
                 .collect::<Vec<_>>();
             let condition_kernels = premise_pairs
                 .iter()
-                .filter(|(kernel, _)| !condition_polarity_forms(kernel).is_empty())
+                .filter(|(kernel, _)| condition(kernel))
                 .map(|(kernel, _)| kernel.clone())
                 .collect::<Vec<_>>();
             // NormalizeUsing can query its ambient graph. Restricted search
