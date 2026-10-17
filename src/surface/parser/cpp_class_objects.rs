@@ -625,7 +625,16 @@ fn rewrite_function(
             .iter()
             .map(|(function, _)| (function.clone(), definer.definitions[function].clone()))
             .collect::<Vec<_>>();
-        let memory = at(&position, vec![ident("owns"), Token::Star, ident("this")]);
+        // A `const` method only views its memory, so a caller keeps every
+        // field across the call, not only the functions' definitions.
+        let memory = at(
+            &position,
+            vec![
+                ident(if head.is_const { "views" } else { "owns" }),
+                Token::Star,
+                ident("this"),
+            ],
+        );
         let own_clauses = split_clauses(&source[head.body_open + 1..head.body_close])
             .iter()
             .map(|clause| read_objects(on_memory(clause, definer, &functions, head.is_const)))
@@ -783,7 +792,8 @@ fn rewrite_function(
 /// reference to `class` becomes a reference to its object class, and back:
 /// the pack consumes the class's memory and produces the object, whose
 /// fields are the class's definitions on that memory; the unpack returns
-/// the memory, whose definitions are the object's fields.
+/// the memory, whose definitions are the object's fields. A `const`
+/// reference's pair leaves the memory with the caller, viewed.
 fn coercion_contracts(
     class: &str,
     definer: &DefiningClass,
@@ -874,6 +884,64 @@ fn coercion_contracts(
         tokens.extend(field_read("object", function, position));
         tokens.extend(at(position, vec![Token::RParen, Token::Semicolon]));
     }
+    tokens.push((Token::RBrace, position.clone()));
+    // Where the reference is `const`, the memory stays the caller's, lent
+    // to a resource the pack produces beside the object: while the callee
+    // holds the object, nothing changes the memory or hands it over again,
+    // so the caller keeps every field. The unpack gives both up.
+    let lend = crate::languages::cpp::names::object_lend_name(class, root);
+    let lent = |verb: &str| {
+        at(
+            position,
+            vec![
+                ident(verb),
+                ident(&lend),
+                Token::LParen,
+                ident("object"),
+                Token::RParen,
+                Token::Semicolon,
+            ],
+        )
+    };
+    tokens.extend(at(
+        position,
+        vec![
+            ident("resource"),
+            ident(&lend),
+            Token::LParen,
+            ident("object"),
+            Token::Colon,
+            ident("struct"),
+            ident(class),
+            Token::Star,
+            Token::RParen,
+            Token::LBrace,
+            ident("views"),
+            Token::Star,
+            ident("object"),
+            Token::Semicolon,
+            Token::RBrace,
+        ],
+    ));
+    tokens.extend(head(&crate::languages::cpp::names::object_const_pack_name(
+        class, root,
+    )));
+    tokens.extend(memory("views"));
+    tokens.extend(lent("produces"));
+    tokens.extend(instance("produces"));
+    for (function, _) in &object.functions {
+        tokens.push((ident("ensures"), position.clone()));
+        tokens.extend(field_read("object", function, position));
+        tokens.extend(at(position, vec![Token::EqualEqual, Token::LParen]));
+        tokens.extend(rename(&definer.definitions[function], &receiver));
+        tokens.extend(at(position, vec![Token::RParen, Token::Semicolon]));
+    }
+    tokens.push((Token::RBrace, position.clone()));
+    tokens.extend(head(
+        &crate::languages::cpp::names::object_const_unpack_name(class, root),
+    ));
+    tokens.extend(lent("consumes"));
+    tokens.extend(instance("consumes"));
     tokens.push((Token::RBrace, position.clone()));
     tokens
 }

@@ -707,35 +707,20 @@ fn advance_execution_proof_statement(
                     .filter_map(StructuralClause::label)
                     .map(str::to_string)
                     .collect::<Vec<_>>();
+                for label in &loop_labels {
+                    recorded_snapshots.label_loop(loop_index, label);
+                }
                 let entry_point = ProgramPointRef {
                     region: CodeRegionRef::Loop(loop_index),
                     kind: ProgramPointKind::Entry,
                 };
                 recorded_snapshots.insert(entry_point, context.state.clone());
-                for label in &loop_labels {
-                    recorded_snapshots.insert(
-                        ProgramPointRef {
-                            region: CodeRegionRef::Label(label.clone()),
-                            kind: ProgramPointKind::Entry,
-                        },
-                        context.state.clone(),
-                    );
-                }
                 if let CStatementOutcome::Normal(exit_state) = &transition.outcome {
                     let exit_point = ProgramPointRef {
                         region: CodeRegionRef::Loop(loop_index),
                         kind: ProgramPointKind::Exit,
                     };
                     recorded_snapshots.insert(exit_point.clone(), *exit_state.clone());
-                    for label in &loop_labels {
-                        recorded_snapshots.insert(
-                            ProgramPointRef {
-                                region: CodeRegionRef::Label(label.clone()),
-                                kind: ProgramPointKind::Exit,
-                            },
-                            *exit_state.clone(),
-                        );
-                    }
                     if let Some(loop_clause) = environment
                         .function_block
                         .structural_clauses()

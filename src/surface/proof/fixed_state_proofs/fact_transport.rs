@@ -3,20 +3,26 @@ use crate::kernel::ExecutionFactSource;
 use crate::surface::planning::proposition_search::PropositionSearch;
 use crate::surface::proof_diagnostics::render;
 
+/// Heuristic premise selection for the single-fact and load-variable routes.
+/// Bare `transport` first asks the fold and quantified frames with its source
+/// alone. This planner does not repeat them for every candidate subset. A frame
+/// that needs additional explicit premises can therefore be missed by search.
+/// The final `TransportUsing` step still checks all the ordinary frame routes.
 #[allow(clippy::too_many_arguments)]
 pub(in crate::surface::proof) fn plan_explicit_fact_transport(
     surface_source: &ClickProposition,
     source: &Proposition,
     target: &Proposition,
-    available: &[Proposition],
+    available_facts: &ProofFacts,
     effect_facts: &(impl ExecutionFactSource + ?Sized),
     parameter_binding: ParameterBinding<'_>,
     view: ExecutionView<'_>,
     state: &CState,
     spec_definitions: SpecDefinitions<'_>,
 ) -> Result<Vec<ClickProposition>, ClickError> {
+    let available = available_facts.to_vec();
     let mut selected = Vec::new();
-    if exact_fact_is_available(source, available) {
+    if exact_fact_is_available(source, &available) {
         selected.push((source.clone(), surface_source.clone()));
     }
     let check_premises = |selected: &[(Proposition, ClickProposition)]| {
@@ -106,14 +112,22 @@ pub(in crate::surface::proof) fn plan_explicit_fact_transport(
     if !checks(&selected) {
         // The written source and checked frame may already suffice. Do not
         // synthesize unrelated ambient facts before trying that proof.
+        let candidate_timing = crate::instrumentation::OperationTiming::new(
+            "surface",
+            "fact transport",
+            "explicit fact transport: candidate synthesis",
+        );
+        // Each candidate uses the same immutable availability indexes and
+        // lowering assumptions; rebuilding them per fact is quadratic.
         let candidates = available
             .iter()
             .filter_map(|kernel| {
-                checked_surface_comparison_fact_in_state(
+                checked_surface_comparison_fact_in_state_with_indexed_facts(
                     view,
                     kernel,
                     SurfaceFactMatch::AvailabilityEquivalent,
-                    available,
+                    available_facts,
+                    available_facts.assumptions(),
                     parameter_binding,
                     state,
                     spec_definitions,
@@ -122,6 +136,7 @@ pub(in crate::surface::proof) fn plan_explicit_fact_transport(
                 .map(|surface| (kernel.clone(), surface))
             })
             .collect::<Vec<_>>();
+        drop(candidate_timing);
         let rank = |proposition: &Proposition| match proposition {
             Proposition::CResourceSeparate { .. }
             | Proposition::CMemoryLoadable { .. }
@@ -151,6 +166,11 @@ pub(in crate::surface::proof) fn plan_explicit_fact_transport(
             .cloned()
             .collect::<Vec<_>>();
         if remaining.is_empty() || !checks(&complete) {
+            let _render_timing = crate::instrumentation::OperationTiming::new(
+                "surface",
+                "fact transport",
+                "explicit fact transport: planning refusal",
+            );
             let unavailable_count = available
                 .iter()
                 .filter(|fact| !candidates.iter().any(|(candidate, _)| candidate == *fact))

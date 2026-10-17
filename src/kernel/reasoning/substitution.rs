@@ -544,7 +544,7 @@ fn walk_c_function<S: VariableSubstitution + ?Sized>(function: &CFunction, s: &S
                 })
                 .collect(),
         ),
-        contract_interface: interface,
+        contract_interface: std::sync::Arc::new(interface),
         global_variables: function.global_variables.clone(),
         global_arrays: function.global_arrays.clone(),
         static_variables: function.static_variables.clone(),

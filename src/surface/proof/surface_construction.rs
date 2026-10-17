@@ -275,30 +275,6 @@ pub(super) enum SurfaceFactMatch {
     AvailabilityEquivalent,
 }
 
-pub(super) fn checked_surface_comparison_fact_in_state(
-    view: ExecutionView<'_>,
-    kernel: &Proposition,
-    match_kind: SurfaceFactMatch,
-    available: &[Proposition],
-    parameter_binding: ParameterBinding<'_>,
-    state: &CState,
-    spec_definitions: SpecDefinitions<'_>,
-) -> Result<ClickProposition, ClickError> {
-    let assumptions = assumptions_from_propositions(available);
-    checked_surface_comparison_fact_in_state_with_availability(
-        view,
-        kernel,
-        match_kind,
-        available,
-        &assumptions,
-        None,
-        false,
-        parameter_binding,
-        state,
-        spec_definitions,
-    )
-}
-
 #[allow(clippy::too_many_arguments)]
 pub(super) fn checked_surface_comparison_fact_in_state_with_indexed_facts(
     view: ExecutionView<'_>,

@@ -705,6 +705,10 @@ pub struct CppBaseReference {
     pub base_declaration_id: String,
     pub base_name: String,
     pub span: CppSpan,
+    /// The conversion's last edge yields a `const` base, as a `const Shape&`
+    /// argument does: the object is lent without the right to change it.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub is_const: bool,
 }
 
 impl CppProjection {

@@ -44,10 +44,11 @@ its file bindings once before spelling the fragment.
 A written code region resolves through `CodeRegionRef::resolve`, both in
 annotation lowering and in proof execution. A loop label binds once per
 execution path, through the structural clause of the `loop as label` that
-declared it; a second `loop as label` at another loop is refused. Recorded
-snapshots are still stored under each spelling of their program point,
-`loop(N)` and each label of that loop, and read back by spelling, so expansion
-can cite the label the proof wrote.
+declared it; a second `loop as label` at another loop is refused. A recorded
+snapshot is one entry per program point. The snapshot map keeps the labels the
+path gave its loops, files a loop's snapshot under its first label, and reads
+`loop(N)`, that label and any other label of the loop as the same entry, so
+expansion still cites the label the proof wrote.
 
 Proof binders in the parser go through `bind_proof_name`. The newest binding
 of a name wins in every reading position: a value binder hides a `have` fact
