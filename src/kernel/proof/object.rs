@@ -665,6 +665,34 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
         if available(proposition) || spelled_otherwise() {
             return Ok(self.closed_focused());
         }
+        // A negated conjunction follows from the negation of one conjunct:
+        // two pointers whose addresses differ are different values, whatever
+        // they designate. One lookup per conjunct.
+        if let Proposition::Not(body) = proposition
+            && matches!(body.as_ref(), Proposition::And(..))
+        {
+            let mut conjuncts = vec![body.as_ref()];
+            while let Some(conjunct) = conjuncts.pop() {
+                if let Proposition::And(left, right) = conjunct {
+                    conjuncts.push(right);
+                    conjuncts.push(left);
+                    continue;
+                }
+                let negated = match conjunct {
+                    Proposition::ConditionIs(condition, value) => {
+                        Proposition::ConditionIs(condition.clone(), !value)
+                    }
+                    other => Proposition::Not(Box::new(other.clone())),
+                };
+                let negations = [Proposition::Not(Box::new(conjunct.clone())), negated];
+                if negations
+                    .iter()
+                    .any(|negation| available(negation) || facts.contains(negation))
+                {
+                    return Ok(self.closed_focused());
+                }
+            }
+        }
         // A conjunction or disjunction that is not itself a fact still
         // follows directly from facts: every conjunct, or one disjunct.
         // That is a lookup per side of the goal and no derivation search.

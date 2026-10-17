@@ -7451,11 +7451,20 @@ fn pointer_designation_equality(
         (Some(left), Some(right)) => (left, right),
         // Equal to a pointer bounded only by its complete object, an opaque
         // extent designates that object.
+        // Each side's designation stays on its side of the equation.
         (Some(opaque), None) if opaque.is_opaque() => {
             return Some(opaque.complete_object_fact(right.pointer()));
         }
         (None, Some(opaque)) if opaque.is_opaque() => {
-            return Some(opaque.complete_object_fact(left.pointer()));
+            return Some(Proposition::ConditionIs(
+                ConditionTerm::PointerEqual(
+                    Box::new(crate::kernel::SubobjectExtent::complete_object_designation(
+                        left.pointer(),
+                    )),
+                    Box::new(opaque.start.clone()),
+                ),
+                true,
+            ));
         }
         _ => return None,
     };

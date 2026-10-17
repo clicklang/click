@@ -5586,7 +5586,14 @@ impl PureFactContext {
                 Proposition::ConditionIs(condition, value) => {
                     self.knows_condition_or_stated_separation(condition, !*value)
                 }
-                _ => false,
+                body => crate::kernel::SubobjectExtent::compared_pointer_values(body).is_some_and(
+                    |(left, right)| {
+                        self.equality_graph.knows_condition(
+                            &ConditionTerm::PointerEqual(Box::new(left), Box::new(right)),
+                            false,
+                        )
+                    },
+                ),
             },
             _ => false,
         }
@@ -5867,6 +5874,15 @@ impl PureFactContext {
                     self = self.assume_condition_uncharged(condition, !value);
                 }
                 body => {
+                    // Two different pointer values: their value terms differ.
+                    if let Some((left, right)) =
+                        crate::kernel::SubobjectExtent::compared_pointer_values(&body)
+                    {
+                        self = self.assume_condition_uncharged(
+                            ConditionTerm::PointerEqual(Box::new(left), Box::new(right)),
+                            false,
+                        );
+                    }
                     self.insert_proposition_fact(Proposition::Not(Box::new(body)));
                 }
             },

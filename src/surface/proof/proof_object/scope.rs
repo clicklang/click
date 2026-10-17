@@ -198,10 +198,16 @@ impl<'a> ProofScope<'a> {
                 }
             })
             .collect::<Result<crate::kernel::LoweringIntroductions, ClickError>>()?;
-        if matches!(
-            cursor,
-            Proposition::Implies(_, _) | Proposition::Not(_) | Proposition::ForAll { .. }
-        ) {
+        // A negated pointer value equality (`p != q`) is a claim, not a
+        // negation to introduce.
+        let pointer_disequality = matches!(cursor, Proposition::Not(body)
+            if crate::kernel::SubobjectExtent::compared_pointer_values(body).is_some());
+        if !pointer_disequality
+            && matches!(
+                cursor,
+                Proposition::Implies(_, _) | Proposition::Not(_) | Proposition::ForAll { .. }
+            )
+        {
             return Err(self
                 .root
                 .step_error("reported introductions omit a reachable nested `have` step"));

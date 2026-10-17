@@ -22,6 +22,9 @@ pub(crate) const SUBOBJECT_COVERS_PREDICATE_PREFIX: &str = "__click_subobject_co
 /// The pure function naming the complete object a pointer points into
 /// ([`SubobjectExtent::complete_object_designation`]).
 pub(crate) const COMPLETE_OBJECT_DESIGNATION: &str = "__click_complete_object";
+/// The pure function naming a pointer value by its address and designation
+/// ([`SubobjectExtent::pointer_value_term`]).
+pub(crate) const POINTER_VALUE: &str = "__click_pointer_value";
 pub(crate) const MUTEX_HELD_PREDICATE_NAME: &str = "__click_mutex_held";
 
 mod contracts;
@@ -1286,6 +1289,52 @@ impl SubobjectExtent {
             )),
             offset: PointerOffsetTerm::Constant(0),
         }
+    }
+
+    /// A pointer value as one term: its address and the start of the
+    /// designation it carries. Equal parts make equal values by congruence,
+    /// so a disequality of two values carries across equalities of either
+    /// part.
+    pub(crate) fn pointer_value_term(address: &Pointer, designation: &Pointer) -> Pointer {
+        let argument = |pointer: &Pointer| {
+            PureFunctionArgument::Value(CValue::Pointer(CPointerValue::new(
+                pointer.clone(),
+                CType::VoidPointer,
+            )))
+        };
+        Pointer {
+            block: PointerBlock::PureFunctionApplication(SharedPureApplication::intern(
+                POINTER_VALUE.to_string(),
+                vec![argument(address), argument(designation)],
+            )),
+            offset: PointerOffsetTerm::Constant(0),
+        }
+    }
+
+    /// The two values a pointer value equality with an opaque designation
+    /// compares, as [`Self::pointer_value_term`]s: `p == q` lowered as the
+    /// addresses' equality and the designations' starts' equality.
+    pub(crate) fn compared_pointer_values(equality: &Proposition) -> Option<(Pointer, Pointer)> {
+        let Proposition::And(address, designation) = equality else {
+            return None;
+        };
+        let (
+            Proposition::ConditionIs(ConditionTerm::PointerEqual(left, right), true),
+            Proposition::ConditionIs(ConditionTerm::PointerEqual(left_start, right_start), true),
+        ) = (address.as_ref(), designation.as_ref())
+        else {
+            return None;
+        };
+        let designates = |start: &Pointer| {
+            Self::opaque_start(start).is_some() || Self::is_complete_object_designation(start)
+        };
+        if !designates(left_start) && !designates(right_start) {
+            return None;
+        }
+        Some((
+            Self::pointer_value_term(left, left_start),
+            Self::pointer_value_term(right, right_start),
+        ))
     }
 
     /// Whether `pointer` is a [`Self::complete_object_designation`].
