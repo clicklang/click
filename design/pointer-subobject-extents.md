@@ -1,7 +1,7 @@
 # Pointer subobject extents: closing the scalar-subobject P1
 
 Status: approved 2026-10-15; decisions D1-D5 accepted as recommended. It targets
-[the scalar-subobject bug](../bugs/pointer-arithmetic-crosses-scalar-subobject.md)
+[the scalar-subobject bug](https://github.com/clicklang/click/blob/8d8a621cc/bugs/pointer-arithmetic-crosses-scalar-subobject.md)
 on current master. It does not revive the archived object model. It reuses that
 model's semantic conclusions (`design/cpp-object-model.md` at `e3d84a785`) where they
 still apply, but proposes a narrower representation.
@@ -249,8 +249,29 @@ none of that.
 ## Phase C: pointers of unseen formation
 
 Status: approved 2026-10-16; decisions E1-E3 accepted as recommended. Step 1
-and the evidence infrastructure of step 2 are delivered; no producer assigns
-an opaque extent yet (see *Evidence as built*).
+and the evidence infrastructure of step 2 are delivered (see *Evidence as
+built*).
+
+An audit on master `8d8a621cc` (2026-10-17) found every boundary route the
+steps target already refused, and the scalar-subobject bug is closed. The
+fixtures pin each route: the bug's two programs
+(`a_loaded_member_pointer_keeps_its_subobject_in_a_callee`,
+`an_incoming_one_past_pointer_keeps_its_subobject`), a call result
+(`a_member_pointer_returned_by_a_call_keeps_its_subobject`), a parameter read
+under a sibling's view (`a_member_pointer_parameter_keeps_its_subobject_beside_a_sibling_view`),
+a pointer a callee stores (`a_member_pointer_stored_by_a_callee_keeps_its_subobject`),
+a forwarded parameter (`a_forwarded_member_pointer_keeps_its_subobject`), a
+loop-carried cell (`a_member_pointer_kept_across_a_loop_keeps_its_subobject`)
+and C++ member references (`cpp_a_member_reference_parameter_keeps_its_subobject`,
+`cpp_a_member_reference_returned_by_a_call_keeps_its_subobject`). The audit
+also found two Phase C completeness regressions. A clause on a pointer whose
+extent was adopted through an equality was measured in the pointer's own
+spelling; it is now respelled at the extent's start
+(`a_member_pointer_returned_by_a_call_fills_its_member_clause`,
+`a_member_pointer_parameter_fills_its_member_clause`). A C++ member-reference
+precondition equality is filed as
+`bugs/cpp-member-reference-precondition-equality-is-unprovable.md`. The
+remaining steps are completeness and coverage work for the object model.
 
 ### The hole
 
@@ -263,7 +284,7 @@ cell a call or loop havocs. Its actual designation may be a single member.
 Neither kind is checked against an extent, and authority stays
 address-based, so the second kind can step past its member and read a
 sibling with permission held through another pointer at the same address.
-[The bug file](../bugs/pointer-arithmetic-crosses-scalar-subobject.md#pointers-of-unseen-formation)
+[The bug file](https://github.com/clicklang/click/blob/8d8a621cc/bugs/pointer-arithmetic-crosses-scalar-subobject.md#pointers-of-unseen-formation)
 has two complete programs that verify on master: a callee steps a pointer
 field its caller set to `&p->first`, and a callee reads through a parameter
 its caller formed as `&p->first + 1`. In both, the contract states the

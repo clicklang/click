@@ -9224,8 +9224,25 @@ fn range_extent_refusal(
             ),
         })
     };
-    let Some(offset) =
-        crate::kernel::reasoning::pointer_byte_offset_from_base(base.pointer(), &extent.start)
+    // A pointer can carry an extent it adopted through a proven pointer
+    // equality, whose start is spelled through the other pointer: another
+    // block, or another parameter of the same one. Respell the pointer at
+    // that start before measuring its offset, as an access through it is
+    // decided; the spellings' own difference names two unrelated variables.
+    let respelled = assumptions
+        .pointer_at_known_base(base.pointer(), &extent.start)
+        .filter(|respelled| {
+            respelled != base.pointer()
+                && assumptions.pointers_known_equal(base.pointer(), respelled)
+        });
+    let Some(offset) = respelled
+        .as_ref()
+        .and_then(|respelled| {
+            crate::kernel::reasoning::pointer_byte_offset_from_base(respelled, &extent.start)
+        })
+        .or_else(|| {
+            crate::kernel::reasoning::pointer_byte_offset_from_base(base.pointer(), &extent.start)
+        })
     else {
         return refusal();
     };
