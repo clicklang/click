@@ -1913,6 +1913,7 @@ impl Parser {
             // `struct tag` is not a pointer to a laid-out object and a
             // `struct tag**` does not point at one either, so neither is a
             // memory base in a match arm.
+            let object_class = self.declared_object_class(&parsed);
             let struct_name = if parsed.struct_pointer && parsed.c_type == C0Type::Int32Pointer {
                 parsed.struct_name
             } else {
@@ -1921,6 +1922,7 @@ impl Parser {
             return Ok(AlgebraicFieldType::C {
                 c_type: parsed.c_type,
                 struct_name,
+                object_class,
             });
         }
         if name == "Integer" {
@@ -2211,6 +2213,9 @@ impl Parser {
         self.expect(Token::RParen)?;
         self.expect(Token::Arrow)?;
         let (return_type, parsed_c_return_type) = self.parse_click_type()?;
+        let return_object_class = parsed_c_return_type
+            .as_ref()
+            .and_then(|parsed| self.declared_object_class(parsed));
         if let Some(parsed_return_type) = parsed_c_return_type {
             if parsed_return_type.struct_name.is_some() && !parsed_return_type.struct_pointer {
                 return Err(self.error("only pointer-to-struct types are supported"));
@@ -2257,6 +2262,7 @@ impl Parser {
             type_parameters,
             parameters: parsed_parameters.parameters,
             return_type,
+            return_object_class,
             decreases,
             body,
         })
@@ -4830,6 +4836,24 @@ impl Parser {
             pointee_constant,
             reference,
         })
+    }
+
+    /// The class of the object a pointer of the declared type `parsed`
+    /// designates (`design/effective-types.md`), as a C parameter of that
+    /// type gets it, at every pointer depth. A bare `struct tag` designates
+    /// nothing.
+    fn declared_object_class(
+        &self,
+        parsed: &ParsedType,
+    ) -> Option<crate::kernel::effective_type::CAccessClass> {
+        match (&parsed.struct_name, parsed.struct_pointer) {
+            (Some(_), false) => None,
+            (struct_name, _) => syntax::declared_pointee_class(
+                parsed.c_type,
+                struct_name.as_deref(),
+                &self.struct_layouts,
+            ),
+        }
     }
 
     fn parse_click_type(&mut self) -> Result<(ClickType, Option<ParsedType>), ClickError> {

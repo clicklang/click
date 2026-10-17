@@ -3026,8 +3026,7 @@ fn collect_bitvector_bound_variables(term: &Bitvector32Term, variables: &mut BTr
             collect_memory_bitvector_variables(memory, variables);
             collect_pointer_offset_bound_variables(&pointer.offset, variables);
         }
-        Bitvector32Term::PointerAddress(pointer)
-        | Bitvector32Term::ObjectPointerAddress(pointer, _) => {
+        Bitvector32Term::PointerAddress(pointer, _) => {
             collect_pointer_offset_bound_variables(&pointer.offset, variables);
         }
         Bitvector32Term::IntegerToMachine { value, .. } => {
@@ -4994,14 +4993,9 @@ pub(crate) fn substitute_bitvector_variable(
             Box::new(substitute_bitvector_variable_in_pointer(pointer, from, to)),
             *kind,
         ),
-        Bitvector32Term::ObjectPointerAddress(pointer, class) => {
-            Bitvector32Term::object_pointer_address(
-                substitute_bitvector_variable_in_pointer(pointer, from, to),
-                Some(class.clone()),
-            )
-        }
-        Bitvector32Term::PointerAddress(pointer) => Bitvector32Term::pointer_address(
+        Bitvector32Term::PointerAddress(pointer, class) => Bitvector32Term::object_pointer_address(
             substitute_bitvector_variable_in_pointer(pointer, from, to),
+            class.class(),
         ),
         Bitvector32Term::IntegerToMachine { value, destination } => {
             Bitvector32Term::IntegerToMachine {
@@ -6311,6 +6305,7 @@ fn substitute_pointer_variable_in_spec_expression(
             name,
             arguments,
             result_type,
+            result_object_class,
         } => SpecExpression::PureFunctionApplication {
             name: name.clone(),
             arguments: arguments
@@ -6320,6 +6315,7 @@ fn substitute_pointer_variable_in_spec_expression(
                 })
                 .collect(),
             result_type: *result_type,
+            result_object_class: result_object_class.clone(),
         },
         SpecExpression::LoopEntrySnapshot(expression) => {
             SpecExpression::LoopEntrySnapshot(Box::new(
@@ -6943,7 +6939,10 @@ mod machine_integer_pointer_substitution_tests {
             block: replacement.block.clone(),
             offset: PointerOffsetTerm::Constant(12),
         };
-        let bits = Bitvector32Term::PointerAddress(Box::new(source));
+        let bits = Bitvector32Term::PointerAddress(
+            Box::new(source),
+            crate::kernel::AddressObjectClass::NONE,
+        );
         let term =
             IntegerTerm::from_machine(crate::kernel::MachineIntegerType::UInt64, bits.clone())
                 .unwrap();
@@ -6961,7 +6960,10 @@ mod machine_integer_pointer_substitution_tests {
         };
         assert_eq!(
             observation.value(),
-            &Bitvector32Term::PointerAddress(Box::new(expected.clone()))
+            &Bitvector32Term::PointerAddress(
+                Box::new(expected.clone()),
+                crate::kernel::AddressObjectClass::NONE
+            )
         );
 
         let spec = SpecProposition::IntegerComparison {
@@ -6982,9 +6984,10 @@ mod machine_integer_pointer_substitution_tests {
         };
         assert_eq!(
             *value,
-            SpecExpression::Value(CValue::UInt64(Bitvector32Term::PointerAddress(Box::new(
-                expected
-            ))))
+            SpecExpression::Value(CValue::UInt64(Bitvector32Term::PointerAddress(
+                Box::new(expected),
+                crate::kernel::AddressObjectClass::NONE,
+            )))
         );
     }
 }
@@ -7535,7 +7538,10 @@ mod integer_mixed_quantifier_tests {
         let inner_pointer = Variable(9_222);
         let replacement = IntegerTerm::from_machine(
             MachineIntegerType::UInt64,
-            Bitvector32Term::PointerAddress(Box::new(Pointer::symbolic(inner_pointer))),
+            Bitvector32Term::PointerAddress(
+                Box::new(Pointer::symbolic(inner_pointer)),
+                crate::kernel::AddressObjectClass::NONE,
+            ),
         )
         .expect("pointer observations are Integer-valued");
         let pointer_value = |variable| {

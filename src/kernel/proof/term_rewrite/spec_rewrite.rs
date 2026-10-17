@@ -1146,6 +1146,7 @@ impl<'a> TermRewrite<'a> {
                 name,
                 arguments,
                 result_type,
+                result_object_class,
             } => SpecExpression::PureFunctionApplication {
                 name: name.clone(),
                 arguments: arguments
@@ -1153,6 +1154,7 @@ impl<'a> TermRewrite<'a> {
                     .map(|argument| self.rewrite_spec_argument(argument))
                     .collect::<Result<Vec<_>, _>>()?,
                 result_type: *result_type,
+                result_object_class: result_object_class.clone(),
             },
             SpecExpression::LoopEntrySnapshot(value) => {
                 SpecExpression::LoopEntrySnapshot(Box::new(self.rewrite_spec_expression(value)?))

@@ -172,7 +172,7 @@ impl Bitvector32Term {
         if pointer == Pointer::null() {
             Self::UInt64Constant(0)
         } else {
-            Self::PointerAddress(Box::new(pointer))
+            Self::PointerAddress(Box::new(pointer), crate::kernel::AddressObjectClass::NONE)
         }
     }
 
@@ -182,16 +182,17 @@ impl Bitvector32Term {
     ) -> Self {
         if pointer == Pointer::null() {
             Self::UInt64Constant(0)
-        } else if let Some(class) = class {
-            Self::ObjectPointerAddress(Box::new(pointer), class)
         } else {
-            Self::pointer_address(pointer)
+            Self::PointerAddress(
+                Box::new(pointer),
+                crate::kernel::AddressObjectClass::new(class),
+            )
         }
     }
 
     pub(crate) fn address_pointer(&self) -> Option<&Pointer> {
         match self {
-            Self::PointerAddress(pointer) | Self::ObjectPointerAddress(pointer, _) => Some(pointer),
+            Self::PointerAddress(pointer, _) => Some(pointer),
             _ => None,
         }
     }
@@ -308,8 +309,7 @@ impl Bitvector32Term {
             Self::Constant(value) => Some(*value),
             Self::Variable(_)
             | Self::MemoryLoad(_, _, _)
-            | Self::PointerAddress(_)
-            | Self::ObjectPointerAddress(_, _)
+            | Self::PointerAddress(_, _)
             | Self::IntegerToMachine { .. }
             | Self::PureFunctionApplication { .. }
             | Self::ClickFunctionApplication { .. }
@@ -882,12 +882,7 @@ fn uint64_constant(term: &Bitvector32Term) -> Option<u64> {
         // Null converts to the integer zero, exactly as evaluating the C
         // cast `(uint64)p` yields it. The address term reaches a proof only
         // when a pointer proved null is substituted into `(uint64)p`.
-        Bitvector32Term::PointerAddress(pointer)
-        | Bitvector32Term::ObjectPointerAddress(pointer, _)
-            if **pointer == Pointer::null() =>
-        {
-            Some(0)
-        }
+        Bitvector32Term::PointerAddress(pointer, _) if **pointer == Pointer::null() => Some(0),
         Bitvector32Term::UInt64From32(value) => match value.as_ref() {
             Bitvector32Term::Constant(value) => Some(u64::from(*value)),
             _ => uint64_constant(value),
@@ -2435,27 +2430,21 @@ impl ConditionTerm {
     ) -> Option<Self> {
         match (left, right) {
             (
-                Bitvector32Term::PointerAddress(left)
-                | Bitvector32Term::ObjectPointerAddress(left, _),
-                Bitvector32Term::PointerAddress(right)
-                | Bitvector32Term::ObjectPointerAddress(right, _),
+                Bitvector32Term::PointerAddress(left, _),
+                Bitvector32Term::PointerAddress(right, _),
             ) => Some(Self::pointer_equal(
                 left.as_ref().clone(),
                 right.as_ref().clone(),
             )),
-            (
-                Bitvector32Term::PointerAddress(pointer)
-                | Bitvector32Term::ObjectPointerAddress(pointer, _),
-                other,
-            )
-            | (
-                other,
-                Bitvector32Term::PointerAddress(pointer)
-                | Bitvector32Term::ObjectPointerAddress(pointer, _),
-            ) if other.uint64_as_const() == Some(0) => Some(Self::pointer_equal(
-                pointer.as_ref().clone(),
-                Pointer::null(),
-            )),
+            (Bitvector32Term::PointerAddress(pointer, _), other)
+            | (other, Bitvector32Term::PointerAddress(pointer, _))
+                if other.uint64_as_const() == Some(0) =>
+            {
+                Some(Self::pointer_equal(
+                    pointer.as_ref().clone(),
+                    Pointer::null(),
+                ))
+            }
             _ => None,
         }
     }
@@ -2486,7 +2475,10 @@ impl ConditionTerm {
         debug_assert!(alignment.is_power_of_two());
         Self::uint64_equal(
             Bitvector32Term::uint64_bitwise_and(
-                Bitvector32Term::PointerAddress(Box::new(pointer)),
+                Bitvector32Term::PointerAddress(
+                    Box::new(pointer),
+                    crate::kernel::AddressObjectClass::NONE,
+                ),
                 Bitvector32Term::UInt64Constant(alignment - 1),
             ),
             Bitvector32Term::UInt64Constant(0),
@@ -2510,16 +2502,8 @@ impl ConditionTerm {
             return None;
         };
         let (pointer, mask) = match (left.as_ref(), right.as_ref()) {
-            (
-                Bitvector32Term::PointerAddress(pointer)
-                | Bitvector32Term::ObjectPointerAddress(pointer, _),
-                mask,
-            )
-            | (
-                mask,
-                Bitvector32Term::PointerAddress(pointer)
-                | Bitvector32Term::ObjectPointerAddress(pointer, _),
-            ) => (pointer, mask),
+            (Bitvector32Term::PointerAddress(pointer, _), mask)
+            | (mask, Bitvector32Term::PointerAddress(pointer, _)) => (pointer, mask),
             _ => return None,
         };
         let mask = mask.uint64_as_const()?;
@@ -2535,16 +2519,8 @@ impl ConditionTerm {
         }
         // An address is zero exactly when its pointer is null. Two addresses
         // stay an address equality: equal addresses are not equal pointers.
-        if let (
-            Bitvector32Term::PointerAddress(pointer)
-            | Bitvector32Term::ObjectPointerAddress(pointer, _),
-            other,
-        )
-        | (
-            other,
-            Bitvector32Term::PointerAddress(pointer)
-            | Bitvector32Term::ObjectPointerAddress(pointer, _),
-        ) = (&left, &right)
+        if let (Bitvector32Term::PointerAddress(pointer, _), other)
+        | (other, Bitvector32Term::PointerAddress(pointer, _)) = (&left, &right)
             && other.uint64_as_const() == Some(0)
         {
             return Self::pointer_equal(pointer.as_ref().clone(), Pointer::null());
@@ -2559,7 +2535,10 @@ impl ConditionTerm {
                 if let Some((pointer, alignment)) = condition.as_pointer_alignment() {
                     return Self::Bitvector64Equal(
                         Box::new(Bitvector32Term::UInt64BitwiseAnd(
-                            Box::new(Bitvector32Term::PointerAddress(Box::new(pointer.clone()))),
+                            Box::new(Bitvector32Term::PointerAddress(
+                                Box::new(pointer.clone()),
+                                crate::kernel::AddressObjectClass::NONE,
+                            )),
                             Box::new(Bitvector32Term::UInt64Constant(alignment - 1)),
                         )),
                         Box::new(Bitvector32Term::UInt64Constant(0)),
