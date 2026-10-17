@@ -2947,7 +2947,11 @@ pub(in crate::surface) fn contract_expression_has_explicit_c_result_reference(
 pub(in crate::surface) fn pure_function_parameter_scalar_type(
     parameter: &FunctionParameter,
 ) -> Option<CType> {
-    let c_type = parameter.click_type().c_type()?;
+    pure_function_scalar_type(parameter.click_type())
+}
+
+fn pure_function_scalar_type(click_type: &ClickType) -> Option<CType> {
+    let c_type = click_type.c_type()?;
     let target_type = c_type.to_kernel_type();
     if !matches!(
         target_type,
@@ -2968,6 +2972,38 @@ pub(in crate::surface) fn pure_function_parameter_scalar_type(
         return None;
     }
     Some(target_type)
+}
+
+pub(in crate::surface) fn pure_function_result_scalar_type(
+    definition: &ClickFunctionDefinition,
+) -> Option<CType> {
+    pure_function_scalar_type(definition.return_type()).filter(|ty| *ty != CType::Bool)
+}
+
+/// The defining equality uses the same numeric return conversion as the
+/// registered body. Pointer results retain their existing selected views.
+pub(in crate::surface) fn pure_function_result_value(
+    definition: &ClickFunctionDefinition,
+    value: ContractExpression,
+) -> ContractExpression {
+    let Some(target_type) = pure_function_result_scalar_type(definition) else {
+        return value;
+    };
+    let lowered = CExpression::Cast {
+        expression: Box::new(
+            contract_expression_as_c_fragment(&value).unwrap_or(CExpression::Value(int32(0))),
+        ),
+        target_type,
+        integer_mode: crate::kernel::CIntegerCastMode::CConversion,
+        pointee_struct: None,
+        pointee_volatile: false,
+        pointee_constant: false,
+        explicit_qualification: false,
+    };
+    ContractExpression::CUnary {
+        operand: Box::new(value),
+        lowered,
+    }
 }
 
 pub(in crate::surface) fn pure_function_parameter_argument(

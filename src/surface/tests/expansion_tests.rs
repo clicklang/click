@@ -2181,7 +2181,7 @@ theorem force_bad_machine_body(n: int32) {
     }
 }
 "#,
-            "mathematical Integer expressions cannot be compared with C values",
+            "function `bad_machine_body` returns Integer, but its body can produce `k` of type int32",
         ),
         (
             r#"
@@ -2225,7 +2225,7 @@ theorem force_bad_c_body(x: int32, z: Integer) {
     }
 }
 "#,
-            "expected a specification-side Integer expression",
+            "function `bad_c_body` returns Integer, but its body can produce `x` of type int32",
         ),
     ] {
         let error = verify_c0_sources(source, &[])

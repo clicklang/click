@@ -1,6 +1,7 @@
-//! Pointer origins of pure results, computed once from the definition bodies.
-//! This is a transfer of existing evidence, not a refinement inferred from a
-//! return declaration. Unsupported expressions and recursive cycles stay opaque.
+//! Checked pointer return types and origins of pure results.
+//! Nominal return declarations are checked against their bodies before the
+//! environment is used. Calls, including recursive calls, use that interface;
+//! untyped and generic returns retain body-derived origin information.
 
 use super::*;
 use crate::kernel::PurePointerResult;
@@ -8,6 +9,19 @@ use crate::kernel::effective_type::{CAccessClass, CPointeeBase, CStructClass};
 use std::sync::Arc;
 
 type Origins = Option<Arc<PurePointerResult>>;
+
+fn nominal_return_class(definition: &ClickFunctionDefinition) -> Option<&CAccessClass> {
+    definition.return_object_class().filter(|class| {
+        matches!(
+            class,
+            CAccessClass::Struct(_)
+                | CAccessClass::Pointer {
+                    base: CPointeeBase::Struct(_),
+                    ..
+                }
+        )
+    })
+}
 
 impl FunctionParameter {
     pub(super) fn pointer_object_class(&self) -> Option<CAccessClass> {
@@ -92,6 +106,18 @@ impl Analysis<'_> {
             return result.clone();
         }
         let definition = *self.functions.get(name)?;
+        if let Some(class) = nominal_return_class(definition) {
+            // Recursive calls may assume the declared interface while checking
+            // its implementation, just as they assume the parameter types.
+            // check_definition validates every body before these summaries can
+            // be used by verification. Termination is checked independently.
+            let result = Some(Arc::new(PurePointerResult {
+                classes: BTreeSet::from([class.clone()]),
+                arguments: BTreeSet::new(),
+            }));
+            self.results.insert(name.to_string(), result.clone());
+            return result;
+        }
         if !(matches!(definition.return_type(), ClickType::C(ty) if ty.is_object_pointer())
             || matches!(definition.return_type(), ClickType::Parameter(_)))
             || !self.active.insert(name.to_string())
@@ -262,7 +288,17 @@ impl Analysis<'_> {
                 (parameter.name().to_string(), origin)
             })
             .collect();
-        self.check_expression(definition.body(), &mut bindings, definition)
+        self.check_expression(definition.body(), &mut bindings, definition)?;
+        if let Some(class) = nominal_return_class(definition) {
+            self.require_class(
+                definition.body(),
+                class,
+                &mut bindings,
+                definition,
+                "return value",
+            )?;
+        }
+        Ok(())
     }
 
     fn require_class(

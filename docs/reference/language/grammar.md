@@ -229,15 +229,23 @@ select an algebraic result with an exhaustive `match` instead. Declaration
 validation rejects unsupported conditionals even when their branches are pure
 function calls.
 
+Pure function definitions check every return branch against the declared result
+type, including definitions with no callers. C-valued returns use the existing
+numeric conversions and null-pointer-constant rule; a pointer is not an integer
+return value. Bool results require bool values rather than implicit truth tests.
+
 A model field declared `struct tag*` retains its nominal pointee class.
 Constructing the model requires a null pointer or checked evidence that the
 pointer's original object class is `struct tag`; matching the model recovers
 that evidence. A pointer proved equal to the typed identity can use that
 evidence in the current context. Pure helper parameters declared `struct tag*` require the same
 evidence at calls. Helper bodies check their model constructors and calls
-against the declared input types. Pointer getters preserve evidence from model
-fields and actual input values through nested calls. A destination cast or a
-return declaration alone supplies no checked original-class evidence. C access
+against the declared input types. A pure function returning `struct tag*` must
+also establish that its body returns null or a pointer with that original
+object class. Calls use this checked return type, including recursive calls;
+recursive definitions still require the existing termination check. Untyped
+and generic pointer getters preserve evidence from their actual return sources.
+A destination cast cannot manufacture original-class evidence. C access
 typing retains its existing declaration metadata separately. Memory access
 still requires the relevant resource permissions.
 

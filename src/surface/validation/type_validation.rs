@@ -875,7 +875,7 @@ fn contains_integer_expression_signal(
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-enum SpecValueType {
+pub(super) enum SpecValueType {
     Scalar(Option<C0Type>),
     Integer,
     Sequence(Option<C0Type>),
@@ -894,7 +894,7 @@ fn spec_value_matches_click_type(actual: &SpecValueType, expected: &ClickType) -
     }
 }
 
-fn describe_spec_value_type(value_type: &SpecValueType) -> String {
+pub(super) fn describe_spec_value_type(value_type: &SpecValueType) -> String {
     match value_type {
         SpecValueType::Scalar(Some(c_type)) => describe_c0_type(*c_type),
         SpecValueType::Scalar(None) => "a C value".to_string(),
@@ -913,7 +913,7 @@ fn describe_spec_value_type(value_type: &SpecValueType) -> String {
 /// deliberately bidirectional only at explicit Integer contexts: an
 /// unsuffixed literal can inherit that context, while an existing C binding
 /// remains a C value and is rejected when it is mixed with Integer arithmetic.
-fn infer_scoped_spec_value_type(
+pub(super) fn infer_scoped_spec_value_type(
     expression: &ContractExpression,
     variables: &BTreeMap<String, C0Type>,
     integer_bindings: &BTreeSet<String>,
@@ -1389,14 +1389,14 @@ fn range_item_type(start: Option<C0Type>, end: Option<C0Type>) -> C0Type {
     }
 }
 
-fn infer_scoped_range_fold_type(
+pub(super) fn infer_scoped_range_fold_bindings(
     expression: &ContractExpression,
     variables: &BTreeMap<String, C0Type>,
     integer_bindings: &BTreeSet<String>,
     click_functions: &BTreeMap<String, ClickFunctionType>,
     context: &str,
     expected_integer: bool,
-) -> Result<SpecValueType, ClickError> {
+) -> Result<(ClickType, ClickType), ClickError> {
     let ContractExpression::RangeFold {
         start,
         end,
@@ -1431,10 +1431,9 @@ fn infer_scoped_range_fold_type(
             |ty: &SpecValueType| matches!(ty, SpecValueType::Scalar(Some(C0Type::UInt64(_))));
         let literal = |expression: &ContractExpression| {
             matches!(
-                expression,
-                ContractExpression::CFragment(CExpression::Value(CValue::Int32(
-                    crate::kernel::Bitvector32Term::Constant(value)
-                ))) if *value <= i32::MAX as u32
+                contract_expression_as_c_fragment(expression),
+                Some(CExpression::Value(CValue::Int32(value)))
+                    if value.as_const().is_some_and(|value| value <= i32::MAX as u32)
             )
         };
         (uint64(&start_type) && (uint64(&end_type) || literal(end)))
@@ -1488,31 +1487,70 @@ fn infer_scoped_range_fold_type(
         || expected_integer
         || body_may_be_integer;
 
+    let accumulator_type = if integer_accumulator {
+        ClickType::Integer
+    } else {
+        if uint64_index {
+            return Err(ClickError::new(format!(
+                "range fold with uint64 bounds requires an Integer accumulator in {context}; C-valued range folds support only int32 bounds"
+            )));
+        }
+        if initial_type != SpecValueType::Scalar(Some(C0Type::Int32)) {
+            return Err(ClickError::new(format!(
+                "C-valued range fold requires an int32 accumulator in {context}; other C accumulator types are not supported"
+            )));
+        }
+        ClickType::C(C0Type::Int32)
+    };
+    let item_type = if integer_index {
+        ClickType::Integer
+    } else if uint64_index {
+        ClickType::C(C0Type::UInt64(LongRank::Long))
+    } else {
+        ClickType::C(C0Type::Int32)
+    };
+    Ok((accumulator_type, item_type))
+}
+
+fn infer_scoped_range_fold_type(
+    expression: &ContractExpression,
+    variables: &BTreeMap<String, C0Type>,
+    integer_bindings: &BTreeSet<String>,
+    click_functions: &BTreeMap<String, ClickFunctionType>,
+    context: &str,
+    expected_integer: bool,
+) -> Result<SpecValueType, ClickError> {
+    let ContractExpression::RangeFold {
+        accumulator,
+        item,
+        body,
+        ..
+    } = expression
+    else {
+        unreachable!()
+    };
+    let (accumulator_type, item_type) = infer_scoped_range_fold_bindings(
+        expression,
+        variables,
+        integer_bindings,
+        click_functions,
+        context,
+        expected_integer,
+    )?;
     let mut body_variables = variables.clone();
     let mut body_integer_bindings = integer_bindings.clone();
-    body_variables.remove(accumulator);
-    body_variables.remove(item);
-    body_integer_bindings.remove(accumulator);
-    body_integer_bindings.remove(item);
-    if integer_accumulator {
-        body_integer_bindings.insert(accumulator.clone());
-    } else {
-        let Some(initial_type) = (match &initial_type {
-            SpecValueType::Scalar(Some(initial_type)) => Some(*initial_type),
-            _ => None,
-        }) else {
-            return Err(ClickError::new(format!(
-                "range fold accumulator must be scalar in {context}"
-            )));
-        };
-        body_variables.insert(accumulator.clone(), initial_type);
-    }
-    if integer_index {
-        body_integer_bindings.insert(item.clone());
-    } else if uint64_index {
-        body_variables.insert(item.clone(), C0Type::UInt64(LongRank::Long));
-    } else {
-        body_variables.insert(item.clone(), C0Type::Int32);
+    for (name, ty) in [(accumulator, &accumulator_type), (item, &item_type)] {
+        body_variables.remove(name);
+        body_integer_bindings.remove(name);
+        match ty {
+            ClickType::Integer => {
+                body_integer_bindings.insert(name.clone());
+            }
+            ClickType::C(ty) => {
+                body_variables.insert(name.clone(), *ty);
+            }
+            _ => unreachable!(),
+        }
     }
     let body_type = infer_scoped_spec_value_type(
         body,
@@ -1520,47 +1558,22 @@ fn infer_scoped_range_fold_type(
         &body_integer_bindings,
         click_functions,
         context,
-        integer_accumulator,
+        accumulator_type == ClickType::Integer,
     )?;
-    if integer_accumulator {
-        if !matches!(&body_type, SpecValueType::Integer) {
-            return Err(ClickError::new(format!(
-                "range fold body must preserve Integer accumulator in {context}"
-            )));
+    match (accumulator_type, body_type) {
+        (ClickType::Integer, SpecValueType::Integer) => Ok(SpecValueType::Integer),
+        (ClickType::Integer, _) => Err(ClickError::new(format!(
+            "range fold body must preserve Integer accumulator in {context}"
+        ))),
+        (ClickType::C(initial), SpecValueType::Scalar(body))
+            if body.is_none_or(|body| click_types_compatible(initial, body)) =>
+        {
+            Ok(SpecValueType::Scalar(Some(initial)))
         }
-        return Ok(SpecValueType::Integer);
-    }
-    let SpecValueType::Scalar(initial_type) = initial_type else {
-        return Err(ClickError::new(format!(
-            "range fold accumulator must be scalar in {context}"
-        )));
-    };
-    // The C-valued kernel fold has signed int32 endpoints and an int32
-    // accumulator. Wider endpoints are supported by the Integer fold only;
-    // accepting them here would silently discard every lowering path.
-    if uint64_index {
-        return Err(ClickError::new(format!(
-            "range fold with uint64 bounds requires an Integer accumulator in {context}; C-valued range folds support only int32 bounds"
-        )));
-    }
-    if initial_type != Some(C0Type::Int32) {
-        return Err(ClickError::new(format!(
-            "C-valued range fold requires an int32 accumulator in {context}; other C accumulator types are not supported"
-        )));
-    }
-    let SpecValueType::Scalar(body_type) = body_type else {
-        return Err(ClickError::new(format!(
+        _ => Err(ClickError::new(format!(
             "range fold body must preserve accumulator type in {context}"
-        )));
-    };
-    if let (Some(initial_type), Some(body_type)) = (initial_type, body_type)
-        && !click_types_compatible(initial_type, body_type)
-    {
-        return Err(ClickError::new(format!(
-            "range fold body must preserve accumulator type in {context}"
-        )));
+        ))),
     }
-    Ok(SpecValueType::Scalar(initial_type))
 }
 
 fn validate_comparison_expression_types(

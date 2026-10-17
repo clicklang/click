@@ -1,4 +1,4 @@
-# A pure getter cannot acquire its declared result's object class
+# A pure getter must satisfy its declared result's object class
 
 ```c filename=getter.c
 struct model_node { uint64 word; };
@@ -21,5 +21,5 @@ void wrong(struct other_node* p) {
 ```
 
 ```expect
-fail: algebraic initializer must denote one symbolic value
+fail: function `retyped` return value requires original object class `struct model_node` or null
 ```

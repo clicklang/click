@@ -704,6 +704,10 @@ fn lower_kernel_pure_function_definition(
     let body = lowerer
         .lower_contract_expression_to_spec(definition.body(), &context)
         .ok()?;
+    let body = match pure_function_result_scalar_type(definition) {
+        Some(target) => SpecExpression::Cast(Box::new(body), target),
+        None => body,
+    };
     Some(crate::kernel::CPureFunctionDefinition::new(
         definition.name(),
         parameters,
