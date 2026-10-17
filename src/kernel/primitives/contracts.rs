@@ -3853,7 +3853,15 @@ impl CExecutionEnvironment {
             if rule.loop_statement != *statement || !self.loop_rule_answers_for_recursion(rule) {
                 return false;
             }
-            let assumptions_match = || rule
+            // A rule stepped under the very context it was certified under
+            // finds each prerequisite exactly there: the two hold the same
+            // fact sets by identity. Asking each still records reasoning
+            // provenance, so a capture asks them all.
+            let same_context = || {
+                !crate::kernel::assumptions::implicit_reasoning_provenance_capturing()
+                    && rule.required_assumptions.holds_the_facts_of(assumptions)
+            };
+            let assumptions_match = || same_context() || rule
                 .required_assumptions
                 .pure_facts()
                 .iter()

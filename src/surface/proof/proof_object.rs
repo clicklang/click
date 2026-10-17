@@ -508,6 +508,10 @@ pub(in crate::surface::proof) struct ExecutionProofPresentation {
     /// loop rules of `rules`. The next `loop` adds the rules since instead
     /// of copying every earlier rule into a new environment.
     pub(in crate::surface::proof) loop_rule_environment: Option<Arc<LoopRuleEnvironment>>,
+    /// The annotation the last `loop` tactic on this path made of its
+    /// function, with what it was made from, so the next `loop` lowers only
+    /// its own loop when nothing else changed.
+    pub(in crate::surface::proof) loop_annotation: Option<Arc<LoopAnnotationCache>>,
     /// A surface-stated existential can retain spellings of its checked body
     /// leaves without referring to a numbered contract requirement.
     pub(in crate::surface::proof) existential_projection: Option<ExistentialProjection>,
@@ -687,9 +691,28 @@ impl ExecutionProofState {
                 existential_projection: None,
                 loop_fact_list: None,
                 loop_rule_environment: None,
+                loop_annotation: None,
             },
         )
     }
+}
+
+/// A `loop` tactic's annotation of its function and the inputs it was made
+/// from (`ExecutionProofPresentation::loop_annotation`). The block and the
+/// parsed function are named by address: both are the claim's own, borrowed
+/// for the whole proof.
+pub(in crate::surface::proof) struct LoopAnnotationCache {
+    pub(in crate::surface::proof) function_block: usize,
+    pub(in crate::surface::proof) parsed_function: usize,
+    pub(in crate::surface::proof) start_facts: Arc<crate::surface::PureFactList>,
+    pub(in crate::surface::proof) function_entry_state: Option<CState>,
+    pub(in crate::surface::proof) initial_state: CState,
+    pub(in crate::surface::proof) arguments: Vec<CExpression>,
+    /// The frontier clauses bound before the annotated loop's own clause.
+    pub(in crate::surface::proof) frontier_clauses: PersistentSequence<StructuralClause>,
+    /// The annotated loop's own clause, bound to it.
+    pub(in crate::surface::proof) bound_clause: StructuralClause,
+    pub(in crate::surface::proof) annotation: crate::surface::lowering::LoopAnnotation,
 }
 
 /// A claim's execution environment extended by a path's frontier loop

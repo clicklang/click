@@ -1,6 +1,11 @@
 use super::*;
 use crate::surface::proof::proof_object::ExecutionProofState;
 
+/// Whether a loop tactic binds no clause beyond its own loop's.
+fn nested_loop_clauses_bound(current_loop_clauses: &[StructuralClause]) -> bool {
+    current_loop_clauses.len() == 1
+}
+
 pub(in crate::surface::proof) fn execute_frontier_local_loop(
     expansion_capture: Option<&mut ExpansionCapture>,
     loop_template: &StructuralClause,
@@ -97,22 +102,96 @@ pub(in crate::surface::proof) fn execute_frontier_local_loop(
     // The proof's own layout of this function: built once for the claim,
     // with the whole-function indexes every loop reads.
     let source_layout = proof_context.constants.source_layout.clone();
-    let annotated = annotated_function_with_assumptions(
-        &bound_function_block,
-        parsed_function,
-        &initial_state,
-        arguments,
-        SpecDefinitions::new(predicate_environment, click_function_environment),
-        resource_environment,
-        Some(ResourceFrameEntry {
-            assumptions: &entry_assumptions,
-            checked_entry_state: proof_context.constants.function_entry_state.as_ref(),
-        }),
-        Some(
-            source_layout
-                .local_pointer_element_types(|| local_pointer_element_types(parsed_function)),
-        ),
-    )?;
+    let frame_entry = Some(ResourceFrameEntry {
+        assumptions: &entry_assumptions,
+        checked_entry_state: proof_context.constants.function_entry_state.as_ref(),
+    });
+    let pointer_element_types =
+        source_layout.local_pointer_element_types(|| local_pointer_element_types(parsed_function));
+    // The previous loop's annotation of this function, when this loop's
+    // block differs from that one's only by this loop's own clause: the
+    // previous loop's clause is the one frontier clause bound since, this
+    // loop binds no nested clause and no label, and every other input is the
+    // one the previous annotation was made from.
+    let extendable = execution
+        .presentation
+        .loop_annotation
+        .as_deref()
+        .filter(|cached| {
+            nested_loop_clauses_bound(&current_loop_clauses)
+                && scoped_template.label().is_none()
+                && cached.function_block == std::ptr::from_ref(function_block) as usize
+                && cached.parsed_function == std::ptr::from_ref(parsed_function) as usize
+                && Arc::ptr_eq(
+                    &cached.start_facts,
+                    &proof_context.constants.execution_start_facts,
+                )
+                && cached.function_entry_state == proof_context.constants.function_entry_state
+                && cached.initial_state == initial_state
+                && cached.arguments.as_slice() == arguments
+                && execution
+                    .presentation
+                    .frontier_loop_clauses
+                    .suffix_since(&cached.frontier_clauses)
+                    .is_some_and(|added| added == [cached.bound_clause.clone()])
+        });
+    let spliced = match extendable {
+        Some(cached) => annotated_loop_function_extending(
+            &cached.annotation,
+            &bound_function_block,
+            parsed_function,
+            &initial_state,
+            arguments,
+            SpecDefinitions::new(predicate_environment, click_function_environment),
+            frame_entry,
+            Some(pointer_element_types),
+            loop_index,
+        )?,
+        None => None,
+    };
+    let annotation = match spliced {
+        Some(annotation) => annotation,
+        None => annotated_loop_function(
+            &bound_function_block,
+            parsed_function,
+            &initial_state,
+            arguments,
+            SpecDefinitions::new(predicate_environment, click_function_environment),
+            resource_environment,
+            frame_entry,
+            Some(pointer_element_types),
+            loop_index,
+        )?,
+    };
+    #[cfg(debug_assertions)]
+    if crate::surface::lowering::loop_annotation_check_enabled() {
+        let whole = annotated_function_with_assumptions(
+            &bound_function_block,
+            parsed_function,
+            &initial_state,
+            arguments,
+            SpecDefinitions::new(predicate_environment, click_function_environment),
+            resource_environment,
+            frame_entry,
+            Some(pointer_element_types),
+        )?;
+        assert!(
+            &whole == annotation.function(),
+            "loop({loop_index})'s annotation differs from the whole-function walk's"
+        );
+    }
+    let annotated = annotation.function().clone();
+    execution.presentation.loop_annotation = Some(Arc::new(LoopAnnotationCache {
+        function_block: std::ptr::from_ref(function_block) as usize,
+        parsed_function: std::ptr::from_ref(parsed_function) as usize,
+        start_facts: proof_context.constants.execution_start_facts.clone(),
+        function_entry_state: proof_context.constants.function_entry_state.clone(),
+        initial_state: initial_state.clone(),
+        arguments: arguments.to_vec(),
+        frontier_clauses: execution.presentation.frontier_loop_clauses.clone(),
+        bound_clause: scoped_template.bound_to_loop(loop_index),
+        annotation,
+    }));
     if execution.core.frontier.is_at_function_entry() {
         let entry_state = c_function_entry_state(&initial_state, &annotated, arguments)
             .ok_or_else(|| {
