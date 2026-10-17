@@ -1226,6 +1226,66 @@ whole-function execution. Tests count checked body executions directly and
 also require an artifact containing an unproved extra assumption or an
 incomplete entry partition to be rejected.
 
+## Sequential loop clauses
+
+A `loop` tactic at the k-th of N sequential loops reads the path's facts,
+the earlier loops' verified rules and clauses, and the function it
+annotates. Each is kept so that the clause pays for its own loop:
+
+- The path's facts are a persistent `PureFactList`: facts filed under
+  growing sequence numbers, with persistent indexes of exact facts and
+  conjuncts (direct conflicts and exact prerequisites are lookups) and of
+  the facts a store's automatic transport may move. A slice view
+  (`Deref`) is materialized once per version and counted. The proof keeps
+  the list its last `loop` copied (`loop_fact_list`), and the next `loop`
+  extends that one by the facts the proof gained since
+  (`PureFactList::extended_to_proof_facts`, new statement batches in front
+  as `ProofFacts::propositions` presents them) instead of copying and
+  indexing every fact again.
+- Fresh-identity reservations hold a rule's prerequisite context, and a
+  loop head's, as `LazyReservedVariables`: the context's execution ceiling
+  answers every execution-range candidate above it, and the variables are
+  collected only for a query below it. An environment's loop rules are a
+  persistent `VerifiedLoopRules` indexed by a fingerprint of their loop
+  statement, with one reservation behind the rules' common bound, and the
+  proof keeps the environment its last `loop` built
+  (`loop_rule_environment`).
+- Applying a loop's rule under the very context it was certified under
+  compares the two contexts' fact sets by identity
+  (`PureFactContext::holds_the_facts_of`); any other context, or a
+  provenance capture, checks every prerequisite as before.
+- A fact set reserves a fact's variables through the snapshots it already
+  reserves (`proposition_variables_reserving`): a snapshot it holds adds
+  nothing, and one derived from it adds the entries the two differ on.
+- The function is annotated by a whole-function walk once per claim. The
+  next `loop` lowers only its own loop with the walk state recorded for
+  the loop before it and puts it in place (`annotated_loop_function_extending`),
+  when its block differs only by that loop's unlabelled clause and both
+  loops are `while` or `do` loops without nested loops or declared
+  resources; otherwise it walks the whole function.
+- The frontier replaces its next source operation with the annotated loop,
+  keeping the statements after it, and a loop clause's contents are shared
+  by every copy of the function block.
+
+`sequential_loops_build_the_same_context_entries_each` counts, at 3, 6 and
+12 loops, the context entries, flat fact copies, fact index entries,
+transport-candidacy tests, reservation collections, reserved fact
+variables and annotation walks each further loop costs, and requires the
+same count per loop at both steps and one annotation walk per claim; the
+debug-build cross-checks `CLICK_DEBUG_CHECK_FACT_LISTS=1`,
+`CLICK_DEBUG_CHECK_LAZY_RESERVATIONS=1` and
+`CLICK_DEBUG_CHECK_LOOP_ANNOTATIONS=1` compare each indexed answer with the
+copy, collection or walk it replaces. Measured with callgrind on the
+`loops` hunt shape, the marginal cost of one more loop is about 40 million
+instructions near 40 loops, 42 million near 120 and 44 million near 248,
+where it was 52 and 200 million; at 192 loops the last clause takes about
+21 ms against 16 ms for the second, where it took 47 ms. The remaining
+growth is logarithmic: persistent-map depths in the fact context and proof
+facts. A few pointer walks stay linear in the earlier loops with a small
+constant: binding the frontier's clauses into the function block, the
+label and scope checks over its clauses, and finding the loop's node in
+the source and kernel bodies.
+
 ## Regression policy
 
 Wall-clock examples find user-visible pain, but they do not enforce a scaling

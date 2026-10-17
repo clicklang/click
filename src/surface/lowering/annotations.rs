@@ -618,6 +618,7 @@ pub(in crate::surface) fn register_kernel_fold_read_definitions(
             next_quantifier_variable: 3_200_000,
             branch_join_target: None,
             snapshots: None,
+            loop_records: None,
         };
         let Ok(body) = lowerer
             .lower_contract_integer_to_spec(definition.body(), &SpecElaborationContext::default())
@@ -673,6 +674,7 @@ fn lower_kernel_pure_function_definition(
         next_quantifier_variable: 3_200_000,
         branch_join_target: None,
         snapshots: None,
+        loop_records: None,
     };
     let mut parameters = Vec::new();
     let mut context = SpecElaborationContext::default();
@@ -759,6 +761,7 @@ pub(in crate::surface) fn lower_composite_resource_condition(
         next_quantifier_variable: 3_200_000,
         branch_join_target: None,
         snapshots: None,
+        loop_records: None,
     };
     let all_predicates = spec_definitions
         .predicates
@@ -845,6 +848,7 @@ pub(in crate::surface) fn lower_composite_resource_body_with_bindings(
         next_quantifier_variable: 3_200_000,
         branch_join_target: None,
         snapshots: None,
+        loop_records: None,
     };
     let all_predicates = spec_definitions
         .predicates
@@ -978,6 +982,418 @@ pub(in crate::surface) fn annotated_function_with_assumptions(
     frame_entry: Option<ResourceFrameEntry<'_>>,
     pointer_element_types: Option<&BTreeMap<String, CType>>,
 ) -> Result<CFunction, ClickError> {
+    annotate_function(
+        function_block,
+        parsed_function,
+        entry_state,
+        arguments,
+        spec_definitions,
+        resource_environment,
+        frame_entry,
+        pointer_element_types,
+        false,
+    )
+    .map(|(function, _)| function)
+}
+
+/// A function annotated for a `loop` tactic at one of its loops, with what
+/// annotating it again for the next loop needs to lower that loop alone
+/// ([`annotated_loop_function_extending`]).
+#[derive(Clone)]
+pub(in crate::surface) struct LoopAnnotation {
+    function: CFunction,
+    /// The loop this annotation was made for.
+    loop_index: usize,
+    /// The quantifier counter once that loop was lowered, and whether the
+    /// walk's scoped bindings were empty then.
+    quantifiers_after: u64,
+    bindings_empty_after: bool,
+    shape: std::sync::Arc<LoopAnnotationShape>,
+}
+
+/// The parts of a whole-function annotation that do not depend on its loop
+/// clauses: what the walk saw at each loop, and the contract's lowered
+/// write footprint a loop without a resource clause inherits.
+struct LoopAnnotationShape {
+    records: Vec<LoopLoweringRecord>,
+    contract_mutable: Vec<CMemorySegment>,
+    resource_derived_mutable_frame: bool,
+    /// Whether one loop can be lowered alone at all: the walk lowered the
+    /// function's own body, numbering every loop the kernel body holds, and
+    /// no loop declares resources (which are lowered for every loop before
+    /// the body) or wraps the whole body as a natural control loop.
+    loops_lower_alone: bool,
+}
+
+impl LoopAnnotation {
+    pub(in crate::surface) fn function(&self) -> &CFunction {
+        &self.function
+    }
+}
+
+/// The function annotated for the `loop` tactic at `loop_index`: what
+/// [`annotated_function_with_assumptions`] lowers, with the walk's records.
+#[allow(clippy::too_many_arguments)]
+pub(in crate::surface) fn annotated_loop_function(
+    function_block: &FunctionBlock,
+    parsed_function: &syntax::C0Function,
+    entry_state: &CState,
+    arguments: &[CExpression],
+    spec_definitions: SpecDefinitions<'_>,
+    resource_environment: &ResourceEnvironment,
+    frame_entry: Option<ResourceFrameEntry<'_>>,
+    pointer_element_types: Option<&BTreeMap<String, CType>>,
+    loop_index: usize,
+) -> Result<LoopAnnotation, ClickError> {
+    count_annotation_walks(1);
+    let (function, shape) = annotate_function(
+        function_block,
+        parsed_function,
+        entry_state,
+        arguments,
+        spec_definitions,
+        resource_environment,
+        frame_entry,
+        pointer_element_types,
+        true,
+    )?;
+    let shape = shape.expect("a recording annotation returns its shape");
+    let record = shape.records.get(loop_index).copied();
+    Ok(LoopAnnotation {
+        function,
+        loop_index,
+        quantifiers_after: record.map_or(0, |record| record.quantifiers_after),
+        bindings_empty_after: record.is_some_and(|record| record.bindings_empty_after),
+        shape: std::sync::Arc::new(shape),
+    })
+}
+
+/// The function annotated for the `loop` tactic at `loop_index`, made from
+/// `previous`, the annotation for the loop just before it, by lowering only
+/// this loop and putting it in place of that annotation's copy of it.
+///
+/// The caller guarantees that `function_block` differs from the block
+/// `previous` was annotated from only in this loop's clause, and that every
+/// other input is the one `previous` was made from. Then a whole-function
+/// walk would lower every other loop as `previous` holds it: the loops
+/// before this one see the same clauses and walk state, and the loops after
+/// it have no clause in either, so they consume no walk state. This loop's
+/// walk state is the one `previous` recorded once its own loop was lowered,
+/// since only statements without loops lie between them; its statement
+/// counter is positional. The result is therefore the whole-function
+/// annotation. `None` when that argument does not apply: another loop in
+/// between, a loop with nested loops or declared resources, a `for` loop,
+/// a natural control loop, or clauses carrying proof scopes.
+#[allow(clippy::too_many_arguments)]
+pub(in crate::surface) fn annotated_loop_function_extending(
+    previous: &LoopAnnotation,
+    function_block: &FunctionBlock,
+    parsed_function: &syntax::C0Function,
+    entry_state: &CState,
+    arguments: &[CExpression],
+    spec_definitions: SpecDefinitions<'_>,
+    frame_entry: Option<ResourceFrameEntry<'_>>,
+    pointer_element_types: Option<&BTreeMap<String, CType>>,
+    loop_index: usize,
+) -> Result<Option<LoopAnnotation>, ClickError> {
+    let shape = &previous.shape;
+    let (Some(earlier), Some(record)) = (
+        shape.records.get(previous.loop_index),
+        shape.records.get(loop_index),
+    ) else {
+        return Ok(None);
+    };
+    if !shape.loops_lower_alone
+        || loop_index != previous.loop_index + 1
+        || !earlier.lowered_alone
+        || !record.lowered_alone
+        || !previous.bindings_empty_after
+        || function_block
+            .structural_clauses()
+            .iter()
+            .any(|clause| !clause.scope.is_empty() || !clause.resources().is_empty())
+    {
+        return Ok(None);
+    }
+    let parsed_function =
+        &*crate::surface::verification::witnessed_function(parsed_function, function_block);
+    let Some(loop_statement) = c0_loop_by_index(parsed_function.body(), loop_index) else {
+        return Ok(None);
+    };
+    let implicit_contract_mutable_segments = if shape.resource_derived_mutable_frame {
+        &[]
+    } else {
+        shape.contract_mutable.as_slice()
+    };
+    let mut lowerer = AnnotationLowerer {
+        capture_referenced_names: None,
+        structural_clauses: function_block.structural_clauses(),
+        implicit_contract_mutable_segments,
+        loop_resources: BTreeMap::new(),
+        inherits_resource_derived_frame: shape.resource_derived_mutable_frame,
+        spec_definitions,
+        entry_state: frame_entry
+            .and_then(|frame_entry| frame_entry.checked_entry_state)
+            .unwrap_or(entry_state),
+        result_type: if parsed_function.return_struct_name().is_some() {
+            CType::UInt8Pointer
+        } else {
+            parsed_function.return_type().to_kernel_type()
+        },
+        entry_values: parameter_values(ParameterBinding::new(
+            parsed_function.parameters(),
+            arguments,
+        ))?,
+        aggregate_parameters: parsed_function
+            .parameters()
+            .iter()
+            .filter(|p| p.is_struct_value())
+            .map(|p| p.name().to_string())
+            .collect(),
+        c_parameter_types: parsed_function
+            .parameters()
+            .iter()
+            .map(|parameter| {
+                (
+                    parameter.name().to_string(),
+                    parameter.c_type().to_kernel_type(),
+                )
+            })
+            .collect(),
+        local_type_state: None,
+        pointer_element_types: parsed_function
+            .parameters()
+            .iter()
+            .filter_map(|parameter| {
+                if parameter.is_struct_value() {
+                    return Some((parameter.name().to_string(), CType::Int32));
+                }
+                Some((
+                    parameter.name().to_string(),
+                    click_array_element_type(parameter.c_type())?,
+                ))
+            })
+            .collect(),
+        parameter_pointer_element_widths: parameter_pointer_element_widths(
+            parsed_function.parameters(),
+        ),
+        quantified_values: BTreeMap::new(),
+        algebraic_variables: BTreeMap::new(),
+        algebraic_types: BTreeMap::new(),
+        loop_index,
+        statement_index: record.statement_index,
+        next_quantifier_variable: previous.quantifiers_after,
+        branch_join_target: None,
+        snapshots: None,
+        loop_records: None,
+    };
+    match pointer_element_types {
+        Some(types) => lowerer
+            .pointer_element_types
+            .extend(types.iter().map(|(name, element)| (name.clone(), *element))),
+        None => return Ok(None),
+    }
+    let lowered = lowerer.lower_statement(loop_statement, parsed_function.control_targets())?;
+    let quantifiers_after = lowerer.next_quantifier_variable;
+    let bindings_empty_after =
+        lowerer.quantified_values.is_empty() && lowerer.algebraic_variables.is_empty();
+    let lowered = if previous.function.resource_derived_mutable_frame()
+        && !function_block.is_external()
+        && let Some(frame_entry) = frame_entry
+    {
+        // The frames are read off the function's entry clauses alone, so the
+        // loop is given the ranges every other loop of `previous` holds.
+        let checked_entry = match frame_entry.checked_entry_state {
+            Some(state) => state.clone(),
+            None => {
+                crate::kernel::c_function_entry_state(entry_state, &previous.function, arguments)
+                    .ok_or_else(|| {
+                        ClickError::new(format!(
+                            "could not construct the resource-derived loop entry for `{}`",
+                            parsed_function.name()
+                        ))
+                    })?
+            }
+        };
+        let mut budget = crate::kernel::ExecutionBudget::for_new_execution();
+        match crate::kernel::establish_resource_derived_loop_frames(
+            previous.function.clone().with_body(lowered),
+            &checked_entry,
+            &frame_entry
+                .assumptions
+                .clone()
+                .assume_entry_clause_extents(),
+            &mut budget,
+        ) {
+            Ok(Ok(function)) => function.body().clone(),
+            Ok(Err(message)) => {
+                return Err(ClickError::new(format!(
+                    "could not establish resource-derived loop frames for `{}`: {message}",
+                    parsed_function.name()
+                )));
+            }
+            Err(limit) => {
+                return Err(ClickError::new(format!(
+                    "resource-derived loop-frame establishment for `{}` stopped at {}",
+                    limit.describe(),
+                    parsed_function.name()
+                )));
+            }
+        }
+    } else {
+        lowered
+    };
+    let mut next_loop_index = 0;
+    let Some(body) = kernel_loop_replaced(
+        previous.function.body(),
+        loop_index,
+        &mut next_loop_index,
+        &lowered,
+    ) else {
+        return Ok(None);
+    };
+    Ok(Some(LoopAnnotation {
+        function: previous.function.clone().with_body(body),
+        loop_index,
+        quantifiers_after,
+        bindings_empty_after,
+        shape: previous.shape.clone(),
+    }))
+}
+
+/// The C0 loop node a whole-function walk gives loop index `target`, found
+/// in that walk's order: `while`, `do` and `for` loops number themselves
+/// before their bodies, and only sequences, loops and `if` arms are
+/// descended, as `AnnotationLowerer::lower_statement` descends them.
+fn c0_loop_by_index(
+    statement: &syntax::C0Statement,
+    target: usize,
+) -> Option<&syntax::C0Statement> {
+    fn find<'s>(
+        statement: &'s syntax::C0Statement,
+        target: usize,
+        next: &mut usize,
+    ) -> Option<&'s syntax::C0Statement> {
+        match statement {
+            syntax::C0Statement::Seq(first, second) => {
+                find(first, target, next).or_else(|| find(second, target, next))
+            }
+            syntax::C0Statement::While { body, .. }
+            | syntax::C0Statement::DoWhile { body, .. }
+            | syntax::C0Statement::For { body, .. } => {
+                let index = *next;
+                *next += 1;
+                if index == target {
+                    Some(statement)
+                } else {
+                    find(body, target, next)
+                }
+            }
+            syntax::C0Statement::If {
+                then_branch,
+                else_branch,
+                ..
+            } => find(then_branch, target, next).or_else(|| find(else_branch, target, next)),
+            _ => None,
+        }
+    }
+    let mut next = 0;
+    let found = find(statement, target, &mut next)?;
+    matches!(
+        found,
+        syntax::C0Statement::While { .. } | syntax::C0Statement::DoWhile { .. }
+    )
+    .then_some(found)
+}
+
+/// `statement` with the loop `kernel_loop_by_index` finds at `target`
+/// replaced by `replacement`: the statements on the way to it are rebuilt,
+/// every other part is shared.
+fn kernel_loop_replaced(
+    statement: &CStatement,
+    target: usize,
+    next: &mut usize,
+    replacement: &CStatement,
+) -> Option<CStatement> {
+    match statement {
+        CStatement::While { body, .. } => {
+            let index = *next;
+            *next += 1;
+            if index == target {
+                return Some(replacement.clone());
+            }
+            // A loop inside another is not one a walk lowers alone.
+            *next += count_kernel_loops(body);
+            None
+        }
+        CStatement::Seq(first, second) => {
+            if let Some(first) = kernel_loop_replaced(first, target, next, replacement) {
+                return Some(CStatement::Seq(std::sync::Arc::new(first), second.clone()));
+            }
+            let second = kernel_loop_replaced(second, target, next, replacement)?;
+            Some(CStatement::Seq(first.clone(), std::sync::Arc::new(second)))
+        }
+        CStatement::If {
+            condition,
+            then_branch,
+            else_branch,
+        } => {
+            if let Some(then_branch) = kernel_loop_replaced(then_branch, target, next, replacement)
+            {
+                return Some(CStatement::If {
+                    condition: condition.clone(),
+                    then_branch: Box::new(then_branch),
+                    else_branch: else_branch.clone(),
+                });
+            }
+            let else_branch = kernel_loop_replaced(else_branch, target, next, replacement)?;
+            Some(CStatement::If {
+                condition: condition.clone(),
+                then_branch: then_branch.clone(),
+                else_branch: Box::new(else_branch),
+            })
+        }
+        // A loop under any other statement is not one a walk lowers alone.
+        statement => {
+            *next += count_kernel_loops(statement);
+            None
+        }
+    }
+}
+
+/// The loops `kernel_loop_by_index` numbers in `statement`.
+fn count_kernel_loops(statement: &CStatement) -> usize {
+    match statement {
+        CStatement::While { body, .. } => 1 + count_kernel_loops(body),
+        CStatement::Seq(first, second) => count_kernel_loops(first) + count_kernel_loops(second),
+        CStatement::If {
+            then_branch,
+            else_branch,
+            ..
+        } => count_kernel_loops(then_branch) + count_kernel_loops(else_branch),
+        CStatement::TryCatchInt32 {
+            try_body, handler, ..
+        } => count_kernel_loops(try_body) + count_kernel_loops(handler),
+        CStatement::Switch { cases, .. } => cases
+            .iter()
+            .map(|case| count_kernel_loops(&case.body))
+            .sum(),
+        _ => 0,
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn annotate_function(
+    function_block: &FunctionBlock,
+    parsed_function: &syntax::C0Function,
+    entry_state: &CState,
+    arguments: &[CExpression],
+    spec_definitions: SpecDefinitions<'_>,
+    resource_environment: &ResourceEnvironment,
+    frame_entry: Option<ResourceFrameEntry<'_>>,
+    pointer_element_types: Option<&BTreeMap<String, CType>>,
+    record_loops: bool,
+) -> Result<(CFunction, Option<LoopAnnotationShape>), ClickError> {
     // A frontier loop clause carries the proof scope it was written under;
     // lowering reads every clause through that scope.
     let resolved_block = resolved_function_block(function_block)?;
@@ -1090,6 +1506,7 @@ pub(in crate::surface) fn annotated_function_with_assumptions(
         next_quantifier_variable: 3_000_000,
         branch_join_target: None,
         snapshots: None,
+        loop_records: record_loops.then(Vec::new),
     };
     let parsed_kernel_function = parsed_function.to_kernel_function();
     match pointer_element_types {
@@ -1111,11 +1528,13 @@ pub(in crate::surface) fn annotated_function_with_assumptions(
         &mut lowerer,
     )?;
     lowerer.loop_resources = loop_resources;
-    let body = if parsed_function.prelowered_kernel_function().is_some() {
+    let prelowered = parsed_function.prelowered_kernel_function().is_some();
+    let body = if prelowered {
         lowerer.lower_kernel_statement(parsed_kernel_function.body())?
     } else {
         lowerer.lower_statement(parsed_function.body(), parsed_function.control_targets())?
     };
+    let natural_control_loop = parsed_function.natural_control_loop().is_some();
     let body = if let Some((backedge_target, natural_exit_target, _)) =
         parsed_function.natural_control_loop()
         && function_block
@@ -1145,6 +1564,11 @@ pub(in crate::surface) fn annotated_function_with_assumptions(
     } else {
         body
     };
+    let no_loop_resources = lowerer.loop_resources.is_empty();
+    let recorded = lowerer
+        .loop_records
+        .take()
+        .map(|records| (records, contract_mutable.clone()));
     let source_body = parsed_kernel_function.body().clone();
     let mut function = c_function(
         if parsed_function.return_struct_name().is_some() {
@@ -1306,7 +1730,16 @@ pub(in crate::surface) fn annotated_function_with_assumptions(
             "by-value aggregate parameter `{parameter}` is modified, but a postcondition reads its current state"
         )));
     }
-    Ok(function)
+    let shape = recorded.map(|(records, contract_mutable)| LoopAnnotationShape {
+        loops_lower_alone: !natural_control_loop
+            && !prelowered
+            && no_loop_resources
+            && count_kernel_loops(function.body()) == records.len(),
+        records,
+        contract_mutable,
+        resource_derived_mutable_frame,
+    });
+    Ok((function, shape))
 }
 
 /// Lowers one `branch ensuring` fact as a state-parametric kernel
@@ -1379,6 +1812,7 @@ pub(in crate::surface) fn lower_branch_interface_fact(
         next_quantifier_variable: 3_300_000,
         branch_join_target: Some(branch_join_target),
         snapshots: Some(snapshots),
+        loop_records: None,
     };
     lowerer
         .click_proposition_to_spec_proposition(proposition, &SpecElaborationContext::default())
@@ -1427,6 +1861,7 @@ fn fixed_state_elaboration<'a>(
         loop_resources: BTreeMap::new(),
         inherits_resource_derived_frame: false,
         snapshots: Some(snapshots),
+        loop_records: None,
     };
     // The proof's current locals are fixed values in every context: a name a
     // snapshot or the entry does not bind keeps its current value, as the
@@ -1838,6 +2273,7 @@ pub(in crate::surface) fn elaborate_requirement_proposition(
         next_quantifier_variable: 3_100_000,
         branch_join_target: None,
         snapshots: None,
+        loop_records: None,
     };
     lowerer.click_proposition_to_spec_proposition(
         proposition,
@@ -1913,6 +2349,7 @@ pub(in crate::surface) fn function_contract_summary(
         next_quantifier_variable: 3_100_000,
         branch_join_target: None,
         snapshots: None,
+        loop_records: None,
     };
     let mut context = SpecElaborationContext::for_function_contract();
     // Parameters shadow file-scope spellings in both current and old clauses.
@@ -2389,6 +2826,54 @@ struct AnnotationLowerer<'a> {
     /// The states a proof recorded at program points and marks, when the
     /// proposition is stated inside a proof.
     snapshots: Option<&'a RecordedSnapshots>,
+    /// What a whole-function walk saw at each loop it lowered, in loop
+    /// order, when a later annotation may lower one loop alone
+    /// (`LoopAnnotation`).
+    loop_records: Option<Vec<LoopLoweringRecord>>,
+}
+
+/// Debug builds only: `CLICK_DEBUG_CHECK_LOOP_ANNOTATIONS=1` checks every
+/// `loop` tactic's annotation against a whole-function walk, for corpus
+/// validation.
+#[cfg(debug_assertions)]
+pub(in crate::surface) fn loop_annotation_check_enabled() -> bool {
+    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ENABLED.get_or_init(|| {
+        std::env::var_os("CLICK_DEBUG_CHECK_LOOP_ANNOTATIONS").is_some_and(|value| value == "1")
+    })
+}
+
+#[cfg(test)]
+thread_local! {
+    static ANNOTATION_WALKS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+/// Counts, in test builds, whole-function annotation walks made for `loop`
+/// tactics.
+fn count_annotation_walks(_walks: usize) {
+    #[cfg(test)]
+    ANNOTATION_WALKS.with(|count| count.set(count.get() + _walks));
+}
+
+/// The whole-function annotation walks `loop` tactics made on this thread.
+#[cfg(test)]
+pub(in crate::surface) fn loop_annotation_walks() -> usize {
+    ANNOTATION_WALKS.with(std::cell::Cell::get)
+}
+
+/// What the lowering walk saw at one loop.
+#[derive(Clone, Copy, Debug)]
+struct LoopLoweringRecord {
+    /// The statement counter at the loop's own node.
+    statement_index: usize,
+    /// Whether the loop is a `while` or `do` loop whose body holds no loop,
+    /// so lowering its node alone lowers exactly that loop.
+    lowered_alone: bool,
+    /// The quantifier counter once the loop was lowered.
+    quantifiers_after: u64,
+    /// Whether the walk's scoped bindings were empty once the loop was
+    /// lowered, so the next loop starts from none.
+    bindings_empty_after: bool,
 }
 
 pub(in crate::surface) fn parameter_pointer_element_widths<'a>(
@@ -2761,14 +3246,16 @@ impl AnnotationLowerer<'_> {
             | syntax::C0Statement::DoWhile {
                 condition, body, ..
             } => {
-                self.next_statement_index();
+                let statement_index = self.next_statement_index();
                 let loop_index = self.next_loop_index();
+                self.begin_loop_record(statement_index, loop_index);
                 let lowered_body = self.lower_statement(body, control_targets)?;
                 let invariant_checks = self.loop_invariant_checks(loop_index)?;
                 let effect_checks = self.loop_frame_checks(loop_index)?;
                 let resource_specs = self.loop_resource_specs(loop_index);
                 let (ranking_measures, structural_measure) =
                     self.loop_measure_clauses(loop_index)?;
+                self.end_loop_record(loop_index, true);
                 if matches!(statement, syntax::C0Statement::DoWhile { .. }) {
                     c_do_while_with_invariant_and_effect_checks(
                         condition.to_kernel_expression(),
@@ -2800,8 +3287,9 @@ impl AnnotationLowerer<'_> {
                 ..
             } => {
                 let lowered_initializer = self.lower_statement(initializer, control_targets)?;
-                self.next_statement_index();
+                let statement_index = self.next_statement_index();
                 let loop_index = self.next_loop_index();
+                self.begin_loop_record(statement_index, loop_index);
                 let lowered_body = self.lower_statement(body, control_targets)?;
                 let lowered_step = self.lower_statement(step, control_targets)?;
                 let invariant_checks = self.loop_invariant_checks(loop_index)?;
@@ -2809,6 +3297,7 @@ impl AnnotationLowerer<'_> {
                 let resource_specs = self.loop_resource_specs(loop_index);
                 let (ranking_measures, structural_measure) =
                     self.loop_measure_clauses(loop_index)?;
+                self.end_loop_record(loop_index, false);
                 c_seq(
                     lowered_initializer,
                     c_while_with_invariant_and_effect_checks(
@@ -2862,6 +3351,36 @@ impl AnnotationLowerer<'_> {
         let index = self.loop_index;
         self.loop_index += 1;
         index
+    }
+
+    fn begin_loop_record(&mut self, statement_index: usize, loop_index: usize) {
+        if let Some(records) = &mut self.loop_records {
+            debug_assert_eq!(records.len(), loop_index);
+            records.push(LoopLoweringRecord {
+                statement_index,
+                lowered_alone: false,
+                quantifiers_after: 0,
+                bindings_empty_after: false,
+            });
+        }
+    }
+
+    /// Completes loop `loop_index`'s record once it is lowered; `whole` says
+    /// whether its own node is all a lowering of it alone has to visit.
+    fn end_loop_record(&mut self, loop_index: usize, whole: bool) {
+        let nested = self.loop_index != loop_index + 1;
+        let quantifiers_after = self.next_quantifier_variable;
+        let bindings_empty_after =
+            self.quantified_values.is_empty() && self.algebraic_variables.is_empty();
+        if let Some(record) = self
+            .loop_records
+            .as_mut()
+            .and_then(|records| records.get_mut(loop_index))
+        {
+            record.lowered_alone = whole && !nested;
+            record.quantifiers_after = quantifiers_after;
+            record.bindings_empty_after = bindings_empty_after;
+        }
     }
 
     /// The loop's declared `decreases` components, in source order.

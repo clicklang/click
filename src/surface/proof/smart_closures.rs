@@ -5467,6 +5467,7 @@ impl<'a> Proof<'a> {
             self.execution_proposition_fixed_state_view()
                 .and_then(|view| {
                     view.requirement_facts
+                        .as_slice()
                         .iter()
                         .zip(view.original_requirements)
                         .find(|(fact, _)| *fact == kernel)
@@ -9463,6 +9464,41 @@ impl<'a> Proof<'a> {
         }))
     }
 
+    /// `auto`'s automatic opening (design/proof-reuse.md R4): a C operation
+    /// refused because the resource it reads or writes lies inside a folded
+    /// resource is retried once that resource is unfolded, one layer per
+    /// refused access. The certificate records each `unfold`, so expansion
+    /// writes it out. A refusal the opening does not resolve is reported as
+    /// the original refusal.
+    fn retry_statement_after_auto_open(
+        &self,
+        step: ProofStep,
+        retried_requirements: &mut std::collections::BTreeSet<PropositionIdentityKey>,
+        error: ClickError,
+    ) -> Result<Self, ClickError> {
+        let mut proof = self.clone();
+        let mut refusal = error.clone();
+        for _ in 0..MAX_AUTO_OPENINGS_PER_STATEMENT {
+            let Some(missing) = refusal.missing_resource() else {
+                break;
+            };
+            let Some(opened) = proof.auto_open_for_missing_resource(missing)? else {
+                break;
+            };
+            proof = opened;
+            match proof.apply_step(step.clone()) {
+                Ok(stepped) => return Ok(stepped),
+                Err(next) if next.missing_resource().is_some() => refusal = next,
+                Err(next) => {
+                    return proof
+                        .retry_statement_after_refusal(step, retried_requirements, Err(next))
+                        .map_err(|_| error);
+                }
+            }
+        }
+        Err(error)
+    }
+
     pub(in crate::surface::proof) fn retry_statement_after_refusal(
         &self,
         step: ProofStep,
@@ -9471,6 +9507,9 @@ impl<'a> Proof<'a> {
     ) -> Result<Self, ClickError> {
         match initial {
             Ok(proof) => Ok(proof),
+            Err(error) if error.missing_resource().is_some() => {
+                self.retry_statement_after_auto_open(step, retried_requirements, error)
+            }
             Err(error) => {
                 let Some(mut requirement) = error.unresolved_requirement().cloned() else {
                     return Err(error);
@@ -9941,6 +9980,11 @@ impl<'a> Proof<'a> {
         }
     }
 }
+
+/// How many resources `auto` opens for one C statement before it reports
+/// the statement's refusal. A statement touches a bounded number of places,
+/// and each opening must hold one of them.
+const MAX_AUTO_OPENINGS_PER_STATEMENT: usize = 4;
 
 /// How many variables simp's bound selection visits from a goal's own
 /// variables before it stops following bounds to further variables.

@@ -656,7 +656,8 @@ impl<'a> Proof<'a> {
             }
             _ => None,
         };
-        let source_facts = caller_requirement_facts.unwrap_or(view.requirement_facts);
+        let source_facts =
+            caller_requirement_facts.unwrap_or_else(|| view.requirement_facts.as_slice());
         let source_selection = match self.context.as_ref() {
             ProofContext::Execution(context) => {
                 let owner = context
@@ -2829,7 +2830,7 @@ impl<'a> Proof<'a> {
             ),
             theorem_environment: context.theorem_environment,
             original_requirements: context.function_block.requires(),
-            requirement_facts: &context.constants.execution_start_facts,
+            requirement_facts: FixedStateFacts::List(&context.constants.execution_start_facts),
         })
     }
 
@@ -3215,7 +3216,7 @@ impl<'a> Proof<'a> {
             ),
             theorem_environment: context.theorem_environment,
             original_requirements: context.function_block.requires(),
-            requirement_facts: context.constants.execution_start_facts.as_slice(),
+            requirement_facts: FixedStateFacts::List(&context.constants.execution_start_facts),
         })
     }
 

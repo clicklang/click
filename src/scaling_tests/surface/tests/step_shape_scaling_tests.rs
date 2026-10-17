@@ -819,28 +819,81 @@ fn sequential_loop_clauses_cost_the_same_at_every_position() {
 /// context entry per earlier fact at every loop; the transport context's
 /// build is charged nothing, so clause work alone does not show it.
 ///
+/// Nor does the rest of a clause's uncharged work, counted here alongside:
+/// the path facts it copies out of its persistent fact list into flat
+/// vectors, files in the list's exact index, and tests for store-transport
+/// candidacy (`PureFactList`); the reserved-variable sets it collects for
+/// fresh identities (`LazyReservedVariables`); the variables its facts
+/// hand to their fact sets' reservations beyond already reserved
+/// snapshots; and the whole-function annotation walks it makes
+/// (`LoopAnnotation`). Each once grew with the loops before: the list was a
+/// flat copy indexed afresh at every loop, every rule and loop head
+/// collected the whole path context's variables, every fact re-collected
+/// its snapshots' variables, and every loop re-annotated the whole function.
+///
 /// Across the twelve-loop run, the last clause also costs what the second
 /// does. A drift of a unit or two per earlier loop is below the band between
 /// neighbours: restoring the entry's blocks at each loop head once rebuilt
 /// the block table, and comparing it walked every block declared so far.
 #[test]
+#[ignore = "nightly: 2.2s in the parallel gate"]
 fn sequential_loops_build_the_same_context_entries_each() {
+    let counts = || {
+        let [copied, indexed, tested] = crate::surface::pure_fact_list::fact_list_entry_counts();
+        [
+            (
+                "context entries",
+                crate::kernel::reasoning::path_facts::context_rebuild_entries(),
+            ),
+            ("flat fact copies", copied),
+            ("fact index entries", indexed),
+            ("transport candidacy tests", tested),
+            (
+                "reservation collections",
+                crate::kernel::lazy_reservation_collections(),
+            ),
+            (
+                "reserved fact variables",
+                crate::kernel::proof::reserved_fact_variable_entries(),
+            ),
+            (
+                "annotation walks",
+                crate::surface::lowering::loop_annotation_walks(),
+            ),
+        ]
+    };
     let runs = [3, 6, 12].map(|n| {
-        let before = crate::kernel::reasoning::path_facts::context_rebuild_entries();
+        let before = counts();
         let run = run(loops, n);
+        let after = counts();
         (
-            crate::kernel::reasoning::path_facts::context_rebuild_entries() - before,
+            std::array::from_fn::<_, 7, _>(|index| {
+                (after[index].0, after[index].1 - before[index].1)
+            }),
             run.loops,
         )
     });
-    let entries = runs.each_ref().map(|(entries, _)| *entries);
-    let per_loop = [(entries[1] - entries[0]) / 3, (entries[2] - entries[1]) / 6];
+    for index in 0..7 {
+        let name = runs[0].0[index].0;
+        let entries = runs.each_ref().map(|(counts, _)| counts[index].1);
+        let per_loop = [(entries[1] - entries[0]) / 3, (entries[2] - entries[1]) / 6];
+        assert!(
+            entries[1] >= entries[0] && entries[2] >= entries[1],
+            "{name}: a longer run counts fewer ({entries:?})"
+        );
+        assert!(
+            per_loop[1] <= per_loop[0] + band(per_loop[0]),
+            "each further loop counts {} {name} at 3 to 6 loops and {} at 6 to 12 ({entries:?})",
+            per_loop[0],
+            per_loop[1]
+        );
+    }
+    // A loop clause's annotation lowers its own loop; only the first walks
+    // the whole function.
     assert!(
-        per_loop[1] <= per_loop[0] + band(per_loop[0]),
-        "each further loop builds {} context entries at 3 to 6 loops and {} at 6 to 12 \
-         ({entries:?})",
-        per_loop[0],
-        per_loop[1]
+        runs.iter().all(|(counts, _)| counts[6].1 == 1),
+        "loop tactics walk the whole function more than once per claim: {:?}",
+        runs.each_ref().map(|(counts, _)| counts[6].1)
     );
     let clauses = &runs[2].1;
     let (second, last) = (clauses[1], clauses[clauses.len() - 1]);

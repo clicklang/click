@@ -919,8 +919,22 @@ fn c_loop_preservation_contexts_with_mode(
         collect_loop_effect_bitvector_variables(check.effect(), &mut existing_variables);
     }
     collect_c_statement_bitvector_variables(body, &mut existing_variables);
-    collect_assumption_variables(assumptions, &mut existing_variables);
-    let mut variables = KernelVariableGenerator::fresh_for_execution(existing_variables);
+    // The context's variables are the whole path's before the loop. The
+    // head's identities come from the execution counter, which normally
+    // already lies above every one of them, so they are reserved through the
+    // ceiling the context keeps and collected only for a query below it.
+    let path_assumptions = assumptions.clone();
+    let mut variables = KernelVariableGenerator::fresh_for_execution_with_shared_reservations(
+        existing_variables,
+        crate::kernel::LazyReservedVariables::new(
+            assumptions.execution_variable_ceiling(),
+            move || {
+                let mut variables = BTreeSet::new();
+                collect_assumption_variables(&path_assumptions, &mut variables);
+                std::sync::Arc::new(variables)
+            },
+        ),
+    );
     let head = prepare_loop_top_state(
         loop_entry_state,
         effect_checks,

@@ -1386,13 +1386,11 @@ fn expand_declared_resource_structural_clause(
     mut clause: StructuralClause,
     resource_definitions: &DeclaredResourceScope,
 ) -> Result<StructuralClause, ClickError> {
-    clause.items = clause
-        .items
+    clause.items = std::mem::take(&mut clause.items)
         .into_iter()
         .map(|item| expand_declared_resource_structural_item(item, resource_definitions))
         .collect::<Result<Vec<_>, _>>()?;
-    clause.resources = clause
-        .resources
+    clause.resources = std::mem::take(&mut clause.resources)
         .into_iter()
         .map(|resource| expand_declared_resource_clause(resource, resource_definitions))
         .collect::<Result<Vec<_>, _>>()?;
