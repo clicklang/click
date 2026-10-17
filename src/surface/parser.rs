@@ -324,7 +324,7 @@ pub(super) fn parse_file_items_for_module(
     imported_callees: &[ImportedCallee<'_>],
     imported_resources: &[&ResourceDefinition],
     layouts: ProgramLayouts,
-) -> Result<ClickFile, ClickError> {
+) -> Result<(ClickFile, Vec<ProofBlockSpan>), ClickError> {
     let mut parser = Parser::with_program_layouts(
         source,
         layouts,
@@ -400,7 +400,8 @@ pub(super) fn parse_file_items_for_module(
             );
         }
     }
-    parser.parse_file_items()
+    let file = parser.parse_file_items()?;
+    Ok((file, parser.proof_block_spans))
 }
 
 /// The names of the standard library's pure functions, read from its tokens

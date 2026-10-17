@@ -48,6 +48,13 @@ parameter types and objects, struct, reference and aggregate parameters, arm
 binder types, facts) beside them. Cross-kind queries and shadowing are table
 methods.
 
+The parser records every braced proof block it reads, with the start of each
+tactic in it. `click-verify` builds its `ProofSourceIndex` from the blocks the
+entry module's verification parse recorded, instead of guessing from the
+token before each brace. The guess also took resource `match` arms, `if`
+expression branches in pure functions and the bodies of C functions named
+`open` for proofs. Expansion still finds proof blocks from tokens.
+
 The complete scoped table for parameters, fields, binders, constructors,
 resources, program points and project modules remains open. Proof inventories
 still interpret shared parser tokens; parser-produced AST spans and integration

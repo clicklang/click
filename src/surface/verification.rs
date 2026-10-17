@@ -1126,6 +1126,16 @@ pub(in crate::surface) fn resolve_click_project_context(
     project: &ClickProject,
     sources: &CSourceContext<'_>,
 ) -> Result<ClickFile, ClickError> {
+    resolve_click_project_context_with_proof_blocks(project, sources).map(|(file, _)| file)
+}
+
+/// The resolved project, with the braced proof blocks its entry module's
+/// parse read. Library contracts the frontend appends after the entry text
+/// contribute blocks past its last line.
+pub(in crate::surface) fn resolve_click_project_context_with_proof_blocks(
+    project: &ClickProject,
+    sources: &CSourceContext<'_>,
+) -> Result<(ClickFile, Vec<parser::ProofBlockSpan>), ClickError> {
     let _timing = VerificationTimingPhase::new("source resolution");
     let click_source = project
         .entry_source()

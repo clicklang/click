@@ -655,10 +655,9 @@ fn proof_error_report(
 ) -> String {
     let (mut report, mut context) = error.concise_report_parts();
     let source_locations = ProofSourceLocations::new(project, inputs);
-    let failure_position = project.entry_source().and_then(|source| {
-        let (claim, path) = error.proof_source_site()?;
-        source_locations.position(claim, path, source)
-    });
+    let failure_position = error
+        .proof_source_site()
+        .and_then(|(claim, path)| source_locations.position(claim, path));
     if let Some(source) = project.entry_source()
         && let Some(position) = failure_position.as_ref()
     {
@@ -724,12 +723,9 @@ fn proof_error_report(
                 return cached.clone();
             }
             let label = error.proof_claim_label().and_then(|claim| {
-                let source = project.entry_source()?;
-                let position = source_locations.position(claim, path, source)?;
+                let position = source_locations.position(claim, path)?;
                 let multiple = source_locations
-                    .with_index(source, |index| {
-                        index.line_has_multiple_starts(&position).unwrap_or(true)
-                    })
+                    .with_index(|index| index.line_has_multiple_starts(&position).unwrap_or(true))
                     .unwrap_or(true);
                 let line = position.line + line_offset;
                 let label = if multiple {
@@ -743,29 +739,21 @@ fn proof_error_report(
             label
         };
         let branch_arm = |path: &[usize], target: &click::surface::SourcePosition| {
-            let source = project.entry_source()?;
             let claim = error.proof_claim_label()?;
-            let branch = source_locations.position(claim, path, source)?;
+            let branch = source_locations.position(claim, path)?;
             source_locations
-                .with_index(source, |index| {
-                    index.arm_containing(&branch, target).ok().flatten()
-                })
+                .with_index(|index| index.arm_containing(&branch, target).ok().flatten())
                 .flatten()
         };
         let have_body_contains = |path: &[usize], target: &click::surface::SourcePosition| {
-            let Some(source) = project.entry_source() else {
-                return false;
-            };
             let Some(claim) = error.proof_claim_label() else {
                 return false;
             };
-            let Some(have) = source_locations.position(claim, path, source) else {
+            let Some(have) = source_locations.position(claim, path) else {
                 return false;
             };
             source_locations
-                .with_index(source, |index| {
-                    index.have_body_contains(&have, target).unwrap_or(false)
-                })
+                .with_index(|index| index.have_body_contains(&have, target).unwrap_or(false))
                 .unwrap_or(false)
         };
         if let Some(trace) = error.trace_context_report_with_tactic_locations(
@@ -921,15 +909,19 @@ impl<'a> ProofSourceLocations<'a> {
         position: &click::surface::SourcePosition,
         line_offset: usize,
     ) -> Option<String> {
-        self.with_index(source, |index| {
+        self.with_index(|index| {
             format_source_tactic_at_position(index, source, position, line_offset)
         })
         .flatten()
     }
 
-    fn with_index<T>(&self, source: &str, query: impl FnOnce(&ProofSourceIndex) -> T) -> Option<T> {
+    /// Queries the entry module's index, built once from its verification
+    /// parse.
+    fn with_index<T>(&self, query: impl FnOnce(&ProofSourceIndex) -> T) -> Option<T> {
         if self.index.borrow().is_none() {
-            *self.index.borrow_mut() = Some(ProofSourceIndex::new(source).ok());
+            *self.index.borrow_mut() = Some(
+                ProofSourceIndex::for_project(self.project, &self.inputs.program_inputs()).ok(),
+            );
         }
         self.index.borrow().as_ref()?.as_ref().map(query)
     }
@@ -943,25 +935,12 @@ impl<'a> ProofSourceLocations<'a> {
         }
     }
 
-    fn position(
-        &self,
-        claim: &str,
-        path: &[usize],
-        source: &str,
-    ) -> Option<click::surface::SourcePosition> {
+    fn position(&self, claim: &str, path: &[usize]) -> Option<click::surface::SourcePosition> {
         let source_index = *path.first()?;
         let key = claim.to_owned();
         if !self.outer.borrow().contains_key(&key) {
             let outer = self
-                .with_index(source, |index| {
-                    index
-                        .project_tactic_positions(
-                            self.project,
-                            &self.inputs.program_inputs(),
-                            claim,
-                        )
-                        .ok()
-                })
+                .with_index(|index| index.project_tactic_positions(self.project, claim).ok())
                 .flatten();
             self.outer.borrow_mut().insert(key.clone(), outer);
         }
@@ -975,10 +954,8 @@ impl<'a> ProofSourceLocations<'a> {
         if path.len() == 1 {
             Some(outer)
         } else {
-            self.with_index(source, |index| {
-                index.nested_position(&outer, &path[1..]).ok()
-            })
-            .flatten()
+            self.with_index(|index| index.nested_position(&outer, &path[1..]).ok())
+                .flatten()
         }
     }
 }
@@ -1471,12 +1448,9 @@ fn verify_file_within_limits(
                         return cached.clone();
                     }
                     let label = (|| {
-                        let source = project.entry_source()?;
-                        let position = source_locations.position(claim, path, source)?;
+                        let position = source_locations.position(claim, path)?;
                         let multiple = source_locations
-                            .with_index(source, |index| {
-                                index.line_has_multiple_starts(&position).ok()
-                            })
+                            .with_index(|index| index.line_has_multiple_starts(&position).ok())
                             .flatten()?;
                         let line = position.line + line_offset;
                         let label = if multiple {
@@ -1490,24 +1464,18 @@ fn verify_file_within_limits(
                     label
                 };
                 let arm = |claim: &str, path: &[usize], target: &click::surface::SourcePosition| {
-                    let source = project.entry_source()?;
-                    let branch = source_locations.position(claim, path, source)?;
+                    let branch = source_locations.position(claim, path)?;
                     source_locations
-                        .with_index(source, |index| {
-                            index.arm_containing(&branch, target).ok().flatten()
-                        })
+                        .with_index(|index| index.arm_containing(&branch, target).ok().flatten())
                         .flatten()
                 };
                 let body =
                     |claim: &str, path: &[usize], target: &click::surface::SourcePosition| {
-                        let Some(source) = project.entry_source() else {
-                            return false;
-                        };
-                        let Some(have) = source_locations.position(claim, path, source) else {
+                        let Some(have) = source_locations.position(claim, path) else {
                             return false;
                         };
                         source_locations
-                            .with_index(source, |index| {
+                            .with_index(|index| {
                                 index.have_body_contains(&have, target).unwrap_or(false)
                             })
                             .unwrap_or(false)

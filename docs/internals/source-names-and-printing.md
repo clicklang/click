@@ -20,8 +20,11 @@ comments and lexical refusals therefore have the parser's boundaries. The
 proof source adapter inserts only zero-width braces around an implicit
 single-tactic `by` body. The splicer materializes those braces when a rewrite
 needs several tactics and preserves source outside its selected byte span.
-Proof-block and declaration inventories still interpret the token structure;
-they are not yet parser-produced AST spans.
+The parser records each braced proof block it reads (`ProofBlockSpan`: its
+braces and the start of each tactic), and `ProofSourceIndex::for_project`
+indexes exactly the blocks the entry module's verification parse recorded.
+Expansion's proof-block and declaration inventories still interpret the token
+structure; they are not yet parser-produced spans.
 
 `printing::print_proposition` is the common Surface proposition printer.
 Callers select source, ordinary diagnostic, or refusal spelling explicitly. Source output always
