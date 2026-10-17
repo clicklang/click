@@ -18589,7 +18589,7 @@ int total(const Shape& shape, int scale) {
         (
             "int Tile::area(int scale) const {\n} by { execute(); simp(); }\n",
             "class Tile : Square {\n}\n",
-            "`class Tile : Square` states no override of `Square::area`",
+            "`Tile::area` overrides the virtual method `Square::area` but has no contract",
         ),
     ] {
         let sidecar = sidecar.replacen(from, to, 1);

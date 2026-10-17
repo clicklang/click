@@ -95,6 +95,17 @@ pub(super) struct ObjectMethods {
     pub(super) interfaces: BTreeSet<String>,
     /// The defining classes' methods, which are so stated.
     pub(super) on_memory: BTreeSet<String>,
+    /// The defining classes.
+    pub(super) defining: BTreeSet<String>,
+    /// The dispatches the rewrite states on the object, by name: the class
+    /// another derives from and its method.
+    pub(super) dispatches: BTreeMap<String, (String, String)>,
+    /// For each defining class another derives from, the object class, and
+    /// a class deriving from it.
+    pub(super) derived_from: BTreeMap<String, (String, String)>,
+    /// Each function's parameters that are references to such a class, and
+    /// hold the object, by importer name: the parameter and its class.
+    pub(super) object_parameters: BTreeMap<String, BTreeMap<String, String>>,
 }
 
 /// Rewrites the class object state of a C++ sidecar, and returns the
@@ -140,31 +151,100 @@ pub(super) fn rewrite_class_objects(
             );
         }
     }
-    // A class deriving from a defining class runs none of its methods on its
-    // own object: a method stated on the base's memory would read that
-    // object by the base's definitions.
+    // A class deriving from a defining class that inherits a method stated
+    // on an ancestor's memory runs it on its own object, which the method's
+    // proof reads by that ancestor's definitions: each function the object
+    // class's interface for it reads is the same here, read through the
+    // base parts.
     let stated = found
         .iter()
         .filter_map(|head| Some((head.class.as_deref()?, head.method.as_str())))
         .collect::<BTreeSet<_>>();
     for (class, definer) in &defining {
-        if !defining.contains_key(&definer.base) {
-            continue;
+        let root = &objects[&definer.root];
+        for (method, interface) in &root.methods {
+            if stated.contains(&(class.as_str(), method.as_str())) {
+                continue;
+            }
+            let mut ancestor = &definer.base;
+            let mut depth = 1;
+            while let Some(parent) = defining.get(ancestor) {
+                if !stated.contains(&(ancestor.as_str(), method.as_str())) {
+                    ancestor = &parent.base;
+                    depth += 1;
+                    continue;
+                }
+                for (function, _) in &root.functions {
+                    let read = interface.clauses.iter().any(|clause| {
+                        clause.windows(2).any(|pair| {
+                            is_ident(pair.first(), function) && pair[1].0 == Token::LParen
+                        })
+                    });
+                    let inherited = (0..depth)
+                        .try_fold(parent.definitions[function].clone(), |definition, _| {
+                            through_base(&definition)
+                        });
+                    if read
+                        && !inherited.is_some_and(|inherited| {
+                            same_tokens(&inherited, &definer.definitions[function])
+                        })
+                    {
+                        return Err(error_at(
+                            &definer.position,
+                            format!(
+                                "`{class}` inherits `{ancestor}::{method}`, whose interface \
+                                 reads `{function}`, which `{class}` defines otherwise than \
+                                 `{ancestor}`: `{ancestor}::{method}` is stated on \
+                                 `{ancestor}`'s definitions, so `{class}` overrides it, \
+                                 `{class}::{method}`"
+                            ),
+                        ));
+                    }
+                }
+                break;
+            }
         }
-        for method in objects[&definer.root].methods.keys() {
-            if stated.contains(&(definer.base.as_str(), method.as_str()))
-                && !stated.contains(&(class.as_str(), method.as_str()))
-            {
-                return Err(error_at(
-                    &definer.position,
-                    format!(
-                        "`class {class} : {base}` states no override of `{base}::{method}`, \
-                         which is stated on `{base}`'s memory; on an object of a class deriving \
-                         from `{base}`, its method runs only through that class's override, \
-                         `{class}::{method}`",
-                        base = definer.base
-                    ),
-                ));
+    }
+    // The dispatches stated on the object, and the parameters holding the
+    // object of a class another derives from.
+    let mut dispatches = BTreeMap::new();
+    let mut object_parameters = BTreeMap::<String, BTreeMap<String, String>>::new();
+    for head in &found {
+        let own = parameters(&source[head.list_open + 1..head.list_close]);
+        if let Some(class) = head
+            .class
+            .as_ref()
+            .filter(|class| derived_from.contains(*class))
+            && objects[&defining[class].root]
+                .methods
+                .get(&head.method)
+                .is_some_and(|interface| interface.parameters.len() == own.len())
+        {
+            dispatches.insert(
+                crate::languages::cpp::names::object_dispatch_name(class, &head.method),
+                (class.clone(), head.method.clone()),
+            );
+        }
+        let function = match &head.class {
+            Some(class) => method_name(class, &head.method),
+            None => crate::languages::cpp::names::path_name(&[head.method.as_str()]),
+        };
+        for parameter in &own {
+            let class = match parameter.tokens.as_slice() {
+                [
+                    (Token::Ident(word), _),
+                    (Token::Ident(class), _),
+                    (Token::Amp, _),
+                    _,
+                ] if word == "const" => class,
+                [(Token::Ident(class), _), (Token::Amp, _), _] => class,
+                _ => continue,
+            };
+            if derived_from.contains(class) {
+                object_parameters
+                    .entry(function.clone())
+                    .or_default()
+                    .insert(parameter.name.clone(), class.clone());
             }
         }
     }
@@ -249,6 +329,20 @@ pub(super) fn rewrite_class_objects(
         ObjectMethods {
             interfaces,
             on_memory,
+            defining: defining.keys().cloned().collect(),
+            dispatches,
+            derived_from: derived_from
+                .iter()
+                .map(|class| {
+                    let derived = defining
+                        .iter()
+                        .find(|(_, definer)| &definer.base == class)
+                        .map(|(derived, _)| derived.clone())
+                        .unwrap_or_default();
+                    (class.clone(), (defining[class].root.clone(), derived))
+                })
+                .collect(),
+            object_parameters,
         },
     ))
 }

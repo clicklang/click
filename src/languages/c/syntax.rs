@@ -175,6 +175,10 @@ pub struct C0Function {
     trait_interface: Option<String>,
     /// The C++ virtual method a dispatch the importer names stands for.
     dispatched_method: Option<String>,
+    /// A C++ function's calls of methods on a receiver that may be an object
+    /// of a derived class: the function called, and the reference parameter
+    /// the receiver is, or `None` for `this`.
+    receiver_calls: Vec<(String, Option<String>)>,
     parameters: Vec<C0Parameter>,
     body: C0Statement,
     /// Compiler-created carriers for statement-form callback calls. Keeping
@@ -3319,6 +3323,19 @@ impl C0Function {
         self.trait_interface.as_deref()
     }
 
+    /// This C++ function, calling methods on receivers that may be objects of
+    /// derived classes.
+    pub(crate) fn with_receiver_calls(mut self, calls: Vec<(String, Option<String>)>) -> Self {
+        self.receiver_calls = calls;
+        self
+    }
+
+    /// Its calls of methods on receivers that may be objects of derived
+    /// classes.
+    pub(crate) fn receiver_calls(&self) -> &[(String, Option<String>)] {
+        &self.receiver_calls
+    }
+
     /// The C++ virtual method this function, a dispatch, stands for.
     pub(crate) fn dispatched_method(&self) -> Option<&str> {
         self.dispatched_method.as_deref()
@@ -3404,6 +3421,7 @@ impl C0Function {
             closure_captures: 0,
             trait_interface: None,
             dispatched_method: None,
+            receiver_calls: Vec::new(),
             program_entry_state: None,
             prelowered_kernel_function: None,
             parameters,
@@ -10194,6 +10212,7 @@ impl Parser {
             closure_captures: 0,
             trait_interface: None,
             dispatched_method: None,
+            receiver_calls: Vec::new(),
             program_entry_state: None,
             prelowered_kernel_function: None,
             parameters: header.parameters,
