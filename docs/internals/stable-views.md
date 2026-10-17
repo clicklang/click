@@ -130,7 +130,18 @@ when the viewed composite's checked expansion is covered piecewise and its
 facts hold at the call. A fact holds by the exact routes a fold uses: a
 quantified fact the caller states matches the body's up to its binder and the
 registered loads that binder indexes. Coverage starts from the exact owner occurrence
-checked before reservations. If memory splitting assigns a fresh occurrence
+checked before reservations. When no single owner covers a view with
+concrete bounds, but the caller's unbound owned memory pieces tile its
+range, as a struct owned field by field in pieces of different widths is,
+those pieces are first joined bytewise into one owner, the same join a
+consumed footprint composes from several pieces, and that owner is lent; it
+stays joined after recovery, the same bytes of authority. A gap, a
+loan-bound or projected piece, or a symbolic range is refused, and such a
+view of a local is not read as implicit local storage
+(`mdtests/a_kept_view_of_mixed_width_owned_fields_is_lent_until_released.md`,
+`mdtests/a_kept_view_of_owned_fields_with_a_gap_is_refused.md`,
+`mdtests/writing_a_field_while_its_kept_view_is_lent_is_refused.md`).
+If memory splitting assigns a fresh occurrence
 to a residual fragment, the planner accepts it only when the original owner
 uniquely supported the view and the residual is contained in that owner. It
 refuses any other equal-looking replacement. Declared automatic scalars have
@@ -198,7 +209,8 @@ A composite whose body packages a loan-backed view is a struct holding a
 borrow. Folding it places a hold on the loan's scope, carried by the head's
 binding; unfolding hands the binding to the restored piece so a refold reuses
 the hold. At a call boundary, every viewed piece a produced or returned owned
-composite packages must be backed by exactly one loan of the call: a view
+composite packages must be backed by exactly one loan of the call (one
+joined owner, when the view spans several pieces): a view
 lent here (the loan is returned open with the composite holding it: an
 escrowed owner stays escrowed, a child of the caller's view ends and the
 parent binding is held), or the hold binding an owned input brought in. None

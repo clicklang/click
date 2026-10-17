@@ -4785,7 +4785,12 @@ private:
             fail(cast->getExprLoc(), "C++ base conversion requires an explicit nominal base path");
             return std::nullopt;
           }
+          // A conversion to a `const` base reference, the last edge of the
+          // path, lends the object without the right to change it.
+          const bool to_const = cast->getType().isConstQualified();
+          std::size_t edge_index = 0;
           for (const auto *base : cast->path()) {
+            ++edge_index;
             if (owner == nullptr || !remember_record(owner) ||
                 owner->getNumBases() != 1 || base->isVirtual() ||
                 base->getAccessSpecifier() != clang::AS_public) {
@@ -4810,6 +4815,8 @@ private:
             reference["base_declaration_id"] = declaration_id(target);
             reference["base_name"] = record_name(target);
             reference["span"] = span(cast->getSourceRange());
+            if (to_const && edge_index == cast->path_size())
+              reference["is_const"] = true;
             llvm::json::Object projection;
             projection["base"] = std::move(reference);
             edges.push_back(Json(std::move(projection)));
