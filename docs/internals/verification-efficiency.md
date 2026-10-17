@@ -898,6 +898,11 @@ explicit:
   Exact pointer-operand buckets precede shared-base variable buckets. Literal
   values do not nominate rewrite candidates; an old iterator's `k_old == 4`
   cannot help rewrite a distinct `k` merely because its goal contains `4`.
+  Full pointer-value substitution walks the selected displacement, including
+  C argument bases represented as offsets and symbolic loop-snapshot bases.
+  It preserves already narrowed bounds. The regression
+  `displaced_full_pointer_rewrite_scales_with_the_selected_offset` checks
+  linear work at 8, 32 and 128 offset terms for both representations.
 - **Decide an overlap before searching for a separation.** A walk across a
   call asks whether each cell it names is separate from the callee's write
   set. A cell the write set contains, such as a field of an object that a
