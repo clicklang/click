@@ -4879,16 +4879,22 @@ void relink(struct node* node) { requires node != 0; owns links: pair(node); own
             .contains("missing resource fact `owns node->right`"),
         "{error:?}"
     );
+    // The held field of the struct `node->right` points at is named by its
+    // chain, and is not compared with `node->right` as a byte offset from
+    // `node`: the view of `node->right` is what explains the refusal.
     assert!(
-        error.message.contains("held `owns node->right->augmented`"),
+        error.message.contains("owns node->right->augmented"),
         "{error:?}"
     );
-    assert!(error.message.contains("((node->right - "), "{error:?}");
+    assert!(
+        error.message.contains(
+            "available `views node->right` covers the requested range but permits reading only"
+        ),
+        "{error:?}"
+    );
+    assert!(!error.message.contains("((node->right - "), "{error:?}");
     assert!(!error.message.contains("load("), "{error:?}");
-    assert!(
-        error.message.contains("byte offsets from `node`"),
-        "{error:?}"
-    );
+    assert!(!error.message.contains("byte offsets from"), "{error:?}");
     assert!(!error.message.contains("node[2]"), "{error:?}");
     assert!(!error.message.contains("right[4..6]"), "{error:?}");
 }

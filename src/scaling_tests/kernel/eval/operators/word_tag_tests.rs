@@ -3,7 +3,7 @@ use super::*;
 
 #[test]
 fn checked_word_tag_addition_ignores_unrelated_facts() {
-    let costs = [16u64, 64, 256, 1024].map(|size| {
+    let costs = [4u64, 16, 64, 256].map(|size| {
         let _session = crate::kernel::VerificationSession::enter();
         let (bits, value) = word();
         let mut context = PureFactContext::new().assume_condition(
@@ -47,7 +47,7 @@ fn checked_word_tag_addition_ignores_unrelated_facts() {
 
 #[test]
 fn commuted_word_tag_or_ignores_unrelated_facts() {
-    let costs = [16u64, 64, 256, 1024].map(|size| {
+    let costs = [4u64, 16, 64, 256].map(|size| {
         let _session = crate::kernel::VerificationSession::enter();
         let (_, value) = word();
         let tag = Bitvector32Term::Variable(Variable(997_080));

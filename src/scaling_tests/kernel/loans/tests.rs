@@ -305,7 +305,7 @@ fn overlapping_memory_view_clustering_handles_chains_and_equal_starts() {
     let assumptions = PureFactContext::new();
     let mut chain_samples = Vec::new();
     let mut equal_start_samples = Vec::new();
-    for size in [16_usize, 32, 64, 128] {
+    for size in [4_usize, 8, 16, 32] {
         let ledger = LoanLedger::new();
         let caller = ledger.fresh_participant().unwrap();
         let callee = ledger.fresh_participant().unwrap();
@@ -373,6 +373,50 @@ fn overlapping_memory_view_clustering_handles_chains_and_equal_starts() {
             );
         }
     }
+    {
+        let costs = chain_samples
+            .iter()
+            .map(|(_, work)| *work)
+            .collect::<Vec<_>>();
+        let linear = |costs: &[usize]| {
+            costs.windows(3).all(|triple| {
+                let first = triple[1] - triple[0];
+                let second = triple[2] - triple[1];
+                second <= first * 2 + 128
+            })
+        };
+        assert!(linear(&costs), "transition work: {costs:?}");
+        let rescanned = chain_samples
+            .iter()
+            .map(|(size, work)| work + size * size)
+            .collect::<Vec<_>>();
+        assert!(
+            !linear(&rescanned),
+            "the smaller fixture must detect quadratic transition work: {costs:?}"
+        );
+    }
+    {
+        let costs = equal_start_samples
+            .iter()
+            .map(|(_, work)| *work)
+            .collect::<Vec<_>>();
+        let linear = |costs: &[usize]| {
+            costs.windows(3).all(|triple| {
+                let first = triple[1] - triple[0];
+                let second = triple[2] - triple[1];
+                second <= first * 2 + 128
+            })
+        };
+        assert!(linear(&costs), "transition work: {costs:?}");
+        let rescanned = equal_start_samples
+            .iter()
+            .map(|(size, work)| work + size * size)
+            .collect::<Vec<_>>();
+        assert!(
+            !linear(&rescanned),
+            "the smaller fixture must detect quadratic transition work: {costs:?}"
+        );
+    }
 }
 
 #[test]
@@ -380,7 +424,7 @@ fn overlapping_memory_view_clustering_handles_chains_and_equal_starts() {
 fn loan_certificate_recheck_scales_with_explicit_transition_delta() {
     let assumptions = PureFactContext::new();
     let mut samples = Vec::new();
-    for size in [16_usize, 32, 64, 128] {
+    for size in [4_usize, 8, 16, 32] {
         let ledger = LoanLedger::new();
         let caller = ledger.fresh_participant().unwrap();
         let callee = ledger.fresh_participant().unwrap();
@@ -422,6 +466,25 @@ fn loan_certificate_recheck_scales_with_explicit_transition_delta() {
         assert!(
             pair[1].1 <= pair[0].1.saturating_mul(3),
             "certificate recheck work exceeded its explicit transition delta: {samples:?}"
+        );
+    }
+    {
+        let costs = samples.iter().map(|(_, work)| *work).collect::<Vec<_>>();
+        let linear = |costs: &[usize]| {
+            costs.windows(3).all(|triple| {
+                let first = triple[1] - triple[0];
+                let second = triple[2] - triple[1];
+                second <= first * 2 + 128
+            })
+        };
+        assert!(linear(&costs), "transition work: {costs:?}");
+        let rescanned = samples
+            .iter()
+            .map(|(size, work)| work + size * size)
+            .collect::<Vec<_>>();
+        assert!(
+            !linear(&rescanned),
+            "the smaller fixture must detect quadratic transition work: {costs:?}"
         );
     }
 }

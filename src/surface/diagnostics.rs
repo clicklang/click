@@ -1132,10 +1132,14 @@ pub(super) fn describe_ensure_clause(clause: &EnsureClause) -> String {
             } else {
                 "produces"
             };
-            let spelling = format!(
-                "{verb} {}",
-                crate::surface::validation::describe_resource_clause(resource)
-            );
+            // A memory resource's own spelling already starts with its
+            // access verb; the clause's verb replaces it.
+            let described = crate::surface::validation::describe_resource_clause(resource);
+            let described = described
+                .strip_prefix("owns ")
+                .or_else(|| described.strip_prefix("views "))
+                .unwrap_or(&described);
+            let spelling = format!("{verb} {described}");
             clause.condition().map_or(spelling.clone(), |guard| {
                 format!("if {} {{ {spelling}; }}", describe_click_proposition(guard))
             })
@@ -2055,6 +2059,232 @@ fn describe_struct_place_range(
     None
 }
 
+/// A range inside one scalar array field of a struct, spelled from the
+/// field: `p->a[i]`, `p->a[0..4]` or `h->in->a[i]`, for bounds the lowering
+/// wrote as byte offsets from the struct. Display only.
+fn describe_struct_array_field_range(
+    range: &CMemoryRange,
+    parameter_binding: ParameterBinding<'_>,
+) -> Option<String> {
+    let (base, layout, start, end) = struct_byte_bounds(range, parameter_binding)?;
+    let (field, start, end) = scalar_array_field_indices(&layout, &start, &end)?;
+    let place = describe_field_place(&base, field);
+    if is_one_element(&start, &end) {
+        return Some(format!(
+            "{place}[{}]",
+            describe_bitvector_with_context(&start, parameter_binding)
+        ));
+    }
+    Some(format!(
+        "{place}[{}..{}]",
+        describe_bitvector_with_context(&start, parameter_binding),
+        describe_bitvector_with_context(&end, parameter_binding)
+    ))
+}
+
+/// The spelling of the pointer whose struct `range` lies in, that struct's
+/// layout, and the range's bounds as byte offsets from the pointer: a
+/// pointer parameter, or a pointer field some load read.
+fn struct_byte_bounds(
+    range: &CMemoryRange,
+    parameter_binding: ParameterBinding<'_>,
+) -> Option<(
+    String,
+    syntax::C0StructLayout,
+    Bitvector32Term,
+    Bitvector32Term,
+)> {
+    range.int32_bounds()?;
+    let bounds = |offset: Bitvector32Term| {
+        let bytes = |index: &Bitvector32Term| {
+            Some(bitvector32_add(
+                offset.clone(),
+                rescale_range_index(index, range.element_width(), 1)?,
+            ))
+        };
+        Some((bytes(range.start())?, bytes(range.end())?))
+    };
+    if let Some((parameter, layout, offset)) = parameter_binding
+        .parameters
+        .iter()
+        .zip(parameter_binding.arguments)
+        .find_map(|(parameter, argument)| {
+            let CExpression::Value(CValue::Pointer(base)) = argument else {
+                return None;
+            };
+            if parameter.is_struct_value() {
+                return None;
+            }
+            let layout = parameter
+                .pointee_struct_layout()
+                .or_else(|| parameter.struct_layout())?;
+            let offset = pointer_offset_bytes(&range.base().offset_from_base(base.pointer())?)?;
+            Some((parameter, layout, offset))
+        })
+    {
+        let (start, end) = bounds(offset)?;
+        return Some((parameter.name().to_string(), layout.clone(), start, end));
+    }
+    let (variable, offset) = loaded_pointer_split(range.base())?;
+    let (_, address) = crate::kernel::registered_load_for_variable(&variable)?;
+    let layout =
+        object_fields::ambient_struct_layout(&pointee_struct_at(&address, parameter_binding)?)?;
+    let base = describe_load_at(&address, parameter_binding);
+    if !is_place_spelling(&base) {
+        return None;
+    }
+    let (start, end) = bounds(offset)?;
+    Some((base, layout, start, end))
+}
+
+/// A pointer offset as a byte count: `i * 4 + 8` for `Int32Scaled(i, 4) +
+/// 8`. Display only; a 64-bit scaled index is not narrowed.
+fn pointer_offset_bytes(offset: &PointerOffsetTerm) -> Option<Bitvector32Term> {
+    match offset {
+        PointerOffsetTerm::Constant(bytes) => {
+            Some(Bitvector32Term::Constant(i32::try_from(*bytes).ok()? as u32))
+        }
+        PointerOffsetTerm::Int32Scaled { value, byte_width } => Some(match byte_width {
+            1 => value.as_ref().clone(),
+            width => super::lowering::bitvector32_multiply(
+                value.as_ref().clone(),
+                Bitvector32Term::Constant(i32::try_from(*width).ok()? as u32),
+            ),
+        }),
+        PointerOffsetTerm::Add(left, right) => Some(bitvector32_add(
+            pointer_offset_bytes(left)?,
+            pointer_offset_bytes(right)?,
+        )),
+        PointerOffsetTerm::Int64Scaled { .. } | PointerOffsetTerm::Variable(_) => None,
+    }
+}
+
+/// The scalar array field of `layout` holding the byte range `start..end`,
+/// with the range as element indices of that field. The field is the one
+/// the constant part of `start` falls in; constant bounds must also lie
+/// inside it. `None` when the bounds are not whole elements of the field.
+fn scalar_array_field_indices<'a>(
+    layout: &'a syntax::C0StructLayout,
+    start: &Bitvector32Term,
+    end: &Bitvector32Term,
+) -> Option<(&'a str, Bitvector32Term, Bitvector32Term)> {
+    let anchor = constant_addend(start)?;
+    let (name, field) = layout.fields().iter().find(|(_, field)| {
+        let low = i64::from(field.offset_bytes());
+        !field.c_type().is_pointer()
+            && field.struct_name().is_none()
+            && field.array_shape().is_none_or(|shape| shape.len() == 1)
+            && scalar_element_width(field.c_type()).is_some()
+            && low <= anchor
+            && anchor < low + i64::from(field.byte_width())
+    })?;
+    let width = u32::try_from(scalar_element_width(field.c_type())?).ok()?;
+    let offset = field.offset_bytes();
+    let index = |bytes: &Bitvector32Term| {
+        if offset.is_multiple_of(width) {
+            subtract_constant(&exact_quotient(bytes, width)?, offset / width)
+        } else {
+            exact_quotient(&subtract_constant(bytes, offset)?, width)
+        }
+    };
+    let (start, end) = (index(start)?, index(end)?);
+    let length = field.byte_width() / width;
+    if let (Some(low), Some(high)) = (start.as_const(), end.as_const())
+        && !(low as i32 >= 0 && low < high && high <= length)
+    {
+        return None;
+    }
+    Some((name.as_str(), start, end))
+}
+
+/// The constant summand of a byte offset: `8` in `8 + i * 4`, `0` in
+/// `i * 4`. Display only; it picks the field a symbolic offset starts in.
+fn constant_addend(term: &Bitvector32Term) -> Option<i64> {
+    if let Some(value) = term.as_const() {
+        return Some(i64::from(value as i32));
+    }
+    match term {
+        Bitvector32Term::Constant(value) => Some(i64::from(*value as i32)),
+        Bitvector32Term::Add(left, right) => Some(constant_addend(left)? + constant_addend(right)?),
+        Bitvector32Term::Subtract(left, right) => {
+            Some(constant_addend(left)? - constant_addend(right)?)
+        }
+        Bitvector32Term::Multiply(left, right) => match (left.as_const(), right.as_const()) {
+            (_, Some(factor)) => Some(constant_addend(left)? * i64::from(factor as i32)),
+            (Some(factor), _) => Some(i64::from(factor as i32) * constant_addend(right)?),
+            _ => Some(0),
+        },
+        Bitvector32Term::Variable(_) => Some(0),
+        _ => None,
+    }
+}
+
+/// `term - amount`, folding the constant into a constant summand.
+fn subtract_constant(term: &Bitvector32Term, amount: u32) -> Option<Bitvector32Term> {
+    if amount == 0 {
+        return Some(term.clone());
+    }
+    match term {
+        Bitvector32Term::Constant(value) => {
+            Some(Bitvector32Term::Constant(value.wrapping_sub(amount)))
+        }
+        Bitvector32Term::Add(left, right) => {
+            if let Some(left) = left.as_const() {
+                return Some(bitvector32_add(
+                    Bitvector32Term::Constant(left.wrapping_sub(amount)),
+                    right.as_ref().clone(),
+                ));
+            }
+            if let Some(right) = right.as_const() {
+                return Some(bitvector32_add(
+                    left.as_ref().clone(),
+                    Bitvector32Term::Constant(right.wrapping_sub(amount)),
+                ));
+            }
+            None
+        }
+        _ => None,
+    }
+}
+
+/// `term / width` when the term is visibly a multiple of `width`: a
+/// constant multiple, a product by such a constant, or a sum or difference
+/// of those. Display only.
+fn exact_quotient(term: &Bitvector32Term, width: u32) -> Option<Bitvector32Term> {
+    if width == 1 {
+        return Some(term.clone());
+    }
+    match term {
+        Bitvector32Term::Constant(value) => {
+            let value = *value as i32;
+            (value % width as i32 == 0)
+                .then(|| Bitvector32Term::Constant((value / width as i32) as u32))
+        }
+        Bitvector32Term::Multiply(left, right) => {
+            let (factor, constant) = match (left.as_const(), right.as_const()) {
+                (_, Some(constant)) => (left.as_ref(), constant),
+                (Some(constant), _) => (right.as_ref(), constant),
+                _ => return None,
+            };
+            if !constant.is_multiple_of(width) {
+                return None;
+            }
+            Some(match constant / width {
+                1 => factor.clone(),
+                multiple => super::lowering::bitvector32_multiply(
+                    factor.clone(),
+                    Bitvector32Term::Constant(multiple),
+                ),
+            })
+        }
+        Bitvector32Term::Add(left, right) => Some(bitvector32_add(
+            exact_quotient(left, width)?,
+            exact_quotient(right, width)?,
+        )),
+        _ => None,
+    }
+}
+
 pub(super) fn describe_memory_range(
     range: &CMemoryRange,
     parameter_binding: ParameterBinding<'_>,
@@ -2069,6 +2299,9 @@ pub(super) fn describe_memory_range(
         );
     }
     if let Some(place) = describe_struct_place_range(range, parameter_binding) {
+        return place;
+    }
+    if let Some(place) = describe_struct_array_field_range(range, parameter_binding) {
         return place;
     }
     if let Some(place) = object_fields::object_range_spelling(range) {
@@ -2125,6 +2358,9 @@ pub(super) fn describe_memory_range(
                 describe_bitvector_with_context(&end, parameter_binding)
             );
         }
+    }
+    if let Some(description) = describe_loaded_pointer_range(range, parameter_binding) {
+        return description;
     }
     if let Some(description) = describe_parameter_relative_range(range, parameter_binding) {
         return description;
@@ -2274,6 +2510,15 @@ pub(super) fn describe_parameter_relative_range(
     ))
 }
 
+/// Whether `start..end` is one element: constants one apart, or `end`
+/// written as `start + 1`.
+fn is_one_element(start: &Bitvector32Term, end: &Bitvector32Term) -> bool {
+    match (start.as_const(), end.as_const()) {
+        (Some(start), Some(end)) => start.checked_add(1) == Some(end),
+        _ => range_end_is_next_element(start, end),
+    }
+}
+
 /// Whether `end` is written as `start + 1`, so the range is one element.
 fn range_end_is_next_element(start: &Bitvector32Term, end: &Bitvector32Term) -> bool {
     let one =
@@ -2319,7 +2564,10 @@ fn parameter_relative_base<'a>(
         if base_index.as_const().is_some() {
             return Some((parameter, base_index));
         }
-        symbolic.get_or_insert((parameter, base_index));
+        // A pointer a load read is no symbolic offset from a parameter.
+        if loaded_pointer_split(range.base()).is_none() {
+            symbolic.get_or_insert((parameter, base_index));
+        }
     }
     symbolic
 }
@@ -2467,6 +2715,17 @@ pub(super) fn describe_missing_range_end_note(
             || parameter.struct_layout().is_some()
             || diagnostic_parameter_element_width(parameter) != i64::from(required.element_width())
     });
+    // The scalar array field of the parameter's struct the required range
+    // lies in, when it lies in one.
+    let array_field = byte_coordinates
+        .then(|| struct_byte_bounds(required, parameter_binding))
+        .flatten()
+        .and_then(|(_, layout, start, end)| {
+            let field = scalar_array_field_indices(&layout, &start, &end)?
+                .0
+                .to_string();
+            Some((layout, field))
+        });
     // Endpoints of the held range and of the required one, on one scale.
     let comparable = |held: &CMemoryRange| {
         // This repair describes signed arithmetic; native bounds need their own rule.
@@ -2501,16 +2760,26 @@ pub(super) fn describe_missing_range_end_note(
         } else {
             required.element_width()
         };
-        Some((
+        let bounds = (
             rescale_range_index(&held_start, held.element_width(), unit)?,
             rescale_range_index(&held_end, held.element_width(), unit)?,
             rescale_range_index(&required_start, required.element_width(), unit)?,
             rescale_range_index(&required_end, required.element_width(), unit)?,
-        ))
+        );
+        // Inside one array field the bounds compare as indices of that field,
+        // as the clauses are written.
+        let Some((layout, field)) = &array_field else {
+            return Some(bounds);
+        };
+        let (held_field, held_start, held_end) =
+            scalar_array_field_indices(layout, &bounds.0, &bounds.1)?;
+        let (_, required_start, required_end) =
+            scalar_array_field_indices(layout, &bounds.2, &bounds.3)?;
+        (held_field == *field).then_some((held_start, held_end, required_start, required_end))
     };
     let coordinate_note = required_parameter
         .as_ref()
-        .filter(|_| byte_coordinates)
+        .filter(|_| byte_coordinates && array_field.is_none())
         .map_or(String::new(), |(parameter, _)| {
             format!(" (byte offsets from `{}`)", parameter.name())
         });
@@ -5297,7 +5566,155 @@ fn describe_struct_field_load(
             return Some(describe_field_place(parameter.name(), field));
         }
     }
-    None
+    // A field of a struct reached through a pointer some load read:
+    // `o->b->data`, where `o->b` is that load.
+    let (variable, offset) = loaded_pointer_base(pointer)?;
+    let (_, address) = crate::kernel::registered_load_for_variable(&variable)?;
+    let layout =
+        object_fields::ambient_struct_layout(&pointee_struct_at(&address, parameter_binding)?)?;
+    let mut fields = layout
+        .leaf_field_offsets()
+        .filter(|(_, field_offset)| u64::from(*field_offset) == offset);
+    let (Some((field, _)), None) = (fields.next(), fields.next()) else {
+        return None;
+    };
+    let base = describe_load_at(&address, parameter_binding);
+    is_place_spelling(&base).then(|| format!("{base}->{field}"))
+}
+
+/// `(v, c)` for the address `c` bytes past a pointer `v` that a load read.
+fn loaded_pointer_base(address: &Pointer) -> Option<(Variable, u64)> {
+    let (variable, bytes) = loaded_pointer_split(address)?;
+    Some((variable, u64::from(bytes.as_const()?)))
+}
+
+/// `(v, bytes)` for an address past a pointer `v` that a load read, with
+/// the rest of its offset as a byte count, which may be symbolic.
+fn loaded_pointer_split(address: &Pointer) -> Option<(Variable, Bitvector32Term)> {
+    if address.block != PointerBlock::ExternalArgument {
+        return None;
+    }
+    let mut summands = Vec::new();
+    let mut pending = vec![&address.offset];
+    while let Some(offset) = pending.pop() {
+        match offset {
+            PointerOffsetTerm::Add(left, right) => {
+                pending.push(right);
+                pending.push(left);
+            }
+            summand => summands.push(summand),
+        }
+    }
+    let loaded = |summand: &PointerOffsetTerm| match summand {
+        PointerOffsetTerm::Int32Scaled { value, .. } => match value.as_ref() {
+            Bitvector32Term::Variable(variable)
+                if crate::kernel::is_load_variable(variable)
+                    && crate::kernel::registered_load_for_variable(variable).is_some() =>
+            {
+                Some(*variable)
+            }
+            _ => None,
+        },
+        _ => None,
+    };
+    let mut variables = summands.iter().filter_map(|summand| loaded(summand));
+    let (Some(variable), None) = (variables.next(), variables.next()) else {
+        return None;
+    };
+    let mut bytes = Bitvector32Term::Constant(0);
+    for summand in summands.iter().filter(|summand| loaded(summand).is_none()) {
+        bytes = bitvector32_add(bytes, pointer_offset_bytes(summand)?);
+    }
+    Some((variable, bytes))
+}
+
+/// The struct a pointer field at `address` points at, by name: a pointer
+/// field of the struct a parameter points at, or of a struct reached
+/// through such a field. Display only.
+fn pointee_struct_at(address: &Pointer, parameter_binding: ParameterBinding<'_>) -> Option<String> {
+    pointee_struct_at_depth(address, parameter_binding, 0)
+}
+
+fn pointee_struct_at_depth(
+    address: &Pointer,
+    parameter_binding: ParameterBinding<'_>,
+    depth: usize,
+) -> Option<String> {
+    if depth > MAX_POINTER_CHAIN {
+        return None;
+    }
+    let field_at = |layout: &syntax::C0StructLayout, offset: u64| {
+        let mut pointers = layout.fields().iter().filter(|(_, field)| {
+            u64::from(field.offset_bytes()) == offset && field.c_type().is_pointer()
+        });
+        match (pointers.next(), pointers.next()) {
+            (Some((_, field)), None) => field.struct_name().map(str::to_string),
+            _ => None,
+        }
+    };
+    for (parameter, argument) in parameter_binding
+        .parameters
+        .iter()
+        .zip(parameter_binding.arguments)
+    {
+        let CExpression::Value(CValue::Pointer(base)) = argument else {
+            continue;
+        };
+        if parameter.is_struct_value() || parameter.is_reference() {
+            continue;
+        }
+        let Some(layout) = parameter
+            .pointee_struct_layout()
+            .or_else(|| parameter.struct_layout())
+        else {
+            continue;
+        };
+        if let Some(offset) = diagnostic_pointer_element_index_from_base(address, base.pointer(), 1)
+            .and_then(|offset| offset.as_const())
+        {
+            return field_at(layout, u64::from(offset));
+        }
+    }
+    let (variable, offset) = loaded_pointer_base(address)?;
+    let (_, outer) = crate::kernel::registered_load_for_variable(&variable)?;
+    let name = pointee_struct_at_depth(&outer, parameter_binding, depth + 1)?;
+    field_at(&object_fields::ambient_struct_layout(&name)?, offset)
+}
+
+/// How many pointer fields a place spelling follows from a parameter.
+const MAX_POINTER_CHAIN: usize = 8;
+
+/// A range past a pointer some load read, spelled from the place the load
+/// read: `o->b->data[2]` or `o->b->data[i]`. A pointer to a struct is left
+/// to the struct spelling. Display only.
+fn describe_loaded_pointer_range(
+    range: &CMemoryRange,
+    parameter_binding: ParameterBinding<'_>,
+) -> Option<String> {
+    range.int32_bounds()?;
+    let (variable, bytes) = loaded_pointer_split(range.base())?;
+    let (_, address) = crate::kernel::registered_load_for_variable(&variable)?;
+    if pointee_struct_at(&address, parameter_binding).is_some() {
+        return None;
+    }
+    let shift = exact_quotient(&bytes, range.element_width())?;
+    let name = describe_load_at(&address, parameter_binding);
+    if !is_place_spelling(&name) {
+        return None;
+    }
+    let start = bitvector32_add(shift.clone(), range.start().clone());
+    let end = bitvector32_add(shift, range.end().clone());
+    if is_one_element(&start, &end) {
+        return Some(format!(
+            "{name}[{}]",
+            describe_bitvector_with_context(&start, parameter_binding)
+        ));
+    }
+    Some(format!(
+        "{name}[{}..{}]",
+        describe_bitvector_with_context(&start, parameter_binding),
+        describe_bitvector_with_context(&end, parameter_binding)
+    ))
 }
 
 /// The object whose address `rendered` spells, when it is `&name`. Reading

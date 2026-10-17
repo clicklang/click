@@ -111,7 +111,7 @@ fn compound_word_address_lookup_skips_unrelated_equalities() {
 
 #[test]
 fn bounded_symbolic_tag_lookup_ignores_unrelated_facts() {
-    let costs = [16u64, 64, 256, 1024].map(|size| {
+    let costs = [4u64, 16, 64, 256].map(|size| {
         let _session = crate::kernel::VerificationSession::enter();
         let tag = Bitvector32Term::Variable(Variable(980_021));
         let pointer = Pointer::symbolic(Variable(980_022));

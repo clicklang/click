@@ -7,7 +7,7 @@ use super::*;
 #[test]
 fn construction_destination_binding_work_ignores_unrelated_caller_objects() {
     let mut work_by_size = Vec::new();
-    for count in [16, 128, 1024] {
+    for count in [4, 32, 256] {
         let _session = crate::kernel::VerificationSession::enter();
         let mut caller =
             allocate_destination(&CState::new().with_population_creation_tracking(), "node");
@@ -41,6 +41,20 @@ fn construction_destination_binding_work_ignores_unrelated_caller_objects() {
             .all(|work| *work <= work_by_size[0].max(1) * 2),
         "{work_by_size:?}"
     );
+    {
+        let costs = work_by_size.clone();
+        let indexed = |costs: &[usize]| costs.iter().all(|work| *work <= costs[0] + 32);
+        assert!(indexed(&costs), "indexed work: {costs:?}");
+        let scanned = costs
+            .iter()
+            .zip([4, 32, 256])
+            .map(|(work, size)| work + usize::try_from(size).unwrap())
+            .collect::<Vec<_>>();
+        assert!(
+            !indexed(&scanned),
+            "the smaller fixture must detect a visit per unrelated item: {costs:?}"
+        );
+    }
 }
 
 #[test]

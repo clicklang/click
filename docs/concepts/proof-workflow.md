@@ -63,9 +63,11 @@ for a chain of rewrites. Composite-resource folds and theorem applications
 remain explicit.
 
 After execution reaches the return frontier, grouped tactics retain source
-order. `fold`, `apply`, and `have` transform the current finalized path;
-`simp()` closes the postconditions then provable, and `normalize() using` and
-`arithmetic() using` close one from exactly their listed premises when the
+order. Each path's open goals are the contract's claims in contract order,
+resource claims included. `fold`, `apply`, and `have` transform the current
+finalized path; `simp()` closes the postconditions then provable, and a closer
+such as `assumption()`, `normalize() using` or `arithmetic() using` acts on the
+first open goal, the last two from exactly their listed premises when the
 explicit closer is preferable to search. A later fact or fold does not retroactively affect
 an earlier closing step. Each symbolic path is finalized once, and every
 contract proof is packaged from that same finalized specification.
