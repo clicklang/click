@@ -74,7 +74,9 @@ fn checked_attachment_is_flat_beside_unrelated_equality_history() {
         }
         eprintln!("selected attachment work: {samples:?}");
         assert!(
-            samples.iter().all(|(_, work, _)| *work <= samples[0].1 + 64),
+            samples
+                .iter()
+                .all(|(_, work, _)| *work <= samples[0].1 + 64),
             "attachment walked equality history: {samples:?}"
         );
         assert!(

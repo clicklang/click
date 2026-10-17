@@ -72,5 +72,8 @@ fn full_pointer_fact_transport_checks_designations_and_the_whole_read() {
         samples.push(work);
     }
     eprintln!("full-pointer transport work: {samples:?}");
-    assert!(samples.iter().all(|work| *work <= samples[0] + 64), "{samples:?}");
+    assert!(
+        samples.iter().all(|work| *work <= samples[0] + 64),
+        "{samples:?}"
+    );
 }

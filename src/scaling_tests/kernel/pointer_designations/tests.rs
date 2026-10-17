@@ -166,7 +166,9 @@ fn packed_word_contract_lookup_and_scope_ignore_unrelated_words() {
     }
     eprintln!("packed-word selected work: {measurements:?}");
     assert!(
-        measurements.iter().all(|work| *work <= measurements[0] + 32),
+        measurements
+            .iter()
+            .all(|work| *work <= measurements[0] + 32),
         "{measurements:?}"
     );
 }
