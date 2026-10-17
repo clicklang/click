@@ -39,10 +39,14 @@ impl EqualityGraph {
             Term(&'a Term),
             Model(&'a AlgebraicTerm),
             Value(&'a CValue),
+            Pointer(&'a CPointerValue),
         }
         let mut pending = match proposition {
             Proposition::Equal(a, b) => vec![Work::Term(a), Work::Term(b)],
             Proposition::Predicate { arguments, .. } => arguments.iter().map(Work::Term).collect(),
+            Proposition::ConditionIs(ConditionTerm::PointerValueEqual(a, b), true) => {
+                vec![Work::Pointer(a), Work::Pointer(b)]
+            }
             Proposition::ConditionIs(ConditionTerm::AlgebraicEqual(a, b), true) => {
                 vec![Work::Model(a), Work::Model(b)]
             }
@@ -66,7 +70,8 @@ impl EqualityGraph {
                         }
                     }
                 }
-                Work::Value(CValue::Pointer(pointer)) => {
+                Work::Value(CValue::Pointer(pointer)) => pending.push(Work::Pointer(pointer)),
+                Work::Pointer(pointer) => {
                     if let Some(evidence) = pointer.object_type_evidence() {
                         keys.insert((
                             pointer.pointer().clone(),
@@ -250,7 +255,13 @@ impl EqualityGraph {
                             ) => {
                                 left.c_type() == right.c_type()
                                     && left.pointee_volatile() == right.pointee_volatile()
-                                    && self.are_equal(left.pointer(), right.pointer())
+                                    && self.knows_condition(
+                                        &crate::kernel::ConditionTerm::PointerValueEqual(
+                                            Box::new(left.clone()),
+                                            Box::new(right.clone()),
+                                        ),
+                                        true,
+                                    )
                             }
                             _ => left == right,
                         }

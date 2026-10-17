@@ -332,7 +332,12 @@ explicit steps, splits, and branches, and profiling attributes them to the
 tactic. Automatic path selectors must re-lower to the exact checked condition;
 their native load widths and short-circuit operand facts are preserved.
 
-**Checked examples:** [`tactic_execute.md`](https://github.com/clicklang/click/blob/master/mdtests/tactic_execute.md)
+Inside an explicit `branch` arm, `execute()` can succeed when the arm reaches
+function exit, for example through a `return`. A continuing arm must stop at
+its shared continuation; an unsuccessful `execute()` there names that arm
+limit. Use `step()` to finish a continuing arm and `execute()` after the join.
+
+**Checked examples:** [`execute_branch_arm_stops_at_shared_continuation.md`](https://github.com/clicklang/click/blob/master/mdtests/execute_branch_arm_stops_at_shared_continuation.md), [`tactic_execute.md`](https://github.com/clicklang/click/blob/master/mdtests/tactic_execute.md)
 
 ### Execution to a program point
 
@@ -802,6 +807,15 @@ citing the constant order and equality facts of that width indexed under each
 operand; the rule, not the selection, decides whether the operands' ranges
 exclude overflow.
 
+A recursive specification function applied to a known constructor is
+evaluated: `simp` unfolds it, then keeps unfolding the recursive calls the
+definition exposes while their arguments select one arm, rewriting an argument
+by a constructor equation (a supplied premise or a connected fact such as
+`u == Tree::Node(..)`) when that exposes one, for at most eight checked steps.
+An argument nothing fixes stays folded
+([`simp_evaluates_a_recursive_function_over_known_constructors.md`](https://github.com/clicklang/click/blob/master/mdtests/simp_evaluates_a_recursive_function_over_known_constructors.md),
+[`simp_does_not_evaluate_a_recursive_function_past_an_unknown_argument.md`](https://github.com/clicklang/click/blob/master/mdtests/simp_does_not_evaluate_a_recursive_function_past_an_unknown_argument.md)).
+
 A disequality between an algebraic value and a constructor closes from an exact
 equality fixing that value to a different constructor: the equality rewrites the
 goal and normalization decides the constructors differ
@@ -934,13 +948,18 @@ Each leaf conjunct of a fact is already an available fact, so `extract` of a
 leaf conjunct is accepted but adds nothing; every tactic, including
 `assumption()` and an arithmetic certificate's premises, may cite it directly.
 
+Between execution steps and after execution, a bare `extract(P)` adds `P` to
+the current state exactly as `have P by { extract(P); }` does.
+
 **Failure, checking, and tools:**
 
 A noncomponent, missing antecedent, different constructor, or wrong field
-position fails. Click follows an indexed, checked derivation with no search;
-expansion is unchanged, and profiling charges that derivation.
+position fails. A refusal names the requested proposition in its written
+syntax, retaining parameter and proof-local names. Click follows an indexed,
+checked derivation with no search; expansion is unchanged, and profiling
+charges that derivation.
 
-**Checked examples:** [`logical_tactics.rs`](https://github.com/clicklang/click/blob/master/src/surface/tests/tactic_tests/logical_tactics.rs), [`algebraic_symbolic_values.md`](https://github.com/clicklang/click/blob/master/mdtests/algebraic_symbolic_values.md)
+**Checked examples:** [`extract_refusal_keeps_written_parameter_names.md`](https://github.com/clicklang/click/blob/master/mdtests/extract_refusal_keeps_written_parameter_names.md), [`logical_tactics.rs`](https://github.com/clicklang/click/blob/master/src/surface/tests/tactic_tests/logical_tactics.rs), [`algebraic_symbolic_values.md`](https://github.com/clicklang/click/blob/master/mdtests/algebraic_symbolic_values.md)
 
 ### Context-free normalization
 

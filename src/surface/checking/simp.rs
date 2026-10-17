@@ -107,6 +107,12 @@ pub(in crate::surface) fn plan_explicit_equality_rewrites_from(
                     true,
                 )
             }
+            Proposition::ConditionIs(ConditionTerm::PointerValueEqual(left, right), true) => {
+                Proposition::ConditionIs(
+                    ConditionTerm::PointerValueEqual(right.clone(), left.clone()),
+                    true,
+                )
+            }
             Proposition::ConditionIs(ConditionTerm::PointerEqual(left, right), true) => {
                 Proposition::ConditionIs(
                     ConditionTerm::PointerEqual(right.clone(), left.clone()),
@@ -416,6 +422,9 @@ pub(in crate::surface) fn simp_terms_equal(left: &Term, right: &Term) -> Option<
 
 pub(in crate::surface) fn simp_term(term: &Term) -> Term {
     match term {
+        Term::CValue(value @ CValue::PointerInteger(_)) => {
+            simp_term(&Term::CValue(value.numeric_value().clone()))
+        }
         Term::Condition(condition) => match simp_condition_without_assumptions(condition) {
             Some(value) => Term::Condition(ConditionTerm::Constant(value)),
             None => term.clone(),
@@ -441,6 +450,10 @@ pub(in crate::surface) fn simp_condition_without_assumptions(
     condition: &ConditionTerm,
 ) -> Option<bool> {
     match condition {
+        ConditionTerm::PointerValueEqual(_, _) => {
+            PureFactContext::new().decide_condition_for_simp(condition)
+        }
+
         ConditionTerm::AlgebraicEqual(_, _) => {
             PureFactContext::new().decide_condition_for_simp(condition)
         }
@@ -641,8 +654,7 @@ pub(in crate::surface) fn simp_bitvector_const(term: &Bitvector32Term) -> Option
         | Bitvector32Term::PureFunctionApplication { .. }
         | Bitvector32Term::ClickFunctionApplication { .. }
         | Bitvector32Term::AlgebraicMatch { .. }
-        | Bitvector32Term::PointerAddress(_)
-        | Bitvector32Term::ObjectPointerAddress(_, _)
+        | Bitvector32Term::PointerAddress(_, _)
         | Bitvector32Term::MemoryLoad(_, _, _) => None,
         Bitvector32Term::Add(left, right) => {
             Some(simp_bitvector_const(left)?.wrapping_add(simp_bitvector_const(right)?))
@@ -814,9 +826,7 @@ pub(in crate::surface) fn simp_bitvector(term: &Bitvector32Term) -> Bitvector32T
         Bitvector32Term::MemoryLoad(memory, pointer, kind) => {
             Bitvector32Term::MemoryLoad(memory.clone(), pointer.clone(), *kind)
         }
-        Bitvector32Term::PointerAddress(_) | Bitvector32Term::ObjectPointerAddress(_, _) => {
-            term.clone()
-        }
+        Bitvector32Term::PointerAddress(_, _) => term.clone(),
         term => match (term.as_binary(), term.as_unary()) {
             (Some((op, left, right)), _) => op.build(simp_bitvector(left), simp_bitvector(right)),
             (_, Some((op, value))) => op.build(simp_bitvector(value)),
@@ -1215,7 +1225,7 @@ mod tests {
         );
         let base_equality = Proposition::ConditionIs(
             ConditionTerm::PointerOffsetEqual(
-                Box::new(PointerOffsetTerm::scale_int32(source, 4)),
+                Box::new(PointerOffsetTerm::scale_int32(source.clone(), 4)),
                 Box::new(PointerOffsetTerm::scale_int32(target.clone(), 4)),
             ),
             true,
@@ -1230,7 +1240,13 @@ mod tests {
             replaced,
             Proposition::CResourceSeparate {
                 left: Box::new(fixed),
-                right: Box::new(range(target, target_len)),
+                right: Box::new(match range(source, target_len) {
+                    CResource::Memory(range) => CResource::Memory(range.with_base(Pointer {
+                        block: PointerBlock::ExternalArgument,
+                        offset: PointerOffsetTerm::scale_int32(target, 4),
+                    })),
+                    _ => unreachable!(),
+                }),
             }
         );
     }

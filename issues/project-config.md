@@ -248,9 +248,18 @@ C++ items were chosen explicitly; the rest are the recommended defaults.
   committed C locks were re-locked with byte-identical artifacts. C++ and Rust
   unit digests do not bind the C target or mode, so their locks are
   unchanged.
+- **Optimization level.** `click.project.json` names `optimization`, `-O2`
+  (default) or `-O0`, and every C unit is prepared at it; a unit argument
+  naming another level, or defining `__OPTIMIZE__`, is refused. The Linux
+  profile no longer requires `-fno-strict-overflow` or
+  `-fno-delete-null-pointer-checks`, and the optimizer-promise attributes are
+  refused at any optimizing level. Until the strict-aliasing check covers
+  globals and heap objects, an optimizing level still adds
+  `-fno-strict-aliasing` (`design/effective-types.md`). The committed C locks
+  were re-locked with byte-identical artifacts.
 - **Remaining:** the module root still comes
-  from imports rather than the project file; the shared lock envelope; the
-  optimization level and flag policy.
+  from imports rather than the project file; the shared lock envelope;
+  dropping `-fno-strict-aliasing`; the C++ side of the flag policy.
 
 ## Intended regressions
 

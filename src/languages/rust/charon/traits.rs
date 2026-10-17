@@ -376,13 +376,22 @@ impl Adapter<'_> {
         &self,
         record: a::TypeDeclId,
         trait_id: a::TraitDeclId,
+        shared: bool,
     ) -> Result<(String, String), String> {
         let trait_name =
             self.qualified_function_name(&self.krate.trait_decls[trait_id].item_meta.name)?;
         let record_name = &self.records[&record];
+        let (pack, unpack) = if shared {
+            (
+                super::super::names::SHARED_PACK,
+                super::super::names::SHARED_UNPACK,
+            )
+        } else {
+            ("__pack", "__unpack")
+        };
         Ok((
-            super::super::names::trait_method_name(record_name, &trait_name, "__pack"),
-            super::super::names::trait_method_name(record_name, &trait_name, "__unpack"),
+            super::super::names::trait_method_name(record_name, &trait_name, pack),
+            super::super::names::trait_method_name(record_name, &trait_name, unpack),
         ))
     }
 
@@ -392,9 +401,10 @@ impl Adapter<'_> {
         record: a::TypeDeclId,
         trait_id: a::TraitDeclId,
     ) -> Result<Vec<out::Function>, String> {
-        let (pack, unpack) = self.object_coercion_names(record, trait_id)?;
+        let (pack, unpack) = self.object_coercion_names(record, trait_id, false)?;
+        let (shared_pack, shared_unpack) = self.object_coercion_names(record, trait_id, true)?;
         let span = span(self.krate.trait_decls[trait_id].item_meta.span);
-        Ok([pack, unpack]
+        Ok([pack, unpack, shared_pack, shared_unpack]
             .into_iter()
             .map(|name| out::Function {
                 name,
@@ -421,11 +431,11 @@ impl Adapter<'_> {
 }
 
 /// The locals of `body` a crate struct reference is unsized into a `&dyn`
-/// crate trait for, with the struct and the trait.
+/// crate trait for, with the struct, the trait, and whether it is shared.
 pub(super) fn unsized_objects(
     adapter: &Adapter<'_>,
     body: &u::ExprBody,
-) -> BTreeMap<a::LocalId, (a::TypeDeclId, a::TraitDeclId)> {
+) -> BTreeMap<a::LocalId, (a::TypeDeclId, a::TraitDeclId, bool)> {
     let mut objects = BTreeMap::new();
     for block in body.body.iter() {
         for statement in &block.statements {
@@ -441,11 +451,14 @@ pub(super) fn unsized_objects(
                 ) = value
                 && let a::TyKind::Ref(_, record, _) = source.kind()
                 && let Ok(record) = adapter.record_id(record)
-                && let a::TyKind::Ref(_, object, _) = destination.kind()
+                && let a::TyKind::Ref(_, object, kind) = destination.kind()
                 && let a::TyKind::DynTrait(predicate) = object.kind()
                 && let Ok(Some(trait_id)) = adapter.dyn_interface_trait(predicate)
             {
-                objects.insert(local, (record, trait_id));
+                objects.insert(
+                    local,
+                    (record, trait_id, matches!(kind, a::RefKind::Shared)),
+                );
             }
         }
     }
@@ -657,22 +670,24 @@ mod tests {
         assert_eq!(
             path("__rust_q_I13_trait_objects_I13_through_bound"),
             [
-                "<trait_objects::Square as trait_objects::Shape>::__pack",
+                "<trait_objects::Square as trait_objects::Shape>::__pack_shared",
                 "trait_objects::total",
-                "<trait_objects::Square as trait_objects::Shape>::__unpack",
+                "<trait_objects::Square as trait_objects::Shape>::__unpack_shared",
             ]
         );
         assert_eq!(
             path("__rust_q_I13_trait_objects_I11_through_dyn"),
             [
-                "<trait_objects::Circle as trait_objects::Shape>::__pack",
+                "<trait_objects::Circle as trait_objects::Shape>::__pack_shared",
                 "trait_objects::dynamic",
-                "<trait_objects::Circle as trait_objects::Shape>::__unpack",
+                "<trait_objects::Circle as trait_objects::Shape>::__unpack_shared",
             ]
         );
         for name in [
             "<trait_objects::Square as trait_objects::Shape>::__pack",
             "<trait_objects::Circle as trait_objects::Shape>::__unpack",
+            "<trait_objects::Square as trait_objects::Shape>::__pack_shared",
+            "<trait_objects::Circle as trait_objects::Shape>::__unpack_shared",
         ] {
             let coercion = export
                 .functions

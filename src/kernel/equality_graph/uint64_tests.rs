@@ -11,7 +11,10 @@ fn word(memory: &SharedCMemory, pointer: &Pointer, bytes: u32) -> Bitvector32Ter
 }
 fn packed(value: &Bitvector32Term, parent: &Pointer) -> Bitvector32Term {
     Bitvector32Term::UInt64Add(
-        Box::new(Bitvector32Term::PointerAddress(Box::new(parent.clone()))),
+        Box::new(Bitvector32Term::PointerAddress(
+            Box::new(parent.clone()),
+            crate::kernel::AddressObjectClass::NONE,
+        )),
         Box::new(Bitvector32Term::UInt64BitwiseAnd(
             Box::new(value.clone()),
             Box::new(Bitvector32Term::UInt64Constant(1)),

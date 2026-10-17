@@ -299,10 +299,10 @@ pub(crate) fn normalize_using_conditions(
     {
         return Ok(());
     }
-    let reduced = super::term_rewrite::TermRewrite::for_cited_conditions_with_graph(
+    let reduced = super::term_rewrite::TermRewrite::for_cited_conditions_with_context(
         &conditions,
         &selected.equality_graph,
-        &facts.assumptions().equality_graph,
+        facts.assumptions(),
     )
     .proposition(goal);
     // Check constant uint64 upper bounds from the same cited order edges.
@@ -1910,7 +1910,7 @@ impl LoadVariableBridgeSide for PointerOffsetTerm {
         let Proposition::ConditionIs(condition, true) = proposition else {
             return None;
         };
-        let (left, right) = condition.pointer_offset_sides()?;
+        let (left, right) = condition.true_pointer_offset_sides()?;
         Some((left.clone(), right.clone()))
     }
 

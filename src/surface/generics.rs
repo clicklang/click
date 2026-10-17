@@ -306,6 +306,7 @@ pub(super) fn instantiate_function(
             .map(|parameter| instantiate_parameter(parameter, substitution))
             .collect::<Result<Vec<_>, _>>()?,
         return_type: instantiate_click_type(definition.return_type(), substitution)?,
+        return_object_class: definition.return_object_class().cloned(),
         decreases: definition
             .decreases()
             .map(|expression| instantiate_expression(expression, substitution))

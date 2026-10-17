@@ -149,3 +149,61 @@ fn a_call_keeps_argument_direct_composites_in_work_independent_of_their_number()
         );
     }
 }
+
+/// The callee borrowed a flat cell. Unchanged caller composites cannot own
+/// that same cell, even when their symbolic arguments share its block.
+#[test]
+fn a_transferred_flat_cell_does_not_open_unrelated_kept_composites() {
+    let mut samples = Vec::new();
+    let mut recording = Vec::new();
+    for size in [2u64, 4, 8, 16] {
+        let _session = VerificationSession::enter();
+        let object = |index: u64| Pointer {
+            block: PointerBlock::ExternalArgument,
+            offset: PointerOffsetTerm::scale_int32(
+                Bitvector32Term::Variable(Variable(783_000 + index)),
+                4,
+            ),
+        };
+        let residual = (0..size).fold(ResourceContext::new(), |resources, index| {
+            resources.unchecked_with_fact(CResourceFact::own_composite(
+                "boxed".into(),
+                vec![CValue::pointer(object(index))],
+            ))
+        });
+        let cell = object(size + 1);
+        let written = CMemoryRange::new(
+            cell.clone(),
+            Bitvector32Term::Constant(0),
+            Bitvector32Term::Constant(1),
+        );
+        let original = residual
+            .clone()
+            .unchecked_with_fact(CResourceFact::own_memory(written.clone()));
+        let memory = CMemory::new();
+        let assumptions = PureFactContext::new();
+        let state = CState::new()
+            .with_memory(memory.clone())
+            .with_resource_context(original);
+        let (after, work) = crate::instrumentation::measure_deterministic_work(|| {
+            let kept = call_kept_ownership(&residual, &[boxed_definition()], &state, &assumptions)
+                .with_caller_before_transfer(state.resources());
+            memory.with_call_memory_havoc(Variable(783_900), &[written], &assumptions, Some(&kept))
+        });
+        recording.push(work);
+        let recorded = CallKeptRanges::recorded_on(&after).unwrap();
+        let (held, work) = crate::instrumentation::measure_deterministic_work(|| {
+            recorded.holds_access(&cell, 4, &assumptions)
+        });
+        assert!(!held);
+        samples.push(work);
+    }
+    assert!(
+        recording.iter().all(|work| *work <= recording[0] + 128),
+        "recording a caller frame scans unrelated composites: {recording:?}"
+    );
+    assert!(
+        samples.iter().all(|work| *work <= samples[0] + 128),
+        "unrelated caller composites are opened for a transferred flat cell: {samples:?}"
+    );
+}

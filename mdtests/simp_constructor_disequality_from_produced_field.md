@@ -1,7 +1,7 @@
 # simp proves a constructor disequality from a call-produced field
 
 `parent_attach` produces the instance `link` and ensures
-`link.link == ParentLink::Linked((void*)kid)`. `simp` proves
+`link.link == ParentLink::Linked(kid)`. `simp` proves
 `link.link != ParentLink::Empty` from it: synthesis spells the produced
 field and the constructor, the equality rewrites the goal, and
 normalization decides the two constructors differ. The same reasoning lets
@@ -49,10 +49,10 @@ verifying "simp_constructor_disequality_from_produced_field.c";
 void parent_attach(struct parent* p, struct child* kid) {
     consumes p->kid;
     produces link: parent(p);
-    ensures link.link == ParentLink::Linked((void*)kid);
+    ensures link.link == ParentLink::Linked(kid);
 } by {
     step();
-    let link = fold(parent(p), { link: ParentLink::Linked((void*)kid) });
+    let link = fold(parent(p), { link: ParentLink::Linked(kid) });
     execute();
     simp();
 }

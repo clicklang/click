@@ -5300,26 +5300,12 @@ fn materialize_composite_resource_cells_from_snapshot(
                             continue;
                         }
                         // A pointer field is held as its four-byte words.
-                        let kind = if element_type.is_pointer() {
-                            crate::kernel::LoadKind::Bits32
+                        let storage_type = if element_type.is_pointer() {
+                            CType::Int32
                         } else {
-                            crate::surface::lowering::load_kind_of_element(element_type)
+                            element_type
                         };
-                        let load = crate::kernel::canonical_form_of_load(
-                            crate::kernel::intern_c_memory(naming_memory.clone()),
-                            pointer.clone(),
-                            kind,
-                        );
-                        let value = if element_type.is_pointer() {
-                            CValue::Int32(load)
-                        } else {
-                            crate::surface::lowering::symbolic_value_from_load(
-                                &pointer,
-                                element_type,
-                                load,
-                            )
-                        };
-                        memory = memory.materialize_named_cell(pointer, value);
+                        memory = memory.materialize_symbolic_cell(pointer, storage_type);
                     }
                     memory
                 },
@@ -5394,28 +5380,14 @@ fn materialize_composite_resource_cells_from_snapshot(
         // Pointer cells retain the word representation used for load origins,
         // and each cell is named as the read of its own kind.
         let element_type = contract_segment_element_type(parameters, segment);
-        let kind = if !element_type.is_pointer() {
-            crate::surface::lowering::load_kind_of_element(element_type)
+        let storage_type = if !element_type.is_pointer() {
+            element_type
         } else if element_width == 1 {
-            crate::kernel::LoadKind::UInt8
+            CType::UInt8
         } else {
-            crate::kernel::LoadKind::Bits32
+            CType::Int32
         };
-        let load = crate::kernel::canonical_form_of_load(
-            crate::kernel::intern_c_memory(naming_memory.clone()),
-            pointer.clone(),
-            kind,
-        );
-        let value = match element_type {
-            element_type if !element_type.is_pointer() => {
-                crate::surface::lowering::symbolic_value_from_load(&pointer, element_type, load)
-            }
-            _ => match element_width {
-                1 => CValue::UInt8(load),
-                _ => CValue::Int32(load),
-            },
-        };
-        memory = memory.materialize_named_cell(pointer, value);
+        memory = memory.materialize_symbolic_cell(pointer, storage_type);
     }
     memory
 }

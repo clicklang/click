@@ -3439,6 +3439,32 @@ impl PureFactContext {
             {
                 return true;
             }
+            // Full pointer equality entails address equality, while its
+            // negation makes no claim about addresses.
+            if let ConditionTerm::PointerValueEqual(left, right) = condition
+                && *value
+            {
+                let address =
+                    ConditionTerm::pointer_equal(left.pointer().clone(), right.pointer().clone());
+                if condition_polarities.insert(canonical_contradiction_condition(&address), true)
+                    == Some(false)
+                {
+                    return true;
+                }
+            }
+            if !*value
+                && match condition {
+                    ConditionTerm::PointerEqual(left, right) => {
+                        self.equality_graph.are_equal(left, right)
+                    }
+                    ConditionTerm::PointerOffsetEqual(left, right) => {
+                        self.equality_graph.are_offsets_equal(left, right)
+                    }
+                    _ => false,
+                }
+            {
+                return true;
+            }
             match (condition, value) {
                 (ConditionTerm::Constant(actual), expected) if actual != expected => return true,
                 (ConditionTerm::Bitvector32Equal(left, right), true) => {
@@ -4088,7 +4114,7 @@ impl PureFactContext {
             .condition_facts
             .iter()
             .filter_map(|(condition, value)| {
-                let (left, right) = condition.pointer_offset_sides()?;
+                let (left, right) = condition.true_pointer_offset_sides()?;
                 (*value && left != right).then_some((left, right))
             })
             .collect::<Vec<_>>();
@@ -4325,11 +4351,30 @@ mod annotated_alignment_conflict_tests {
                 true
             ),
         );
+        // An address's class is not part of its identity, so the classed
+        // spelling is the same term as the bare one and cannot hide a fact.
+        assert_eq!(
+            ConditionTerm::Bitvector64Equal(
+                Box::new(masked_address.clone()),
+                Box::new(zero.clone())
+            ),
+            ConditionTerm::Bitvector64Equal(
+                Box::new(Bitvector32Term::uint64_bitwise_and(
+                    Bitvector32Term::object_pointer_address(
+                        Pointer::symbolic(Variable(970_001)),
+                        None,
+                    ),
+                    Bitvector32Term::UInt64Constant(7),
+                )),
+                Box::new(zero.clone()),
+            ),
+        );
         // The context's same-key insertion replaces its prior value. Admit
-        // a distinct spelling here to exercise congruence conflict handling;
-        // the factory's canonical spelling was checked above.
+        // a distinct spelling (operands swapped) to exercise congruence
+        // conflict handling; the factory's canonical spelling was checked
+        // above.
         let not_aligned = Proposition::ConditionIs(
-            ConditionTerm::Bitvector64Equal(Box::new(masked_address), Box::new(zero)),
+            ConditionTerm::Bitvector64Equal(Box::new(zero), Box::new(masked_address)),
             false,
         );
         let base = PureFactContext::new().assume_proposition(aligned.clone());

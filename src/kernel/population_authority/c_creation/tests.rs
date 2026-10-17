@@ -2513,7 +2513,10 @@ fn count_alias_uses_only_a_checked_owned_authority_anchor() {
         );
     Arc::make_mut(&mut state.population_effects).creation = Some(events);
     let equal = PureFactContext::new().assume_condition(
-        ConditionTerm::pointer_equal(alias, anchor.pointer().clone()),
+        ConditionTerm::PointerValueEqual(
+            Box::new(CPointerValue::new(alias, CType::Int32Pointer)),
+            Box::new(anchor.clone()),
+        ),
         true,
     );
     let evaluate = |state: &CState, assumptions: &PureFactContext| {
@@ -2977,6 +2980,30 @@ mod wildcard_scope_tests {
             )
         };
         assert!(birth(&entry, &member, &PureFactContext::new()).is_err());
+        let counter = Bitvector32Term::Variable(Variable(960_720));
+        let counter_bound = PureFactContext::new().assume_condition(
+            ConditionTerm::signed_less_than(
+                counter.clone(),
+                Bitvector32Term::Constant(i32::MAX as u32),
+            ),
+            true,
+        );
+        // A bound on an unrelated counter grants nothing. An established
+        // equality transports its bound without scanning ambient premises.
+        assert!(birth(&entry, &member, &counter_bound).is_err());
+        let equal_counter = counter_bound.assume_condition(
+            ConditionTerm::equal(count.entry_count.clone(), counter),
+            true,
+        );
+        assert!(birth(&entry, &member, &equal_counter).is_ok());
+        let at_max = PureFactContext::new().assume_condition(
+            ConditionTerm::equal(
+                count.entry_count.clone(),
+                Bitvector32Term::Constant(i32::MAX as u32),
+            ),
+            true,
+        );
+        assert!(birth(&entry, &member, &at_max).is_err());
         let (wrong_scope, wrong_member) = opaque_scope(1);
         assert!(birth(&entry, &wrong_member, &bounded).is_err());
         let other = entry

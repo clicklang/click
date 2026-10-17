@@ -169,29 +169,37 @@ impl Bitvector32Term {
     /// Keep pointer-to-integer casts canonical when checked rewriting turns
     /// a symbolic pointer into null, just as C cast evaluation does.
     pub(crate) fn pointer_address(pointer: Pointer) -> Self {
+        if let PointerBlock::PureFunctionApplication(application) = &pointer.block
+            && application.name() == "$integer-address"
+            && pointer.offset == PointerOffsetTerm::Constant(0)
+            && let [PureFunctionArgument::Value(CValue::UInt64(bits))] = application.arguments()
+        {
+            return bits.clone();
+        }
         if pointer == Pointer::null() {
             Self::UInt64Constant(0)
         } else {
-            Self::PointerAddress(Box::new(pointer))
+            Self::PointerAddress(Box::new(pointer), crate::kernel::AddressObjectClass::NONE)
         }
     }
 
     pub(crate) fn object_pointer_address(
         pointer: Pointer,
-        class: Option<impl Into<ObjectTypeEvidence>>,
+        class: Option<crate::kernel::effective_type::CAccessClass>,
     ) -> Self {
         if pointer == Pointer::null() {
             Self::UInt64Constant(0)
-        } else if let Some(class) = class {
-            Self::ObjectPointerAddress(Box::new(pointer), class.into())
         } else {
-            Self::pointer_address(pointer)
+            Self::PointerAddress(
+                Box::new(pointer),
+                crate::kernel::AddressObjectClass::new(class),
+            )
         }
     }
 
     pub(crate) fn address_pointer(&self) -> Option<&Pointer> {
         match self {
-            Self::PointerAddress(pointer) | Self::ObjectPointerAddress(pointer, _) => Some(pointer),
+            Self::PointerAddress(pointer, _) => Some(pointer),
             _ => None,
         }
     }
@@ -308,8 +316,7 @@ impl Bitvector32Term {
             Self::Constant(value) => Some(*value),
             Self::Variable(_)
             | Self::MemoryLoad(_, _, _)
-            | Self::PointerAddress(_)
-            | Self::ObjectPointerAddress(_, _)
+            | Self::PointerAddress(_, _)
             | Self::IntegerToMachine { .. }
             | Self::PureFunctionApplication { .. }
             | Self::ClickFunctionApplication { .. }
@@ -882,12 +889,7 @@ fn uint64_constant(term: &Bitvector32Term) -> Option<u64> {
         // Null converts to the integer zero, exactly as evaluating the C
         // cast `(uint64)p` yields it. The address term reaches a proof only
         // when a pointer proved null is substituted into `(uint64)p`.
-        Bitvector32Term::PointerAddress(pointer)
-        | Bitvector32Term::ObjectPointerAddress(pointer, _)
-            if **pointer == Pointer::null() =>
-        {
-            Some(0)
-        }
+        Bitvector32Term::PointerAddress(pointer, _) if **pointer == Pointer::null() => Some(0),
         Bitvector32Term::UInt64From32(value) => match value.as_ref() {
             Bitvector32Term::Constant(value) => Some(u64::from(*value)),
             _ => uint64_constant(value),
@@ -2047,6 +2049,8 @@ impl ConditionTerm {
     /// be a malformed application the kernel deliberately leaves undecided.
     pub(crate) fn reflexive_value(&self) -> Option<bool> {
         match self {
+            Self::PointerValueEqual(left, right) => (left == right).then_some(true),
+
             Self::Bitvector32SignedLessEqual(left, right)
             | Self::Bitvector32SignedGreaterEqual(left, right)
             | Self::Bitvector32Equal(left, right)
@@ -2435,27 +2439,21 @@ impl ConditionTerm {
     ) -> Option<Self> {
         match (left, right) {
             (
-                Bitvector32Term::PointerAddress(left)
-                | Bitvector32Term::ObjectPointerAddress(left, _),
-                Bitvector32Term::PointerAddress(right)
-                | Bitvector32Term::ObjectPointerAddress(right, _),
+                Bitvector32Term::PointerAddress(left, _),
+                Bitvector32Term::PointerAddress(right, _),
             ) => Some(Self::pointer_equal(
                 left.as_ref().clone(),
                 right.as_ref().clone(),
             )),
-            (
-                Bitvector32Term::PointerAddress(pointer)
-                | Bitvector32Term::ObjectPointerAddress(pointer, _),
-                other,
-            )
-            | (
-                other,
-                Bitvector32Term::PointerAddress(pointer)
-                | Bitvector32Term::ObjectPointerAddress(pointer, _),
-            ) if other.uint64_as_const() == Some(0) => Some(Self::pointer_equal(
-                pointer.as_ref().clone(),
-                Pointer::null(),
-            )),
+            (Bitvector32Term::PointerAddress(pointer, _), other)
+            | (other, Bitvector32Term::PointerAddress(pointer, _))
+                if other.uint64_as_const() == Some(0) =>
+            {
+                Some(Self::pointer_equal(
+                    pointer.as_ref().clone(),
+                    Pointer::null(),
+                ))
+            }
             _ => None,
         }
     }
@@ -2472,6 +2470,9 @@ impl ConditionTerm {
                 Self::Bitvector64Equal(right.clone(), left.clone())
             }
             Self::PointerEqual(left, right) => Self::PointerEqual(right.clone(), left.clone()),
+            Self::PointerValueEqual(left, right) => {
+                Self::PointerValueEqual(right.clone(), left.clone())
+            }
             Self::PointerOffsetEqual(left, right) => {
                 Self::PointerOffsetEqual(right.clone(), left.clone())
             }
@@ -2486,7 +2487,10 @@ impl ConditionTerm {
         debug_assert!(alignment.is_power_of_two());
         Self::uint64_equal(
             Bitvector32Term::uint64_bitwise_and(
-                Bitvector32Term::PointerAddress(Box::new(pointer)),
+                Bitvector32Term::PointerAddress(
+                    Box::new(pointer),
+                    crate::kernel::AddressObjectClass::NONE,
+                ),
                 Bitvector32Term::UInt64Constant(alignment - 1),
             ),
             Bitvector32Term::UInt64Constant(0),
@@ -2510,16 +2514,8 @@ impl ConditionTerm {
             return None;
         };
         let (pointer, mask) = match (left.as_ref(), right.as_ref()) {
-            (
-                Bitvector32Term::PointerAddress(pointer)
-                | Bitvector32Term::ObjectPointerAddress(pointer, _),
-                mask,
-            )
-            | (
-                mask,
-                Bitvector32Term::PointerAddress(pointer)
-                | Bitvector32Term::ObjectPointerAddress(pointer, _),
-            ) => (pointer, mask),
+            (Bitvector32Term::PointerAddress(pointer, _), mask)
+            | (mask, Bitvector32Term::PointerAddress(pointer, _)) => (pointer, mask),
             _ => return None,
         };
         let mask = mask.uint64_as_const()?;
@@ -2535,16 +2531,8 @@ impl ConditionTerm {
         }
         // An address is zero exactly when its pointer is null. Two addresses
         // stay an address equality: equal addresses are not equal pointers.
-        if let (
-            Bitvector32Term::PointerAddress(pointer)
-            | Bitvector32Term::ObjectPointerAddress(pointer, _),
-            other,
-        )
-        | (
-            other,
-            Bitvector32Term::PointerAddress(pointer)
-            | Bitvector32Term::ObjectPointerAddress(pointer, _),
-        ) = (&left, &right)
+        if let (Bitvector32Term::PointerAddress(pointer, _), other)
+        | (other, Bitvector32Term::PointerAddress(pointer, _)) = (&left, &right)
             && other.uint64_as_const() == Some(0)
         {
             return Self::pointer_equal(pointer.as_ref().clone(), Pointer::null());
@@ -2559,7 +2547,10 @@ impl ConditionTerm {
                 if let Some((pointer, alignment)) = condition.as_pointer_alignment() {
                     return Self::Bitvector64Equal(
                         Box::new(Bitvector32Term::UInt64BitwiseAnd(
-                            Box::new(Bitvector32Term::PointerAddress(Box::new(pointer.clone()))),
+                            Box::new(Bitvector32Term::PointerAddress(
+                                Box::new(pointer.clone()),
+                                crate::kernel::AddressObjectClass::NONE,
+                            )),
                             Box::new(Bitvector32Term::UInt64Constant(alignment - 1)),
                         )),
                         Box::new(Bitvector32Term::UInt64Constant(0)),
@@ -2818,13 +2809,46 @@ impl ConditionTerm {
         }
     }
 
+    /// The numeric consequence of an established true pointer equality.
+    /// Unlike `pointer_offset_sides`, this does not describe an equivalent
+    /// proposition: equal addresses alone cannot prove full-value equality.
+    pub(crate) fn true_pointer_offset_sides(
+        &self,
+    ) -> Option<(&PointerOffsetTerm, &PointerOffsetTerm)> {
+        match self {
+            Self::PointerValueEqual(a, b) if a.block == b.block => Some((&a.offset, &b.offset)),
+            _ => self.pointer_offset_sides(),
+        }
+    }
+
     /// A common-base comparison's offset view, retaining the original
     /// condition as the supporting premise in callers' indexes.
     pub(crate) fn pointer_offset_sides(&self) -> Option<(&PointerOffsetTerm, &PointerOffsetTerm)> {
         match self {
             Self::PointerOffsetEqual(a, b) => Some((a, b)),
             Self::PointerEqual(a, b) if a.block == b.block => Some((&a.offset, &b.offset)),
+            Self::PointerValueEqual(a, b)
+                if a.block == b.block
+                    && a.designation() == b.designation()
+                    && a.extent() == b.extent() =>
+            {
+                Some((&a.offset, &b.offset))
+            }
             _ => None,
+        }
+    }
+
+    pub(crate) fn pointer_value_equal(left: CPointerValue, right: CPointerValue) -> Self {
+        if (left.designation() == right.designation()
+            && left.extent() == right.extent()
+            && left.extent_is_known() == right.extent_is_known()
+            && (left.extent_is_known() || left.opaque_extent() == right.opaque_extent()))
+            || (matches!(left.c_type(), CType::FunctionPointer(_))
+                && matches!(right.c_type(), CType::FunctionPointer(_)))
+        {
+            Self::pointer_equal(left.pointer().clone(), right.pointer().clone())
+        } else {
+            Self::PointerValueEqual(Box::new(left), Box::new(right))
         }
     }
 
@@ -3254,7 +3278,7 @@ impl CType {
     }
 
     pub(crate) fn accepts(self, value: &CValue) -> bool {
-        match (self, value) {
+        match (self, value.numeric_value()) {
             (Self::Int128, CValue::Int128(term)) => {
                 MachineIntegerType::Int128.accepts_wide_term(term)
             }
@@ -3394,6 +3418,26 @@ impl CType {
 }
 
 impl CValue {
+    /// An unconstrained complete C word has identity but no pointer authority.
+    pub(crate) fn complete_word(self, identity: Pointer) -> Self {
+        if !matches!(self, Self::Int64(_) | Self::UInt64(_)) {
+            return self;
+        }
+        Self::PointerInteger(PointerIntegerValue {
+            numeric: Box::new(self),
+            pointer: Box::new(CPointerValue::new(identity, CType::VoidPointer)),
+            kind: PointerIntegerKind::Word { changed_bits: 0 },
+        })
+    }
+
+    /// Mathematical observation, deliberately without a representation record.
+    pub(crate) fn numeric_value(&self) -> &Self {
+        match self {
+            Self::PointerInteger(record) => record.numeric.numeric_value(),
+            _ => self,
+        }
+    }
+
     pub(crate) fn pointer(pointer: Pointer) -> Self {
         Self::typed_pointer(pointer, CType::Int32Pointer)
     }
@@ -3486,6 +3530,7 @@ impl CValue {
 
     pub(crate) fn c_type(&self) -> CType {
         match self {
+            Self::PointerInteger(record) => record.numeric.c_type(),
             Self::Void => CType::Void,
             Self::Bool(_) => CType::Bool,
             Self::Int8(_) => CType::Int8,
@@ -3506,6 +3551,7 @@ impl CValue {
 
     pub(in crate::kernel) fn byte_width(&self) -> u32 {
         match self {
+            Self::PointerInteger(_) => 8,
             Self::Void => 0,
             Self::Bool(_) => 1,
             Self::Int8(_) => 1,
@@ -3544,6 +3590,9 @@ impl CLValue {
             constant: false,
             pointee_constant: false,
             extent: None,
+            designation: None,
+            extent_known: false,
+            opaque_extent: None,
             access_class: None,
             object_class: None,
         }
@@ -3572,6 +3621,9 @@ impl CLValue {
             constant: false,
             pointee_constant: false,
             extent: None,
+            designation: None,
+            extent_known: false,
+            opaque_extent: None,
             access_class: None,
             object_class: None,
         }
@@ -3599,8 +3651,24 @@ impl CLValue {
     /// class of the object it designates.
     pub(in crate::kernel) fn with_extent_of(mut self, pointer: &CPointerValue) -> Self {
         self.extent = pointer.extent().cloned().map(std::sync::Arc::new);
+        self.designation = Some(std::sync::Arc::new(pointer.designation().clone()));
+        self.extent_known = pointer.extent_is_known();
+        self.opaque_extent = pointer.opaque_extent.clone();
         self.object_class = pointer.object_class();
         self
+    }
+
+    pub(in crate::kernel) fn access_designation(&self) -> Option<(&Pointer, Option<&Pointer>)> {
+        self.designation.as_deref().map(|root| {
+            (
+                root,
+                if self.extent_known {
+                    None
+                } else {
+                    self.opaque_extent.as_deref()
+                },
+            )
+        })
     }
 
     /// The class of the lvalue's type, which an access through it uses.
@@ -3737,6 +3805,21 @@ impl Pointer {
     /// first.
     pub(in crate::kernel) fn is_in_null_block(&self) -> bool {
         self.block == PointerBlock::Concrete("null".to_string())
+    }
+
+    /// Numeric LP64 reconstruction. This application is only an address;
+    /// a complete C word carries its independent designation beside it.
+    pub(in crate::kernel) fn integer_address(bits: Bitvector32Term) -> Self {
+        if bits.uint64_as_const() == Some(0) {
+            return Self::null();
+        }
+        Self {
+            block: PointerBlock::PureFunctionApplication(SharedPureApplication::intern(
+                "$integer-address".into(),
+                vec![PureFunctionArgument::Value(CValue::UInt64(bits))],
+            )),
+            offset: PointerOffsetTerm::Constant(0),
+        }
     }
 
     pub(crate) fn symbolic(variable: Variable) -> Self {
@@ -4564,6 +4647,9 @@ pub(crate) fn mirrored_equality(proposition: &Proposition) -> Option<Proposition
         }
         ConditionTerm::PointerEqual(left, right) => {
             ConditionTerm::PointerEqual(right.clone(), left.clone())
+        }
+        ConditionTerm::PointerValueEqual(left, right) => {
+            ConditionTerm::PointerValueEqual(right.clone(), left.clone())
         }
         _ => return None,
     };

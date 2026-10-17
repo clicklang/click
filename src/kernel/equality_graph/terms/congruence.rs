@@ -12,6 +12,12 @@ pub(super) enum ArgumentTag {
     Value(CType),
     Array((u32, u32), CType),
     Algebraic,
+    DesignationRead((u32, u32)),
+    PointerExtentRead((u32, u32)),
+    PointerRootExtent,
+    PointerSubobjectExtent,
+    PointerCallDesignation,
+    PointerCallExtent,
     Integer,
 }
 
@@ -33,6 +39,7 @@ pub(in crate::kernel::equality_graph) enum ConditionKind {
     UInt64Gt,
     UInt64Ge,
     PointerEq,
+    PointerValueEq,
     OffsetEq,
     AlgebraicEq,
     IntegerEq,
@@ -65,15 +72,15 @@ impl TermClasses {
     }
 
     fn intern_typed_machine(&mut self, term: &T, width: W) -> u64 {
-        self.intern_expression(Some((term, width)), None, None, None)
+        self.intern_expression(Some((term, width)), None, None, None, None)
     }
 
     pub(super) fn intern_algebraic(&mut self, term: &crate::kernel::AlgebraicTerm) -> u64 {
-        self.intern_expression(None, Some(term), None, None)
+        self.intern_expression(None, Some(term), None, None, None)
     }
 
     pub(super) fn intern_integer(&mut self, term: &crate::kernel::IntegerTerm) -> u64 {
-        self.intern_expression(None, None, Some(term), None)
+        self.intern_expression(None, None, Some(term), None, None)
     }
 
     pub(in crate::kernel::equality_graph) fn add_integer_equality(
@@ -99,7 +106,14 @@ impl TermClasses {
     }
 
     pub(super) fn intern_pointer_call(&mut self, application: &SharedPureApplication) -> u64 {
-        self.intern_expression(None, None, None, Some(application))
+        self.intern_expression(None, None, None, None, Some((application, false)))
+    }
+
+    pub(super) fn intern_pointer_call_identity(
+        &mut self,
+        application: &SharedPureApplication,
+    ) -> u64 {
+        self.intern_expression(None, None, None, None, Some((application, true)))
     }
 
     fn intern_expression(
@@ -107,7 +121,8 @@ impl TermClasses {
         machine: Option<(&T, W)>,
         algebraic: Option<&crate::kernel::AlgebraicTerm>,
         integer: Option<&crate::kernel::IntegerTerm>,
-        pointer_call: Option<&SharedPureApplication>,
+        value: Option<&CValue>,
+        pointer_call: Option<(&SharedPureApplication, bool)>,
     ) -> u64 {
         enum Binary {
             Int32Add,
@@ -115,7 +130,7 @@ impl TermClasses {
             UInt64(UInt64Binary),
         }
         enum Work<'a> {
-            PointerCall(&'a SharedPureApplication),
+            PointerCall(&'a SharedPureApplication, bool),
             Algebraic(&'a crate::kernel::AlgebraicTerm),
             Integer(&'a crate::kernel::IntegerTerm),
             RememberInteger(crate::kernel::SharedIntegerTerm),
@@ -129,12 +144,14 @@ impl TermClasses {
             Binary(Binary),
             Unary(Int32Unary, bool),
         }
-        let mut pending = if let Some((term, width)) = machine {
+        let mut pending = if let Some(value) = value {
+            vec![Work::Value(value)]
+        } else if let Some((term, width)) = machine {
             vec![Work::Machine(term, width)]
         } else if let Some(term) = integer {
             vec![Work::Integer(term)]
-        } else if let Some(call) = pointer_call {
-            vec![Work::PointerCall(call)]
+        } else if let Some((call, identity)) = pointer_call {
+            vec![Work::PointerCall(call, identity)]
         } else {
             vec![Work::Algebraic(algebraic.expect("expression"))]
         };
@@ -160,11 +177,14 @@ impl TermClasses {
                 _ => None,
             };
             let node = match work {
-                Work::PointerCall(application) => {
+                Work::PointerCall(application, identity) => {
                     let symbol =
                         SharedPureApplication::intern(application.name().to_owned(), vec![]);
-                    let head = self
-                        .intern_node(Node::PointerFunction(symbol, application.arguments().len()));
+                    let head = self.intern_node(if identity {
+                        Node::PointerFunctionValue(symbol, application.arguments().len())
+                    } else {
+                        Node::PointerFunction(symbol, application.arguments().len())
+                    });
                     pending.push(Work::Call(head, application.arguments().len()));
                     pending.extend(application.arguments().iter().rev().map(Work::Argument));
                     continue;
@@ -509,6 +529,7 @@ impl TermClasses {
                     continue;
                 }
                 Work::Value(value) => {
+                    let value = value.numeric_value();
                     let scalar = match value {
                         CValue::Bool(t) => Some((CType::Bool, t, W::Bits32)),
                         CValue::Int8(t) => Some((CType::Int8, t, W::Bits32)),
@@ -535,9 +556,23 @@ impl TermClasses {
                                 pointer.pointer().offset.clone(),
                             )
                             .0;
-                        let tag = self
-                            .intern_node(Node::ArgumentTag(ArgumentTag::Value(pointer.c_type())));
-                        Node::Apply(tag, address)
+                        // Address, allocation origin and selected extent are
+                        // distinct congruence operands. Only a complete value
+                        // equality merges the latter two domains.
+                        let root = self.designation_node(pointer.designation());
+                        let extent = self.extent_node(pointer);
+                        let metadata = pointer
+                            .clone()
+                            .with_address(crate::kernel::Pointer::null())
+                            .with_designation(std::sync::Arc::new(crate::kernel::Pointer::null()))
+                            .with_root_extent();
+                        let head = self.opaque_argument(&A::Value(CValue::Pointer(metadata)));
+                        let node = self.intern_node(Node::Apply(head, root));
+                        let node = self.intern_node(Node::Apply(node, extent));
+                        let node = self.intern_node(Node::Apply(node, address));
+                        self.retain_pointer_value(node, pointer.clone());
+                        values.push(node);
+                        continue;
                     } else {
                         values.push(self.opaque_argument(&A::Value(value.clone())));
                         continue;
@@ -703,6 +738,267 @@ impl TermClasses {
             .map(|constructor| constructor.as_ref().clone())
     }
 
+    pub(in crate::kernel::equality_graph) fn add_pointer_value_equality(
+        &mut self,
+        a: &crate::kernel::CPointerValue,
+        b: &crate::kernel::CPointerValue,
+    ) -> bool {
+        let roots = (
+            self.designation_node(a.designation()),
+            self.designation_node(b.designation()),
+        );
+        let extents = (self.extent_node(a), self.extent_node(b));
+        let a = self.intern_expression(None, None, None, Some(&CValue::Pointer(a.clone())), None);
+        let b = self.intern_expression(None, None, None, Some(&CValue::Pointer(b.clone())), None);
+        self.register_pending_loads();
+        self.close(vec![roots, extents, (a, b)])
+    }
+
+    pub(in crate::kernel::equality_graph) fn merge_pointer_read_domains(
+        &mut self,
+        a: &crate::kernel::Pointer,
+        b: &crate::kernel::Pointer,
+    ) -> bool {
+        if self.read_domains.equal(a, b) {
+            return false;
+        }
+        let left = self.read_domains.representative(a);
+        let right = self.read_domains.representative(b);
+        self.read_domains.insert(a, b, |a, _| a.clone());
+        let joined = self.read_domains.representative(a);
+        // A source registration need not manufacture congruence applications.
+        // Merge just the domain nodes that selected consumers already named;
+        // later consumers select the retained domain representative directly.
+        let mut pending = Vec::new();
+        for nodes in [
+            &mut self.read_designation_nodes,
+            &mut self.read_extent_nodes,
+        ] {
+            let a = nodes.get(&left).copied();
+            let b = nodes.get(&right).copied();
+            nodes.remove(&left);
+            nodes.remove(&right);
+            if let Some(node) = a.or(b) {
+                nodes.insert(joined.clone(), node);
+            }
+            if let (Some(a), Some(b)) = (a, b) {
+                pending.push((a, b));
+            }
+        }
+        self.close(pending);
+        true
+    }
+
+    pub(in crate::kernel::equality_graph) fn merge_designations(
+        &mut self,
+        a: &crate::kernel::Pointer,
+        b: &crate::kernel::Pointer,
+    ) -> bool {
+        let a = self.designation_node(a);
+        let b = self.designation_node(b);
+        self.close(vec![(a, b)])
+    }
+
+    pub(in crate::kernel::equality_graph) fn designations_equal(
+        &mut self,
+        a: &crate::kernel::Pointer,
+        b: &crate::kernel::Pointer,
+    ) -> bool {
+        let a = self.designation_node(a);
+        let b = self.designation_node(b);
+        self.register_pending_loads();
+        self.root(a) == self.root(b)
+    }
+
+    pub(in crate::kernel::equality_graph) fn pointer_values_equal(
+        &mut self,
+        a: &crate::kernel::CPointerValue,
+        b: &crate::kernel::CPointerValue,
+    ) -> bool {
+        let a = self.intern_expression(None, None, None, Some(&CValue::Pointer(a.clone())), None);
+        let b = self.intern_expression(None, None, None, Some(&CValue::Pointer(b.clone())), None);
+        self.register_pending_loads();
+        self.root(a) == self.root(b)
+    }
+
+    pub(super) fn retain_pointer_value(&mut self, node: u64, value: crate::kernel::CPointerValue) {
+        let root = self.root(node);
+        let value = self
+            .pointer_values
+            .get(&root)
+            .map_or(value.clone(), |previous| {
+                crate::kernel::pointer_designations::prefer_pointer(previous, &value)
+            });
+        self.pointer_values.insert(root, value);
+    }
+
+    pub(in crate::kernel::equality_graph) fn pointer_value_representative(
+        &mut self,
+        value: &crate::kernel::CPointerValue,
+    ) -> crate::kernel::CPointerValue {
+        let node = self.intern_expression(
+            None,
+            None,
+            None,
+            Some(&CValue::Pointer(value.clone())),
+            None,
+        );
+        self.register_pending_loads();
+        let representative = self
+            .pointer_values
+            .get(&self.root(node))
+            .unwrap_or(value)
+            .clone();
+        if representative.extent_is_known() {
+            return representative;
+        }
+        let extent = self.extent_node(value);
+        let Some(witness) = self.extent_values.get(&self.root(extent)) else {
+            return representative;
+        };
+        if !witness.extent_is_known() {
+            return representative;
+        }
+        let adopted = representative
+            .with_extent(witness.extent().cloned())
+            .with_opaque_extent(witness.opaque_extent().cloned().map(std::sync::Arc::new));
+        if witness.extent().is_none() {
+            adopted.with_root_extent()
+        } else {
+            adopted
+        }
+    }
+
+    fn extent_node(&mut self, value: &crate::kernel::CPointerValue) -> u64 {
+        let node = if let Some(extent) = value.extent() {
+            let head = self.intern_node(Node::ArgumentTag(ArgumentTag::PointerSubobjectExtent));
+            let width = self.intern_int32(&extent.width);
+            let head = self.intern_node(Node::Apply(head, width));
+            let start = self
+                .address(extent.start.block.clone(), extent.start.offset.clone())
+                .0;
+            self.intern_node(Node::Apply(head, start))
+        } else if value.extent_is_known() {
+            self.intern_node(Node::ArgumentTag(ArgumentTag::PointerRootExtent))
+        } else {
+            self.opaque_extent_node(value.opaque_extent().unwrap_or(value.designation()))
+        };
+        let root = self.root(node);
+        let witness = self
+            .extent_values
+            .get(&root)
+            .map_or(value.clone(), |previous| {
+                crate::kernel::pointer_designations::prefer_pointer(previous, value)
+            });
+        self.extent_values.insert(root, witness);
+        node
+    }
+
+    fn opaque_extent_node(&mut self, origin: &crate::kernel::Pointer) -> u64 {
+        let node = self.opaque_extent_node_without_calls(origin);
+        self.retain_pointer_call_component(origin, node, ArgumentTag::PointerCallExtent);
+        node
+    }
+
+    fn opaque_extent_node_without_calls(&mut self, origin: &crate::kernel::Pointer) -> u64 {
+        let origin = self.read_domains.representative(origin);
+        if let Some(node) = self.read_extent_nodes.get(&origin) {
+            return *node;
+        }
+        if let Some(read) = origin.as_loaded_value() {
+            let source = crate::kernel::prelude::canonical_load_projection_source(
+                &read.defining_memory,
+                &read.defining_address,
+            )
+            .unwrap_or(read.defining_memory);
+            let cell = self
+                .address(read.defining_address.block, read.defining_address.offset)
+                .0;
+            let head = self.intern_node(Node::ArgumentTag(ArgumentTag::PointerExtentRead(
+                source.read_identity(),
+            )));
+            let node = self.intern_node(Node::Apply(head, cell));
+            self.read_extent_nodes.insert(origin, node);
+            return node;
+        }
+        self.intern_node(Node::OpaqueArgument(SharedPureApplication::intern(
+            "<pointer-extent-origin>".into(),
+            vec![A::Value(CValue::Pointer(
+                crate::kernel::CPointerValue::new(origin.clone(), CType::VoidPointer),
+            ))],
+        )))
+    }
+
+    pub(in crate::kernel::equality_graph) fn opaque_extents_equal(
+        &mut self,
+        a: &crate::kernel::Pointer,
+        b: &crate::kernel::Pointer,
+    ) -> bool {
+        let a = self.opaque_extent_node(a);
+        let b = self.opaque_extent_node(b);
+        self.register_pending_loads();
+        self.root(a) == self.root(b)
+    }
+
+    fn designation_node(&mut self, origin: &crate::kernel::Pointer) -> u64 {
+        let node = self.designation_node_without_calls(origin);
+        self.retain_pointer_call_component(origin, node, ArgumentTag::PointerCallDesignation);
+        node
+    }
+
+    /// Complete result domains depend on complete arguments. Their parallel
+    /// function head never joins raw output-address equations. Queue the one
+    /// selected identity definition so nested calls stay iterative.
+    fn retain_pointer_call_component(
+        &mut self,
+        origin: &crate::kernel::Pointer,
+        component: u64,
+        tag: ArgumentTag,
+    ) {
+        let PointerBlock::PureFunctionApplication(application) = &origin.block else {
+            return;
+        };
+        if origin.offset != PointerOffsetTerm::Constant(0) {
+            return;
+        }
+        let key = Node::PointerFunctionIdentity(application.clone());
+        let new = !self.nodes.contains_key(&key);
+        let identity = self.intern_node(key);
+        if new {
+            self.pending_pointer_identities
+                .push((identity, application.clone()));
+        }
+        let head = self.intern_node(Node::ArgumentTag(tag));
+        let projected = self.intern_node(Node::Apply(head, identity));
+        self.close_with_affine_definition(vec![(component, projected)], true);
+    }
+
+    fn designation_node_without_calls(&mut self, origin: &crate::kernel::Pointer) -> u64 {
+        // Congruence here uses the cell a complete pointer was read from.
+        // Equality of the loaded pointer's numeric address never merges this
+        // node with a different value origin.
+        let origin = self.read_domains.representative(origin);
+        if let Some(node) = self.read_designation_nodes.get(&origin) {
+            return *node;
+        }
+        if let crate::kernel::PointerBlock::LoadedPointer(identity) = &origin.block
+            && let Some((memory, cell)) = crate::kernel::eval::registered_pointer_load(*identity)
+        {
+            let source = crate::kernel::prelude::canonical_load_projection_source(&memory, &cell)
+                .unwrap_or(memory);
+            let cell = self.address(cell.block, cell.offset).0;
+            let head = self.intern_node(Node::ArgumentTag(ArgumentTag::DesignationRead(
+                source.read_identity(),
+            )));
+            let node = self.intern_node(Node::Apply(head, cell));
+            self.read_designation_nodes.insert(origin, node);
+            return node;
+        }
+        self.opaque_argument(&A::Value(CValue::Pointer(
+            crate::kernel::CPointerValue::new(origin.clone(), CType::VoidPointer),
+        )))
+    }
+
     fn opaque_argument(&mut self, argument: &A) -> u64 {
         // Map comparisons use stable IDs, not full algebraic values/snapshots.
         self.intern_node(Node::OpaqueArgument(SharedPureApplication::intern(
@@ -774,6 +1070,23 @@ impl TermClasses {
             C::Bitvector64UnsignedGreaterEqual(a, b) => {
                 (UInt64Ge, self.intern_uint64(a), self.intern_uint64(b))
             }
+            C::PointerValueEqual(a, b) => (
+                PointerValueEq,
+                self.intern_expression(
+                    None,
+                    None,
+                    None,
+                    Some(&CValue::Pointer((**a).clone())),
+                    None,
+                ),
+                self.intern_expression(
+                    None,
+                    None,
+                    None,
+                    Some(&CValue::Pointer((**b).clone())),
+                    None,
+                ),
+            ),
             C::PointerEqual(a, b) => (
                 PointerEq,
                 self.address(a.block.clone(), a.offset.clone()).0,
@@ -810,6 +1123,7 @@ impl TermClasses {
             C::Bitvector32SignedAddOverflows(..) => ConditionKind::Int32AddOverflow,
             C::Bitvector64Equal(..) => ConditionKind::UInt64Eq,
             C::PointerEqual(..) => ConditionKind::PointerEq,
+            C::PointerValueEqual(..) => ConditionKind::PointerValueEq,
             C::PointerOffsetEqual(..) => ConditionKind::OffsetEq,
             C::Bitvector32SignedLessThan(..) => ConditionKind::Int32Lt,
             C::Bitvector32SignedLessEqual(..) => ConditionKind::Int32Le,

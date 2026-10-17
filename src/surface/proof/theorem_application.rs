@@ -965,7 +965,7 @@ pub(super) fn theorem_application_bindings(
             continue;
         }
         if parameter_is_click_array_ref(parameter) {
-            let array_ref = evaluate_fixed_state_array_ref_through_kernel(
+            let (array_ref, pointer_value) = evaluate_fixed_state_array_ref_through_kernel(
                 argument,
                 assumptions,
                 ContractEnvironment::new(context.values, context.array_refs),
@@ -1019,9 +1019,8 @@ pub(super) fn theorem_application_bindings(
                 }
                 value.retag_pointer(parameter_type.to_kernel_type())
             } else {
-                CValue::typed_pointer(
-                    array_ref.pointer.clone(),
-                    expected_element_type.pointer_to().unwrap(),
+                CValue::Pointer(
+                    pointer_value.with_type(expected_element_type.pointer_to().unwrap()),
                 )
             };
             values.insert(parameter.name().to_string(), value);

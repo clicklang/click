@@ -5,6 +5,15 @@ use super::*;
 use crate::kernel::{IntegerRangeFoldIndex, IntegerTerm, LoweringIntroduction, SharedIntegerTerm};
 use crate::surface::planning::proposition_search::PropositionSearch;
 
+// These tests measure local proof updates rather than fixture setup.
+// A 64-fold fact increase still rejects linear copies through the existing
+// allocation ceilings or exact index-sharing assertions.
+const LOCAL_PROOF_FACT_SIZES: [u32; 4] = [16, 64, 256, 1024];
+
+// Local-update fixtures keep five samples and 128-fold growth where the
+// original allocation guard needs more headroom to reject a linear index copy.
+const STRUCTURAL_PROOF_FACT_SIZES: [u32; 5] = [16, 64, 256, 1024, 2048];
+
 fn indexed_fact(index: u32) -> Proposition {
     Proposition::ConditionIs(
         ConditionTerm::Bitvector32SignedLessThan(
@@ -1787,7 +1796,7 @@ fn smart_have_scope_and_explicit_step_scale_with_local_output() {
         ProofTactic::Simp,
     ];
 
-    for size in [16_u32, 64, 256, 1024, 4096] {
+    for size in LOCAL_PROOF_FACT_SIZES {
         let requires = (0..size).map(indexed_fact).collect::<Vec<_>>();
         let theorem_context = PureTheoremContext {
             diagnostic_names: Default::default(),
@@ -2097,7 +2106,7 @@ fn introduced_since_recovers_only_the_appended_delta() {
 #[ignore = "nightly: 1.4s in the parallel gate"]
 fn proof_fact_forks_share_context_and_local_insertions_are_logarithmic() {
     let mut allocation_samples = Vec::new();
-    for size in [16_u32, 64, 256, 1024, 4096] {
+    for size in LOCAL_PROOF_FACT_SIZES {
         let initial = (0..size).map(indexed_fact).collect::<Vec<_>>();
         let facts = ProofFacts::from_ordered(&initial);
         let fork = facts.clone();
@@ -2295,7 +2304,7 @@ fn proposition_unfold_uses_indexed_facts_and_persistent_local_state() {
     let predicate = lower(&predicate_surface);
     let goal = lower(&goal_surface);
 
-    for size in [16_u32, 64, 256, 1024, 4096] {
+    for size in LOCAL_PROOF_FACT_SIZES {
         let mut requires = (0..size).map(indexed_fact).collect::<Vec<_>>();
         requires.push(predicate.clone());
         let theorem_context = PureTheoremContext {
@@ -2444,7 +2453,7 @@ fn fixed_state_proposition_unfold_checks_the_same_retained_step() {
     assert!(root.certificate().steps().is_empty());
 
     let result = int32(7);
-    for size in [16_u32, 64, 256, 1024, 4096] {
+    for size in LOCAL_PROOF_FACT_SIZES {
         let mut facts = (0..size).map(indexed_fact).collect::<Vec<_>>();
         facts.push(predicate.clone());
         let root = Proof::for_fixed_state_frontier(
@@ -2537,7 +2546,8 @@ fn result_aware_fixed_state_goal_focus_shares_facts_and_checks_assumption() {
     let goal = indexed_fact(9_000_000);
     let missing = indexed_fact(9_000_001);
 
-    for size in [16_u32, 64, 256, 1024, 4096] {
+    // Exact index identity rejects copying at every nonempty size.
+    for size in LOCAL_PROOF_FACT_SIZES {
         let mut facts = (0..size).map(indexed_fact).collect::<Vec<_>>();
         facts.push(goal.clone());
         let root = Proof::for_fixed_state_frontier(
@@ -2604,7 +2614,7 @@ fn fixed_state_context_have_publishes_checked_fact_for_later_scope() {
         right: ContractExpression::CFragment(CExpression::Value(int32(0))),
     };
 
-    for size in [16_u32, 64, 256, 1024, 4096] {
+    for size in LOCAL_PROOF_FACT_SIZES {
         let facts = (0..size).map(indexed_fact).collect::<Vec<_>>();
         let root = Proof::for_fixed_state_frontier(
             "fixed-state proof context have",
@@ -2789,7 +2799,7 @@ fn proof_if_fork_and_join_work_is_logarithmic_in_unrelated_facts() {
         Box::new(ClickProposition::Not(Box::new(condition.clone()))),
     );
 
-    for size in [16_u32, 64, 256, 1024, 4096] {
+    for size in LOCAL_PROOF_FACT_SIZES {
         let requires = (0..size).map(indexed_fact).collect::<Vec<_>>();
         let theorem_context = PureTheoremContext {
             diagnostic_names: Default::default(),
@@ -3126,7 +3136,7 @@ fn fixed_state_choose_uses_indexed_requirement_and_persistent_local_bindings() {
         )),
     };
 
-    for size in [16_u32, 64, 256, 1024, 4096] {
+    for size in LOCAL_PROOF_FACT_SIZES {
         let mut facts = vec![source_fact.clone()];
         facts.extend((0..size).map(indexed_fact));
         let root = Proof::for_fixed_state_goal_with_requirements(
@@ -3342,7 +3352,8 @@ fn pure_rewrite_uses_indexed_equality_availability_without_changing_facts() {
     )
     .expect("constant equality should lower");
     let mut allocation_baseline = None;
-    for size in [16_u32, 64, 256, 1024, 4096] {
+    // Exact index identity rejects copying at every nonempty size.
+    for size in LOCAL_PROOF_FACT_SIZES {
         let mut requires = (0..size).map(indexed_fact).collect::<Vec<_>>();
         requires.push(kernel_equality.clone());
         let theorem_context = PureTheoremContext {
@@ -3607,7 +3618,7 @@ fn fixed_state_extract_uses_persistent_proper_conjunct_membership() {
         "an independently available fact is not extractable unless it is also a proper conjunct"
     );
 
-    for size in [16_u32, 64, 256, 1024, 4096] {
+    for size in LOCAL_PROOF_FACT_SIZES {
         let mut available = (0..size).map(indexed_fact).collect::<Vec<_>>();
         available.push(Proposition::And(
             Box::new(indexed_fact(size + 1)),
@@ -3831,7 +3842,7 @@ fn fixed_state_instantiate_uses_indexed_universal_and_only_named_guards() {
     let kernel_goal = lower(&goal_surface);
     let kernel_quantified = lower(&quantified_surface);
 
-    for size in [16_u32, 64, 256, 1024, 4096] {
+    for size in LOCAL_PROOF_FACT_SIZES {
         let mut available = (0..size)
             .flat_map(|index| {
                 [
@@ -4991,7 +5002,7 @@ fn branch_theorem_search_retains_checked_arm_steps_and_scales() {
     let mut nested_samples = Vec::new();
     let mut execute_samples = Vec::new();
     let mut outcome_samples = Vec::new();
-    for size in [16_u32, 64, 256, 1024, 4096] {
+    for size in LOCAL_PROOF_FACT_SIZES {
         let mut pure_facts = (0..size).map(indexed_fact).collect::<Vec<_>>();
         pure_facts.push(kernel_premise.clone());
         let mut surface_propositions = SurfacePropositionMap::default();
@@ -5307,7 +5318,7 @@ fn fixed_state_apply_search_uses_indexes_and_retains_its_checked_successor() {
         .expect("the selected premise form should be recorded");
 
     let mut allocation_baseline = None;
-    for size in [16_u32, 64, 256, 1024, 4096] {
+    for size in LOCAL_PROOF_FACT_SIZES {
         let mut facts = (0..size).map(indexed_fact).collect::<Vec<_>>();
         facts.push(Proposition::And(
             Box::new(kernel_premise.clone()),
@@ -5448,7 +5459,7 @@ fn result_aware_fixed_state_apply_scales_with_unrelated_facts() {
     )
     .expect("the result-aware goal should lower");
 
-    for size in [16_u32, 64, 256, 1024, 4096] {
+    for size in LOCAL_PROOF_FACT_SIZES {
         let facts = (0..size).map(indexed_fact).collect::<Vec<_>>();
         let root = Proof::for_fixed_state_goal_with_requirements(
             "persistent result-aware theorem search",
@@ -5550,7 +5561,7 @@ fn result_aware_fixed_state_context_apply_is_indexed_and_transactional() {
         .expect("the selected premise form should be recorded");
 
     let mut allocation_baseline = None;
-    for size in [16_u32, 64, 256, 1024, 4096] {
+    for size in LOCAL_PROOF_FACT_SIZES {
         let mut facts = (0..size).map(indexed_fact).collect::<Vec<_>>();
         facts.push(kernel_premise.clone());
         let root = Proof::for_fixed_state_frontier(
@@ -5773,7 +5784,7 @@ fn pure_signed_order_simp_builds_its_theorem_path_with_logarithmic_local_updates
     }
 
     let mut baseline = None;
-    for size in [16_u32, 64, 256, 1024, 4096] {
+    for size in LOCAL_PROOF_FACT_SIZES {
         let mut requires = (0..size).map(indexed_fact).collect::<Vec<_>>();
         requires.extend(premises.iter().cloned());
         let theorem_context = PureTheoremContext {
@@ -6810,7 +6821,7 @@ fn fixed_state_single_premise_arithmetic_simps_retain_indexed_theorem_steps() {
         .expect("the exact constant upper-bound premise should be indexed");
 
     for (goal, theorem_name, label, surface_premise, kernel_premise, shape) in goals {
-        for size in [16_u32, 64, 256, 1024, 4096] {
+        for size in LOCAL_PROOF_FACT_SIZES {
             let mut facts = (0..size).map(indexed_fact).collect::<Vec<_>>();
             facts.push(kernel_premise.clone());
             let root = Proof::for_fixed_state_goal(
@@ -7176,7 +7187,7 @@ fn increment_bound_family_retains_two_indexed_theorem_premises() {
         .expect("the exact upper premise should be indexed");
     let selected_premises = [lower_premise.clone(), upper_premise.clone()];
 
-    for size in [16_u32, 64, 256, 1024, 4096] {
+    for size in LOCAL_PROOF_FACT_SIZES {
         let mut facts = (0..size).map(indexed_fact).collect::<Vec<_>>();
         facts.extend([kernel_lower.clone(), kernel_upper.clone()]);
         for (goal, theorem_name, label) in &goals {
@@ -7289,7 +7300,7 @@ fn increment_bound_family_retains_two_indexed_theorem_premises() {
         .expect("the exact upper premise should be indexed");
     let strict_selected_premises = [strict_lower_premise.clone(), upper_premise.clone()];
 
-    for size in [16_u32, 64, 256, 1024, 4096] {
+    for size in LOCAL_PROOF_FACT_SIZES {
         let mut facts = (0..size).map(indexed_fact).collect::<Vec<_>>();
         facts.extend([kernel_strict_lower.clone(), kernel_upper.clone()]);
         let root = Proof::for_fixed_state_goal(
@@ -7439,7 +7450,7 @@ fn le_and_not_lt_equality_simp_retains_one_indexed_theorem_application() {
         .record_lowering(&not_less_than, &kernel_not_less_than)
         .expect("the not-< premise should be indexed");
 
-    for size in [16_u32, 64, 256, 1024, 4096] {
+    for size in LOCAL_PROOF_FACT_SIZES {
         let mut facts = (0..size).map(indexed_fact).collect::<Vec<_>>();
         facts.extend([kernel_less_equal.clone(), kernel_not_less_than.clone()]);
         let root = Proof::for_fixed_state_goal(
@@ -7629,7 +7640,7 @@ fn ge_and_not_gt_equality_simp_retains_one_indexed_theorem_application() {
         .record_lowering(&not_greater_than, &kernel_not_greater_than)
         .expect("the not-> premise should be indexed");
 
-    for size in [16_u32, 64, 256, 1024, 4096] {
+    for size in LOCAL_PROOF_FACT_SIZES {
         let mut facts = (0..size).map(indexed_fact).collect::<Vec<_>>();
         facts.extend([
             kernel_greater_equal.clone(),
@@ -7729,7 +7740,7 @@ fn le_and_neq_strict_simp_retains_one_indexed_theorem_application() {
         .record_lowering(&not_equal, &kernel_not_equal)
         .expect("the != premise should be indexed");
 
-    for size in [16_u32, 64, 256, 1024, 4096] {
+    for size in LOCAL_PROOF_FACT_SIZES {
         let mut facts = (0..size).map(indexed_fact).collect::<Vec<_>>();
         facts.extend([kernel_less_equal.clone(), kernel_not_equal.clone()]);
         let root = Proof::for_fixed_state_goal(
@@ -8002,7 +8013,7 @@ fn selected_disjunction_simp_retains_checked_cases_and_scales() {
         .record_lowering(&disjunction, &kernel_disjunction)
         .expect("the selected disjunction should be indexed");
 
-    for size in [16_u32, 64, 256, 1024, 4096] {
+    for size in LOCAL_PROOF_FACT_SIZES {
         let mut facts = (0..size).map(indexed_fact).collect::<Vec<_>>();
         facts.push(kernel_disjunction.clone());
         let root = Proof::for_fixed_state_goal(
@@ -8141,7 +8152,7 @@ fn surface_structural_simp_retains_recursive_child_proofs_and_scales() {
         .record_lowering(&right_positive, &kernel_right_positive)
         .expect("the recursive right premise should be indexed");
 
-    for size in [16_u32, 64, 256, 1024, 4096] {
+    for size in STRUCTURAL_PROOF_FACT_SIZES {
         let unrelated = (0..size).map(indexed_fact).collect::<Vec<_>>();
         let logarithmic_height = (u32::BITS - size.leading_zeros()) as usize;
         let allocation_bound = 256 * logarithmic_height + 1024;
@@ -8391,7 +8402,7 @@ fn predecessor_simps_retain_indexed_named_rule_premises() {
             .expect("each exact predecessor premise should be indexed");
     }
 
-    for size in [16_u32, 64, 256, 1024, 4096] {
+    for size in LOCAL_PROOF_FACT_SIZES {
         let unrelated_facts = (0..size).map(indexed_fact).collect::<Vec<_>>();
         for (goal, theorem_name, selected, nested) in &goals {
             let mut facts = unrelated_facts.clone();
@@ -8576,7 +8587,7 @@ fn pure_apply_search_instantiates_requirements_and_retains_its_successor() {
     };
 
     let mut allocation_baseline = None;
-    for size in [16_u32, 64, 256, 1024, 4096] {
+    for size in LOCAL_PROOF_FACT_SIZES {
         let mut requires = (0..size).map(indexed_fact).collect::<Vec<_>>();
         requires.push(kernel_premise.clone());
         let theorem_context = PureTheoremContext {
@@ -8820,7 +8831,7 @@ fn execution_unfold_forks_persistently_and_ignores_unrelated_facts() {
         ],
     };
 
-    for size in [16_u32, 64, 256, 1024, 4096] {
+    for size in LOCAL_PROOF_FACT_SIZES {
         let mut pure_facts = (0..size).map(indexed_fact).collect::<Vec<_>>();
         pure_facts.push(predicate.clone());
         let mut surface_propositions = SurfacePropositionMap::default();
@@ -10479,7 +10490,7 @@ fn execution_proof_if_split_is_logarithmic_in_unrelated_facts() {
     };
 
     let mut samples = Vec::new();
-    for size in [16_u32, 64, 256, 1024, 4096] {
+    for size in LOCAL_PROOF_FACT_SIZES {
         let root = Proof::for_execution_frontier(
             "execution proof if scaling",
             0,
@@ -10710,7 +10721,7 @@ fn execution_proof_cases_split_is_logarithmic_in_unrelated_facts() {
     };
 
     let mut samples = Vec::new();
-    for size in [16_u32, 64, 256, 1024, 4096] {
+    for size in LOCAL_PROOF_FACT_SIZES {
         let mut pure_facts = (0..size).map(indexed_fact).collect::<Vec<_>>();
         pure_facts.push(lowered_disjunction.clone());
         let root = Proof::for_execution_frontier(
@@ -11419,7 +11430,7 @@ fn nonempty_execution_branch_retains_checked_arm_steps_at_the_join() {
     let function_environment = CExecutionEnvironment::new();
     let mut allocation_samples = Vec::new();
     let resource_environment = ResourceEnvironment::new(click_file.resource_definitions());
-    for size in [16_u32, 64, 256, 1024, 4096] {
+    for size in LOCAL_PROOF_FACT_SIZES {
         let frontier = ExecutionFrontier {
             next_statement_index: 0,
             ..ExecutionFrontier::default()
@@ -11754,7 +11765,7 @@ fn branch_interface_is_checked_per_arm_and_scales_with_its_delta() {
     };
 
     let mut samples = Vec::new();
-    for size in [16_u32, 64, 256, 1024, 4096] {
+    for size in LOCAL_PROOF_FACT_SIZES {
         let root = make_root(size, CState::new());
         let (split, record) = root
             .split_focused_execution_branch()
@@ -12310,7 +12321,7 @@ fn nested_end_of_arm_interface_derives_its_enclosing_continuation() {
     };
 
     let mut samples = Vec::new();
-    for size in [16_u32, 64, 256, 1024, 4096] {
+    for size in LOCAL_PROOF_FACT_SIZES {
         let (outer_split, outer_record) = make_root(size)
             .split_focused_execution_branch()
             .expect("outer symbolic condition should expose both arms");

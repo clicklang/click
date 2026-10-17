@@ -1775,11 +1775,28 @@ pub(in crate::surface) fn elaborate_fixed_state_expression_with_algebraic_and_in
 /// a `uint8 bytes[8]` defaulted to an `int32` load at byte 24, a different
 /// cell from the one the C program and every other clause read.
 pub(in crate::surface) fn elaborate_requirement_proposition(
-    parameters: &[syntax::C0Parameter],
+    parameter_binding: ParameterBinding<'_>,
     entry_state: &CState,
     proposition: &ClickProposition,
     spec_definitions: SpecDefinitions<'_>,
 ) -> Result<SpecProposition, String> {
+    // A requirement reads only the parameters it names: with the binding's
+    // index, the parameter tables hold those alone.
+    let parameters: Vec<&syntax::C0Parameter> = match parameter_binding.index {
+        Some(index) => {
+            let mut names = BTreeSet::new();
+            crate::surface::lowering::collect_click_proposition_referenced_names(
+                proposition,
+                &mut names,
+            );
+            names
+                .iter()
+                .filter_map(|name| index.position(name))
+                .map(|position| &parameter_binding.parameters[position])
+                .collect()
+        }
+        None => parameter_binding.parameters.iter().collect(),
+    };
     let mut lowerer = AnnotationLowerer {
         capture_referenced_names: None,
         structural_clauses: &[],
@@ -1810,7 +1827,9 @@ pub(in crate::surface) fn elaborate_requirement_proposition(
                 ))
             })
             .collect(),
-        parameter_pointer_element_widths: parameter_pointer_element_widths(parameters),
+        parameter_pointer_element_widths: parameter_pointer_element_widths(
+            parameters.iter().copied(),
+        ),
         quantified_values: BTreeMap::new(),
         algebraic_variables: BTreeMap::new(),
         algebraic_types: BTreeMap::new(),
@@ -2372,11 +2391,11 @@ struct AnnotationLowerer<'a> {
     snapshots: Option<&'a RecordedSnapshots>,
 }
 
-pub(in crate::surface) fn parameter_pointer_element_widths(
-    parameters: &[syntax::C0Parameter],
+pub(in crate::surface) fn parameter_pointer_element_widths<'a>(
+    parameters: impl IntoIterator<Item = &'a syntax::C0Parameter>,
 ) -> BTreeMap<String, u32> {
     parameters
-        .iter()
+        .into_iter()
         .filter_map(|parameter| {
             parameter
                 .array_element_width()
@@ -4705,7 +4724,7 @@ impl AnnotationLowerer<'_> {
                     .ok_or_else(|| {
                         "to_integer expects a signed or unsigned machine integer".to_string()
                     })?;
-                    let (crate::kernel::integer_c_value!(bits)) = value else {
+                    let (crate::kernel::integer_c_value!(bits)) = value.numeric_value() else {
                         return Err(
                             "to_integer expects a signed or unsigned machine integer".into()
                         );
@@ -4998,10 +5017,15 @@ impl AnnotationLowerer<'_> {
                     CExpression::Cast {
                         target_type,
                         pointee_struct,
+                        integer_mode,
                         ..
                     } => {
                         if *target_type == CType::UInt8Pointer
                             && pointee_struct.is_none()
+                            && !matches!(
+                                self.contract_expression_click_type(operand, environment),
+                                Some(ClickType::C(C0Type::Int64(_) | C0Type::UInt64(_)))
+                            )
                             && !self
                                 .contract_pointer_element_type(operand, environment)
                                 .is_some_and(|element| {
@@ -5013,7 +5037,13 @@ impl AnnotationLowerer<'_> {
                                     .to_string(),
                             );
                         }
-                        Ok(SpecExpression::Cast(Box::new(value), *target_type))
+                        Ok(
+                            if *integer_mode == crate::kernel::CIntegerCastMode::PointerCoercion {
+                                SpecExpression::PointerCoercion(Box::new(value), *target_type)
+                            } else {
+                                SpecExpression::Cast(Box::new(value), *target_type)
+                            },
+                        )
                     }
                     CExpression::PointerOffsetBytes { bytes, .. } => {
                         Ok(SpecExpression::PointerOffset {
@@ -5540,7 +5570,7 @@ impl AnnotationLowerer<'_> {
                 // C-valued subfolds can occur inside Integer expressions, so
                 // guard the kernel's carrier here as well as in validation.
                 let c_type = |expression: &SpecExpression| match expression {
-                    SpecExpression::Cast(_, ty) => {
+                    SpecExpression::Cast(_, ty) | SpecExpression::PointerCoercion(_, ty) => {
                         Some(ClickType::C(generics::c0_type_from_kernel(*ty)))
                     }
                     _ => spec_expression_click_type(expression),
@@ -5757,9 +5787,16 @@ impl AnnotationLowerer<'_> {
                                 ),
                             )))
                         }
-                        AlgebraicValueType::C(_) | AlgebraicValueType::ObjectPointer(_, _) => self
-                            .lower_contract_expression_to_spec(argument, environment)
-                            .map(SpecAlgebraicValue::C),
+                        AlgebraicValueType::C(c_type)
+                        | AlgebraicValueType::ObjectPointer(c_type, _) => {
+                            let value =
+                                self.lower_contract_expression_to_spec(argument, environment)?;
+                            Ok(SpecAlgebraicValue::C(if *c_type == CType::VoidPointer {
+                                SpecExpression::PointerCoercion(Box::new(value), *c_type)
+                            } else {
+                                value
+                            }))
+                        }
                         AlgebraicValueType::Integer => self
                             .lower_contract_integer_to_spec(argument, environment)
                             .map(SpecAlgebraicValue::Integer),
@@ -6120,8 +6157,11 @@ impl AnnotationLowerer<'_> {
                         // tree first would clone every nested call's subtree.
                         let value =
                             self.lower_contract_expression_to_spec(argument, environment)?;
-                        let value = match pure_function_parameter_scalar_type(parameter) {
-                            Some(target) => SpecExpression::Cast(Box::new(value), target),
+                        let value = match pure_function_parameter_conversion(parameter) {
+                            Some((target, crate::kernel::CIntegerCastMode::PointerCoercion)) => {
+                                SpecExpression::PointerCoercion(Box::new(value), target)
+                            }
+                            Some((target, _)) => SpecExpression::Cast(Box::new(value), target),
                             None => value,
                         };
                         Ok(crate::kernel::SpecPureFunctionArgument::Value(value))
@@ -6695,10 +6735,10 @@ impl AnnotationLowerer<'_> {
                 },
                 environment,
             ),
-            // A specification observes addresses; it does not designate.
-            CExpression::Subobject { pointer, .. } => {
-                self.lower_c_fragment_to_spec(pointer, environment)
-            }
+            CExpression::Subobject { pointer, width } => Ok(SpecExpression::Subobject {
+                pointer: Box::new(self.lower_c_fragment_to_spec(pointer, environment)?),
+                width: *width,
+            }),
             CExpression::PointerOffsetBytes { pointer, bytes } => {
                 Ok(SpecExpression::PointerOffset {
                     pointer: Box::new(self.lower_c_fragment_to_spec(pointer, environment)?),
@@ -6794,6 +6834,7 @@ impl AnnotationLowerer<'_> {
             CExpression::Cast {
                 expression,
                 target_type,
+                integer_mode,
                 ..
             } if matches!(target_type, CType::Int32 | CType::UInt32 | CType::Int64)
                 || *target_type == CType::UInt64
@@ -6804,10 +6845,14 @@ impl AnnotationLowerer<'_> {
                             .is_some())
                 || target_type.is_pointer() =>
             {
-                Ok(SpecExpression::Cast(
-                    Box::new(self.lower_c_fragment_to_spec(expression, environment)?),
-                    *target_type,
-                ))
+                let value = Box::new(self.lower_c_fragment_to_spec(expression, environment)?);
+                Ok(
+                    if *integer_mode == crate::kernel::CIntegerCastMode::PointerCoercion {
+                        SpecExpression::PointerCoercion(value, *target_type)
+                    } else {
+                        SpecExpression::Cast(value, *target_type)
+                    },
+                )
             }
             CExpression::Index(base, index) => {
                 let element_type = self
@@ -6937,6 +6982,7 @@ impl AnnotationLowerer<'_> {
                 .get(generic_instance_source_name(definition.name()))
                 .cloned()
                 .flatten(),
+            result_object_class: definition.return_object_class().cloned(),
         })
     }
 
@@ -7540,8 +7586,10 @@ fn algebraic_kernel_type_from_parts(
         arguments: arguments.to_vec(),
     };
     let mut schemas = BTreeMap::new();
-    collect_algebraic_kernel_schemas(environment, &root_type, &mut schemas)?;
-    let schemas = std::sync::Arc::new(AlgebraicSchemas::new(schemas));
+    let mut object_classes = BTreeMap::new();
+    collect_algebraic_kernel_schemas(environment, &root_type, &mut schemas, &mut object_classes)?;
+    let schemas =
+        std::sync::Arc::new(AlgebraicSchemas::new(schemas).with_object_classes(object_classes));
     let variants = schemas
         .get(&root_type)
         .cloned()
@@ -7555,10 +7603,15 @@ fn algebraic_kernel_type_from_parts(
     })
 }
 
+/// Collects the schema of `value_type` and of every algebraic type its
+/// fields name, with the declared object classes of their pointer fields
+/// (`AlgebraicSchemas::with_object_classes`). A type whose fields declare no
+/// class records none.
 fn collect_algebraic_kernel_schemas(
     environment: &ClickFunctionEnvironment,
     value_type: &AlgebraicValueType,
     schemas: &mut BTreeMap<AlgebraicValueType, std::sync::Arc<[AlgebraicVariantType]>>,
+    object_classes: &mut BTreeMap<AlgebraicValueType, crate::kernel::AlgebraicFieldObjectClasses>,
 ) -> Result<(), String> {
     if schemas.contains_key(value_type) {
         return Ok(());
@@ -7587,12 +7640,33 @@ fn collect_algebraic_kernel_schemas(
         })
         .collect::<Result<Vec<_>, String>>()?;
     schemas.insert(value_type.clone(), variants.clone().into());
+    let classes = definition
+        .variants()
+        .iter()
+        .filter_map(|variant| {
+            let fields = variant
+                .fields()
+                .iter()
+                .map(|field| match field {
+                    AlgebraicFieldType::C { object_class, .. } => object_class.clone(),
+                    _ => None,
+                })
+                .collect::<Vec<_>>();
+            fields
+                .iter()
+                .any(Option::is_some)
+                .then(|| (variant.name().to_string(), fields.into()))
+        })
+        .collect::<crate::kernel::AlgebraicFieldObjectClasses>();
+    if !classes.is_empty() {
+        object_classes.insert(value_type.clone(), classes);
+    }
     for nested in variants
         .iter()
         .flat_map(|variant| variant.fields.iter())
         .filter(|field| matches!(field, AlgebraicValueType::Algebraic { .. }))
     {
-        collect_algebraic_kernel_schemas(environment, nested, schemas)?;
+        collect_algebraic_kernel_schemas(environment, nested, schemas, object_classes)?;
     }
     Ok(())
 }

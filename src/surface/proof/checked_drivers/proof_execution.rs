@@ -62,6 +62,7 @@ fn bridges_without_executing(tactic: &ProofTactic) -> bool {
     matches!(
         tactic,
         ProofTactic::Have(_)
+            | ProofTactic::Extract(_)
             | ProofTactic::UnfoldResource(_)
             | ProofTactic::UnfoldWitnesses { .. }
             | ProofTactic::UnfoldPredicate(_)
@@ -215,6 +216,7 @@ fn checked_execution_arm_tactics_end(
                 ProofTactic::ApplyTheorem(_)
                     | ProofTactic::Transport { .. }
                     | ProofTactic::Have(_)
+                    | ProofTactic::Extract(_)
                     | ProofTactic::LetSatisfy(_)
             )
         {
@@ -631,51 +633,44 @@ pub(in crate::surface::proof) fn apply_source_step_proofs<'a>(
     }
 }
 
-fn flat_post_execution_tactic(tactic: &ProofTactic) -> Option<PostExecutionTactic> {
+/// A written `extract(P)` adds `P` exactly as `have P by { extract(P); }`
+/// does, through the same checked scope, in every context that admits it.
+fn extract_as_have(proposition: &ClickProposition) -> ProofHave {
+    ProofHave {
+        proposition: proposition.clone(),
+        proof: SourceProof::Script(vec![ProofTactic::Extract(proposition.clone())]),
+    }
+}
+
+/// The `have` a frontier tactic proves: a written `have`, or the one a bare
+/// `extract` stands for.
+fn frontier_have(tactic: &ProofTactic) -> Option<std::borrow::Cow<'_, ProofHave>> {
     match tactic {
-        ProofTactic::FoldResource(resource) => Some(PostExecutionTactic::Fold(resource.clone())),
+        ProofTactic::Have(have) => Some(std::borrow::Cow::Borrowed(have)),
+        ProofTactic::Extract(proposition) => {
+            Some(std::borrow::Cow::Owned(extract_as_have(proposition)))
+        }
+        _ => None,
+    }
+}
+
+fn flat_post_execution_tactic(tactic: &ProofTactic) -> Option<PostExecutionTactic> {
+    if SourceContext::PostExecution.leaf_step(tactic).is_some() {
+        return Some(PostExecutionTactic::Leaf(tactic.clone()));
+    }
+    match tactic {
         ProofTactic::StepProved { step, .. }
             if matches!(step.as_ref(), ProofTactic::FoldResource(_)) =>
         {
             Some(PostExecutionTactic::FoldProved(tactic.clone()))
         }
-        ProofTactic::UnfoldResource(resource) => {
-            Some(PostExecutionTactic::Unfold(resource.clone()))
-        }
-        ProofTactic::ConstructResource(resource) => {
-            Some(PostExecutionTactic::Construct(resource.clone()))
-        }
-        ProofTactic::UnfoldPredicate(name) => {
-            Some(PostExecutionTactic::UnfoldPredicate(name.clone()))
-        }
-        ProofTactic::UnfoldFunction(application) => Some(PostExecutionTactic::UnfoldFunction {
-            application: application.clone(),
-            premises: None,
-        }),
-        ProofTactic::PeelFunction {
-            application,
-            premises,
-        } => Some(PostExecutionTactic::UnfoldFunction {
-            application: application.clone(),
-            premises: Some(premises.clone()),
-        }),
         ProofTactic::ApplyTheorem(application) => {
             Some(PostExecutionTactic::Apply(application.clone()))
         }
-        ProofTactic::ApplyTheoremUsing {
-            application,
-            premises,
-        } => Some(PostExecutionTactic::ApplyUsing {
-            application: application.clone(),
-            premises: premises.clone(),
-        }),
         ProofTactic::Have(have) => Some(PostExecutionTactic::Have(have.clone())),
-        // After execution, `extract(P)` adds `P` to every path exactly as
-        // `have P by { extract(P); }` does, through the same checked scope.
-        ProofTactic::Extract(proposition) => Some(PostExecutionTactic::Have(ProofHave {
-            proposition: proposition.clone(),
-            proof: SourceProof::Script(vec![ProofTactic::Extract(proposition.clone())]),
-        })),
+        ProofTactic::Extract(proposition) => {
+            Some(PostExecutionTactic::Have(extract_as_have(proposition)))
+        }
         ProofTactic::Both(both) => Some(PostExecutionTactic::Both(both.clone())),
         ProofTactic::Transport { source, target } => Some(PostExecutionTactic::Transport {
             source: source.clone(),
@@ -691,23 +686,6 @@ fn flat_post_execution_tactic(tactic: &ProofTactic) -> Option<PostExecutionTacti
             target: target.clone(),
             premises: Some(premises.clone()),
         }),
-        ProofTactic::Choose(choice) => Some(PostExecutionTactic::Choose(choice.clone())),
-        ProofTactic::LetSatisfy(binding) => Some(PostExecutionTactic::LetSatisfy(binding.clone())),
-        ProofTactic::Witness(witness) => Some(PostExecutionTactic::Witness(witness.clone())),
-        ProofTactic::Intro => Some(PostExecutionTactic::Intro(None)),
-        ProofTactic::IntroAs(name) => Some(PostExecutionTactic::Intro(Some(name.clone()))),
-        ProofTactic::Assumption => Some(PostExecutionTactic::Assumption),
-        ProofTactic::Normalize => Some(PostExecutionTactic::Normalize),
-        ProofTactic::NormalizeUsing(premises) => {
-            Some(PostExecutionTactic::NormalizeUsing(premises.clone()))
-        }
-        ProofTactic::ArithmeticUsing(premises) => {
-            Some(PostExecutionTactic::ArithmeticUsing(premises.clone()))
-        }
-        ProofTactic::ArithmeticCertificate(certificate) => Some(
-            PostExecutionTactic::ArithmeticCertificate(certificate.clone()),
-        ),
-        ProofTactic::Rewrite(equality) => Some(PostExecutionTactic::Rewrite(equality.clone())),
         ProofTactic::Simp => Some(PostExecutionTactic::Simp),
         ProofTactic::AutoClose => Some(PostExecutionTactic::AutoClose),
         ProofTactic::SimpUsing(simp) => Some(PostExecutionTactic::SimpUsing(simp.clone())),
@@ -731,7 +709,6 @@ fn deferred_post_execution_linear_region(
                 tactic_index: indexed.index,
                 source_index: indexed.source_index,
                 tactic,
-                surface_recorded: false,
             })
         })
         .collect::<Option<Vec<_>>>()?;
@@ -768,7 +745,6 @@ fn deferred_post_execution_region(
                     then_tactics: deferred_post_execution_region(then_branch)?,
                     else_tactics: deferred_post_execution_region(else_branch)?,
                 },
-                surface_recorded: false,
             }];
             deferred.extend(deferred_post_execution_region(continuation)?);
             Some(deferred)
@@ -788,7 +764,6 @@ fn deferred_post_execution_region(
                     returned_tactics: deferred_post_execution_region(returned_branch)?,
                     threw_tactics: deferred_post_execution_region(threw_branch)?,
                 },
-                surface_recorded: false,
             }];
             deferred.extend(deferred_post_execution_region(continuation)?);
             Some(deferred)
@@ -912,7 +887,8 @@ fn apply_frontier_source_tactic<'a>(
                 source_refusal.as_ref(),
             )?,
         }
-    } else if let ProofTactic::Have(have) = &indexed.tactic {
+    } else if let Some(have) = frontier_have(&indexed.tactic) {
+        let have = have.as_ref();
         let nested = proof.begin_source_have(have)?;
         let goal = nested.goal().cloned();
         let mut failed_check = None;
@@ -951,9 +927,17 @@ fn apply_frontier_source_tactic<'a>(
         match proof.try_execute_to_exit()? {
             Some(executed) => executed,
             None => {
-                return Err(proof.step_error(
-                    "`execute()` found no checked path from this frontier to function exit",
-                ));
+                // Terminal arms can succeed above. A continuing arm cannot
+                // consume its parent's continuation to reach function exit.
+                let message = if !proof.is_at_function_exit()
+                    && proof.execution().is_some_and(|execution| {
+                        execution.core.frontier.region == ExecutionRegionKind::BranchArm
+                    }) {
+                    "`execute()` cannot reach function exit from a continuing branch arm; an arm of `branch` must stop at the shared continuation"
+                } else {
+                    "`execute()` found no checked path from this frontier to function exit"
+                };
+                return Err(proof.step_error(message));
             }
         }
     } else if let ProofTactic::Loop(clause) = &indexed.tactic {
@@ -1872,7 +1856,7 @@ fn defer_post_exit_outcome_tactic<'a>(
     )?))
 }
 
-fn source_have_error(
+pub(in crate::surface::proof) fn source_have_error(
     proof: &Proof<'_>,
     have: &ProofHave,
     index: usize,
@@ -1952,7 +1936,7 @@ fn source_have_error(
     ))
 }
 
-pub(super) fn solve_nested_have<'a>(
+pub(in crate::surface::proof) fn solve_nested_have<'a>(
     nested: ProofScope<'a>,
     have: &ProofHave,
     failed_check: &mut Option<ClickError>,

@@ -48,10 +48,10 @@ int probe(struct rb_node* node, struct rb_node* parent) {
     ensures result == 0;
 } by {
     have reparent(
-            RbTree::Node((void*)node, (void*)node, Color::Red, RbTree::Empty, RbTree::Empty), (void*)parent)
-        == RbTree::Node((void*)node, (void*)parent, Color::Red, RbTree::Empty, RbTree::Empty) by {
+            RbTree::Node(node, node, Color::Red, RbTree::Empty, RbTree::Empty), parent)
+        == RbTree::Node(node, parent, Color::Red, RbTree::Empty, RbTree::Empty) by {
         unfold(reparent(
-            RbTree::Node((void*)node, (void*)node, Color::Red, RbTree::Empty, RbTree::Empty), (void*)parent));
+            RbTree::Node(node, node, Color::Red, RbTree::Empty, RbTree::Empty), parent));
         normalize();
     }
     execute();

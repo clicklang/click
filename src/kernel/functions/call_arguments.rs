@@ -381,6 +381,7 @@ pub(super) fn symbolic_contract_result(
         .with_pointer_pointee_constant(interface.return_pointee_is_constant());
     }
     symbolic_call_result(interface.return_type(), variable)
+        .complete_word(Pointer::symbolic(variable))
         .with_pointer_pointee_constant(interface.return_pointee_is_constant())
         .with_pointer_declared_object_class(interface.return_pointee_class())
 }

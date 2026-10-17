@@ -140,9 +140,9 @@ fn constructor_partition_transports_pointer_payloads_without_scanning_ambient_fa
             crate::kernel::ConditionTerm::pointer_equal(program.clone(), witness),
             true,
         );
-        assert!(partition.facts_for_case(0).unwrap().contains(&transported));
-        assert!(!partition.facts_for_case(1).unwrap().contains(&transported));
-        assert!(!facts.contains(&transported));
+        assert!(partition.facts_for_case(0).unwrap().available(&transported));
+        assert!(!partition.facts_for_case(1).unwrap().available(&transported));
+        assert!(!facts.available(&transported));
         let (unrelated, _, _) = core
             .algebraic_case_partition(
                 &ProofFacts::default(),
@@ -154,7 +154,7 @@ fn constructor_partition_transports_pointer_payloads_without_scanning_ambient_fa
                 65_536,
             )
             .unwrap();
-        assert!(!unrelated.facts_for_case(0).unwrap().contains(&transported));
+        assert!(!unrelated.facts_for_case(0).unwrap().available(&transported));
         samples.push(work);
     }
     assert!(
@@ -1045,5 +1045,186 @@ fn interface_lowering_retention_shares_unrelated_history() {
     assert!(
         samples.windows(2).all(|pair| pair[1] <= pair[0] * 2),
         "retention scanned unrelated history: {samples:?}"
+    );
+}
+
+/// A fold publishes the resource exchange and its evidence in the operation
+/// that derives it. Recording must not lower the same written clauses again.
+#[test]
+fn constructing_an_instance_fold_pays_for_its_body_once() {
+    use crate::kernel::{ResourceFieldSchema, ResourceFieldType, ResourceInstance};
+    let mut samples = Vec::new();
+    for size in [4u32, 8, 16, 32] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let schema =
+            ResourceFieldSchema::new(vec![("tag".into(), ResourceFieldType::C(CType::Int32))])
+                .unwrap();
+        let instance = ResourceInstance::new(
+            Variable(995_800),
+            "cell".into(),
+            vec![].into(),
+            schema.clone(),
+            vec![int32(7).into()].into(),
+        )
+        .unwrap();
+        let clauses = (0..size)
+            .map(|index| crate::kernel::SpecProposition::Comparison {
+                left: crate::kernel::SpecExpression::CExpression(CExpression::Value(int32(index))),
+                operator: crate::kernel::CComparisonOperator::Equal,
+                right: crate::kernel::SpecExpression::CExpression(CExpression::Value(int32(index))),
+            })
+            .collect();
+        let definition =
+            CCompositeResourceDefinition::new("cell", vec![], None, false, vec![], clauses)
+                .with_instance_schema(Some(schema));
+        let function = c_function(
+            CType::Void,
+            "test",
+            vec![],
+            CStatement::Return(CExpression::Value(CValue::Void)),
+        )
+        .with_composite_resource_definitions(vec![definition.clone()]);
+        let before = CState::new();
+        let facts = ProofFacts::default();
+        let (_, direct) = crate::instrumentation::measure_deterministic_work(|| {
+            crate::kernel::rewrite_resource_instance_selecting_children(
+                &before,
+                &instance,
+                &definition,
+                function.composite_resource_definitions(),
+                facts.assumptions(),
+                false,
+                None,
+            )
+            .unwrap()
+        });
+        let (folded, total) = crate::instrumentation::measure_deterministic_work(|| {
+            let mut core =
+                ExecutionProofCore::at_entry(before.clone(), ExecutionFrontier::default());
+            let (result, _) = core
+                .fold_resource_instance_with_children(&function, &[], &facts, &instance, None)
+                .unwrap();
+            result
+        });
+        assert!(
+            folded
+                .state
+                .resources()
+                .owned_instance(instance.identity())
+                .is_some()
+        );
+        samples.push((direct, total));
+    }
+    assert!(
+        samples.iter().all(|(direct, total)| *total <= direct + 128),
+        "[direct derivation, construction and recording]: {samples:?}"
+    );
+}
+
+#[test]
+fn a_checked_interface_join_does_not_reconstruct_a_calls_havoc() {
+    let mut samples = Vec::new();
+    for count in [4u32, 8, 16, 32] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let base = Pointer {
+            block: PointerBlock::ExternalArgument,
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        let mut memory = CMemory::new();
+        for index in 0..count {
+            memory = memory.store(base.offset_by_bytes(index * 4), int32(index));
+        }
+        let range =
+            crate::kernel::CMemoryRange::new_with_element_width(base, 0u32.into(), count.into(), 4);
+        let assumptions = PureFactContext::new();
+        let after = memory.clone().with_call_memory_havoc(
+            Variable(9_940_000),
+            std::slice::from_ref(&range),
+            &assumptions,
+            None,
+        );
+        let before_state = CState::new().with_memory(memory.clone());
+        let after_state = before_state.clone().with_memory(after.clone());
+        let parent =
+            ExecutionProofCore::at_entry(before_state.clone(), ExecutionFrontier::default());
+        let effect = ExecutionPureFact::internal(Proposition::CMemoryEffectSummary {
+            before: memory.clone(),
+            after: after.clone(),
+            mutable_ranges: vec![range.clone()],
+        })
+        .into_certified();
+        let mut called = parent.clone();
+        called.state = after_state.clone().into();
+        called.effect_facts.push(effect);
+        // The statement recorder retains exactly one effect for this call.
+        // Its checked walk is the join's provenance for the effect stream.
+        let steps = [CheckedMemoryStep {
+            before: memory,
+            after,
+            may_write: true,
+            statement_effects: Some(1),
+        }];
+        let (joined, work) = crate::instrumentation::measure_deterministic_work(|| {
+            checked_interface_effect_facts_along(
+                &before_state,
+                &after_state,
+                [&called, &parent],
+                [&ProofFacts::default(), &ProofFacts::default()],
+                [&called.effect_facts, &parent.effect_facts],
+                Some([&steps, &[]]),
+            )
+        });
+        let joined = joined.unwrap();
+        assert!(joined.iter().any(|fact| fact.is_join_summary() && matches!(fact.proposition(), Proposition::CMemoryEffectSummary { mutable_ranges, .. } if mutable_ranges == std::slice::from_ref(&range))));
+        samples.push(work);
+    }
+    assert!(
+        samples.iter().all(|work| *work <= samples[0] + 32),
+        "the join reconstructed the already checked call's havoc: {samples:?}"
+    );
+}
+
+#[test]
+fn taking_a_constructor_arm_reuses_its_constructed_fact_context() {
+    let mut samples = Vec::new();
+    for count in [4u64, 8, 16, 32] {
+        let (core, mut value) = constructor_partition_fixture(2);
+        value.node = crate::kernel::AlgebraicTermNode::Constructor {
+            variant: "C0".into(),
+            fields: vec![crate::kernel::AlgebraicValue::C(CValue::Int32(
+                Bitvector32Term::ClickFunctionApplication {
+                    name: "opaque_payload".into(),
+                    arguments: (0..count)
+                        .map(|i| {
+                            crate::kernel::PureFunctionArgument::Value(CValue::Int32(
+                                Bitvector32Term::Variable(Variable(8_100_000 + i)),
+                            ))
+                        })
+                        .collect(),
+                },
+            ))],
+        };
+        let root = ProofFacts::default();
+        let (partition, _, _) = core
+            .algebraic_case_partition(
+                &root,
+                &value,
+                &crate::kernel::CExecutionEnvironment::new(),
+                &[],
+                None,
+                4_000_000,
+                65_536,
+            )
+            .unwrap();
+        let (facts, work) = crate::instrumentation::measure_deterministic_work(|| {
+            partition.facts_for_case(0).unwrap()
+        });
+        assert!(facts.contains(partition.case_fact(0).unwrap()));
+        assert!(!root.contains(partition.case_fact(0).unwrap()));
+        samples.push(work);
+    }
+    assert!(
+        samples.iter().all(|work| *work <= samples[0] + 16),
+        "entering an already constructed arm rebuilt its payload facts: {samples:?}"
     );
 }

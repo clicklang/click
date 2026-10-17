@@ -119,6 +119,7 @@ impl CarrierVariables {
 
 fn c_value_variable(value: &CValue) -> Option<Variable> {
     match value {
+        CValue::PointerInteger(record) => c_value_variable(&record.numeric),
         CValue::Int8(Bitvector32Term::Variable(variable)) => Some(*variable),
         CValue::Bool(Bitvector32Term::Variable(variable))
         | CValue::Int16(Bitvector32Term::Variable(variable))
@@ -142,6 +143,7 @@ fn c_value_variable(value: &CValue) -> Option<Variable> {
 
 fn typed_c_replacement(value: &CValue) -> Option<TypedCReplacement> {
     match value {
+        CValue::PointerInteger(record) => typed_c_replacement(&record.numeric),
         CValue::Int8(term) => Some(TypedCReplacement::Bitvector(term.clone())),
         CValue::Bool(term)
         | CValue::Int16(term)
@@ -204,6 +206,7 @@ fn typed_binding_variable(
 
 fn c_value_declaration_variable(value: &CValue) -> Option<Variable> {
     match value {
+        CValue::PointerInteger(record) => c_value_declaration_variable(&record.numeric),
         CValue::Int8(Bitvector32Term::Variable(variable)) => Some(*variable),
         CValue::Bool(Bitvector32Term::Variable(variable))
         | CValue::Int16(Bitvector32Term::Variable(variable))
@@ -455,6 +458,10 @@ fn collect_c_value_carriers(value: &CValue, variables: &mut CarrierVariables) {
         return;
     }
     match value {
+        CValue::PointerInteger(record) => {
+            collect_c_value_carriers(&record.numeric, variables);
+            collect_c_value_carriers(&CValue::Pointer(*record.pointer.clone()), variables);
+        }
         CValue::Void => {}
         CValue::Int8(term) => collect_bitvector_carriers(term, variables),
         CValue::Bool(term)
@@ -469,7 +476,11 @@ fn collect_c_value_carriers(value: &CValue, variables: &mut CarrierVariables) {
         | CValue::UInt128(term)
         | CValue::Float32(term)
         | CValue::Float64(term) => collect_bitvector_carriers(term, variables),
-        CValue::Pointer(pointer) => collect_pointer_carriers(pointer, variables),
+        CValue::Pointer(pointer) => {
+            for component in pointer.pointers() {
+                collect_pointer_carriers(component, variables);
+            }
+        }
     }
 }
 
@@ -560,6 +571,11 @@ fn collect_condition_carriers(condition: &ConditionTerm, variables: &mut Carrier
         return;
     }
     match condition {
+        ConditionTerm::PointerValueEqual(left, right) => {
+            collect_c_value_carriers(&CValue::Pointer((**left).clone()), variables);
+            collect_c_value_carriers(&CValue::Pointer((**right).clone()), variables);
+        }
+
         ConditionTerm::AlgebraicEqual(left, right) => {
             let mut seen = BTreeSet::new();
             collect_algebraic_carriers_seen(left, variables, &mut seen);
@@ -712,8 +728,7 @@ fn collect_bitvector_carriers(term: &Bitvector32Term, variables: &mut CarrierVar
         Bitvector32Term::MemoryLoad(_, pointer, _) => {
             collect_pointer_carriers(pointer, variables);
         }
-        Bitvector32Term::PointerAddress(pointer)
-        | Bitvector32Term::ObjectPointerAddress(pointer, _) => {
+        Bitvector32Term::PointerAddress(pointer, _) => {
             collect_pointer_carriers(pointer, variables);
         }
         Bitvector32Term::IntegerToMachine { value, .. } => {
@@ -1070,7 +1085,8 @@ fn exhausted_offset() -> PointerOffsetTerm {
 }
 
 fn exhausted_c_value(value: &CValue) -> CValue {
-    match value {
+    match value.numeric_value() {
+        CValue::PointerInteger(_) => unreachable!("numeric projection"),
         CValue::Void => CValue::Void,
         CValue::Bool(_) => CValue::Bool(Bitvector32Term::Constant(0)),
         CValue::Int8(_) => CValue::Int8(Bitvector32Term::Constant(0)),
@@ -1217,15 +1233,19 @@ pub(crate) struct TermRewrite<'a> {
     bitvector: Option<(&'a Bitvector32Term, &'a Bitvector32Term)>,
     integer_exact: Option<(&'a SharedIntegerTerm, &'a SharedIntegerTerm)>,
     pointer_variable: Option<(Variable, &'a Pointer)>,
+    pointer_addresses_only: bool,
     pointer_exact: Option<(&'a Pointer, &'a Pointer)>,
+    pointer_value_exact: Option<(&'a CPointerValue, &'a CPointerValue)>,
     pointer_offset_exact: Option<(&'a PointerOffsetTerm, &'a PointerOffsetTerm)>,
     conditions: Option<&'a HashMap<ConditionTerm, bool>>,
     cited_conditions: Option<&'a crate::kernel::equality_graph::EqualityGraph>,
     bounded_uint64_indices: Option<std::collections::HashSet<Bitvector32Term>>,
     equality_graph: Option<&'a crate::kernel::equality_graph::EqualityGraph>,
+    pointer_context: Option<&'a PureFactContext>,
     collected_conditions: Option<Vec<ConditionTerm>>,
     integer_cache: HashMap<(u64, u64, bool), IntegerTerm>,
-    pointer_application_cache: HashMap<(u64, u64, bool), PointerBlock>,
+    pointer_application_cache: HashMap<(u64, u64, bool, bool), PointerBlock>,
+    pointer_origin_cache: HashMap<(PointerLoadId, u64, bool, bool), PointerBlock>,
     scope_renaming_max: u64,
     integer_body_summaries: HashMap<u64, crate::kernel::prelude::IntegerScopeSummary>,
     integer_variables: Option<IntegerVariableRewrite<'a>>,
@@ -1245,9 +1265,9 @@ pub(crate) struct TermRewrite<'a> {
     reserved_variables: BTreeSet<Variable>,
     fresh_next: u64,
     replacement_carriers: Option<CarrierVariables>,
-    /// Materialize registered load origins only while rewriting an Integer
-    /// fold body.  Ordinary rewrites keep load variables opaque and therefore
-    /// do not expand a registry DAG that is unrelated to the selected term.
+    /// Materialize registered load origins for an Integer fold body or a
+    /// selected complete-pointer value rewrite. Other rewrites keep load
+    /// variables opaque, avoiding unrelated registry DAG expansion.
     resolve_registered_loads: bool,
     /// Rewritten registered loads are memoized by load identity and lexical
     /// scope.  A changed address is re-minted as a load variable for the
@@ -1352,6 +1372,8 @@ impl<'a> TermRewrite<'a> {
             cited_conditions: None,
             bounded_uint64_indices: None,
             equality_graph: None,
+            pointer_context: None,
+            pointer_addresses_only: false,
             collected_conditions: None,
             algebraic: None,
             bitvector: None,
@@ -1359,6 +1381,7 @@ impl<'a> TermRewrite<'a> {
             changed: false,
             integer_cache: HashMap::new(),
             pointer_application_cache: HashMap::new(),
+            pointer_origin_cache: HashMap::new(),
             scope_renaming_max: 0,
             integer_body_summaries: HashMap::new(),
             integer_replacement_variables: None,
@@ -1386,6 +1409,7 @@ impl<'a> TermRewrite<'a> {
             integer_work_exhausted: false,
             pointer_variable: None,
             pointer_exact: None,
+            pointer_value_exact: None,
             pointer_offset_exact: None,
             #[cfg(test)]
             visits: 0,
@@ -1424,6 +1448,8 @@ impl<'a> TermRewrite<'a> {
             cited_conditions: None,
             bounded_uint64_indices: None,
             equality_graph: None,
+            pointer_context: None,
+            pointer_addresses_only: false,
             collected_conditions: None,
             algebraic: None,
             bitvector: Some((from, to)),
@@ -1431,6 +1457,7 @@ impl<'a> TermRewrite<'a> {
             changed: false,
             integer_cache: HashMap::new(),
             pointer_application_cache: HashMap::new(),
+            pointer_origin_cache: HashMap::new(),
             scope_renaming_max: 0,
             integer_body_summaries: HashMap::new(),
             integer_replacement_variables: Some(integer_replacement_variables),
@@ -1458,6 +1485,7 @@ impl<'a> TermRewrite<'a> {
             integer_work_exhausted: replacement_work_exhausted,
             pointer_variable: None,
             pointer_exact: None,
+            pointer_value_exact: None,
             pointer_offset_exact: None,
             #[cfg(test)]
             visits: 0,
@@ -1557,10 +1585,13 @@ impl<'a> TermRewrite<'a> {
             cited_conditions: None,
             bounded_uint64_indices: None,
             equality_graph: None,
+            pointer_context: None,
+            pointer_addresses_only: false,
             collected_conditions: None,
             changed: false,
             integer_cache: HashMap::new(),
             pointer_application_cache: HashMap::new(),
+            pointer_origin_cache: HashMap::new(),
             scope_renaming_max: 0,
             integer_body_summaries: HashMap::new(),
             integer_replacement_variables: None,
@@ -1588,6 +1619,7 @@ impl<'a> TermRewrite<'a> {
             integer_work_exhausted: false,
             pointer_variable: None,
             pointer_exact: None,
+            pointer_value_exact: None,
             pointer_offset_exact: None,
             #[cfg(test)]
             visits: 0,
@@ -1604,6 +1636,17 @@ impl<'a> TermRewrite<'a> {
     ) -> Self {
         let mut rewrite = Self::for_conditions(conditions);
         rewrite.equality_graph = Some(graph);
+        rewrite
+    }
+
+    pub(in crate::kernel) fn for_cited_conditions_with_context(
+        conditions: &'a HashMap<ConditionTerm, bool>,
+        selected: &'a crate::kernel::equality_graph::EqualityGraph,
+        ambient: &'a PureFactContext,
+    ) -> Self {
+        let mut rewrite =
+            Self::for_cited_conditions_with_graph(conditions, selected, &ambient.equality_graph);
+        rewrite.pointer_context = Some(ambient);
         rewrite
     }
 
@@ -1636,6 +1679,23 @@ impl<'a> TermRewrite<'a> {
         rewrite
     }
 
+    pub(crate) fn for_pointer_value_exact(from: &'a CPointerValue, to: &'a CPointerValue) -> Self {
+        let mut rewrite = Self::empty();
+        rewrite.pointer_value_exact = Some((from, to));
+        // A full value equality also rewrites raw addresses in loadability,
+        // memory endpoints and other address-only propositions.
+        rewrite.pointer_exact = Some((from.pointer(), to.pointer()));
+        rewrite.enforce_integer_work_limit = true;
+        rewrite
+    }
+
+    /// Numeric address equality cannot substitute an allocation or extent identity.
+    pub(crate) fn for_pointer_address_variable(from: Variable, to: &'a Pointer) -> Self {
+        let mut rewrite = Self::for_pointer_variable(from, to);
+        rewrite.pointer_addresses_only = true;
+        rewrite
+    }
+
     pub(crate) fn for_pointer_variable(from: Variable, to: &'a Pointer) -> Self {
         Self {
             algebraic: None,
@@ -1643,14 +1703,18 @@ impl<'a> TermRewrite<'a> {
             integer_exact: None,
             pointer_variable: Some((from, to)),
             pointer_exact: None,
+            pointer_value_exact: None,
             pointer_offset_exact: None,
             conditions: None,
             cited_conditions: None,
             bounded_uint64_indices: None,
             equality_graph: None,
+            pointer_context: None,
+            pointer_addresses_only: false,
             collected_conditions: None,
             integer_cache: HashMap::new(),
             pointer_application_cache: HashMap::new(),
+            pointer_origin_cache: HashMap::new(),
             scope_renaming_max: 0,
             integer_body_summaries: HashMap::new(),
             integer_replacement_variables: None,
@@ -1728,14 +1792,18 @@ impl<'a> TermRewrite<'a> {
             integer_exact: None,
             pointer_variable: None,
             pointer_exact: None,
+            pointer_value_exact: None,
             pointer_offset_exact: None,
             conditions: None,
             cited_conditions: None,
             bounded_uint64_indices: None,
             equality_graph: None,
+            pointer_context: None,
+            pointer_addresses_only: false,
             collected_conditions: None,
             integer_cache: HashMap::new(),
             pointer_application_cache: HashMap::new(),
+            pointer_origin_cache: HashMap::new(),
             scope_renaming_max: 0,
             integer_body_summaries: HashMap::new(),
             integer_replacement_variables: Some(integer_replacement_variables),
@@ -1907,14 +1975,18 @@ impl<'a> TermRewrite<'a> {
             integer_exact: None,
             pointer_variable: None,
             pointer_exact: None,
+            pointer_value_exact: None,
             pointer_offset_exact: None,
             conditions: None,
             cited_conditions: None,
             bounded_uint64_indices: None,
             equality_graph: None,
+            pointer_context: None,
+            pointer_addresses_only: false,
             collected_conditions: None,
             integer_cache: HashMap::new(),
             pointer_application_cache: HashMap::new(),
+            pointer_origin_cache: HashMap::new(),
             scope_renaming_max: 0,
             integer_body_summaries: HashMap::new(),
             integer_replacement_variables: None,
@@ -2223,6 +2295,94 @@ impl<'a> TermRewrite<'a> {
         self.reserve_source_variables(variables);
     }
 
+    fn reserve_resource_variables_once(&mut self, resources: &[&CResource]) {
+        if self.source_variables_reserved {
+            return;
+        }
+        let mut variables = self.new_carrier_variables();
+        let mut seen = BTreeSet::new();
+        for resource in resources {
+            match resource {
+                CResource::Memory(range) => {
+                    collect_c_value_carriers(
+                        &CValue::Pointer(range.pointer_carrier()),
+                        &mut variables,
+                    );
+                    collect_bitvector_carriers(range.bound_terms().0, &mut variables);
+                    collect_bitvector_carriers(range.bound_terms().1, &mut variables);
+                }
+                CResource::Composite { arguments, .. } | CResource::Token { arguments, .. } => {
+                    for argument in arguments.iter() {
+                        collect_algebraic_value_carriers(argument, &mut variables, &mut seen);
+                    }
+                }
+                _ => {}
+            }
+        }
+        self.reserve_source_variables(variables);
+    }
+
+    fn resource(&mut self, resource: &CResource) -> CResource {
+        self.visit();
+        if self.checked_work_exhausted() {
+            return resource.clone();
+        }
+        match resource {
+            CResource::Memory(range) => {
+                let carrier = range.pointer_carrier();
+                let CValue::Pointer(mut mapped) = self.value(&CValue::Pointer(carrier)) else {
+                    unreachable!()
+                };
+                if let Some((from, to)) = self.pointer_value_exact
+                    && !self.source_disabled
+                    && range.designation.as_ref() == from.designation()
+                    && range.opaque_extent.as_deref() == from.opaque_extent()
+                    && range.carrier_extent_known == from.extent_is_known()
+                {
+                    // The footprint already fixed its admitted byte bounds.
+                    // A complete equality transports its retained carrier,
+                    // including transitions between known and opaque extents.
+                    mapped = to.clone().with_address(mapped.pointer().clone());
+                }
+                let mut result = range
+                    .with_bounds(
+                        mapped.pointer().clone(),
+                        self.bits(range.bound_terms().0),
+                        self.bits(range.bound_terms().1),
+                    )
+                    .with_pointer_carrier(&mapped);
+                result.typed_carrier = range.typed_carrier;
+                CResource::Memory(result)
+            }
+            CResource::Composite { name, arguments } | CResource::Token { name, arguments } => {
+                self.charge_rewrite_work(arguments.len());
+                let arguments = arguments
+                    .iter()
+                    .map(|argument| self.field(argument))
+                    .collect();
+                if matches!(resource, CResource::Composite { .. }) {
+                    CResource::Composite {
+                        name: name.clone(),
+                        arguments,
+                    }
+                } else {
+                    CResource::Token {
+                        name: name.clone(),
+                        arguments,
+                    }
+                }
+            }
+            _ => {
+                // Sealed identities and binder-bearing resource bodies need
+                // their own operations; this atomic substitution does not enter them.
+                if self.typed_variables.is_some() || self.integer_variables.is_some() {
+                    self.integer_work_exhausted = true;
+                }
+                resource.clone()
+            }
+        }
+    }
+
     pub(crate) fn proposition(&mut self, proposition: &Proposition) -> Proposition {
         if self.checked_work_exhausted() {
             return exhausted_proposition();
@@ -2263,6 +2423,50 @@ impl<'a> TermRewrite<'a> {
                 }
                 Proposition::ConditionIs(condition, *value)
             }
+            Proposition::CMemoryLoadable {
+                memory,
+                base,
+                bytes,
+                wide,
+            } => {
+                if !self.source_variables_reserved {
+                    let mut variables = self.new_carrier_variables();
+                    collect_pointer_carriers(base, &mut variables);
+                    collect_bitvector_carriers(bytes, &mut variables);
+                    self.reserve_source_variables(variables);
+                }
+                let base = self.pointer(base);
+                let bytes = self.bits(bytes);
+                if self.checked_work_exhausted() {
+                    return exhausted_proposition();
+                }
+                Proposition::CMemoryLoadable {
+                    memory: memory.clone(),
+                    base,
+                    bytes,
+                    wide: *wide,
+                }
+            }
+            Proposition::CMemoryCanStore {
+                memory,
+                pointer,
+                byte_width,
+            } => {
+                if !self.source_variables_reserved {
+                    let mut variables = self.new_carrier_variables();
+                    collect_pointer_carriers(pointer, &mut variables);
+                    self.reserve_source_variables(variables);
+                }
+                let pointer = self.pointer(pointer);
+                if self.checked_work_exhausted() {
+                    return exhausted_proposition();
+                }
+                Proposition::CMemoryCanStore {
+                    memory: memory.clone(),
+                    pointer,
+                    byte_width: *byte_width,
+                }
+            }
             Proposition::CMemoryReadDefined {
                 memory,
                 pointer,
@@ -2281,6 +2485,20 @@ impl<'a> TermRewrite<'a> {
                     memory: memory.clone(),
                     pointer,
                     value_type: *value_type,
+                }
+            }
+            Proposition::CResourceSeparate { left, right } => {
+                self.reserve_resource_variables_once(&[left, right]);
+                Proposition::CResourceSeparate {
+                    left: Box::new(self.resource(left)),
+                    right: Box::new(self.resource(right)),
+                }
+            }
+            Proposition::CResourceContains { parent, child } => {
+                self.reserve_resource_variables_once(&[parent, child]);
+                Proposition::CResourceContains {
+                    parent: Box::new(self.resource(parent)),
+                    child: Box::new(self.resource(child)),
                 }
             }
             Proposition::Not(p) => {
@@ -2515,6 +2733,18 @@ impl<'a> TermRewrite<'a> {
             return exhausted_c_value(v);
         }
         let result = match v {
+            CValue::PointerInteger(record) => {
+                let CValue::Pointer(pointer) =
+                    self.value(&CValue::Pointer(*record.pointer.clone()))
+                else {
+                    unreachable!()
+                };
+                CValue::PointerInteger(PointerIntegerValue {
+                    kind: record.kind.clone(),
+                    numeric: Box::new(self.value(&record.numeric)),
+                    pointer: Box::new(pointer),
+                })
+            }
             CValue::Void => CValue::Void,
             CValue::Bool(v) => CValue::Bool(self.bits(v)),
             CValue::Int8(v) => CValue::Int8(self.bits(v)),
@@ -2530,13 +2760,109 @@ impl<'a> TermRewrite<'a> {
             CValue::Float32(v) => CValue::Float32(self.bits(v)),
             CValue::Float64(v) => CValue::Float64(self.bits(v)),
             CValue::Pointer(v) => {
-                let adopted = match v.extent() {
-                    None => self.replaced_pointer_extent(v.pointer()),
-                    Some(_) => None,
+                if let Some((from, to)) = self.pointer_value_exact
+                    && v == from
+                    && !self.source_disabled
+                {
+                    self.changed = true;
+                    return CValue::Pointer(to.clone());
+                }
+                let replacement = match &v.pointer().block {
+                    PointerBlock::Symbolic(variable) | PointerBlock::FunctionSymbolic(variable) => {
+                        (!self.scope.c.contains_key(variable))
+                            .then_some(())
+                            .and(self.typed_variables.as_ref())
+                            .and_then(|values| values.c.get(variable))
+                            .and_then(|value| match value {
+                                TypedCReplacement::Pointer(pointer) => Some(pointer.clone()),
+                                _ => None,
+                            })
+                    }
+                    _ => None,
+                }.or_else(|| {
+                    let (from, to) = self.pointer_variable?;
+                    if self.pointer_addresses_only || self.scope.c.contains_key(&from)
+                        || !matches!(v.pointer().block, PointerBlock::Symbolic(variable) | PointerBlock::FunctionSymbolic(variable) if variable == from)
+                        || v.designation() != &v.pointer().object_identity()
+                    {
+                        return None;
+                    }
+                    // Lexical substitution replaces a complete formal value.
+                    // Address-equality rewrites use a separate constructor.
+                    Some(CPointerValue::new(to.clone(), v.c_type()))
+                });
+                let adopted = if !v.extent_is_known() {
+                    replacement.as_ref().and_then(|p| p.extent().cloned())
+                } else {
+                    None
                 };
-                let mapped = v.map_pointers(|address| self.pointer(address));
+                let addresses_only = self.pointer_addresses_only
+                    || (self.pointer_exact.is_some() && self.pointer_value_exact.is_none());
+                let designation = if addresses_only {
+                    v.designation().clone()
+                } else if let Some(replacement) = &replacement {
+                    replacement.designation().clone()
+                } else if let Some((from, to)) = self.pointer_variable
+                    && !self.scope.c.contains_key(&from)
+                    && matches!(v.designation().block, PointerBlock::Symbolic(variable) | PointerBlock::FunctionSymbolic(variable) if variable == from)
+                {
+                    to.object_identity()
+                } else if let Some((from, to)) = self.pointer_value_exact
+                    && !self.source_disabled
+                    && v.designation() == from.designation()
+                {
+                    to.designation().clone()
+                } else if self.pointer_exact.is_some() && self.pointer_value_exact.is_none() {
+                    v.designation().clone()
+                } else {
+                    self.pointer(v.designation())
+                };
+                let opaque_extent = match v.opaque_extent() {
+                    None => None,
+                    Some(origin) => {
+                        if addresses_only {
+                            Some(std::sync::Arc::new(origin.clone()))
+                        } else if replacement.is_some() && origin == &v.pointer().object_identity()
+                        {
+                            replacement
+                                .as_ref()
+                                .and_then(|p| p.opaque_extent().cloned())
+                                .map(std::sync::Arc::new)
+                        } else if let Some((from, to)) = self.pointer_variable
+                            && !self.scope.c.contains_key(&from)
+                            && matches!(origin.block, PointerBlock::Symbolic(variable) | PointerBlock::FunctionSymbolic(variable) if variable == from)
+                        {
+                            Some(std::sync::Arc::new(to.object_identity()))
+                        } else if let Some((from, to)) = self.pointer_value_exact
+                            && !self.source_disabled
+                            && !from.extent_is_known()
+                            && from.opaque_extent() == Some(origin)
+                        {
+                            to.opaque_extent().cloned().map(std::sync::Arc::new)
+                        } else if self.pointer_exact.is_some() && self.pointer_value_exact.is_none()
+                        {
+                            Some(std::sync::Arc::new(origin.clone()))
+                        } else {
+                            Some(std::sync::Arc::new(self.pointer(origin)))
+                        }
+                    }
+                };
+                let previous_load_resolution = self.resolve_registered_loads;
+                if self.pointer_value_exact.is_some() {
+                    self.resolve_registered_loads = true;
+                }
+                let mapped = v
+                    .map_pointers(|address| self.pointer(address))
+                    .with_designation(std::sync::Arc::new(designation))
+                    .with_opaque_extent(opaque_extent);
+                self.resolve_registered_loads = previous_load_resolution;
                 CValue::Pointer(match adopted {
                     Some(extent) => mapped.with_extent(Some(extent)),
+                    None if !v.extent_is_known()
+                        && replacement.as_ref().is_some_and(|p| p.extent_is_known()) =>
+                    {
+                        mapped.with_root_extent()
+                    }
                     None => mapped,
                 })
             }
@@ -3629,22 +3955,6 @@ impl<'a> TermRewrite<'a> {
         }
     }
 
-    /// The extent a value at `p` adopts when `p`'s block is a typed
-    /// variable replaced by a pointer value with an extent.
-    fn replaced_pointer_extent(&self, p: &Pointer) -> Option<crate::kernel::SubobjectExtent> {
-        let (PointerBlock::Symbolic(variable) | PointerBlock::FunctionSymbolic(variable)) =
-            &p.block
-        else {
-            return None;
-        };
-        let Some(TypedCReplacement::Pointer(replacement)) =
-            self.typed_variables.as_ref()?.c.get(variable)
-        else {
-            return None;
-        };
-        replacement.extent().cloned()
-    }
-
     fn pointer(&mut self, p: &Pointer) -> Pointer {
         if self.checked_work_exhausted() {
             return exhausted_pointer();
@@ -3655,6 +3965,71 @@ impl<'a> TermRewrite<'a> {
         {
             self.changed = true;
             return to.clone();
+        }
+        // A read's origin depends on its storage address, rather than on
+        // the numeric address held in that cell. A full pointer substitution
+        // can therefore re-express a selected read at the substituted cell.
+        // Keep this separate from numeric rewrites of the read's result.
+        if self.pointer_value_exact.is_some()
+            && !self.source_disabled
+            && let Some(read) = p.as_loaded_value()
+        {
+            self.charge_rewrite_work(1);
+            let key = (
+                read.identity,
+                self.scope_id,
+                self.source_disabled,
+                self.resolve_registered_loads,
+            );
+            let offset = self.offset(&read.displacement);
+            if let Some(block) = self.pointer_origin_cache.get(&key) {
+                self.changed |= block != &p.block;
+                return Pointer {
+                    block: block.clone(),
+                    offset,
+                };
+            }
+            let address = self.pointer(&read.defining_address);
+            let block = if address != read.defining_address {
+                self.changed = true;
+                Pointer::loaded_value(&read.defining_memory, &address).block
+            } else {
+                p.block.clone()
+            };
+            self.pointer_origin_cache.insert(key, block.clone());
+            return Pointer { block, offset };
+        }
+        // Opaque object and extent identities participate in lexical
+        // binding, never in numeric pointer rewrites.
+        if let PointerBlock::ExternalObject(variable) = &p.block {
+            if let Some(mapped) = self.scope.c.get(variable) {
+                return Pointer {
+                    block: PointerBlock::ExternalObject(*mapped),
+                    offset: self.offset(&p.offset),
+                };
+            }
+            if let Some(TypedCReplacement::Pointer(replacement)) = self
+                .typed_variables
+                .as_ref()
+                .and_then(|values| values.c.get(variable))
+            {
+                let root = replacement.designation().clone();
+                self.changed = true;
+                return Pointer {
+                    block: root.block,
+                    offset: PointerOffsetTerm::add(root.offset, self.offset(&p.offset)),
+                };
+            }
+            if let Some((from, to)) = self.pointer_variable
+                && *variable == from
+            {
+                let root = to.object_identity();
+                self.changed = true;
+                return Pointer {
+                    block: root.block,
+                    offset: PointerOffsetTerm::add(root.offset, self.offset(&p.offset)),
+                };
+            }
         }
         if let PointerBlock::Symbolic(variable) | PointerBlock::FunctionSymbolic(variable) =
             &p.block
@@ -3720,7 +4095,12 @@ impl<'a> TermRewrite<'a> {
                 }
                 PointerBlock::PureFunctionApplication(application) => {
                     self.charge_rewrite_work(1);
-                    let key = (application.id(), self.scope_id, self.source_disabled);
+                    let key = (
+                        application.id(),
+                        self.scope_id,
+                        self.source_disabled,
+                        self.resolve_registered_loads,
+                    );
                     if let Some(result) = self.pointer_application_cache.get(&key) {
                         result.clone()
                     } else {
@@ -3836,7 +4216,7 @@ impl<'a> TermRewrite<'a> {
             return ConditionTerm::Constant(false);
         }
         if let Some(conditions) = self.conditions
-            && let Some(value) = conditions.get(v)
+            && let Some(value) = conditions.get(v).or_else(|| conditions.get(&v.flipped()))
         {
             return ConditionTerm::Constant(*value);
         }
@@ -3860,6 +4240,21 @@ impl<'a> TermRewrite<'a> {
             }
             ConditionTerm::Float64(c) => {
                 ConditionTerm::Float64(c.map_bitvector_terms(|b| self.bits(b)))
+            }
+            ConditionTerm::PointerValueEqual(a, b) => {
+                let CValue::Pointer(a) = self.value(&CValue::Pointer((**a).clone())) else {
+                    unreachable!()
+                };
+                let CValue::Pointer(b) = self.value(&CValue::Pointer((**b).clone())) else {
+                    unreachable!()
+                };
+                let canonical = |value: CPointerValue| {
+                    value.map_addresses(|p| Pointer {
+                        block: p.block.clone(),
+                        offset: crate::kernel::eval::canonical_offset_term(&p.offset),
+                    })
+                };
+                ConditionTerm::pointer_value_equal(canonical(a), canonical(b))
             }
             ConditionTerm::PointerEqual(a, b) => {
                 ConditionTerm::PointerEqual(Box::new(self.pointer(a)), Box::new(self.pointer(b)))
@@ -3989,6 +4384,17 @@ impl<'a> TermRewrite<'a> {
         if self.checked_work_exhausted() {
             ConditionTerm::Constant(false)
         } else if self.equality_graph.is_some_and(|graph| match &result {
+            ConditionTerm::PointerValueEqual(left, right) => {
+                let matches = self.pointer_context.map_or_else(
+                    || {
+                        left.designation() == right.designation()
+                            && left.extent() == right.extent()
+                            && left.extent_is_known() == right.extent_is_known()
+                    },
+                    |context| context.pointer_designations_match(left, right),
+                );
+                matches && graph.are_equal(left.pointer(), right.pointer())
+            }
             ConditionTerm::PointerEqual(left, right) => graph.are_equal(left, right),
             ConditionTerm::PointerOffsetEqual(left, right) => graph.are_offsets_equal(left, right),
             ConditionTerm::Bitvector32Equal(left, right) => graph.are_int32_equal(left, right),
@@ -4251,11 +4657,8 @@ impl<'a> TermRewrite<'a> {
             Bitvector32Term::MemoryLoad(memory, pointer, kind) => {
                 Bitvector32Term::MemoryLoad(memory.clone(), Box::new(self.pointer(pointer)), *kind)
             }
-            Bitvector32Term::PointerAddress(pointer) => {
-                Bitvector32Term::pointer_address(self.pointer(pointer))
-            }
-            Bitvector32Term::ObjectPointerAddress(pointer, class) => {
-                Bitvector32Term::object_pointer_address(self.pointer(pointer), Some(class.clone()))
+            Bitvector32Term::PointerAddress(pointer, class) => {
+                Bitvector32Term::object_pointer_address(self.pointer(pointer), class.class())
             }
             Bitvector32Term::IntegerToMachine { value, destination } => {
                 Bitvector32Term::IntegerToMachine {
@@ -6179,5 +6582,45 @@ mod tests {
     #[cfg(test)]
     mod scaling_tests {
         include!("../../scaling_tests/kernel/proof/term_rewrite/tests.rs");
+    }
+}
+
+#[cfg(test)]
+mod pointer_integer_rewrite_tests {
+    use super::*;
+
+    #[test]
+    fn numeric_rewriting_retains_the_existing_record_without_creating_one() {
+        let context = PureFactContext::new();
+        let pointer = CPointerValue::new(Pointer::symbolic(Variable(996_001)), CType::Int32Pointer);
+        let word = crate::kernel::eval::cast_c_value_to_type(
+            CValue::Pointer(pointer.clone()),
+            CType::UInt64,
+            crate::kernel::eval::IntegerConversion::Modular,
+            &mut Vec::new(),
+            &context,
+        )
+        .unwrap();
+        let from = crate::kernel::spec::c_value_bitvector_term(&word).unwrap();
+        let alias = Bitvector32Term::Variable(Variable(996_002));
+        let rewritten = TermRewrite::for_bits(&from, &alias).value(&word);
+        let CValue::PointerInteger(record) = &rewritten else {
+            panic!("complete word")
+        };
+        assert_eq!(*record.pointer, pointer);
+        assert_eq!(*record.numeric, CValue::UInt64(alias.clone()));
+        let back = crate::kernel::eval::cast_c_value_to_type(
+            rewritten,
+            CType::Int32Pointer,
+            crate::kernel::eval::IntegerConversion::Modular,
+            &mut Vec::new(),
+            &context,
+        )
+        .unwrap();
+        assert_eq!(back, CValue::Pointer(pointer));
+        assert!(matches!(
+            TermRewrite::for_bits(&alias, &from).value(&CValue::UInt64(alias.clone())),
+            CValue::UInt64(_)
+        ));
     }
 }

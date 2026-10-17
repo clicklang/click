@@ -3035,7 +3035,6 @@ fn failed_invariant_closure_retains_body_trace_and_focused_fact() {
         assert!(trace.contains("have len == 0u64"), "{trace}");
         assert!(trace.contains("have to_integer(len) == 0"), "{trace}");
         assert!(!trace.contains("no checked simple steps"), "{trace}");
-        let index = ProofSourceIndex::new(CLOSURE_TRACE_CLICK).unwrap();
         let project = ClickProject::new(
             "entry.click",
             [ClickModuleSource::new(
@@ -3044,12 +3043,13 @@ fn failed_invariant_closure_retains_body_trace_and_focused_fact() {
                 [],
             )],
         );
+        let index = ProofSourceIndex::for_project(
+            &project,
+            &ProgramInputs::Bundle(vec![("loop.c", CLOSURE_TRACE_C)]),
+        )
+        .unwrap();
         let positions = index
-            .project_tactic_positions(
-                &project,
-                &ProgramInputs::Bundle(vec![("loop.c", CLOSURE_TRACE_C)]),
-                error.proof_claim_label().unwrap(),
-            )
+            .project_tactic_positions(&project, error.proof_claim_label().unwrap())
             .unwrap();
         let locate = |path: &[usize]| {
             let outer = positions.get(*path.first()?)?;
@@ -3764,4 +3764,49 @@ fn callback_refinement_hint_with_produced_resource_is_a_checked_proof() {
         .replace("/* REFINEMENT */", theorem)
         .replace("/* APPLY */", "apply(wrapped_is_callback());");
     verify_c0_sources(&corrected, &c).unwrap();
+}
+
+#[test]
+fn failed_branch_interface_retains_its_arm_and_written_requirement() {
+    let c = "int advance(int x) { int y; if (x >= 0) { y = x; } else { y = 0; } return y; }";
+    for (requirement, precondition, chosen, other) in [
+        ("y == 0", "", "then", "else"),
+        ("y == x", "", "else", "then"),
+        ("y == 0", "requires x >= 0;", "then", "else"),
+    ] {
+        let source = format!(
+            r#"verifying "branch.c";
+            int32 advance(int32 x) {{
+                {precondition}
+                ensures result == result by {{
+                    step();
+                    branch ensuring {{ fact {requirement}; }} then {{ step(); }} else {{ step(); }}
+                    step(); simp();
+                }}
+            }}
+        "#
+        );
+        with_proof_trace("advance", || {
+            let error = verify_c0_sources(&source, &[("branch.c", c)])
+                .expect_err("the chosen arm does not establish the interface");
+            assert!(
+                error.message().contains("did not establish fact"),
+                "{error}"
+            );
+            let trace = error
+                .trace_context_report()
+                .expect("the rejected interface must retain the checked arm");
+            assert!(trace.contains(&format!("{chosen} arm")), "{trace}");
+            assert!(!trace.contains(&format!("{other} arm")), "{trace}");
+            let written = error
+                .unresolved_requirement()
+                .and_then(|requirement| requirement.surface.as_ref())
+                .expect("the interface failure must retain its written requirement");
+            assert_eq!(
+                crate::surface::printing::source_click_proposition(written),
+                requirement
+            );
+            assert!(error.message().contains(requirement), "{error}");
+        });
+    }
 }

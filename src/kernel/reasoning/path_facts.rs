@@ -1175,7 +1175,8 @@ pub(in crate::kernel) fn call_input_fact_is_already_known(
                     || !matches!(condition,
                         ConditionTerm::Bitvector32Equal(..)
                         | ConditionTerm::Bitvector64Equal(..)
-                        | ConditionTerm::PointerEqual(..)
+                        | ConditionTerm::PointerValueEqual(..)
+                    | ConditionTerm::PointerEqual(..)
                         | ConditionTerm::PointerOffsetEqual(..))
                         && bare_condition_is_decided(assumptions, side))
     };

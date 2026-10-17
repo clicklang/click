@@ -55,7 +55,7 @@ pub(in crate::kernel) fn algebraic_constructor_case_equations(
         }
         let mut fields = Vec::with_capacity(variant.fields.len());
         let mut binders = Vec::with_capacity(variant.fields.len());
-        for field_type in &variant.fields {
+        for (index, field_type) in variant.fields.iter().enumerate() {
             let variable = fresh();
             let (sort, field) = match field_type {
                 AlgebraicValueType::C(c_type) | AlgebraicValueType::ObjectPointer(c_type, _) => {
@@ -71,9 +71,10 @@ pub(in crate::kernel) fn algebraic_constructor_case_equations(
                     (
                         sort,
                         AlgebraicValue::C(
-                            field_type
-                                .symbolic_c_value(variable)
-                                .expect("C model field"),
+                            value
+                                .algebraic_type
+                                .symbolic_c_field_value(&variant.name, index, *c_type, variable)
+                                .with_pointer_object_class(field_type.object_class()),
                         ),
                     )
                 }

@@ -662,6 +662,9 @@ fn pure_pointer_result_preserves_type_and_unsupported_results_are_explicit() {
             arguments: vec![],
             result_type,
             pointer_result: None,
+            result_object_class: Some(crate::kernel::effective_type::CAccessClass::Struct(
+                crate::kernel::effective_type::CStructClass::opaque("node"),
+            )),
         };
         let result = evaluate_spec_expression_paths_with_loop_entry_in(
             &CState::new(),
@@ -679,6 +682,14 @@ fn pure_pointer_result_preserves_type_and_unsupported_results_are_explicit() {
             let paths = result.expect("a pointer-valued pure call has one opaque result");
             assert_eq!(paths.len(), 1);
             assert_eq!(paths[0].value.c_type(), result_type);
+            // The declared return type's class reaches the pointer result.
+            let crate::kernel::CValue::Pointer(pointer) = &paths[0].value else {
+                panic!("a pointer result");
+            };
+            assert_eq!(
+                pointer.object_class().map(|class| class.spelling()),
+                Some("struct node".to_string())
+            );
             let CValue::Pointer(pointer) = &paths[0].value else {
                 panic!("lost pointer sort")
             };
@@ -701,6 +712,7 @@ fn pure_function_application_is_not_eagerly_evaluated() {
         ))],
         result_type: CType::Int32,
         pointer_result: None,
+        result_object_class: None,
     };
     let paths = evaluate_spec_expression_paths_with_loop_entry_in(
         &CState::new(),
@@ -734,6 +746,7 @@ fn pure_function_application_retains_symbolic_algebraic_argument() {
         )],
         result_type: CType::Int32,
         pointer_result: None,
+        result_object_class: None,
     };
     let paths = evaluate_spec_expression_paths_with_loop_entry_in(
         &CState::new(),

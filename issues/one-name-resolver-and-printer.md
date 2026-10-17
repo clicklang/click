@@ -28,8 +28,8 @@ Code regions now resolve through one function, `CodeRegionRef::resolve`, in
 annotation lowering and proof execution. A loop label can no longer be bound
 to two loops on one path. Before, `at(L.exit, ...)` read the last loop named
 `L` while label regions resolved to the first
-(`mdtests/a_loop_label_names_one_loop.md`). Snapshots are still keyed by
-spelling.
+(`mdtests/a_loop_label_names_one_loop.md`). A recorded snapshot is now one
+entry per program point, reached by `loop(N)` or any of the loop's labels.
 
 Proof binders now share one rule, applied by `bind_proof_name`: the newest
 binding wins wherever a name is read, and a proof binder cannot hide a C
@@ -42,10 +42,18 @@ rule: a result hides an earlier proof binding of its name
 (`mdtests/a_step_result_name_can_be_bound_again.md`). Contract and theorem
 `let` names stay reserved.
 
-The parser's plain name sets are now one `NameTable` indexed by kind. The
-sets that carry data per name (resource instances, arm binder types, C
-parameter types and objects, struct, reference and aggregate parameters,
-facts) still have their own maps.
+Every lexical name the parser tracks is now in one `NameTable`: plain names
+indexed by kind, and the names that carry data (resource instances, C
+parameter types and objects, struct, reference and aggregate parameters, arm
+binder types, facts) beside them. Cross-kind queries and shadowing are table
+methods.
+
+The parser records every braced proof block it reads, with the start of each
+tactic in it. `click-verify` builds its `ProofSourceIndex` from the blocks the
+entry module's verification parse recorded, instead of guessing from the
+token before each brace. The guess also took resource `match` arms, `if`
+expression branches in pure functions and the bodies of C functions named
+`open` for proofs. Expansion still finds proof blocks from tokens.
 
 The complete scoped table for parameters, fields, binders, constructors,
 resources, program points and project modules remains open. Proof inventories

@@ -1356,7 +1356,9 @@ fn low_bits_from_alignment_survive_tagged_word_arithmetic() {
         value: Box::new(variable(index)),
         byte_width,
     };
-    let address = |pointer: Pointer| T::PointerAddress(Box::new(pointer));
+    let address = |pointer: Pointer| {
+        T::PointerAddress(Box::new(pointer), crate::kernel::AddressObjectClass::NONE)
+    };
     let and = |a: &Bitvector32Term, mask| T::UInt64BitwiseAnd(boxed(a), Box::new(u(mask)));
     let add = |a: &Bitvector32Term, b: &Bitvector32Term| T::UInt64Add(boxed(a), boxed(b));
     let equal = |a: &Bitvector32Term, b: &Bitvector32Term| {

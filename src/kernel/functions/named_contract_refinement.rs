@@ -347,13 +347,15 @@ pub(in crate::kernel) fn contract_refinement_context_for_interface(
     for (index, parameter) in function_interface.parameters().iter().enumerate() {
         let variable = budget.allocate_kernel_variable().ok()?;
         argument_values.push(
-            symbolic_call_result(parameter.c_type(), variable).with_pointer_object_class(
-                contract
-                    .interface()
-                    .object_type_requirements()
-                    .get(&index)
-                    .cloned(),
-            ),
+            symbolic_call_result(parameter.c_type(), variable)
+                .complete_word(Pointer::symbolic(variable))
+                .with_pointer_object_class(
+                    contract
+                        .interface()
+                        .object_type_requirements()
+                        .get(&index)
+                        .cloned(),
+                ),
         );
     }
     let result_variable = budget.allocate_kernel_variable().ok()?;

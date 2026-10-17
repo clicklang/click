@@ -8,7 +8,7 @@ premise.
 The application used to be refused: the premise was reported unavailable
 although the `have` immediately above it had recorded exactly that proposition.
 The theorem's requirement instantiated to
-`holds(Box::Box((void*)p), array-ref(snapshot#1, p))`: the occurrence of `p` inside
+`holds(Box::Box(p), array-ref(snapshot#1, p))`: the occurrence of `p` inside
 the constructor was the loop head's value, and the occurrence passed directly
 as a pointer argument was read at function entry. A pointer parameter has two
 entries in a proof-side environment, its value and the array reference a
@@ -47,9 +47,9 @@ function holds(b: Box, p: void*) -> int32 {
 }
 
 theorem holds_is_nonzero(p: void*) {
-    requires holds(Box::Box((void*)p), p) == 1;
-    ensures holds(Box::Box((void*)p), p) != 0 by {
-        rewrite(holds(Box::Box((void*)p), p) == 1);
+    requires holds(Box::Box(p), p) == 1;
+    ensures holds(Box::Box(p), p) != 0 by {
+        rewrite(holds(Box::Box(p), p) == 1);
         normalize();
     }
 }
@@ -64,13 +64,13 @@ struct node* skip(struct node* p, struct node* q, int32 n) {
 
         initialize by simp();
         preserve by {
-            have holds(Box::Box((void*)p), p) == 1 by {
-                unfold(holds(Box::Box((void*)p), p));
+            have holds(Box::Box(p), p) == 1 by {
+                unfold(holds(Box::Box(p), p));
                 normalize();
             }
-            have holds(Box::Box((void*)p), p) != 0 by {
+            have holds(Box::Box(p), p) != 0 by {
                 apply(holds_is_nonzero(p)) using {
-                    holds(Box::Box((void*)p), p) == 1;
+                    holds(Box::Box(p), p) == 1;
                 };
                 assumption();
             }

@@ -392,7 +392,7 @@ fn authority_parent_entry_alias_expansion_preserves_later_resource_proof() {
         verify_c0_project(&project, &c).expect("the original parent lifecycle verifies");
         let line = source
             .lines()
-            .position(|line| line.contains("have old(p->kid) == kid by simp();"))
+            .position(|line| line.contains("have old(p->kid) == entry_child by simp();"))
             .unwrap()
             + 1;
         let expanded =

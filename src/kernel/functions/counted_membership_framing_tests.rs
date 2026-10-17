@@ -60,6 +60,86 @@ fn a_call_keeps_an_argument_direct_composites_memory_without_opening_it() {
     );
 }
 
+/// Original flat ownership only excludes unchanged composite owners. Newly
+/// packaged composites, retained flat fragments, and overlapping views must
+/// keep their ordinary positive answers.
+#[test]
+fn caller_flat_exclusions_keep_new_composites_fragments_and_views() {
+    let _session = VerificationSession::enter();
+    let object = |index| Pointer {
+        block: PointerBlock::ExternalArgument,
+        offset: PointerOffsetTerm::scale_int32(Bitvector32Term::Variable(Variable(index)), 4),
+    };
+    let cell = object(783_901);
+    let other = object(783_902);
+    let range =
+        |base: Pointer, start, end| CMemoryRange::new_with_element_width(base, start, end, 4);
+    let flat = range(cell.clone(), 0u32.into(), 3u32.into());
+    let boxed =
+        |base: Pointer| CResourceFact::own_composite("boxed".into(), vec![CValue::pointer(base)]);
+    let original = ResourceContext::new()
+        .unchecked_with_fact(CResourceFact::own_memory(flat.clone()))
+        .unchecked_with_fact(boxed(other));
+    let assumptions = PureFactContext::new();
+    let memory = CMemory::new();
+    let record = |original: &ResourceContext, residual: &ResourceContext| {
+        let state = CState::new()
+            .with_memory(memory.clone())
+            .with_resource_context(original.clone());
+        let kept = call_kept_ownership(residual, &[boxed_definition()], &state, &assumptions)
+            .with_caller_before_transfer(original);
+        let after = memory.clone().with_call_memory_havoc(
+            Variable(783_910),
+            std::slice::from_ref(&flat),
+            &assumptions,
+            Some(&kept),
+        );
+        CallKeptRanges::recorded_on(&after).unwrap()
+    };
+    let repackaged = ResourceContext::new().unchecked_with_fact(boxed(cell.clone()));
+    let kept = record(&original, &repackaged);
+    assert!(
+        kept.holds_access(&cell, 4, &assumptions),
+        "a new residual composite can protect the original flat cell"
+    );
+    assert_eq!(
+        kept.diagnostic_ranges().facts().len(),
+        1,
+        "original owners are exclusion hints, not kept ranges"
+    );
+    assert!(!kept.holds_access(&cell.offset_by_elements(1u32.into(), 4), 4, &assumptions));
+
+    let right = cell.offset_by_elements(2u32.into(), 4);
+    let fragments = ResourceContext::new().unchecked_with_fact(CResourceFact::own_memory(range(
+        cell.clone(),
+        2u32.into(),
+        3u32.into(),
+    )));
+    assert!(
+        record(&original, &fragments).holds_access(&right, 4, &assumptions),
+        "a retained flat fragment wins before composite exclusion"
+    );
+
+    let zero = repackaged
+        .clone()
+        .unchecked_with_fact(CResourceFact::own_quantity(
+            CResource::Memory(flat.clone()),
+            0u32.into(),
+        ));
+    assert!(
+        record(&zero, &repackaged).holds_access(&cell, 4, &assumptions),
+        "a zero quantity must not exclude a composite owner"
+    );
+
+    let viewed = repackaged
+        .clone()
+        .unchecked_with_fact(CResourceFact::view_memory(flat.clone()));
+    assert!(
+        record(&viewed, &repackaged).holds_access(&cell, 4, &assumptions),
+        "a view must not exclude its composite owner"
+    );
+}
+
 #[test]
 fn retained_membership_does_not_preserve_the_shared_body_across_a_call() {
     let _session = VerificationSession::enter();

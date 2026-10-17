@@ -33,6 +33,8 @@ thread_local! {
         const { std::cell::RefCell::new(None) };
     static LAST_SURFACE_SYNTHESIS_EXHAUSTION: std::cell::Cell<Option<&'static str>> =
         const { std::cell::Cell::new(None) };
+    static SYNTHESIS_ACTIVE_POINTERS: std::cell::RefCell<std::collections::HashSet<PointerSynthesisKey>> =
+        std::cell::RefCell::new(std::collections::HashSet::new());
     static SURFACE_SYNTHESIS_BITVECTOR_NESTING: std::cell::Cell<usize> =
         const { std::cell::Cell::new(0) };
     /// The struct layouts synthesis may read memory through for the
@@ -529,6 +531,50 @@ struct SurfaceSynthesisFrame {
     counted: bool,
 }
 
+// Spelling an offset may ask for the address currently being spelled.
+// Reject that candidate edge; another local can still name the pointer.
+#[derive(Clone, Eq, PartialEq, Hash)]
+struct PointerSynthesisKey {
+    pointer: Pointer,
+    state: usize,
+    parameters: usize,
+    arguments: usize,
+    bound_variables: usize,
+}
+
+struct SurfacePointerFrame(PointerSynthesisKey);
+
+impl SurfacePointerFrame {
+    fn enter(
+        pointer: &Pointer,
+        parameter_binding: ParameterBinding<'_>,
+        state: &CState,
+        bound_variables: &BTreeMap<Variable, String>,
+    ) -> Option<Self> {
+        // All borrowed inputs remain live for this frame. Their addresses
+        // distinguish snapshot and binder environments without cloning or
+        // structurally hashing the surrounding proof state.
+        crate::instrumentation::record_deterministic_work(1);
+        let key = PointerSynthesisKey {
+            pointer: pointer.clone(),
+            state: state as *const _ as usize,
+            parameters: parameter_binding.parameters.as_ptr() as usize,
+            arguments: parameter_binding.arguments.as_ptr() as usize,
+            bound_variables: bound_variables as *const _ as usize,
+        };
+        SYNTHESIS_ACTIVE_POINTERS
+            .with(|active| active.borrow_mut().insert(key.clone()).then(|| Self(key)))
+    }
+}
+
+impl Drop for SurfacePointerFrame {
+    fn drop(&mut self) {
+        SYNTHESIS_ACTIVE_POINTERS.with(|active| {
+            active.borrow_mut().remove(&self.0);
+        });
+    }
+}
+
 struct SurfaceBitvectorFrame {
     outermost: bool,
 }
@@ -662,8 +708,7 @@ fn bitvector_term_exceeds_depth_limit(root: &Bitvector32Term) -> bool {
                     pending.push((value, depth + 1));
                 }
             }
-            Bitvector32Term::PointerAddress(pointer)
-            | Bitvector32Term::ObjectPointerAddress(pointer, _) => {
+            Bitvector32Term::PointerAddress(pointer, _) => {
                 if let PointerOffsetTerm::Int32Scaled { value, .. }
                 | PointerOffsetTerm::Int64Scaled { value, .. } = &pointer.offset
                 {
@@ -749,6 +794,31 @@ pub(in crate::surface) fn with_proof_local_value_names<R>(
 /// A source expression for a semantic C value, such as a resource witness
 /// inferred from memory: the proof local that names it, else a pointer or an
 /// `int32` as the proof would write it at `state`.
+fn synthesize_surface_pointer_address(
+    pointer: &Pointer,
+    parameter_binding: ParameterBinding<'_>,
+    state: &CState,
+    bound_variables: &BTreeMap<Variable, String>,
+) -> Option<ContractExpression> {
+    let operand =
+        synthesize_surface_pointer_expression(pointer, parameter_binding, state, bound_variables)?;
+    Some(crate::surface::lowering::contract_c_unary(
+        operand,
+        CExpression::Cast {
+            expression: Box::new(CExpression::Value(CValue::typed_pointer(
+                pointer.clone(),
+                CType::VoidPointer,
+            ))),
+            target_type: CType::UInt64,
+            integer_mode: crate::kernel::CIntegerCastMode::Standard,
+            pointee_struct: None,
+            pointee_volatile: false,
+            pointee_constant: false,
+            explicit_qualification: false,
+        },
+    ))
+}
+
 pub(in crate::surface) fn synthesize_surface_value(
     value: &CValue,
     parameter_binding: ParameterBinding<'_>,
@@ -1959,10 +2029,10 @@ fn synthesize_surface_atomic_proposition(
             )?,
         });
     }
-    if let ConditionTerm::PointerEqual(left, right) = condition {
+    if let ConditionTerm::PointerValueEqual(left, right) = condition {
         return Some(ClickProposition::Comparison {
             left: synthesize_surface_pointer_expression(
-                left,
+                left.pointer(),
                 parameter_binding,
                 state,
                 bound_variables,
@@ -1973,11 +2043,27 @@ fn synthesize_surface_atomic_proposition(
                 ComparisonOperator::NotEqual
             },
             right: synthesize_surface_pointer_expression(
-                right,
+                right.pointer(),
                 parameter_binding,
                 state,
                 bound_variables,
             )?,
+        });
+    }
+    if let ConditionTerm::PointerEqual(left, right) = condition {
+        let pointer = if **left == Pointer::null() || **right == Pointer::null() {
+            synthesize_surface_pointer_expression
+        } else {
+            synthesize_surface_pointer_address
+        };
+        return Some(ClickProposition::Comparison {
+            left: pointer(left, parameter_binding, state, bound_variables)?,
+            operator: if *value {
+                ComparisonOperator::Equal
+            } else {
+                ComparisonOperator::NotEqual
+            },
+            right: pointer(right, parameter_binding, state, bound_variables)?,
         });
     }
     if let Some(comparison) =
@@ -2293,10 +2379,10 @@ pub(in crate::surface) fn synthesize_surface_equality_across_points(
                 synthesize_surface_pointer_offset(right, parameter_binding, state, &bound_variables)
             })?,
         ),
-        ConditionTerm::PointerEqual(left, right) => (
+        ConditionTerm::PointerValueEqual(left, right) => (
             anchored(&|state| {
                 synthesize_surface_pointer_expression(
-                    left,
+                    left.pointer(),
                     parameter_binding,
                     state,
                     &bound_variables,
@@ -2304,6 +2390,19 @@ pub(in crate::surface) fn synthesize_surface_equality_across_points(
             })?,
             anchored(&|state| {
                 synthesize_surface_pointer_expression(
+                    right.pointer(),
+                    parameter_binding,
+                    state,
+                    &bound_variables,
+                )
+            })?,
+        ),
+        ConditionTerm::PointerEqual(left, right) => (
+            anchored(&|state| {
+                synthesize_surface_pointer_address(left, parameter_binding, state, &bound_variables)
+            })?,
+            anchored(&|state| {
+                synthesize_surface_pointer_address(
                     right,
                     parameter_binding,
                     state,
@@ -2677,7 +2776,7 @@ fn synthesize_surface_bitvector(
             crate::instrumentation::record_deterministic_work(1);
         }
         matches!(
-            value,
+            value.numeric_value(),
             CValue::Bool(local) | CValue::Int8(local) | CValue::Int16(local)
                 | CValue::Int32(local)
                 | CValue::UInt8(local)
@@ -2831,8 +2930,7 @@ fn synthesize_surface_bitvector(
         | Bitvector32Term::Float32Binary { .. }
         | Bitvector32Term::Float64Negate(_)
         | Bitvector32Term::Float64Binary { .. } => None,
-        Bitvector32Term::PointerAddress(pointer)
-        | Bitvector32Term::ObjectPointerAddress(pointer, _) => {
+        Bitvector32Term::PointerAddress(pointer, _) => {
             let pointer =
                 synthesize_surface_pointer(pointer, parameter_binding, state, bound_variables)?;
             Some(ContractExpression::CFragment(CExpression::Cast {
@@ -3427,7 +3525,8 @@ fn synthesize_local_struct_pointer_field(
             let CExpressionOutcome::Value(loaded) = state.memory().load(&pointer) else {
                 continue;
             };
-            let loaded = match loaded {
+            let loaded = match loaded.numeric_value().clone() {
+                CValue::PointerInteger(_) => unreachable!("numeric projection"),
                 CValue::Int8(value) => value,
                 CValue::Bool(value)
                 | CValue::Int16(value)
@@ -3500,7 +3599,8 @@ fn synthesize_local_aggregate_field(
                     let CExpressionOutcome::Value(value) = state.memory().load(&pointer) else {
                         return None;
                     };
-                    let value_term = match value {
+                    let value_term = match value.numeric_value().clone() {
+                        CValue::PointerInteger(_) => unreachable!("numeric projection"),
                         CValue::Int8(value) => value,
                         CValue::Bool(value)
                         | CValue::Int16(value)
@@ -3593,8 +3693,7 @@ pub(super) fn bitvector_term_is_load_free(term: &Bitvector32Term) -> bool {
         }
         match term {
             Bitvector32Term::MemoryLoad(_, _, _) => return false,
-            Bitvector32Term::PointerAddress(pointer)
-            | Bitvector32Term::ObjectPointerAddress(pointer, _) => {
+            Bitvector32Term::PointerAddress(pointer, _) => {
                 pending.extend(pointer.offset.scaled_values());
             }
             Bitvector32Term::Constant(_)
@@ -3922,6 +4021,8 @@ fn synthesize_surface_pointer(
     state: &CState,
     bound_variables: &BTreeMap<Variable, String>,
 ) -> Option<CExpression> {
+    let _pointer_frame =
+        SurfacePointerFrame::enter(pointer, parameter_binding, state, bound_variables)?;
     let _frame = SurfaceSynthesisFrame::enter("pointer")?;
     if pointer == &Pointer::null() {
         return Some(CExpression::Value(int32(0)));
@@ -3955,6 +4056,7 @@ fn synthesize_surface_pointer(
         return Some(expression);
     }
     if let Some(expression) = state.locals().object_values().find_map(|(name, value)| {
+        crate::instrumentation::record_deterministic_work(1);
         let CValue::Pointer(base) = value else {
             return None;
         };
@@ -4186,11 +4288,14 @@ fn synthesize_surface_algebraic(
                             synthesize_loaded_pointer_value(pointer, parameter_binding, state)
                         })
                         .map(|expression| {
-                            // An address-only model field needs its void*
-                            // carrier, even when the source binding names a
-                            // struct pointer. Dropping this cast produces a
-                            // constructor that cannot lower back to the fact.
-                            if pointer.c_type() == CType::VoidPointer {
+                            // Constructors implicitly retag object pointers
+                            // without widening their views. An explicit cast
+                            // is needed only for a checked root view; adding
+                            // it to a saved narrow view would change the value.
+                            if pointer.c_type() == CType::VoidPointer
+                                && pointer.extent_is_known()
+                                && pointer.extent().is_none()
+                            {
                                 ContractExpression::CUnary {
                                     lowered: CExpression::Cast {
                                         expression: Box::new(CExpression::Value(CValue::Pointer(

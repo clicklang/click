@@ -2974,9 +2974,20 @@ pub(in crate::surface) fn pure_function_parameter_argument(
     parameter: &FunctionParameter,
     argument: &ContractExpression,
 ) -> ContractExpression {
-    let Some(target_type) = pure_function_parameter_scalar_type(parameter) else {
+    let Some((target_type, integer_mode)) = pure_function_parameter_conversion(parameter) else {
         return argument.clone();
     };
+    if target_type == CType::VoidPointer
+        && parameter
+            .click_type()
+            .c_type()
+            .is_some_and(|c_type| argument_is_null_pointer_constant(argument, c_type))
+    {
+        return ContractExpression::CFragment(CExpression::Value(CValue::typed_pointer(
+            Pointer::null(),
+            target_type,
+        )));
+    }
     ContractExpression::CUnary {
         operand: Box::new(argument.clone()),
         // CUnary's operand is authoritative during lowering. Retain an exact
@@ -2986,7 +2997,7 @@ pub(in crate::surface) fn pure_function_parameter_argument(
                 contract_expression_as_c_fragment(argument).unwrap_or(CExpression::Value(int32(0))),
             ),
             target_type,
-            integer_mode: crate::kernel::CIntegerCastMode::CConversion,
+            integer_mode,
             pointee_struct: None,
             pointee_volatile: false,
             pointee_constant: false,
@@ -2995,14 +3006,28 @@ pub(in crate::surface) fn pure_function_parameter_argument(
     }
 }
 
-/// The explicit byte view `(uint8*)name` of a C pointer named `name`, in
-/// exactly the form the parser gives a written contract cast.
-///
-/// This is how the C-string bridge is elaborated. A predicate or theorem
-/// parameter of `uint8` bytes may be passed a character pointer; where the
-/// target's plain `char` is signed, that pointer's bytes are `int8` reads,
-/// so the implicit conversion is made explicit as this byte view rather than
-/// left to textual substitution, which would read the bytes signed.
+/// Implicit argument conversions also apply when a helper's body is unfolded.
+/// Unlike an authored void-pointer cast, the object-pointer coercion retains
+/// the caller's designation and selected extent.
+pub(in crate::surface) fn pure_function_parameter_conversion(
+    parameter: &FunctionParameter,
+) -> Option<(CType, crate::kernel::CIntegerCastMode)> {
+    if parameter.click_type().c_type()?.to_kernel_type() == CType::VoidPointer {
+        Some((
+            CType::VoidPointer,
+            crate::kernel::CIntegerCastMode::PointerCoercion,
+        ))
+    } else {
+        pure_function_parameter_scalar_type(parameter)
+            .map(|target| (target, crate::kernel::CIntegerCastMode::CConversion))
+    }
+}
+
+/// The compiler-inserted byte view of a C character pointer named `name`.
+/// A `uint8` predicate parameter reads unsigned bytes even when the source
+/// target's plain `char` is signed. The conversion changes that read type
+/// while retaining the source pointer's selected extent. An authored byte
+/// cast uses the separate explicit-cast rule and can widen to the root.
 pub(in crate::surface) fn character_byte_view(name: &str) -> ContractExpression {
     ContractExpression::CUnary {
         operand: Box::new(ContractExpression::CFragment(CExpression::Variable(
@@ -3011,7 +3036,7 @@ pub(in crate::surface) fn character_byte_view(name: &str) -> ContractExpression 
         lowered: CExpression::Cast {
             expression: Box::new(CExpression::Variable(name.to_string())),
             target_type: crate::kernel::CType::UInt8Pointer,
-            integer_mode: crate::kernel::CIntegerCastMode::Standard,
+            integer_mode: crate::kernel::CIntegerCastMode::PointerCoercion,
             pointee_struct: None,
             pointee_volatile: false,
             pointee_constant: false,

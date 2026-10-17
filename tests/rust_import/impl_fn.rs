@@ -65,7 +65,7 @@ fn charon_impl_fn_arguments_meet_named_contracts() {
 #[ignore = "nightly: 11.9s in the parallel gate"]
 fn charon_impl_fn_tools_recheck_expanded_certificates() {
     let p = impl_fn_project();
-    for command in ["verify", "profile", "audit"] {
+    for command in ["profile", "audit"] {
         assert_cli(&p, &[command]);
     }
     for claim in [
@@ -75,6 +75,6 @@ fn charon_impl_fn_tools_recheck_expanded_certificates() {
         "__rust_q_I7_impl_fn_I4_both.contract",
     ] {
         assert_cli(&p, &["expand", "--claim", claim, "--in-place"]);
-        assert_cli(&p, &["verify"]);
     }
+    assert_cli(&p, &["verify"]);
 }

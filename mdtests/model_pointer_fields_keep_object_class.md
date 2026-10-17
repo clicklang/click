@@ -1,7 +1,9 @@
 # Model pointer fields keep their declared object class
 
 Matching the model recovers the original object class needed by the packed
-pointer round trip and its reachable loop back edge.
+pointer round trip and its reachable loop back edge. The numeric address
+relation alone does not promise the stored pointer's designation and bounds;
+the resource also states the complete pointer round trip.
 
 ```c filename=packed_model.c
 struct model_node { uint64 parent_word; };
@@ -15,7 +17,7 @@ spec enum PackedLink { At(struct model_node*), }
 resource model_link(p: struct model_node*) {
     field word: uint64;
     field model: PackedLink;
-    match model { PackedLink::At(q) => { owns p->parent_word; fact p->parent_word == word; fact q == p; fact word == address(q); }, }
+    match model { PackedLink::At(q) => { owns p->parent_word; fact p->parent_word == word; fact q == p; fact word == address(q); fact ((struct model_node*)p->parent_word) == q; }, }
 }
 void follow_model(struct model_node* p, int32 more) {
     owns held: model_link(p);

@@ -57,8 +57,10 @@ pub(crate) use cell_store::{
     offset_stem_and_constant,
 };
 mod derivations;
+mod heap_effective_types;
 mod initialized_bytes;
 mod observed_population_families;
+pub(crate) use heap_effective_types::HeapEffectiveTypes;
 pub(crate) use initialized_bytes::InitializedBytes;
 mod memory_state;
 pub(crate) use observed_population_families::ObservedPopulationFamilies;
@@ -395,7 +397,8 @@ impl LoadKind {
     /// The kind of read that returns exactly `value`, a cell's stored value:
     /// a read of any other kind at the cell's address does not.
     pub fn of_value(value: &CValue) -> Option<Self> {
-        Some(match value {
+        Some(match value.numeric_value() {
+            CValue::PointerInteger(_) => unreachable!("numeric projection"),
             CValue::Void => return None,
             CValue::Bool(_) | CValue::UInt8(_) => Self::UInt8,
             CValue::Int8(_) => Self::Int8,
@@ -456,6 +459,52 @@ impl LoadKind {
             Self::Bits64 | Self::Float64 => 8,
             Self::Int128 | Self::UInt128 => 16,
         }
+    }
+}
+
+/// The object class an address term retains from the pointer it was formed
+/// from (`design/effective-types.md`). Like a pointer value's class, it is
+/// not part of the value's identity: it compares equal to every other
+/// annotation, hashes to nothing, and orders as equal, so equality, fact
+/// lookup, rewriting and premise matching see one address however it is
+/// annotated. Only an integer-to-pointer cast reads it, and the destination
+/// type of that cast never supplies it.
+#[derive(Clone, Debug, Default)]
+pub struct AddressObjectClass(Option<crate::kernel::effective_type::CAccessClass>);
+
+impl AddressObjectClass {
+    pub const NONE: Self = Self(None);
+
+    pub(crate) fn new(class: Option<crate::kernel::effective_type::CAccessClass>) -> Self {
+        Self(class)
+    }
+
+    pub(crate) fn class(&self) -> Option<crate::kernel::effective_type::CAccessClass> {
+        self.0.clone()
+    }
+}
+
+impl PartialEq for AddressObjectClass {
+    fn eq(&self, _: &Self) -> bool {
+        true
+    }
+}
+
+impl Eq for AddressObjectClass {}
+
+impl std::hash::Hash for AddressObjectClass {
+    fn hash<H: std::hash::Hasher>(&self, _: &mut H) {}
+}
+
+impl PartialOrd for AddressObjectClass {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for AddressObjectClass {
+    fn cmp(&self, _: &Self) -> std::cmp::Ordering {
+        std::cmp::Ordering::Equal
     }
 }
 
@@ -525,17 +574,13 @@ pub enum Bitvector32Term {
     /// that differ in width or, below four bytes, in signedness return
     /// different values, so they are different terms. See [`LoadKind`].
     MemoryLoad(SharedCMemory, Box<Pointer>, LoadKind),
-    /// The 64-bit integer representation of a non-null object pointer under
-    /// the LP64 profile.  The term keeps the exact source pointer, so the
-    /// integer carries provenance: a cast back recovers that pointer.  Equal
-    /// pointers have equal addresses; equal addresses are not equal pointers
-    /// (a C pointer comparison states only the latter).  No arithmetic on the term
-    /// is interpreted as address arithmetic; tag bits are handled by checked
-    /// rewrites on top of this term.
-    PointerAddress(Box<Pointer>),
-    /// The same numeric address with checked source object-class evidence.
-    /// The destination type of a later cast never supplies this class.
-    ObjectPointerAddress(Box<Pointer>, ObjectTypeEvidence),
+    /// The physical LP64 address bits of an object pointer. This numeric
+    /// observation carries no designation or selected extent. Complete C
+    /// integer copies retain that information separately in PointerInteger.
+    /// Checked tag identities can recover address bits, never pointer bounds.
+    /// The annotation retains the source object class for a later cast and
+    /// does not participate in equality, ordering, or hashing.
+    PointerAddress(Box<Pointer>, AddressObjectClass),
     IntegerToMachine {
         value: SharedIntegerTerm,
         destination: MachineIntegerType,
@@ -739,6 +784,8 @@ pub enum ConditionTerm {
     Float64(CFloatCondition),
     PointerOffsetEqual(Box<PointerOffsetTerm>, Box<PointerOffsetTerm>),
     PointerEqual(Box<Pointer>, Box<Pointer>),
+    /// Specification pointer equality includes the designated object and extent.
+    PointerValueEqual(Box<CPointerValue>, Box<CPointerValue>),
     IntegerLessThan(SharedIntegerTerm, SharedIntegerTerm),
     IntegerLessEqual(SharedIntegerTerm, SharedIntegerTerm),
     IntegerGreaterThan(SharedIntegerTerm, SharedIntegerTerm),
@@ -1126,6 +1173,12 @@ pub(super) struct ObjectTypePremise {
 #[derive(Clone, Debug)]
 pub struct CPointerValue {
     pointer: Pointer,
+    /// The object designated when this value entered. Address aliases never
+    /// replace this component; only value transport or substitution maps it.
+    designation: Arc<Pointer>,
+    /// The opaque containing extent retained through narrowing. A byte/void
+    /// view clears it, so that wider view cannot authorize the original input.
+    opaque_extent: Option<Arc<Pointer>>,
     c_type: CType,
     qualifiers: Option<Arc<CPointerQualifiers>>,
 }
@@ -1135,6 +1188,7 @@ struct CPointerQualifiers {
     volatile: bool,
     constant: bool,
     extent: Option<SubobjectExtent>,
+    extent_known: bool,
     /// The class of the object the pointer was formed to designate, from the
     /// declaration that produced it (`design/effective-types.md`). It is not
     /// part of the value's identity, and it survives casts, `void *`,
@@ -1280,11 +1334,89 @@ impl CPointerValue {
             c_type.is_pointer(),
             "C pointer values require a pointer type"
         );
+        let is_function =
+            matches!(c_type, CType::FunctionPointer(_)) || pointer.block.is_function();
+        let known_root = is_function
+            || matches!(
+                pointer.block,
+                PointerBlock::Concrete(_) | PointerBlock::Heap(_) | PointerBlock::Temporary(_)
+            );
+        let root = if is_function {
+            Pointer::null()
+        } else {
+            pointer.object_identity()
+        };
         Self {
+            opaque_extent: (!known_root).then(|| Arc::new(root.clone())),
+            designation: Arc::new(root),
             pointer,
             c_type,
-            qualifiers: None,
+            qualifiers: known_root.then(|| {
+                Arc::new(CPointerQualifiers {
+                    extent_known: true,
+                    ..Default::default()
+                })
+            }),
         }
+    }
+
+    /// A complete pointer read owns an opaque domain independently of its
+    /// numeric address. Both bounds and origin cover all eight bytes.
+    pub(in crate::kernel) fn from_read(
+        pointer: Pointer,
+        c_type: CType,
+        memory: &SharedCMemory,
+        cell: &Pointer,
+    ) -> Self {
+        let mut value = Self::new(pointer, c_type);
+        if matches!(c_type, CType::FunctionPointer(_)) || value.pointer.block.is_function() {
+            return value;
+        }
+        value.qualifiers = None;
+        // The domain comes from one complete pointer read.
+        // Name its eight-byte version using the tracker's cached, assumption-
+        // free naming query rather than a cached four-byte scalar prefix.
+        let point = crate::kernel::resource_tracker::last_same_point(
+            crate::kernel::resource_tracker::Resource::Cell {
+                pointer: cell,
+                bytes: C_POINTER_BYTE_WIDTH,
+            },
+            &crate::kernel::resource_tracker::ProgramPoint::at(memory),
+        );
+        let source = point.as_ref().map_or(memory, |point| point.snapshot());
+        let origin = Arc::new(Pointer::loaded_value(source, cell));
+        value
+            .with_opaque_extent(Some(origin.clone()))
+            .with_designation(origin)
+    }
+
+    pub(crate) fn designation(&self) -> &Pointer {
+        &self.designation
+    }
+
+    pub(in crate::kernel) fn opaque_extent(&self) -> Option<&Pointer> {
+        self.opaque_extent.as_deref()
+    }
+
+    pub(in crate::kernel) fn with_opaque_extent(mut self, extent: Option<Arc<Pointer>>) -> Self {
+        self.opaque_extent = extent;
+        self
+    }
+
+    pub(in crate::kernel) fn access_designation(&self) -> (&Pointer, Option<&Pointer>) {
+        (
+            self.designation(),
+            if self.extent_is_known() {
+                None
+            } else {
+                self.opaque_extent()
+            },
+        )
+    }
+
+    pub(in crate::kernel) fn with_designation(mut self, designation: Arc<Pointer>) -> Self {
+        self.designation = designation;
+        self
     }
 
     pub(crate) fn pointer(&self) -> &Pointer {
@@ -1310,6 +1442,8 @@ impl CPointerValue {
     pub(crate) fn with_type(self, c_type: CType) -> Self {
         Self {
             pointer: self.pointer,
+            designation: self.designation,
+            opaque_extent: self.opaque_extent,
             c_type,
             qualifiers: self.qualifiers,
         }
@@ -1360,6 +1494,19 @@ impl CPointerValue {
 
     pub(crate) fn extent(&self) -> Option<&SubobjectExtent> {
         self.qualifiers.as_ref()?.extent.as_ref()
+    }
+
+    pub(crate) fn extent_is_known(&self) -> bool {
+        self.qualifiers.as_ref().is_some_and(|q| q.extent_known)
+    }
+
+    pub(in crate::kernel) fn with_root_extent(mut self) -> Self {
+        self.opaque_extent = None;
+        let qualifiers = Arc::make_mut(self.qualifiers.get_or_insert_with(Default::default));
+        qualifiers.extent = None;
+        qualifiers.extent_known = true;
+        qualifiers.within = RangeDesignation::default();
+        self
     }
 
     /// The opaque extents a clause through this pointer makes claims about:
@@ -1450,13 +1597,10 @@ impl CPointerValue {
         self
     }
 
-    pub(crate) fn object_address_evidence(&self) -> Option<ObjectTypeEvidence> {
-        self.object_origin_evidence()
-            .cloned()
-            .or_else(|| self.object_class().map(ObjectTypeEvidence::declared))
-    }
-
     pub(crate) fn with_extent(mut self, extent: Option<SubobjectExtent>) -> Self {
+        if extent.is_some() {
+            Arc::make_mut(self.qualifiers.get_or_insert_with(Default::default)).extent_known = true;
+        }
         if extent.is_some() || self.extent().is_some() {
             Arc::make_mut(self.qualifiers.get_or_insert_with(Default::default)).extent = extent;
         }
@@ -1469,6 +1613,11 @@ impl CPointerValue {
     pub(crate) fn map_pointers(&self, mut map: impl FnMut(&Pointer) -> Pointer) -> Self {
         let mut result = self.clone();
         result.pointer = map(&self.pointer);
+        let designation = map(&self.designation);
+        if designation != *self.designation {
+            result.designation = Arc::new(designation);
+        }
+        result.opaque_extent = self.opaque_extent().map(|origin| Arc::new(map(origin)));
         if let Some(extent) = self.extent() {
             result = result.with_extent(Some(SubobjectExtent {
                 start: map(&extent.start),
@@ -1478,9 +1627,45 @@ impl CPointerValue {
         result
     }
 
+    pub(in crate::kernel) fn try_map_pointers(
+        &self,
+        mut map: impl FnMut(&Pointer) -> Option<Pointer>,
+    ) -> Option<Self> {
+        let pointer = map(&self.pointer)?;
+        let designation = map(&self.designation)?;
+        let opaque_extent = match self.opaque_extent() {
+            Some(origin) => Some(Arc::new(map(origin)?)),
+            None => None,
+        };
+        let extent = match self.extent() {
+            Some(extent) => Some(SubobjectExtent {
+                start: map(&extent.start)?,
+                width: extent.width.clone(),
+            }),
+            None => None,
+        };
+        Some(
+            self.clone()
+                .with_address(pointer)
+                .with_designation(Arc::new(designation))
+                .with_extent(extent)
+                .with_opaque_extent(opaque_extent),
+        )
+    }
+
+    /// Re-spell physical addresses without changing the value's origin.
+    pub(in crate::kernel) fn map_addresses(&self, map: impl FnMut(&Pointer) -> Pointer) -> Self {
+        self.map_pointers(map)
+            .with_designation(self.designation.clone())
+            .with_opaque_extent(self.opaque_extent.clone())
+    }
+
     /// Every address the value mentions, for variable collection.
     pub(crate) fn pointers(&self) -> impl Iterator<Item = &Pointer> {
-        std::iter::once(&self.pointer).chain(self.extent().map(|extent| &extent.start))
+        std::iter::once(&self.pointer)
+            .chain(std::iter::once(self.designation.as_ref()))
+            .chain(self.opaque_extent())
+            .chain(self.extent().map(|extent| &extent.start))
     }
 
     pub(crate) fn is_null(&self) -> bool {
@@ -1501,15 +1686,25 @@ impl CPointerValue {
         &self,
     ) -> (
         &Pointer,
+        &Pointer,
         &CType,
         bool,
+        bool,
+        Option<&Pointer>,
         Option<&SubobjectExtent>,
         Option<super::loans::LocalReferenceId>,
     ) {
         (
             &self.pointer,
+            &self.designation,
             &self.c_type,
             self.pointee_volatile(),
+            self.extent_is_known(),
+            if self.extent_is_known() {
+                None
+            } else {
+                self.opaque_extent()
+            },
             self.extent(),
             self.local_reference().map(|reference| reference.id()),
         )
@@ -1895,8 +2090,29 @@ impl std::fmt::Display for PointerBlock {
     }
 }
 
+/// Complete LP64 integer produced from a pointer. Numeric projections discard
+/// this record; complete C-value transport keeps it. Fields are kernel-owned.
+#[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub(in crate::kernel) enum PointerIntegerKind {
+    Exact,
+    Tagged,
+    /// An incoming or loaded complete word. Its identity is independent of
+    /// its numeric value; only an explicit full-pointer contract gives bounds.
+    Word {
+        changed_bits: u64,
+    },
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub struct PointerIntegerValue {
+    pub(in crate::kernel) numeric: Box<CValue>,
+    pub(in crate::kernel) pointer: Box<CPointerValue>,
+    pub(in crate::kernel) kind: PointerIntegerKind,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum CValue {
+    PointerInteger(PointerIntegerValue),
     Void,
     /// C `_Bool` values are represented by a 32-bit term whose value is
     /// always normalized to zero or one.  The storage width remains the
@@ -2134,7 +2350,10 @@ pub struct CLValue {
     pub(super) pointee_constant: bool,
     /// The subobject extent of the pointer this memory lvalue was reached
     /// through. The access is checked against it, and `&lvalue` keeps it.
+    pub(super) extent_known: bool,
+    pub(super) opaque_extent: Option<Arc<Pointer>>,
     pub(super) extent: Option<Arc<SubobjectExtent>>,
+    pub(super) designation: Option<Arc<Pointer>>,
     /// The class of the lvalue's type, which the access uses, when the
     /// frontend supplied one.
     pub(super) access_class: Option<crate::kernel::effective_type::CAccessClass>,
@@ -2164,6 +2383,10 @@ pub enum CIntegerCastMode {
     /// range (`narrowed_cast_identity`). `Standard` remains the
     /// specification's checked conversion.
     CConversion,
+    /// An inserted byte/void view changes the carrier while retaining the
+    /// source pointer's designation and bounds. Authored pointer casts use
+    /// the separate explicit conversion rule.
+    PointerCoercion,
     /// Legacy exact uint64-to-int64 boundary.
     UInt64BitsToInt64,
 }
@@ -2480,6 +2703,8 @@ pub enum SpecExpression {
     BitwiseXor(Box<SpecExpression>, Box<SpecExpression>),
     BitwiseNot(Box<SpecExpression>),
     Cast(Box<SpecExpression>, CType),
+    /// An implicit pointer conversion retains the complete designation.
+    PointerCoercion(Box<SpecExpression>, CType),
     If {
         condition: Box<SpecProposition>,
         then_branch: Box<SpecExpression>,
@@ -2503,8 +2728,15 @@ pub enum SpecExpression {
         arguments: Vec<SpecPureFunctionArgument>,
         result_type: CType,
         pointer_result: Option<Arc<PurePointerResult>>,
+        /// The class of the object a pointer result designates, from the
+        /// function's declared return type (`design/effective-types.md`).
+        result_object_class: Option<crate::kernel::effective_type::CAccessClass>,
     },
     LoopEntrySnapshot(Box<SpecExpression>),
+    Subobject {
+        pointer: Box<SpecExpression>,
+        width: u32,
+    },
     PointerOffset {
         pointer: Box<SpecExpression>,
         elements: Box<SpecExpression>,
@@ -2825,12 +3057,29 @@ pub struct AlgebraicVariantType {
 /// algebraic type family. Groundedness is computed once when the graph is
 /// formed so checking each constructor or variable does not rescan schemas
 /// unrelated to that term.
+///
+/// The schemas also record, beside the field types, the object class a
+/// pointer field's declaration gives the object it designates
+/// (`design/effective-types.md`). A field's kernel type spells every struct
+/// pointer as an `int32` pointer, so this is where a symbolic value of the
+/// field gets the class a parameter of the declared type would have. Like a
+/// pointer value's class it is not part of the type's identity: two types
+/// that differ only in it are equal, and only fresh symbolic field values
+/// read it.
 #[derive(Debug)]
 pub struct AlgebraicSchemas {
     variants:
         std::collections::BTreeMap<AlgebraicValueType, std::sync::Arc<[AlgebraicVariantType]>>,
     grounded: std::collections::BTreeSet<AlgebraicValueType>,
+    object_classes: std::collections::BTreeMap<AlgebraicValueType, AlgebraicFieldObjectClasses>,
 }
+
+/// The declared object class of each field of each constructor of one
+/// algebraic type, by constructor name; a field without one is `None`.
+pub(crate) type AlgebraicFieldObjectClasses = std::collections::BTreeMap<
+    String,
+    std::sync::Arc<[Option<crate::kernel::effective_type::CAccessClass>]>,
+>;
 
 impl AlgebraicSchemas {
     pub(crate) fn new(
@@ -2859,7 +3108,22 @@ impl AlgebraicSchemas {
                 break;
             }
         }
-        Self { variants, grounded }
+        Self {
+            variants,
+            grounded,
+            object_classes: std::collections::BTreeMap::new(),
+        }
+    }
+
+    /// These schemas with the declared object classes of pointer fields.
+    /// Entries for types or constructors without a classed field may be
+    /// omitted.
+    pub(crate) fn with_object_classes(
+        mut self,
+        object_classes: std::collections::BTreeMap<AlgebraicValueType, AlgebraicFieldObjectClasses>,
+    ) -> Self {
+        self.object_classes = object_classes;
+        self
     }
 
     pub(crate) fn get(
@@ -2992,7 +3256,8 @@ impl AlgebraicTerm {
                         }
                     }
                 },
-                Node::Value(value) => match value {
+                Node::Value(value) => match value.numeric_value() {
+                    CValue::PointerInteger(_) => unreachable!("numeric projection"),
                     CValue::Void => {}
                     CValue::Bool(v) => visit(v),
                     CValue::Pointer(v) => pending.push(Node::Offset(&v.pointer().offset)),
@@ -3123,6 +3388,46 @@ impl AlgebraicType {
             variants: self.schemas.get(value_type)?.clone(),
             schemas: self.schemas.clone(),
         })
+    }
+
+    /// The object class the declaration of field `index` of constructor
+    /// `variant` gives the object a pointer stored there designates. A type
+    /// without classed fields answers without building its lookup key.
+    pub(crate) fn field_object_class(
+        &self,
+        variant: &str,
+        index: usize,
+    ) -> Option<crate::kernel::effective_type::CAccessClass> {
+        if self.rigid || self.schemas.object_classes.is_empty() {
+            return None;
+        }
+        self.schemas
+            .object_classes
+            .get(&self.value_type())?
+            .get(variant)?
+            .get(index)?
+            .clone()
+    }
+
+    /// A fresh symbolic value for field `index` of constructor `variant`,
+    /// of kernel type `c_type`, carrying the class its declaration gives a
+    /// pointer field's object.
+    pub(crate) fn symbolic_c_field_value(
+        &self,
+        variant: &str,
+        index: usize,
+        c_type: CType,
+        variable: Variable,
+    ) -> CValue {
+        let value = crate::kernel::symbolic_call_result(c_type, variable);
+        match c_type
+            .is_pointer()
+            .then(|| self.field_object_class(variant, index))
+            .flatten()
+        {
+            Some(class) => value.with_pointer_object_class(Some(class)),
+            None => value,
+        }
     }
 
     pub(in crate::kernel) fn has_consistent_root_schema(&self) -> bool {
@@ -3684,9 +3989,17 @@ pub struct CMemorySegment {
     pub(super) guard: Option<SpecProposition>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+#[derive(Clone, Debug)]
 pub struct CMemoryRange {
     pub(super) base: Pointer,
+    /// Origin of the value naming the range, independent of address aliases.
+    pub(super) designation: Arc<Pointer>,
+    /// A typed clause also demands this carrier's designation. Raw kernel
+    /// intervals ask only about physical authority; both retain supplier
+    /// designations through resource algebra and subsequent C access checks.
+    pub(super) typed_carrier: bool,
+    pub(super) carrier_extent_known: bool,
+    pub(super) opaque_extent: Option<Arc<Pointer>>,
     /// The bounds, in elements. Read them through [`CMemoryRange::start`]
     /// and [`CMemoryRange::end`], which hold only for an `Int32` range, or
     /// through [`CMemoryRange::wide_bounds`]: a term carries no width, so a
@@ -3704,7 +4017,7 @@ pub struct CMemoryRange {
     kind: RangeIndexKind,
     /// The opaque extent of the pointer whose clause named this range, if
     /// any. Not part of the range's identity.
-    designation: RangeDesignation<[Option<Variable>; 2]>,
+    extent_claims: RangeDesignation<[Option<Variable>; 2]>,
 }
 
 /// The opaque subobject extent a held range was named through
@@ -3747,6 +4060,53 @@ impl<T> Ord for RangeDesignation<T> {
     }
 }
 
+impl CMemoryRange {
+    // The mode changes what a requested clause must establish, not the
+    // identity of the physical authority and retained carrier it names.
+    fn identity(
+        &self,
+    ) -> (
+        &Pointer,
+        &Pointer,
+        Option<&Pointer>,
+        &Bitvector32Term,
+        &Bitvector32Term,
+        u32,
+        RangeIndexKind,
+    ) {
+        (
+            &self.base,
+            &self.designation,
+            self.opaque_extent.as_deref(),
+            &self.start_bound,
+            &self.end_bound,
+            self.element_width,
+            self.kind,
+        )
+    }
+}
+impl PartialEq for CMemoryRange {
+    fn eq(&self, other: &Self) -> bool {
+        self.identity() == other.identity()
+    }
+}
+impl Eq for CMemoryRange {}
+impl std::hash::Hash for CMemoryRange {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.identity().hash(state);
+    }
+}
+impl PartialOrd for CMemoryRange {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+impl Ord for CMemoryRange {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.identity().cmp(&other.identity())
+    }
+}
+
 /// The integer type of a range's bounds. Two ranges with the same terms in
 /// different kinds are different ranges.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
@@ -3784,6 +4144,9 @@ pub struct CGlobal {
     pub(super) pointee_volatile: bool,
     pub(super) constant: bool,
     pub(super) pointee_constant: bool,
+    /// The object's strict-aliasing class (`design/effective-types.md`),
+    /// when the frontend knows more than the kernel type says.
+    pub(super) declared_class: Option<crate::kernel::effective_type::CAccessClass>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
@@ -3794,6 +4157,9 @@ pub struct CGlobalArray {
     pub(super) length: u32,
     pub(super) initial_values: CArrayContents,
     pub(super) constant: bool,
+    /// The object's strict-aliasing class (`design/effective-types.md`),
+    /// when the frontend knows more than the kernel type says.
+    pub(super) declared_class: Option<crate::kernel::effective_type::CAccessClass>,
 }
 
 /// A linked file-scope aggregate. The layout describes the typed leaf cells
@@ -3806,6 +4172,8 @@ pub struct CGlobalAggregate {
     pub(super) layout: CAggregateLayout,
     pub(super) initializers: Vec<CAggregateInitializer>,
     pub(super) constant: bool,
+    /// The object's strict-aliasing class (`design/effective-types.md`),
+    /// when the frontend knows more than the kernel type says.
     pub(super) declared_class: Option<crate::kernel::effective_type::CAccessClass>,
 }
 
@@ -3820,6 +4188,8 @@ pub struct CGlobalAggregateArray {
     pub(super) length: u32,
     pub(super) initializers: Vec<CAggregateInitializer>,
     pub(super) constant: bool,
+    /// The object's strict-aliasing class (`design/effective-types.md`),
+    /// when the frontend knows more than the kernel type says.
     pub(super) declared_class: Option<crate::kernel::effective_type::CAccessClass>,
 }
 
@@ -4363,7 +4733,9 @@ pub struct CFunction {
     pub(super) body: CStatement,
     pub(super) source_body: CStatement,
     pub(super) control_targets: std::sync::Arc<BTreeMap<CControlTargetId, CControlTarget>>,
-    pub(super) contract_interface: CFunctionContractInterface,
+    /// Shared: every claim and theorem a proof issues carries the function,
+    /// and the contract spans every parameter.
+    pub(super) contract_interface: Arc<CFunctionContractInterface>,
     pub(super) global_variables: Vec<CGlobal>,
     pub(super) global_arrays: Vec<CGlobalArray>,
     pub(super) static_variables: Vec<CStaticLocal>,
@@ -4560,8 +4932,10 @@ pub(crate) const C_EXCEPTIONAL_RESULT_NAME: &str = "__click_exception";
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct CFunctionSpecification {
     pub(super) state: CState,
-    pub(super) arguments: Vec<CExpression>,
-    pub(super) requires: Vec<Proposition>,
+    /// Shared: every theorem a proof issues carries the specification, and
+    /// both lists span every parameter.
+    pub(super) arguments: Arc<[CExpression]>,
+    pub(super) requires: Arc<[Proposition]>,
     pub(super) outcome: CFunctionOutcome,
 }
 
@@ -6431,6 +6805,9 @@ pub(super) struct CHeapMemory {
     /// refined. Success then retires it and installs the copied prefix;
     /// failure simply resolves the new result to null.
     pub(super) pending_reallocations: SnapshotMap<Pointer, CPendingReallocation>,
+    /// The effective types C stores gave heap cells
+    /// (`design/effective-types.md`); see [`HeapEffectiveTypes`].
+    pub(super) effective_types: HeapEffectiveTypes,
 }
 
 impl std::hash::Hash for CHeapMemory {
@@ -6450,6 +6827,10 @@ impl std::hash::Hash for CHeapMemory {
         if !self.pending_object_classes.is_empty() {
             "pending_object_classes".hash(state);
             self.pending_object_classes.hash(state);
+        }
+        if self.effective_types != HeapEffectiveTypes::default() {
+            "effective_types".hash(state);
+            self.effective_types.hash(state);
         }
         if !self.uninitialized_objects.is_empty() {
             "uninitialized_objects".hash(state);
@@ -6498,6 +6879,9 @@ impl CHeapMemory {
             && self
                 .pending_reallocations
                 .eq_relative_to(&other.pending_reallocations, &base.pending_reallocations)
+            && self
+                .effective_types
+                .eq_relative_to(&other.effective_types, &base.effective_types)
     }
 
     /// Whether two heap states have the same allocation lifetime and shape.
@@ -6620,6 +7004,31 @@ impl SharedCMemory {
                 return self.arena_id();
             }
             (self.arena, arena.1.read_identities[self.id as usize])
+        })
+    }
+
+    /// The producer-retained source of unchanged physical bytes. This is
+    /// read congruence only: callers must retain the current snapshot for
+    /// initialization, lifetime and permission checks.
+    pub(crate) fn unchanged_bytes_source(&self) -> Self {
+        C_MEMORY_ARENA.with(|arena| {
+            let arena = arena.borrow();
+            if arena.0 != self.arena {
+                return self.clone();
+            }
+            let source = arena.1.read_identities[self.id as usize];
+            if source == self.id {
+                return self.clone();
+            }
+            let memory = arena.1.memories[source as usize].clone();
+            let (_, content_hash) =
+                arena.1.shallow_identities[&CMemoryShallowIdentity::of(&memory)];
+            Self {
+                arena: self.arena,
+                id: source,
+                content_hash,
+                memory,
+            }
         })
     }
 
@@ -6916,6 +7325,8 @@ pub enum CMemoryDerivation {
     /// own never-crossed / guarded edge kinds, so this edge cannot launder a
     /// havoc (conventions.md's soundness trap).
     CellsForgotten { base: SharedCMemory },
+    /// Cache a value observed in `base`; no bytes or lifetime facts change.
+    CellObserved { base: SharedCMemory },
     /// `base` after a loop body that may write anything it can reach.
     ///
     /// `mutable_ranges` is present only when the loop's whole-effect summary
@@ -7003,6 +7414,7 @@ impl CMemoryDerivation {
             Self::HeapFreed { .. } => "HeapFreed",
             Self::ObjectInitializationRecorded { .. } => "ObjectInitializationRecorded",
             Self::CellsForgotten { .. } => "CellsForgotten",
+            Self::CellObserved { .. } => "CellObserved",
             Self::LocalLifetimeEnded { .. } => "LocalLifetimeEnded",
             Self::LoopHavoc { .. } => "LoopHavoc",
             Self::CallHavoc { .. } => "CallHavoc",
@@ -7023,6 +7435,7 @@ impl CMemoryDerivation {
             | Self::HeapFreed { base, .. }
             | Self::ObjectInitializationRecorded { base, .. }
             | Self::CellsForgotten { base }
+            | Self::CellObserved { base }
             | Self::LocalLifetimeEnded { base, .. }
             | Self::LoopHavoc { base, .. }
             | Self::CallHavoc { base, .. }
@@ -7196,10 +7609,15 @@ pub(crate) fn record_c_memory_derivation(result: &mut CMemory, derivation: CMemo
     }
     // Interning borrows the arena, so it has to finish before the write.
     let read_identity = match derivation.as_ref() {
-        CMemoryDerivation::CellsForgotten { base } => Some(base.read_identity()),
+        CMemoryDerivation::CellsForgotten { base } | CMemoryDerivation::CellObserved { base } => {
+            Some(base.read_identity())
+        }
         CMemoryDerivation::CellsSeeded { base, run }
             if matches!(run.value_mode(), cell_store::RunValueMode::Load)
-                && run.element_width() == run.value_width()
+                && (run.element_width() == run.value_width()
+                    || (run.element_width() > run.value_width()
+                        && run.element_type() != CType::Bool
+                        && !run.element_type().is_pointer()))
                 && base.read_identity() == run.source().read_identity() =>
         {
             // Copying the same bytes already in the base is materialization,
@@ -11329,6 +11747,10 @@ pub struct PureFactContext {
     /// terms. Appended on insertion; withdrawal rebuilds from exact equality
     /// indexes, preserving the remaining support in every fragment.
     pub(super) equality_graph: super::equality_graph::EqualityGraph,
+    /// Producer-retained predecessor for withdrawing the latest full-pointer
+    /// premise. Exact persistent roots identify the unchanged fact frontier.
+    pub(super) pointer_value_undo: Option<Arc<super::assumptions::PointerValueUndo>>,
+    pub(super) restoring_pointer_graph: Option<Arc<super::equality_graph::EqualityGraph>>,
     /// Addresses of the first elements of two separated memory ranges of
     /// one block, keyed by the unordered pair and carrying the separation
     /// facts that state it. Mirrors `memory_separation_facts` under a key a

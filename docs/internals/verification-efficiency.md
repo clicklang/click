@@ -75,6 +75,38 @@ where the input genuinely comes from outside the session, such as expansion
 checks, audits, and certificates read back from disk, which run off the
 simple-checking path.
 
+Ordinary named-instance folds construct their successor, checked facts, and
+execution event together in `ExecutionProofCore::fold_resource_instance_with_children`.
+The Surface supplies the instance and selected children and uses those returned
+facts directly; recording never lowers that fold's body again. Population
+custody and post-return exchanges retain their separate operations. The
+`constructing_an_instance_fold_pays_for_its_body_once` regression compares the
+complete construction with one direct body derivation at 4, 8, 16, and 32
+clauses, allowing only constant recording overhead. Independent certificate
+checks still reject proposed successors with unrelated state or facts.
+
+Logical case partitions retain each arm's indexed context alongside its exact
+premise delta. Entering an arm shares the context constructed when issuing the
+partition; independent scope and certificate checks still use the recorded
+delta and witness scope. The constructor-payload regression varies 4, 8, 16,
+and 32 explicit arguments and bounds entry by constant work.
+
+Branch-interface publication similarly extends one `ProofFacts` context as
+it exports resource viewability projections and written facts. Every following
+assertion lowers against that accumulated context, and the successor keeps it.
+The 16, 32, 64, and 128 assertion regression prevents repeated admission of
+every growing prefix; the reduced 128-assertion fixture fell from about
+178,000 to 46,000 total work units.
+
+Interface joins combine the effects retained by each arm's checked statement
+walk. When that walk accounts for the complete recorded effect stream, joining
+its footprints does not reconstruct store or call-havoc results. A standalone
+stream without that provenance still receives the ordinary diff-coverage check.
+`a_checked_interface_join_does_not_reconstruct_a_calls_havoc` varies the cells
+a single recorded call discarded at 4, 8, 16, and 32; joining its one effect is
+independent of that earlier work. The independent malformed-effect controls
+continue to reject writes outside the stated footprint.
+
 Existing produce-then-check code is a defect, tracked in
 `issues/scaling.md` cause 4. The review question for any
 change is: does this re-validate something the same session produced? If so,
@@ -114,6 +146,14 @@ at sizes 1, 2, 4 and 8 for both assumption runs and normalization batches.
 A named nightly regression independently varies four resource sizes and
 three claim sizes, retaining the full matrix without slowing the regular gate. It does not bound every part of contract
 verification or eliminate preparation after a frontier-changing tactic.
+
+A whole-cell memory query first uses its admitted address-class index. An
+existing exact supplier needs no resolution of the queried pointer's defining
+read. Only a miss enters the checked read-endpoint route. Supplier quantities
+and permissions retain their ordinary checks; this selection adds no equality
+to the ambient context. The four-size regression
+`an_indexed_read_supplier_does_not_resolve_its_pointer_history` varies unrelated
+stores before the same indexed loaded-pointer query.
 
 ### Refused ownership separation
 
@@ -280,7 +320,16 @@ charged to visible semantic output rather than hidden ambient state:
   rule; construction charges each fact and the rule charges each copied exit
   handle. `checked_loop_exit_copies_share_their_fact_storage` checks both
   exit forms at 4, 64, and 1,024 facts, alongside the full loop-exit scaling
-  regression.
+  regression. Break exits produced by a checked proof also retain its indexed
+  fact context. Binder checks at the exit join reuse that context and add only
+  incoming facts absent from it; they do not admit the exit's facts again.
+  `exit_argument_checks_reuse_the_checked_path_context` varies the shared
+  prefix and checks both the selected exit's facts and an incoming-only fact.
+- Constructor refutation compares a declared predicate's value using indexed
+  scalar equalities, exact facts, and intrinsic decisions. An unknown value
+  does not start memory resolution across unrelated path equations.
+  `predicate_constructor_comparison_ignores_unrelated_load_facts` measures
+  failed decisions at four sizes and retains known-value positive controls.
 - A loop exit join reconciles contract-call epochs through changed marker
   entries, retaining common history and one fresh marker. It does not union
   every branch's epoch into a successor that every exit must then scan. The
@@ -335,6 +384,12 @@ charged to visible semantic output rather than hidden ambient state:
   successor's bindings against the arms' through one membership index over
   binding values and is linear in the binding count, which grows with proof
   length (`interface_binding_inheritance_is_near_linear_in_the_binding_count`).
+- Bare fact-transport premise synthesis reuses the proof's persistent fact
+  indexes and lowering assumptions across candidates. It does not rebuild the
+  complete context per candidate. The operation spans `explicit fact transport:
+  candidate synthesis` and `explicit fact transport: planning refusal` expose
+  that search and its diagnostic cost; `failing_bare_transport_reuses_candidate_assumptions`
+  counts context rebuild entries at 4, 16, and 64 unrelated premises.
 - An explicit fold read frame — a `transport` of a fact about an application
   of a checked range-fold function (`src/kernel/fold_read_summary.rs`) —
   walks the recorded memory history back from both array snapshots to a

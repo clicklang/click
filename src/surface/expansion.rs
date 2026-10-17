@@ -1356,6 +1356,101 @@ fn checked_expanded_source(
     }
 }
 
+/// A shorter spelling of the grouped closers an expansion wrote, or `None`
+/// when it wrote none to shorten. Only lines the expansion changed are
+/// touched.
+///
+/// A grouped closure proves each open claim in a `have` and then closes
+/// every obligation with its own `assumption();`. Where some of those
+/// `have`s are proved by `normalize();` alone and the run of closers ends
+/// its block, one `normalize();` proves those claims where they stand, and
+/// the other `have`s and the closers left over still close the rest. This
+/// is a candidate only: the caller keeps it when it verifies, and the
+/// expansion as generated otherwise.
+pub fn tidy_expansion_closers(original: &str, expanded: &str) -> Option<String> {
+    let before = original.lines().collect::<Vec<_>>();
+    let lines = expanded.lines().collect::<Vec<_>>();
+    let first_changed = before
+        .iter()
+        .zip(&lines)
+        .take_while(|(left, right)| left == right)
+        .count();
+    let unchanged_tail = before[first_changed..]
+        .iter()
+        .rev()
+        .zip(lines[first_changed..].iter().rev())
+        .take_while(|(left, right)| left == right)
+        .count();
+    let changed_end = lines.len() - unchanged_tail;
+    let indent_of = |line: &str| line.len() - line.trim_start().len();
+    let mut tidied = Vec::with_capacity(lines.len());
+    let mut index = 0;
+    let mut shortened = false;
+    while index < lines.len() {
+        let line = lines[index];
+        let indent = &line[..indent_of(line)];
+        // The run of `have`s starting here, each as its line range and
+        // whether `normalize();` alone proves it.
+        let mut haves = Vec::new();
+        let mut next = index;
+        while index >= first_changed
+            && let Some(header) = lines.get(next)
+            && header.starts_with(indent)
+            && header[indent.len()..].starts_with("have ")
+        {
+            if header.ends_with(';') {
+                haves.push((next..next + 1, false));
+                next += 1;
+                continue;
+            }
+            if !header.ends_with(" by {") {
+                break;
+            }
+            let closing = format!("{indent}}}");
+            let Some(length) = lines[next + 1..].iter().position(|line| *line == closing) else {
+                break;
+            };
+            let normalized = length == 1 && lines[next + 1] == format!("{indent}    normalize();");
+            haves.push((next..next + length + 2, normalized));
+            next += length + 2;
+        }
+        let closer = format!("{indent}assumption();");
+        let closers = lines[next..]
+            .iter()
+            .take_while(|line| **line == closer)
+            .count();
+        let ends_block = lines.get(next + closers).is_some_and(|after| {
+            after.trim_start().starts_with('}') && indent_of(after) < indent.len()
+        });
+        let normalized = haves.iter().filter(|(_, normalized)| *normalized).count();
+        if normalized > 0 && closers >= normalized && ends_block && next + closers <= changed_end {
+            for (range, normalized) in &haves {
+                if !normalized {
+                    tidied.extend(lines[range.clone()].iter().map(|line| line.to_string()));
+                }
+            }
+            tidied.push(format!("{indent}normalize();"));
+            tidied.extend(std::iter::repeat_n(closer, closers - normalized));
+            index = next + closers;
+            shortened = true;
+            continue;
+        }
+        // A shorter run of the same `have`s ends at the same closers, so
+        // none of them starts a match either.
+        let skipped = next.max(index + 1);
+        tidied.extend(lines[index..skipped].iter().map(|line| line.to_string()));
+        index = skipped;
+    }
+    if !shortened {
+        return None;
+    }
+    let mut source = tidied.join("\n");
+    if expanded.ends_with('\n') {
+        source.push('\n');
+    }
+    Some(source)
+}
+
 /// Expands one tactic and returns the rewritten source.
 ///
 /// Certificate capture verifies the selected proof prefix. The caller is
@@ -6388,5 +6483,7 @@ fn indent_replacement(source: &str, start: usize, replacement: &str) -> String {
     replacement.replace('\n', &format!("\n{indent}"))
 }
 
+#[cfg(test)]
+mod span_tests;
 #[cfg(test)]
 mod tests;

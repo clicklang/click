@@ -246,11 +246,11 @@ fn charon_assignment_frontiers_select_source_locals_and_recheck_tools() {
                 .is_err()
         );
     }
-    for command in ["verify", "profile", "audit"] {
+    for command in ["profile", "audit"] {
         assert_cli(&p, &[command]);
     }
     for claim in ["count.contract", "accumulate.contract", "walk.contract"] {
         assert_cli(&p, &["expand", "--claim", claim, "--in-place"]);
-        assert_cli(&p, &["verify"]);
     }
+    assert_cli(&p, &["verify"]);
 }

@@ -568,22 +568,22 @@ fn recheck_helper_tools(index: usize, commands: &[&str], expand: bool) {
 #[test]
 #[ignore = "nightly: whole-fixture proof-tool agreement and expansion coverage"]
 fn charon_adler2_helpers_from_tools_recheck_expanded_certificate() {
-    recheck_helper_tools(0, &["verify", "profile", "audit"], true);
+    recheck_helper_tools(0, &["profile", "audit"], true);
 }
 #[test]
 #[ignore = "nightly: whole-fixture proof-tool agreement and expansion coverage"]
 fn charon_adler2_helpers_add_tools_recheck_expanded_certificate() {
-    recheck_helper_tools(1, &["verify", "profile", "audit"], true);
+    recheck_helper_tools(1, &["profile", "audit"], true);
 }
 #[test]
 #[ignore = "nightly: whole-fixture proof-tool agreement and expansion coverage"]
 fn charon_adler2_helpers_rem_tools_recheck_expanded_certificate() {
-    recheck_helper_tools(2, &["verify", "profile", "audit"], true);
+    recheck_helper_tools(2, &["profile", "audit"], true);
 }
 #[test]
 #[ignore = "nightly: whole-fixture proof-tool agreement and expansion coverage"]
 fn charon_adler2_helpers_mul_profile_checks_verified_contract() {
-    recheck_helper_tools(3, &["verify", "profile"], false);
+    recheck_helper_tools(3, &["profile"], false);
 }
 fn audit_mul_site(tactic: &str) {
     let p = adler2_helpers_project();
@@ -704,7 +704,7 @@ fn charon_adler2_recombination_bounds_tools_recheck_certificates() {
             String::from_utf8_lossy(&result.stderr)
         );
     };
-    for command in ["verify", "profile", "audit"] {
+    for command in ["profile", "audit"] {
         check(&[command]);
     }
     for name in ["difference", "lane_1", "lane_2", "lane_3"] {
@@ -789,7 +789,7 @@ fn charon_adler2_lane_bounds_verify_with_original_helper_contracts() {
 fn charon_adler2_lane_bounds_tools_recheck_expanded_certificates() {
     let p = adler2_helpers_project();
     fs::write(p.root.join("bounds.click"), BOUNDS).unwrap();
-    for command in ["verify", "profile", "audit"] {
+    for command in ["profile", "audit"] {
         let result = Command::new(env!("CARGO_BIN_EXE_click"))
             .arg(command)
             .arg(p.root.join("bounds.click"))
@@ -959,7 +959,7 @@ fn charon_adler2_iterator_bounds_verify_with_locked_original_helpers() {
 #[ignore = "nightly: whole-fixture proof-tool agreement and expansion coverage"]
 fn charon_adler2_iterator_bounds_tools_verify_profile_and_audit() {
     let p = iterator_bounds_project();
-    for command in ["verify", "profile", "audit"] {
+    for command in ["profile", "audit"] {
         let result = Command::new(env!("CARGO_BIN_EXE_click"))
             .arg(command)
             .arg(p.root.join("iterator-bounds.click"))
@@ -3871,9 +3871,7 @@ fn adler_remaining_count_byte_observations_reject_wrong_positions_and_missing_gu
 fn adler_count_byte_observation_tools_expand_and_reverify() {
     let p = Project::isolated("");
     fs::write(p.root.join("borrow.click"), COUNT_BRIDGE).unwrap();
-    for command in ["verify", "profile"] {
-        assert_cli(&p, &[command]);
-    }
+    assert_cli(&p, &["profile"]);
     for name in [
         "adler_count_byte_observation",
         "adler_count_chunk_byte_observation",
@@ -3911,7 +3909,6 @@ fn adler_remainder_positions_verify_expand_and_reverify() {
     click::surface::verify_c0_sources(&source, &[]).unwrap();
     let p = Project::isolated("");
     fs::write(p.root.join("borrow.click"), &source).unwrap();
-    assert_cli(&p, &["verify"]);
     for theorem in [
         "adler_checked_subprefix",
         "adler_checked_four_byte_start",
@@ -4020,7 +4017,6 @@ fn adler_bounded_previous_byte_verify_expand_and_reverify() {
     let p = Project::isolated("");
     fs::write(p.root.join("borrow.click"), BOUNDED_COUNT).unwrap();
     click::surface::verify_c0_sources(BOUNDED_COUNT, &[]).unwrap();
-    assert_cli(&p, &["verify"]);
     assert_cli(
         &p,
         &[

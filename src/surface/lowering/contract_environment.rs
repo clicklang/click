@@ -128,7 +128,7 @@ pub(in crate::surface) fn contract_array_ref_element_type(
 }
 
 pub(in crate::surface) fn c_value_matches_click_type(value: &CValue, c_type: C0Type) -> bool {
-    match (value, c_type) {
+    match (value.numeric_value(), c_type) {
         (
             CValue::Int8(_),
             C0Type::Int8 | C0Type::Char(crate::languages::c::syntax::PlainChar::Signed),

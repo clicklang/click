@@ -2450,6 +2450,7 @@ pub(crate) fn completion_key(proposition: &Proposition) -> Proposition {
         match condition {
             ConditionTerm::Bitvector32Equal(left, right) => left == right,
             ConditionTerm::PointerEqual(left, right) => left == right,
+            ConditionTerm::PointerValueEqual(left, right) => left == right,
             ConditionTerm::PointerOffsetEqual(left, right) => left == right,
             _ => false,
         }
@@ -2585,7 +2586,8 @@ fn literal_completion_key(outcome: &CFunctionOutcome) -> Option<(bool, CValue)> 
         CFunctionOutcome::Throw { value, .. } => (true, value),
         _ => return None,
     };
-    let term = match value {
+    let term = match value.numeric_value() {
+        CValue::PointerInteger(_) => unreachable!("numeric projection"),
         CValue::Void => return Some((exceptional, CValue::Void)),
         CValue::Bool(term)
         | CValue::Int8(term)
@@ -3209,7 +3211,7 @@ mod checked_proposition_index_tests {
         let context = PureFactContext::new().assume_proposition(route.clone());
         let pointer = Pointer::symbolic(Variable(71_031));
         let equation = ExecutionPureFact::logical_read_equation(
-            pointer.clone(),
+            CPointerValue::new(pointer.clone(), CType::Int32Pointer),
             Pointer::loaded_value(&intern_c_memory(CMemory::new()), &pointer),
         );
         let mut paths = vec![

@@ -160,13 +160,29 @@ instead of from what the step changed.
    (`ClauseParameters`) instead of each rebuilding the parameter values and
    array references (`entry_resource_clauses_do_not_rebuild_every_parameter`:
    560, 8,384 and 131,840 units at 16, 64 and 256 parameters before; 80,
-   320 and 1,280 after). Still open: other entry passes rebuild them per
-   requirement. From N = 32 to 128 in `objects_and_calls`,
-   `resource_clause_memory_ranges_at_state`,
-   `requirement_proposition_and_facts_with_assumptions`,
-   `materialize_access_segment_cells` and `evaluate_requirement_segment`
-   each grow x13 to x15. The deterministic work counter does not yet see
-   most of this, so an end-to-end entry test cannot gate it.
+   320 and 1,280 after). Also fixed: the other entry passes looked up
+   every parameter for each requirement: segment evaluation, memory clause
+   lowering, requirement elaboration, and the returned-place and `ensures`
+   checks. A function's entry and proof now carry one `ParameterIndex`, and
+   these passes read only the parameters a segment, memory clause or
+   requirement names (`entry_setup_is_linear_in_owned_parameters`).
+   `objects_and_calls` at N = 128: 9.06 to 8.59 billion instructions, its
+   entry context 1.33 to 0.90 billion. Also fixed: a proof issues a
+   theorem per path and claim, and each claim and theorem cloned the
+   function's contract and its specification's argument and requirement
+   lists. Those are now shared (`Arc`), so a clone copies none of them
+   (`cloned_functions_and_specifications_share_their_contracts`);
+   `objects_and_calls` at N = 128, 8.59 to 8.17 billion instructions.
+   Also fixed: building a proof's fact set reserved every variable its
+   facts mention, and the entry states one loadability fact per object over
+   the one entry memory holding every object, so each fact added that whole
+   memory's variables again. A fact set now collects each interned memory's
+   variables once (`collecting_each_memory_once`;
+   `facts_over_one_memory_reserve_its_variables_once`: 6,083, 106,895 and
+   2,141,373 units at 16, 64 and 256 facts before; 2,033, 8,993 and 46,803
+   after). Against current master, the entry-only shape at N = 128 went
+   from 3.66 to 3.52 billion instructions, and `objects_and_calls` from 9.13
+   to 8.99 billion.
 9. **Fixed: comparing equal resource contexts walked every fact.** A call
    that takes the caller's ownership and returns it rebuilds a context with
    the same facts in fresh storage. Contexts order by content hash first, so

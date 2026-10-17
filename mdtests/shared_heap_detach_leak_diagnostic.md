@@ -91,7 +91,7 @@ void parent_detach(struct parent* p) {
         ParentLink::Empty => {
             contradiction(link.link == ParentLink::Empty);
         },
-        ParentLink::Linked(kid) => {
+        ParentLink::Linked(entry_child) => {
             unfold(link);
             execute();
             let out = fold(parent(p), { link: ParentLink::Empty });

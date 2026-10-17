@@ -152,12 +152,14 @@ pub(in crate::surface) fn evaluate_requirement_segment(
                 .to_string(),
         );
     }
-    let parameter_values = parameter_values(parameter_binding).map_err(|error| error.message)?;
-    let array_refs = array_refs_for_parameters(
-        parameter_binding.parameters,
-        &parameter_values,
-        entry_state.memory(),
-    );
+    // A segment reads only the parameters it names.
+    let parameter_values = parameter_values_named(
+        parameter_binding,
+        &crate::surface::lowering::contract_segment_referenced_names(segment),
+    )
+    .map_err(|error| error.message)?;
+    let array_refs =
+        array_refs_for_values(parameter_binding, &parameter_values, entry_state.memory());
     evaluate_segment_bounds(
         segment,
         &PureFactContext::new(),

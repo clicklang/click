@@ -1433,10 +1433,7 @@ impl<'a> Proof<'a> {
             .with_selected_call_binders(callee, parameters.len(), bindings);
         let before = &*execution.core.state;
         let pre_state = context.old_reference_state(&execution.core.frontier, before);
-        let values = parameter_values(ParameterBinding::new(
-            context.parsed_function.parameters(),
-            context.arguments,
-        ))?;
+        let values = parameter_values(context.parameter_binding())?;
         let array_refs = array_refs_for_parameters(
             context.parsed_function.parameters(),
             &values,
@@ -2750,10 +2747,7 @@ impl<'a> Proof<'a> {
                         &source,
                         facts,
                         state.resources().facts(),
-                        ParameterBinding::new(
-                            context.parsed_function.parameters(),
-                            context.arguments
-                        ),
+                        context.parameter_binding(),
                         &view.execution.core.effect_facts,
                     )
                 )));
@@ -2778,7 +2772,7 @@ impl<'a> Proof<'a> {
                 surface_source,
                 &source,
                 &target,
-                facts,
+                view.facts,
                 &transition_facts,
                 context.parameter_binding(),
                 view.execution.view(view.context),

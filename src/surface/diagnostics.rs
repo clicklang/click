@@ -680,7 +680,7 @@ pub(in crate::surface) fn value_naming_tables(
             name.clone(),
             None,
         ));
-        arguments.push(CExpression::Value(value.clone()));
+        arguments.push(CExpression::Value(value.numeric_value().clone()));
     }
     (parameters, arguments)
 }
@@ -689,6 +689,8 @@ pub(in crate::surface) fn value_naming_tables(
 /// diagnostic that has no source spelling of its operands.
 pub(super) fn condition_kind(condition: &ConditionTerm) -> &'static str {
     match condition {
+        ConditionTerm::PointerValueEqual(_, _) => "pointer value equality",
+
         ConditionTerm::AlgebraicEqual(_, _) => "algebraic equality",
         ConditionTerm::IntegerLessThan(_, _) => "Integer less-than",
         ConditionTerm::IntegerLessEqual(_, _) => "Integer less-or-equal",
@@ -2613,7 +2615,7 @@ fn unresolved_load_kind(value: &CValue) -> Option<crate::kernel::LoadKind> {
         )
         .then_some(crate::kernel::LoadKind::Int8);
     }
-    let term = match value {
+    let term = match value.numeric_value() {
         CValue::Int8(term)
         | CValue::Bool(term)
         | CValue::Int16(term)
@@ -2652,7 +2654,7 @@ fn describe_load_kind(kind: crate::kernel::LoadKind) -> &'static str {
 }
 
 pub(super) fn unresolved_load(value: &CValue) -> Option<(SharedCMemory, Pointer)> {
-    let term = match value {
+    let term = match value.numeric_value() {
         // A signed byte read is the conversion of the byte's unsigned read,
         // so it reads that read's address.
         CValue::Int8(term) => term.signed_byte_operand().unwrap_or(term),
@@ -3378,6 +3380,9 @@ fn describe_cell_cause(
             "a step in between recorded initialized bytes.".to_string()
         }
         resource_tracker::Change::BranchJoin => "branch memory join".into(),
+        resource_tracker::Change::CellObserved => {
+            "a step in between cached a read observation.".to_string()
+        }
         resource_tracker::Change::CellsForgotten => {
             "a step in between dropped the cell values it had cached.".to_string()
         }
@@ -3565,6 +3570,15 @@ pub(in crate::surface) fn diagnostic_source_load_cell(
     kind: crate::kernel::LoadKind,
     parameter_binding: ParameterBinding<'_>,
 ) -> Option<String> {
+    // A read of exactly one scalar field of a struct-typed global or local
+    // is that field, `g.b`.
+    if let (PointerOffsetTerm::Constant(offset), PointerBlock::Concrete(block)) =
+        (&pointer.offset, &pointer.block)
+        && let Ok(offset) = u32::try_from(*offset)
+        && let Some(field) = object_fields::object_field_spelling(block, offset, kind.byte_width())
+    {
+        return Some(field);
+    }
     let cell = describe_source_cell(pointer, parameter_binding)?;
     (cell.element_bytes == Some(kind.byte_width()) && !matches!(cell.index, CellIndex::Unnamed))
         .then(|| cell.text())
@@ -3857,6 +3871,7 @@ fn describe_step(
             "a step recording initialized bytes".to_string()
         }
         resource_tracker::Change::BranchJoin => "branch memory join".into(),
+        resource_tracker::Change::CellObserved => "a cached read observation".to_string(),
         resource_tracker::Change::CellsForgotten => {
             "a step that dropped its cached cell values".to_string()
         }
@@ -4728,7 +4743,8 @@ fn typed_literal_spelling(spelled: String, suffix: &str) -> String {
 }
 
 pub(super) fn describe_c_value(value: &CValue, parameter_binding: ParameterBinding<'_>) -> String {
-    match value {
+    match value.numeric_value() {
+        CValue::PointerInteger(_) => unreachable!("numeric projection"),
         CValue::Void => "void".to_string(),
         CValue::Bool(Bitvector32Term::Constant(0)) => "false".to_string(),
         CValue::Bool(Bitvector32Term::Constant(1)) => "true".to_string(),
@@ -6341,8 +6357,7 @@ pub(super) fn describe_bitvector_with_context(
         }
         Bitvector32Term::AlgebraicMatch { .. } => "match <algebraic value> { ... }".to_string(),
         Bitvector32Term::MemoryLoad(_, pointer, _) => describe_load_at(pointer, parameter_binding),
-        Bitvector32Term::PointerAddress(pointer)
-        | Bitvector32Term::ObjectPointerAddress(pointer, _) => {
+        Bitvector32Term::PointerAddress(pointer, _) => {
             format!("((uint64){})", describe_pointer(pointer, parameter_binding))
         }
         Bitvector32Term::IntegerToMachine { value, destination } => format!(
@@ -6374,6 +6389,14 @@ pub(super) fn describe_parameter_bitvector(
         .zip(parameter_binding.arguments)
     {
         match argument {
+            CExpression::Value(value @ CValue::PointerInteger(_)) => {
+                if let CValue::Int64(bits) | CValue::UInt64(bits) = value.numeric_value()
+                    && bits == term
+                    && value.c_type() == parameter.c_type().to_kernel_type()
+                {
+                    return Some(parameter.name().to_string());
+                }
+            }
             CExpression::Value(CValue::Int32(value))
                 if value == term && parameter.c_type() == C0Type::Int32 =>
             {
@@ -6571,6 +6594,12 @@ pub(super) fn describe_condition(condition: &ConditionTerm) -> String {
         };
     }
     match condition {
+        ConditionTerm::PointerValueEqual(left, right) => format!(
+            "{} == {}",
+            describe_pointer(left.pointer(), ParameterBinding::default()),
+            describe_pointer(right.pointer(), ParameterBinding::default())
+        ),
+
         ConditionTerm::AlgebraicEqual(_, _) => "algebraic equality".to_string(),
         ConditionTerm::IntegerLessThan(left, right) => {
             describe_integer_comparison(left, "<", right)

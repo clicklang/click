@@ -2600,6 +2600,7 @@ fn join_loop_exits(
         ExecutionFacts,
         Vec<ProofObligation>,
         CheckedLoanCallEvidenceSequence,
+        Option<PureFactContext>,
     )>,
     assumptions: &PureFactContext,
     variables: &mut KernelVariableGenerator,
@@ -2608,7 +2609,7 @@ fn join_loop_exits(
     let exit_state = exits.first()?.0.clone();
     let states = exits
         .iter()
-        .map(|(state, _, _, _)| state)
+        .map(|(state, _, _, _, _)| state)
         .collect::<Vec<_>>();
     let unchanged = || vec![LoopExitRestatement::default(); exits.len()];
     let invariant_state_unchanged = states[1..].iter().all(|other| **other == exit_state);
@@ -2617,7 +2618,11 @@ fn join_loop_exits(
     } else {
         let facts = exits
             .iter()
-            .map(|(_, facts, _, _)| facts)
+            .map(|(_, facts, _, _, _)| facts)
+            .collect::<Vec<_>>();
+        let contexts = exits
+            .iter()
+            .map(|(_, _, _, _, context)| context.clone())
             .collect::<Vec<_>>();
         match abstract_loop_exit_states(
             head,
@@ -2625,6 +2630,7 @@ fn join_loop_exits(
             binders,
             &states,
             &facts,
+            &contexts,
             assumptions,
             variables,
             budget,
@@ -2637,7 +2643,7 @@ fn join_loop_exits(
         exits
             .into_iter()
             .zip(restatements)
-            .map(|((_, facts, obligations, loan_evidence), restatement)| {
+            .map(|((_, facts, obligations, loan_evidence, _), restatement)| {
                 restatement.restate(facts, obligations, loan_evidence)
             })
             .collect(),
@@ -2748,6 +2754,7 @@ fn abstract_loop_exit_states(
     binders: &[CLoopBinder],
     states: &[&CState],
     exit_facts: &[&ExecutionFacts],
+    retained_contexts: &[Option<PureFactContext>],
     assumptions: &PureFactContext,
     variables: &mut KernelVariableGenerator,
     budget: &mut ExecutionBudget,
@@ -2755,7 +2762,12 @@ fn abstract_loop_exit_states(
     // This join already restates and exports each exit's facts. Index that
     // explicit input once per exit, shared by all binder equality checks;
     // never rebuild the path context for each binder or argument.
-    let contexts = loop_exit_argument_contexts(exit_facts, assumptions, !binders.is_empty());
+    let contexts = loop_exit_argument_contexts(
+        exit_facts,
+        retained_contexts,
+        assumptions,
+        !binders.is_empty(),
+    );
     let mut rebound = Vec::with_capacity(states.len());
     for (index, state) in states.iter().enumerate() {
         match c_loop_state_with_loop_binders_rebound(
@@ -2842,6 +2854,7 @@ fn abstract_loop_exit_states(
 
 fn loop_exit_argument_contexts(
     facts: &[&ExecutionFacts],
+    retained_contexts: &[Option<PureFactContext>],
     assumptions: &PureFactContext,
     has_binders: bool,
 ) -> Vec<PureFactContext> {
@@ -2850,7 +2863,35 @@ fn loop_exit_argument_contexts(
     }
     facts
         .iter()
-        .map(|facts| {
+        .enumerate()
+        .map(|(index, facts)| {
+            if let Some(Some(context)) = retained_contexts.get(index) {
+                let mut retained = context.clone();
+                for change in context
+                    .execution_fact_projection
+                    .diff(&assumptions.execution_fact_projection)
+                {
+                    crate::instrumentation::record_deterministic_work(1);
+                    // The exit is later than the incoming context. Preserve
+                    // its recorded truth when both name the same condition.
+                    if let imbl::ordmap::DiffItem::Add(_, fact) = change {
+                        retained = retained.assume_execution_pure_fact(fact);
+                    }
+                }
+                if !context
+                    .resource_compositions
+                    .shares_root_with(&assumptions.resource_compositions)
+                {
+                    for composition in assumptions.resource_compositions.iter() {
+                        if !retained.resource_compositions.contains(composition) {
+                            retained = retained.assume_proposition(
+                                Proposition::CResourceComposition(composition.clone()),
+                            );
+                        }
+                    }
+                }
+                return retained;
+            }
             crate::instrumentation::record_deterministic_work(facts.len());
             assumptions_with_path_context(assumptions, *facts, &[])
         })
@@ -3158,7 +3199,8 @@ fn equation_states_nothing(equation: &Proposition) -> bool {
 
 /// The scalar term a C value carries, for the one-variable renaming above.
 fn scalar_bitvector(value: &CValue) -> Option<&Bitvector32Term> {
-    match value {
+    match value.numeric_value() {
+        CValue::PointerInteger(_) => unreachable!("numeric projection"),
         CValue::Int8(term) => Some(term),
         CValue::Bool(term)
         | CValue::Int16(term)
@@ -3295,13 +3337,39 @@ fn loop_exit_local_arguments(
             if argument_snapshots.get(position) != Some(&CResourceSnapshot::Current) {
                 return None;
             }
-            let CExpression::Variable(name) = expression else {
-                return None;
+            // A numeric address is a pure projection of the declared local.
+            // It must follow the local's joined value just as a direct index
+            // does; it never transfers the pointer's designation or extent.
+            let (name, address_only) = match expression {
+                CExpression::Variable(name) => (name, false),
+                CExpression::Cast {
+                    expression,
+                    target_type: CType::UInt64,
+                    ..
+                } => {
+                    let CExpression::Variable(name) = expression.as_ref() else {
+                        return None;
+                    };
+                    (name, true)
+                }
+                _ => return None,
             };
-            let fresh = successor.locals().get(name)?;
+            let project = |value: &CValue| {
+                if address_only {
+                    let CValue::Pointer(pointer) = value else {
+                        return None;
+                    };
+                    Some(CValue::UInt64(Bitvector32Term::pointer_address(
+                        pointer.pointer().clone(),
+                    )))
+                } else {
+                    Some(value.clone())
+                }
+            };
+            let fresh = project(successor.locals().get(name)?)?;
             for ((exit, instance), context) in exits.iter().zip(instances).zip(contexts) {
                 crate::instrumentation::record_deterministic_work(1);
-                let held = exit.locals().get(name)?;
+                let held = project(exit.locals().get(name)?)?;
                 let argument = instance.arguments().get(position)?;
                 if !crate::kernel::resource_arguments_proven_equal(
                     argument,
@@ -3870,8 +3938,10 @@ fn fresh_loop_local_value(
         CType::UInt8 => uint8(Bitvector32Term::Variable(variable)),
         CType::UInt16 => uint16(Bitvector32Term::Variable(variable)),
         CType::UInt32 => uint32(Bitvector32Term::Variable(variable)),
-        CType::Int64 => CValue::Int64(Bitvector32Term::Variable(variable)),
-        CType::UInt64 => CValue::UInt64(Bitvector32Term::Variable(variable)),
+        CType::Int64 => CValue::Int64(Bitvector32Term::Variable(variable))
+            .complete_word(Pointer::symbolic(variable)),
+        CType::UInt64 => CValue::UInt64(Bitvector32Term::Variable(variable))
+            .complete_word(Pointer::symbolic(variable)),
         CType::Float32 => CValue::Float32(Bitvector32Term::Variable(variable)),
         CType::Float64 => CValue::Float64(Bitvector32Term::Variable(variable)),
         CType::FunctionPointer(_) => {
@@ -4387,6 +4457,7 @@ fn execute_c_while_exit_paths(
                         .collect(),
                     obligations,
                     candidate.loan_evidence().clone(),
+                    None,
                 ));
                 continue;
             }
@@ -4449,6 +4520,7 @@ fn execute_c_while_exit_paths(
                     facts,
                     obligations,
                     loan_evidence,
+                    None,
                 ));
             }
         }
@@ -4499,6 +4571,7 @@ fn execute_c_while_exit_paths(
                     .collect::<ExecutionFacts>(),
                 loop_check_obligations.clone(),
                 exit.loan_evidence().clone(),
+                exit.fact_context().cloned(),
             )
         })
         .chain(candidate_exit_entries)
@@ -4567,7 +4640,7 @@ fn execute_c_while_exit_paths(
             let exits = exits
                 .into_iter()
                 .map(|(facts, obligations, loan_evidence)| {
-                    (top_state.clone(), facts, obligations, loan_evidence)
+                    (top_state.clone(), facts, obligations, loan_evidence, None)
                 })
                 .chain(break_exit_entries.iter().cloned())
                 .collect::<Vec<_>>();
@@ -5525,6 +5598,9 @@ pub(super) fn collect_loop_preservation_summary(
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) struct EvaluatedMemorySegment {
     pub(super) base: Pointer,
+    pub(super) designation: std::sync::Arc<Pointer>,
+    pub(super) opaque_extent: Option<std::sync::Arc<Pointer>>,
+    pub(super) extent_known: bool,
     pub(super) start: Bitvector32Term,
     pub(super) end: Bitvector32Term,
     pub(super) element_width: u32,
@@ -5537,6 +5613,7 @@ pub(super) struct EvaluatedMemorySegment {
 impl EvaluatedMemorySegment {
     /// The range this segment denotes, in its own index kind.
     pub(super) fn into_range(self) -> CMemoryRange {
+        let designation = self.designation;
         let designations = self.base_designations;
         let range = match self.kind {
             RangeIndexKind::Int32 => CMemoryRange::new_with_element_width(
@@ -5549,7 +5626,11 @@ impl EvaluatedMemorySegment {
                 CMemoryRange::new_wide(self.base, self.start, self.end, self.element_width)
             }
         };
-        range.with_designations(designations)
+        range
+            .with_designation(designation)
+            .with_opaque_extent(self.opaque_extent, self.extent_known)
+            .with_typed_carrier()
+            .with_designations(designations)
     }
 }
 
@@ -6872,38 +6953,43 @@ fn rebind_one_loop_binder_instance(
                     crate::kernel::resource_arguments_proven_equal(held, declared, assumptions)
                 })
     };
-    if state
+    let selected = if let Some(instance) = state
         .resources()
         .owned_instance(identity)
-        .is_some_and(|instance| instance.name == name && arguments_match(instance))
+        .filter(|instance| instance.name == name && arguments_match(instance))
     {
-        claimed.insert(identity);
-        return Ok(state.clone());
-    }
-    let mut candidates = state
-        .resources()
-        .owned_instances_of_shape(name, arguments.len())
-        .into_iter()
-        .filter(|instance| !claimed.contains(&instance.identity) && arguments_match(instance))
-        .cloned()
-        .collect::<Vec<_>>();
-    let Some(selected) = candidates.pop() else {
-        return Err(format!(
-            "loop binder `{binder}` has no owned `{name}` instance at its arguments here"
-        ));
+        if instance.arguments == *arguments {
+            claimed.insert(identity);
+            return Ok(state.clone());
+        }
+        instance.clone()
+    } else {
+        let mut candidates = state
+            .resources()
+            .owned_instances_of_shape(name, arguments.len())
+            .into_iter()
+            .filter(|instance| !claimed.contains(&instance.identity) && arguments_match(instance))
+            .cloned()
+            .collect::<Vec<_>>();
+        let Some(selected) = candidates.pop() else {
+            return Err(format!(
+                "loop binder `{binder}` has no owned `{name}` instance at its arguments here"
+            ));
+        };
+        if !candidates.is_empty() {
+            return Err(format!(
+                "loop binder `{binder}` matches {} owned `{name}` instances at its arguments; a loop binder must name exactly one",
+                candidates.len() + 1
+            ));
+        }
+        selected
     };
-    if !candidates.is_empty() {
-        return Err(format!(
-            "loop binder `{binder}` matches {} owned `{name}` instances at its arguments; a loop binder must name exactly one",
-            candidates.len() + 1
-        ));
-    }
     claimed.insert(identity);
     let held = CResourceFact::own(CResource::Instance(selected.clone()));
     let Some(rebound) = ResourceInstance::new_with_resource_arguments(
         identity,
         selected.name.clone(),
-        selected.arguments.clone(),
+        arguments.clone(),
         selected.schema.clone(),
         selected.fields.clone(),
         selected.resource_arguments().to_vec(),
@@ -6912,8 +6998,10 @@ fn rebind_one_loop_binder_instance(
             "loop binder `{binder}` names an instance whose fields do not match its schema"
         ));
     };
-    // The rename removes one exact instance fact and adds it back under the
-    // binder's identity. Incremental consumption touches that fact's own
+    // The matching step established the declared argument values on this exit.
+    // Publish those values before joining exits, while their equality premises
+    // are still available. The rename removes one exact instance fact and adds
+    // it back under the binder's identity. Incremental consumption touches its own
     // bucket instead of normalizing the ambient context.
     let Some(resources) = state
         .resources()
@@ -7399,6 +7487,9 @@ pub(super) fn collect_loop_effect_check_obligations(
                     validated
                         .iter()
                         .map(|range| EvaluatedMemorySegment {
+                            designation: range.designation.clone(),
+                            opaque_extent: range.opaque_extent.clone(),
+                            extent_known: range.carrier_extent_known,
                             base: range.base.clone(),
                             start: range.bound_terms().0.clone(),
                             end: range.bound_terms().1.clone(),
@@ -7546,6 +7637,9 @@ pub(super) fn evaluate_loop_effect_segment(
         && let Some((start, end)) = crate::kernel::wide_range_bounds(start, end)
     {
         let evaluated = EvaluatedMemorySegment {
+            designation: std::sync::Arc::new(base_value.designation().clone()),
+            opaque_extent: base_value.opaque_extent().cloned().map(std::sync::Arc::new),
+            extent_known: base_value.extent_is_known(),
             base,
             start,
             end,
@@ -7589,6 +7683,9 @@ pub(super) fn evaluate_loop_effect_segment(
     let element_width = segment.element_width;
 
     let evaluated = EvaluatedMemorySegment {
+        designation: std::sync::Arc::new(base_value.designation().clone()),
+        opaque_extent: base_value.opaque_extent().cloned().map(std::sync::Arc::new),
+        extent_known: base_value.extent_is_known(),
         base,
         start,
         end,
@@ -7651,6 +7748,9 @@ pub(super) fn evaluate_loop_effect_segment_with_facts(
         && let Some((start, end)) = crate::kernel::wide_range_bounds(start, end)
     {
         let evaluated = EvaluatedMemorySegment {
+            designation: std::sync::Arc::new(base_value.designation().clone()),
+            opaque_extent: base_value.opaque_extent().cloned().map(std::sync::Arc::new),
+            extent_known: base_value.extent_is_known(),
             base,
             start,
             end,
@@ -7694,6 +7794,9 @@ pub(super) fn evaluate_loop_effect_segment_with_facts(
     };
     let element_width = segment.element_width;
     let evaluated = EvaluatedMemorySegment {
+        designation: std::sync::Arc::new(base_value.designation().clone()),
+        opaque_extent: base_value.opaque_extent().cloned().map(std::sync::Arc::new),
+        extent_known: base_value.extent_is_known(),
         base,
         start,
         end,
@@ -7813,7 +7916,12 @@ fn evaluate_loop_effect_segment_value_capturing(
     budget: &mut ExecutionBudget,
     diagnostic: Option<&mut Option<CRuntimeError>>,
 ) -> ExecutionResult<Result<(CValue, ExecutionFacts), ValueRefusal>> {
-    let paths = evaluate_c_expression_paths(state, expression, assumptions, budget)?;
+    // A contract's operand, such as a resource argument, is a specification:
+    // its reads are not C accesses.
+    let paths = {
+        let _specification = crate::kernel::eval::SpecificationAccessScope::enter();
+        evaluate_c_expression_paths(state, expression, assumptions, budget)?
+    };
     // An endpoint the facts do not keep defined splits into its defined value
     // and the undefined behavior beside it: name that behavior, which a
     // requirement can rule out, rather than the path count.
@@ -8981,9 +9089,16 @@ fn with_retained_object_class(fresh: CValue, previous: Option<&CValue>) -> CValu
 
 /// `fresh` with the subobject extent of the pointer value it abstracts.
 fn with_retained_extent(fresh: CValue, previous: Option<&CValue>) -> CValue {
-    match (fresh, previous.and_then(c_value_subobject_extent)) {
-        (CValue::Pointer(pointer), Some(extent)) => {
-            CValue::Pointer(pointer.with_extent(Some(extent.clone())))
+    match (fresh, previous) {
+        (CValue::Pointer(pointer), Some(CValue::Pointer(previous)))
+            if previous.extent().is_some() =>
+        {
+            CValue::Pointer(
+                pointer
+                    .with_extent(previous.extent().cloned())
+                    .with_designation(std::sync::Arc::new(previous.designation().clone()))
+                    .with_opaque_extent(previous.opaque_extent().cloned().map(std::sync::Arc::new)),
+            )
         }
         (fresh, _) => fresh,
     }

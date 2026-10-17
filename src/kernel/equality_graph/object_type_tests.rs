@@ -214,3 +214,22 @@ mod scaling_tests {
         "/src/scaling_tests/kernel/equality_graph/object_type_tests.rs"
     ));
 }
+
+#[test]
+fn checked_pointer_value_equalities_retain_their_scoped_type_receipts() {
+    let _session = VerificationSession::enter();
+    let (p, q) = (pointer(21), pointer(22));
+    let (CValue::Pointer(p_value), CValue::Pointer(q_value)) = (value(&p, true), value(&q, false))
+    else {
+        unreachable!()
+    };
+    let equality = Proposition::ConditionIs(
+        ConditionTerm::PointerValueEqual(Box::new(p_value), Box::new(q_value)),
+        true,
+    );
+    let parent = PureFactContext::new();
+    let branch = parent.clone().assume_proposition(equality.clone());
+    assert!(can_type(&branch, &q));
+    assert!(!can_type(&parent, &q));
+    assert!(!can_type(&branch.without_exact_fact(&equality), &q));
+}

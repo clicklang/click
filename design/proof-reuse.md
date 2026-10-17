@@ -277,6 +277,13 @@ This item is different: it covers pure functions over constructors, which are
 bounded and decidable at fixed fuel. It can be added as a stage of that issue
 or done separately.
 
+Status (2026-10-16): `simp` unfolds one application over a known constructor
+(the smt-auto step-3 work) and now evaluates on to a fuel of eight checked
+unfold or rewrite steps, through constructor equations among the facts. The
+rewrite of `rbtree_erase_color_flips_red_all.click` that would measure the
+saving waits on `bugs/rbtree-sized-flip-loop-object-class-join.md`: the
+example does not verify on master today.
+
 ### R4. Automatic opening and closing of resources
 
 When a step reads or writes a field covered by a folded recursive resource

@@ -102,10 +102,9 @@ void bump_n(struct cell* p, int32 n) {
                                     interval_subtract 5, 6 5 (-2147483647) (1000);
                                     interval_atom (1) (1) (1);
                                     interval_subtract 7, 8 7 (-2147483648) (999);
-                                    interval_subtract 5, 6 5 (-2147483647) (1000);
                                     trivial => 0 <= 0;
-                                    affine_conclusion_pair 11 9 10 => ((n - at(statement(3).entry, i)) - 1) < (n - at(statement(3).entry, i));
-                                    conclusion 12;
+                                    affine_conclusion_pair 10 9 7 => ((n - at(statement(3).entry, i)) - 1) < (n - at(statement(3).entry, i));
+                                    conclusion 11;
                                 }
                             }
                         }

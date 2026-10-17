@@ -458,6 +458,25 @@ impl C0Global {
         .with_pointee_volatile(self.pointee_is_volatile())
         .with_constant(self.is_constant())
         .with_pointee_constant(self.pointee_is_constant())
+        .with_declared_class(self.declared_class())
+    }
+
+    /// The global's strict-aliasing class (`design/effective-types.md`). A
+    /// struct pointer's class names its struct by tag, which is all a
+    /// pointer class compares.
+    fn declared_class(&self) -> Option<crate::kernel::effective_type::CAccessClass> {
+        match self.struct_name.as_deref() {
+            Some(name) => struct_pointer_class(
+                self.c_type,
+                crate::kernel::effective_type::CPointeeBase::Struct(
+                    crate::kernel::effective_type::CStructClass::opaque(name),
+                ),
+            ),
+            None => self
+                .c_type
+                .access_class()
+                .or_else(|| int_pointer_class(self.c_type)),
+        }
     }
 }
 
@@ -661,6 +680,7 @@ impl C0GlobalArray {
             values,
         )
         .with_constant(self.is_constant())
+        .with_declared_class(self.element_type.access_class())
     }
 }
 
@@ -7554,6 +7574,36 @@ fn add_member_class(
             None => contents.member(None),
         },
         _ => contents.member(c_type.access_class().or_else(|| int_pointer_class(c_type))),
+    }
+}
+
+/// The class of the object a pointer of declared type `c_type` designates
+/// (`design/effective-types.md`), as a pointer parameter's declaration gives
+/// it: through `struct_name` for a struct pointer, otherwise the pointee
+/// type's class, with `int *` and `int **` told apart from struct pointers
+/// by the absence of a struct. A struct whose layout `structs` does not hold
+/// is identified by its tag alone. Click declarations of model fields use it
+/// so a pointer read from a model designates what its declaration promises.
+pub fn declared_pointee_class(
+    c_type: C0Type,
+    struct_name: Option<&str>,
+    structs: &BTreeMap<String, C0StructLayout>,
+) -> Option<crate::kernel::effective_type::CAccessClass> {
+    use crate::kernel::effective_type::{CPointeeBase, CStructClass};
+    match struct_name {
+        Some(name) => {
+            let class = structs
+                .get(name)
+                .and_then(|layout| layout.class.clone())
+                .unwrap_or_else(|| CStructClass::opaque(name));
+            struct_pointer_class(c_type, CPointeeBase::Struct(class))?.pointee()
+        }
+        None => {
+            let pointee = c_type.pointee_type()?;
+            pointee
+                .access_class()
+                .or_else(|| int_pointer_class(pointee))
+        }
     }
 }
 

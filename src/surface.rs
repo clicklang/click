@@ -138,7 +138,7 @@ pub use expansion::{
     selected_c_target, selected_project_c_target, selected_project_thread_runtime,
     selected_thread_runtime, smart_tactic_source_sites, tactic_arm_containing_position,
     tactic_have_body_contains_position, tactic_line_has_multiple_starts, tactic_source_at_position,
-    tactic_source_position, tactic_starts_on_line, verifying_source_paths,
+    tactic_source_position, tactic_starts_on_line, tidy_expansion_closers, verifying_source_paths,
 };
 use expansion::{
     ExpansionCapture, NestedTacticCapture, ProofSite, VerificationTarget, verification_target_at,
@@ -517,7 +517,8 @@ pub struct ClickFile {
     thread_runtime: crate::languages::c::thread_runtime::CThreadRuntime,
     /// Whether this file opts into Integer-default specification
     /// arithmetic with `arithmetic "integer";`, the migration switch for
-    /// design-review P2. Removed once every file uses the new default.
+    /// `issues/standard-library.md`. Removed once every file uses the new
+    /// default.
     integer_arithmetic: bool,
     algebraic_type_definitions: Vec<AlgebraicTypeDefinition>,
     predicate_definitions: Vec<PredicateDefinition>,
@@ -738,9 +739,16 @@ pub enum AlgebraicFieldType {
     /// field is declared `struct tag*`; every C pointer shares one kernel
     /// type, so the tag is the only record of which layout a matched
     /// constructor binding of this field denotes.
+    ///
+    /// `object_class` is the class of the object a pointer field designates
+    /// (`design/effective-types.md`), from the declared pointee exactly as a
+    /// pointer parameter's declaration gives it. A symbolic value of the
+    /// field carries it, so a pointer read from a model keeps its
+    /// strict-aliasing and loop object-class checks.
     C {
         c_type: C0Type,
         struct_name: Option<String>,
+        object_class: Option<crate::kernel::effective_type::CAccessClass>,
     },
     Algebraic {
         name: String,
@@ -756,6 +764,7 @@ impl AlgebraicFieldType {
             Self::C {
                 c_type,
                 struct_name,
+                ..
             } if c_type.is_pointer() => struct_name.as_deref(),
             _ => None,
         }
@@ -849,6 +858,10 @@ pub struct ClickFunctionDefinition {
     type_parameters: Vec<String>,
     parameters: Vec<FunctionParameter>,
     return_type: ClickType,
+    /// The class of the object a returned pointer designates, from the
+    /// declared return type as a C function's declaration gives it
+    /// (`design/effective-types.md`).
+    return_object_class: Option<crate::kernel::effective_type::CAccessClass>,
     decreases: Option<ContractExpression>,
     body: ContractExpression,
 }
@@ -2841,6 +2854,17 @@ impl<'a> ContractEnvironment<'a> {
 #[derive(Clone)]
 struct RecordedSnapshots {
     version: std::sync::Arc<RecordedSnapshotVersion>,
+    /// The labels the proof gave loops on this path. A program point is
+    /// recorded once, under its loop's first label when it has one and as
+    /// `loop(N)` otherwise; a lookup by either spelling, or by another label
+    /// of the same loop, reads that one entry.
+    loop_labels: Option<std::sync::Arc<LoopLabels>>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+struct LoopLabels {
+    loops: BTreeMap<String, usize>,
+    preferred: BTreeMap<usize, String>,
 }
 
 struct RecordedSnapshotVersion {
@@ -2857,6 +2881,7 @@ impl Default for RecordedSnapshots {
                 history: None,
                 origin: std::sync::Arc::new(()),
             }),
+            loop_labels: None,
         }
     }
 }
@@ -2993,6 +3018,86 @@ impl RecordedSnapshots {
     }
 
     fn get<K: RecordedSnapshotKey + ?Sized>(&self, key: &K) -> Option<&CState> {
+        if self.loop_labels.is_some() {
+            let selector = self.recorded_spelling(key.to_selector());
+            return self.get_exact(&selector);
+        }
+        self.get_exact(key)
+    }
+
+    /// The program point `selector` names, spelled as it is recorded: under
+    /// its loop's first label when the loop has one.
+    fn recorded_spelling(&self, selector: SnapshotSelector) -> SnapshotSelector {
+        let Some(labels) = &self.loop_labels else {
+            return selector;
+        };
+        let SnapshotSelector::ProgramPoint(ProgramPointRef { region, kind }) = &selector else {
+            return selector;
+        };
+        let index = match region {
+            CodeRegionRef::Loop(index) => *index,
+            CodeRegionRef::Label(label) => match labels.loops.get(label) {
+                Some(index) => *index,
+                None => return selector,
+            },
+            _ => return selector,
+        };
+        match labels.preferred.get(&index) {
+            Some(label) => SnapshotSelector::ProgramPoint(ProgramPointRef {
+                region: CodeRegionRef::Label(label.clone()),
+                kind: *kind,
+            }),
+            None => SnapshotSelector::ProgramPoint(ProgramPointRef {
+                region: CodeRegionRef::Loop(index),
+                kind: *kind,
+            }),
+        }
+    }
+
+    /// Records that the proof calls loop `index` `label` on this path.
+    /// Record a loop's labels before its first snapshot.
+    fn label_loop(&mut self, index: usize, label: &str) {
+        if self
+            .loop_labels
+            .as_ref()
+            .is_some_and(|labels| labels.loops.get(label) == Some(&index))
+        {
+            return;
+        }
+        let mut labels = self.loop_labels.as_deref().cloned().unwrap_or_default();
+        labels.loops.insert(label.to_string(), index);
+        let first = !labels.preferred.contains_key(&index);
+        labels
+            .preferred
+            .entry(index)
+            .or_insert_with(|| label.to_string());
+        // A snapshot recorded before the loop had a label moves to the
+        // label's spelling, so it stays the one entry for its point.
+        let unlabeled = if first {
+            [ProgramPointKind::Entry, ProgramPointKind::Exit]
+                .into_iter()
+                .filter_map(|kind| {
+                    let point = ProgramPointRef {
+                        region: CodeRegionRef::Loop(index),
+                        kind,
+                    };
+                    let state = self.get_exact(&point)?.clone();
+                    Some((point, state))
+                })
+                .collect::<Vec<_>>()
+        } else {
+            Vec::new()
+        };
+        for (point, _) in &unlabeled {
+            self.remove(point);
+        }
+        self.loop_labels = Some(std::sync::Arc::new(labels));
+        for (point, state) in unlabeled {
+            self.insert(point, state);
+        }
+    }
+
+    fn get_exact<K: RecordedSnapshotKey + ?Sized>(&self, key: &K) -> Option<&CState> {
         let mut node = self.version.root.as_deref();
         while let Some(current) = node {
             match key.compare(&current.selector) {
@@ -3009,7 +3114,7 @@ impl RecordedSnapshots {
     }
 
     fn insert(&mut self, selector: impl Into<SnapshotSelector>, state: CState) -> Option<CState> {
-        let selector = selector.into();
+        let selector = self.recorded_spelling(selector.into());
         let prior = self.get(&selector).cloned();
         self.version = std::sync::Arc::new(RecordedSnapshotVersion {
             root: Some(recorded_snapshot_insert(
@@ -3054,7 +3159,7 @@ impl RecordedSnapshots {
     }
 
     fn remove<K: RecordedSnapshotKey + ?Sized>(&mut self, key: &K) -> Option<CState> {
-        let selector = key.to_selector();
+        let selector = self.recorded_spelling(key.to_selector());
         let prior = self.get(key).cloned();
         if prior.is_some() {
             self.version = std::sync::Arc::new(RecordedSnapshotVersion {
@@ -3113,6 +3218,10 @@ impl RecordedSnapshots {
             return None;
         }
         let mut common = ancestor.clone();
+        // Labels both arms agree on stay; an arm's own labels end at the join.
+        if self.loop_labels == other.loop_labels {
+            common.loop_labels = self.loop_labels.clone();
+        }
         for selector in changed {
             match (self.get(&selector), other.get(&selector)) {
                 (Some(left), Some(right)) if left == right => {
@@ -3191,6 +3300,7 @@ impl RecordedSnapshots {
 
     fn retain(&mut self, mut keep: impl FnMut(&SnapshotSelector, &mut CState) -> bool) {
         let mut retained = Self::new();
+        retained.loop_labels = self.loop_labels.clone();
         for (selector, state) in self.iter() {
             let mut state = state.clone();
             if keep(selector, &mut state) {
@@ -5382,6 +5492,10 @@ impl<'a> FixedStateFrame<'a> {
 pub(crate) struct ParameterBinding<'a> {
     pub(crate) parameters: &'a [syntax::C0Parameter],
     pub(crate) arguments: &'a [CExpression],
+    /// Each parameter's position by name, when the caller built one: a
+    /// lowering that reads a few parameters then looks up only those
+    /// instead of building a map over every parameter.
+    pub(crate) index: Option<&'a ParameterIndex>,
 }
 
 impl<'a> ParameterBinding<'a> {
@@ -5389,7 +5503,46 @@ impl<'a> ParameterBinding<'a> {
         Self {
             parameters,
             arguments,
+            index: None,
         }
+    }
+
+    /// This binding with `index`, which must index its parameters.
+    pub(crate) fn with_index(self, index: &'a ParameterIndex) -> Self {
+        debug_assert_eq!(index.len(), self.parameters.len());
+        Self {
+            index: Some(index),
+            ..self
+        }
+    }
+}
+
+/// A function's parameter positions by name, built once for its entry.
+pub(crate) struct ParameterIndex {
+    positions: BTreeMap<String, usize>,
+    len: usize,
+}
+
+impl ParameterIndex {
+    pub(crate) fn new(parameters: &[syntax::C0Parameter]) -> Self {
+        crate::instrumentation::record_deterministic_work(parameters.len());
+        Self {
+            positions: parameters
+                .iter()
+                .enumerate()
+                .map(|(position, parameter)| (parameter.name().to_string(), position))
+                .collect(),
+            len: parameters.len(),
+        }
+    }
+
+    pub(crate) fn position(&self, name: &str) -> Option<usize> {
+        crate::instrumentation::record_deterministic_work(1);
+        self.positions.get(name).copied()
+    }
+
+    fn len(&self) -> usize {
+        self.len
     }
 }
 
@@ -6391,6 +6544,10 @@ impl ClickFunctionDefinition {
 
     pub fn return_type(&self) -> &ClickType {
         &self.return_type
+    }
+
+    pub fn return_object_class(&self) -> Option<&crate::kernel::effective_type::CAccessClass> {
+        self.return_object_class.as_ref()
     }
 
     pub fn decreases(&self) -> Option<&ContractExpression> {

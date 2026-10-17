@@ -539,3 +539,31 @@ fn unrelated_offset_inputs_preserve_the_selected_parameter_partition() {
         assert!(relevant.parameter_store_partition(&write, 4).is_none());
     }
 }
+
+#[test]
+fn complete_pointer_scalar_evidence_ignores_unrelated_inputs() {
+    for size in [16u64, 64, 256, 1024] {
+        let _session = VerificationSession::enter();
+        let mut context = PureFactContext::new();
+        for index in 0..size {
+            context = context.assume_condition(eq(&var(index * 2), &var(index * 2 + 1)), true);
+        }
+        let pointer = |id| {
+            CPointerValue::new(
+                Pointer::loaded(PointerBlock::ExternalArgument, var(id), 4),
+                CType::Int32Pointer,
+            )
+        };
+        for (a, b) in [(941_010, 941_011), (941_011, 941_012)] {
+            context = context.assume_condition(
+                ConditionTerm::pointer_value_equal(pointer(a), pointer(b)),
+                true,
+            );
+        }
+        let (class, work) = crate::instrumentation::measure_deterministic_work(|| {
+            context.recorded_equality_class(&var(941_010))
+        });
+        assert_eq!(class, BTreeSet::from([var(941_011), var(941_012)]));
+        assert!(work <= 32, "size={size}, work={work}");
+    }
+}

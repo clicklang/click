@@ -335,10 +335,7 @@ impl<'a> Proof<'a> {
                         "`branch` recorded condition evidence the proof object rejected: {}",
                         crate::surface::proof::cursor_execution::describe_evidence_refusal(
                             &refusal,
-                            ParameterBinding::new(
-                                context.parsed_function.parameters(),
-                                context.arguments
-                            ),
+                            context.parameter_binding(),
                         )
                     ))
                 })?;
@@ -567,7 +564,13 @@ impl<'a> Proof<'a> {
             join_next_kernel_variable,
             false,
         )
-        .map_err(|error| add_proof_branch_path(error, &execution.presentation.branch_path))?;
+        .map_err(|error| {
+            let error = add_proof_branch_path(error, &execution.presentation.branch_path);
+            match self.focus_branch(arm.branch_id) {
+                Ok(focused) => focused.attach_step_diagnostic(error),
+                Err(_) => error,
+            }
+        })?;
         execution.presentation.branch_path = parent_execution.presentation.branch_path.clone();
         execution.presentation.case_assumptions =
             parent_execution.presentation.case_assumptions.clone();
@@ -908,7 +911,13 @@ impl<'a> Proof<'a> {
                 Some(&sibling_join_states),
                 join_next_kernel_variable,
                 true)
-            .map_err(|error| add_proof_branch_path(error, &execution.presentation.branch_path))?;
+            .map_err(|error| {
+            let error = add_proof_branch_path(error, &execution.presentation.branch_path);
+            match self.focus_branch(arm.branch_id) {
+                Ok(focused) => focused.attach_step_diagnostic(error),
+                Err(_) => error,
+            }
+        })?;
             Ok((execution, facts))
         };
         let (then_abstract, then_interface_facts) = abstract_arm(&arms[0])?;
@@ -2886,6 +2895,7 @@ impl<'a> Proof<'a> {
             )))?
             .to_vec();
         Ok(CheckedExecutionJoinArm {
+            branch_id: id,
             certificate: ProofCertificate::from_steps(steps)?,
             facts: &branch.state.facts,
             execution,

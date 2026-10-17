@@ -9,6 +9,7 @@ fn nested_typed_uses_share_pointer_origin_analysis() {
             expression = SpecExpression::PureFunctionApplication {
                 name: "pointer_identity".to_string(),
                 result_type: CType::Int32Pointer,
+                result_object_class: None,
                 pointer_result: Some(Arc::new(PurePointerResult {
                     classes: Default::default(),
                     arguments: BTreeSet::from([0]),

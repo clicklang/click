@@ -179,6 +179,15 @@ impl DifferenceGraph {
     /// Records a true or false condition fact. A fact difference logic does
     /// not express is ignored.
     pub(crate) fn assume_condition(&mut self, condition: &ConditionTerm, value: bool) {
+        if let ConditionTerm::PointerValueEqual(a, b) = condition {
+            if value {
+                self.assume_condition(
+                    &ConditionTerm::pointer_equal(a.pointer().clone(), b.pointer().clone()),
+                    true,
+                );
+            }
+            return;
+        }
         if value && let ConditionTerm::Bitvector64Equal(a, b) = condition {
             self.residues.assume_equal(a, b);
         }
@@ -1374,7 +1383,7 @@ impl ContextDifferenceGraph {
 /// Whether difference logic reads anything from a fact about `condition`.
 fn expresses(condition: &ConditionTerm) -> bool {
     use ConditionTerm as C;
-    matches!(condition, C::PointerEqual(..))
+    matches!(condition, C::PointerEqual(..) | C::PointerValueEqual(..))
         || overflow_parts(condition).is_some()
         || offset_equality(condition).is_some()
         || matches!(
@@ -1797,9 +1806,7 @@ impl Residues {
                     _ => x.map(|x| Residue::new(x.bits, x.value ^ c)),
                 }
             }
-            T::PointerAddress(pointer) | T::ObjectPointerAddress(pointer, _) => {
-                self.address_residue(pointer, depth - 1)
-            }
+            T::PointerAddress(pointer, _) => self.address_residue(pointer, depth - 1),
             _ => None,
         };
         Residue::better(best, structural)
@@ -1814,10 +1821,13 @@ impl Residues {
         };
         let mut best = None;
         for (base, offset) in [(left, right), (right, left)] {
-            let base = Bitvector32Term::PointerAddress(Box::new(Pointer {
-                block: pointer.block.clone(),
-                offset: base.as_ref().clone(),
-            }));
+            let base = Bitvector32Term::PointerAddress(
+                Box::new(Pointer {
+                    block: pointer.block.clone(),
+                    offset: base.as_ref().clone(),
+                }),
+                crate::kernel::AddressObjectClass::NONE,
+            );
             let found = self
                 .residue(&base, depth)
                 .zip(offset_residue(offset))

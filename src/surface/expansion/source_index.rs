@@ -1,6 +1,8 @@
-//! An immutable lexical index shared by every location query in one trace.
+//! An immutable index of a container's proof blocks, shared by every
+//! location query in one trace.
 use super::*;
-use std::collections::{BTreeSet, HashMap};
+use crate::surface::parser::ProofBlockSpan;
+use std::collections::{BTreeSet, HashMap, HashSet};
 
 thread_local! {
     static TOKENIZATION_WORK: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
@@ -31,6 +33,9 @@ pub struct ProofSourceIndex {
     blocks: HashMap<usize, Vec<usize>>,
     tactics: HashMap<usize, IndexedTactic>,
     starts: Vec<Vec<usize>>,
+    /// The resolved project whose entry module this indexes, when built from
+    /// its verification parse.
+    file: Option<ClickFile>,
 }
 
 impl ProofSourceIndex {
@@ -40,7 +45,34 @@ impl ProofSourceIndex {
         TOKENIZATION_WORK.with(std::cell::Cell::get)
     }
 
+    /// The index of a project's entry module. Its proof blocks are the ones
+    /// the module's verification parse read, so braced groups that only look
+    /// like proofs, such as the arms of a resource's `match`, are not indexed.
+    pub fn for_project(
+        project: &ClickProject,
+        inputs: &ProgramInputs<'_>,
+    ) -> Result<Self, ClickError> {
+        let sources = CSourceContext::of(inputs)?.with_click_project(project);
+        let (file, blocks) = resolve_click_project_context_with_proof_blocks(project, &sources)?;
+        let source = project.entry_source().ok_or_else(|| {
+            ClickError::new(format!("missing entry module `{}`", project.entry()))
+        })?;
+        let mut index = Self::build(source, Some(&blocks))?;
+        index.file = Some(file);
+        Ok(index)
+    }
+
+    /// The index of a proof fragment with no declarations to parse, whose
+    /// proof blocks are found lexically from the token before each brace.
+    #[cfg(test)]
     pub fn new(source: &str) -> Result<Self, ClickError> {
+        Self::build(source, None)
+    }
+
+    pub(super) fn build(
+        source: &str,
+        parsed: Option<&[ProofBlockSpan]>,
+    ) -> Result<Self, ClickError> {
         crate::instrumentation::record_deterministic_work(source.len());
         let tokens = proof_source_tokens(source)?;
         let mut pairs = vec![None; tokens.len()];
@@ -86,6 +118,7 @@ impl ProofSourceIndex {
             lines,
             blocks: HashMap::new(),
             tactics: HashMap::new(),
+            file: None,
         };
         for index in 0..result.tokens.len() {
             let offset = result.tokens[index].span.start;
@@ -96,6 +129,26 @@ impl ProofSourceIndex {
                 result.by_offset.entry(offset).or_insert(index);
             }
         }
+        // Library contracts appended after the entry text lie past its
+        // last line; every other parsed block opens at a written brace.
+        let parsed = parsed
+            .map(|blocks| {
+                blocks
+                    .iter()
+                    .filter(|block| block.open.line <= result.lines.len())
+                    .map(|block| {
+                        crate::instrumentation::record_deterministic_work(1);
+                        result
+                            .token(&block.open)
+                            .ok()
+                            .filter(|&open| result.tokens[open].text == "{")
+                            .ok_or_else(|| {
+                                ClickError::new("a parsed proof block does not open at a brace")
+                            })
+                    })
+                    .collect::<Result<HashSet<_>, _>>()
+            })
+            .transpose()?;
         let mut arm_blocks = BTreeSet::new();
         let mut open_since_boundary = false;
         for open in 0..result.tokens.len() {
@@ -111,11 +164,21 @@ impl ProofSourceIndex {
                 continue;
             }
             let previous = open.checked_sub(1).map(|i| result.tokens[i].text.as_str());
-            let direct = matches!(previous, Some("by" | "then" | "else" | "and" | "both"))
-                || previous == Some("=>");
             let is_open_body = previous == Some(")") && open_since_boundary;
             open_since_boundary = false;
-            if !direct && !is_open_body && !arm_blocks.contains(&open) {
+            // A zero-width brace pairs a lone `by T(args);` tactic, which
+            // the parser reads without a block.
+            let selected = match &parsed {
+                Some(parsed) => result.tokens[open].span.is_empty() || parsed.contains(&open),
+                None => {
+                    matches!(
+                        previous,
+                        Some("by" | "then" | "else" | "and" | "both" | "=>")
+                    ) || is_open_body
+                        || arm_blocks.contains(&open)
+                }
+            };
+            if !selected {
                 continue;
             }
             let close = result.pairs[open].expect("balanced opening brace");
@@ -139,6 +202,32 @@ impl ProofSourceIndex {
             starts.dedup();
         }
         Ok(result)
+    }
+
+    /// Every written proof block the lexical index found, with the start of
+    /// each tactic in it, for comparison with the parser's own spans.
+    #[cfg(test)]
+    pub(in crate::surface) fn written_blocks(
+        &self,
+    ) -> Vec<(SourcePosition, SourcePosition, Vec<SourcePosition>)> {
+        let mut blocks = self
+            .blocks
+            .iter()
+            .filter(|(open, _)| !self.tokens[**open].span.is_empty())
+            .map(|(open, children)| {
+                let close = self.pairs[*open].expect("balanced block");
+                (
+                    self.positions[*open].clone(),
+                    self.positions[close].clone(),
+                    children
+                        .iter()
+                        .map(|child| self.positions[*child].clone())
+                        .collect(),
+                )
+            })
+            .collect::<Vec<_>>();
+        blocks.sort_by_key(|(open, _, _)| (open.line, open.column));
+        blocks
     }
 
     fn position_at(&self, offset: usize) -> SourcePosition {
@@ -314,13 +403,14 @@ impl ProofSourceIndex {
     pub fn project_tactic_positions(
         &self,
         project: &ClickProject,
-        inputs: &ProgramInputs<'_>,
         claim: &str,
     ) -> Result<Vec<SourcePosition>, ClickError> {
-        let sources = CSourceContext::of(inputs)?.with_click_project(project);
-        let file = resolve_click_project_context(project, &sources)?;
+        let file = self
+            .file
+            .as_ref()
+            .ok_or_else(|| ClickError::new("the source index has no resolved project"))?;
         c0_tactic_source_positions_with_tokens(
-            &file,
+            file,
             project.entry_source().expect("resolved entry source"),
             claim,
             &self.tokens,

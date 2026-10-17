@@ -174,7 +174,7 @@ pub(crate) enum PropositionCloseError {
     ContradictionUnavailable {
         fact_held: bool,
     },
-    ExtractUnavailable(Proposition),
+    ExtractUnavailable,
     /// The explicit premise at this index of the `using` list is not held.
     InstantiatePremiseUnavailable(usize, Proposition),
     InstantiateQuantifiedUnavailable,
@@ -1199,7 +1199,7 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
         {
             proposition
         } else {
-            return Err(PropositionCloseError::ExtractUnavailable(proposition));
+            return Err(PropositionCloseError::ExtractUnavailable);
         };
         let added_facts = (!branch.state.facts.contains_top_level(&proposition))
             .then(|| proposition.clone())

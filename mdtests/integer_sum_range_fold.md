@@ -425,10 +425,9 @@ int32 sum(int32 a[], int32 n) {
                                     interval_subtract 6, 10 6 (-999) (1000);
                                     interval_atom (1) (1) (1);
                                     interval_subtract 11, 12 11 (-1000) (999);
-                                    interval_subtract 6, 10 6 (-999) (1000);
                                     trivial => 0 <= 0;
-                                    affine_conclusion_pair 15 13 14 => ((n - at(statement(5).entry, i)) - 1) < (n - at(statement(5).entry, i));
-                                    conclusion 16;
+                                    affine_conclusion_pair 14 13 11 => ((n - at(statement(5).entry, i)) - 1) < (n - at(statement(5).entry, i));
+                                    conclusion 15;
                                 }
                             }
                         }

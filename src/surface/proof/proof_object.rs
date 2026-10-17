@@ -164,6 +164,7 @@ pub(super) struct ExecutionLogicalCasesSplit {
 /// in-`Proof` sibling join both reduce their arms to this view, so the
 /// merge law has one implementation.
 struct CheckedExecutionJoinArm<'v> {
+    branch_id: BranchId,
     certificate: ProofCertificate,
     facts: &'v ProofFacts,
     execution: &'v ExecutionProofState,
@@ -985,10 +986,14 @@ struct ProofDiagnosticProofState(
     Option<Arc<crate::kernel::ResourceInstance>>,
     &'static str,
     (Vec<syntax::C0Parameter>, Vec<CExpression>),
+    // The recorded snapshots an outcome goal's `at(...)` cites. A shared
+    // handle; the citable ones are selected only when a report is rendered.
+    Option<crate::surface::RecordedSnapshots>,
 );
 
 fn diagnostic_value_variable(value: &CValue) -> Option<Variable> {
-    match value {
+    match value.numeric_value() {
+        CValue::PointerInteger(_) => unreachable!("numeric projection"),
         crate::kernel::arithmetic_c_value!(term) => match term {
             Bitvector32Term::Variable(variable) => Some(*variable),
             _ => None,
@@ -1027,12 +1032,19 @@ pub(in crate::surface::proof) fn register_recorded_snapshot_names(
     labels: &mut crate::surface::proof_diagnostics::render::SnapshotLabels,
     snapshots: &crate::surface::RecordedSnapshots,
 ) {
+    register_snapshot_names(labels, &citable_snapshots(snapshots));
+}
+
+/// The most recent recorded snapshots an `at(...)` can cite, oldest first,
+/// with the point each one is spelled by. Bounded by
+/// `NAMED_SNAPSHOT_LIMIT`; each state shares its persistent storage.
+fn citable_snapshots(snapshots: &crate::surface::RecordedSnapshots) -> Vec<(String, CState)> {
     use crate::surface::{CodeRegionRef, ProgramPointRef, SnapshotSelector};
-    let recent = snapshots.recent(NAMED_SNAPSHOT_LIMIT);
-    // Only points `at(...)` resolves from recorded snapshots.
-    let citable = recent
+    snapshots
+        .recent(NAMED_SNAPSHOT_LIMIT)
         .into_iter()
         .rev()
+        // Only points `at(...)` resolves from recorded snapshots.
         .filter(|(selector, _)| match selector {
             SnapshotSelector::Mark(_) => true,
             SnapshotSelector::ProgramPoint(ProgramPointRef { region, .. }) => matches!(
@@ -1043,16 +1055,22 @@ pub(in crate::surface::proof) fn register_recorded_snapshot_names(
         .map(|(selector, state)| {
             (
                 crate::surface::diagnostics::describe_snapshot_selector(selector),
-                state,
+                state.clone(),
             )
         })
-        .collect::<Vec<_>>();
+        .collect()
+}
+
+fn register_snapshot_names(
+    labels: &mut crate::surface::proof_diagnostics::render::SnapshotLabels,
+    citable: &[(String, CState)],
+) {
     // A read of a snapshot's memory is spelled against the locals it held,
     // as `at(point, p[1])`.
-    for (point, state) in &citable {
+    for (point, state) in citable {
         labels.source_state(state, point.clone());
     }
-    for (point, state) in &citable {
+    for (point, state) in citable {
         for (name, value) in state.locals().object_values() {
             // A pointer's offset variable is not the pointer; a scalar
             // local's value, or a pointer local's whole address, is exactly
@@ -1140,6 +1158,11 @@ impl crate::surface::proof_diagnostics::ProofDiagnosticState for ProofDiagnostic
                 }
             }
             register_recorded_snapshot_names(labels, &execution.presentation.recorded_snapshots);
+        }
+        // An outcome goal's snapshots name what a local held at a recorded
+        // point, in the goal and the premises as in the proof context.
+        if let Some(snapshots) = &self.14 {
+            register_recorded_snapshot_names(labels, snapshots);
         }
     }
 
@@ -1672,6 +1695,12 @@ impl Proof<'_> {
             None,
             self.proof_context_description(),
             self.diagnostic_naming_tables(),
+            match self.context.as_ref() {
+                ProofContext::Pure(_) => None,
+                _ => self
+                    .outcome_fixed_state_view()
+                    .map(|view| view.fixed_state.recorded_snapshots.clone()),
+            },
         )
     }
 }
@@ -3072,7 +3101,6 @@ impl ExecutionProofPresentation {
                 tactic_index,
                 source_index,
                 tactic,
-                surface_recorded: false,
             });
     }
 }

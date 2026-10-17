@@ -309,7 +309,9 @@ fn collect_spec_expression_carriers(
             }
             collect_spec_expression_carriers(right, variables, integer_seen);
         }
-        SpecExpression::BitwiseNot(value) | SpecExpression::Cast(value, _) => {
+        SpecExpression::BitwiseNot(value)
+        | SpecExpression::Cast(value, _)
+        | SpecExpression::PointerCoercion(value, _) => {
             collect_spec_expression_carriers(value, variables, integer_seen)
         }
         SpecExpression::If {
@@ -375,7 +377,8 @@ fn collect_spec_expression_carriers(
             }
             collect_spec_expression_carriers(elements, variables, integer_seen);
         }
-        SpecExpression::AggregateFieldValue { pointer, .. }
+        SpecExpression::Subobject { pointer, .. }
+        | SpecExpression::AggregateFieldValue { pointer, .. }
         | SpecExpression::MemoryLoad { pointer, .. } => {
             collect_spec_expression_carriers(pointer, variables, integer_seen)
         }
@@ -1116,6 +1119,10 @@ impl<'a> TermRewrite<'a> {
             SpecExpression::Cast(value, target_type) => {
                 SpecExpression::Cast(Box::new(self.rewrite_spec_expression(value)?), *target_type)
             }
+            SpecExpression::PointerCoercion(value, target_type) => SpecExpression::PointerCoercion(
+                Box::new(self.rewrite_spec_expression(value)?),
+                *target_type,
+            ),
             SpecExpression::If {
                 condition,
                 then_branch,
@@ -1150,6 +1157,7 @@ impl<'a> TermRewrite<'a> {
                 arguments,
                 result_type,
                 pointer_result,
+                result_object_class,
             } => SpecExpression::PureFunctionApplication {
                 name: name.clone(),
                 arguments: arguments
@@ -1158,10 +1166,15 @@ impl<'a> TermRewrite<'a> {
                     .collect::<Result<Vec<_>, _>>()?,
                 result_type: *result_type,
                 pointer_result: pointer_result.clone(),
+                result_object_class: result_object_class.clone(),
             },
             SpecExpression::LoopEntrySnapshot(value) => {
                 SpecExpression::LoopEntrySnapshot(Box::new(self.rewrite_spec_expression(value)?))
             }
+            SpecExpression::Subobject { pointer, width } => SpecExpression::Subobject {
+                pointer: Box::new(self.rewrite_spec_expression(pointer)?),
+                width: *width,
+            },
             SpecExpression::PointerOffset {
                 pointer,
                 elements,

@@ -641,7 +641,15 @@ int32 count_to_one() {
 #[test]
 fn repository_root_targets_examples_and_passing_mdtests() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let targets = audit_targets(&root).expect("repository audit targets should resolve");
+    let targets = without_expected_failure_mdtests(
+        audit_targets(&root).expect("repository audit targets should resolve"),
+    )
+    .expect("repository inventory should classify all container expectations");
+    assert!(
+        !targets.iter().any(|path| path
+            .ends_with("mdtests/a_sidecar_conjunction_written_as_ampersands_names_and.md")),
+        "the negative syntax fixture must not reach runtime inventory"
+    );
     assert!(
         targets.iter().any(|path| {
             path.extension()
@@ -1957,4 +1965,56 @@ int32 compare(uint8 bytes[]) {
     let error = audit_claim_rewrite(&sites[0], &mut worker, &limits, deadline)
         .expect_err("a whole-claim rewrite must include the implicit auto's evidence");
     assert_eq!(error, expected_error);
+}
+
+/// A negative mdtest is a boundary of the entire audit, including runtime
+/// discovery before smart-site inventory.
+#[test]
+fn audit_skips_expected_failure_before_runtime_inventory() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let path = root.join("mdtests/a_sidecar_conjunction_written_as_ampersands_names_and.md");
+    run_audit(parse_arguments([path.display().to_string()]).unwrap()).unwrap();
+}
+
+/// Skipping a negative container must also precede C++ input preparation.
+#[test]
+fn audit_skips_expected_failure_before_preparing_inputs() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("negative.md");
+    fs::write(&path, "```cpp filename=invalid.cpp function=invalid profile=normal_only\nthis is invalid C++\n```\n```click\ninvalid Click &&\n```\n```expect\nfail: invalid\n```\n").unwrap();
+    run_audit(parse_arguments([path.display().to_string()]).unwrap()).unwrap();
+}
+
+/// A mixed selection still expands and checks its positive proof, and never
+/// hides a positive container's syntax error behind the negative filter.
+#[test]
+fn audit_mixed_mdtests_checks_positive_sources() {
+    let directory = tempfile::tempdir().unwrap();
+    let negative = directory.path().join("negative.md");
+    let positive = directory.path().join("positive.md");
+    fs::write(
+        &negative,
+        "```click\ninvalid Click &&\n```\n```expect\nfail: invalid\n```\n",
+    )
+    .unwrap();
+    fs::write(
+        &positive,
+        "```click\ntheorem identity() { ensures 0 == 0 by simp(); }\n```\n```expect\npass\n```\n",
+    )
+    .unwrap();
+    let sites = inventory_sites(&audit_targets(directory.path()).unwrap()).unwrap();
+    assert_eq!(sites.len(), 1);
+    assert_eq!(sites[0].click_path, fs::canonicalize(&positive).unwrap());
+    run_audit(parse_arguments([directory.path().display().to_string()]).unwrap()).unwrap();
+    fs::write(
+        &positive,
+        "```click\ntheorem bad() { ensures true && true by simp(); }\n```\n```expect\npass\n```\n",
+    )
+    .unwrap();
+    let error =
+        run_audit(parse_arguments([directory.path().display().to_string()]).unwrap()).unwrap_err();
+    assert!(
+        error.contains("Click writes conjunction as `and`"),
+        "{error}"
+    );
 }

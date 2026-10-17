@@ -20,8 +20,11 @@ comments and lexical refusals therefore have the parser's boundaries. The
 proof source adapter inserts only zero-width braces around an implicit
 single-tactic `by` body. The splicer materializes those braces when a rewrite
 needs several tactics and preserves source outside its selected byte span.
-Proof-block and declaration inventories still interpret the token structure;
-they are not yet parser-produced AST spans.
+The parser records each braced proof block it reads (`ProofBlockSpan`: its
+braces and the start of each tactic), and `ProofSourceIndex::for_project`
+indexes exactly the blocks the entry module's verification parse recorded.
+Expansion's proof-block and declaration inventories still interpret the token
+structure; they are not yet parser-produced spans.
 
 `printing::print_proposition` is the common Surface proposition printer.
 Callers select source, ordinary diagnostic, or refusal spelling explicitly. Source output always
@@ -44,10 +47,11 @@ its file bindings once before spelling the fragment.
 A written code region resolves through `CodeRegionRef::resolve`, both in
 annotation lowering and in proof execution. A loop label binds once per
 execution path, through the structural clause of the `loop as label` that
-declared it; a second `loop as label` at another loop is refused. Recorded
-snapshots are still stored under each spelling of their program point,
-`loop(N)` and each label of that loop, and read back by spelling, so expansion
-can cite the label the proof wrote.
+declared it; a second `loop as label` at another loop is refused. A recorded
+snapshot is one entry per program point. The snapshot map keeps the labels the
+path gave its loops, files a loop's snapshot under its first label, and reads
+`loop(N)`, that label and any other label of the loop as the same entry, so
+expansion still cites the label the proof wrote.
 
 Proof binders in the parser go through `bind_proof_name`. The newest binding
 of a name wins in every reading position: a value binder hides a `have` fact
@@ -57,13 +61,14 @@ log as fact names. In an execution proof, a proof binder may not take a C
 parameter's or C object's name; `intro()` binders keep their `outer.`
 shadowing. A step or call result is stored in the proof's local values by
 name, so a later result of the same name replaces it there; only a C local or
-parameter of that name is refused. The parser's plain name sets (proof
-binders, contract bindings, Integer parameters and lets, theorem parameters)
-are one `NameTable` (`src/surface/parser/name_table.rs`), indexed by
-`NameKind`; every read and write goes through it, and a cross-kind question
-such as `name_bound_in_scope` is one query. Names that carry data (resource
-instances, arm binder types, C parameter types, C objects, facts) keep their
-own maps and are queried beside it.
+parameter of that name is refused. Every lexical name the parser tracks is in one `NameTable`
+(`src/surface/parser/name_table.rs`): plain names indexed by `NameKind`
+(proof binders, contract bindings, Integer parameters and lets, theorem,
+reference, struct-array, `void*` and type parameters) and the names that
+carry data (resource instances, C parameter types and objects, struct and
+aggregate parameters, arm binder types, facts). Cross-kind questions,
+`is_bound` and `is_c_variable`, and the hiding and restoring of bindings are
+methods of the table.
 
 This is the first consolidation boundary for
 [`one-name-resolver-and-printer.md`](https://github.com/clicklang/click/blob/master/issues/one-name-resolver-and-printer.md),

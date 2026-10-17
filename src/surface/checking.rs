@@ -396,7 +396,8 @@ pub(super) fn apply_witness_tactic(
     if let Some(expected) = expected
         && !expected.accepts(&witness_value)
     {
-        let actual = match &witness_value {
+        let actual = match witness_value.numeric_value() {
+            CValue::PointerInteger(_) => unreachable!("numeric projection"),
             CValue::Void => CType::Void,
             CValue::Bool(_) => CType::Bool,
             CValue::Int8(_) => CType::Int8,
@@ -441,7 +442,8 @@ pub(super) fn apply_witness_tactic(
             Sort::CPointer(expected) | Sort::CObjectPointer(expected, _),
             CValue::Pointer(pointer),
         ) if expected.accepts(&CValue::Pointer(pointer.clone())) => {
-            crate::kernel::substitute_pointer_variable_in_proposition(&body, var, pointer.pointer())
+            crate::kernel::substitute_pointer_value_in_proposition(&body, var, &pointer)
+                .map_err(ClickError::new)?
         }
         _ => {
             return Err(ClickError::new(format!(

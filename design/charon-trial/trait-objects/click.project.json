@@ -14,7 +14,9 @@
           "trait_objects::through_dyn",
           "trait_objects::reset_square",
           "trait_objects::reset_dyn_square",
-          "trait_objects::default_square"
+          "trait_objects::default_square",
+          "trait_objects::tag_after_dyn",
+          "trait_objects::tag_after_bound"
         ],
         "files": [
           "shapes.rs"

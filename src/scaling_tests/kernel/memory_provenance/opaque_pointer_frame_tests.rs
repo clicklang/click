@@ -69,8 +69,14 @@ fn bounded_pointer_value_skips_unrelated_facts_cells_and_history() {
             ConditionTerm::pointer_equal(parent.clone(), parent_alias.clone()),
             true,
         );
-        let value = Bitvector32Term::PointerAddress(Box::new(parent));
-        let wanted = Bitvector32Term::PointerAddress(Box::new(parent_alias));
+        let value = Bitvector32Term::PointerAddress(
+            Box::new(parent),
+            crate::kernel::AddressObjectClass::NONE,
+        );
+        let wanted = Bitvector32Term::PointerAddress(
+            Box::new(parent_alias),
+            crate::kernel::AddressObjectClass::NONE,
+        );
         let source = intern_c_memory(
             snapshot
                 .memory()
@@ -94,5 +100,178 @@ fn bounded_pointer_value_skips_unrelated_facts_cells_and_history() {
     assert!(
         wide_samples.windows(2).all(|pair| pair[0] == pair[1]),
         "{wide_samples:?}"
+    );
+}
+
+#[test]
+fn complete_read_domains_use_numeric_storage_classes_without_scanning_other_classes() {
+    let costs = [16u64, 64, 256, 1024].map(|size| {
+        let _session = crate::kernel::VerificationSession::enter();
+        let mut facts = PureFactContext::new();
+        let equal = |a: Pointer, b: Pointer| {
+            ConditionTerm::uint64_equal(
+                Bitvector32Term::pointer_address(a),
+                Bitvector32Term::pointer_address(b),
+            )
+        };
+        for index in 0..size {
+            facts = facts.assume_condition(
+                equal(
+                    Pointer::symbolic(Variable(9_890_000 + index * 2)),
+                    Pointer::symbolic(Variable(9_890_001 + index * 2)),
+                ),
+                true,
+            );
+        }
+        let a = Pointer::symbolic(Variable(9_889_000));
+        let b = Pointer::symbolic(Variable(9_889_001));
+        facts = facts.assume_condition(equal(a.clone(), b.clone()), true);
+        let memory = intern_c_memory(CMemory::new());
+        let left = Pointer::loaded_value(&memory, &a);
+        let right = Pointer::loaded_value(&memory, &b);
+        let (holds, work) = crate::instrumentation::measure_deterministic_work(|| {
+            pointer_read_designations_equal(&left, &right, &facts)
+                && pointer_read_extents_equal(&left, &right, &facts)
+        });
+        assert!(holds);
+        work
+    });
+    assert!(
+        costs[0] > 0 && costs.iter().all(|work| *work <= costs[0] + 128),
+        "{costs:?}"
+    );
+}
+
+#[test]
+fn copied_pointer_frames_ignore_unrelated_separations() {
+    let costs = [16u64, 64, 256, 1024].map(|size| {
+        let _session = crate::kernel::VerificationSession::enter();
+        let separation = |a: Pointer, a_words: u32, b: Pointer| Proposition::CResourceSeparate {
+            left: Box::new(CResource::Memory(CMemoryRange::new(
+                a,
+                0u32.into(),
+                a_words.into(),
+            ))),
+            right: Box::new(CResource::Memory(CMemoryRange::new(
+                b,
+                0u32.into(),
+                8u32.into(),
+            ))),
+        };
+        let mut facts = PureFactContext::new();
+        for index in 0..size {
+            facts = facts.assume_proposition(separation(
+                Pointer::symbolic(Variable(9_910_000 + index * 2)),
+                4,
+                Pointer::symbolic(Variable(9_910_001 + index * 2)),
+            ));
+        }
+        let header = Pointer::symbolic(Variable(9_909_000));
+        let field = header.clone().offset_by_bytes(8);
+        let buffer = Pointer::symbolic(Variable(9_909_001));
+        let target = Pointer::symbolic(Variable(9_909_002));
+        let stored = CPointerValue::new(target.clone(), CType::Int32Pointer).with_extent(Some(
+            SubobjectExtent {
+                start: target,
+                width: 4u32.into(),
+            },
+        ));
+        let memory = intern_c_memory(
+            CMemory::new()
+                .store(field.clone(), CValue::Pointer(stored.clone()))
+                .store(
+                    buffer.clone().offset_by_bytes(4),
+                    CValue::Int32(7u32.into()),
+                ),
+        );
+        facts = facts.assume_proposition(separation(header, 4, buffer));
+        let read = CPointerValue::from_read(
+            stored.pointer().clone(),
+            CType::Int32Pointer,
+            &memory,
+            &field,
+        );
+        let (holds, work) = crate::instrumentation::measure_deterministic_work(|| {
+            facts.pointer_designations_match(&read, &stored)
+        });
+        assert!(holds);
+        work
+    });
+    assert!(
+        costs[0] > 0 && costs.iter().all(|work| *work <= costs[0] + 128),
+        "{costs:?}"
+    );
+}
+
+#[test]
+fn sibling_pointer_reads_stop_before_unrelated_shared_history() {
+    let costs = [16u64, 64, 256, 1024].map(|size| {
+        let _session = crate::kernel::VerificationSession::enter();
+        let field = Pointer::symbolic(Variable(9_920_000));
+        let mut memory = CMemory::new().with_block("local:read-common-history", 4096);
+        for index in 0..size {
+            memory = memory.store(
+                Pointer {
+                    block: "local:read-common-history".into(),
+                    offset: PointerOffsetTerm::Constant(index as i64 * 4),
+                },
+                CValue::Int32(0u32.into()),
+            );
+        }
+        let left = intern_c_memory(memory.clone().store(
+            field.offset_by_bytes(8),
+            CValue::UInt64(Bitvector32Term::UInt64Constant(1)),
+        ));
+        let right = intern_c_memory(memory.store(
+            field.offset_by_bytes(16),
+            CValue::UInt64(Bitvector32Term::UInt64Constant(2)),
+        ));
+        let producer = crate::kernel::equality_graph::EqualityGraph::default();
+        for index in 0..size {
+            producer.register_pointer_read_definition(
+                &Pointer::loaded(
+                    field.block.clone(),
+                    Bitvector32Term::Variable(Variable(9_930_000 + index)),
+                    4,
+                ),
+                &left,
+                &field.offset_by_bytes(32 + index as u32 * 8),
+            );
+        }
+        let legacy = |memory: &SharedCMemory| {
+            Pointer::loaded(
+                field.block.clone(),
+                Bitvector32Term::MemoryLoad(
+                    memory.clone(),
+                    Box::new(field.clone()),
+                    LoadKind::Bits32,
+                ),
+                4,
+            )
+        };
+        let a = legacy(&left);
+        let b = legacy(&right);
+        producer.register_pointer_read_definition(&a, &left, &field);
+        producer.register_pointer_read_definition(&b, &right, &field);
+        let context = PureFactContext::new();
+        let (holds, work) = crate::instrumentation::measure_deterministic_work(|| {
+            complete_pointer_reads_equal_across_frame(&a, &b, &context)
+                && pointer_read_designations_equal(
+                    &Pointer::loaded_value(&left, &field),
+                    &Pointer::loaded_value(&right, &field),
+                    &context,
+                )
+                && pointer_read_extents_equal(
+                    &Pointer::loaded_value(&left, &field),
+                    &Pointer::loaded_value(&right, &field),
+                    &context,
+                )
+        });
+        assert!(holds);
+        work
+    });
+    assert!(
+        costs[0] > 0 && costs.iter().all(|work| *work <= costs[0] + 128),
+        "{costs:?}"
     );
 }

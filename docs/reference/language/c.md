@@ -2108,8 +2108,33 @@ declared return type
 `mdtests/returning_a_struct_as_another_struct_is_refused.md`,
 `mdtests/a_returned_pointer_designates_its_declared_type.md`,
 `mdtests/calls_and_returns_of_matching_pointer_types_are_allowed.md`).
-The check does not yet cover globals or heap objects; the effective-type
-design (`design/effective-types.md`) stages them next.
+The check applies to the C program's accesses only. A specification reads
+memory as a value, so a contract's reads, resource arguments included, are
+not checked: a contract may state a Linux augmented rbtree node's cached
+count as `((struct sized_node*)(void*)old)->size` for a `struct rb_node*`
+parameter, while a C read of the same object through an unrelated struct is
+still refused
+(`mdtests/a_resource_argument_reads_the_containing_struct_as_a_value.md`,
+`mdtests/a_resource_argument_does_not_exempt_the_c_read_beside_it.md`).
+Globals are covered as locals are: a global scalar, array, struct or array of
+structs records its declared type
+(`mdtests/a_global_long_read_through_a_long_long_pointer_is_refused.md`,
+`mdtests/a_global_byte_buffer_read_through_a_uint32_pointer_is_refused.md`,
+`mdtests/a_global_struct_read_through_another_struct_is_refused.md`,
+`mdtests/globals_read_through_their_own_types_are_allowed.md`).
+
+Allocated storage has no declared type. A store gives the heap cell it writes
+the type of its lvalue (a member store, its struct; a character store, none),
+and a later read must be allowed for that type; a store through another type
+gives the cell that new type (C11 6.5p6). The type lasts while the cell holds
+the value that store wrote. A cell written at a computed index keeps its type
+for reads at the same index expression, until another store to its
+allocation. A cell written through `memcpy` or by a callee falls back to the
+pointer's type
+(`mdtests/a_heap_long_read_through_a_long_long_pointer_is_refused.md`,
+`mdtests/a_heap_long_written_at_a_computed_index_read_through_a_long_long_pointer_is_refused.md`,
+`mdtests/a_heap_struct_read_through_another_struct_is_refused.md`,
+`mdtests/heap_cells_take_the_type_of_their_last_store.md`).
 
 Automatic scalar, pointer, and array declarations do not zero-initialize their
 storage. Reading a local before a value has been written is undefined behavior.

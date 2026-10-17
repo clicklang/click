@@ -229,10 +229,7 @@ impl<'a> Proof<'a> {
                                 instantiate_resource_clause(clause, &substitutions).ok()?;
                             let fact = lower_resource_clause_at_state(
                                 &clause,
-                                ParameterBinding::new(
-                                    context.parsed_function.parameters(),
-                                    context.arguments,
-                                ),
+                                context.parameter_binding(),
                                 &execution.core.state,
                             )
                             .ok()?;
@@ -457,10 +454,7 @@ impl<'a> Proof<'a> {
             if supplied.len() != schema.fields().len() {
                 return Err(self.step_error("fold must explicitly supply every resource field"));
             }
-            let values = parameter_values(ParameterBinding::new(
-                context.parsed_function.parameters(),
-                context.arguments,
-            ))?;
+            let values = parameter_values(context.parameter_binding())?;
             let array_refs = array_refs_for_parameters(
                 context.parsed_function.parameters(),
                 &values,
@@ -492,10 +486,7 @@ impl<'a> Proof<'a> {
                             &expression,
                             before,
                             pre_state,
-                            ParameterBinding::new(
-                                context.parsed_function.parameters(),
-                                context.arguments,
-                            ),
+                            context.parameter_binding(),
                         )
                         .unwrap_or(message);
                     self.step_error(format!("fold field `{name}`: {message}"))
@@ -588,15 +579,32 @@ impl<'a> Proof<'a> {
             )?),
             (_, selected_children) => selected_children,
         };
-        let rewrite = crate::kernel::rewrite_resource_instance_selecting_children(
-            before,
-            instance,
-            definition,
-            context.function.composite_resource_definitions(),
-            self.facts().assumptions(),
-            unfold,
-            selected_children.as_deref(),
-        )
+        let instance_value = instance.clone();
+        let instance = &instance_value;
+        let construct_fold = !unfold && outcome.is_none() && !definition.reaches_population();
+        let (rewrite, produced_facts) = if construct_fold {
+            execution
+                .core
+                .fold_resource_instance_with_children(
+                    context.function,
+                    context.arguments,
+                    self.facts(),
+                    instance,
+                    selected_children.clone(),
+                )
+                .map(|(rewrite, facts)| (rewrite, Some(facts)))
+        } else {
+            crate::kernel::rewrite_resource_instance_selecting_children(
+                before,
+                instance,
+                definition,
+                context.function.composite_resource_definitions(),
+                self.facts().assumptions(),
+                unfold,
+                selected_children.as_deref(),
+            )
+            .map(|rewrite| (rewrite, None))
+        }
         .map_err(|refusal| {
             let comparison = if crate::surface::proof_trace::enabled_for(self.claim_label()) {
                 crate::surface::proof_trace::ChildArgumentTrace::from_refusal(
@@ -708,10 +716,7 @@ impl<'a> Proof<'a> {
                 context.spec_definitions.functions,
                 instance,
                 &rewrite.body_clauses,
-                &parameter_values(ParameterBinding::new(
-                    context.parsed_function.parameters(),
-                    context.arguments,
-                ))?,
+                &parameter_values(context.parameter_binding())?,
                 in_scope,
             )?
         } else {
@@ -719,10 +724,11 @@ impl<'a> Proof<'a> {
         };
         let after = rewrite.state;
         let added = rewrite.semantic_facts;
-        let mut facts = self.facts().clone();
-        for fact in &added {
-            facts = facts.with_kernel_checked_fact(fact.clone());
-        }
+        let facts = produced_facts.unwrap_or_else(|| {
+            added.iter().fold(self.facts().clone(), |facts, fact| {
+                facts.with_kernel_checked_fact(fact.clone())
+            })
+        });
         if clause_presentations
             .iter()
             .any(|clause| !clause.matches_available_fact(&facts))
@@ -786,18 +792,20 @@ impl<'a> Proof<'a> {
                 },
             )
         } else {
-            execution
-                .core
-                .record_resource_rewrite_with_children(
-                    context.function,
-                    context.arguments,
-                    self.facts(),
-                    &selected,
-                    &after,
-                    &facts,
-                    selected_children,
-                )
-                .map_err(|error| self.step_error_resource_rewrite(error))?;
+            if !construct_fold {
+                execution
+                    .core
+                    .record_resource_rewrite_with_children(
+                        context.function,
+                        context.arguments,
+                        self.facts(),
+                        &selected,
+                        &after,
+                        &facts,
+                        selected_children,
+                    )
+                    .map_err(|error| self.step_error_resource_rewrite(error))?;
+            }
             execution.core.state = after.into();
             branch.with_state(BranchState {
                 facts,
@@ -1036,10 +1044,7 @@ impl<'a> Proof<'a> {
                 let execution = self.execution().ok_or_else(|| {
                     self.step_error("function `unfold` lost its semantic execution state")
                 })?;
-                let values = parameter_values(ParameterBinding::new(
-                    context.parsed_function.parameters(),
-                    context.arguments,
-                ))?;
+                let values = parameter_values(context.parameter_binding())?;
                 let array_refs = array_refs_for_parameters(
                     context.parsed_function.parameters(),
                     &values,
@@ -2008,10 +2013,7 @@ impl<'a> Proof<'a> {
                         lower_fixed_state_proposition_with_assumptions(
                             &surface,
                             checked.facts.assumptions(),
-                            ParameterBinding::new(
-                                context.parsed_function.parameters(),
-                                context.arguments,
-                            ),
+                            context.parameter_binding(),
                             FixedStateFrame::new(
                                 pre_state,
                                 &execution.core.state,

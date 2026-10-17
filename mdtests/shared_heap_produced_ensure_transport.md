@@ -54,11 +54,11 @@ void parent_attach(struct parent* p, struct child* kid) {
     consumes p->kid;
     requires kid != 0;
     produces link: parent(p);
-    ensures link.link == ParentLink::Linked((void*)kid);
+    ensures link.link == ParentLink::Linked(kid);
     ensures p->kid == kid;
 } by {
     execute();
-    let link = fold(parent(p), { link: ParentLink::Linked((void*)kid) });
+    let link = fold(parent(p), { link: ParentLink::Linked(kid) });
     simp();
 }
 

@@ -193,7 +193,70 @@ allowed cases:
     through the parameter's type.
   - A return is refused on the same rule against the declared return
     type, and the caller's result carries the return type's pointee class.
-- **Step 3b (heap effective types):** next.
+- **Class sources in specifications:** done.
+  - A Click declaration gives a pointer the class a C declaration of the same
+    type would. This applies to a model (`spec enum`) field, the result of a
+    Click function, and a theorem parameter declared `struct T*`. A symbolic
+    value of a model field, such as a match binder or a case witness, carries
+    its field's class. A Click function's opaque pointer result carries its
+    declared return type's class. A theorem is checked apart from any
+    translation unit, so a theorem parameter's struct is identified by its
+    tag alone.
+  - A pointer-to-integer cast keeps the source pointer's class on the
+    address term, so decoding the integer restores it. The destination type
+    of the decoding cast never supplies a class. Like a pointer value's class,
+    the address term's class is not part of the term's identity: a classed
+    and a bare spelling of one address are one term for fact lookup,
+    rewriting and premise matching.
+  - Generic type arguments (`List<struct T*>`), quantified pointer binders,
+    and resource fields of C pointer type still carry no class.
+- **Specification reads:** done.
+  - A contract operand the kernel evaluates as a C expression, such as a
+    resource argument or a memory operand, is evaluated under
+    `SpecificationAccessScope`, and so is a C fragment of a specification
+    proposition. Its loads skip the check. Before, such a load carried no
+    access class, and the kernel's fallback gave it its kernel type's class:
+    `((struct sized_node*)(void*)old)->size` as a resource argument read as
+    `int` and was refused against the `struct rb_node` its parameter
+    designates, which stopped `examples/rbtree-augmented` wherever a contract
+    names a node's cached count.
+- **Step 4 (project optimization level):** done, with one exception the
+  maintainer approved on 2026-10-17. A project names `optimization`, `-O2` by
+  default, and every C unit is prepared at it; the Linux profile no longer
+  requires `-fno-strict-overflow` or `-fno-delete-null-pointer-checks`, and
+  the promise attributes are refused at any optimizing level. An optimizing
+  level still adds `-fno-strict-aliasing` until the check covers globals and
+  heap objects. The remaining order: globals, then step 3b, then dropping
+  that flag.
+- **Globals:** done. A global scalar, array, struct or array of structs
+  records its declared class on its block when the block is first created
+  at a function's entry, as a local does; a struct pointer global's class
+  names its struct by tag.
+- **Step 3b (heap effective types):** done.
+  - `CHeapMemory.effective_types` (`HeapEffectiveTypes`) records, for each
+    heap cell at a constant offset that a classed C store wrote, its class
+    and the value written. A member store records its struct; a character
+    store, or one without a class, records nothing and drops what it
+    overlapped. A store at a symbolic offset replaces its block's entries
+    with its own, keyed by its exact address spelling, which a read
+    confirms only at the same spelling; any constant-offset store to the
+    block drops it. So a block holds constant entries or one symbolic one.
+  - The store records its entry under its own store edge, as it records
+    the bytes it initialized, so the memory history stays connected.
+  - An entry counts only while the cell still holds that value, so havoc,
+    joins, calls and writes the record does not see need not maintain it: an
+    unconfirmed entry is ignored. Interface joins keep the record only where
+    every arm agrees; substitution rewrites its addresses and values as it
+    rewrites cells.
+  - Reads are checked against a confirmed entry; writes are not, because a
+    store gives the cell a new effective type.
+  - Not covered: `memcpy`'s copying of effective types and a callee's
+    stores, which leave no entry, and a computed-index cell read through a
+    different spelling of its address.
+  - `one_classed_heap_store_and_read_are_logarithmic_in_recorded_effective_types`
+    measures one classed store and one checked read against up to 1024
+    unrelated recorded entries: both stay constant.
+- **Next:** drop `-fno-strict-aliasing` from optimizing builds.
 
 ## Validation
 

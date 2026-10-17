@@ -1545,6 +1545,7 @@ impl ResourceContext {
         if let Some(query) = query {
             query.register(&graph);
         }
+        let mut complete_addresses = true;
         let addresses = if self.storage.facts.len() < graph.pointer_merge_count() {
             // A small, cold contract beside a large caller equality history:
             // index its actual occurrences in the already closed namespace.
@@ -1559,7 +1560,18 @@ impl ResourceContext {
             addresses
         } else {
             let mut addresses = self.storage.index.memory_addresses.clone();
-            for merge in graph.pointer_merges() {
+            let merges = match query {
+                Some(MemoryQuery::Address(pointer)) => {
+                    complete_addresses = false;
+                    graph.pointer_merges_for_block(&pointer.block)
+                }
+                Some(MemoryQuery::Footprint(range)) => {
+                    complete_addresses = false;
+                    graph.pointer_merges_for_block(&range.base().block)
+                }
+                None => graph.pointer_merges(),
+            };
+            for merge in merges {
                 addresses.merge(merge);
             }
             addresses
@@ -1572,7 +1584,11 @@ impl ResourceContext {
             symbolic: symbolic::RangeSupports::default(),
             points_initialized: false,
         });
-        cache.by_inputs = cache.by_inputs.with_inserted(key, paired.clone());
+        // A selected-class view is valid for this query only. Caching it by
+        // the whole graph key would make a later unrelated query miss aliases.
+        if complete_addresses {
+            cache.by_inputs = cache.by_inputs.with_inserted(key, paired.clone());
+        }
         paired
     }
 
@@ -1884,6 +1900,30 @@ impl ResourceContext {
         assumptions: &PureFactContext,
         owned: bool,
     ) -> Option<MemoryAccessCandidates> {
+        // An admitted footprint at this address already supplies coordinates.
+        // Resolve a pointer's recorded read only when the ordinary index has
+        // no supplier; otherwise its defining history is unrelated to selection.
+        let direct = self.pair_memory_equalities_in_graph(
+            assumptions.equality_graph.clone(),
+            false,
+            Some(MemoryQuery::Address(pointer)),
+        );
+        let direct_entries =
+            Self::indexed_access_entries(&direct, pointer, bytes, owned).and_then(|entries| {
+                match entries {
+                    MemoryAccessEntries::Intervals(mut entries) => entries
+                        .next()
+                        .map(|first| MemoryAccessEntries::Prefixed(Some(first), entries)),
+                    entries => Some(entries),
+                }
+            });
+        if let Some(entries) = direct_entries {
+            return Some(MemoryAccessCandidates {
+                entries,
+                query: pointer.clone(),
+                index: direct,
+            });
+        }
         let index = self.pair_memory_equalities(assumptions, false, Some(pointer));
         // A reference result may capture an interior address without an
         // additive syntax tree. Its checked class retains a producer spelling

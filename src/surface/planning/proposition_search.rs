@@ -1746,6 +1746,7 @@ pub(crate) fn solver_connected_equalities(
             Proposition::ConditionIs(
                 ConditionTerm::Bitvector32Equal(..)
                     | ConditionTerm::Bitvector64Equal(..)
+                    | ConditionTerm::PointerValueEqual(..)
                     | ConditionTerm::PointerEqual(..)
                     | ConditionTerm::PointerOffsetEqual(..)
                     | ConditionTerm::IntegerEqual(..)

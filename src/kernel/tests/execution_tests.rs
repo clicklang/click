@@ -3239,6 +3239,7 @@ fn statement_reservations_cover_integer_arguments_of_machine_applications() {
         )],
         result_type: CType::Int32,
         pointer_result: None,
+        result_object_class: None,
     };
     assert_statement_reserves_application_integer_argument(
         SpecProposition::Comparison {

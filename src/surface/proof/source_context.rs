@@ -17,6 +17,9 @@ pub(in crate::surface::proof) enum SourceContext {
     /// linear continuation, a focused execution arm, a loop's `preserve`
     /// body and a linear `open` scope.
     ExecutionFrontier,
+    /// A path that has reached the function exit, where a tactic runs once
+    /// per concrete outcome.
+    PostExecution,
 }
 
 impl SourceContext {
@@ -67,6 +70,27 @@ impl SourceContext {
                     | ProofTactic::Iterated(_)
                     | ProofTactic::ApplyTheoremUsing { .. }
             ),
+            Self::PostExecution => matches!(
+                tactic,
+                ProofTactic::FoldResource(_)
+                    | ProofTactic::UnfoldResource(_)
+                    | ProofTactic::ConstructResource(_)
+                    | ProofTactic::UnfoldPredicate(_)
+                    | ProofTactic::UnfoldFunction(_)
+                    | ProofTactic::PeelFunction { .. }
+                    | ProofTactic::ApplyTheoremUsing { .. }
+                    | ProofTactic::Choose(_)
+                    | ProofTactic::LetSatisfy(_)
+                    | ProofTactic::Witness(_)
+                    | ProofTactic::Intro
+                    | ProofTactic::IntroAs(_)
+                    | ProofTactic::Assumption
+                    | ProofTactic::Normalize
+                    | ProofTactic::NormalizeUsing(_)
+                    | ProofTactic::ArithmeticUsing(_)
+                    | ProofTactic::ArithmeticCertificate(_)
+                    | ProofTactic::Rewrite(_)
+            ),
         }
     }
 
@@ -84,11 +108,13 @@ impl SourceContext {
     /// continuation hands the first tactic outside this set, with its
     /// suffix, to the outcome driver; an arm refuses it. A pure goal's
     /// structured tactics are interpreted by the script that owns the goal,
-    /// so only its leaves are listed here.
+    /// so only its leaves are listed here. After execution, the structured
+    /// and smart tactics not yet listed here are still converted by
+    /// `flat_post_execution_tactic`.
     pub(in crate::surface::proof) fn admits(self, tactic: &ProofTactic) -> bool {
         self.admits_leaf(tactic)
             || match self {
-                Self::PureGoal => false,
+                Self::PureGoal | Self::PostExecution => false,
                 Self::ExecutionFrontier => matches!(
                     tactic,
                     ProofTactic::CloseInvariants
@@ -99,6 +125,7 @@ impl SourceContext {
                         | ProofTactic::ApplyTheorem(_)
                         | ProofTactic::Transport { .. }
                         | ProofTactic::Have(_)
+                        | ProofTactic::Extract(_)
                         | ProofTactic::ExecuteUntil(_)
                         | ProofTactic::SmartExecute
                         | ProofTactic::Loop(_)

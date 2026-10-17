@@ -167,6 +167,11 @@ pub(in crate::surface::proof) struct ExecutionProofConstants {
     /// proof-local index. Missing ownership makes source selection fail closed.
     pub(in crate::surface::proof) caller_source_owner: Option<CallerSourceOwnerId>,
     pub(in crate::surface::proof) function_entry_state: Option<CState>,
+    /// The proved function's parameter index, with the address of the
+    /// parameter list it indexes: a context reading that list hands it on to
+    /// its parameter bindings.
+    pub(in crate::surface::proof) parameter_index:
+        Option<(usize, Arc<crate::surface::ParameterIndex>)>,
     /// The entry this proof was built from, handed on to the theorems it
     /// issues. `None` for a proof that is not a function's contract proof.
     pub(in crate::surface::proof) entry_context:
@@ -192,6 +197,7 @@ impl Default for ExecutionProofConstants {
             caller_requirement_index: Arc::new(CallerRequirementIndex::default()),
             caller_source_owner: None,
             function_entry_state: None,
+            parameter_index: None,
             entry_context: None,
             function_source_registry: Arc::new(FunctionSourceRegistry::default()),
             grouped_contract: false,
@@ -222,8 +228,15 @@ pub(in crate::surface::proof) struct ExecutionProofContext<'a> {
 
 impl<'a> ExecutionProofContext<'a> {
     /// The function's parameters and the argument expressions bound to them.
-    pub(in crate::surface::proof) fn parameter_binding(&self) -> ParameterBinding<'a> {
-        ParameterBinding::new(self.parsed_function.parameters(), self.arguments)
+    pub(in crate::surface::proof) fn parameter_binding(&self) -> ParameterBinding<'_> {
+        let parameters = self.parsed_function.parameters();
+        let binding = ParameterBinding::new(parameters, self.arguments);
+        match &self.constants.parameter_index {
+            Some((list, index)) if *list == parameters.as_ptr() as usize => {
+                binding.with_index(index)
+            }
+            _ => binding,
+        }
     }
 
     /// The immutable ordinary-callee source registry shared by this proof and

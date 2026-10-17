@@ -25,10 +25,31 @@ accepted before Phase B: reaching another object through a C address
 comparison inside a callee. Phase B makes a C pointer comparison state only
 address equality, which carries no permission, and refuses that read
 (`mdtests/address_equality_does_not_grant_access_to_a_one_past_pointer.md`).
-Still accepted: a pointer whose formation the verifier never saw, such as a
-static pointer initialized to a scalar member and stepped past in a function
-that loads it at entry. It has the root extent. See *Pointers of unseen
-formation* below for complete programs that verify on master `44eacfde1`.
+An immutable global pointer initialized to a scalar member now retains that
+member's extent: the valid element-zero read passes and the sibling read is
+rejected (`mdtests/a_const_global_member_pointer_reads_its_member.md` and
+`mdtests/a_const_global_member_pointer_keeps_its_subobject.md`). A mutable global
+pointer is an unknown entry value; its initializer is not a permanent full
+pointer relationship.
+
+The Phase B investigation also reproduced an integer escape: converting
+`&pair->first` to `unsigned long` and back lets an element-one read reach the
+sibling. The regression is
+`mdtests/a_pointer_integer_round_trip_keeps_its_subobject.md`. The implementation
+rejects it and retains valid direct and stored-word member reads.
+A hidden complete-value record preserves the original pointer; mathematical
+integer observations cannot supply that record. The
+[integer representation notes](../design/pointer-integer-representations.md)
+record the implementation and the approved cast-based contract/tag support.
+The color-repair sidecar now verifies within default budgets. This bug remains
+open for the remaining Phase C work on pointers of unseen formation.
+Additional complete programs recorded on master `44eacfde1` appear under
+*Pointers of unseen formation* below. The implementation rejects both complete
+programs at the undefined callee read.
+The regressions are
+`mdtests/a_loaded_member_pointer_keeps_its_subobject_in_a_callee.md` and
+`mdtests/an_incoming_one_past_pointer_keeps_its_subobject.md`.
+
 
 A contract pointer equality compared addresses only, so a caller could
 satisfy a callee's `requires q == p` with `&pair->first + 1` and
@@ -217,9 +238,8 @@ int32 caller(struct Pair* p) {
 } by { execute(); simp(); }
 ```
 
-In each callee the contract states the pointer's designation exactly, but
-its value has no extent, so the equality is an address equality and the
-read is authorized by `p->second`'s view at the same address. The proposed
-repair is Phase C of the
+On the recorded master baseline, each callee's contract states the pointer's
+designation, but its value has no extent. Equality therefore compares addresses
+and the read uses `p->second`'s view at the same address. The baseline design
+records this as Phase C of the
 [subobject-extent design](../design/pointer-subobject-extents.md#phase-c-pointers-of-unseen-formation).
-

@@ -221,8 +221,10 @@ that writes `int32` for such a source already writes the source's spelling.
    sealed object resource, each `impl` defines it from its fields and is
    verified on its own memory against an `_iface` contract, and the
    importer packs the struct into the object at generic instantiation and
-   `dyn` coercion; a mutable reference may change the state, which its
-   `ensures` read as new and `old(...)` as at entry. Remaining:
+   `dyn` coercion; a shared reference keeps the struct's memory lent for
+   the call, so its caller keeps every field; a mutable reference may
+   change the state, which its `ensures` read as new and `old(...)` as at
+   entry. Remaining:
    implementations of function-free traits that rename the interface's parameters, generic
    traits, and C++ virtual methods. Done for default methods: the `trait`
    block writes a default method's interface with the proof of its default
@@ -244,9 +246,13 @@ that writes `int32` for such a source already writes the source's spelling.
    defaulted, implicit or empty virtual destructor, of any access, only
    resets the vtable pointer and runs no proof code; a class's own
    destructor with a body is verified as any destructor is, over a base
-   whose destruction runs none. Remaining for C++: overriding a defining
-   class's method, base destructors with effects, and constructing objects
-   whose base has fields or a constructor.
+   whose destruction runs none. A defining class's `const` method views its
+   memory, so its callers keep every field. A `const Shape&` conversion
+   keeps the object's memory lent until the call returns, so its caller
+   keeps every field too. A base with fields is built by its own
+   constructor, named first in the derived constructor's initializer list.
+   Remaining for C++: overriding a defining class's method and base
+   destructors with effects.
 
 ## Intended regressions
 

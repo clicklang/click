@@ -941,6 +941,14 @@ fn collect_c_value_bound_identities(
     _integer_seen: &mut SeenTerms,
 ) {
     match value {
+        CValue::PointerInteger(record) => {
+            collect_c_value_bound_identities(&record.numeric, variables, _integer_seen);
+            collect_c_value_bound_identities(
+                &CValue::Pointer(*record.pointer.clone()),
+                variables,
+                _integer_seen,
+            );
+        }
         CValue::Void => {}
         CValue::Pointer(pointer) => {
             for address in pointer.pointers() {
@@ -1426,15 +1434,19 @@ pub(in crate::kernel) fn execution_environment_variable_index(
 ) -> crate::kernel::ReservedVariableSets {
     let mut sets =
         crate::kernel::ReservedVariableSets::from(environment.variable_index.get_or_init(|| {
-            let mut variables = BTreeSet::new();
-            collect_execution_environment_variables_uncached(environment, &mut variables);
-            variables
+            suspending_memory_scope(|| {
+                let mut variables = BTreeSet::new();
+                collect_execution_environment_variables_uncached(environment, &mut variables);
+                variables
+            })
         }));
     for rule in environment.verified_loop_rules.iter() {
         sets.push(rule.variable_index.get_or_init(|| {
-            let mut variables = BTreeSet::new();
-            collect_verified_loop_rule_variables(rule, &mut variables);
-            variables
+            suspending_memory_scope(|| {
+                let mut variables = BTreeSet::new();
+                collect_verified_loop_rule_variables(rule, &mut variables);
+                variables
+            })
         }));
     }
     sets
@@ -1561,6 +1573,55 @@ fn checked_collection_checkpoint() -> bool {
 }
 
 thread_local! {
+    /// The interned memories whose variables the enclosing
+    /// [`collecting_each_memory_once`] scope has already collected.
+    static COLLECTED_MEMORIES: std::cell::RefCell<Option<BTreeSet<(u32, u32)>>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// Runs `operation` collecting each interned memory's variables at most once.
+/// A caller that unions the variables of many propositions, such as a fact
+/// set reserving every variable its facts mention, adds a snapshot several
+/// facts share once rather than once per fact. Collections inside the scope
+/// therefore return only variables not already added by an earlier one.
+pub(crate) fn collecting_each_memory_once<R>(operation: impl FnOnce() -> R) -> R {
+    struct Restore(Option<BTreeSet<(u32, u32)>>);
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            COLLECTED_MEMORIES.with(|collected| *collected.borrow_mut() = self.0.take());
+        }
+    }
+    let _restore = Restore(
+        COLLECTED_MEMORIES.with(|collected| collected.borrow_mut().replace(BTreeSet::new())),
+    );
+    operation()
+}
+
+/// Runs `operation` outside any [`collecting_each_memory_once`] scope, for a
+/// collection whose result is cached and so must hold every variable.
+fn suspending_memory_scope<R>(operation: impl FnOnce() -> R) -> R {
+    struct Restore(Option<BTreeSet<(u32, u32)>>);
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            COLLECTED_MEMORIES.with(|collected| *collected.borrow_mut() = self.0.take());
+        }
+    }
+    let _restore = Restore(COLLECTED_MEMORIES.with(|collected| collected.borrow_mut().take()));
+    operation()
+}
+
+/// Whether an enclosing [`collecting_each_memory_once`] scope already
+/// collected this memory; marks it collected otherwise.
+fn already_collected_memory(identity: (u32, u32)) -> bool {
+    COLLECTED_MEMORIES.with(|collected| {
+        collected
+            .borrow_mut()
+            .as_mut()
+            .is_some_and(|collected| !collected.insert(identity))
+    })
+}
+
+thread_local! {
     // Condition-index insertion reads syntax, never snapshot contents. A
     // snapshot-dependent fact is indexed lazily by the ordinary collector.
     static DEFER_CONDITION_SNAPSHOTS: std::cell::Cell<Option<bool>> = const { std::cell::Cell::new(None) };
@@ -1623,6 +1684,12 @@ pub(crate) fn collect_condition_bitvector_variables(
     variables: &mut BTreeSet<Variable>,
 ) {
     match condition {
+        ConditionTerm::PointerValueEqual(left, right) => {
+            for pointer in left.pointers().chain(right.pointers()) {
+                collect_pointer_bitvector_variables(pointer, variables);
+            }
+        }
+
         ConditionTerm::AlgebraicEqual(left, right) => {
             collect_algebraic_term_bitvector_variables(left, variables);
             collect_algebraic_term_bitvector_variables(right, variables);
@@ -1800,8 +1867,7 @@ fn collect_bitvector_integer_variables_seen(
         | Bitvector32Term::MachineIntegerConstant(_)
         | Bitvector32Term::Variable(_) => {}
         Bitvector32Term::MemoryLoad(_, pointer, _)
-        | Bitvector32Term::PointerAddress(pointer)
-        | Bitvector32Term::ObjectPointerAddress(pointer, _) => {
+        | Bitvector32Term::PointerAddress(pointer, _) => {
             collect_pointer_integer_variables(pointer, variables, seen)
         }
         Bitvector32Term::IntegerToMachine { value, .. } => {
@@ -2218,6 +2284,14 @@ fn collect_c_value_integer_variables(
         return;
     }
     match value {
+        CValue::PointerInteger(record) => {
+            collect_c_value_integer_variables(&record.numeric, variables, seen);
+            collect_c_value_integer_variables(
+                &CValue::Pointer(*record.pointer.clone()),
+                variables,
+                seen,
+            );
+        }
         CValue::Void => {}
         CValue::Int8(value) => collect_bitvector_integer_variables_seen(value, variables, seen),
         CValue::Bool(value)
@@ -2528,8 +2602,7 @@ pub(crate) fn collect_bitvector_variables(
             collect_pointer_bitvector_variables(pointer, variables);
             collect_stored_load_connection_variables(memory, pointer, variables);
         }
-        Bitvector32Term::PointerAddress(pointer)
-        | Bitvector32Term::ObjectPointerAddress(pointer, _) => {
+        Bitvector32Term::PointerAddress(pointer, _) => {
             collect_pointer_bitvector_variables(pointer, variables);
         }
         Bitvector32Term::IntegerToMachine { value, .. } => {
@@ -2659,8 +2732,7 @@ fn collect_bitvector_capture_variables_seen(
             }
         }
         Bitvector32Term::MemoryLoad(_, pointer, _)
-        | Bitvector32Term::PointerAddress(pointer)
-        | Bitvector32Term::ObjectPointerAddress(pointer, _) => {
+        | Bitvector32Term::PointerAddress(pointer, _) => {
             collect_pointer_capture_variables(pointer, variables, integer_seen)
         }
         Bitvector32Term::IntegerToMachine { value, .. } => {
@@ -2706,6 +2778,12 @@ fn collect_condition_capture_variables(
         return;
     }
     match condition {
+        ConditionTerm::PointerValueEqual(left, right) => {
+            for pointer in left.pointers().chain(right.pointers()) {
+                collect_pointer_capture_variables(pointer, variables, integer_seen);
+            }
+        }
+
         ConditionTerm::Constant(_) => {}
         ConditionTerm::Variable(variable) => {
             variables.insert(*variable);
@@ -2825,6 +2903,14 @@ fn collect_capture_variables_in_c_value(
         return;
     }
     match value {
+        CValue::PointerInteger(record) => {
+            collect_capture_variables_in_c_value(&record.numeric, variables, integer_seen);
+            collect_capture_variables_in_c_value(
+                &CValue::Pointer(*record.pointer.clone()),
+                variables,
+                integer_seen,
+            );
+        }
         CValue::Void => {}
         CValue::Int8(bits) => {
             collect_bitvector_capture_variables_seen(bits, variables, integer_seen)
@@ -3354,8 +3440,7 @@ fn collect_bitvector_scope_summary(
             summary
         }
         Bitvector32Term::MemoryLoad(_, pointer, _)
-        | Bitvector32Term::PointerAddress(pointer)
-        | Bitvector32Term::ObjectPointerAddress(pointer, _) => {
+        | Bitvector32Term::PointerAddress(pointer, _) => {
             collect_pointer_scope_summary(pointer, summaries)
         }
         Bitvector32Term::IntegerToMachine { value, .. } => {
@@ -3420,6 +3505,14 @@ fn collect_condition_scope_summary(
         return IntegerScopeSummary::default();
     }
     match condition {
+        ConditionTerm::PointerValueEqual(left, right) => {
+            let mut summary = IntegerScopeSummary::default();
+            for pointer in left.pointers().chain(right.pointers()) {
+                summary.merge(collect_pointer_scope_summary(pointer, summaries));
+            }
+            summary
+        }
+
         ConditionTerm::Constant(_) => IntegerScopeSummary::default(),
         ConditionTerm::Variable(variable) => IntegerScopeSummary::bitvector_variable(*variable),
         ConditionTerm::AlgebraicEqual(left, right) => {
@@ -3501,6 +3594,14 @@ fn collect_c_value_scope_summary(
         return IntegerScopeSummary::default();
     }
     match value {
+        CValue::PointerInteger(record) => {
+            let mut summary = collect_c_value_scope_summary(&record.numeric, summaries);
+            summary.merge(collect_c_value_scope_summary(
+                &CValue::Pointer(*record.pointer.clone()),
+                summaries,
+            ));
+            summary
+        }
         CValue::Void => IntegerScopeSummary::default(),
         CValue::Int8(term) => collect_bitvector_scope_summary(term, summaries),
         CValue::Bool(term)
@@ -3804,8 +3905,7 @@ fn collect_bitvector_binder_variables_seen(
         | Bitvector32Term::MachineIntegerConstant(_)
         | Bitvector32Term::Variable(_)
         | Bitvector32Term::MemoryLoad(_, _, _)
-        | Bitvector32Term::PointerAddress(_)
-        | Bitvector32Term::ObjectPointerAddress(_, _) => {}
+        | Bitvector32Term::PointerAddress(_, _) => {}
         Bitvector32Term::IntegerToMachine { value, .. } => {
             collect_integer_binder_variables_shared(
                 value,
@@ -3990,6 +4090,17 @@ fn collect_condition_binder_variables(
         return;
     }
     match condition {
+        ConditionTerm::PointerValueEqual(left, right) => {
+            for pointer in left.pointers().chain(right.pointers()) {
+                collect_pointer_binder_variables(
+                    pointer,
+                    integer_variables,
+                    bitvector_variables,
+                    integer_seen,
+                );
+            }
+        }
+
         ConditionTerm::AlgebraicEqual(left, right) => {
             collect_binder_variables_in_algebraic_term(
                 left,
@@ -4170,6 +4281,20 @@ fn collect_binder_variables_in_c_value(
         return;
     }
     match value {
+        CValue::PointerInteger(record) => {
+            collect_binder_variables_in_c_value(
+                &record.numeric,
+                integer_variables,
+                bitvector_variables,
+                integer_seen,
+            );
+            collect_binder_variables_in_c_value(
+                &CValue::Pointer(*record.pointer.clone()),
+                integer_variables,
+                bitvector_variables,
+                integer_seen,
+            );
+        }
         CValue::Void => {}
         CValue::Int8(bits) => collect_bitvector_binder_variables_seen(
             bits,
@@ -5047,7 +5172,12 @@ pub(in crate::kernel) fn collect_memory_bitvector_variables(
     // counted snapshot and the entries they changed are charged, as are the
     // snapshots its cells' loads reach.
     if let Some(shared) = crate::kernel::primitives::interned_storage_of(memory) {
-        let counts = shared_memory_variable_counts(&shared, WholeCount::Uncharged);
+        if already_collected_memory(shared.arena_id()) {
+            return;
+        }
+        let counts = suspending_memory_scope(|| {
+            shared_memory_variable_counts(&shared, WholeCount::Uncharged)
+        });
         if EXECUTION_CEILING_ONLY.with(std::cell::Cell::get) {
             variables.extend(
                 counts
@@ -5147,6 +5277,13 @@ pub(crate) fn collect_c_value_bitvector_variables(
     variables: &mut BTreeSet<Variable>,
 ) {
     match value {
+        CValue::PointerInteger(record) => {
+            collect_c_value_bitvector_variables(&record.numeric, variables);
+            collect_c_value_bitvector_variables(
+                &CValue::Pointer(*record.pointer.clone()),
+                variables,
+            );
+        }
         CValue::Void => {}
         CValue::Int8(bits) => collect_bitvector_variables(bits, variables),
         CValue::Bool(bits)

@@ -326,7 +326,8 @@ mod certificate_tests {
         );
         let state = CState::new().with_memory(CMemory::new().with_block("current", 4));
 
-        let error = checked_surface_comparison_fact_in_state(
+        let facts = ProofFacts::from_ordered(&[]);
+        let error = checked_surface_comparison_fact_in_state_with_indexed_facts(
             ExecutionView::new(
                 &ExecutionFrontier::default(),
                 &ExecutionFacts::new(),
@@ -336,7 +337,8 @@ mod certificate_tests {
             ),
             &kernel,
             SurfaceFactMatch::CanonicalExact,
-            &[],
+            &facts,
+            facts.assumptions(),
             ParameterBinding::default(),
             &state,
             SpecDefinitions::new(
@@ -1558,6 +1560,11 @@ pub(super) fn initial_claim_context_with_caller_owner(
             &authority_definitions,
         )?
     };
+    // The entry lowers its requirements one at a time; the index lets each
+    // read only the parameters it names.
+    let parameter_index = crate::surface::ParameterIndex::new(parsed_function.parameters());
+    let parameter_binding = ParameterBinding::new(parsed_function.parameters(), &arguments)
+        .with_index(&parameter_index);
     crate::surface::proof_diagnostics::render::enter_ambient_naming(
         ParameterBinding::new(parsed_function.parameters(), &arguments),
         state.memory(),
@@ -1616,7 +1623,7 @@ pub(super) fn initial_claim_context_with_caller_owner(
     )?;
     state = materialize_folded_composite_resource_cells(
         resource_environment,
-        ParameterBinding::new(parsed_function.parameters(), &arguments),
+        parameter_binding,
         state,
         claim_label,
         spec_definitions,
@@ -1627,7 +1634,7 @@ pub(super) fn initial_claim_context_with_caller_owner(
         if iteration > 0
             && requirement_propositions(
                 function_block.requires(),
-                ParameterBinding::new(parsed_function.parameters(), &arguments),
+                parameter_binding,
                 &projection_state,
                 spec_definitions,
             )
@@ -1637,13 +1644,13 @@ pub(super) fn initial_claim_context_with_caller_owner(
         }
         let available_pure_facts = available_initial_requirement_propositions(
             function_block.requires(),
-            ParameterBinding::new(parsed_function.parameters(), &arguments),
+            parameter_binding,
             &projection_state,
             spec_definitions,
         );
         let projected = project_initial_composite_resource_cores(
             resource_environment,
-            ParameterBinding::new(parsed_function.parameters(), &arguments),
+            parameter_binding,
             projection_state.clone(),
             &available_pure_facts,
             claim_label,
@@ -1659,7 +1666,7 @@ pub(super) fn initial_claim_context_with_caller_owner(
     let lowered_requirement_facts =
         crate::surface::lowering::requirement_propositions_with_sources_and_assumptions(
             function_block.requires(),
-            ParameterBinding::new(parsed_function.parameters(), &arguments),
+            parameter_binding,
             &state,
             spec_definitions,
             &PureFactContext::new(),
@@ -1741,7 +1748,7 @@ pub(super) fn initial_claim_context_with_caller_owner(
     let lower_one = |requirement: &Requirement| {
         crate::surface::lowering::requirement_propositions_sharing_lowering_state(
             std::slice::from_ref(requirement),
-            ParameterBinding::new(parsed_function.parameters(), &arguments),
+            parameter_binding,
             &state,
             spec_definitions,
             &requirement_context,
@@ -1804,7 +1811,7 @@ pub(super) fn initial_claim_context_with_caller_owner(
     entry_fact_origins.resize(unfolded_requirement_facts.len(), EntryFactOrigin::Derived);
     state = project_initial_composite_resource_cores(
         resource_environment,
-        ParameterBinding::new(parsed_function.parameters(), &arguments),
+        parameter_binding,
         state,
         &unfolded_requirement_facts,
         claim_label,
@@ -1813,7 +1820,7 @@ pub(super) fn initial_claim_context_with_caller_owner(
     )?;
     requirement_pure_facts = project_initial_resource_facts(
         resource_environment,
-        ParameterBinding::new(parsed_function.parameters(), &arguments),
+        parameter_binding,
         &state,
         &unfolded_requirement_facts,
         spec_definitions,
@@ -1822,7 +1829,7 @@ pub(super) fn initial_claim_context_with_caller_owner(
     entry_fact_origins.resize(requirement_pure_facts.len(), EntryFactOrigin::Derived);
     let definedness_state = project_initial_composite_resource_cores(
         resource_environment,
-        ParameterBinding::new(parsed_function.parameters(), &arguments),
+        parameter_binding,
         state.clone(),
         &requirement_pure_facts,
         claim_label,
@@ -1869,7 +1876,7 @@ pub(super) fn initial_claim_context_with_caller_owner(
         let projected =
             crate::surface::lowering::requirement_propositions_with_sources_and_assumptions(
                 std::slice::from_ref(requirement),
-                ParameterBinding::new(parsed_function.parameters(), &arguments),
+                parameter_binding,
                 &definedness_state,
                 spec_definitions,
                 &definedness_context,
@@ -1911,7 +1918,7 @@ pub(super) fn initial_claim_context_with_caller_owner(
     }
     let definedness = requirement_definedness_propositions(
         function_block.requires(),
-        ParameterBinding::new(parsed_function.parameters(), &arguments),
+        parameter_binding,
         &definedness_state,
         spec_definitions,
     )?;
@@ -1995,7 +2002,7 @@ pub(super) fn initial_claim_context_with_caller_owner(
         record_initial_composite_surface_facts(
             resource_environment,
             resource,
-            ParameterBinding::new(parsed_function.parameters(), &arguments),
+            parameter_binding,
             &state,
             &requirement_pure_facts,
             &mut surface_propositions,
@@ -2078,6 +2085,9 @@ fn refuse_overlapping_returned_places(
     assumptions: &crate::kernel::PureFactContext,
 ) -> Result<(), ClickError> {
     let parameters = parsed_function.parameters();
+    let parameter_index = crate::surface::ParameterIndex::new(parameters);
+    let parameter_binding =
+        ParameterBinding::new(parameters, arguments).with_index(&parameter_index);
     let mut returned = crate::kernel::ResourceContext::new();
     let mut written = Vec::new();
     let mut places = 0;
@@ -2097,7 +2107,7 @@ fn refuse_overlapping_returned_places(
         }
         let Ok(fact) = crate::surface::lowering::lower_resource_clause_at_state(
             resource,
-            ParameterBinding::new(parameters, arguments),
+            parameter_binding,
             state,
         ) else {
             continue;
@@ -2125,10 +2135,7 @@ fn refuse_overlapping_returned_places(
             .find(|(candidate, _)| candidate == range)
             .map(|(_, segment)| crate::surface::diagnostics::describe_contract_segment(segment))
             .unwrap_or_else(|| {
-                crate::surface::diagnostics::describe_memory_range(
-                    range,
-                    ParameterBinding::new(parameters, arguments),
-                )
+                crate::surface::diagnostics::describe_memory_range(range, parameter_binding)
             })
     };
     Err(ClickError::new(format!(

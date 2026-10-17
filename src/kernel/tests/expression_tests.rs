@@ -1370,7 +1370,10 @@ fn pointer_cast_retags_the_view_but_pointer_type_mismatch_is_not_implicit() {
 fn spec_pointer_equality_lowers_to_a_pure_fact() {
     let left = Pointer::symbolic(Variable(22_100));
     let right = Pointer::symbolic(Variable(22_101));
-    let equality = ConditionTerm::pointer_equal(left.clone(), right.clone());
+    let equality = ConditionTerm::PointerValueEqual(
+        Box::new(CPointerValue::new(left.clone(), CType::Int32Pointer)),
+        Box::new(CPointerValue::new(right.clone(), CType::Int32Pointer)),
+    );
 
     assert_eq!(
         c_value_comparison_proposition(
@@ -3720,7 +3723,7 @@ fn unsigned_narrowing_distributes_constant_subtraction_modulo_the_low_word() {
 
 /// A pointer at `pair + offset` whose subobject extent is `[pair + start,
 /// pair + start + width)`, as `&pair.first` would carry.
-fn subobject_pointer(offset: i64, start: i64, width: u64) -> CPointerValue {
+fn subobject_pointer(offset: i64, start: i64, width: u32) -> CPointerValue {
     CPointerValue::new(
         Pointer {
             block: "pair".into(),
@@ -3733,7 +3736,7 @@ fn subobject_pointer(offset: i64, start: i64, width: u64) -> CPointerValue {
             block: "pair".into(),
             offset: PointerOffsetTerm::Constant(start),
         },
-        width: Bitvector32Term::Constant(u32::try_from(width).unwrap()),
+        width: Bitvector32Term::Constant(width),
     }))
 }
 
@@ -3824,4 +3827,139 @@ fn substitution_maps_the_extent_start_with_the_address() {
 #[cfg(test)]
 mod scaling_tests {
     include!("../../scaling_tests/kernel/tests/expression_tests.rs");
+}
+
+#[test]
+fn implicit_byte_pointer_coercion_retains_the_selected_extent() {
+    let address = Pointer::symbolic(Variable(22_102));
+    let pointer = CPointerValue::new(address.clone(), CType::Int8Pointer).with_extent(Some(
+        SubobjectExtent {
+            start: address,
+            width: 4u32.into(),
+        },
+    ));
+    let (value, _) = c_evaluate_spec_expression_at_state(
+        &CState::new(),
+        &SpecExpression::PointerCoercion(
+            Box::new(SpecExpression::Value(CValue::Pointer(pointer.clone()))),
+            CType::UInt8Pointer,
+        ),
+        None,
+        &PureFactContext::new(),
+    )
+    .unwrap();
+    let CValue::Pointer(coerced) = value else {
+        panic!("a pointer coercion must yield a pointer")
+    };
+    assert_eq!(coerced.c_type(), CType::UInt8Pointer);
+    assert_eq!(coerced.designation(), pointer.designation());
+    assert_eq!(coerced.opaque_extent(), pointer.opaque_extent());
+    assert_eq!(coerced.extent(), pointer.extent());
+    for source in [CType::Int8Pointer, CType::UInt8Pointer] {
+        for target in [CType::Int8Pointer, CType::UInt8Pointer] {
+            let (value, _) = c_evaluate_spec_expression_at_state(
+                &CState::new(),
+                &SpecExpression::Cast(
+                    Box::new(SpecExpression::Value(CValue::Pointer(
+                        pointer.clone().with_type(source),
+                    ))),
+                    target,
+                ),
+                None,
+                &PureFactContext::new(),
+            )
+            .unwrap();
+            let CValue::Pointer(explicit) = value else {
+                panic!("a pointer cast must yield a pointer")
+            };
+            assert_eq!(explicit.c_type(), target);
+            assert_eq!(explicit.designation(), pointer.designation());
+            assert_eq!(explicit.opaque_extent(), pointer.opaque_extent());
+            assert_eq!(explicit.extent(), pointer.extent());
+        }
+    }
+    for (source, target) in [
+        (CType::Int32Pointer, CType::UInt8Pointer),
+        (CType::VoidPointer, CType::UInt8Pointer),
+        (CType::Int8Pointer, CType::VoidPointer),
+        (CType::VoidPointer, CType::VoidPointer),
+    ] {
+        let (value, _) = c_evaluate_spec_expression_at_state(
+            &CState::new(),
+            &SpecExpression::Cast(
+                Box::new(SpecExpression::Value(CValue::Pointer(
+                    pointer.clone().with_type(source),
+                ))),
+                target,
+            ),
+            None,
+            &PureFactContext::new(),
+        )
+        .unwrap();
+        let CValue::Pointer(explicit) = value else {
+            panic!("a pointer cast must yield a pointer")
+        };
+        assert!(explicit.extent_is_known());
+        assert!(explicit.extent().is_none());
+    }
+}
+
+#[test]
+fn complete_pointer_reads_keep_stored_bounds_across_different_cells() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let a = Pointer::symbolic(Variable(22_111));
+    let b = Pointer::symbolic(Variable(22_112));
+    let stored = subobject_pointer(0, 0, 4);
+    let memory = CMemory::new()
+        .store(a.clone(), CValue::Pointer(stored.clone()))
+        .store(b.clone(), CValue::Pointer(stored.clone()));
+    let read = |memory: &CMemory, address: &Pointer| {
+        CPointerValue::from_read(
+            stored.pointer().clone(),
+            CType::Int32Pointer,
+            &crate::kernel::intern_c_memory_ref(memory),
+            address,
+        )
+    };
+    let context = PureFactContext::new().assume_proposition(Proposition::CResourceSeparate {
+        left: Box::new(CResource::Memory(memory_range(a.clone(), 0, 2))),
+        right: Box::new(CResource::Memory(memory_range(b.clone(), 0, 2))),
+    });
+    let first = read(&memory, &a);
+    let second = read(&memory, &b);
+    assert!(context.pointer_designations_match(&first, &stored));
+    assert!(context.pointer_designations_match(&first, &second));
+    assert!(!context.pointer_designations_match(&first.clone().with_root_extent(), &stored));
+    assert!(!context.pointer_designations_match(
+        &first.clone().with_extent(Some(SubobjectExtent {
+            start: stored.pointer().clone(),
+            width: 2u32.into(),
+        })),
+        &stored,
+    ));
+    let c = Pointer::symbolic(Variable(22_113));
+    let before = CMemory::new();
+    let original = read(&before, &c);
+    let changed = before.store(b.clone(), int32(1));
+    let later = read(&changed, &c);
+    let copied = changed.store(a.clone(), CValue::Pointer(later));
+    let framed = context
+        .clone()
+        .assume_proposition(Proposition::CResourceSeparate {
+            left: Box::new(CResource::Memory(memory_range(c.clone(), 0, 2))),
+            right: Box::new(CResource::Memory(memory_range(b.clone(), 0, 1))),
+        })
+        .assume_proposition(Proposition::CResourceSeparate {
+            left: Box::new(CResource::Memory(memory_range(c, 0, 2))),
+            right: Box::new(CResource::Memory(memory_range(a.clone(), 0, 2))),
+        });
+    assert!(framed.pointer_designations_match(&read(&copied, &a), &original));
+    assert!(!context.pointer_designations_match(&first, &stored.clone().with_root_extent()));
+    let partial = memory.store(a.clone().offset_by_bytes(4), int32(0));
+    assert!(!context.pointer_designations_match(&read(&partial, &a), &stored));
+    let numeric = CMemory::new().store(
+        a.clone(),
+        CValue::UInt64(Bitvector32Term::pointer_address(stored.pointer().clone())),
+    );
+    assert!(!context.pointer_designations_match(&read(&numeric, &a), &stored));
 }

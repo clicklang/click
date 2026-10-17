@@ -241,6 +241,16 @@ return declaration alone supplies no checked original-class evidence. C access
 typing retains its existing declaration metadata separately. Memory access
 still requires the relevant resource permissions.
 
+A model field or pure-helper parameter declared `void*` accepts an object
+pointer through implicit coercion: its carrier changes to `void*`, preserving
+its designation, bounds, qualifiers, and object-type evidence. Opaque helper
+calls and unfolded bodies use this same argument conversion. Function pointers
+are excluded. An authored `(void*)p` remains an explicit cast and selects the
+root view according to C cast semantics. Address-only models should use `void*`
+without inserting explicit casts that would change saved pointer views. See
+`mdtests/model_pointer_void_helper_preserves_selected_view.md` and
+`mdtests/a_saved_pointer_link_keeps_its_bounds_through_an_outer_alias_update.md`.
+
 The written C contract is the complete callable interface. Typed model
 constructors and typed pure-helper calls in its clauses determine the required
 original object classes of its input pointers. For example,

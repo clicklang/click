@@ -26,6 +26,8 @@ pub(super) fn prepare(
         for name in [
             crate::languages::cpp::names::object_pack_name(derived, base),
             crate::languages::cpp::names::object_unpack_name(derived, base),
+            crate::languages::cpp::names::object_const_pack_name(derived, base),
+            crate::languages::cpp::names::object_const_unpack_name(derived, base),
         ] {
             crate::instrumentation::record_deterministic_work(1);
             let object = syntax::C0Parameter::new(

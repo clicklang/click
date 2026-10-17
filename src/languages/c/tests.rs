@@ -8378,8 +8378,17 @@ fn c0_wide_scalar_struct_fields_execute_at_declared_widths() {
     )
     .expect("wide scalar struct fields should execute");
 
+    let mut numeric_result = theorem.proposition().clone();
+    let crate::kernel::Proposition::CFunctionExecutes {
+        outcome: crate::kernel::CFunctionOutcome::Return { value, .. },
+        ..
+    } = &mut numeric_result
+    else {
+        panic!("function result")
+    };
+    *value = value.numeric_value().clone();
     assert_eq!(
-        theorem.proposition(),
+        &numeric_result,
         &crate::kernel::Proposition::CFunctionExecutes {
             state: Box::new(state),
             function: Box::new(function),

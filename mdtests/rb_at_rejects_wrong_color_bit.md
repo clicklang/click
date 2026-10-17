@@ -90,7 +90,7 @@ void set_parent_black(struct rb_node* node, struct rb_node* old_parent, struct r
             }
             execute();
             let u = fold(rb_at(node), {
-                model: RbTree::Node(identity, (void*)parent, Color::Red, left_model, right_model)
+                model: RbTree::Node(identity, parent, Color::Red, left_model, right_model)
             }, { left: l, right: r });
             simp();
         },

@@ -135,7 +135,7 @@ impl Gen {
             return self.expr_leaf();
         }
         let d = depth - 1;
-        match self.pick(19) {
+        match self.pick(20) {
             0 => self.expr_leaf(),
             1 => SpecExpression::CExpression(self.c()),
             2 => SpecExpression::IntegerToMachine {
@@ -144,6 +144,7 @@ impl Gen {
             },
             3 => SpecExpression::Add(Box::new(self.expr(d)), Box::new(self.expr(d))),
             4 => SpecExpression::BitwiseNot(Box::new(self.expr(d))),
+            19 => SpecExpression::PointerCoercion(Box::new(self.expr(d)), CType::UInt8Pointer),
             5 => SpecExpression::Cast(Box::new(self.expr(d)), CType::Int32),
             6 => SpecExpression::LoopEntrySnapshot(Box::new(self.expr(d))),
             7 => SpecExpression::If {
@@ -169,6 +170,7 @@ impl Gen {
                 arguments: vec![self.arg(d), self.arg(d)],
                 result_type: CType::Int32,
                 pointer_result: None,
+                result_object_class: None,
             },
             11 => SpecExpression::PointerOffset {
                 pointer: Box::new(self.expr(d)),

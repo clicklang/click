@@ -749,11 +749,10 @@ impl<'a> Proof<'a> {
             crate::kernel::integer_c_value!(value) => {
                 substitute_int32_variable_in_proposition(&body, var, value.clone())
             }
-            CValue::Pointer(pointer) => crate::kernel::substitute_pointer_variable_in_proposition(
-                &body,
-                var,
-                pointer.pointer(),
-            ),
+            CValue::Pointer(pointer) => {
+                crate::kernel::substitute_pointer_value_in_proposition(&body, var, pointer)
+                    .map_err(|error| self.step_error(&error))?
+            }
             _ => unreachable!("unsupported choice sort above"),
         };
         let mut locals = self.state().locals().clone();
@@ -1197,11 +1196,8 @@ impl<'a> Proof<'a> {
                 substitute_int32_variable_in_proposition(body, *var, value.clone())
             }
             (Proposition::Exists { var, body, .. }, CValue::Pointer(pointer)) => {
-                crate::kernel::substitute_pointer_variable_in_proposition(
-                    body,
-                    *var,
-                    pointer.pointer(),
-                )
+                crate::kernel::substitute_pointer_value_in_proposition(body, *var, pointer)
+                    .map_err(|error| self.step_error(&error))?
             }
             _ => return Ok(None),
         };
@@ -2608,9 +2604,11 @@ impl<'a> Proof<'a> {
             None => self.lower_cited_surface_proposition(surface, "`extract` proposition")?,
         };
         self.state.apply_extract(proposition).map_err(|error| match error {
-            PropositionCloseError::ExtractUnavailable(proposition) => self.step_error(format!(
+            // Lowering need not retain source names; the refusal concerns
+            // the citation the user wrote, rather than its anonymous terms.
+            PropositionCloseError::ExtractUnavailable => self.step_error(format!(
                 "`extract` proposition is not a proper conjunct, a checked disjunction projection, a discharged implication consequent, or a field equality of an exact same-constructor equality: {}",
-                describe_pure_fact(&proposition, ParameterBinding::default())
+                crate::surface::printing::source_click_proposition(surface)
             )),
             PropositionCloseError::Unavailable => {
                 self.step_error("`extract` requires an open proof branch")
@@ -2709,11 +2707,8 @@ impl<'a> Proof<'a> {
                     )
                 }
                 ContractExpression::CFragment(CExpression::Value(CValue::Pointer(pointer))) => {
-                    crate::kernel::substitute_pointer_variable_in_proposition(
-                        &body,
-                        var,
-                        pointer.pointer(),
-                    )
+                    crate::kernel::substitute_pointer_value_in_proposition(&body, var, pointer)
+                        .map_err(|error| self.step_error(&error))?
                 }
                 _ => return Ok(None),
             },
@@ -3063,10 +3058,7 @@ impl<'a> Proof<'a> {
                             query.with_kernel_checked_fact(fact.clone())
                         });
                         lower_outcome_proposition_with_recorded_snapshots(
-                            ParameterBinding::new(
-                                context.parsed_function.parameters(),
-                                context.arguments,
-                            ),
+                            context.parameter_binding(),
                             &pre_state,
                             state,
                             value,
@@ -3077,10 +3069,7 @@ impl<'a> Proof<'a> {
                         )
                     } else {
                         lower_outcome_proposition_with_recorded_snapshots(
-                            ParameterBinding::new(
-                                context.parsed_function.parameters(),
-                                context.arguments,
-                            ),
+                            context.parameter_binding(),
                             &pre_state,
                             state,
                             value,

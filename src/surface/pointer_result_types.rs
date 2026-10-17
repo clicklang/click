@@ -33,6 +33,7 @@ impl AlgebraicFieldType {
         let Self::C {
             c_type,
             struct_name: Some(name),
+            ..
         } = self
         else {
             return None;

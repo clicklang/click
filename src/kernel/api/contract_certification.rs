@@ -626,9 +626,7 @@ pub(in crate::kernel) fn quantified_int32_fact_certifies_loadable_cell(
             // the base expression (for example the owner parameter), not to
             // that index.
             Bitvector32Term::MemoryLoad(_, _, _) => {}
-            Bitvector32Term::PointerAddress(_)
-            | Bitvector32Term::ObjectPointerAddress(_, _)
-            | Bitvector32Term::IntegerToMachine { .. } => {}
+            Bitvector32Term::PointerAddress(_, _) | Bitvector32Term::IntegerToMachine { .. } => {}
         }
     }
 
@@ -2822,6 +2820,15 @@ pub(crate) fn condition_holds_by_memory_resolution(
                     ),
                     true,
                 )
+        }
+        (ConditionTerm::PointerValueEqual(left, right), true) => {
+            assumptions.contains_known(&Proposition::ConditionIs(condition.clone(), true))
+                || (assumptions.pointer_designations_match(left, right)
+                    && pointers_proven_equal_for_memory_resolution(
+                        left.pointer(),
+                        right.pointer(),
+                        assumptions,
+                    ))
         }
         (ConditionTerm::PointerEqual(left, right), true) => {
             pointers_proven_equal_for_memory_resolution(left, right, assumptions)

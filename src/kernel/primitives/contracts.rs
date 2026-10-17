@@ -149,7 +149,29 @@ impl CGlobal {
             pointee_volatile: false,
             constant: false,
             pointee_constant: false,
+            declared_class: None,
         }
+    }
+
+    /// Records the class the frontend gives the object.
+    pub fn with_declared_class(
+        mut self,
+        class: Option<crate::kernel::effective_type::CAccessClass>,
+    ) -> Self {
+        // A class the kernel type already gives is not stored, so a
+        // declaration lowered with and without the frontend's knowledge
+        // stays one declaration.
+        let derived = crate::kernel::effective_type::CAccessClass::of_kernel_type(self.c_type);
+        self.declared_class = class.filter(|class| derived.as_ref() != Some(class));
+        self
+    }
+
+    /// The class the object's block records: the frontend's, or what the
+    /// kernel type gives.
+    pub fn declared_class(&self) -> Option<crate::kernel::effective_type::CAccessClass> {
+        self.declared_class
+            .clone()
+            .or_else(|| crate::kernel::effective_type::CAccessClass::of_kernel_type(self.c_type))
     }
 
     pub fn name(&self) -> &str {
@@ -249,7 +271,30 @@ impl CGlobalArray {
             length,
             initial_values,
             constant: false,
+            declared_class: None,
         }
+    }
+
+    /// Records the class the frontend gives the object.
+    pub fn with_declared_class(
+        mut self,
+        class: Option<crate::kernel::effective_type::CAccessClass>,
+    ) -> Self {
+        // A class the kernel type already gives is not stored, so a
+        // declaration lowered with and without the frontend's knowledge
+        // stays one declaration.
+        let derived =
+            crate::kernel::effective_type::CAccessClass::of_kernel_type(self.element_type);
+        self.declared_class = class.filter(|class| derived.as_ref() != Some(class));
+        self
+    }
+
+    /// The class the object's block records: the frontend's, or what the
+    /// kernel type gives.
+    pub fn declared_class(&self) -> Option<crate::kernel::effective_type::CAccessClass> {
+        self.declared_class.clone().or_else(|| {
+            crate::kernel::effective_type::CAccessClass::of_kernel_type(self.element_type)
+        })
     }
 
     pub fn name(&self) -> &str {
@@ -307,12 +352,19 @@ impl CGlobalAggregate {
         }
     }
 
-    pub(crate) fn with_declared_class(
+    /// Records the class the frontend gives the object.
+    pub fn with_declared_class(
         mut self,
         class: Option<crate::kernel::effective_type::CAccessClass>,
     ) -> Self {
         self.declared_class = class;
         self
+    }
+
+    /// The class the object's block records: the frontend's, or what the
+    /// kernel type gives.
+    pub fn declared_class(&self) -> Option<crate::kernel::effective_type::CAccessClass> {
+        self.declared_class.clone()
     }
 
     pub fn source_name(&self) -> &str {
@@ -372,12 +424,19 @@ impl CGlobalAggregateArray {
         }
     }
 
-    pub(crate) fn with_declared_class(
+    /// Records the class the frontend gives the object.
+    pub fn with_declared_class(
         mut self,
         class: Option<crate::kernel::effective_type::CAccessClass>,
     ) -> Self {
         self.declared_class = class;
         self
+    }
+
+    /// The class the object's block records: the frontend's, or what the
+    /// kernel type gives.
+    pub fn declared_class(&self) -> Option<crate::kernel::effective_type::CAccessClass> {
+        self.declared_class.clone()
     }
 
     pub fn source_name(&self) -> &str {
@@ -1129,7 +1188,7 @@ impl CFunction {
             source_body: body.clone(),
             body,
             control_targets: std::sync::Arc::new(BTreeMap::new()),
-            contract_interface: CFunctionContractInterface::new(return_type, parameters),
+            contract_interface: Arc::new(CFunctionContractInterface::new(return_type, parameters)),
             global_variables: Vec::new(),
             global_arrays: Vec::new(),
             static_variables: Vec::new(),
@@ -1272,20 +1331,21 @@ impl CFunction {
         requires: Vec<CResourceSpec>,
         ensures: Vec<CResourceSpec>,
     ) -> Self {
-        self.contract_interface.resource_requires = requires;
-        self.contract_interface.resource_ensures = ensures;
+        Arc::make_mut(&mut self.contract_interface).resource_requires = requires;
+        Arc::make_mut(&mut self.contract_interface).resource_ensures = ensures;
         self
     }
 
     pub fn with_resource_constructors(mut self, constructors: Vec<CResourceSpec>) -> Self {
-        self.contract_interface.resource_constructors = constructors;
+        Arc::make_mut(&mut self.contract_interface).resource_constructors = constructors;
         self
     }
 
     /// Internal staging hook for importers and tests. No source frontend opts
     /// into the exceptional channel yet.
     pub(crate) fn with_int32_exceptional_outcome(mut self) -> Self {
-        self.contract_interface.exceptional_signature = CExceptionalSignature::Int32;
+        Arc::make_mut(&mut self.contract_interface).exceptional_signature =
+            CExceptionalSignature::Int32;
         self
     }
 
@@ -1293,8 +1353,8 @@ impl CFunction {
     /// payload is available to these propositions through the kernel's
     /// exceptional-result binding.
     pub(crate) fn with_exceptional_ensures(mut self, ensures: Vec<SpecProposition>) -> Self {
-        self.contract_interface.exceptional_ensures = ensures;
-        self.contract_interface.refresh_object_types();
+        Arc::make_mut(&mut self.contract_interface).exceptional_ensures = ensures;
+        Arc::make_mut(&mut self.contract_interface).refresh_object_types();
         self
     }
 
@@ -1306,18 +1366,18 @@ impl CFunction {
         claims: Vec<CFunctionContractClaim>,
         opaque_supported: bool,
     ) -> Self {
-        self.contract_interface.contract_requires = requires;
-        self.contract_interface.contract_requirement_sources =
+        Arc::make_mut(&mut self.contract_interface).contract_requires = requires;
+        Arc::make_mut(&mut self.contract_interface).contract_requirement_sources =
             ContractRequirementSources(vec![None; self.contract_interface.contract_requires.len()]);
-        self.contract_interface.contract_ensures = ensures;
-        self.contract_interface.contract_mutable = mutable;
-        self.contract_interface.resource_derived_frame_mixed = false;
-        self.contract_interface.contract_effect_claim_required =
+        Arc::make_mut(&mut self.contract_interface).contract_ensures = ensures;
+        Arc::make_mut(&mut self.contract_interface).contract_mutable = mutable;
+        Arc::make_mut(&mut self.contract_interface).resource_derived_frame_mixed = false;
+        Arc::make_mut(&mut self.contract_interface).contract_effect_claim_required =
             !self.contract_interface.contract_mutable.is_empty();
-        self.contract_interface.resource_derived_mutable_frame = false;
-        self.contract_interface.contract_claims = claims;
-        self.contract_interface.opaque_contract_supported = opaque_supported;
-        self.contract_interface.refresh_object_types();
+        Arc::make_mut(&mut self.contract_interface).resource_derived_mutable_frame = false;
+        Arc::make_mut(&mut self.contract_interface).contract_claims = claims;
+        Arc::make_mut(&mut self.contract_interface).opaque_contract_supported = opaque_supported;
+        Arc::make_mut(&mut self.contract_interface).refresh_object_types();
         self
     }
 
@@ -1328,7 +1388,7 @@ impl CFunction {
     /// to it, names the function that declared the measure, and a function
     /// that declares none is a different `CFunction`.
     pub fn with_recursion_measure(mut self, measure: Vec<CRankingComponent>) -> Self {
-        self.contract_interface.recursion_measure = measure;
+        Arc::make_mut(&mut self.contract_interface).recursion_measure = measure;
         self
     }
 
@@ -1338,7 +1398,7 @@ impl CFunction {
     /// exactly these functions.
     /// Declares a structural `decreases t` measure ranked at each call.
     pub fn with_recursion_binder(mut self, binder: Option<String>) -> Self {
-        self.contract_interface.recursion_binder = binder;
+        Arc::make_mut(&mut self.contract_interface).recursion_binder = binder;
         self
     }
 
@@ -1346,7 +1406,7 @@ impl CFunction {
         peers.sort();
         peers.dedup();
         peers.retain(|peer| peer != &self.name);
-        self.contract_interface.recursion_peers = peers;
+        Arc::make_mut(&mut self.contract_interface).recursion_peers = peers;
         self
     }
 
@@ -1356,13 +1416,14 @@ impl CFunction {
             self.contract_interface.contract_requires.len(),
             "contract requirement source map must match lowered requirements"
         );
-        self.contract_interface.contract_requirement_sources = ContractRequirementSources(sources);
+        Arc::make_mut(&mut self.contract_interface).contract_requirement_sources =
+            ContractRequirementSources(sources);
         self
     }
 
     #[cfg(test)]
     pub(crate) fn without_test_contract_requirement_sources(mut self) -> Self {
-        self.contract_interface.contract_requirement_sources =
+        Arc::make_mut(&mut self.contract_interface).contract_requirement_sources =
             ContractRequirementSources::default();
         self
     }
@@ -1379,10 +1440,10 @@ impl CFunction {
     /// a resource-derived frame is a mixed interface, refused when the
     /// projection is asked for.
     pub(crate) fn with_resource_derived_mutable_frame(mut self) -> Self {
-        self.contract_interface.contract_effect_claim_required = false;
-        self.contract_interface.resource_derived_frame_mixed =
+        Arc::make_mut(&mut self.contract_interface).contract_effect_claim_required = false;
+        Arc::make_mut(&mut self.contract_interface).resource_derived_frame_mixed =
             !self.contract_interface.contract_mutable.is_empty();
-        self.contract_interface.resource_derived_mutable_frame = true;
+        Arc::make_mut(&mut self.contract_interface).resource_derived_mutable_frame = true;
         self
     }
 
@@ -1393,7 +1454,7 @@ impl CFunction {
         definitions.sort_by(|left, right| left.name().cmp(right.name()));
         super::super::thread_confinement::propagate_thread_confinement(&mut definitions);
         super::super::owned_footprint_reach::propagate_owned_footprint_reach(&mut definitions);
-        self.contract_interface.composite_resource_definitions = definitions;
+        Arc::make_mut(&mut self.contract_interface).composite_resource_definitions = definitions;
         self
     }
 
@@ -1418,12 +1479,12 @@ impl CFunction {
     pub fn with_ordinary_abstract_families(mut self, mut families: Vec<String>) -> Self {
         families.sort();
         families.dedup();
-        self.contract_interface.ordinary_abstract_families = families;
+        Arc::make_mut(&mut self.contract_interface).ordinary_abstract_families = families;
         self
     }
 
     pub fn with_predicate_unfoldings(mut self, unfoldings: Vec<CPredicateUnfolding>) -> Self {
-        self.contract_interface.predicate_unfoldings = unfoldings;
+        Arc::make_mut(&mut self.contract_interface).predicate_unfoldings = unfoldings;
         self
     }
 
@@ -1432,7 +1493,7 @@ impl CFunction {
     }
 
     pub fn with_return_pointee_constant(mut self, constant: bool) -> Self {
-        self.contract_interface.return_pointee_constant = constant;
+        Arc::make_mut(&mut self.contract_interface).return_pointee_constant = constant;
         self
     }
 
@@ -1440,7 +1501,7 @@ impl CFunction {
         mut self,
         class: Option<crate::kernel::effective_type::CAccessClass>,
     ) -> Self {
-        self.contract_interface.return_pointee_class = class;
+        Arc::make_mut(&mut self.contract_interface).return_pointee_class = class;
         self
     }
 
@@ -1453,16 +1514,18 @@ impl CFunction {
     }
 
     pub fn with_return_aggregate_layout(mut self, layout: CAggregateLayout) -> Self {
-        self.contract_interface.return_aggregate_layout = Some(layout);
-        self.contract_interface.aggregate_return_mode = CAggregateReturnMode::Copy;
+        Arc::make_mut(&mut self.contract_interface).return_aggregate_layout = Some(layout);
+        Arc::make_mut(&mut self.contract_interface).aggregate_return_mode =
+            CAggregateReturnMode::Copy;
         self
     }
 
     /// Selects completion into a separately supplied call destination. The
     /// contract must describe its actual storage authority and write effects.
     pub fn with_construction_return(mut self, layout: CAggregateLayout) -> Self {
-        self.contract_interface.return_aggregate_layout = Some(layout);
-        self.contract_interface.aggregate_return_mode = CAggregateReturnMode::Construction;
+        Arc::make_mut(&mut self.contract_interface).return_aggregate_layout = Some(layout);
+        Arc::make_mut(&mut self.contract_interface).aggregate_return_mode =
+            CAggregateReturnMode::Construction;
         self
     }
 
@@ -1470,7 +1533,7 @@ impl CFunction {
     /// by this ordinary pointer parameter. Binding grants no storage or authority.
     /// Checked summaries retain the initialization established by the body.
     pub fn with_construction_parameter(mut self, index: usize, layout: CAggregateLayout) -> Self {
-        self.contract_interface.construction_parameter = Some((index, layout));
+        Arc::make_mut(&mut self.contract_interface).construction_parameter = Some((index, layout));
         self
     }
 
@@ -1492,7 +1555,7 @@ impl CFunction {
     }
 
     pub(crate) fn pop_parameter(&mut self) -> Option<CParameter> {
-        self.contract_interface.parameters.pop()
+        Arc::make_mut(&mut self.contract_interface).parameters.pop()
     }
 
     /// This function with its last `count` parameters as contract value
@@ -1502,9 +1565,9 @@ impl CFunction {
         if count == 0 {
             return Some(self);
         }
-        self.contract_interface = self
-            .contract_interface
-            .with_trailing_value_parameters(count)?;
+        self.contract_interface = Arc::new(
+            Arc::unwrap_or_clone(self.contract_interface).with_trailing_value_parameters(count)?,
+        );
         Some(self)
     }
 
@@ -1577,7 +1640,9 @@ impl CFunction {
     }
 
     pub(crate) fn pop_contract_requirement(&mut self) -> Option<SpecProposition> {
-        self.contract_interface.contract_requires.pop()
+        Arc::make_mut(&mut self.contract_interface)
+            .contract_requires
+            .pop()
     }
 
     pub fn contract_ensures(&self) -> &[SpecProposition] {
@@ -2194,25 +2259,122 @@ impl CMemoryRange {
         element_width: u32,
     ) -> Self {
         assert!(element_width > 0, "memory element width must be positive");
+        let carrier = CPointerValue::new(base.clone(), CType::VoidPointer);
         Self {
+            opaque_extent: carrier.opaque_extent.clone(),
+            carrier_extent_known: carrier.extent_is_known(),
+            designation: std::sync::Arc::new(base.object_identity()),
+            typed_carrier: false,
             base,
             start_bound: start,
             end_bound: end,
             element_width,
             kind: RangeIndexKind::Int32,
-            designation: Default::default(),
+            extent_claims: Default::default(),
         }
+    }
+
+    /// A typed clause carries the complete pointer's origin, independently of
+    /// whichever address spelling the resource algebra subsequently selects.
+    pub(crate) fn from_pointer_value(
+        value: &CPointerValue,
+        start: Bitvector32Term,
+        end: Bitvector32Term,
+        element_width: u32,
+    ) -> Self {
+        Self::new_with_element_width(value.pointer().clone(), start, end, element_width)
+            .with_pointer_carrier(value)
+    }
+
+    pub(crate) fn from_pointer_value_wide(
+        value: &CPointerValue,
+        start: Bitvector32Term,
+        end: Bitvector32Term,
+        element_width: u32,
+    ) -> Self {
+        Self::new_wide(value.pointer().clone(), start, end, element_width)
+            .with_pointer_carrier(value)
+    }
+
+    /// The origin and extent ancestry retained by this admitted footprint.
+    /// Its own bounds describe the authorized bytes; this carrier is not a
+    /// new pointer access and does not infer a selected subobject extent.
+    pub(in crate::kernel) fn pointer_carrier(&self) -> CPointerValue {
+        CPointerValue {
+            pointer: self.base.clone(),
+            designation: self.designation.clone(),
+            opaque_extent: self.opaque_extent.clone(),
+            c_type: CType::VoidPointer,
+            qualifiers: self.carrier_extent_known.then(|| {
+                std::sync::Arc::new(CPointerQualifiers {
+                    extent_known: true,
+                    ..Default::default()
+                })
+            }),
+        }
+    }
+
+    pub(in crate::kernel) fn with_pointer_carrier(mut self, value: &CPointerValue) -> Self {
+        self.designation = value.designation.clone();
+        self.opaque_extent = value.opaque_extent.clone();
+        self.carrier_extent_known = value.extent_is_known();
+        self.typed_carrier = true;
+        self.extent_claims.0 = value.designations();
+        self
+    }
+
+    pub(in crate::kernel) fn with_opaque_extent(
+        mut self,
+        origin: Option<std::sync::Arc<Pointer>>,
+        known: bool,
+    ) -> Self {
+        self.opaque_extent = origin;
+        self.carrier_extent_known = known;
+        self
+    }
+
+    pub(in crate::kernel) fn with_designation(
+        mut self,
+        designation: std::sync::Arc<Pointer>,
+    ) -> Self {
+        self.designation = designation;
+        self
+    }
+
+    pub(in crate::kernel) fn with_typed_carrier(mut self) -> Self {
+        self.typed_carrier = true;
+        self
+    }
+
+    pub(in crate::kernel) fn with_carrier_of(mut self, source: &Self) -> Self {
+        self.designation = source.designation.clone();
+        self.extent_claims = source.extent_claims;
+        self.typed_carrier = source.typed_carrier;
+        self.opaque_extent = source.opaque_extent.clone();
+        self.carrier_extent_known = source.carrier_extent_known;
+        self
+    }
+
+    pub(in crate::kernel) fn access_designation(&self) -> (&Pointer, Option<&Pointer>) {
+        (
+            &self.designation,
+            if self.carrier_extent_known {
+                None
+            } else {
+                self.opaque_extent.as_deref()
+            },
+        )
     }
 
     /// The opaque extents whose pointers named this range.
     pub(crate) fn designations(&self) -> [Option<Variable>; 2] {
-        self.designation.0
+        self.extent_claims.0
     }
 
     /// The same range, recorded as named through a pointer with these
     /// designations ([`super::CPointerValue::designations`]).
     pub(crate) fn with_designations(mut self, designations: [Option<Variable>; 2]) -> Self {
-        self.designation.0 = designations;
+        self.extent_claims.0 = designations;
         self
     }
 
@@ -2376,6 +2538,11 @@ impl CMemoryRange {
     ) -> Self {
         Self {
             kind: self.kind,
+            extent_claims: self.extent_claims,
+            designation: self.designation.clone(),
+            typed_carrier: self.typed_carrier,
+            opaque_extent: self.opaque_extent.clone(),
+            carrier_extent_known: self.carrier_extent_known,
             ..Self::new_with_element_width(base, start, end, self.element_width)
         }
     }
@@ -2920,6 +3087,7 @@ pub(crate) fn memory_range_extent_guards(range: &CMemoryRange) -> Vec<Propositio
 /// fits one: the only 64-bit bound a narrow range takes
 /// ([`wide_range_bounds`]).
 pub(crate) fn narrow_range_constant(value: &CValue) -> Option<Bitvector32Term> {
+    let value = value.numeric_value();
     let constant = match value {
         CValue::Int32(Bitvector32Term::Constant(bits)) => i64::from(*bits as i32),
         CValue::Int64(Bitvector32Term::Int64Constant(value)) => *value,
@@ -2934,6 +3102,9 @@ pub(crate) fn wide_range_bounds(
     start: &CValue,
     end: &CValue,
 ) -> Option<(Bitvector32Term, Bitvector32Term)> {
+    let start = start.numeric_value();
+    let end = end.numeric_value();
+
     let widened = |value: &CValue| match value {
         CValue::UInt64(term) => Some(term.clone()),
         // A signed bound is read as its sign extension, the same bits as an
@@ -3136,8 +3307,8 @@ impl CFunctionSpecification {
     ) -> Self {
         Self {
             state,
-            arguments,
-            requires,
+            arguments: arguments.into(),
+            requires: requires.into(),
             outcome,
         }
     }

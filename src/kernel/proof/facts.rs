@@ -644,10 +644,18 @@ impl ProofFacts {
         let assumptions = facts.pure_context();
         let mut implicit_transport_assumptions = PureFactContext::new();
         let mut by_predicate = PersistentMap::default();
-        for fact in facts.propositions() {
-            for variable in crate::kernel::proposition_variables(fact) {
-                reserved_variables = reserved_variables.with_value(variable);
+        // Many facts read one entry memory: reserve its variables once.
+        let collected_variables = crate::kernel::reasoning::collecting_each_memory_once(|| {
+            let mut variables = BTreeSet::new();
+            for fact in facts.propositions() {
+                variables.extend(crate::kernel::proposition_variables(fact));
             }
+            variables
+        });
+        for variable in collected_variables {
+            reserved_variables = reserved_variables.with_value(variable);
+        }
+        for fact in facts.propositions() {
             if top_level_exact.contains(fact) {
                 continue;
             }
@@ -1436,6 +1444,11 @@ impl ProofFacts {
                     candidates.push(candidate.clone());
                 }
                 if candidate == required
+                    || condition_bridged_fact_is_available(
+                        required,
+                        std::slice::from_ref(candidate),
+                        &self.assumptions,
+                    )
                     || separation_bridged_fact_is_available(
                         required,
                         std::slice::from_ref(candidate),
@@ -2158,7 +2171,9 @@ fn index_bitvector_equality_fact(
         // it observes, so a goal over those operands selects it as `simp`
         // selects their native equalities.
         Proposition::ConditionIs(
-            condition @ (ConditionTerm::PointerEqual(_, _) | ConditionTerm::IntegerEqual(_, _)),
+            condition @ (ConditionTerm::PointerEqual(_, _)
+            | ConditionTerm::PointerValueEqual(_, _)
+            | ConditionTerm::IntegerEqual(_, _)),
             true,
         ) => {
             let mut atoms = BTreeSet::new();
@@ -2445,6 +2460,12 @@ fn collect_condition_bitvector_atoms(
     atoms: &mut BTreeSet<BitvectorEqualityAtomKey>,
 ) {
     match condition {
+        ConditionTerm::PointerValueEqual(left, right) => {
+            for pointer in left.pointers().chain(right.pointers()) {
+                collect_pointer_bitvector_atoms(pointer, atoms);
+            }
+        }
+
         ConditionTerm::AlgebraicEqual(left, right) => {
             left.for_each_bitvector_term(|term| collect_bitvector_atoms(term, atoms));
             right.for_each_bitvector_term(|term| collect_bitvector_atoms(term, atoms));
@@ -2544,8 +2565,7 @@ fn collect_bitvector_atoms(term: &Bitvector32Term, atoms: &mut BTreeSet<Bitvecto
         Bitvector32Term::MemoryLoad(_, pointer, _) => {
             collect_pointer_bitvector_atoms(pointer, atoms)
         }
-        Bitvector32Term::PointerAddress(pointer)
-        | Bitvector32Term::ObjectPointerAddress(pointer, _) => {
+        Bitvector32Term::PointerAddress(pointer, _) => {
             collect_pointer_bitvector_atoms(pointer, atoms)
         }
         // A load variable names one read; the atoms of the address it read
@@ -4213,6 +4233,14 @@ mod integer_witness_freshness_tests {
 }
 
 #[cfg(test)]
+mod pointer_snapshot_transport_tests {
+    use super::*;
+    mod scaling_tests {
+        include!("../../scaling_tests/kernel/proof/facts/pointer_snapshot_transport_tests.rs");
+    }
+}
+
+#[cfg(test)]
 mod quantified_conjunct_projection_tests {
     use super::*;
 
@@ -4325,5 +4353,13 @@ mod quantified_conjunct_projection_tests {
     #[cfg(test)]
     mod scaling_tests {
         include!("../../scaling_tests/kernel/proof/facts/quantified_conjunct_projection_tests.rs");
+    }
+}
+
+#[cfg(test)]
+mod shared_memory_reservation_tests {
+    use super::*;
+    mod scaling_tests {
+        include!("../../scaling_tests/kernel/proof/facts/shared_memory_reservation_tests.rs");
     }
 }

@@ -41,7 +41,9 @@ fn old_collect_spec_expression_bitvector_variables(
             old_collect_spec_expression_bitvector_variables(left, variables);
             old_collect_spec_expression_bitvector_variables(right, variables);
         }
-        SpecExpression::BitwiseNot(expression) | SpecExpression::Cast(expression, _) => {
+        SpecExpression::BitwiseNot(expression)
+        | SpecExpression::Cast(expression, _)
+        | SpecExpression::PointerCoercion(expression, _) => {
             old_collect_spec_expression_bitvector_variables(expression, variables);
         }
         SpecExpression::If {
@@ -90,7 +92,8 @@ fn old_collect_spec_expression_bitvector_variables(
             old_collect_spec_expression_bitvector_variables(pointer, variables);
             old_collect_spec_expression_bitvector_variables(elements, variables);
         }
-        SpecExpression::AggregateFieldValue { pointer, .. } => {
+        SpecExpression::Subobject { pointer, .. }
+        | SpecExpression::AggregateFieldValue { pointer, .. } => {
             old_collect_spec_expression_bitvector_variables(pointer, variables);
         }
         SpecExpression::MemoryLoad {
@@ -395,6 +398,7 @@ fn old_collect_spec_integer_bound_expression(
         }
         SpecExpression::BitwiseNot(expression)
         | SpecExpression::Cast(expression, _)
+        | SpecExpression::PointerCoercion(expression, _)
         | SpecExpression::LoopEntrySnapshot(expression) => {
             old_collect_spec_integer_bound_expression(expression, variables, integer_seen);
         }
@@ -434,7 +438,8 @@ fn old_collect_spec_integer_bound_expression(
             old_collect_spec_integer_bound_expression(pointer, variables, integer_seen);
             old_collect_spec_integer_bound_expression(elements, variables, integer_seen);
         }
-        SpecExpression::AggregateFieldValue { pointer, .. } => {
+        SpecExpression::Subobject { pointer, .. }
+        | SpecExpression::AggregateFieldValue { pointer, .. } => {
             old_collect_spec_integer_bound_expression(pointer, variables, integer_seen);
         }
         SpecExpression::MemoryLoad {

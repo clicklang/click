@@ -334,13 +334,6 @@ pub(in crate::surface::proof) fn verify_loop_initialization_pure_proof(
         .unwrap_or(source.loop_source_index);
     let initialize_site = source.proof_site.as_ref();
     let mut recorded_snapshots = context.recorded_snapshots.clone();
-    recorded_snapshots.insert(
-        ProgramPointRef {
-            region: CodeRegionRef::Loop(loop_index),
-            kind: ProgramPointKind::Entry,
-        },
-        context.state.clone(),
-    );
     for label in environment
         .function_block
         .structural_clauses()
@@ -348,14 +341,15 @@ pub(in crate::surface::proof) fn verify_loop_initialization_pure_proof(
         .filter(|clause| clause.region() == &CodeRegion::Loop(loop_index))
         .filter_map(StructuralClause::label)
     {
-        recorded_snapshots.insert(
-            ProgramPointRef {
-                region: CodeRegionRef::Label(label.to_string()),
-                kind: ProgramPointKind::Entry,
-            },
-            context.state.clone(),
-        );
+        recorded_snapshots.label_loop(loop_index, label);
     }
+    recorded_snapshots.insert(
+        ProgramPointRef {
+            region: CodeRegionRef::Loop(loop_index),
+            kind: ProgramPointKind::Entry,
+        },
+        context.state.clone(),
+    );
     let invariant_items = clause.items().iter().collect::<Vec<_>>();
     // Generated initialization steps belong to the explicit phase tactic when
     // one exists, or to the enclosing `loop` keyword for an omitted phase.
@@ -1530,7 +1524,6 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
                         tactic_index: environment.frontier_loop_source.loop_tactic_index,
                         source_index: environment.frontier_loop_source.loop_source_index,
                         tactic: PostExecutionTactic::Simp,
-                        surface_recorded: false,
                     });
                 }
                 return_proofs.push(Arc::new(LoopReturnProof {
@@ -1585,12 +1578,11 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
             // there. The loop rule joins it with every other exit into the
             // single successor, so nothing about this path is dropped and
             // nothing about it is assumed to satisfy the invariants.
-            let (state, exit_facts) = preservation.restored_exit(
+            let state = preservation.restored_exit_state(
                 &checked_execution.core.state,
-                checked.facts(),
                 &assumptions_from_propositions(checked.facts()),
             );
-            let exit = CLoopBreakExit::new(state, exit_facts)
+            let exit = CLoopBreakExit::from_proof_facts(state, checked.facts())
                 .with_loan_evidence(checked_execution.core.loan_evidence().clone());
             if seen_break_exits.is_new(exit.state(), exit.pure_facts(), &break_exits, &exit) {
                 break_exits.push(exit);

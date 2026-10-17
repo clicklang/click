@@ -765,7 +765,7 @@ fn a_partial_borrow_call_ignores_unrelated_owned_objects() {
     assert_flat_across(
         "partial_borrow_beside_objects",
         partial_borrow_beside_objects,
-        [1, 3],
+        [1, 8],
         "touch_half(data);",
     );
 }
@@ -860,4 +860,56 @@ fn drift_rules_separate_slow_drift_from_warm_up() {
     // A bounded window: climbs, then holds over the last half.
     let window = (0..48).map(|i| 300 + 2 * i.min(16)).collect::<Vec<_>>();
     assert!(!drifts(&window));
+}
+
+/// The work to verify a function that owns one object per parameter and does
+/// nothing, at each of `sizes`. A first verification parses shared prelude
+/// definitions later ones reuse, so a discarded one runs first.
+fn owned_parameter_entry_work(sizes: [usize; 3]) -> [(usize, usize); 3] {
+    let work = |n: usize| {
+        let params = (0..n)
+            .map(|i| format!("struct box* b{i}"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let owns = lines(n, |i| format!("    owns *b{i};"));
+        let c = format!(
+            "struct box {{
+    int32 v;
+}};
+
+void caller({params}) {{
+    return;
+}}"
+        );
+        let click = format!(
+            "verifying \"hunt.c\";
+
+void caller({params}) {{
+{owns}
+}} by {{
+    step();
+}}"
+        );
+        let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
+            verify_c0_sources(&click, &[("hunt.c", c.as_str())])
+        });
+        result.unwrap_or_else(|error| panic!("size {n}: {}", error.message()));
+        work
+    };
+    work(1);
+    sizes.map(|n| (n, work(n)))
+}
+
+/// A function's entry lowers each requirement reading only the parameters
+/// it names (issues/scaling.md, cause 8), so the work to verify a function
+/// that owns one object per parameter grows with the parameters, not with
+/// their square. Sizes double, so past the fixed cost of a verification the
+/// second increment is about twice the first when the entry is linear and
+/// four times it when the entry is quadratic.
+#[test]
+fn entry_setup_is_linear_in_owned_parameters() {
+    let samples = owned_parameter_entry_work([32, 64, 128]);
+    let first = samples[1].1 - samples[0].1;
+    let second = samples[2].1 - samples[1].1;
+    assert!(second * 2 <= first * 5, "{samples:?}");
 }

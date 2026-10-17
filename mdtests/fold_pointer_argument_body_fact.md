@@ -81,12 +81,12 @@ void clear(struct cell* c) {
         Owned::Free => { contradiction(t.model == Owned::Free); },
         Owned::Held(owner, v) => {
             unfold(t);
-            have is_owner(Owned::Held((void*)c, 0), c) == 1 by {
-                unfold(is_owner(Owned::Held((void*)c, 0), c));
+            have is_owner(Owned::Held(c, 0), c) == 1 by {
+                unfold(is_owner(Owned::Held(c, 0), c));
                 normalize();
             }
             execute();
-            let u = fold(cell_at(c), { model: Owned::Held((void*)c, 0) });
+            let u = fold(cell_at(c), { model: Owned::Held(c, 0) });
             simp();
         },
     }

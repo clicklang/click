@@ -3177,6 +3177,25 @@ fn a_declaration_position_skips_uses_inside_bodies() {
 }
 
 #[test]
+fn a_parsed_source_index_holds_only_proof_blocks() {
+    let source = "spec enum Mode {\n    Off,\n    On(int32),\n}\n\nresource mode_at(p: int32*) {\n    field model: Mode;\n    match model {\n        Mode::Off => { fact p == 0; },\n        Mode::On(count) => { fact count > 0; },\n    }\n}\n\ntheorem t() {\n    ensures true by { simp(); }\n}\n";
+    let spans = parser::proof_block_spans(source, parser::ProgramLayouts::default()).unwrap();
+    let opens = |index: &ProofSourceIndex| {
+        index
+            .written_blocks()
+            .into_iter()
+            .map(|(open, _, _)| open.line)
+            .collect::<Vec<_>>()
+    };
+    // The lexical reading takes the `match` arms for proofs.
+    assert_eq!(opens(&ProofSourceIndex::new(source).unwrap()), [9, 10, 15]);
+    assert_eq!(
+        opens(&ProofSourceIndex::build(source, Some(&spans)).unwrap()),
+        [15]
+    );
+}
+
+#[test]
 fn trace_source_index_preserves_nested_locations_and_containment() {
     let source = "// αβ UTF-8\nby {\n  have true by { open(resource) { assumption(); } }\n  if true { normalize(); } else { simp(); }\n  cases { true => { step(); } false => { normalize(); } }\n  both { normalize(); } and { simp(); }\n  outcomes { threw => { step(); } returned => { simp(); } }\n  branch ensuring { true } then { step(); } else { simp(); }\n  normalize();\n}\n";
     let index = ProofSourceIndex::new(source).unwrap();

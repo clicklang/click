@@ -265,10 +265,13 @@ injectivity, arithmetic definedness, or memory access permission follows.
 Unsupported constructors remain opaque.
 
 Pointer-to-word casts also retain the source pointer's checked object class
-when one is known. This annotation is part of the stored address term, so
-memory storage and substitution preserve it without a global address-to-class
-registry. Annotated and unannotated addresses register the same numeric
-application in equality closure. The supported tag operations carry the
+when one is known. The annotation is a field of the stored address term, so
+memory storage, rewriting and substitution carry it without a global
+address-to-class registry. It is not part of the term's identity: equality,
+hashing and ordering ignore it, as they ignore a pointer value's class. A
+classed and a bare spelling of one address are therefore one term in equality
+closure, exact fact lookup, `rewrite`, `contradiction` and theorem-premise
+matching. The supported tag operations carry the
 annotation to decoding; an integer-to-pointer cast restores the original
 class, never the destination type's class. A bare address remains unclassified,
 and unavailable or withdrawn origin evidence cannot supply a class. Loop
@@ -1785,3 +1788,10 @@ The executable controls are `model_pointer_resource_call_domains.md`,
 `model_pointer_resource_fold_requires_call_domains.md`,
 `model_pointer_empty_resource_does_not_type_parameter.md`, and
 `model_pointer_resource_inactive_call_domains.md` in `mdtests/`.
+
+Complete C pointer-to-integer copies retain nominal type receipts in the
+`PointerInteger` representation record. A numeric `PointerAddress` observation
+retains access-class annotation only: its annotation is excluded from numeric
+identity and cannot establish nominal type evidence. Recovering a typed pointer
+from those coordinates still needs the current scope's checked type facts.
+This does not recover a designation, bounds, or memory permission from numbers.

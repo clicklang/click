@@ -374,4 +374,4 @@ is what step 4 does: `auto` and `apply` choose their premises and expansion
 writes the `using` list. A certificate cache (stage 3) was ruled out;
 expansion is the fix ([proof-language-rulings.md](proof-language-rulings.md)).
 `Integer` by default in specifications (stage 4) is a language decision,
-[issues/design-review.md](../issues/design-review.md) P2.
+[issues/standard-library.md](../issues/standard-library.md).

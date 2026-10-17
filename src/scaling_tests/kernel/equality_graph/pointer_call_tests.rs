@@ -18,7 +18,7 @@ fn nested_pointer_call_registration_and_late_merges_scale_with_selected_dag() {
             crate::instrumentation::measure_deterministic_work(|| {
                 let mut graph = EqualityGraph::default();
                 assert!(!graph.are_equal(&a, &b));
-                graph.add_equality(&p, &q);
+                equal_pointer_arguments(&mut graph, &p, &q);
                 assert!(graph.are_equal(&a, &b));
             })
         });
@@ -44,7 +44,7 @@ fn pointer_call_queries_do_not_scan_unrelated_facts() {
             Pointer::symbolic(Variable(100)),
             Pointer::symbolic(Variable(101)),
         );
-        graph.add_equality(&p, &q);
+        equal_pointer_arguments(&mut graph, &p, &q);
         crate::instrumentation::measure_deterministic_work(|| {
             assert!(graph.are_equal(
                 &call("select", vec![pointer_argument(p)]),

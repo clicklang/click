@@ -115,7 +115,7 @@ fn native_contract_byte_casts_preserve_pointer_identity_and_offsets() {
 }
 
 #[test]
-// Reject scalar origins, pointer-slot views, reverse casts, and incompatible comparisons locally.
+// Reject narrow scalar origins, pointer-slot byte views, and incompatible comparisons locally.
 fn native_contract_byte_casts_check_their_type_boundary() {
     for (parameter, expression, diagnostic) in [
         (
@@ -128,7 +128,6 @@ fn native_contract_byte_casts_check_their_type_boundary() {
             "(uint8*)p == (uint8*)p",
             "scalar object pointer",
         ),
-        ("uint8* p", "(uint32*)p == (uint32*)p", "byte-view target"),
         (
             "uint32* p",
             "(uint8*)old(p) == (uint8*)p",

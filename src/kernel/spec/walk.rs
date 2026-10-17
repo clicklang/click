@@ -117,6 +117,7 @@ impl<'a> SpecNode<'a> {
                 }
                 SpecExpression::BitwiseNot(body)
                 | SpecExpression::Cast(body, _)
+                | SpecExpression::PointerCoercion(body, _)
                 | SpecExpression::LoopEntrySnapshot(body) => visit(N::Expression(body)),
                 SpecExpression::If {
                     condition,
@@ -154,7 +155,8 @@ impl<'a> SpecNode<'a> {
                     visit(N::Expression(pointer));
                     visit(N::Expression(elements));
                 }
-                SpecExpression::MemoryLoad { pointer, .. }
+                SpecExpression::Subobject { pointer, .. }
+                | SpecExpression::MemoryLoad { pointer, .. }
                 | SpecExpression::AggregateFieldValue { pointer, .. } => {
                     visit(N::Expression(pointer))
                 }

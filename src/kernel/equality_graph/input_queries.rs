@@ -119,6 +119,9 @@ impl EqualityGraph {
             };
             classes.add_algebraic_equality(left, right);
         }
+        for (left, right) in self.admitted.pointer_value_equalities.iter() {
+            classes.add_pointer_value_equality(left, right);
+        }
         for ((left, right), _) in self.admitted.int32_graph_equalities.iter() {
             classes.add_int32_equality(left.value(), right.value());
         }

@@ -7,9 +7,7 @@ mod iterated_lowering;
 pub(super) use iterated_lowering::*;
 mod proposition_lowering;
 mod resource_lowering;
-pub(in crate::surface) use resource_lowering::{
-    load_kind_of_element, object_segment_layout, symbolic_value_from_load, visit_struct_field_cells,
-};
+pub(in crate::surface) use resource_lowering::{object_segment_layout, visit_struct_field_cells};
 mod source_layout;
 pub(super) use annotations::*;
 pub(super) use contract_environment::*;

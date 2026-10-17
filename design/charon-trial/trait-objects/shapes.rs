@@ -4,7 +4,9 @@
 //! `set` changes the object through `&mut self`, which `reset` and
 //! `reset_dyn` reach through `&mut T` and `&mut dyn Shape`. `area_twice`
 //! has a default body, which holds the object as `area` does and which
-//! `default_square` calls on a `Square`.
+//! `default_square` calls on a `Square`. A `Tagged` carries a `tag` the
+//! trait's functions do not read, which `tag_after_dyn` and
+//! `tag_after_bound` still know after lending it as a shared object.
 
 pub trait Shape {
     fn area(&self, scale: i32) -> i32;
@@ -20,6 +22,11 @@ pub struct Square {
 
 pub struct Circle {
     pub radius: i32,
+}
+
+pub struct Tagged {
+    pub side: i32,
+    pub tag: i32,
 }
 
 impl Shape for Square {
@@ -39,6 +46,16 @@ impl Shape for Circle {
 
     fn set(&mut self, half: i32) {
         self.radius = half;
+    }
+}
+
+impl Shape for Tagged {
+    fn area(&self, scale: i32) -> i32 {
+        self.side + scale
+    }
+
+    fn set(&mut self, half: i32) {
+        self.side = half + half;
     }
 }
 
@@ -83,4 +100,16 @@ pub fn reset_dyn_square(half: i32) -> i32 {
 pub fn default_square(scale: i32) -> i32 {
     let square = Square { side: 3 };
     square.area_twice(scale)
+}
+
+pub fn tag_after_dyn(scale: i32) -> i32 {
+    let tagged = Tagged { side: 3, tag: 7 };
+    dynamic(&tagged, scale);
+    tagged.tag
+}
+
+pub fn tag_after_bound(scale: i32) -> i32 {
+    let tagged = Tagged { side: 3, tag: 7 };
+    total(&tagged, scale);
+    tagged.tag
 }

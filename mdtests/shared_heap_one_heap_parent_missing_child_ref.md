@@ -143,9 +143,9 @@ void parent_detach(struct parent* p) {
         ParentLink::Empty => {
             contradiction(link.link == ParentLink::Empty);
         },
-        ParentLink::Linked(kid) => {
+        ParentLink::Linked(entry_child) => {
             unfold(link);
-            have old(p->kid) == kid by simp();
+            have old(p->kid) == entry_child by simp();
             if p->kid->refs > 1 {
                 execute();
                 simp();

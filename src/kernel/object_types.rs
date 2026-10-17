@@ -36,15 +36,6 @@ fn origin_fingerprint(scope: u64, parameter: usize) -> u64 {
 }
 
 impl ObjectTypeEvidence {
-    pub(super) fn declared(class: effective_type::CAccessClass) -> Self {
-        Self {
-            class,
-            checked: false,
-            premise_fingerprint: 0,
-            premises: Default::default(),
-        }
-    }
-
     pub(super) fn parameter(
         class: effective_type::CAccessClass,
         parameter: usize,
@@ -276,24 +267,88 @@ mod tests {
             unreachable!()
         };
         assert!(!pointer.supports_object_class(&class()));
-        let word = Bitvector32Term::object_pointer_address(
-            pointer.pointer().clone(),
-            pointer.object_address_evidence(),
-        );
-        let decoded = super::super::eval::pointer_tags::cast_tagged_address_to_pointer(
-            &word,
-            &PureFactContext::new(),
+        let context = PureFactContext::new();
+        let word = super::super::eval::cast_c_value_to_type(
+            CValue::Pointer(pointer.clone()),
+            CType::UInt64,
+            super::super::eval::IntegerConversion::Modular,
             &mut Vec::new(),
-            CType::Int32Pointer,
+            &context,
         )
-        .unwrap()
         .unwrap();
+        assert!(matches!(word, CValue::PointerInteger(_)));
+        let decoded = super::super::eval::cast_c_value_to_type(
+            word,
+            CType::Int32Pointer,
+            super::super::eval::IntegerConversion::Modular,
+            &mut Vec::new(),
+            &context,
+        )
+        .unwrap();
+        let CValue::Pointer(decoded) = decoded else {
+            unreachable!()
+        };
         assert!(!decoded.supports_object_class(&class()));
         assert_eq!(
             decoded.object_origin_evidence(),
             pointer.object_origin_evidence()
         );
     }
+    #[test]
+    fn numeric_address_annotations_cannot_manufacture_nominal_type_evidence() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let original =
+            CValue::typed_pointer(Pointer::symbolic(Variable(900_002)), CType::Int32Pointer)
+                .with_pointer_object_class(Some(class()));
+        let CValue::Pointer(source) = &original else {
+            unreachable!()
+        };
+        let bits = Bitvector32Term::object_pointer_address(
+            source.pointer().clone(),
+            source.object_class(),
+        );
+        let decoded = super::super::eval::pointer_tags::cast_tagged_address_to_pointer(
+            &bits,
+            &PureFactContext::new(),
+            &mut Vec::new(),
+            CType::Int32Pointer,
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(decoded.object_class(), Some(class()));
+        assert!(!decoded.supports_object_class(&class()));
+        let mut decoded = CValue::Pointer(decoded);
+        let facts = PureFactContext::new().assume_proposition(Proposition::Predicate {
+            name: "checked_source".into(),
+            arguments: vec![Term::CValue(original.clone())],
+        });
+        assert!(refine_object_pointer_argument(
+            &mut decoded,
+            &class(),
+            &CMemory::new(),
+            &facts
+        ));
+        let word = super::super::eval::cast_c_value_to_type(
+            original,
+            CType::UInt64,
+            super::super::eval::IntegerConversion::Modular,
+            &mut Vec::new(),
+            &PureFactContext::new(),
+        )
+        .unwrap();
+        let decoded = super::super::eval::cast_c_value_to_type(
+            word,
+            CType::Int32Pointer,
+            super::super::eval::IntegerConversion::Modular,
+            &mut Vec::new(),
+            &PureFactContext::new(),
+        )
+        .unwrap();
+        assert!(
+            matches!(decoded, CValue::Pointer(pointer) if pointer.supports_object_class(&class()))
+        );
+    }
+
     #[test]
     fn returned_alternatives_combine_origins_without_demanding_equal_origin_ids() {
         let values: Vec<_> = (0..2)

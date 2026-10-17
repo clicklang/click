@@ -12,6 +12,8 @@ void __rb_change_child(struct rb_node* old, struct rb_node* new,
     produces after: ctx_at(new, root);
     ensures after.model == old(before.model);
     ensures old->__rb_parent_color == old(old->__rb_parent_color);
+    ensures ((struct rb_node*)(old->__rb_parent_color & ~3))
+        == old((struct rb_node*)(old->__rb_parent_color & ~3));
 } by {
     match before.model {
         Context::Top => {
