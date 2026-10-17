@@ -765,9 +765,10 @@ pub(super) fn collect_c_memory_read_expressions(
         CStatement::HeapAllocate { bytes, .. } => values(bytes, reads),
         CStatement::HeapFree { pointer } => values(pointer, reads),
         CStatement::Assert { condition, .. } => values(condition, reads),
-        CStatement::Seq(first, second) => {
-            collect_c_memory_read_expressions(first, reads);
-            collect_c_memory_read_expressions(second, reads);
+        CStatement::Seq(statements) => {
+            for statement in statements.iter() {
+                collect_c_memory_read_expressions(statement, reads);
+            }
         }
         CStatement::TryCatchInt32 {
             try_body, handler, ..

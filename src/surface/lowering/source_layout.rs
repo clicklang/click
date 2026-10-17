@@ -36,7 +36,9 @@ pub(in crate::surface) fn count_loop_regions(function: &syntax::C0Function) -> u
     let mut count = 0;
     while let Some(statement) = pending.pop() {
         match statement {
-            CStatement::Seq(a, b) => pending.extend([a.as_ref(), b.as_ref()]),
+            CStatement::Seq(statements) => {
+                pending.extend(statements.iter().map(|statement| statement.as_ref()))
+            }
             CStatement::If {
                 then_branch,
                 else_branch,
@@ -359,9 +361,16 @@ impl SourceExecutionLayout {
                 layout.reads.push(*next_statement_index);
             }
             match statement {
-                CStatement::Seq(first, second) => {
-                    visit(first, next_statement_index, layout)?;
-                    visit(second, next_statement_index, layout)
+                CStatement::Seq(statements) => {
+                    let last = statements.len() - 1;
+                    for statement in statements.iter().take(last) {
+                        visit(statement, next_statement_index, layout)?;
+                    }
+                    visit(
+                        statements.get(last).expect("a last statement"),
+                        next_statement_index,
+                        layout,
+                    )
                 }
                 CStatement::If {
                     then_branch,
@@ -1060,9 +1069,10 @@ fn collect_kernel_automatic_exits(source: &CStatement, layout: &mut SourceExecut
             CStatement::Declare { name, .. } | CStatement::DeclareAggregate { name, .. } => {
                 names.push(name.clone())
             }
-            CStatement::Seq(a, b) => {
-                declarations(a, names);
-                declarations(b, names);
+            CStatement::Seq(statements) => {
+                for statement in statements.iter() {
+                    declarations(statement, names);
+                }
             }
             // Implementation cleanup does not introduce a lexical scope.
             CStatement::TryCatchInt32 {
@@ -1100,9 +1110,12 @@ fn collect_kernel_automatic_exits(source: &CStatement, layout: &mut SourceExecut
         scopes: &mut Vec<(Vec<String>, Option<usize>)>,
         layout: &mut SourceExecutionLayoutData,
     ) -> Vec<usize> {
-        if let CStatement::Seq(a, b) = s {
-            visit(a, index, scopes, layout);
-            return visit(b, index, scopes, layout);
+        if let CStatement::Seq(statements) = s {
+            let mut tails = Vec::new();
+            for statement in statements.iter() {
+                tails = visit(statement, index, scopes, layout);
+            }
+            return tails;
         }
         let head = *index;
         *index += 1;

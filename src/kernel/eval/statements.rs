@@ -2768,9 +2768,10 @@ fn collect_scope_declared_names(statement: &CStatement, names: &mut Vec<String>)
         CStatement::Declare { name, .. } | CStatement::DeclareAggregate { name, .. } => {
             names.push(name.clone());
         }
-        CStatement::Seq(first, second) => {
-            collect_scope_declared_names(first, names);
-            collect_scope_declared_names(second, names);
+        CStatement::Seq(statements) => {
+            for statement in statements.iter() {
+                collect_scope_declared_names(statement, names);
+            }
         }
         // Nested scopes retire their own declarations.
         CStatement::If { .. }
@@ -2982,11 +2983,12 @@ pub(in crate::kernel) fn execute_statement_paths(
 ) -> ExecutionResult<Vec<CStatementExecutionPath>> {
     // Keep a source block's sequence spine out of the large leaf-operation
     // frame. Adding a fact index must not multiply stack use per statement.
-    if let CStatement::Seq(first, second) = statement {
+    if let CStatement::Seq(statements) = statement {
+        let second = statements.rest();
         let mut paths = Vec::new();
         for first_path in execute_statement_paths(
             state,
-            first,
+            statements.first(),
             assumptions,
             execution_context,
             budget,
@@ -3003,7 +3005,7 @@ pub(in crate::kernel) fn execute_statement_paths(
                 CStatementOutcome::Normal(state) => {
                     paths.extend(execute_statement_paths_with_prefix(
                         &state,
-                        second,
+                        &second,
                         assumptions,
                         execution_context,
                         &facts,
@@ -3167,7 +3169,7 @@ fn verification_operation_name(statement: &CStatement) -> &'static str {
         CStatement::While { .. } => "verification statement: while",
         CStatement::Switch { .. } => "verification statement: switch",
         CStatement::If { .. } => "verification statement: if",
-        CStatement::Seq(_, _) => "verification statement: sequence",
+        CStatement::Seq(_) => "verification statement: sequence",
     }
 }
 
@@ -3280,7 +3282,7 @@ fn execute_c_statement_leaf_paths(
                 return Ok(paths);
             }
             CStatement::TypedStore { .. } if pending.has_local_handle_slot(state) => {}
-            CStatement::Skip | CStatement::Seq(_, _) => {}
+            CStatement::Skip | CStatement::Seq(_) => {}
             CStatement::If { condition, .. }
                 if super::super::functions::c_expression_is_state_independent(condition) => {}
             _ => {
@@ -3299,7 +3301,7 @@ fn execute_c_statement_leaf_paths(
     // `Seq` is the tree representation of a source block, not an executed C
     // statement. Charging it made the statement budget depend on tree shape
     // and counted every straight-line source statement twice.
-    if !matches!(statement, CStatement::Seq(_, _)) {
+    if !matches!(statement, CStatement::Seq(_)) {
         budget.consume_statement_step()?;
     }
     // The private scalar lease adapter supports direct scalar execution only.
@@ -3711,7 +3713,7 @@ fn execute_c_statement_leaf_paths(
         CStatement::Assert { condition, label } => {
             execute_c_assert_paths(state, condition, label.as_deref(), assumptions, budget)?
         }
-        CStatement::Seq(_, _) => unreachable!("sequences dispatch before leaf execution"),
+        CStatement::Seq(_) => unreachable!("sequences dispatch before leaf execution"),
         CStatement::Return(CExpression::Value(CValue::Void)) => {
             let outcome = if let Some(refusal) = return_authority_refusal(state) {
                 refusal

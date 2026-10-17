@@ -4585,7 +4585,7 @@ fn void_fallthrough_completion_requires_consuming_the_entire_source() {
         (CType::Int32, false),
     ] {
         let body = if pending_return {
-            CStatement::Seq(
+            CStatement::seq(
                 std::sync::Arc::new(CStatement::Skip),
                 std::sync::Arc::new(c_return(c_void_value())),
             )

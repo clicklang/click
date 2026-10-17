@@ -6057,11 +6057,14 @@ fn checked_evidence_premises_hold_in(theorem: &Theorem, context: &PureFactContex
 
 fn split_checked_evidence_statement(statement: CStatement) -> (CStatement, Option<CStatement>) {
     match statement {
-        CStatement::Seq(first, second) => {
-            let (head, first_tail) = split_checked_evidence_statement(Arc::unwrap_or_clone(first));
+        CStatement::Seq(statements) => {
+            let (head, first_tail) =
+                split_checked_evidence_statement((**statements.first()).clone());
             let tail = match first_tail {
-                Some(first_tail) => CStatement::Seq(Arc::new(first_tail), second),
-                None => Arc::unwrap_or_clone(second),
+                Some(first_tail) => {
+                    CStatement::Seq(statements.with_statement(0, Arc::new(first_tail)))
+                }
+                None => Arc::unwrap_or_clone(statements.rest()),
             };
             (head, Some(tail))
         }
@@ -6075,11 +6078,13 @@ fn split_shared_source(
     source: &CStatement,
 ) -> (std::borrow::Cow<'_, CStatement>, Option<Arc<CStatement>>) {
     match source {
-        CStatement::Seq(first, second) => {
-            let (head, first_tail) = split_shared_source(first);
+        CStatement::Seq(statements) => {
+            let (head, first_tail) = split_shared_source(statements.first());
             let tail = match first_tail {
-                Some(first_tail) => Arc::new(CStatement::Seq(first_tail, second.clone())),
-                None => second.clone(),
+                Some(first_tail) => {
+                    Arc::new(CStatement::Seq(statements.with_statement(0, first_tail)))
+                }
+                None => statements.rest(),
             };
             (head, Some(tail))
         }
@@ -6092,7 +6097,7 @@ fn prepend_shared_source(
     tail: Option<Arc<CStatement>>,
 ) -> Arc<CStatement> {
     match tail {
-        Some(tail) => Arc::new(CStatement::Seq(statement, tail)),
+        Some(tail) => Arc::new(CStatement::seq(statement, tail)),
         None => statement,
     }
 }
@@ -6102,7 +6107,7 @@ fn prepend_checked_evidence_statement(
     tail: Option<CStatement>,
 ) -> CStatement {
     match tail {
-        Some(tail) => CStatement::Seq(Arc::new(statement), Arc::new(tail)),
+        Some(tail) => CStatement::seq(Arc::new(statement), Arc::new(tail)),
         None => statement,
     }
 }
@@ -6133,9 +6138,10 @@ fn loop_head_source(
 fn statements_have_same_source(left: &CStatement, right: &CStatement) -> bool {
     fn flatten<'a>(statement: &'a CStatement, output: &mut Vec<&'a CStatement>) {
         match statement {
-            CStatement::Seq(first, second) => {
-                flatten(first, output);
-                flatten(second, output);
+            CStatement::Seq(statements) => {
+                for statement in statements.iter() {
+                    flatten(statement, output);
+                }
             }
             statement => output.push(statement),
         }
@@ -6193,9 +6199,10 @@ fn statement_sequence_has_same_source_prefix(
 ) -> bool {
     fn flatten<'a>(statement: &'a CStatement, output: &mut Vec<&'a CStatement>) {
         match statement {
-            CStatement::Seq(first, second) => {
-                flatten(first, output);
-                flatten(second, output);
+            CStatement::Seq(statements) => {
+                for statement in statements.iter() {
+                    flatten(statement, output);
+                }
             }
             statement => output.push(statement),
         }
@@ -6224,9 +6231,10 @@ fn statement_sequence_is_prefix(
 ) -> bool {
     fn flatten<'a>(statement: &'a CStatement, output: &mut Vec<&'a CStatement>) {
         match statement {
-            CStatement::Seq(first, second) => {
-                flatten(first, output);
-                flatten(second, output);
+            CStatement::Seq(statements) => {
+                for statement in statements.iter() {
+                    flatten(statement, output);
+                }
             }
             statement => output.push(statement),
         }
@@ -8653,7 +8661,7 @@ impl ExecutionProofCore {
                         natural_exit_target: None,
                         body: body.clone(),
                     };
-                    let body_then_head = Arc::new(CStatement::Seq(
+                    let body_then_head = Arc::new(CStatement::seq(
                         Arc::new((**body).clone()),
                         Arc::new(loop_head),
                     ));

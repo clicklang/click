@@ -197,8 +197,10 @@ instead of from what the step changed.
    charged step work is now flat (largest step 4,692 units at N = 16 to
    128) and mean step time grows x1.1 from N = 32 to 128.
 
-Related scaling bugs stay in `bugs/` until fixed:
-[sequential-loop-clause-grows-with-earlier-loops.md](../bugs/sequential-loop-clause-grows-with-earlier-loops.md).
+The sequential-loop clause bug filed beside these is fixed; "Sequential loop
+clauses" in
+[verification-efficiency.md](../docs/internals/verification-efficiency.md)
+describes what each clause reads.
 
 ## Scaling tests
 

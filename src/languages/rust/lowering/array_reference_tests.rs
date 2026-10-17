@@ -5,10 +5,13 @@ use crate::surface::C0VerificationSession;
 fn charon_array_reference_assignments_preserve_bounded_storage_and_proof_work() {
     fn shape(s: &CStatement) -> (usize, usize) {
         match s {
-            CStatement::Seq(a, b) => {
-                let a = shape(a);
-                let b = shape(b);
-                (1 + a.0 + b.0, a.1 + b.1)
+            CStatement::Seq(statements) => {
+                let mut total = (statements.len() - 1, 0);
+                for statement in statements.iter() {
+                    let part = shape(statement);
+                    total = (total.0 + part.0, total.1 + part.1);
+                }
+                total
             }
             CStatement::DeclareAggregate { layout, .. } => {
                 assert!(
@@ -79,7 +82,13 @@ fn charon_external_array_operations_keep_lowering_and_proof_work_bounded() {
     let prepared = super::super::import::prepared_for_test(export).unwrap();
     fn statements(statement: &CStatement) -> usize {
         match statement {
-            CStatement::Seq(a, b) => 1 + statements(a) + statements(b),
+            CStatement::Seq(sequence) => {
+                sequence.len() - 1
+                    + sequence
+                        .iter()
+                        .map(|statement| statements(statement))
+                        .sum::<usize>()
+            }
             _ => 1,
         }
     }
