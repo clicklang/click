@@ -159,6 +159,10 @@ pub(crate) fn normalize_using_conditions(
     facts: &super::ProofFacts,
 ) -> Result<(), ConditionalNormalizationError> {
     let mut conditions = std::collections::HashMap::new();
+    // Keep graph admission in source order. Its bounded pointer fragment may
+    // retain different coordinates after a block merge; hash iteration must
+    // not choose whether the same certificate checks.
+    let mut admission_order = Vec::new();
     // Equality is symmetric; signed comparisons also have an exact mirrored
     // spelling with swapped operands. Retain those spellings so
     // `normalize using` can close the same condition in either orientation.
@@ -179,10 +183,12 @@ pub(crate) fn normalize_using_conditions(
         }
         let (condition, value) = crate::kernel::spec::proposition_as_single_condition(premise)
             .ok_or(ConditionalNormalizationError::UnsupportedPremise(index))?;
-        if let Some(previous) = conditions.insert(condition.clone(), value)
-            && previous != value
-        {
+        let previous = conditions.insert(condition.clone(), value);
+        if previous.is_some_and(|previous| previous != value) {
             return Err(ConditionalNormalizationError::UnsupportedPremise(index));
+        }
+        if previous.is_none() {
+            admission_order.push((condition.clone(), value));
         }
         let reverse = match &condition {
             ConditionTerm::IntegerEqual(left, right) => {
@@ -208,11 +214,14 @@ pub(crate) fn normalize_using_conditions(
             ),
             _ => None,
         };
-        if let Some(reverse) = reverse
-            && let Some(previous) = conditions.insert(reverse, value)
-            && previous != value
-        {
-            return Err(ConditionalNormalizationError::UnsupportedPremise(index));
+        if let Some(reverse) = reverse {
+            let previous = conditions.insert(reverse.clone(), value);
+            if previous.is_some_and(|previous| previous != value) {
+                return Err(ConditionalNormalizationError::UnsupportedPremise(index));
+            }
+            if previous.is_none() {
+                admission_order.push((reverse, value));
+            }
         }
         // Exact condition lookup above handles ordinary scalar terms.  Fold
         // binders can be freshly allocated while lowering the cited premise
@@ -259,6 +268,7 @@ pub(crate) fn normalize_using_conditions(
                 match candidate.checked_eq(&key) {
                     Some(true) => {
                         conditions.insert(condition.clone(), *value);
+                        admission_order.push((condition.clone(), *value));
                         break;
                     }
                     Some(false) => {}
@@ -271,9 +281,9 @@ pub(crate) fn normalize_using_conditions(
     // condition rewrites retain their direct indexed lookup and never build
     // a graph from an ambient map.
     let mut selected = PureFactContext::new();
-    for (condition, value) in &conditions {
+    for (condition, value) in admission_order {
         crate::instrumentation::record_deterministic_work(1);
-        selected = selected.assume_condition(condition.clone(), *value);
+        selected = selected.assume_condition(condition, value);
     }
     if let Some((ConditionTerm::Bitvector64Equal(left, right), true)) =
         crate::kernel::spec::proposition_as_single_condition(goal)
