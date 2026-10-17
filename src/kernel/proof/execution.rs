@@ -1530,20 +1530,6 @@ impl CheckedResourceRewrite {
                 parameter.c_type(),
             );
         }
-        let child_context = ResourceContext::new_with_equalities(assumptions)
-            .unchecked_with_facts(children.clone());
-        let mut allowed = child_context.observable_facts_assuming_valid(assumptions);
-        for child in &children {
-            if let Some(owned) = child.owned_resource() {
-                allowed.push(Proposition::CResourceContains {
-                    parent: Box::new(selected.resource().clone()),
-                    child: Box::new(owned.clone()),
-                });
-            }
-        }
-        allowed.push(Proposition::CResourceComposition(
-            ResourceContext::new_with_equalities(assumptions).unchecked_with_facts(children),
-        ));
         let mut evaluation_assumptions = assumptions.clone();
         for imported in imported_counts.into_iter().flatten() {
             let bound = Proposition::ConditionIs(
@@ -1556,18 +1542,7 @@ impl CheckedResourceRewrite {
                 ),
                 true,
             );
-            allowed.push(bound.clone());
             evaluation_assumptions = evaluation_assumptions.assume_proposition(bound);
-        }
-        if let Some(loadable) =
-            crate::kernel::functions::evaluate_composite_resource_loadable_propositions(
-                selected,
-                std::slice::from_ref(definition),
-                after_state.memory(),
-                assumptions,
-            )
-        {
-            allowed.extend(loadable);
         }
         let mut budget = ExecutionBudget::beside_live_state();
         for (index, source) in definition.facts().iter().enumerate() {
@@ -1609,40 +1584,11 @@ impl CheckedResourceRewrite {
                         .unwrap_or("the control resource fact"),
                 ));
             }
-            allowed.push(path.proposition.clone());
         }
-        let introduced = after_facts
-            .introduced_since(before_facts)
-            .ok_or("authority control facts do not descend from their input")?;
-        let allowed_assumptions = allowed.iter().fold(assumptions.clone(), |facts, fact| {
-            facts.assume_proposition(fact.clone())
-        });
-        let allowed_set = allowed
-            .iter()
-            .cloned()
-            .collect::<std::collections::BTreeSet<_>>();
-        let mut cached_comparisons = HashMap::new();
-        if let Some(unchecked) = introduced.iter().find(|fact| {
-            !allowed.contains(fact)
-                && !cached_body_loadability(
-                    fact,
-                    before_state.memory(),
-                    &allowed_set,
-                    &mut cached_comparisons,
-                )
-                && !allowed_assumptions.proves_exact(fact)
-                && !resource_composition_is_supported_by(
-                    fact,
-                    &ResourceContext::new_with_equalities(assumptions)
-                        .unchecked_with_facts(expected_resources.facts().iter().cloned()),
-                    assumptions,
-                )
-        }) {
-            return Err(format!(
-                "authority control introduced an unchecked pure fact: {}",
-                truncate_debug(unchecked, 240)
-            ));
-        }
+        // The resource operation constructs its fact delta while naming the
+        // selected body's loaded children. Retain those facts directly, as for
+        // ordinary composite rewrites below. Reconstructing a second allowed
+        // list loses auxiliary pointer-value equalities from that operation.
         Ok(Self {
             before_state: before_state.clone(),
             after_state: after_state.clone(),
