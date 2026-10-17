@@ -970,8 +970,16 @@ Fold consumption uses this paired address/span index instead of enumerating
 pointer spellings. A selected candidate can express the requirement in its
 own block coordinates using the graph's affine relation; this visits no other
 class members. Existing local range matching remains responsible for
-same-block containment and endpoint reasoning. Specification reads also use
-the paired index for concrete affine addresses in classes whose memory entries
+same-block containment and endpoint reasoning.
+
+Logical model reads retain the selected supplier's full base expression when
+choosing its address coordinates. A loaded pointer can have a variable offset
+within its storage block; only the displacement from that complete base needs
+to be constant. Dropping the offset would give an unrelated read identity for
+an unchanged field after a helper call. Address selection grants neither read
+permission nor equality between different snapshots.
+
+Specification reads also use the paired index for concrete affine addresses in classes whose memory entries
 all have positive concrete read cores. A persistent AVL interval tree stores
 each occurrence's byte start/end and each subtree's maximum end. It lazily
 selects ranges covering the access's candidate footprint, including mixed extents and overlapping
