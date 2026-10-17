@@ -905,74 +905,12 @@ fn write_arithmetic_certificate(
     let ArithmeticCertificateFamily::Integer(certificate) = &certificate.family else {
         unreachable!("signed_int32 certificates are printed above")
     };
+    let certificate = compact_integer_certificate(certificate);
     let prefix = "    ".repeat(indent);
     wrapped_line(output, &prefix, "arithmetic_certificate {");
     let body = "    ".repeat(indent + 1);
     for node in &certificate.nodes {
-        let text = match node {
-            IntegerCertificateNode::Premise {
-                index,
-                proposition,
-                result,
-            } => format!(
-                "premise {index}: {} => {};",
-                source_click_proposition(proposition),
-                source_click_proposition(result)
-            ),
-            IntegerCertificateNode::Scale {
-                source,
-                coefficient,
-                result,
-            } => format!(
-                "scale {source} by {} => {};",
-                describe_contract_expression(coefficient),
-                source_click_proposition(result)
-            ),
-            IntegerCertificateNode::Add {
-                left,
-                right,
-                result,
-            } => format!(
-                "add {left}, {right} => {};",
-                source_click_proposition(result)
-            ),
-            IntegerCertificateNode::EqualityToLessEqual {
-                source,
-                reverse,
-                result,
-            } => format!(
-                "less_equal_from_equal {source}{} => {};",
-                if *reverse { " reverse" } else { "" },
-                source_click_proposition(result)
-            ),
-            IntegerCertificateNode::EqualityFromBounds {
-                lower,
-                upper,
-                result,
-            } => format!(
-                "equal_from_bounds {lower}, {upper} => {};",
-                source_click_proposition(result)
-            ),
-            IntegerCertificateNode::Trivial { result } => {
-                format!("trivial => {};", source_click_proposition(result))
-            }
-            IntegerCertificateNode::TypeRange { result } => {
-                format!("type_range => {};", source_click_proposition(result))
-            }
-            IntegerCertificateNode::NegatedGoal { result } => {
-                format!("negated_goal => {};", source_click_proposition(result))
-            }
-            IntegerCertificateNode::Divide {
-                source,
-                divisor,
-                result,
-            } => format!(
-                "divide {source} by {} => {};",
-                describe_contract_expression(divisor),
-                source_click_proposition(result)
-            ),
-        };
-        wrapped_line(output, &body, &text);
+        wrapped_line(output, &body, &integer_certificate_node_text(node));
     }
     wrapped_line(
         output,
@@ -980,6 +918,72 @@ fn write_arithmetic_certificate(
         &format!("conclusion {};", certificate.conclusion),
     );
     wrapped_line(output, &prefix, "}");
+}
+
+fn integer_certificate_node_text(node: &IntegerCertificateNode) -> String {
+    match node {
+        IntegerCertificateNode::Premise {
+            index,
+            proposition,
+            result,
+        } => format!(
+            "premise {index}: {} => {};",
+            source_click_proposition(proposition),
+            source_click_proposition(result)
+        ),
+        IntegerCertificateNode::Scale {
+            source,
+            coefficient,
+            result,
+        } => format!(
+            "scale {source} by {} => {};",
+            describe_contract_expression(coefficient),
+            source_click_proposition(result)
+        ),
+        IntegerCertificateNode::Add {
+            left,
+            right,
+            result,
+        } => format!(
+            "add {left}, {right} => {};",
+            source_click_proposition(result)
+        ),
+        IntegerCertificateNode::EqualityToLessEqual {
+            source,
+            reverse,
+            result,
+        } => format!(
+            "less_equal_from_equal {source}{} => {};",
+            if *reverse { " reverse" } else { "" },
+            source_click_proposition(result)
+        ),
+        IntegerCertificateNode::EqualityFromBounds {
+            lower,
+            upper,
+            result,
+        } => format!(
+            "equal_from_bounds {lower}, {upper} => {};",
+            source_click_proposition(result)
+        ),
+        IntegerCertificateNode::Trivial { result } => {
+            format!("trivial => {};", source_click_proposition(result))
+        }
+        IntegerCertificateNode::TypeRange { result } => {
+            format!("type_range => {};", source_click_proposition(result))
+        }
+        IntegerCertificateNode::NegatedGoal { result } => {
+            format!("negated_goal => {};", source_click_proposition(result))
+        }
+        IntegerCertificateNode::Divide {
+            source,
+            divisor,
+            result,
+        } => format!(
+            "divide {source} by {} => {};",
+            describe_contract_expression(divisor),
+            source_click_proposition(result)
+        ),
+    }
 }
 
 fn write_special_arithmetic_certificate(
@@ -1176,234 +1180,12 @@ fn write_signed_int32_certificate(
     certificate: &SignedInt32Certificate,
     indent: usize,
 ) {
+    let certificate = compact_signed_int32_certificate(certificate);
     let prefix = "    ".repeat(indent);
     wrapped_line(output, &prefix, "arithmetic_certificate signed_int32 {");
     let body = "    ".repeat(indent + 1);
     for node in &certificate.nodes {
-        let text = match node {
-            SignedArithmeticStep::Premise {
-                index,
-                proposition,
-                result,
-            } => format!(
-                "premise {index}: {} => {};",
-                source_click_proposition(proposition),
-                source_click_proposition(result)
-            ),
-            SignedArithmeticStep::Scale {
-                source,
-                coefficient,
-                result,
-            } => format!(
-                "scale {source} by {} => {};",
-                describe_contract_expression(coefficient),
-                source_click_proposition(result)
-            ),
-            SignedArithmeticStep::Add {
-                left,
-                right,
-                result,
-            } => format!(
-                "add {left}, {right} => {};",
-                source_click_proposition(result)
-            ),
-            SignedArithmeticStep::EqualityToLessEqual {
-                source,
-                reverse,
-                result,
-            } => format!(
-                "less_equal_from_equal {source}{} => {};",
-                if *reverse { " reverse" } else { "" },
-                source_click_proposition(result)
-            ),
-            SignedArithmeticStep::EqualityFromBounds {
-                lower,
-                upper,
-                result,
-            } => format!(
-                "equal_from_bounds {lower}, {upper} => {};",
-                source_click_proposition(result)
-            ),
-            SignedArithmeticStep::StrictFromDisequal {
-                bound,
-                disequal,
-                result,
-            } => format!(
-                "less_than_from_not_equal {bound}, {disequal} => {};",
-                source_click_proposition(result)
-            ),
-            SignedArithmeticStep::Trivial { result } => {
-                format!("trivial => {};", source_click_proposition(result))
-            }
-            SignedArithmeticStep::Int32Range { result } => {
-                format!("int32_range => {};", source_click_proposition(result))
-            }
-            SignedArithmeticStep::IntervalFromAffine {
-                source,
-                term,
-                lower,
-                upper,
-            } => format!(
-                "interval_from_affine {source} ({}) ({lower}) ({upper});",
-                describe_contract_expression(term)
-            ),
-            SignedArithmeticStep::IntervalFromAffineDirect {
-                source,
-                term,
-                lower,
-                upper,
-            } => format!(
-                "interval_from_affine_direct {source} ({}) ({lower}) ({upper});",
-                describe_contract_expression(term)
-            ),
-            SignedArithmeticStep::IntervalAtom { term, lower, upper } => format!(
-                "interval_atom ({}) ({lower}) ({upper});",
-                describe_contract_expression(term)
-            ),
-            SignedArithmeticStep::DefinedPremise { index, term } => {
-                format!("defined {index} ({});", describe_contract_expression(term))
-            }
-            SignedArithmeticStep::IntervalIntersect {
-                left,
-                right,
-                result,
-            } => format!(
-                "interval_intersect {left}, {right} ({}) ({});",
-                result.lower, result.upper
-            ),
-            SignedArithmeticStep::IntervalAdd {
-                left,
-                right,
-                defined,
-                result,
-            } => format!(
-                "interval_add {left}, {right} {defined} ({}) ({});",
-                result.lower, result.upper
-            ),
-            SignedArithmeticStep::IntervalAddBounded {
-                left,
-                right,
-                result,
-            } => format!(
-                "interval_add_bounded {left}, {right} ({}) ({});",
-                result.lower, result.upper
-            ),
-            SignedArithmeticStep::IntervalSubtract {
-                left,
-                right,
-                defined,
-                result,
-            } => format!(
-                "interval_subtract {left}, {right} {defined} ({}) ({});",
-                result.lower, result.upper
-            ),
-            SignedArithmeticStep::IntervalMultiply {
-                left,
-                right,
-                defined,
-                result,
-            } => format!(
-                "interval_multiply {left}, {right} {defined} ({}) ({});",
-                result.lower, result.upper
-            ),
-            SignedArithmeticStep::IntervalRemainderAdd {
-                operand,
-                remainder,
-                addend,
-                divisor,
-                result,
-            } => format!(
-                "interval_remainder_add {operand}, {remainder} ({addend}) ({divisor}) ({}) ({});",
-                result.lower, result.upper
-            ),
-            SignedArithmeticStep::IntervalRemainder {
-                operand,
-                divisor,
-                defined,
-                result,
-            } => format!(
-                "interval_remainder {operand} {divisor} {defined} ({}) ({});",
-                result.lower, result.upper
-            ),
-            SignedArithmeticStep::IntervalShiftLeft {
-                operand,
-                shift,
-                defined,
-                result,
-            } => format!(
-                "interval_shift_left {operand} {shift} {defined} ({}) ({});",
-                result.lower, result.upper
-            ),
-            SignedArithmeticStep::IntervalArithmeticShiftRight {
-                operand,
-                shift,
-                result,
-            } => format!(
-                "interval_arithmetic_shift_right {operand} {shift} ({}) ({});",
-                result.lower, result.upper
-            ),
-            SignedArithmeticStep::IntervalBitwiseAnd {
-                operand,
-                mask,
-                result,
-            } => format!(
-                "interval_bitwise_and {operand} {mask} ({}) ({});",
-                result.lower, result.upper
-            ),
-            SignedArithmeticStep::IntervalSignBitFlip { operand, result } => format!(
-                "interval_sign_bit_flip {operand} ({}) ({});",
-                result.lower, result.upper
-            ),
-            SignedArithmeticStep::IntervalNarrowedCast {
-                operand,
-                source,
-                destination,
-                result,
-            } => format!(
-                "interval_narrowed_cast {operand} {} {} ({}) ({});",
-                machine_integer_type_name(*source),
-                machine_integer_type_name(*destination),
-                result.lower,
-                result.upper
-            ),
-            SignedArithmeticStep::IntervalCompare {
-                left,
-                right,
-                comparison,
-                result,
-            } => format!(
-                "interval_compare {left}, {right} {} => {};",
-                signed_comparison_name(*comparison),
-                source_click_proposition(result)
-            ),
-            SignedArithmeticStep::AffinePremise {
-                source,
-                left_evidence,
-                right_evidence,
-                result,
-            } => format!(
-                "affine_premise {source} {left_evidence} {right_evidence} => {};",
-                source_click_proposition(result)
-            ),
-            SignedArithmeticStep::AffineConclusion {
-                source,
-                evidence,
-                result,
-            } => format!(
-                "affine_conclusion {source} {evidence} => {};",
-                source_click_proposition(result)
-            ),
-            SignedArithmeticStep::AffineConclusionWithEvidence {
-                source,
-                left_evidence,
-                right_evidence,
-                result,
-            } => format!(
-                "affine_conclusion_pair {source} {left_evidence} {right_evidence} => {};",
-                source_click_proposition(result)
-            ),
-        };
-        wrapped_line(output, &body, &text);
+        wrapped_line(output, &body, &signed_arithmetic_step_text(node));
     }
     wrapped_line(
         output,
@@ -1411,6 +1193,427 @@ fn write_signed_int32_certificate(
         &format!("conclusion {};", certificate.conclusion),
     );
     wrapped_line(output, &prefix, "}");
+}
+
+fn signed_arithmetic_step_text(node: &SignedArithmeticStep) -> String {
+    match node {
+        SignedArithmeticStep::Premise {
+            index,
+            proposition,
+            result,
+        } => format!(
+            "premise {index}: {} => {};",
+            source_click_proposition(proposition),
+            source_click_proposition(result)
+        ),
+        SignedArithmeticStep::Scale {
+            source,
+            coefficient,
+            result,
+        } => format!(
+            "scale {source} by {} => {};",
+            describe_contract_expression(coefficient),
+            source_click_proposition(result)
+        ),
+        SignedArithmeticStep::Add {
+            left,
+            right,
+            result,
+        } => format!(
+            "add {left}, {right} => {};",
+            source_click_proposition(result)
+        ),
+        SignedArithmeticStep::EqualityToLessEqual {
+            source,
+            reverse,
+            result,
+        } => format!(
+            "less_equal_from_equal {source}{} => {};",
+            if *reverse { " reverse" } else { "" },
+            source_click_proposition(result)
+        ),
+        SignedArithmeticStep::EqualityFromBounds {
+            lower,
+            upper,
+            result,
+        } => format!(
+            "equal_from_bounds {lower}, {upper} => {};",
+            source_click_proposition(result)
+        ),
+        SignedArithmeticStep::StrictFromDisequal {
+            bound,
+            disequal,
+            result,
+        } => format!(
+            "less_than_from_not_equal {bound}, {disequal} => {};",
+            source_click_proposition(result)
+        ),
+        SignedArithmeticStep::Trivial { result } => {
+            format!("trivial => {};", source_click_proposition(result))
+        }
+        SignedArithmeticStep::Int32Range { result } => {
+            format!("int32_range => {};", source_click_proposition(result))
+        }
+        SignedArithmeticStep::IntervalFromAffine {
+            source,
+            term,
+            lower,
+            upper,
+        } => format!(
+            "interval_from_affine {source} ({}) ({lower}) ({upper});",
+            describe_contract_expression(term)
+        ),
+        SignedArithmeticStep::IntervalFromAffineDirect {
+            source,
+            term,
+            lower,
+            upper,
+        } => format!(
+            "interval_from_affine_direct {source} ({}) ({lower}) ({upper});",
+            describe_contract_expression(term)
+        ),
+        SignedArithmeticStep::IntervalAtom { term, lower, upper } => format!(
+            "interval_atom ({}) ({lower}) ({upper});",
+            describe_contract_expression(term)
+        ),
+        SignedArithmeticStep::DefinedPremise { index, term } => {
+            format!("defined {index} ({});", describe_contract_expression(term))
+        }
+        SignedArithmeticStep::IntervalIntersect {
+            left,
+            right,
+            result,
+        } => format!(
+            "interval_intersect {left}, {right} ({}) ({});",
+            result.lower, result.upper
+        ),
+        SignedArithmeticStep::IntervalAdd {
+            left,
+            right,
+            defined,
+            result,
+        } => format!(
+            "interval_add {left}, {right} {defined} ({}) ({});",
+            result.lower, result.upper
+        ),
+        SignedArithmeticStep::IntervalAddBounded {
+            left,
+            right,
+            result,
+        } => format!(
+            "interval_add_bounded {left}, {right} ({}) ({});",
+            result.lower, result.upper
+        ),
+        SignedArithmeticStep::IntervalSubtract {
+            left,
+            right,
+            defined,
+            result,
+        } => format!(
+            "interval_subtract {left}, {right} {defined} ({}) ({});",
+            result.lower, result.upper
+        ),
+        SignedArithmeticStep::IntervalMultiply {
+            left,
+            right,
+            defined,
+            result,
+        } => format!(
+            "interval_multiply {left}, {right} {defined} ({}) ({});",
+            result.lower, result.upper
+        ),
+        SignedArithmeticStep::IntervalRemainderAdd {
+            operand,
+            remainder,
+            addend,
+            divisor,
+            result,
+        } => format!(
+            "interval_remainder_add {operand}, {remainder} ({addend}) ({divisor}) ({}) ({});",
+            result.lower, result.upper
+        ),
+        SignedArithmeticStep::IntervalRemainder {
+            operand,
+            divisor,
+            defined,
+            result,
+        } => format!(
+            "interval_remainder {operand} {divisor} {defined} ({}) ({});",
+            result.lower, result.upper
+        ),
+        SignedArithmeticStep::IntervalShiftLeft {
+            operand,
+            shift,
+            defined,
+            result,
+        } => format!(
+            "interval_shift_left {operand} {shift} {defined} ({}) ({});",
+            result.lower, result.upper
+        ),
+        SignedArithmeticStep::IntervalArithmeticShiftRight {
+            operand,
+            shift,
+            result,
+        } => format!(
+            "interval_arithmetic_shift_right {operand} {shift} ({}) ({});",
+            result.lower, result.upper
+        ),
+        SignedArithmeticStep::IntervalBitwiseAnd {
+            operand,
+            mask,
+            result,
+        } => format!(
+            "interval_bitwise_and {operand} {mask} ({}) ({});",
+            result.lower, result.upper
+        ),
+        SignedArithmeticStep::IntervalSignBitFlip { operand, result } => format!(
+            "interval_sign_bit_flip {operand} ({}) ({});",
+            result.lower, result.upper
+        ),
+        SignedArithmeticStep::IntervalNarrowedCast {
+            operand,
+            source,
+            destination,
+            result,
+        } => format!(
+            "interval_narrowed_cast {operand} {} {} ({}) ({});",
+            machine_integer_type_name(*source),
+            machine_integer_type_name(*destination),
+            result.lower,
+            result.upper
+        ),
+        SignedArithmeticStep::IntervalCompare {
+            left,
+            right,
+            comparison,
+            result,
+        } => format!(
+            "interval_compare {left}, {right} {} => {};",
+            signed_comparison_name(*comparison),
+            source_click_proposition(result)
+        ),
+        SignedArithmeticStep::AffinePremise {
+            source,
+            left_evidence,
+            right_evidence,
+            result,
+        } => format!(
+            "affine_premise {source} {left_evidence} {right_evidence} => {};",
+            source_click_proposition(result)
+        ),
+        SignedArithmeticStep::AffineConclusion {
+            source,
+            evidence,
+            result,
+        } => format!(
+            "affine_conclusion {source} {evidence} => {};",
+            source_click_proposition(result)
+        ),
+        SignedArithmeticStep::AffineConclusionWithEvidence {
+            source,
+            left_evidence,
+            right_evidence,
+            result,
+        } => format!(
+            "affine_conclusion_pair {source} {left_evidence} {right_evidence} => {};",
+            source_click_proposition(result)
+        ),
+    }
+}
+
+/// A certificate's nodes with each repeated derivation written once and
+/// every derivation the conclusion does not use dropped, references
+/// renumbered to match. Premise nodes stay: their indices must remain
+/// contiguous, and the caller names any other node that must stay. Two nodes are the same derivation when they print the same
+/// after renumbering, which is what checking them reads. A certificate
+/// with a reference that does not point at an earlier node is returned
+/// unchanged, so checking still reports it.
+fn compact_certificate_nodes<N: Clone>(
+    nodes: &[N],
+    conclusion: usize,
+    is_premise: impl Fn(&N) -> bool,
+    references: impl Fn(&mut N) -> Vec<&mut usize>,
+    text: impl Fn(&N) -> String,
+) -> Option<(Vec<N>, usize)> {
+    // Forward pass: renumber each node's references onto the derivations
+    // already kept, and send a repeat to its first occurrence.
+    let mut kept = Vec::with_capacity(nodes.len());
+    let mut kept_index = Vec::with_capacity(nodes.len());
+    let mut first = std::collections::HashMap::new();
+    for (index, node) in nodes.iter().enumerate() {
+        let mut node = node.clone();
+        for reference in references(&mut node) {
+            *reference = *kept_index.get(*reference).filter(|_| *reference < index)?;
+        }
+        if is_premise(&node) {
+            kept_index.push(kept.len());
+            kept.push(node);
+            continue;
+        }
+        let spelled = text(&node);
+        let target = *first.entry(spelled).or_insert_with(|| {
+            kept.push(node);
+            kept.len() - 1
+        });
+        kept_index.push(target);
+    }
+    let conclusion = *kept_index.get(conclusion)?;
+    // Backward pass: references point at earlier nodes, so one sweep from
+    // the conclusion marks every derivation it uses.
+    let mut used = vec![false; kept.len()];
+    used[conclusion] = true;
+    for index in (0..kept.len()).rev() {
+        if !used[index] {
+            continue;
+        }
+        let mut node = kept[index].clone();
+        for reference in references(&mut node) {
+            used[*reference] = true;
+        }
+    }
+    let mut renumbered = vec![usize::MAX; kept.len()];
+    let mut compact = Vec::with_capacity(kept.len());
+    for (index, mut node) in kept.into_iter().enumerate() {
+        if !used[index] && !is_premise(&node) {
+            continue;
+        }
+        for reference in references(&mut node) {
+            *reference = renumbered[*reference];
+        }
+        renumbered[index] = compact.len();
+        compact.push(node);
+    }
+    Some((compact, renumbered[conclusion]))
+}
+
+fn compact_signed_int32_certificate(
+    certificate: &SignedInt32Certificate,
+) -> std::borrow::Cow<'_, SignedInt32Certificate> {
+    match compact_certificate_nodes(
+        &certificate.nodes,
+        certificate.conclusion,
+        |node| {
+            matches!(
+                node,
+                SignedArithmeticStep::Premise { .. } | SignedArithmeticStep::DefinedPremise { .. }
+            )
+        },
+        signed_arithmetic_step_references,
+        signed_arithmetic_step_text,
+    ) {
+        Some((nodes, conclusion)) => {
+            std::borrow::Cow::Owned(SignedInt32Certificate { nodes, conclusion })
+        }
+        None => std::borrow::Cow::Borrowed(certificate),
+    }
+}
+
+fn compact_integer_certificate(
+    certificate: &IntegerCertificate,
+) -> std::borrow::Cow<'_, IntegerCertificate> {
+    match compact_certificate_nodes(
+        &certificate.nodes,
+        certificate.conclusion,
+        // A negated goal makes the certificate a refutation; it stays even
+        // when unread.
+        |node| {
+            matches!(
+                node,
+                IntegerCertificateNode::Premise { .. } | IntegerCertificateNode::NegatedGoal { .. }
+            )
+        },
+        integer_certificate_node_references,
+        integer_certificate_node_text,
+    ) {
+        Some((nodes, conclusion)) => {
+            std::borrow::Cow::Owned(IntegerCertificate { nodes, conclusion })
+        }
+        None => std::borrow::Cow::Borrowed(certificate),
+    }
+}
+
+/// The node indices a signed_int32 step reads.
+fn signed_arithmetic_step_references(node: &mut SignedArithmeticStep) -> Vec<&mut usize> {
+    match node {
+        SignedArithmeticStep::Premise { .. }
+        | SignedArithmeticStep::DefinedPremise { .. }
+        | SignedArithmeticStep::Trivial { .. }
+        | SignedArithmeticStep::Int32Range { .. }
+        | SignedArithmeticStep::IntervalAtom { .. } => Vec::new(),
+        SignedArithmeticStep::Scale { source, .. }
+        | SignedArithmeticStep::EqualityToLessEqual { source, .. }
+        | SignedArithmeticStep::IntervalFromAffine { source, .. }
+        | SignedArithmeticStep::IntervalFromAffineDirect { source, .. } => vec![source],
+        SignedArithmeticStep::IntervalArithmeticShiftRight { operand, .. }
+        | SignedArithmeticStep::IntervalBitwiseAnd { operand, .. }
+        | SignedArithmeticStep::IntervalSignBitFlip { operand, .. }
+        | SignedArithmeticStep::IntervalNarrowedCast { operand, .. } => vec![operand],
+        SignedArithmeticStep::Add { left, right, .. }
+        | SignedArithmeticStep::IntervalIntersect { left, right, .. }
+        | SignedArithmeticStep::IntervalAddBounded { left, right, .. }
+        | SignedArithmeticStep::IntervalCompare { left, right, .. } => vec![left, right],
+        SignedArithmeticStep::EqualityFromBounds { lower, upper, .. } => vec![lower, upper],
+        SignedArithmeticStep::StrictFromDisequal {
+            bound, disequal, ..
+        } => vec![bound, disequal],
+        SignedArithmeticStep::IntervalAdd {
+            left,
+            right,
+            defined,
+            ..
+        }
+        | SignedArithmeticStep::IntervalSubtract {
+            left,
+            right,
+            defined,
+            ..
+        }
+        | SignedArithmeticStep::IntervalMultiply {
+            left,
+            right,
+            defined,
+            ..
+        } => vec![left, right, defined],
+        SignedArithmeticStep::IntervalRemainderAdd {
+            operand, remainder, ..
+        } => vec![operand, remainder],
+        SignedArithmeticStep::IntervalRemainder {
+            operand, defined, ..
+        }
+        | SignedArithmeticStep::IntervalShiftLeft {
+            operand, defined, ..
+        } => vec![operand, defined],
+        SignedArithmeticStep::AffineConclusion {
+            source, evidence, ..
+        } => vec![source, evidence],
+        SignedArithmeticStep::AffinePremise {
+            source,
+            left_evidence,
+            right_evidence,
+            ..
+        }
+        | SignedArithmeticStep::AffineConclusionWithEvidence {
+            source,
+            left_evidence,
+            right_evidence,
+            ..
+        } => vec![source, left_evidence, right_evidence],
+    }
+}
+
+/// The node indices an Integer certificate node reads.
+fn integer_certificate_node_references(node: &mut IntegerCertificateNode) -> Vec<&mut usize> {
+    match node {
+        IntegerCertificateNode::Premise { .. }
+        | IntegerCertificateNode::Trivial { .. }
+        | IntegerCertificateNode::TypeRange { .. }
+        | IntegerCertificateNode::NegatedGoal { .. } => Vec::new(),
+        IntegerCertificateNode::Scale { source, .. }
+        | IntegerCertificateNode::EqualityToLessEqual { source, .. }
+        | IntegerCertificateNode::Divide { source, .. } => vec![source],
+        IntegerCertificateNode::Add { left, right, .. } => vec![left, right],
+        IntegerCertificateNode::EqualityFromBounds { lower, upper, .. } => vec![lower, upper],
+    }
 }
 
 /// The Click spelling of an integer type in certificate text.
@@ -1780,6 +1983,192 @@ pub(super) fn spell_source_names(context: &str, source: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn certificate_variable(name: &str) -> ContractExpression {
+        ContractExpression::CFragment(CExpression::Variable(name.into()))
+    }
+
+    fn certificate_literal(value: &str) -> ContractExpression {
+        ContractExpression::IntegerLiteral(value.into())
+    }
+
+    fn certificate_comparison(
+        left: ContractExpression,
+        operator: ComparisonOperator,
+        right: ContractExpression,
+    ) -> ClickProposition {
+        ClickProposition::Comparison {
+            left,
+            operator,
+            right,
+        }
+    }
+
+    #[test]
+    fn printed_signed_certificates_write_each_derivation_once() {
+        let j = certificate_variable("j");
+        let lower = certificate_comparison(
+            j.clone(),
+            ComparisonOperator::GreaterEqual,
+            certificate_literal("0"),
+        );
+        let upper = certificate_comparison(
+            j.clone(),
+            ComparisonOperator::LessThan,
+            certificate_literal("2"),
+        );
+        let interval = |lower, upper| SignedInt32Interval { lower, upper };
+        let atom = |value: i64| SignedArithmeticStep::IntervalAtom {
+            term: certificate_literal(&value.to_string()),
+            lower: value,
+            upper: value,
+        };
+        let goal = certificate_comparison(
+            certificate_literal("0"),
+            ComparisonOperator::LessEqual,
+            certificate_literal("1"),
+        );
+        let nodes = vec![
+            SignedArithmeticStep::Premise {
+                index: 0,
+                proposition: lower.clone(),
+                result: lower,
+            },
+            SignedArithmeticStep::Premise {
+                index: 1,
+                proposition: upper.clone(),
+                result: upper,
+            },
+            atom(0),
+            SignedArithmeticStep::IntervalFromAffine {
+                source: 0,
+                term: j.clone(),
+                lower: 0,
+                upper: 2147483647,
+            },
+            SignedArithmeticStep::IntervalFromAffine {
+                source: 1,
+                term: j,
+                lower: -2147483648,
+                upper: 1,
+            },
+            SignedArithmeticStep::IntervalIntersect {
+                left: 3,
+                right: 4,
+                result: interval(0, 1),
+            },
+            SignedArithmeticStep::IntervalSubtract {
+                left: 2,
+                right: 5,
+                defined: 2,
+                result: interval(-1, 0),
+            },
+            // Read by nothing.
+            atom(7),
+            // A repeat of node 6.
+            SignedArithmeticStep::IntervalSubtract {
+                left: 2,
+                right: 5,
+                defined: 2,
+                result: interval(-1, 0),
+            },
+            atom(1),
+            // Reads the repeat, so it moves to node 6.
+            SignedArithmeticStep::IntervalAddBounded {
+                left: 8,
+                right: 9,
+                result: interval(0, 1),
+            },
+            SignedArithmeticStep::Trivial {
+                result: goal.clone(),
+            },
+            SignedArithmeticStep::AffineConclusionWithEvidence {
+                source: 11,
+                left_evidence: 6,
+                right_evidence: 10,
+                result: goal,
+            },
+        ];
+        let certificate = SignedInt32Certificate {
+            nodes,
+            conclusion: 12,
+        };
+        let mut output = String::new();
+        write_signed_int32_certificate(&mut output, &certificate, 0);
+        let lines = output.lines().map(str::trim).collect::<Vec<_>>();
+        assert_eq!(
+            lines[1..lines.len() - 1],
+            [
+                "premise 0: j >= 0 => j >= 0;",
+                "premise 1: j < 2 => j < 2;",
+                "interval_atom (0) (0) (0);",
+                "interval_from_affine 0 (j) (0) (2147483647);",
+                "interval_from_affine 1 (j) (-2147483648) (1);",
+                "interval_intersect 3, 4 (0) (1);",
+                "interval_subtract 2, 5 2 (-1) (0);",
+                "interval_atom (1) (1) (1);",
+                "interval_add_bounded 6, 7 (0) (1);",
+                "trivial => 0 <= 1;",
+                "affine_conclusion_pair 9 6 8 => 0 <= 1;",
+                "conclusion 10;",
+            ],
+            "{output}"
+        );
+    }
+
+    #[test]
+    fn printed_certificates_keep_unused_premises_and_malformed_references() {
+        let x = certificate_variable("x");
+        let premise = |index: usize, bound: &str| {
+            let proposition = certificate_comparison(
+                x.clone(),
+                ComparisonOperator::LessEqual,
+                certificate_literal(bound),
+            );
+            IntegerCertificateNode::Premise {
+                index,
+                proposition: proposition.clone(),
+                result: proposition,
+            }
+        };
+        let goal = certificate_comparison(
+            x.clone(),
+            ComparisonOperator::LessEqual,
+            certificate_literal("6"),
+        );
+        let certificate = IntegerCertificate {
+            nodes: vec![
+                premise(0, "3"),
+                premise(1, "9"),
+                IntegerCertificateNode::Trivial {
+                    result: certificate_comparison(
+                        certificate_literal("0"),
+                        ComparisonOperator::LessEqual,
+                        certificate_literal("3"),
+                    ),
+                },
+                IntegerCertificateNode::Add {
+                    left: 0,
+                    right: 2,
+                    result: goal.clone(),
+                },
+            ],
+            conclusion: 3,
+        };
+        let compact = compact_integer_certificate(&certificate);
+        assert_eq!(compact.nodes.len(), 4, "the unused premise 1 stays");
+        // Node 3 reading itself is not a reference to an earlier node.
+        let mut forward = certificate.clone();
+        forward.nodes[3] = IntegerCertificateNode::Add {
+            left: 0,
+            right: 3,
+            result: goal,
+        };
+        assert!(matches!(
+            compact_integer_certificate(&forward),
+            std::borrow::Cow::Borrowed(_)
+        ));
+    }
 
     #[test]
     fn wrapping_keeps_quoted_literals_and_long_tokens_intact() {

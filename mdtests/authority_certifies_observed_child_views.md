@@ -62,10 +62,7 @@ int32 tree_sum(struct node* node) {
     step();
     step();
     step();
-    have result == ((node->value + node->left->value) + node->right->value) by {
-        normalize();
-    }
-    assumption();
+    normalize();
 }
 ```
 

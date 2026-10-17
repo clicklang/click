@@ -1745,6 +1745,15 @@ pub(in crate::surface) fn pure_theorem_parameter_values(
                     c_type.to_kernel_type(),
                 ),
             };
+            // A parameter declared `struct T*` designates a `struct T`, as a
+            // C parameter of that type does. A theorem is checked apart from
+            // any translation unit, so the struct is known by its tag alone.
+            let value = match parameter.struct_name() {
+                Some(name) if c_type.is_pointer() => value.with_pointer_object_class(
+                    syntax::declared_pointee_class(c_type, Some(name), &BTreeMap::new()),
+                ),
+                _ => value,
+            };
             Some((parameter.name().to_string(), value))
         })
         .collect()

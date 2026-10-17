@@ -137,7 +137,7 @@ pub use expansion::{
     selected_c_target, selected_project_c_target, selected_project_thread_runtime,
     selected_thread_runtime, smart_tactic_source_sites, tactic_arm_containing_position,
     tactic_have_body_contains_position, tactic_line_has_multiple_starts, tactic_source_at_position,
-    tactic_source_position, tactic_starts_on_line, verifying_source_paths,
+    tactic_source_position, tactic_starts_on_line, tidy_expansion_closers, verifying_source_paths,
 };
 use expansion::{
     ExpansionCapture, NestedTacticCapture, ProofSite, VerificationTarget, verification_target_at,
@@ -738,9 +738,16 @@ pub enum AlgebraicFieldType {
     /// field is declared `struct tag*`; every C pointer shares one kernel
     /// type, so the tag is the only record of which layout a matched
     /// constructor binding of this field denotes.
+    ///
+    /// `object_class` is the class of the object a pointer field designates
+    /// (`design/effective-types.md`), from the declared pointee exactly as a
+    /// pointer parameter's declaration gives it. A symbolic value of the
+    /// field carries it, so a pointer read from a model keeps its
+    /// strict-aliasing and loop object-class checks.
     C {
         c_type: C0Type,
         struct_name: Option<String>,
+        object_class: Option<crate::kernel::effective_type::CAccessClass>,
     },
     Algebraic {
         name: String,
@@ -756,6 +763,7 @@ impl AlgebraicFieldType {
             Self::C {
                 c_type,
                 struct_name,
+                ..
             } if c_type.is_pointer() => struct_name.as_deref(),
             _ => None,
         }
@@ -849,6 +857,10 @@ pub struct ClickFunctionDefinition {
     type_parameters: Vec<String>,
     parameters: Vec<FunctionParameter>,
     return_type: ClickType,
+    /// The class of the object a returned pointer designates, from the
+    /// declared return type as a C function's declaration gives it
+    /// (`design/effective-types.md`).
+    return_object_class: Option<crate::kernel::effective_type::CAccessClass>,
     decreases: Option<ContractExpression>,
     body: ContractExpression,
 }
@@ -6428,6 +6440,10 @@ impl ClickFunctionDefinition {
 
     pub fn return_type(&self) -> &ClickType {
         &self.return_type
+    }
+
+    pub fn return_object_class(&self) -> Option<&crate::kernel::effective_type::CAccessClass> {
+        self.return_object_class.as_ref()
     }
 
     pub fn decreases(&self) -> Option<&ContractExpression> {

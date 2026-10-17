@@ -141,11 +141,11 @@ int32 parent_read_payload(struct parent* p) {
         ParentLink::Empty => {
             contradiction(link.link == ParentLink::Empty);
         },
-        ParentLink::Linked(kid) => {
+        ParentLink::Linked(entry_child) => {
             unfold(link);
-            have old(p->kid) == kid by { simp(); }
+            have old(p->kid) == entry_child by { simp(); }
             open(child_control(p->kid)) { execute(); }
-            let link = fold(parent(p), { link: ParentLink::Linked(kid) });
+            let link = fold(parent(p), { link: ParentLink::Linked(entry_child) });
             simp();
         },
     }
@@ -167,20 +167,20 @@ void parent_detach(struct parent* p) {
         ParentLink::Empty => {
             contradiction(link.link == ParentLink::Empty);
         },
-        ParentLink::Linked(kid) => {
+        ParentLink::Linked(entry_child) => {
             unfold(link);
-            have old(p->kid) == kid by simp();
+            have old(p->kid) == entry_child by simp();
             have old(p->kid->refs) == old(count(child_ref(p->kid))) by { simp(); }
             step();
-            have kid->refs == old(p->kid->refs) by { simp(); }
-            if kid->refs > 1 {
+            have entry_child->refs == old(p->kid->refs) by { simp(); }
+            if entry_child->refs > 1 {
                 have old(count(child_ref(p->kid))) > 1 by { simp(); }
                 execute();
                 simp();
             } else {
-                have old(count(child_ref(p->kid))) == kid->refs by { simp(); }
+                have old(count(child_ref(p->kid))) == entry_child->refs by { simp(); }
                 have old(count(child_ref(p->kid))) <= 1 by {
-                    rewrite(old(count(child_ref(p->kid))) == kid->refs);
+                    rewrite(old(count(child_ref(p->kid))) == entry_child->refs);
                     simp();
                 }
                 execute();

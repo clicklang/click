@@ -16,17 +16,17 @@ usage: click audit [OPTIONS] <sidecar.click|example-project|examples-directory|m
 mdtests directory, or repository root. A repository-root audit covers both
 `examples/` and `mdtests/`. `--claim`, `--changed-since`, and `--start-at`
 narrow that target; their exact interaction and defaults are listed below.
-
-Mdtests with a `fail:` expectation are skipped before input preparation,
-runtime selection, and proof discovery. The mdtest gate checks their expected
-rejections. Passing fixtures must still parse and verify to pass the audit.
-
 For a sidecar with Click imports, the inventory contains only smart sites owned
 by the selected entry module. Its imports resolve under the project root
 `click verify` selects for it, so a sidecar that imports a sibling project's
 model, as `examples/rbtree-insert` does, audits as it verifies. The retained session keeps imported interfaces
 fixed while checking each rewritten local proof; audit the library path itself
 to select library sites.
+
+Expected-failure mdtests are excluded before runtime discovery or input
+preparation. They contribute no audit sites, including when selected alone.
+A mixed selection still audits its positive sources, and syntax or input
+errors in a positive fixture fail the audit.
 
 The inventory includes smart tactics inside ordinary `have` bodies, including
 nested bodies and checked proof arms. A smart container owns its body: its

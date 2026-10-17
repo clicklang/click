@@ -193,6 +193,23 @@ allowed cases:
     through the parameter's type.
   - A return is refused on the same rule against the declared return
     type, and the caller's result carries the return type's pointee class.
+- **Class sources in specifications:** done.
+  - A Click declaration gives a pointer the class a C declaration of the same
+    type would. This applies to a model (`spec enum`) field, the result of a
+    Click function, and a theorem parameter declared `struct T*`. A symbolic
+    value of a model field, such as a match binder or a case witness, carries
+    its field's class. A Click function's opaque pointer result carries its
+    declared return type's class. A theorem is checked apart from any
+    translation unit, so a theorem parameter's struct is identified by its
+    tag alone.
+  - A pointer-to-integer cast keeps the source pointer's class on the
+    address term, so decoding the integer restores it. The destination type
+    of the decoding cast never supplies a class. Like a pointer value's class,
+    the address term's class is not part of the term's identity: a classed
+    and a bare spelling of one address are one term for fact lookup,
+    rewriting and premise matching.
+  - Generic type arguments (`List<struct T*>`), quantified pointer binders,
+    and resource fields of C pointer type still carry no class.
 - **Step 3b (heap effective types):** next.
 
 ## Validation

@@ -417,8 +417,7 @@ fn snapshot_blind_float_condition_key(
 
 fn snapshot_blind_bitvector_key(term: &Bitvector32Term) -> SnapshotBlindBitvectorKey {
     match term {
-        Bitvector32Term::PointerAddress(pointer)
-        | Bitvector32Term::ObjectPointerAddress(pointer, _) => {
+        Bitvector32Term::PointerAddress(pointer, _) => {
             SnapshotBlindBitvectorKey::Address(Box::new(snapshot_blind_pointer_key(pointer)))
         }
         Bitvector32Term::MemoryLoad(_, pointer, kind) => {
@@ -2134,14 +2133,9 @@ fn alpha_bitvector_key_with_bindings<const ALLOW_LOADS: bool>(
                 *kind,
             )
         }
-        Bitvector32Term::PointerAddress(pointer)
-        | Bitvector32Term::ObjectPointerAddress(pointer, _) => {
-            AlphaBitvectorKey::Address(Box::new(alpha_pointer_key_with_bindings::<ALLOW_LOADS>(
-                pointer,
-                bindings,
-                next_binder,
-            )?))
-        }
+        Bitvector32Term::PointerAddress(pointer, _) => AlphaBitvectorKey::Address(Box::new(
+            alpha_pointer_key_with_bindings::<ALLOW_LOADS>(pointer, bindings, next_binder)?,
+        )),
         Bitvector32Term::IntegerToMachine { value, destination } => {
             AlphaBitvectorKey::IntegerToMachine(
                 *destination,

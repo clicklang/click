@@ -3565,6 +3565,15 @@ pub(in crate::surface) fn diagnostic_source_load_cell(
     kind: crate::kernel::LoadKind,
     parameter_binding: ParameterBinding<'_>,
 ) -> Option<String> {
+    // A read of exactly one scalar field of a struct-typed global or local
+    // is that field, `g.b`.
+    if let (PointerOffsetTerm::Constant(offset), PointerBlock::Concrete(block)) =
+        (&pointer.offset, &pointer.block)
+        && let Ok(offset) = u32::try_from(*offset)
+        && let Some(field) = object_fields::object_field_spelling(block, offset, kind.byte_width())
+    {
+        return Some(field);
+    }
     let cell = describe_source_cell(pointer, parameter_binding)?;
     (cell.element_bytes == Some(kind.byte_width()) && !matches!(cell.index, CellIndex::Unnamed))
         .then(|| cell.text())
@@ -6340,8 +6349,7 @@ pub(super) fn describe_bitvector_with_context(
         }
         Bitvector32Term::AlgebraicMatch { .. } => "match <algebraic value> { ... }".to_string(),
         Bitvector32Term::MemoryLoad(_, pointer, _) => describe_load_at(pointer, parameter_binding),
-        Bitvector32Term::PointerAddress(pointer)
-        | Bitvector32Term::ObjectPointerAddress(pointer, _) => {
+        Bitvector32Term::PointerAddress(pointer, _) => {
             format!("((uint64){})", describe_pointer(pointer, parameter_binding))
         }
         Bitvector32Term::IntegerToMachine { value, destination } => format!(

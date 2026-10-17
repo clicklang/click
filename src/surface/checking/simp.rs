@@ -641,8 +641,7 @@ pub(in crate::surface) fn simp_bitvector_const(term: &Bitvector32Term) -> Option
         | Bitvector32Term::PureFunctionApplication { .. }
         | Bitvector32Term::ClickFunctionApplication { .. }
         | Bitvector32Term::AlgebraicMatch { .. }
-        | Bitvector32Term::PointerAddress(_)
-        | Bitvector32Term::ObjectPointerAddress(_, _)
+        | Bitvector32Term::PointerAddress(_, _)
         | Bitvector32Term::MemoryLoad(_, _, _) => None,
         Bitvector32Term::Add(left, right) => {
             Some(simp_bitvector_const(left)?.wrapping_add(simp_bitvector_const(right)?))
@@ -814,9 +813,7 @@ pub(in crate::surface) fn simp_bitvector(term: &Bitvector32Term) -> Bitvector32T
         Bitvector32Term::MemoryLoad(memory, pointer, kind) => {
             Bitvector32Term::MemoryLoad(memory.clone(), pointer.clone(), *kind)
         }
-        Bitvector32Term::PointerAddress(_) | Bitvector32Term::ObjectPointerAddress(_, _) => {
-            term.clone()
-        }
+        Bitvector32Term::PointerAddress(_, _) => term.clone(),
         term => match (term.as_binary(), term.as_unary()) {
             (Some((op, left, right)), _) => op.build(simp_bitvector(left), simp_bitvector(right)),
             (_, Some((op, value))) => op.build(simp_bitvector(value)),

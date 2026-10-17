@@ -767,6 +767,15 @@ struct Parser {
     /// expected reads as `f(args) == true` when it names one of these, and
     /// as a predicate call otherwise.
     pure_function_names: BTreeSet<String>,
+    /// The pure functions of this module that take a slice, indexed with
+    /// their names: each one's written parameter count and the positions of
+    /// its `name: &[T]` parameters. A call passes such a parameter a slice,
+    /// which stands for its pointer and its length.
+    pure_function_slices: BTreeMap<String, (usize, Vec<usize>)>,
+    /// The slice parameters of the pure function whose parameter list is
+    /// being parsed; `None` in any other parameter list, where a slice is
+    /// not a parameter type.
+    pending_slice_params: Option<Vec<String>>,
     /// Set immediately before an `if`, `match` or `let` expression that is
     /// the value of a `bool` context, and taken by that expression's parser:
     /// its branches are then `bool` values too.
@@ -1228,6 +1237,8 @@ impl Parser {
             current_reference_result: false,
             names: NameTable::default(),
             pure_function_names: BTreeSet::new(),
+            pure_function_slices: BTreeMap::new(),
+            pending_slice_params: None,
             bool_value_context: false,
             algebraic_variant_fields: BTreeMap::new(),
             integer_arithmetic,
@@ -1313,9 +1324,12 @@ impl Parser {
             }
             if depth == 0
                 && self.peek_ident() == Some("function")
-                && let Some(Token::Ident(name)) = self.peek_next()
+                && let Some(Token::Ident(name)) = self.peek_next().cloned()
             {
                 self.pure_function_names.insert(name.clone());
+                if let Some(slices) = self.written_slice_parameters(self.position + 2) {
+                    self.pure_function_slices.insert(name.clone(), slices);
+                }
             }
             match self.peek() {
                 Some(Token::LBrace) => depth += 1,
@@ -1330,6 +1344,93 @@ impl Parser {
             self.tokens[index] = Token::ShiftRight;
         }
         self.position = resume;
+    }
+
+    /// The written parameter count and the slice parameter positions of the
+    /// pure function whose parameter list opens at or after `start`, when
+    /// it takes a slice. Reads tokens only.
+    fn written_slice_parameters(&self, start: usize) -> Option<(usize, Vec<usize>)> {
+        let open = start
+            + self.tokens[start..]
+                .iter()
+                .position(|token| *token == Token::LParen)?;
+        let mut depth = 0usize;
+        let mut count = 0;
+        let mut slices = Vec::new();
+        let mut parameter_start = true;
+        for index in open + 1..self.tokens.len() {
+            let token = &self.tokens[index];
+            if depth == 0 && parameter_start && *token != Token::RParen {
+                count += 1;
+                // `name: &[T]` or `name: &mut [T]`, not `&[T; N]`.
+                let mut at = index + 2;
+                if self.tokens.get(index + 1) == Some(&Token::Colon)
+                    && self.tokens.get(at) == Some(&Token::Amp)
+                {
+                    at += 1;
+                    if self.tokens.get(at) == Some(&Token::Ident("mut".into())) {
+                        at += 1;
+                    }
+                    if self.tokens.get(at) == Some(&Token::LBracket)
+                        && self.tokens.get(at + 2) == Some(&Token::RBracket)
+                    {
+                        slices.push(count - 1);
+                    }
+                }
+            }
+            parameter_start = false;
+            match token {
+                Token::LParen | Token::LBracket | Token::LessThan => depth += 1,
+                Token::RParen if depth == 0 => break,
+                Token::RParen | Token::RBracket | Token::GreaterThan => {
+                    depth = depth.saturating_sub(1)
+                }
+                Token::Comma if depth == 0 => parameter_start = true,
+                _ => {}
+            }
+        }
+        (!slices.is_empty()).then_some((count, slices))
+    }
+
+    /// The arguments of a call to a pure function that takes a slice, with
+    /// each slice argument written as the pointer and the length it stands
+    /// for. A call that already writes them, as printed proofs do, is left
+    /// as it is.
+    fn spread_slice_arguments(
+        &self,
+        name: &str,
+        arguments: Vec<ContractExpression>,
+    ) -> Result<Vec<ContractExpression>, ClickError> {
+        let Some((count, slices)) = self.pure_function_slices.get(name) else {
+            return Ok(arguments);
+        };
+        if arguments.len() != *count {
+            return Ok(arguments);
+        }
+        let mut spread = Vec::with_capacity(count + slices.len());
+        for (index, argument) in arguments.into_iter().enumerate() {
+            if !slices.contains(&index) {
+                spread.push(argument);
+                continue;
+            }
+            let ContractExpression::CFragment(CExpression::Variable(slice)) = &argument else {
+                return Err(self.error(format!(
+                    "argument {} of `{name}` is a slice; pass a slice parameter, such as `bytes`, or its pointer and length",
+                    index + 1
+                )));
+            };
+            if !self.rust_slice_params.contains(slice) {
+                return Err(self.error(format!(
+                    "argument {} of `{name}` is a slice, but `{slice}` is not a slice parameter; pass one, or a pointer and a length",
+                    index + 1
+                )));
+            }
+            let length =
+                ContractExpression::CFragment(CExpression::Variable(format!("{slice}_len")));
+            spread.push(argument);
+            spread.push(length);
+        }
+        Ok(spread)
     }
 
     fn parse_file_items(&mut self) -> Result<ClickFile, ClickError> {
@@ -1913,6 +2014,7 @@ impl Parser {
             // `struct tag` is not a pointer to a laid-out object and a
             // `struct tag**` does not point at one either, so neither is a
             // memory base in a match arm.
+            let object_class = self.declared_object_class(&parsed);
             let struct_name = if parsed.struct_pointer && parsed.c_type == C0Type::Int32Pointer {
                 parsed.struct_name
             } else {
@@ -1921,6 +2023,7 @@ impl Parser {
             return Ok(AlgebraicFieldType::C {
                 c_type: parsed.c_type,
                 struct_name,
+                object_class,
             });
         }
         if name == "Integer" {
@@ -2207,10 +2310,21 @@ impl Parser {
             type_parameters.iter().cloned().collect(),
         );
         self.expect(Token::LParen)?;
-        let parsed_parameters = self.parse_click_parameters()?;
+        self.pending_slice_params = Some(Vec::new());
+        let parsed_parameters = self.parse_click_parameters();
+        let slice_params = self.pending_slice_params.take().unwrap_or_default();
+        let parsed_parameters = parsed_parameters?;
         self.expect(Token::RParen)?;
+        // A slice parameter reads as one: `bytes.len()` and `*bytes`.
+        let previous_slice_params = std::mem::replace(
+            &mut self.rust_slice_params,
+            slice_params.into_iter().collect(),
+        );
         self.expect(Token::Arrow)?;
         let (return_type, parsed_c_return_type) = self.parse_click_type()?;
+        let return_object_class = parsed_c_return_type
+            .as_ref()
+            .and_then(|parsed| self.declared_object_class(parsed));
         if let Some(parsed_return_type) = parsed_c_return_type {
             if parsed_return_type.struct_name.is_some() && !parsed_return_type.struct_pointer {
                 return Err(self.error("only pointer-to-struct types are supported"));
@@ -2251,12 +2365,14 @@ impl Parser {
         self.names.algebraic_params = previous_algebraic_params;
         self.names
             .replace(NameKind::TypeParameter, previous_type_parameters);
+        self.rust_slice_params = previous_slice_params;
         self.expect(Token::RBrace)?;
         Ok(ClickFunctionDefinition {
             name,
             type_parameters,
             parameters: parsed_parameters.parameters,
             return_type,
+            return_object_class,
             decreases,
             body,
         })
@@ -2936,17 +3052,56 @@ impl Parser {
                     ));
                 }
                 self.expect(Token::Colon)?;
-                let (click_type, parsed_c_type) = self.parse_click_type()?;
-                let parsed_parameter = if let Some(parsed_type) = parsed_c_type {
-                    if self.peek() == Some(&Token::LParen) {
-                        let (c_type, function_pointer_signature) =
-                            self.parse_abstract_function_pointer_type(parsed_type)?;
+                if self.pending_slice_params.is_some()
+                    && self.verifies_rust()
+                    && let Some(element) = self.parse_rust_slice_type()?
+                {
+                    // `bytes: &[T]` is a pointer and a `bytes_len` length, as
+                    // in a `fn` signature.
+                    let length = format!("{name}_len");
+                    if let Some(slices) = &mut self.pending_slice_params {
+                        slices.push(name.clone());
+                    }
+                    parameters.push(self.parse_parameter_array_suffix(name, element)?.parameter);
+                    parameters.push(FunctionParameter {
+                        click_type: ClickType::C(C0Type::UInt64(LongRank::Long)),
+                        name: length,
+                        struct_name: None,
+                        function_pointer_signature: None,
+                        constant: false,
+                        pointee_constant: false,
+                        reference: false,
+                    });
+                } else {
+                    let (click_type, parsed_c_type) = self.parse_click_type()?;
+                    let parsed_parameter = if let Some(parsed_type) = parsed_c_type {
+                        if self.peek() == Some(&Token::LParen) {
+                            let (c_type, function_pointer_signature) =
+                                self.parse_abstract_function_pointer_type(parsed_type)?;
+                            ParsedParameter {
+                                parameter: FunctionParameter {
+                                    click_type: ClickType::C(c_type),
+                                    name,
+                                    struct_name: None,
+                                    function_pointer_signature: Some(function_pointer_signature),
+                                    constant: false,
+                                    pointee_constant: false,
+                                    reference: false,
+                                },
+                                struct_name: None,
+                                declared_bytes: None,
+                                struct_array: false,
+                            }
+                        } else {
+                            self.parse_parameter_array_suffix(name, parsed_type)?
+                        }
+                    } else {
                         ParsedParameter {
                             parameter: FunctionParameter {
-                                click_type: ClickType::C(c_type),
+                                click_type,
                                 name,
                                 struct_name: None,
-                                function_pointer_signature: Some(function_pointer_signature),
+                                function_pointer_signature: None,
                                 constant: false,
                                 pointee_constant: false,
                                 reference: false,
@@ -2955,50 +3110,34 @@ impl Parser {
                             declared_bytes: None,
                             struct_array: false,
                         }
-                    } else {
-                        self.parse_parameter_array_suffix(name, parsed_type)?
+                    };
+                    if let Some(struct_name) = parsed_parameter.struct_name {
+                        if parsed_parameter.parameter.click_type
+                            == ClickType::C(C0Type::Int32PointerPointer)
+                        {
+                            struct_params.insert(
+                                struct_pointer_pointer_key(&parsed_parameter.parameter.name),
+                                struct_name.clone(),
+                            );
+                        }
+                        struct_params.insert(parsed_parameter.parameter.name.clone(), struct_name);
                     }
-                } else {
-                    ParsedParameter {
-                        parameter: FunctionParameter {
-                            click_type,
-                            name,
-                            struct_name: None,
-                            function_pointer_signature: None,
-                            constant: false,
-                            pointee_constant: false,
-                            reference: false,
-                        },
-                        struct_name: None,
-                        declared_bytes: None,
-                        struct_array: false,
+                    if parsed_parameter.struct_array {
+                        struct_array_params.insert(parsed_parameter.parameter.name.clone());
                     }
-                };
-                if let Some(struct_name) = parsed_parameter.struct_name {
-                    if parsed_parameter.parameter.click_type
-                        == ClickType::C(C0Type::Int32PointerPointer)
-                    {
-                        struct_params.insert(
-                            struct_pointer_pointer_key(&parsed_parameter.parameter.name),
-                            struct_name.clone(),
+                    if parsed_parameter.parameter.is_reference() {
+                        reference_params.insert(
+                            syntax::referent_of_carrier(&parsed_parameter.parameter.name)
+                                .unwrap_or(&parsed_parameter.parameter.name)
+                                .to_string(),
                         );
                     }
-                    struct_params.insert(parsed_parameter.parameter.name.clone(), struct_name);
+                    if let Some(bytes) = parsed_parameter.declared_bytes {
+                        declared_loadable_bytes
+                            .push((parsed_parameter.parameter.name.clone(), bytes));
+                    }
+                    parameters.push(parsed_parameter.parameter);
                 }
-                if parsed_parameter.struct_array {
-                    struct_array_params.insert(parsed_parameter.parameter.name.clone());
-                }
-                if parsed_parameter.parameter.is_reference() {
-                    reference_params.insert(
-                        syntax::referent_of_carrier(&parsed_parameter.parameter.name)
-                            .unwrap_or(&parsed_parameter.parameter.name)
-                            .to_string(),
-                    );
-                }
-                if let Some(bytes) = parsed_parameter.declared_bytes {
-                    declared_loadable_bytes.push((parsed_parameter.parameter.name.clone(), bytes));
-                }
-                parameters.push(parsed_parameter.parameter);
             }
 
             match self.peek() {
@@ -4830,6 +4969,24 @@ impl Parser {
             pointee_constant,
             reference,
         })
+    }
+
+    /// The class of the object a pointer of the declared type `parsed`
+    /// designates (`design/effective-types.md`), as a C parameter of that
+    /// type gets it, at every pointer depth. A bare `struct tag` designates
+    /// nothing.
+    fn declared_object_class(
+        &self,
+        parsed: &ParsedType,
+    ) -> Option<crate::kernel::effective_type::CAccessClass> {
+        match (&parsed.struct_name, parsed.struct_pointer) {
+            (Some(_), false) => None,
+            (struct_name, _) => syntax::declared_pointee_class(
+                parsed.c_type,
+                struct_name.as_deref(),
+                &self.struct_layouts,
+            ),
+        }
     }
 
     fn parse_click_type(&mut self) -> Result<(ClickType, Option<ParsedType>), ClickError> {
@@ -7194,6 +7351,7 @@ impl Parser {
             }
         }
         self.expect(Token::RParen)?;
+        let arguments = self.spread_slice_arguments(&name, arguments)?;
         Ok((name, arguments))
     }
 

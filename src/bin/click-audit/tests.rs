@@ -641,7 +641,15 @@ int32 count_to_one() {
 #[test]
 fn repository_root_targets_examples_and_passing_mdtests() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let targets = audit_targets(&root).expect("repository audit targets should resolve");
+    let targets = without_expected_failure_mdtests(
+        audit_targets(&root).expect("repository audit targets should resolve"),
+    )
+    .expect("repository inventory should classify all container expectations");
+    assert!(
+        !targets.iter().any(|path| path
+            .ends_with("mdtests/a_sidecar_conjunction_written_as_ampersands_names_and.md")),
+        "the negative syntax fixture must not reach runtime inventory"
+    );
     assert!(
         targets.iter().any(|path| {
             path.extension()
@@ -1838,55 +1846,6 @@ theorem nested(x: int32) {
 }
 
 #[test]
-fn audit_skips_expected_syntax_failures_before_runtime_inventory() {
-    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("mdtests/a_sidecar_conjunction_written_as_ampersands_names_and.md");
-    let arguments = parse_arguments([path.display().to_string()]).unwrap();
-    run_audit(arguments).expect("the negative syntax fixture has no proof to expand");
-}
-
-#[test]
-fn audit_skips_expected_input_failures_before_preparation() {
-    let directory = tempfile::tempdir().unwrap();
-    let path = directory.path().join("missing-input.md");
-    fs::write(
-        &path,
-        "```click\nverifying \"missing.c\";\n```\n\n```expect\nfail: missing source\n```\n",
-    )
-    .unwrap();
-    let arguments = parse_arguments([path.display().to_string()]).unwrap();
-    run_audit(arguments).expect("negative inputs must be skipped before source preparation");
-}
-
-#[test]
-fn audit_keeps_positive_fixtures_beside_expected_failures() {
-    let directory = tempfile::tempdir().unwrap();
-    let negative = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("mdtests/a_sidecar_conjunction_written_as_ampersands_names_and.md");
-    fs::copy(negative, directory.path().join("negative.md")).unwrap();
-    let positive = directory.path().join("positive.md");
-    let source = "```click\ntheorem identity() { ensures 0 == 0 by { simp(); } }\n```\n\n```expect\npass\n```\n";
-    fs::write(&positive, source).unwrap();
-    let targets = audit_targets(directory.path()).unwrap();
-    assert_eq!(inventory_sites(&targets).unwrap().len(), 1);
-    let arguments = || parse_arguments([directory.path().display().to_string()]).unwrap();
-    run_audit(arguments()).expect("the positive proof must still expand and recheck");
-
-    fs::write(&positive, source.replace("0 == 0", "0 == 1")).unwrap();
-    assert!(
-        run_audit(arguments()).is_err(),
-        "a false positive claim must fail"
-    );
-
-    fs::write(&positive, source.replace("0 == 0", "0 == 0 && true")).unwrap();
-    let error = run_audit(arguments()).expect_err("invalid positive syntax must still fail");
-    assert!(
-        error.contains("Click writes conjunction as `and`"),
-        "{error}"
-    );
-}
-
-#[test]
 fn inventory_obeys_the_work_and_whole_run_bounds() {
     let directory = std::env::temp_dir().join(format!(
         "click-audit-inventory-bounds-{}",
@@ -2006,4 +1965,56 @@ int32 compare(uint8 bytes[]) {
     let error = audit_claim_rewrite(&sites[0], &mut worker, &limits, deadline)
         .expect_err("a whole-claim rewrite must include the implicit auto's evidence");
     assert_eq!(error, expected_error);
+}
+
+/// A negative mdtest is a boundary of the entire audit, including runtime
+/// discovery before smart-site inventory.
+#[test]
+fn audit_skips_expected_failure_before_runtime_inventory() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let path = root.join("mdtests/a_sidecar_conjunction_written_as_ampersands_names_and.md");
+    run_audit(parse_arguments([path.display().to_string()]).unwrap()).unwrap();
+}
+
+/// Skipping a negative container must also precede C++ input preparation.
+#[test]
+fn audit_skips_expected_failure_before_preparing_inputs() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("negative.md");
+    fs::write(&path, "```cpp filename=invalid.cpp function=invalid profile=normal_only\nthis is invalid C++\n```\n```click\ninvalid Click &&\n```\n```expect\nfail: invalid\n```\n").unwrap();
+    run_audit(parse_arguments([path.display().to_string()]).unwrap()).unwrap();
+}
+
+/// A mixed selection still expands and checks its positive proof, and never
+/// hides a positive container's syntax error behind the negative filter.
+#[test]
+fn audit_mixed_mdtests_checks_positive_sources() {
+    let directory = tempfile::tempdir().unwrap();
+    let negative = directory.path().join("negative.md");
+    let positive = directory.path().join("positive.md");
+    fs::write(
+        &negative,
+        "```click\ninvalid Click &&\n```\n```expect\nfail: invalid\n```\n",
+    )
+    .unwrap();
+    fs::write(
+        &positive,
+        "```click\ntheorem identity() { ensures 0 == 0 by simp(); }\n```\n```expect\npass\n```\n",
+    )
+    .unwrap();
+    let sites = inventory_sites(&audit_targets(directory.path()).unwrap()).unwrap();
+    assert_eq!(sites.len(), 1);
+    assert_eq!(sites[0].click_path, fs::canonicalize(&positive).unwrap());
+    run_audit(parse_arguments([directory.path().display().to_string()]).unwrap()).unwrap();
+    fs::write(
+        &positive,
+        "```click\ntheorem bad() { ensures true && true by simp(); }\n```\n```expect\npass\n```\n",
+    )
+    .unwrap();
+    let error =
+        run_audit(parse_arguments([directory.path().display().to_string()]).unwrap()).unwrap_err();
+    assert!(
+        error.contains("Click writes conjunction as `and`"),
+        "{error}"
+    );
 }

@@ -413,6 +413,22 @@ printing uses nominal struct tags, pointer base/depth, and member/scalar classes
 without dumping struct layouts. The diagnostic retains the comparison already
 made by the join checker; it does not scan locals a second time.
 
+The join never supplies a missing class, so every way a pointer reaches the
+back edge must carry one. These sources carry a class:
+- C declarations: parameters, declared locals, struct-pointer member loads
+  and call results.
+- The Click declarations listed in
+  [effective types](https://github.com/clicklang/click/blob/master/design/effective-types.md#status): model fields,
+  Click function results and theorem parameters.
+- An integer word whose origin fact names a classed address. Decoding it
+  through tag masking restores the class.
+
+A pointer that has no class here also gets no strict-aliasing checks. The
+fix for such a pointer belongs where it was formed, not at the join. For
+example, the null constant has no class, so assigning `NULL` to a classed
+local inside a loop is refused today
+([bug](https://github.com/clicklang/click/blob/master/bugs/null-assignment-in-loop-fails-object-class-join.md)).
+
 A loop ranking component is not restricted to a C expression. The loop head
 carries a `CRankingComponent`: a current-state C expression, a pure
 specification expression lowered exactly as a loop invariant's expression is,

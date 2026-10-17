@@ -660,12 +660,11 @@ fn run_audit(arguments: Arguments) -> Result<(), String> {
     println!("INVENTORY");
     let inventory_limit = arguments.limits.session.within(deadline)?;
     let ((sources, mut sites), _) = run_phase("smart-site inventory", inventory_limit, || {
-        let mut audited_sources = Vec::with_capacity(sources.len());
-        for path in sources {
-            if is_expected_failure_mdtest(&path)? {
-                continue;
-            }
-            let source = load_audit_source(&path)?;
+        // Negative fixtures are not audit inputs: reject them before runtime
+        // discovery can prepare their imports or parse their invalid Click.
+        let sources = without_expected_failure_mdtests(sources)?;
+        for path in &sources {
+            let source = load_audit_source(path)?;
             let runtime = match &source.project {
                 Some(project) => click::surface::selected_project_thread_runtime(project),
                 None => click::surface::selected_thread_runtime(&source.click_source),
@@ -674,10 +673,9 @@ fn run_audit(arguments: Arguments) -> Result<(), String> {
             if let Some(assumption) = runtime.assumption() {
                 println!("  {} runtime assumption: {assumption}", path.display());
             }
-            audited_sources.push(path);
         }
-        let sites = inventory_sites(&audited_sources)?;
-        Ok((audited_sources, sites))
+        let sites = inventory_sites(&sources)?;
+        Ok((sources, sites))
     })?;
     let inventory_claims = sites
         .iter()
@@ -1269,7 +1267,8 @@ fn load_audit_source_from_text(
     })
 }
 
-/// Read the container expectation before preparing its deliberately invalid inputs.
+/// Read only the container expectation; never prepare its program inputs or
+/// parse the Click source of a deliberately invalid fixture.
 fn is_expected_failure_mdtest(path: &Path) -> Result<bool, String> {
     if !looks_like_mdtest(path) {
         return Ok(false);
@@ -1281,6 +1280,16 @@ fn is_expected_failure_mdtest(path: &Path) -> Result<bool, String> {
         mdtest.expectation,
         Some(MdTestExpectation::FailContains(_))
     ))
+}
+
+fn without_expected_failure_mdtests(sources: Vec<PathBuf>) -> Result<Vec<PathBuf>, String> {
+    let mut kept = Vec::new();
+    for source in sources {
+        if !is_expected_failure_mdtest(&source)? {
+            kept.push(source);
+        }
+    }
+    Ok(kept)
 }
 
 fn inventory_sites(sources: &[PathBuf]) -> Result<Vec<AuditSite>, String> {

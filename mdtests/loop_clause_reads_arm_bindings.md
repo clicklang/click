@@ -109,10 +109,9 @@ int spin(struct node* p, int n) {
                                             interval_subtract 2, 3 2 (-2147483647) (2147483647);
                                             interval_atom (1) (1) (1);
                                             interval_subtract 4, 5 4 (-2147483648) (2147483646);
-                                            interval_subtract 2, 3 2 (-2147483647) (2147483647);
                                             trivial => 0 <= 0;
-                                            affine_conclusion_pair 8 6 7 => ((n - at(statement(3).entry, i)) - 1) < (n - at(statement(3).entry, i));
-                                            conclusion 9;
+                                            affine_conclusion_pair 7 6 4 => ((n - at(statement(3).entry, i)) - 1) < (n - at(statement(3).entry, i));
+                                            conclusion 8;
                                         }
                                     }
                                 }

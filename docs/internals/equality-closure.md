@@ -243,10 +243,13 @@ injectivity, arithmetic definedness, or memory access permission follows.
 Unsupported constructors remain opaque.
 
 Pointer-to-word casts also retain the source pointer's checked object class
-when one is known. This annotation is part of the stored address term, so
-memory storage and substitution preserve it without a global address-to-class
-registry. Annotated and unannotated addresses register the same numeric
-application in equality closure. The supported tag operations carry the
+when one is known. The annotation is a field of the stored address term, so
+memory storage, rewriting and substitution carry it without a global
+address-to-class registry. It is not part of the term's identity: equality,
+hashing and ordering ignore it, as they ignore a pointer value's class. A
+classed and a bare spelling of one address are therefore one term in equality
+closure, exact fact lookup, `rewrite`, `contradiction` and theorem-premise
+matching. The supported tag operations carry the
 annotation to decoding; an integer-to-pointer cast restores the original
 class, never the destination type's class. A bare address remains unclassified,
 and unavailable or withdrawn origin evidence cannot supply a class. Loop
