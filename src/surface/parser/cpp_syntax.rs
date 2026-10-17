@@ -128,7 +128,15 @@ impl Parser {
         // Each segment, with the plain name of a record template instance.
         let mut path = Vec::new();
         let mut plain = Vec::new();
-        let first = self.expect_ident("function name")?;
+        // A namespace that shares a Click library module's name, as in
+        // `list::append`, reaches here joined; its segments are as written.
+        let written = self.expect_c_declaration_ident("function name")?;
+        let mut segments = written.split("::").map(str::to_string).collect::<Vec<_>>();
+        let first = segments.pop().expect("a name has a last segment");
+        for segment in segments {
+            path.push(segment.clone());
+            plain.push(segment);
+        }
         let mut arguments = self.parse_cpp_template_arguments()?;
         path.push(format!("{first}{}", arguments.clone().unwrap_or_default()));
         plain.push(first);
