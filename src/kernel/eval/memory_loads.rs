@@ -5058,6 +5058,72 @@ mod tests {
     }
 
     #[test]
+    fn logical_pointer_field_alias_keeps_loaded_supplier_base_after_call() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let owner = Pointer::symbolic(Variable(955_920))
+            .offset_by_elements(Bitvector32Term::Variable(Variable(955_921)), 4);
+        let alias = Pointer::symbolic(Variable(955_922));
+        let target = Pointer::symbolic(Variable(955_923));
+        let right = owner.offset_by_bytes(8);
+        let before = CMemory::new().store(
+            right.clone(),
+            CValue::typed_pointer(target.clone(), CType::Int64Pointer),
+        );
+        let bare = PureFactContext::new();
+        let write =
+            CMemoryRange::new_with_element_width(owner.clone(), 0u32.into(), 2u32.into(), 4);
+        let memory = before.with_call_memory_havoc(Variable(955_924), &[write], &bare, None);
+        let resources = ResourceContext::new().unchecked_with_fact(CResourceFact::view_memory(
+            CMemoryRange::new_with_element_width(owner.clone(), 2u32.into(), 4u32.into(), 4),
+        ));
+        resources.synchronize_memory_equalities(&bare);
+        let without_alias = bare
+            .clone()
+            .assume_proposition(Proposition::CResourceComposition(resources));
+        let context = without_alias.clone().assume_condition(
+            ConditionTerm::pointer_equal(owner.clone(), alias.clone()),
+            true,
+        );
+        let read = |memory: &CMemory, address: Pointer, context: &PureFactContext| {
+            let paths = evaluate_logical_memory_load_paths(
+                memory,
+                address,
+                CType::Int64Pointer,
+                ExecutionFacts::new(),
+                Vec::new(),
+                context,
+            );
+            let [path] = paths.as_slice() else {
+                panic!("one logical read");
+            };
+            path.outcome.clone()
+        };
+        let direct = read(&memory, right.clone(), &context);
+        assert_eq!(
+            direct,
+            CExpressionOutcome::Value(CValue::typed_pointer(target, CType::Int64Pointer))
+        );
+        assert_eq!(read(&memory, alias.offset_by_bytes(8), &context), direct);
+        assert_ne!(
+            read(&memory, alias.offset_by_bytes(8), &without_alias),
+            direct
+        );
+        assert_ne!(read(&memory, alias.offset_by_bytes(16), &context), direct);
+        let changed = memory.store(
+            right,
+            CValue::typed_pointer(Pointer::symbolic(Variable(955_925)), CType::Int64Pointer),
+        );
+        let updated = read(&changed, alias.offset_by_bytes(8), &context);
+        assert_eq!(updated, read(&changed, owner.offset_by_bytes(8), &context));
+        assert_ne!(updated, direct);
+        assert!(!ResourceContext::new().permits_memory_read(
+            &alias.offset_by_bytes(8),
+            8,
+            &context
+        ));
+    }
+
+    #[test]
     fn program_and_logical_reads_share_an_opaque_alias_load_identity() {
         let _session = crate::kernel::VerificationSession::enter();
         let owner = Pointer {
