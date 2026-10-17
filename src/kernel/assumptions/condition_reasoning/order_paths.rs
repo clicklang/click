@@ -3338,15 +3338,17 @@ mod annotated_alignment_premise_tests {
         use crate::kernel::effective_type::{CAccessClass, CScalarClass};
         let _session = crate::kernel::VerificationSession::enter();
         let pointer = Pointer::symbolic(Variable(996_210));
-        let source = ConditionTerm::uint64_equal(
-            Bitvector32Term::uint64_bitwise_and(
+        // The factory now canonicalizes alignment annotations. Keep a raw
+        // source occurrence to check exact citation and independent removal.
+        let source = ConditionTerm::Bitvector64Equal(
+            Box::new(Bitvector32Term::uint64_bitwise_and(
                 Bitvector32Term::object_pointer_address(
                     pointer.clone(),
                     Some(CAccessClass::Scalar(CScalarClass::Int)),
                 ),
                 Bitvector32Term::UInt64Constant(7),
-            ),
-            Bitvector32Term::UInt64Constant(0),
+            )),
+            Box::new(Bitvector32Term::UInt64Constant(0)),
         );
         let bare = ConditionTerm::pointer_aligned(pointer.clone(), 8);
         let context = PureFactContext::new().assume_condition(source.clone(), true);

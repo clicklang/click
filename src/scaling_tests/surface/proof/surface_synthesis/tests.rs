@@ -51,3 +51,56 @@ fn boolean_local_synthesis_round_trips_and_scales_with_local_population() {
         );
     }
 }
+
+#[test]
+fn pointer_spelling_skips_cyclic_offsets_and_tries_the_next_local() {
+    std::thread::Builder::new()
+        .stack_size(1792 * 1024)
+        .spawn(|| {
+            for size in [1usize, 8, 32, 128] {
+                let pointer = Pointer {
+                    block: crate::kernel::PointerBlock::ExternalArgument,
+                    offset: PointerOffsetTerm::Constant(0),
+                };
+                let cyclic = Pointer {
+                    block: pointer.block.clone(),
+                    offset: PointerOffsetTerm::Int32Scaled {
+                        value: Box::new(Bitvector32Term::PointerAddress(Box::new(pointer.clone()))),
+                        byte_width: 4,
+                    },
+                };
+                let mut state = CState::new();
+                for index in 0..size {
+                    state = state.with_local(
+                        format!("a_{index:04}"),
+                        CValue::typed_pointer(cyclic.clone(), CType::Int32Pointer),
+                    );
+                }
+                let synthesize = |state: &CState| {
+                    synthesize_surface_pointer(
+                        &pointer,
+                        ParameterBinding::default(),
+                        state,
+                        &BTreeMap::new(),
+                    )
+                };
+                let (missing, work) =
+                    crate::instrumentation::measure_deterministic_work(|| synthesize(&state));
+                assert!(missing.is_none());
+                assert!(work >= size && work <= 4 * size + 64, "{size}: {work}");
+                state = state.with_local(
+                    "z_pointer",
+                    CValue::typed_pointer(pointer.clone(), CType::Int32Pointer),
+                );
+                for _ in 0..2 {
+                    let (found, work) =
+                        crate::instrumentation::measure_deterministic_work(|| synthesize(&state));
+                    assert_eq!(found, Some(CExpression::Variable("z_pointer".into())));
+                    assert!(work >= size && work <= 4 * size + 64, "{size}: {work}");
+                }
+            }
+        })
+        .unwrap()
+        .join()
+        .unwrap();
+}

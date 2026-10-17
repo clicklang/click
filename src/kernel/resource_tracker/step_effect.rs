@@ -493,6 +493,19 @@ fn cell_effect(
             kept_by_caller,
             ..
         } => {
+            // Keep this producer's selected range, including a miss. The
+            // fallback below asks the same question when explicit endpoint
+            // evidence cannot be formed; it must not rebuild the frame.
+            let kept_range = std::cell::OnceCell::new();
+            let range_holding = || {
+                kept_range
+                    .get_or_init(|| {
+                        kept_by_caller
+                            .as_ref()?
+                            .range_holding(assumptions, None, pointer, bytes)
+                    })
+                    .as_ref()
+            };
             if let Some(ranges) = typed_ranges_disjoint_from_pointer_evidence(
                 mutable_ranges,
                 pointer,
@@ -500,25 +513,24 @@ fn cell_effect(
                 assumptions,
             ) {
                 hop(MemoryDagHopJustification::CallHavocRanges { ranges })
-            } else if let Some((range, first, last)) = kept_by_caller.as_ref().and_then(|kept| {
-                let range = kept.range_holding(assumptions, None, pointer, bytes)?;
+            } else if let Some((range, first, last)) = range_holding().and_then(|range| {
                 let width = range.element_width();
                 if width == 0 || bytes == 0 || !bytes.is_multiple_of(width) {
                     return None;
                 }
                 let first = super::cell_source::PointerInRangeEvidence::for_pointer(
                     pointer,
-                    &range,
+                    range,
                     assumptions,
                 )?;
                 let last_pointer =
                     pointer.offset_by_elements(Bitvector32Term::Constant(bytes / width - 1), width);
                 let last = super::cell_source::PointerInRangeEvidence::for_pointer(
                     &last_pointer,
-                    &range,
+                    range,
                     assumptions,
                 )?;
-                Some((range, first, last))
+                Some((range.clone(), first, last))
             }) {
                 hop(MemoryDagHopJustification::CallHavocKeptRange { range, first, last })
             } else if assumptions.ranges_proven_disjoint_from_pointer_for_frame(
@@ -529,10 +541,7 @@ fn cell_effect(
                 hop(MemoryDagHopJustification::AssumptionDependent(
                     MemoryDagAssumptionKind::CallHavocRangeSeparation,
                 ))
-            } else if kept_by_caller
-                .as_ref()
-                .is_some_and(|kept| kept.holds_access(pointer, bytes, assumptions))
-            {
+            } else if range_holding().is_some() {
                 // Memory the caller kept owning outside the transfer: the
                 // callee owns none of it, so it wrote none of it. The ranges
                 // are the edge's own, spelled in its write-set marker, and

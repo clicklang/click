@@ -33,6 +33,8 @@ thread_local! {
         const { std::cell::RefCell::new(None) };
     static LAST_SURFACE_SYNTHESIS_EXHAUSTION: std::cell::Cell<Option<&'static str>> =
         const { std::cell::Cell::new(None) };
+    static SYNTHESIS_ACTIVE_POINTERS: std::cell::RefCell<std::collections::HashSet<PointerSynthesisKey>> =
+        std::cell::RefCell::new(std::collections::HashSet::new());
     static SURFACE_SYNTHESIS_BITVECTOR_NESTING: std::cell::Cell<usize> =
         const { std::cell::Cell::new(0) };
     /// The struct layouts synthesis may read memory through for the
@@ -527,6 +529,50 @@ impl Drop for SurfaceSynthesisScope {
 
 struct SurfaceSynthesisFrame {
     counted: bool,
+}
+
+// Spelling an offset may ask for the address currently being spelled.
+// Reject that candidate edge; another local can still name the pointer.
+#[derive(Clone, Eq, PartialEq, Hash)]
+struct PointerSynthesisKey {
+    pointer: Pointer,
+    state: usize,
+    parameters: usize,
+    arguments: usize,
+    bound_variables: usize,
+}
+
+struct SurfacePointerFrame(PointerSynthesisKey);
+
+impl SurfacePointerFrame {
+    fn enter(
+        pointer: &Pointer,
+        parameter_binding: ParameterBinding<'_>,
+        state: &CState,
+        bound_variables: &BTreeMap<Variable, String>,
+    ) -> Option<Self> {
+        // All borrowed inputs remain live for this frame. Their addresses
+        // distinguish snapshot and binder environments without cloning or
+        // structurally hashing the surrounding proof state.
+        crate::instrumentation::record_deterministic_work(1);
+        let key = PointerSynthesisKey {
+            pointer: pointer.clone(),
+            state: state as *const _ as usize,
+            parameters: parameter_binding.parameters.as_ptr() as usize,
+            arguments: parameter_binding.arguments.as_ptr() as usize,
+            bound_variables: bound_variables as *const _ as usize,
+        };
+        SYNTHESIS_ACTIVE_POINTERS
+            .with(|active| active.borrow_mut().insert(key.clone()).then(|| Self(key)))
+    }
+}
+
+impl Drop for SurfacePointerFrame {
+    fn drop(&mut self) {
+        SYNTHESIS_ACTIVE_POINTERS.with(|active| {
+            active.borrow_mut().remove(&self.0);
+        });
+    }
 }
 
 struct SurfaceBitvectorFrame {
@@ -3978,6 +4024,8 @@ fn synthesize_surface_pointer(
     state: &CState,
     bound_variables: &BTreeMap<Variable, String>,
 ) -> Option<CExpression> {
+    let _pointer_frame =
+        SurfacePointerFrame::enter(pointer, parameter_binding, state, bound_variables)?;
     let _frame = SurfaceSynthesisFrame::enter("pointer")?;
     if pointer == &Pointer::null() {
         return Some(CExpression::Value(int32(0)));
@@ -4011,6 +4059,7 @@ fn synthesize_surface_pointer(
         return Some(expression);
     }
     if let Some(expression) = state.locals().object_values().find_map(|(name, value)| {
+        crate::instrumentation::record_deterministic_work(1);
         let CValue::Pointer(base) = value else {
             return None;
         };

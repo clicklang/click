@@ -17200,10 +17200,10 @@ fn arm_is_refuted_by_a_binding_free_fact(
 ///
 /// Facts are restricted to the comparison shape for the same reason arm
 /// selection restricts its guards: a comparison of C expressions is what a
-/// path condition decides. The arm's `owns` clauses are evaluated first,
-/// exactly as arm selection evaluates the selected arm's cells, so a fact that
-/// reads a cell the arm owns has the authority to read it. A fact that needs a
-/// conditional proof, or that the budget cannot lower, contributes nothing.
+/// path condition decides. Direct value comparisons need no owned memory.
+/// Other facts first evaluate the arm's `owns` clauses, exactly as arm
+/// selection does, so a fact reading an arm-owned cell has its authority.
+/// A fact that needs a conditional proof, or that the budget cannot lower, contributes nothing.
 ///
 /// Cost is this arm's own clauses. Nothing outside the arm is visited.
 fn arm_binding_free_facts(
@@ -17221,42 +17221,71 @@ fn arm_binding_free_facts(
         return Vec::new();
     }
     let mut budget = ExecutionBudget::beside_live_state();
-    let Ok(Ok(body_resources)) = evaluate_function_resource_context_with_normalization(
-        evaluation,
-        &arm.contains,
-        &[],
-        evaluation_assumptions,
-        &mut budget,
-        false,
-    ) else {
-        return Vec::new();
-    };
-    let body_state = evaluation.clone().with_resource_context(body_resources.0);
-    let body_assumptions =
-        evaluation_assumptions
-            .clone()
-            .assume_proposition(Proposition::CResourceComposition(
-                body_state.resources().clone(),
-            ));
-    let bindings = BTreeMap::new();
+    let prepared = std::cell::OnceCell::new();
     binding_free
         .into_iter()
         .filter_map(|fact| {
             crate::instrumentation::record_deterministic_work(1);
-            let paths =
-                crate::kernel::spec::lower_spec_proposition_at_state_with_algebraic_bindings(
-                    &body_state,
-                    fact,
-                    None,
-                    &body_assumptions,
-                    &bindings,
-                    &mut budget,
-                )
-                .ok()?;
-            let [path] = paths.as_slice() else {
-                return None;
+            let lower = |state: &CState,
+                         assumptions: &PureFactContext,
+                         budget: &mut ExecutionBudget| {
+                let paths =
+                    crate::kernel::spec::lower_spec_proposition_at_state_with_algebraic_bindings(
+                        state,
+                        fact,
+                        None,
+                        assumptions,
+                        &BTreeMap::new(),
+                        budget,
+                    )
+                    .ok()?;
+                let [path] = paths.as_slice() else {
+                    return None;
+                };
+                (path.facts.is_empty() && path.obligations.is_empty())
+                    .then(|| path.proposition.clone())
             };
-            (path.facts.is_empty() && path.obligations.is_empty()).then(|| path.proposition.clone())
+            // Direct scalar comparisons need no owned cells. In particular,
+            // checking a null guard must not evaluate every memory clause.
+            let direct = match fact {
+                SpecProposition::Comparison { left, right, .. } => {
+                    [left, right].into_iter().all(|side| {
+                        matches!(
+                            side,
+                            SpecExpression::Value(_)
+                                | SpecExpression::CExpression(
+                                    CExpression::Value(_) | CExpression::Variable(_)
+                                )
+                        )
+                    })
+                }
+                _ => false,
+            };
+            if direct
+                && let Some(proposition) = lower(evaluation, evaluation_assumptions, &mut budget)
+            {
+                return Some(proposition);
+            }
+            let (body_state, body_assumptions) = prepared
+                .get_or_init(|| {
+                    let body_resources = evaluate_function_resource_context_with_normalization(
+                        evaluation,
+                        &arm.contains,
+                        &[],
+                        evaluation_assumptions,
+                        &mut budget,
+                        false,
+                    )
+                    .ok()?
+                    .ok()?;
+                    let body_state = evaluation.clone().with_resource_context(body_resources.0);
+                    let body_assumptions = evaluation_assumptions.clone().assume_proposition(
+                        Proposition::CResourceComposition(body_state.resources().clone()),
+                    );
+                    Some((body_state, body_assumptions))
+                })
+                .as_ref()?;
+            lower(body_state, body_assumptions, &mut budget)
         })
         .collect()
 }

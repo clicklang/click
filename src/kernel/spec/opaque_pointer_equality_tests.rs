@@ -2,6 +2,7 @@ use super::*;
 
 #[test]
 fn opaque_extent_equality_retains_the_full_value_and_coverage() {
+    let _session = crate::kernel::VerificationSession::enter();
     let base = Pointer::symbolic(Variable(998_801));
     let extent = SubobjectExtent::opaque(Variable(SubobjectExtent::OPAQUE_VARIABLE_BASE + 81));
     let opaque =
@@ -27,6 +28,7 @@ fn opaque_extent_equality_retains_the_full_value_and_coverage() {
 
 #[test]
 fn typed_ranges_keep_opaque_claims_and_root_widening_drops_them() {
+    let _session = crate::kernel::VerificationSession::enter();
     let base = Pointer::symbolic(Variable(998_802));
     let variable = Variable(SubobjectExtent::OPAQUE_VARIABLE_BASE + 82);
     let pointer = CPointerValue::new(base.clone(), CType::Int32Pointer)

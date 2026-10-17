@@ -1343,3 +1343,162 @@ fn cached_raw_pointer_names_ignore_unrelated_read_definitions() {
         "{costs:?}"
     );
 }
+
+fn opaque_word_call_frame(size: u32) -> (CMemory, PureFactContext, Pointer) {
+    let input = |name| Pointer {
+        block: PointerBlock::ExternalArgument,
+        offset: PointerOffsetTerm::scale_int32(Bitvector32Term::Variable(Variable(name)), 4),
+    };
+    let word = input(989_700);
+    let context = PureFactContext::new()
+        .allow_symbolic_contract_loads()
+        .keep_spec_loads_symbolic()
+        .prefer_symbolic_external_loads()
+        .assume_condition(ConditionTerm::pointer_aligned(word.clone(), 8), true)
+        .assume_condition(
+            ConditionTerm::pointer_equal(word.clone(), Pointer::null()),
+            false,
+        );
+    let definition = CCompositeResourceDefinition::new(
+        "numeric_word_slot",
+        vec![crate::kernel::api::c_parameter("p", CType::UInt64Pointer)],
+        None,
+        false,
+        vec![CResourceSpec::owned_memory(CMemorySegment {
+            base: crate::kernel::api::c_variable("p"),
+            start: crate::kernel::api::c_int32_literal(0),
+            end: crate::kernel::api::c_int32_literal(1),
+            element_width: 8,
+            guard: None,
+        })],
+        vec![],
+    );
+    let mut residual = ResourceContext::new();
+    for index in 0..size {
+        residual = residual.unchecked_with_fact(CResourceFact::own(CResource::Composite {
+            name: "numeric_word_slot".into(),
+            arguments: vec![
+                CValue::typed_pointer(input(990_000 + u64::from(index)), CType::UInt64Pointer)
+                    .into(),
+            ]
+            .into(),
+        }));
+    }
+    let kept = crate::kernel::primitives::CallKeptOwnership::new(
+        residual,
+        crate::kernel::primitives::CallKeptRanges::new(
+            ResourceContext::new(),
+            vec![],
+            Some(std::sync::Arc::new(vec![definition])),
+        ),
+        &context,
+    );
+    let memory = CMemory::new().with_call_memory_havoc(
+        Variable(989_702),
+        &[CMemoryRange::new_with_element_width(
+            input(989_701),
+            0u32.into(),
+            1u32.into(),
+            8,
+        )],
+        &context,
+        Some(&kept),
+    );
+    (memory, context, word)
+}
+
+#[test]
+fn normalizing_an_opaque_word_pointer_does_not_search_unrelated_call_resources() {
+    let costs = [16u32, 64, 256, 1024].map(|size| {
+        let _session = crate::kernel::VerificationSession::enter();
+        let (memory, context, word) = opaque_word_call_frame(size);
+        // The load producer's final step creates this opaque word. Avoid
+        // measuring its earlier carrier search: this regression targets the
+        // subsequent normalization of the already-produced complete value.
+        let value = complete_loaded_word(
+            CValue::UInt64(Bitvector32Term::Variable(Variable(989_705))),
+            &memory,
+            &word,
+        );
+        assert!(matches!(value, CValue::PointerInteger(_)));
+        let CValue::Pointer(pointer) = crate::kernel::eval::expression::cast_c_value_to_type(
+            value,
+            CType::Int32Pointer,
+            IntegerConversion::Modular,
+            &mut Vec::new(),
+            &context,
+        )
+        .unwrap() else {
+            panic!("expected pointer")
+        };
+        assert!(!pointer.extent_is_known());
+        let context = context.assume_condition(ConditionTerm::Variable(Variable(989_703)), true);
+        let (normalized, work) = crate::instrumentation::measure_deterministic_work(|| {
+            context.pointer_value_at_entry(&pointer)
+        });
+        assert_eq!(normalized, pointer);
+        if size == 16 {
+            // A full pointer premise still supplies the selected member bounds.
+            let root = Pointer::symbolic(Variable(989_704));
+            let bounded = CPointerValue::new(root.clone(), CType::Int32Pointer).with_extent(Some(
+                SubobjectExtent {
+                    start: root,
+                    width: 4u32.into(),
+                },
+            ));
+            let related = context.assume_condition(
+                ConditionTerm::pointer_value_equal(pointer.clone(), bounded.clone()),
+                true,
+            );
+            assert_eq!(
+                related.pointer_value_at_entry(&pointer).extent(),
+                bounded.extent()
+            );
+        }
+        work
+    });
+    assert!(costs.iter().all(|work| *work <= costs[0] + 64), "{costs:?}");
+}
+
+#[test]
+fn a_call_frame_step_queries_its_kept_range_once() {
+    for size in [16u32, 64, 256, 1024] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let (memory, context, word) = opaque_word_call_frame(size);
+        let source = intern_c_memory_ref(&memory);
+        let derivation = source.derivation().unwrap();
+        let CMemoryDerivation::CallHavoc {
+            kept_by_caller: Some(kept),
+            ..
+        } = derivation.as_ref()
+        else {
+            panic!("call frame")
+        };
+        let (range, lookup_work) = crate::instrumentation::measure_deterministic_work(|| {
+            kept.range_holding(&context, None, &word, 8)
+        });
+        assert!(range.is_none());
+        let (effect, step_work) = crate::instrumentation::measure_deterministic_work(|| {
+            crate::kernel::resource_tracker::step_effect::affects(
+                &derivation,
+                &source,
+                crate::kernel::resource_tracker::Resource::Cell {
+                    pointer: &word,
+                    bytes: 8,
+                },
+                &crate::kernel::resource_tracker::step_effect::Evidence {
+                    assumptions: &context,
+                    cross_loop_havoc: true,
+                },
+            )
+        });
+        assert!(matches!(
+            effect,
+            crate::kernel::resource_tracker::step_effect::StepEffect::NotShownSeparate(_)
+        ));
+        assert!(
+            step_work <= lookup_work + 512,
+            "{size}: lookup {lookup_work}, step {step_work}"
+        );
+    }
+}

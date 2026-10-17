@@ -7622,27 +7622,26 @@ pub(super) fn c_value_comparison_proposition(
             CComparisonOperator::Equal | CComparisonOperator::NotEqual
         )
     {
-        let equality = Proposition::ConditionIs(
-            ConditionTerm::pointer_value_equal(a.clone(), b.clone()),
-            true,
-        );
-        // Phase C's opaque extent claims supplement complete pointer equality;
-        // they never replace the full value relationship with address equality.
-        let equality = if a.extent().is_some_and(SubobjectExtent::is_opaque)
-            || b.extent().is_some_and(SubobjectExtent::is_opaque)
+        let condition = ConditionTerm::pointer_value_equal(a.clone(), b.clone());
+        // Phase C's opaque claims supplement complete value equality.
+        if (a.extent().is_some_and(SubobjectExtent::is_opaque)
+            || b.extent().is_some_and(SubobjectExtent::is_opaque))
+            && let Some(coverage) = pointer_designation_equality(a, b)
         {
-            match pointer_designation_equality(a, b) {
-                Some(coverage) => Proposition::And(Box::new(equality), Box::new(coverage)),
-                None => equality,
-            }
-        } else {
-            equality
-        };
-        return Some(if operator == CComparisonOperator::Equal {
-            equality
-        } else {
-            Proposition::Not(Box::new(equality))
-        });
+            let equality = Proposition::And(
+                Box::new(Proposition::ConditionIs(condition, true)),
+                Box::new(coverage),
+            );
+            return Some(if operator == CComparisonOperator::Equal {
+                equality
+            } else {
+                Proposition::Not(Box::new(equality))
+            });
+        }
+        return Some(Proposition::ConditionIs(
+            condition,
+            operator == CComparisonOperator::Equal,
+        ));
     }
     if matches!(left, CValue::Int128(_) | CValue::UInt128(_))
         || matches!(right, CValue::Int128(_) | CValue::UInt128(_))

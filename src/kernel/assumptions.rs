@@ -3203,15 +3203,11 @@ impl PureFactContext {
             representative
         };
         if !representative.extent_is_known() {
-            // An equality between opaque inputs needs no choice of address
-            // spelling. Only an actual complete stored value can replace an
-            // opaque read; its producer supplied the entire pointer.
-            return crate::kernel::memory_provenance::complete_pointer_read_value(
-                value.designation(),
-                self,
-            )
-            .map(|stored| stored.with_type(value.c_type()))
-            .unwrap_or_else(|| value.clone());
+            // Typed loads already return the complete stored pointer when one
+            // exists. Normalizing their result must not repeat that history
+            // search, including for opaque pointers reconstructed from words.
+            // Only full pointer premises above can supply additional bounds.
+            return value.clone();
         }
         let adopted = value
             .clone()

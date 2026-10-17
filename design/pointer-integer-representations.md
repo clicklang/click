@@ -74,18 +74,29 @@ as approved on 2026-10-16. Other authored pointer-to-character casts and every
 authored cast to `void*`, including identity casts, widen to the enclosing
 object. Compiler-inserted conversions preserve the incoming view.
 
-After integrating master `3a9a01368`, the implementation passes 4,954 ordinary
-non-scaling library tests, all 795 scaling tests, all 42 documentation tests,
-and seven targeted pointer fixtures in fresh, expanded and retained checking.
-All 4,272 ordinary Markdown fixtures and all 51 ordinary example projects pass.
-The saved-link regression also verifies and expands independently. Both formatting
-checks and the PR CI quality check pass, including Clippy for all targets.
+After integrating master `9f1e4db6a`, all 803 scaling tests pass. The ordinary
+library run passed 4,958 cases; its two merge integration failures were fixed
+and pass targeted reruns, bringing the checked total to 4,960. The seven
+pointer fixtures pass fresh, expanded and retained checking on the merged tree.
+The preceding checkpoint passed all 42 documentation tests, 4,272 ordinary
+Markdown fixtures and 51 ordinary example projects; CI reruns the broad gate
+on each published checkpoint. Clippy for all targets passes on this tree.
+
+Typed reads recover complete stored pointers once, at the load producer.
+Entry normalization then adopts explicit full-pointer premises without repeating
+that memory-history search. Its scaling regression keeps work bounded beside
+16, 64, 256 and 1,024 unrelated caller resources. Source spelling detects a
+repeated pointer query in the same live environment and tries other names;
+a small-stack regression checks cyclic candidates and a later valid local.
 
 The complete minimized `__rb_erase_augmented` proof and rotation-helper proof
 pass with full cast relationships in packed-parent resources. Their adaptations
 are committed. The color-repair adaptation remains local: after the saved-link
-fix it reaches a subtree unfold that exceeds the simple-work budget, dominated
-by hypothetical resource-arm preparation. No budget was raised. The existing
+fix it reaches hypothetical resource-arm preparation that exceeds the work
+budget. Retaining one call-frame range lookup gets beyond that unfold, to a
+later instance-body evaluation budget. After the latest master integration,
+a numeric address rewrite fails earlier because canonical masks and annotated
+address equalities disagree; that reduction is being investigated. No budget was raised. The existing
 erase-color budget report also identifies resource-arm refutation costs.
 The C implementation is preserved. The full nightly suite has not been run,
 following repository policy. This remains an incomplete Phase B checkpoint and
