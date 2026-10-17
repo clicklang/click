@@ -499,10 +499,7 @@ fn construction_destination_survives_substitution_and_requires_agreement_at_join
     assert_eq!(mapped.aggregate_destination.as_ref().unwrap().pointer, at);
     assert_eq!(mapped.aggregate_destination, after.aggregate_destination);
     assert!(!state.shares_non_memory_storage_with(&mapped));
-    assert!(
-        abstract_c_state_for_interface_join_across(&state, &[&state, &mapped], &BTreeMap::new(), 0)
-            .is_err()
-    );
+    assert!(abstract_c_state_for_interface_join_across(&state, &[&state, &mapped], 0).is_err());
 }
 
 // This tests the existing explicit-destination procedure building block,

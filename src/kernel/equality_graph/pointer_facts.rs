@@ -157,6 +157,9 @@ impl EqualityGraph {
     ) {
         use crate::kernel::{CFunctionContract, CValue, Proposition, Term};
         let proposition = source.proposition();
+        if self.adjust_address_separation_source(source, insert) {
+            return;
+        }
         let mut keys = Self::object_type_keys(proposition);
         let predicate = Self::pointer_predicate_key(proposition);
         keys.extend(predicate.iter().cloned());

@@ -6748,6 +6748,40 @@ impl ResourceDefinition {
 }
 
 impl CompositeResourceBody {
+    /// The named child slots of this body, its unmatched part and every
+    /// match arm, each with the resource it owns, or `None` when two arms
+    /// give one slot name different resources. A child may name another
+    /// declared resource, so a slot's resource is a property of the
+    /// definition, which the parser and declaration expansion both read.
+    pub(in crate::surface) fn child_slot_resources(&self) -> BTreeMap<String, Option<String>> {
+        let mut slots: BTreeMap<String, Option<String>> = BTreeMap::new();
+        let bodies = std::iter::once(self).chain(
+            self.matched
+                .iter()
+                .flat_map(|matched| &matched.arms)
+                .map(|arm| &arm.body),
+        );
+        for body in bodies {
+            for clause in &body.contains {
+                let ResourceClause::Named { binding, resource } = clause else {
+                    continue;
+                };
+                let ResourceClause::Declared { name, .. } = resource.as_ref() else {
+                    continue;
+                };
+                slots
+                    .entry(binding.name.clone())
+                    .and_modify(|existing| {
+                        if existing.as_deref() != Some(name.as_str()) {
+                            *existing = None;
+                        }
+                    })
+                    .or_insert_with(|| Some(name.clone()));
+            }
+        }
+        slots
+    }
+
     pub fn condition(&self) -> Option<&ClickProposition> {
         self.condition.as_ref()
     }

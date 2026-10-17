@@ -757,8 +757,7 @@ fn source_scalar_lease_branches_keep_identical_live_ledger_until_common_end() {
             .collect::<std::collections::BTreeMap<_, _>>();
         common.retain(|name, value| right.locals().get(name) == Some(value));
         let joined =
-            abstract_c_state_for_interface_join_across(&left, &[&left, &right], &common, 0)
-                .unwrap();
+            abstract_c_state_for_interface_join_across(&left, &[&left, &right], 0).unwrap();
         assert_eq!(joined.state.loan_ledger(), active.loan_ledger());
         let endings = ends(&program);
         assert_eq!(endings.len(), depth);

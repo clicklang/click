@@ -157,6 +157,17 @@ unfold(y);
 step();
 ```
 
+Numeric address inequalities use the same scoped separation evidence. For
+example, `have separate(memory(a->word), memory(b->word))` for their first
+cells supports `have address(a) != address(b) by assumption();`. An established
+pointer or numeric-address alias carries that conclusion to another spelling,
+including a pointer loaded from a cell. Explicit nonempty range separation is
+indexed by its two anchor address classes. C comparisons publish their selected
+two owned holders through that same index, without generating all pairs of
+a larger frame. Empty or unknown ranges and viewed cells supply no such
+evidence. Arbitrary full pointer-value inequality does not imply numeric-address
+inequality.
+
 Neither rule ever decides a comparison true, and neither searches. When
 nothing settles one of the two pointers the comparison stays undecided,
 execution keeps both paths, and the proof has to handle both — see

@@ -4870,6 +4870,7 @@ impl PureFactContext {
             proposition,
             Proposition::Equal(..)
                 | Proposition::Predicate { .. }
+                | Proposition::CResourceSeparate { .. }
                 | Proposition::ConditionIs(
                     ConditionTerm::AlgebraicEqual(..) | ConditionTerm::PointerValueEqual(..),
                     true
@@ -6000,6 +6001,9 @@ impl PureFactContext {
             if self.equality_graph.knows_condition(condition, false) {
                 return Some(false);
             }
+            if self.addresses_separated_by_class(condition) {
+                return Some(false);
+            }
         }
         let graph = self.difference_graph.graph(|| {
             self.condition_facts
@@ -6163,7 +6167,23 @@ impl PureFactContext {
 
     fn knows_condition_or_stated_separation(&self, condition: &ConditionTerm, value: bool) -> bool {
         self.equality_graph.knows_condition(condition, value)
-            || (!value && self.stated_pointer_disequality(condition) == Some(false))
+            || (!value && self.addresses_separated_by_class(condition))
+    }
+
+    pub(in crate::kernel) fn addresses_separated_by_class(
+        &self,
+        condition: &ConditionTerm,
+    ) -> bool {
+        // Preserve the direct anchor lookup. Only an alias-dependent query
+        // needs to register a condition application in the shared classes.
+        if self.stated_pointer_disequality(condition) == Some(false) {
+            return true;
+        }
+        let Some(source) = self.equality_graph.address_separation_source(condition) else {
+            return false;
+        };
+        record_implicit_reasoning_provenance(self, &source);
+        true
     }
 
     /// This context extended by `condition == value`, charged one unit of
