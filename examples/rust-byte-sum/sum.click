@@ -1,5 +1,4 @@
-import click::integer;
-import click::machine_integer;
+arithmetic "integer";
 
 verifying "sum.rs";
 function prefix(bytes: &[u8], end: usize) -> Integer {
@@ -10,7 +9,7 @@ function prefix(bytes: &[u8], end: usize) -> Integer {
 fn sum(bytes: &[u8]) -> i32 {
     requires bytes.len() <= 1000u64;
     views bytes[0..bytes.len()];
-    ensures to_integer(result) == old(prefix(bytes, bytes.len()));
+    ensures result == old(prefix(bytes, bytes.len()));
 } by {
     execute_until(loop(0));
     have prefix(bytes, i) == 0 by {
@@ -21,8 +20,8 @@ fn sum(bytes: &[u8]) -> i32 {
     loop {
         decreases bytes.len() - i;
         invariant i <= bytes.len();
-        invariant 0 <= to_integer(total) and to_integer(total) <= 255 * to_integer(i);
-        invariant to_integer(total) == prefix(bytes, i);
+        invariant 0 <= total and total <= 255 * i;
+        invariant total == prefix(bytes, i);
         preserve by {
             execute_until(read(0)); step();
             have defined(bytes[i]) by {
@@ -32,8 +31,6 @@ fn sum(bytes: &[u8]) -> i32 {
                     bytes.len() <= 9223372036854775807u64;
                 };
             }
-            have 0 <= bytes[i] as i32 and 255 >= bytes[i] as i32;
-            have 0 <= to_integer(total);
             have defined(total + bytes[i] as i32) by auto();
             have i < 18446744073709551615u64 by auto();
             have prefix(bytes, i + 1u64) == prefix(bytes, i) + to_integer(bytes[i] as i32) by {
@@ -43,53 +40,17 @@ fn sum(bytes: &[u8]) -> i32 {
                 };
                 simp();
             }
-            have to_integer(total + (bytes[i] as i32)) == to_integer(total) + to_integer((bytes[i] as i32)) by {
-                apply(int32_add_to_integer(total, (bytes[i] as i32))) using { defined(total + (bytes[i] as i32)); };
-            }
-            have to_integer(total + (bytes[i] as i32)) == prefix(bytes, i + 1u64) by {
-                arithmetic() using {
-                    to_integer(total + (bytes[i] as i32)) == to_integer(total) + to_integer((bytes[i] as i32));
-                    to_integer(total) == prefix(bytes, i);
-                    prefix(bytes, i + 1u64) == prefix(bytes, i) + to_integer((bytes[i] as i32));
-                };
-            }
-            have 0 <= to_integer(total + bytes[i] as i32) by auto();
-            have i <= 1000u64 by { arithmetic() using { i <= bytes.len(); bytes.len() <= 1000u64; }; }
-            have to_integer(i) <= 1000 by {
-                apply(uint64_less_equal_to_integer(i, 1000u64)) using { i <= 1000u64; };
-            }
-            have to_integer(i) + 1 <= 18446744073709551615 by {
-                arithmetic() using { to_integer(i) <= 1000; };
-            }
-            have to_integer(i + 1u64) == to_integer(i) + 1 by {
-                apply(uint64_add_to_integer(i, 1u64)) using { to_integer(i) + 1 <= 18446744073709551615; };
-            }
-            have to_integer((bytes[i] as i32)) <= 255 by {
-                apply(int32_less_equal_to_integer((bytes[i] as i32), 255)) using { 255 >= (bytes[i] as i32); };
-            }
-            have to_integer(total + (bytes[i] as i32)) <= 255 * to_integer(i + 1u64) by {
-                arithmetic() using {
-                    to_integer(total) <= 255 * to_integer(i);
-                    to_integer((bytes[i] as i32)) <= 255;
-                    to_integer(total + (bytes[i] as i32)) == to_integer(total) + to_integer((bytes[i] as i32));
-                    to_integer(i + 1u64) == to_integer(i) + 1;
-                };
-            }
             execute_until(assignment(i, 1));
+            have 0 <= total by auto();
+            have to_integer(total) <= 255 * to_integer(i + 1u64) by auto();
+            have total == prefix(bytes, i + 1u64) by auto();
             step();
         }
     }
-    have i == bytes.len() by {
-        apply(uint64_less_equal_and_not_less_than_implies_equal(i, bytes.len())) using {
-            i <= bytes.len();
-            not i < bytes.len();
-        };
-    }
+    have i == bytes.len() by auto();
     have prefix(bytes, i) == prefix(bytes, bytes.len()) by {
         rewrite(i == bytes.len());
         simp();
     }
-    have to_integer(total) == prefix(bytes, bytes.len()) by auto();
     execute();
-    simp();
 }
