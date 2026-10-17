@@ -152,6 +152,18 @@ pub(crate) fn take_statement_priority_entries() -> (usize, usize, usize) {
     )
 }
 
+#[cfg(test)]
+thread_local! {
+    static RESERVED_FACT_VARIABLES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+/// The variables facts handed to their fact sets' reservations on this
+/// thread so far, beyond those of snapshots already reserved.
+#[cfg(test)]
+pub(crate) fn reserved_fact_variable_entries() -> usize {
+    RESERVED_FACT_VARIABLES.with(std::cell::Cell::get)
+}
+
 /// `reserved` and `snapshots` once `fact`'s variables are reserved too:
 /// every variable `proposition_variables(fact)` lists is then in the
 /// reserved set, and every snapshot named in `snapshots` has all its
@@ -168,6 +180,8 @@ fn reserve_fact_variables(
         crate::kernel::reasoning::variable_collection::proposition_variables_reserving(
             fact, &snapshots,
         );
+    #[cfg(test)]
+    RESERVED_FACT_VARIABLES.with(|count| count.set(count.get() + variables.len()));
     for variable in variables {
         if !reserved.contains(&variable) {
             reserved = reserved.with_value(variable);

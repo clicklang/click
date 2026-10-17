@@ -3289,6 +3289,19 @@ impl RecordedSnapshots {
         self.iter().map(|(selector, _)| selector)
     }
 
+    /// The entries newest selector first, read from the persistent tree as
+    /// they are taken: a reader that stops at the first one it wants visits
+    /// a logarithm of the tree, not every snapshot the path recorded.
+    fn iter_newest_first(&self) -> RecordedSnapshotsNewestFirst<'_> {
+        let mut entries = RecordedSnapshotsNewestFirst { pending: Vec::new() };
+        entries.push_right_spine(self.version.root.as_deref());
+        entries
+    }
+
+    fn keys_newest_first(&self) -> impl Iterator<Item = &SnapshotSelector> {
+        self.iter_newest_first().map(|(selector, _)| selector)
+    }
+
     /// Statement entries at/before the anchor in reverse order, then later
     /// entries in forward order. Seek through the persistent tree rather than
     /// materializing and sorting every snapshot before the first candidate.
@@ -3530,6 +3543,34 @@ fn recorded_snapshot_insert(
         std::cmp::Ordering::Equal => {
             recorded_snapshot_node(selector, state, root.left.clone(), root.right.clone())
         }
+    }
+}
+
+/// [`RecordedSnapshots::iter_newest_first`].
+struct RecordedSnapshotsNewestFirst<'a> {
+    pending: Vec<&'a RecordedSnapshotNode>,
+}
+
+impl<'a> RecordedSnapshotsNewestFirst<'a> {
+    fn push_right_spine(&mut self, mut node: Option<&'a RecordedSnapshotNode>) {
+        while let Some(current) = node {
+            self.pending.push(current);
+            node = current.right.as_deref();
+        }
+    }
+}
+
+impl<'a> Iterator for RecordedSnapshotsNewestFirst<'a> {
+    type Item = (&'a SnapshotSelector, &'a CState);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        while let Some(node) = self.pending.pop() {
+            self.push_right_spine(node.left.as_deref());
+            if let Some(state) = &node.state {
+                return Some((&node.selector, state));
+            }
+        }
+        None
     }
 }
 

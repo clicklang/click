@@ -1,6 +1,21 @@
 use super::*;
 use crate::surface::proof::proof_object::ExecutionProofState;
 
+/// `statement` with its next source operation, the one
+/// `split_next_source_operation` takes first, replaced by `replacement`.
+fn with_next_source_operation_replaced(
+    statement: &CStatement,
+    replacement: CStatement,
+) -> CStatement {
+    match statement {
+        CStatement::Seq(first, second) => CStatement::Seq(
+            Arc::new(with_next_source_operation_replaced(first, replacement)),
+            second.clone(),
+        ),
+        _ => replacement,
+    }
+}
+
 /// Whether a loop tactic binds no clause beyond its own loop's.
 fn nested_loop_clauses_bound(current_loop_clauses: &[StructuralClause]) -> bool {
     current_loop_clauses.len() == 1
@@ -358,20 +373,12 @@ pub(in crate::surface::proof) fn execute_frontier_local_loop(
     execution.presentation.loop_rule_environment = Some(earlier_rules);
 
     if let FrontierPosition::StatementEntry { remaining } = &execution.core.frontier.position {
-        let (_, tail) = split_next_source_operation(remaining).map_err(|message| {
-                ClickError::new(format!(
-                    "`{claim_label}` tactic {tactic_index}: `loop` could not isolate the current source loop: {message}"
-                ))
-            })?;
-        let mut statements = Vec::new();
-        statements.push(current_loop);
-        if let Some(tail) = tail {
-            flatten_top_level_sequence(&tail, &mut statements).map_err(ClickError::new)?;
-        }
+        // The current loop, annotated, in place of the source operation the
+        // frontier is at; the statements after it keep their tree, so this
+        // rebuilds only the path to that operation rather than every
+        // statement after the loop.
         execution.core.frontier.position = FrontierPosition::StatementEntry {
-            remaining: sequence_from_statements(&statements)
-                .expect("the current loop always contributes one statement")
-                .into(),
+            remaining: with_next_source_operation_replaced(remaining, current_loop).into(),
         };
     }
 

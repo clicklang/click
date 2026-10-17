@@ -1846,7 +1846,7 @@ fn canonicalized_symbolic_load_value_with_identity(
 }
 
 const LOAD_VARIABLE_BASE: u64 = 1 << 40;
-const LOAD_VARIABLE_RANGE: u64 = 1 << 40;
+const LOAD_VARIABLE_RANGE_SIZE: u64 = 1 << 40;
 #[allow(
     dead_code,
     reason = "the typed load producer migrates after this identity foundation"
@@ -1906,14 +1906,14 @@ fn load_variable_range() -> u64 {
     if let Some(range) = LOAD_VARIABLE_RANGE_OVERRIDE.with(|cell| cell.get()) {
         return range;
     }
-    LOAD_VARIABLE_RANGE
+    LOAD_VARIABLE_RANGE_SIZE
 }
 
 /// Runs `body` with only the first `range` load-variable ids available, so
 /// distinct loads collide at the hash and a test can watch the probe.
 #[cfg(test)]
 pub(crate) fn with_load_variable_range<T>(range: u64, body: impl FnOnce() -> T) -> T {
-    assert!(range > 0 && range <= LOAD_VARIABLE_RANGE);
+    assert!(range > 0 && range <= LOAD_VARIABLE_RANGE_SIZE);
     let previous = LOAD_VARIABLE_RANGE_OVERRIDE.with(|cell| cell.replace(Some(range)));
     let result = body();
     LOAD_VARIABLE_RANGE_OVERRIDE.with(|cell| cell.set(previous));
@@ -1942,7 +1942,7 @@ pub(crate) fn load_variable_registry_len() -> usize {
 /// Structural: no registry consultation, so the answer is deterministic
 /// and thread-agnostic.
 pub(crate) fn is_load_variable(variable: &Variable) -> bool {
-    (LOAD_VARIABLE_BASE..LOAD_VARIABLE_BASE + LOAD_VARIABLE_RANGE).contains(&variable.0)
+    LOAD_VARIABLE_RANGE.contains(&variable.0)
 }
 
 /// Whether a proposition is a load-variable defining equation
@@ -2632,12 +2632,16 @@ pub(crate) fn viewed_as_memory_load(term: &Bitvector32Term) -> Option<Bitvector3
 /// any later time too.
 pub(crate) fn proposition_mentions_load_variable(proposition: &Proposition) -> bool {
     let mut variables = std::collections::BTreeSet::new();
-    crate::kernel::reasoning::variable_collection::collect_proposition_bitvector_variables(
+    crate::kernel::reasoning::variable_collection::collect_proposition_variables_for_load_presence(
         proposition,
         &mut variables,
     );
     variables.iter().any(is_load_variable)
 }
+
+/// The identities load variables are minted from.
+pub(crate) const LOAD_VARIABLE_RANGE: std::ops::Range<u64> =
+    LOAD_VARIABLE_BASE..LOAD_VARIABLE_BASE + LOAD_VARIABLE_RANGE_SIZE;
 
 pub(crate) fn proposition_mentions_registered_load_variable(proposition: &Proposition) -> bool {
     let mut variables = std::collections::BTreeSet::new();

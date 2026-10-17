@@ -4806,6 +4806,31 @@ struct SnapshotReservation {
 }
 
 thread_local! {
+    /// Set while `proposition_mentions_load_variable` collects: a snapshot
+    /// contributes at most one load variable, which is all that question
+    /// reads of it.
+    static LOAD_PRESENCE_ONLY: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Collects `proposition`'s variables as `collect_proposition_bitvector_variables`
+/// does, except that each interned snapshot contributes at most one of its
+/// load variables: the result names a load variable exactly when the whole
+/// collection does.
+pub(in crate::kernel) fn collect_proposition_variables_for_load_presence(
+    proposition: &Proposition,
+    variables: &mut BTreeSet<Variable>,
+) {
+    struct Restore(bool);
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            LOAD_PRESENCE_ONLY.with(|flag| flag.set(self.0));
+        }
+    }
+    let _restore = Restore(LOAD_PRESENCE_ONLY.with(|flag| flag.replace(true)));
+    collect_proposition_bitvector_variables(proposition, variables);
+}
+
+thread_local! {
     static SNAPSHOT_RESERVATION: std::cell::RefCell<Option<SnapshotReservation>> =
         const { std::cell::RefCell::new(None) };
 }
@@ -4825,6 +4850,18 @@ fn extend_with_snapshot_variables(
     whole: WholeCount,
     variables: &mut BTreeSet<Variable>,
 ) {
+    if LOAD_PRESENCE_ONLY.with(std::cell::Cell::get) {
+        // Whether the snapshot names a load variable is whether its counts
+        // hold one: the first one stands for them all.
+        let counts = shared_memory_variable_counts(memory, whole);
+        variables.extend(
+            counts
+                .get_greater_than(&Variable(crate::kernel::eval::LOAD_VARIABLE_RANGE.start - 1))
+                .map(|(variable, _)| *variable)
+                .filter(crate::kernel::is_load_variable),
+        );
+        return;
+    }
     let Some(mut reservation) = SNAPSHOT_RESERVATION.with(|cell| cell.borrow_mut().take()) else {
         variables.extend(shared_memory_variable_counts(memory, whole).keys().copied());
         return;
