@@ -55,6 +55,26 @@ run is usually the larger. The same replacement of the same `have`
 statement in the block's other branch (75 lines further on) reproduces it
 too; replacing any of six other `have`s of that block does not.
 
+## Where the work goes
+
+`CLICK_TIMINGS=1` names the operations inside the tactic (statement 35,
+source tactic 347). No nested tactic is recorded inside it in either run, so
+the extra work is the control `have`'s own closure:
+
+| operation | whole file | selected unit |
+|---|---:|---:|
+| `simp closure: premise spelling` | 1,454,105 | 6,247 |
+| `simp premise surface at recorded snapshots` | 1,116,674 | 1,305 |
+| `canonicalize atomic loads: miss` | 1,112,090 | 56,218 |
+| `cell epoch walk` | 1,103,127 | 55,668 |
+
+The premise spelling falls through to synthesizing surfaces at recorded
+snapshots far more often in the whole-file run. The atomic-load and memory
+caches it uses are unbounded thread-locals, so eviction is not the cause; a
+first suspect is state registered by the claims checked earlier in the run
+(surface spellings of kernel facts, or interned terms) that changes which
+spelling path the closure takes.
+
 ## Intended regression
 
 A gate test that checks this unit both ways, with the edit above applied to a
