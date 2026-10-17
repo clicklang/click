@@ -269,9 +269,9 @@ fn direct_forward_goto_lowers_to_an_indexed_kernel_target() {
     ) -> Option<crate::kernel::CControlTargetId> {
         match statement {
             crate::kernel::CStatement::Goto { target } => Some(*target),
-            crate::kernel::CStatement::Seq(first, second) => {
-                goto_target(first).or_else(|| goto_target(second))
-            }
+            crate::kernel::CStatement::Seq(statements) => statements
+                .iter()
+                .find_map(|statement| goto_target(statement)),
             _ => None,
         }
     }
@@ -297,9 +297,9 @@ fn conditional_forward_goto_uses_the_preorder_source_target_index() {
     ) -> Option<crate::kernel::CControlTargetId> {
         match statement {
             crate::kernel::CStatement::Goto { target } => Some(*target),
-            crate::kernel::CStatement::Seq(first, second) => {
-                goto_target(first).or_else(|| goto_target(second))
-            }
+            crate::kernel::CStatement::Seq(statements) => statements
+                .iter()
+                .find_map(|statement| goto_target(statement)),
             crate::kernel::CStatement::If {
                 then_branch,
                 else_branch,

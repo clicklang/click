@@ -116,3 +116,77 @@ fn proposition_snapshot_selection_matches_full_context_without_unrelated_binding
         "snapshot selection costs: {costs:?}"
     );
 }
+
+/// Putting a lowered loop in place follows the loop's path from the body's
+/// root, whose length is the loop's nesting depth: a sequence on the path
+/// replaces its one statement and shares the rest. The kernel body was a
+/// pair tree, and the walk this replaces found the loop by numbering the
+/// loops of every statement before it, so a function's loops cost work
+/// quadratic in its length
+/// (see "Sequential loop clauses" in
+/// `docs/internals/verification-efficiency.md`). A C block
+/// lowers to a balanced tree of pairs, so the path to the first, middle and
+/// last of 16 to 1,024 loops visits at most the tree's depth, two more
+/// statements per fourfold size, and the result is what the walk builds.
+#[test]
+fn putting_a_lowered_loop_in_place_reads_its_path_not_the_loops_before_it() {
+    let mut visits = Vec::new();
+    for loops in [16, 64, 256, 1024] {
+        let body = (0..loops)
+            .map(|k| format!("    i = 0;\n    while (i < 4) {{ p[i] = {k}; i = i + 1; }}\n"))
+            .collect::<String>();
+        let function = crate::languages::c::syntax::parse_function(&format!(
+            "int32 caller(int32* p) {{\n    int32 i;\n{body}    return 0;\n}}"
+        ))
+        .expect("the loops parse")
+        .to_kernel_function();
+        let body = function.body();
+        let paths = KernelLoopPaths::of(body);
+        let replacement = CStatement::While {
+            condition: crate::kernel::c_int32_literal(0),
+            invariant: Vec::new(),
+            invariant_checks: Vec::new(),
+            effect_checks: Vec::new(),
+            resource_specs: Vec::new(),
+            ranking_measures: Vec::new(),
+            structural_measure: None,
+            do_while: false,
+            backedge_target: None,
+            natural_exit_target: None,
+            body: Box::new(CStatement::Skip),
+        };
+        let mut size_visits = Vec::new();
+        for target in [0, loops / 2, loops - 1] {
+            let before = kernel_loop_replacement_steps();
+            let replaced = paths
+                .replaced(body, target, &replacement)
+                .expect("a top-level loop is put in place");
+            size_visits.push(kernel_loop_replacement_steps() - before);
+            assert_eq!(
+                Some(&replaced),
+                kernel_loop_replaced(body, target, &mut 0, &replacement).as_ref(),
+                "loop({target}) of {loops}"
+            );
+            let (CStatement::Seq(old), CStatement::Seq(new)) = (body, &replaced) else {
+                panic!("a block body");
+            };
+            assert_eq!(
+                old.iter()
+                    .zip(new.iter())
+                    .filter(|(old, new)| !std::sync::Arc::ptr_eq(old, new))
+                    .count(),
+                1,
+                "loop({target}) of {loops} shares every other statement"
+            );
+        }
+        visits.push(size_visits);
+    }
+    for (index, size) in visits.iter().enumerate().skip(1) {
+        for (position, visited) in size.iter().enumerate() {
+            assert!(
+                *visited <= visits[0][position] + 2 * index,
+                "putting a loop in place visits more than the depth of a longer body: {visits:?}"
+            );
+        }
+    }
+}

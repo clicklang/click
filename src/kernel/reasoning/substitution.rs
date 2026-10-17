@@ -945,9 +945,9 @@ fn walk_c_statement<S: VariableSubstitution + ?Sized>(statement: &CStatement, s:
             condition: s.c_expression(condition),
             label: label.clone(),
         },
-        CStatement::Seq(first, second) => {
-            c_seq(walk_c_statement(first, s), walk_c_statement(second, s))
-        }
+        CStatement::Seq(statements) => CStatement::Seq(
+            statements.map(|statement| std::sync::Arc::new(walk_c_statement(statement, s))),
+        ),
         CStatement::Return(expression) => CStatement::Return(s.c_expression(expression)),
         CStatement::Throw(expression) => CStatement::Throw(s.c_expression(expression)),
         CStatement::TryCatchInt32 {
@@ -2560,9 +2560,10 @@ pub(in crate::kernel) fn collect_c_statement_bound_variables(
         CStatement::HeapFree { pointer } => {
             collect_c_expression_bound_variables(pointer, variables)
         }
-        CStatement::Seq(first, second) => {
-            collect_c_statement_bound_variables(first, variables);
-            collect_c_statement_bound_variables(second, variables);
+        CStatement::Seq(statements) => {
+            for statement in statements.iter() {
+                collect_c_statement_bound_variables(statement, variables);
+            }
         }
         CStatement::TryCatchInt32 {
             try_body, handler, ..

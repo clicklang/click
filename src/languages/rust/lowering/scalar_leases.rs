@@ -57,9 +57,10 @@ pub(super) fn decorate(
         while let Some(selected) = pending.pop() {
             crate::instrumentation::record_deterministic_work(1);
             match selected {
-                CStatement::Seq(first, second) => {
-                    pending.push(std::sync::Arc::make_mut(first));
-                    pending.push(std::sync::Arc::make_mut(second));
+                CStatement::Seq(statements) => {
+                    // The pair nodes beyond the first the tree held.
+                    crate::instrumentation::record_deterministic_work(statements.len() - 2);
+                    pending.extend(statements.iter_mut().map(std::sync::Arc::make_mut));
                 }
                 CStatement::Assign {
                     name,
@@ -218,9 +219,10 @@ mod tests {
             let mut pending = vec![helper.body()];
             while let Some(statement) = pending.pop() {
                 match statement {
-                    CStatement::Seq(first, second) => {
-                        pending.push(first);
-                        pending.push(second);
+                    CStatement::Seq(statements) => {
+                        for statement in statements.iter() {
+                            pending.push(statement);
+                        }
                     }
                     CStatement::If {
                         then_branch,
