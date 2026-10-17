@@ -7964,9 +7964,10 @@ impl<'a> Proof<'a> {
             .iter()
             .map(|(kernel, _)| kernel.clone())
             .collect::<Vec<_>>();
-        // Signed-order rules have checked named theorem certificates. Try
-        // those before allocating speculative normalization contexts, including
-        // for predecessor and negated-bound rules without an explicit `+ 1`.
+        // Signed-order and definedness rules have checked named theorem
+        // certificates. Try those before allocating speculative normalization
+        // contexts, including for predecessor and negated-bound rules without
+        // an explicit `+ 1`.
         let signed_order = signed_nonstrict_parts(goal)
             .or_else(|| signed_strict_parts(goal))
             .is_some();
@@ -7985,7 +7986,8 @@ impl<'a> Proof<'a> {
                 theorem_application_closes_goal,
             )
         };
-        if signed_order && let Some(closed) = try_typed_derivation() {
+        let typed_first = signed_order || signed_definedness_operands(goal).is_some();
+        if typed_first && let Some(closed) = try_typed_derivation() {
             return Some(closed);
         }
         if crate::kernel::proof::fact_reasoning::is_single_normalization_condition(goal)
@@ -8061,7 +8063,7 @@ impl<'a> Proof<'a> {
         }
         // The selected context has not changed, so the ordinary derivation
         // slot need not repeat the early attempt.
-        let typed = if signed_order {
+        let typed = if typed_first {
             None
         } else {
             try_typed_derivation()
