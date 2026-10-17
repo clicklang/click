@@ -328,6 +328,11 @@ pub enum LoadKind {
     UInt128,
     Float32,
     Float64,
+    /// The designation of the pointer a cell holds
+    /// (`design/pointer-subobject-extents.md`, Phase C): read from the same
+    /// snapshot and address as the pointer itself, so reads of one cell share
+    /// it, but a different read, so equal pointer values do not.
+    Designation,
 }
 
 impl LoadKind {
@@ -425,7 +430,8 @@ impl LoadKind {
             Self::Int8 | Self::UInt8 => 1,
             Self::Int16 | Self::UInt16 => 2,
             Self::Bits32 | Self::Float32 => 4,
-            Self::Bits64 | Self::Float64 => 8,
+            // A designation is read from the cell of the pointer it names.
+            Self::Bits64 | Self::Float64 | Self::Designation => 8,
             Self::Int128 | Self::UInt128 => 16,
         }
     }
@@ -1171,6 +1177,14 @@ impl SubobjectExtent {
         };
         (identity.0 < Self::OPAQUE_VARIABLE_BASE)
             .then(|| Self::opaque(Variable(Self::OPAQUE_VARIABLE_BASE + identity.0)))
+    }
+
+    /// The identity variable whose unseen extent `variable` names, if it
+    /// names one ([`Self::unseen`]).
+    pub(crate) fn unseen_identity(variable: Variable) -> Option<Variable> {
+        (Self::OPAQUE_VARIABLE_BASE..Self::OPAQUE_VARIABLE_CEILING)
+            .contains(&variable.0)
+            .then(|| Variable(variable.0 - Self::OPAQUE_VARIABLE_BASE))
     }
 
     /// The opaque extent variable `pointer` is the start of, if any.

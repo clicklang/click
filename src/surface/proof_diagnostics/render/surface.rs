@@ -2260,6 +2260,7 @@ fn load_type_spelling(kind: crate::kernel::LoadKind) -> &'static str {
         K::UInt128 => "uint128",
         K::Float32 => "float",
         K::Float64 => "double",
+        K::Designation => "designation",
     }
 }
 

@@ -2082,7 +2082,11 @@ impl EqualityGraphState {
     fn register_blocks(&mut self, roots: impl IntoIterator<Item = PointerBlock>) {
         let is_application = |block: &PointerBlock| match block {
             PointerBlock::LoadedPointer(_) | PointerBlock::PureFunctionApplication(_) => true,
-            PointerBlock::Symbolic(variable) => crate::kernel::is_load_variable(variable),
+            PointerBlock::Symbolic(variable) => {
+                crate::kernel::is_load_variable(variable)
+                    || crate::kernel::SubobjectExtent::unseen_identity(*variable)
+                        .is_some_and(|read| crate::kernel::is_load_variable(&read))
+            }
             _ => false,
         };
         let mut pending: Vec<_> = roots.into_iter().filter(is_application).collect();
@@ -2127,12 +2131,26 @@ impl EqualityGraphState {
                         },
                     )
                 }
+                // The opaque extent of a loaded pointer is the designation the
+                // read cell holds: a read of the same snapshot and address of
+                // its own kind, so it is congruent exactly where the read is.
+                PointerBlock::Symbolic(variable)
+                    if let Some(read) = crate::kernel::SubobjectExtent::unseen_identity(*variable)
+                        && crate::kernel::is_load_variable(&read)
+                        && crate::kernel::registered_load_bytes_for_variable(&read) == Some(8) =>
+                {
+                    crate::kernel::registered_load_for_variable(&read).map(|(memory, address)| {
+                        (memory, address, crate::kernel::LoadKind::Designation)
+                    })
+                }
                 _ => None,
             };
             let Some((memory, address, kind)) = definition else {
                 continue;
             };
-            if matches!(block, PointerBlock::LoadedPointer(_)) {
+            if matches!(block, PointerBlock::LoadedPointer(_))
+                || kind == crate::kernel::LoadKind::Designation
+            {
                 self.typed_reads = self.typed_reads.with_value(block.clone());
                 let address_term = self.register_pointer_address(&address);
                 let value_term = self.register_pointer_address(&Pointer {

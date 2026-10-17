@@ -7480,6 +7480,14 @@ fn pointer_designation_equality(
                 1,
             )));
         }
+        // An opaque extent is named by its start: equal starts are one
+        // designation, whose width is therefore one width.
+        (true, true) => {
+            return Some(Proposition::ConditionIs(
+                pointer_equality_condition(left.start.clone(), right.start.clone()),
+                true,
+            ));
+        }
         _ => {}
     }
     let starts = Proposition::ConditionIs(
