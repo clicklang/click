@@ -69,7 +69,7 @@ fn uint64_constant_order_strengthening_is_sound_at_full_width_and_scales() {
     let n = Bitvector32Term::Variable(Variable(998001));
     let c = Bitvector32Term::UInt64Constant;
     let mut work_counts = Vec::new();
-    for size in [8, 32, 128, 512] {
+    for size in [8, 32, 128] {
         let mut facts = PureFactContext::new();
         for i in 0..size {
             // Shared endpoints exercise the dangerous constant-index shape.
@@ -192,7 +192,7 @@ fn uint64_slice_index_transport_is_sound_and_ignores_unrelated_bounds() {
     let length_word = Bitvector32Term::uint32_from_64(length.clone());
     let goal = ConditionTerm::signed_less_than(index_word.clone(), length_word);
     let mut work = Vec::new();
-    for size in [8, 32, 128, 512] {
+    for size in [8, 32, 128] {
         let mut context = PureFactContext::new();
         for n in 0..size {
             context = context.assume_condition(

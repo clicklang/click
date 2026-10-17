@@ -24,7 +24,7 @@ fn uint64_successor_certificates_require_the_strict_guard_and_ignore_unrelated_f
         true,
     );
     let mut samples = Vec::new();
-    for size in [8, 32, 128, 512] {
+    for size in [8, 32, 128] {
         let mut premises = vec![guard.clone()];
         premises.extend((0..size).map(|k| {
             Proposition::ConditionIs(

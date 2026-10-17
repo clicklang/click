@@ -10,7 +10,7 @@ use click::cli::{
 };
 use click::instrumentation::{self, ActiveVerificationWork, TacticEvent, VerificationEvent};
 use click::surface::{
-    ClickProject, SourcePosition, project_smart_tactic_source_sites,
+    ClickError, ClickProject, ProofSourceIndex, SourcePosition, project_smart_tactic_source_sites,
     project_tactic_source_position, smart_tactic_source_sites, tactic_source_position,
     verify_c0_prepared_project, verify_c0_project, verify_c0_sources,
     verify_program_prepared_project,
@@ -1559,6 +1559,10 @@ fn resolve_source_positions(
     sources: &mut ProfiledSources,
 ) -> Result<(), String> {
     let mut unresolved: BTreeMap<String, usize> = BTreeMap::new();
+    // A nested step is located through its source's proof index, built from
+    // the parse once per source.
+    let mut indexes: BTreeMap<std::path::PathBuf, Result<ProofSourceIndex, ClickError>> =
+        BTreeMap::new();
     let interrupted_key = match profile.interrupted.as_mut() {
         Some(InterruptedWork::Tactic(key)) => Some(key),
         Some(InterruptedWork::Phase(_) | InterruptedWork::Driver) | None => None,
@@ -1590,11 +1594,19 @@ fn resolve_source_positions(
             ),
         };
         let position = position.and_then(|outer| match key.source_tactic_path.as_deref() {
-            Some(path) if path.len() > 1 => click::surface::nested_tactic_source_position(
-                &source.click_source,
-                &outer,
-                &path[1..],
-            ),
+            Some(path) if path.len() > 1 => {
+                let index = indexes.entry(key.source_path.clone()).or_insert_with(|| {
+                    let inputs = source.inputs.program_inputs();
+                    match &source.project {
+                        Some(project) => ProofSourceIndex::for_project(project, &inputs),
+                        None => ProofSourceIndex::for_sidecar(&source.click_source, &inputs),
+                    }
+                });
+                match index {
+                    Ok(index) => index.nested_position(&outer, &path[1..]),
+                    Err(error) => Err(error.clone()),
+                }
+            }
             _ => Ok(outer),
         });
         match position {

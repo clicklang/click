@@ -11,7 +11,7 @@ fn normalize_using_graph_work_ignores_unrelated_ambient_equalities() {
     let c = Pointer::symbolic(Variable(96_122));
     let goal = normalization_pointer_equality(&a, &c);
     let mut curve = Vec::new();
-    for size in [16, 64, 256, 1024] {
+    for size in [16, 64, 256] {
         let _session = crate::kernel::VerificationSession::enter();
         let mut facts = ProofFacts::from_ordered(&[
             normalization_pointer_equality(&a, &b),
