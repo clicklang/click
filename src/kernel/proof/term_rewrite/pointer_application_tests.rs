@@ -349,3 +349,186 @@ fn a_full_pointer_rewrite_does_not_adopt_another_read_carrier_at_the_same_addres
     assert_eq!(range.opaque_extent.as_deref(), unrelated.opaque_extent());
     assert!(!range.carrier_extent_known);
 }
+
+#[test]
+fn full_c_argument_pointer_rewrite_reaches_a_displaced_copy() {
+    let parameter = |id| {
+        CPointerValue::new(
+            Pointer {
+                block: PointerBlock::ExternalArgument,
+                offset: PointerOffsetTerm::scale_int32(Bitvector32Term::Variable(Variable(id)), 1),
+            },
+            CType::UInt8Pointer,
+        )
+    };
+    let base = parameter(916_201);
+    let middle = parameter(916_202);
+    let replacement = base.clone().with_address(base.pointer().offset_by_bytes(2));
+    let displaced = middle
+        .clone()
+        .with_address(middle.pointer().offset_by_bytes(3));
+    let mut rewrite = TermRewrite::for_pointer_value_exact(&middle, &replacement);
+    let CValue::Pointer(actual) = rewrite.value(&CValue::Pointer(displaced)) else {
+        panic!("pointer rewrite changed type")
+    };
+    let expected = base.pointer().offset_by_bytes(5);
+    assert_eq!(actual.pointer().block, expected.block);
+    assert_eq!(
+        crate::kernel::eval::canonical_offset_term(&actual.pointer().offset),
+        crate::kernel::eval::canonical_offset_term(&expected.offset)
+    );
+    assert_eq!(actual.designation(), base.designation());
+    assert_eq!(actual.opaque_extent(), base.opaque_extent());
+
+    let mut numeric = TermRewrite::for_pointer_exact(middle.pointer(), replacement.pointer());
+    let CValue::Pointer(address_only) = numeric.value(&CValue::Pointer(middle.clone())) else {
+        panic!("address rewrite changed type")
+    };
+    assert_eq!(address_only.designation(), middle.designation());
+    assert_eq!(address_only.opaque_extent(), middle.opaque_extent());
+}
+
+#[test]
+fn displaced_symbolic_pointer_rewrite_keeps_selected_bounds() {
+    let source = CPointerValue::new(Pointer::symbolic(Variable(916_211)), CType::UInt8Pointer);
+    let target_address = Pointer::symbolic(Variable(916_212));
+    let target = CPointerValue::new(target_address.clone(), CType::UInt8Pointer).with_extent(Some(
+        SubobjectExtent {
+            start: target_address.clone(),
+            width: 4u32.into(),
+        },
+    ));
+    let shifted = source
+        .clone()
+        .with_address(source.pointer().offset_by_bytes(1));
+    let CValue::Pointer(actual) =
+        TermRewrite::for_pointer_value_exact(&source, &target).value(&CValue::Pointer(shifted))
+    else {
+        panic!("pointer type")
+    };
+    assert_eq!(actual.pointer(), &target_address.offset_by_bytes(1));
+    assert_eq!(actual.designation(), target.designation());
+    assert_eq!(actual.opaque_extent(), target.opaque_extent());
+    assert_eq!(actual.extent(), target.extent());
+
+    let selected = source
+        .clone()
+        .with_extent(Some(SubobjectExtent {
+            start: source.pointer().offset_by_bytes(1),
+            width: 1u32.into(),
+        }))
+        .with_address(source.pointer().offset_by_bytes(1));
+    let CValue::Pointer(narrowed) =
+        TermRewrite::for_pointer_value_exact(&source, &target).value(&CValue::Pointer(selected))
+    else {
+        panic!("selected pointer type")
+    };
+    assert_eq!(
+        narrowed.extent(),
+        Some(&SubobjectExtent {
+            start: target_address.offset_by_bytes(1),
+            width: 1u32.into(),
+        })
+    );
+
+    let CValue::Pointer(numeric) =
+        TermRewrite::for_pointer_exact(source.pointer(), target.pointer())
+            .value(&CValue::Pointer(source.clone()))
+    else {
+        panic!("numeric pointer type")
+    };
+    assert_eq!(numeric.designation(), source.designation());
+    assert_eq!(numeric.opaque_extent(), source.opaque_extent());
+    assert_eq!(numeric.extent(), source.extent());
+}
+
+#[test]
+fn displaced_c_argument_rewrite_inherits_known_replacement_bounds() {
+    let parameter = |id| {
+        CPointerValue::new(
+            Pointer {
+                block: PointerBlock::ExternalArgument,
+                offset: PointerOffsetTerm::scale_int32(Bitvector32Term::Variable(Variable(id)), 1),
+            },
+            CType::UInt8Pointer,
+        )
+    };
+    let source = parameter(916_241);
+    let base = parameter(916_242);
+    let target = base.clone().with_extent(Some(SubobjectExtent {
+        start: base.pointer().clone(),
+        width: 4u32.into(),
+    }));
+    let input = source
+        .clone()
+        .with_address(source.pointer().offset_by_bytes(1));
+    let CValue::Pointer(actual) =
+        TermRewrite::for_pointer_value_exact(&source, &target).value(&CValue::Pointer(input))
+    else {
+        panic!("pointer type")
+    };
+    assert_eq!(actual.extent(), target.extent());
+    assert_eq!(actual.extent_is_known(), target.extent_is_known());
+    assert_eq!(actual.opaque_extent(), target.opaque_extent());
+}
+
+#[test]
+fn displaced_original_pointer_keeps_its_bounds_beside_a_view_equality() {
+    let original = CPointerValue::new(Pointer::symbolic(Variable(916_251)), CType::UInt8Pointer);
+    let other = CPointerValue::new(Pointer::symbolic(Variable(916_252)), CType::UInt8Pointer);
+    let source_view = original
+        .clone()
+        .with_type(CType::VoidPointer)
+        .with_opaque_extent(None);
+    let target_view = other
+        .clone()
+        .with_type(CType::VoidPointer)
+        .with_opaque_extent(None);
+    let input = original
+        .clone()
+        .with_address(original.pointer().offset_by_bytes(3));
+    let CValue::Pointer(actual) = TermRewrite::for_pointer_value_exact(&source_view, &target_view)
+        .value(&CValue::Pointer(input))
+    else {
+        panic!("pointer type")
+    };
+    assert_eq!(actual.pointer(), &other.pointer().offset_by_bytes(3));
+    assert_eq!(actual.c_type(), original.c_type());
+    assert_eq!(actual.opaque_extent(), original.opaque_extent());
+    assert_eq!(actual.extent(), original.extent());
+}
+
+#[test]
+fn displaced_copy_keeps_a_domain_not_named_by_the_full_equality() {
+    let numeric = Pointer::symbolic(Variable(916_261));
+    let original = CPointerValue::new(numeric.clone(), CType::UInt8Pointer).with_extent(Some(
+        SubobjectExtent {
+            start: numeric.clone(),
+            width: 4u32.into(),
+        },
+    ));
+    let memory = intern_c_memory(CMemory::new());
+    let source = CPointerValue::from_read(
+        numeric.clone(),
+        CType::UInt8Pointer,
+        &memory,
+        &Pointer::symbolic(Variable(916_263)),
+    );
+    let target = CPointerValue::new(Pointer::symbolic(Variable(916_262)), CType::UInt8Pointer);
+    let input = original.clone().with_address(numeric.offset_by_bytes(1));
+    let CValue::Pointer(actual) =
+        TermRewrite::for_pointer_value_exact(&source, &target).value(&CValue::Pointer(input))
+    else {
+        panic!("pointer type")
+    };
+    assert_eq!(actual.pointer(), &target.pointer().offset_by_bytes(1));
+    assert_eq!(actual.designation(), original.designation());
+    assert_eq!(actual.opaque_extent(), original.opaque_extent());
+    assert_eq!(
+        actual.extent(),
+        Some(&SubobjectExtent {
+            start: target.pointer().clone(),
+            width: 4u32.into(),
+        })
+    );
+}
