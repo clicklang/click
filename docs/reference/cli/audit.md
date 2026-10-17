@@ -16,6 +16,11 @@ usage: click audit [OPTIONS] <sidecar.click|example-project|examples-directory|m
 mdtests directory, or repository root. A repository-root audit covers both
 `examples/` and `mdtests/`. `--claim`, `--changed-since`, and `--start-at`
 narrow that target; their exact interaction and defaults are listed below.
+
+Mdtests with a `fail:` expectation are skipped before input preparation,
+runtime selection, and proof discovery. The mdtest gate checks their expected
+rejections. Passing fixtures must still parse and verify to pass the audit.
+
 For a sidecar with Click imports, the inventory contains only smart sites owned
 by the selected entry module. Its imports resolve under the project root
 `click verify` selects for it, so a sidecar that imports a sibling project's

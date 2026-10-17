@@ -1838,6 +1838,55 @@ theorem nested(x: int32) {
 }
 
 #[test]
+fn audit_skips_expected_syntax_failures_before_runtime_inventory() {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("mdtests/a_sidecar_conjunction_written_as_ampersands_names_and.md");
+    let arguments = parse_arguments([path.display().to_string()]).unwrap();
+    run_audit(arguments).expect("the negative syntax fixture has no proof to expand");
+}
+
+#[test]
+fn audit_skips_expected_input_failures_before_preparation() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("missing-input.md");
+    fs::write(
+        &path,
+        "```click\nverifying \"missing.c\";\n```\n\n```expect\nfail: missing source\n```\n",
+    )
+    .unwrap();
+    let arguments = parse_arguments([path.display().to_string()]).unwrap();
+    run_audit(arguments).expect("negative inputs must be skipped before source preparation");
+}
+
+#[test]
+fn audit_keeps_positive_fixtures_beside_expected_failures() {
+    let directory = tempfile::tempdir().unwrap();
+    let negative = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("mdtests/a_sidecar_conjunction_written_as_ampersands_names_and.md");
+    fs::copy(negative, directory.path().join("negative.md")).unwrap();
+    let positive = directory.path().join("positive.md");
+    let source = "```click\ntheorem identity() { ensures 0 == 0 by { simp(); } }\n```\n\n```expect\npass\n```\n";
+    fs::write(&positive, source).unwrap();
+    let targets = audit_targets(directory.path()).unwrap();
+    assert_eq!(inventory_sites(&targets).unwrap().len(), 1);
+    let arguments = || parse_arguments([directory.path().display().to_string()]).unwrap();
+    run_audit(arguments()).expect("the positive proof must still expand and recheck");
+
+    fs::write(&positive, source.replace("0 == 0", "0 == 1")).unwrap();
+    assert!(
+        run_audit(arguments()).is_err(),
+        "a false positive claim must fail"
+    );
+
+    fs::write(&positive, source.replace("0 == 0", "0 == 0 && true")).unwrap();
+    let error = run_audit(arguments()).expect_err("invalid positive syntax must still fail");
+    assert!(
+        error.contains("Click writes conjunction as `and`"),
+        "{error}"
+    );
+}
+
+#[test]
 fn inventory_obeys_the_work_and_whole_run_bounds() {
     let directory = std::env::temp_dir().join(format!(
         "click-audit-inventory-bounds-{}",
