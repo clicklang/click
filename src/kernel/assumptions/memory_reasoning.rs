@@ -3886,26 +3886,42 @@ impl PureFactContext {
                 if !self.opaque_extents_equal(origin, source.pointer()) {
                     return false;
                 }
-                SubobjectExtent::covered_range(fact).is_some_and(|(from, count, width)| {
-                    let contains = |position: &Pointer, bytes| {
-                        self.pointer_access_in_range(
-                            position,
-                            bytes,
-                            &from,
-                            &Bitvector32Term::Constant(0),
-                            &count,
-                            width,
+                let covered = if let Some(range) = SubobjectExtent::covered_wide_range(fact) {
+                    let contains = |pointer| {
+                        crate::kernel::primitives::pointer_formation_in_range(
+                            pointer,
+                            value.pointer(),
+                            &range,
+                            self,
                         )
                     };
-                    contains(position, bytes)
-                        && (bytes > 0
-                            || contains(value.pointer(), 0)
-                            || contains(position, 1)
-                            || self.decide(&ConditionTerm::signed_less_than(
-                                Bitvector32Term::Constant(0),
-                                count,
-                            )) == Some(true))
-                })
+                    contains(position) && (bytes == 0 || contains(&position.offset_by_bytes(bytes)))
+                } else {
+                    SubobjectExtent::covered_range(fact).is_some_and(|(from, count, width)| {
+                        let contains = |position: &Pointer, bytes| {
+                            self.pointer_access_in_range(
+                                position,
+                                bytes,
+                                &from,
+                                &Bitvector32Term::Constant(0),
+                                &count,
+                                width,
+                            )
+                        };
+                        contains(position, bytes)
+                            && (bytes > 0
+                                || contains(value.pointer(), 0)
+                                || contains(position, 1)
+                                || self.decide(&ConditionTerm::signed_less_than(
+                                    Bitvector32Term::Constant(0),
+                                    count,
+                                )) == Some(true))
+                    })
+                };
+                if covered {
+                    record_reasoning_provenance(self, fact);
+                }
+                covered
             })
     }
 

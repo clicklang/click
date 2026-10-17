@@ -18411,6 +18411,11 @@ fn unknown_pointer_bounds_survive_expansion_and_retained_verification() {
             "nested.contract",
             "ensures result == o->inner.second;",
         ),
+        (
+            "mdtests/native_bounds_survive_refolding_their_memory_resource.md",
+            "end.contract",
+            "ensures result == p + n;",
+        ),
     ] {
         let (source, sources) = mdtest_sources(fixture);
         let sources = sources

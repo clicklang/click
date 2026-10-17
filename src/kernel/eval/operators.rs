@@ -2374,19 +2374,26 @@ fn pointer_offset_by_elements_paths(
     // offset and compared unequal to null, which decided a branch C leaves
     // undefined. Displacing by zero is left alone: it is the shape real code
     // writes, and C23 defines it.
-    let zero = if wide {
-        ConditionTerm::uint64_equal(offset.clone(), Bitvector32Term::UInt64Constant(0))
-    } else {
-        ConditionTerm::equal(offset.clone(), Bitvector32Term::Constant(0))
+    let zero_term = match (wide, unsigned) {
+        (true, true) => Bitvector32Term::UInt64Constant(0),
+        (true, false) => Bitvector32Term::Int64Constant(0),
+        (false, _) => Bitvector32Term::Constant(0),
     };
-    let zero = Proposition::ConditionIs(zero, true);
-    let zero_is_known = crate::kernel::reasoning::path_facts::call_input_fact_is_already_known;
-    let displaces = !(zero_is_known(assumptions, &zero)
+    let zero = Proposition::ConditionIs(
+        if wide {
+            ConditionTerm::int64_equal(offset.clone(), zero_term)
+        } else {
+            ConditionTerm::equal(offset.clone(), zero_term)
+        },
+        true,
+    );
+    let zero_is_known = |context: &PureFactContext| {
+        crate::kernel::reasoning::path_facts::call_input_fact_is_already_known(context, &zero)
+            || (wide && context.wide_constant_from_equalities(&offset) == Some(0))
+    };
+    let displaces = !(zero_is_known(assumptions)
         || (!facts.is_empty()
-            && zero_is_known(
-                &assumptions_with_path_context(assumptions, &facts, &[]),
-                &zero,
-            )));
+            && zero_is_known(&assumptions_with_path_context(assumptions, &facts, &[]))));
     if pointer.is_in_null_block() && displaces {
         return vec![CExpressionPath {
             outcome: CExpressionOutcome::UndefinedBehavior(CUndefinedBehavior::PointerArithmetic),

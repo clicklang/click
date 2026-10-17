@@ -6179,82 +6179,9 @@ impl ResourceContext {
             if !assumptions.access_designations_match(designation, &range) {
                 continue;
             }
-            let width = range.element_width();
-            let nonempty = match range.wide_bounds() {
-                Some((start, end)) => ConditionTerm::uint64_less_than(start.clone(), end.clone()),
-                None => ConditionTerm::signed_less_than(range.start().clone(), range.end().clone()),
-            };
-            // Re-spell only checked nonnegative endpoints. This does not
-            // truncate a native index or a native range into 32 bits.
-            let wide = if range.wide_bounds().is_some() {
-                Some(range.clone())
-            } else {
-                checked_native_range_endpoint(range.start(), assumptions)
-                    .zip(checked_native_range_endpoint(range.end(), assumptions))
-                    .map(|(start, end)| {
-                        CMemoryRange::new_wide(range.base().clone(), start, end, width)
-                    })
-            };
-            let narrow = if range.wide_bounds().is_none() {
-                Some(range.clone())
-            } else {
-                range.wide_bounds().and_then(|(start, end)| {
-                    let (start, end) = start.uint64_as_const().zip(end.uint64_as_const())?;
-                    (start <= end && end <= i32::MAX as u64 / u64::from(width)).then(|| {
-                        CMemoryRange::new_with_element_width(
-                            range.base().clone(),
-                            Bitvector32Term::Constant(start as u32),
-                            Bitvector32Term::Constant(end as u32),
-                            width,
-                        )
-                    })
-                })
-            };
-            let wide_window = |base: &Pointer, start: u64, end: u64| {
-                wide.as_ref().is_some_and(|range| {
-                    let (_, limit) = range.wide_bounds().expect("wide spelling");
-                    assumptions.decide(&ConditionTerm::uint64_less_equal(
-                        limit.clone(),
-                        Bitvector32Term::UInt64Constant(i64::MAX as u64 / u64::from(width)),
-                    )) == Some(true)
-                        && wide_memory_range_covers(
-                            range,
-                            &CMemoryRange::new_wide(
-                                base.clone(),
-                                Bitvector32Term::UInt64Constant(start),
-                                Bitvector32Term::UInt64Constant(end),
-                                width,
-                            ),
-                            assumptions,
-                        )
-                })
-            };
-            let narrow_contains = |position: &Pointer, bytes| {
-                narrow.as_ref().is_some_and(|range| {
-                    assumptions.pointer_access_in_held_range(position, bytes, range)
-                })
-            };
-            let contains = |position: &Pointer| {
-                narrow_contains(position, 0)
-                    || narrow_contains(position, 1)
-                    || wide_window(position, 0, 0)
-                    || position
-                        .offset_from_base(operand)
-                        .and_then(|offset| offset.as_const())
-                        .filter(|bytes| *bytes >= 0 && *bytes % i64::from(width) == 0)
-                        .is_some_and(|bytes| {
-                            let elements = (bytes / i64::from(width)) as u64;
-                            wide_window(operand, elements, elements)
-                        })
-            };
-            // In an empty range, two contained positions are the same point:
-            // this can justify zero displacement, but no other formation.
-            if (contains(&address) || contains(pointer))
-                && (contains(operand)
-                    || assumptions.decide(&nonempty) == Some(true)
-                    || narrow_contains(&address, 1)
-                    || narrow_contains(&address, width)
-                    || wide_window(&address, 0, 1))
+            if pointer_formation_in_range(&address, operand, &range, assumptions)
+                || (address != *pointer
+                    && pointer_formation_in_range(pointer, operand, &range, assumptions))
             {
                 return true;
             }
@@ -9408,6 +9335,90 @@ fn memory_range_in_element_width(range: &CMemoryRange, width: u32) -> Option<CMe
         )
         .with_carrier_of(range),
     )
+}
+
+/// Bounds geometry shared by held ranges and opaque-domain coverage facts.
+/// This constructs no read authority and includes the one-past position.
+pub(in crate::kernel) fn pointer_formation_in_range(
+    pointer: &Pointer,
+    operand: &Pointer,
+    range: &CMemoryRange,
+    assumptions: &PureFactContext,
+) -> bool {
+    let width = range.element_width();
+    let nonempty = match range.wide_bounds() {
+        Some((start, end)) => ConditionTerm::uint64_less_than(start.clone(), end.clone()),
+        None => ConditionTerm::signed_less_than(range.start().clone(), range.end().clone()),
+    };
+    // Re-spell only checked nonnegative endpoints. This does not
+    // truncate a native index or a native range into 32 bits.
+    let wide = if range.wide_bounds().is_some() {
+        Some(range.clone())
+    } else {
+        checked_native_range_endpoint(range.start(), assumptions)
+            .zip(checked_native_range_endpoint(range.end(), assumptions))
+            .map(|(start, end)| CMemoryRange::new_wide(range.base().clone(), start, end, width))
+    };
+    let narrow = if range.wide_bounds().is_none() {
+        Some(range.clone())
+    } else {
+        range.wide_bounds().and_then(|(start, end)| {
+            let (start, end) = start.uint64_as_const().zip(end.uint64_as_const())?;
+            (start <= end && end <= i32::MAX as u64 / u64::from(width)).then(|| {
+                CMemoryRange::new_with_element_width(
+                    range.base().clone(),
+                    Bitvector32Term::Constant(start as u32),
+                    Bitvector32Term::Constant(end as u32),
+                    width,
+                )
+            })
+        })
+    };
+    let wide_window = |base: &Pointer, start: u64, end: u64| {
+        wide.as_ref().is_some_and(|range| {
+            let (_, limit) = range.wide_bounds().expect("wide spelling");
+            assumptions.decide(&ConditionTerm::uint64_less_equal(
+                limit.clone(),
+                Bitvector32Term::UInt64Constant(i64::MAX as u64 / u64::from(width)),
+            )) == Some(true)
+                && wide_memory_range_covers(
+                    range,
+                    &CMemoryRange::new_wide(
+                        base.clone(),
+                        Bitvector32Term::UInt64Constant(start),
+                        Bitvector32Term::UInt64Constant(end),
+                        width,
+                    ),
+                    assumptions,
+                )
+        })
+    };
+    let narrow_contains = |position: &Pointer, bytes| {
+        narrow
+            .as_ref()
+            .is_some_and(|range| assumptions.pointer_access_in_held_range(position, bytes, range))
+    };
+    let contains = |position: &Pointer| {
+        narrow_contains(position, 0)
+            || narrow_contains(position, 1)
+            || wide_window(position, 0, 0)
+            || position
+                .offset_from_base(operand)
+                .and_then(|offset| offset.as_const())
+                .filter(|bytes| *bytes >= 0)
+                .is_some_and(|bytes| {
+                    let elements = (bytes / i64::from(width)) as u64;
+                    let last = elements + u64::from(bytes % i64::from(width) != 0);
+                    wide_window(operand, elements, last)
+                })
+    };
+    // An empty range can justify only the same contained position.
+    contains(pointer)
+        && (contains(operand)
+            || assumptions.decide(&nonempty) == Some(true)
+            || narrow_contains(pointer, 1)
+            || narrow_contains(pointer, width)
+            || wide_window(pointer, 0, 1))
 }
 
 pub(in crate::kernel) fn memory_range_covers(

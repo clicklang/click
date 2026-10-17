@@ -159,3 +159,45 @@ fn well_formed_range_terms_do_not_establish_an_opaque_domain() {
     assert!(permits(&p, 12, &admitted, &ResourceContext::new()));
     assert!(!permits(&p, 16, &admitted, &ResourceContext::new()));
 }
+
+#[test]
+fn native_coverage_keeps_high_bits_and_interior_bytes() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let p = pointer(930_600);
+    let start = 1u64 << 32;
+    let range = CMemoryRange::from_pointer_value_wide(
+        &p,
+        Bitvector32Term::UInt64Constant(start),
+        Bitvector32Term::UInt64Constant(start + 2),
+        4,
+    );
+    let coverage = p.opaque_coverage_fact(&range).unwrap();
+    let context = PureFactContext::new().assume_proposition(coverage.clone());
+    let position = |index| {
+        p.pointer()
+            .offset_by_typed_elements(Bitvector32Term::UInt64Constant(index), 4, true, true)
+    };
+    assert!(context.opaque_pointer_covers(&p, &position(start + 1), 4));
+    assert!(context.opaque_pointer_covers(&p, &position(start + 2), 0));
+    assert!(!context.opaque_pointer_covers(&p, &position(start + 2), 4));
+    assert!(!context.opaque_pointer_covers(&p, &position(1), 0));
+    let (allowed, used) = crate::kernel::assumptions::collect_reasoning_provenance(|| {
+        context.opaque_pointer_covers(&p, &position(start + 1), 0)
+    });
+    assert!(allowed && used.contains(&coverage));
+    assert!(
+        !context
+            .without_exact_fact(&coverage)
+            .opaque_pointer_covers(&p, &position(start + 1), 0)
+    );
+    let record = CMemoryRange::from_pointer_value_wide(
+        &p,
+        Bitvector32Term::UInt64Constant(0),
+        Bitvector32Term::UInt64Constant(2),
+        16,
+    );
+    let context =
+        PureFactContext::new().assume_proposition(p.opaque_coverage_fact(&record).unwrap());
+    assert!(context.opaque_pointer_covers(&p, &p.pointer().offset_by_bytes(4), 4));
+    assert!(!context.opaque_pointer_covers(&p, &p.pointer().offset_by_bytes(31), 4));
+}

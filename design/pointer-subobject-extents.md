@@ -256,8 +256,8 @@ for formation and selection checks; it does not activate the earlier
 a declared object, allocation result or explicit widening cast from an unseen
 pointer carrying `opaque_extent`. Executed arithmetic through the latter must
 prove that the resulting position lies inside its own domain, including its
-one-past endpoint. Zero displacement, including a symbolic displacement proved
-zero, preserves the original pointer. Selecting a member through an unseen
+one-past endpoint. Zero displacement, including signed/native symbolic displacements proved
+zero and subtraction of zero, preserves the original pointer. Selecting a member through an unseen
 struct pointer also needs bounds for the complete selected member. A `T*` alone
 does not supply `sizeof(T)` bytes.
 
@@ -288,12 +288,14 @@ rebasing and splitting retain it, and substitution maps its variables.
 
 An owned allocation supplies bounds independently of byte ownership. Entry,
 unfold and verified allocation-return producers publish its coverage, requiring
-positive ownership. This permits taking a member address without making its
-bytes readable. Internal coverage facts are omitted from ordinary proof-context
+positive ownership. The token retains complete pointer identity: a member
+pointer cannot claim an enclosing allocation token by address alone. This
+permits taking a member address without making its bytes readable. Internal coverage facts are omitted from ordinary proof-context
 lists; the source clauses and the actual refusal remain visible.
 
 A position check does not require a readable element. The supplier's end is
-included, and native 64-bit endpoints retain their width. Checked nonnegative
+included, and native 64-bit endpoints retain their width in coverage facts
+and geometry checks. Those facts remain available after refolding memory. Checked nonnegative
 32-bit endpoints can be promoted; native constants can be re-spelled narrowly
 only when their complete byte footprint fits. Suffix windows retain the
 non-wrapping subtraction evidence used by ordinary range containment. An empty

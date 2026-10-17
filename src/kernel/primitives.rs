@@ -1166,11 +1166,12 @@ struct CPointerQualifiers {
 /// change as the pointer moves through arithmetic or loops. Respelling the
 /// pointer's address through a proven alias leaves it alone; a substitution
 /// of the variables the address mentions maps `start` the same way. A value
-/// without an extent is bounded only by its complete object, as before.
+/// without a concrete extent either has a known complete object or carries
+/// an opaque domain whose bounds come from coverage evidence.
 ///
-/// The width is a term: a member's is its constant size, and a pointer of
-/// unseen formation will carry an unknown one (`design/pointer-subobject-extents.md`,
-/// Phase C).
+/// The term-valued width also supports the legacy symbolic-extent prototype.
+/// Production unseen pointers use `CPointerValue::opaque_extent` instead
+/// (`design/pointer-subobject-extents.md`, Phase C).
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct SubobjectExtent {
     pub(crate) start: Pointer,
@@ -1226,6 +1227,17 @@ impl SubobjectExtent {
             )))
         };
         let width = range.element_width();
+        if let Some((start, end)) = range.wide_bounds() {
+            return Proposition::Predicate {
+                name: format!("{SUBOBJECT_COVERS_PREDICATE_PREFIX}{width}"),
+                arguments: vec![
+                    pointer(self.start.clone()),
+                    pointer(range.base().clone()),
+                    Term::CValue(CValue::UInt64(start.clone())),
+                    Term::CValue(CValue::UInt64(end.clone())),
+                ],
+            };
+        }
         Proposition::Predicate {
             name: format!("{SUBOBJECT_COVERS_PREDICATE_PREFIX}{width}"),
             arguments: vec![
@@ -1264,6 +1276,33 @@ impl SubobjectExtent {
             .pointer()
             .element_index_from_base_with_width(from.pointer(), width)?;
         Some((from.pointer().clone(), count, width))
+    }
+
+    /// A native range retains both full-width endpoints in its coverage fact.
+    pub(crate) fn covered_wide_range(proposition: &Proposition) -> Option<CMemoryRange> {
+        let Proposition::Predicate { name, arguments } = proposition else {
+            return None;
+        };
+        let width = name
+            .strip_prefix(SUBOBJECT_COVERS_PREDICATE_PREFIX)?
+            .parse::<u32>()
+            .ok()
+            .filter(|width| *width > 0)?;
+        let [
+            _,
+            Term::CValue(CValue::Pointer(base)),
+            Term::CValue(CValue::UInt64(start)),
+            Term::CValue(CValue::UInt64(end)),
+        ] = arguments.as_slice()
+        else {
+            return None;
+        };
+        Some(CMemoryRange::new_wide(
+            base.pointer().clone(),
+            start.clone(),
+            end.clone(),
+            width,
+        ))
     }
 
     /// The `width` bytes at `start`: a member's extent.

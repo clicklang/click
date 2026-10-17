@@ -183,18 +183,23 @@ impl EqualityGraph {
         start: &Pointer,
     ) -> Vec<crate::kernel::Proposition> {
         use crate::kernel::{CPointerValue, CType, SUBOBJECT_COVERS_PREDICATE_PREFIX};
-        let key = terms::PointerFactKey::PredicateShape(
-            SUBOBJECT_COVERS_PREDICATE_PREFIX.to_string(),
-            3,
-            0,
-            CPointerValue::new(start.clone(), CType::VoidPointer).c_type(),
-        );
-        self.pointer_fact_candidates(start, &key)
-            .iter()
-            .flat_map(|(_, sources)| sources.iter())
-            .map(|(_, source)| {
-                crate::instrumentation::record_deterministic_work(1);
-                source.proposition().clone()
+        [3, 4]
+            .into_iter()
+            .flat_map(|arity| {
+                let key = terms::PointerFactKey::PredicateShape(
+                    SUBOBJECT_COVERS_PREDICATE_PREFIX.to_string(),
+                    arity,
+                    0,
+                    CPointerValue::new(start.clone(), CType::VoidPointer).c_type(),
+                );
+                self.pointer_fact_candidates(start, &key)
+                    .iter()
+                    .flat_map(|(_, sources)| sources.iter())
+                    .map(|(_, source)| {
+                        crate::instrumentation::record_deterministic_work(1);
+                        source.proposition().clone()
+                    })
+                    .collect::<Vec<_>>()
             })
             .collect()
     }
