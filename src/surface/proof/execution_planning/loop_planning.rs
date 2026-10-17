@@ -334,13 +334,6 @@ pub(in crate::surface::proof) fn verify_loop_initialization_pure_proof(
         .unwrap_or(source.loop_source_index);
     let initialize_site = source.proof_site.as_ref();
     let mut recorded_snapshots = context.recorded_snapshots.clone();
-    recorded_snapshots.insert(
-        ProgramPointRef {
-            region: CodeRegionRef::Loop(loop_index),
-            kind: ProgramPointKind::Entry,
-        },
-        context.state.clone(),
-    );
     for label in environment
         .function_block
         .structural_clauses()
@@ -348,14 +341,15 @@ pub(in crate::surface::proof) fn verify_loop_initialization_pure_proof(
         .filter(|clause| clause.region() == &CodeRegion::Loop(loop_index))
         .filter_map(StructuralClause::label)
     {
-        recorded_snapshots.insert(
-            ProgramPointRef {
-                region: CodeRegionRef::Label(label.to_string()),
-                kind: ProgramPointKind::Entry,
-            },
-            context.state.clone(),
-        );
+        recorded_snapshots.label_loop(loop_index, label);
     }
+    recorded_snapshots.insert(
+        ProgramPointRef {
+            region: CodeRegionRef::Loop(loop_index),
+            kind: ProgramPointKind::Entry,
+        },
+        context.state.clone(),
+    );
     let invariant_items = clause.items().iter().collect::<Vec<_>>();
     // Generated initialization steps belong to the explicit phase tactic when
     // one exists, or to the enclosing `loop` keyword for an omitted phase.
