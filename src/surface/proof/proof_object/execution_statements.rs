@@ -2772,7 +2772,7 @@ impl<'a> Proof<'a> {
                 surface_source,
                 &source,
                 &target,
-                facts,
+                view.facts,
                 &transition_facts,
                 context.parameter_binding(),
                 view.execution.view(view.context),

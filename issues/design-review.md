@@ -169,27 +169,25 @@ local held at a recorded statement boundary as that local there
 (`at(statement(1).exit, r)`, `at(statement(2).exit, buf)`), and a read of a
 recorded snapshot's memory through that snapshot's locals. A pure theorem's
 `Integer` binder prints as its name in a conversion-condition refusal, and a
-memory-history sentence names a struct-typed global's field (`g.b`) where
-exactly one scalar field occupies exactly the bytes accessed. What remains:
+memory-history sentence, a goal and an evaluated side name a struct-typed
+global's or local's field (`g.b`, `s.b`) where exactly one scalar field
+occupies exactly the bytes accessed. An address inside an allocation a local
+held is spelled from that local (`*((char *)at(statement(2).exit, p) + 5)`),
+and the goal and premise lines of a refusal name what locals held at
+recorded points, as its proof context does. What remains:
 
 - A callee's result that no local ever held, as in `return value() + 1;`,
   prints as `<unnamed A>`. Its only spelling is a translation temporary: the
   C call `value()` is not a Click expression, and re-evaluating it would be
   another call.
-- An address no local held exactly at a recorded snapshot, such as an
-  element `buf + u` of an allocation, prints as `<pointer A>`; so do the
-  `recent premises` lines, which are rendered without the execution's
-  snapshot names.
-- A store at a constant offset into a struct-typed local prints as `s+8`:
-  the function's table of local struct types is keyed by source spelling,
-  while a local's block carries its kernel name, so a shadowing declaration
-  of another type could hold the block that spelling would find. Union
-  members sharing an offset and width keep the offset by design
-  (`mdtests/global_union_members_sharing_bytes_keep_the_offset.md`).
+- A cell at a quantified binder's index, `dst[k]` in a frame refusal,
+  prints as `*<pointer A>`: the report has no name for the binder `k`
+  (`mdtests/bare_transport_names_its_uncarried_leaf.md`).
 
-Proposed fix: carry each struct-typed local's layout with its kernel block
-name; spell an address inside an allocation as an offset from the local that
-held its base; give the `recent premises` lines the report's snapshot names.
+Union members sharing an offset and width keep the offset by design
+(`mdtests/global_union_members_sharing_bytes_keep_the_offset.md`).
+
+Proposed fix: name a quantified binder's cell by the binder.
 
 Decision: in progress.
 

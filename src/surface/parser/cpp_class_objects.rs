@@ -625,7 +625,16 @@ fn rewrite_function(
             .iter()
             .map(|(function, _)| (function.clone(), definer.definitions[function].clone()))
             .collect::<Vec<_>>();
-        let memory = at(&position, vec![ident("owns"), Token::Star, ident("this")]);
+        // A `const` method only views its memory, so a caller keeps every
+        // field across the call, not only the functions' definitions.
+        let memory = at(
+            &position,
+            vec![
+                ident(if head.is_const { "views" } else { "owns" }),
+                Token::Star,
+                ident("this"),
+            ],
+        );
         let own_clauses = split_clauses(&source[head.body_open + 1..head.body_close])
             .iter()
             .map(|clause| read_objects(on_memory(clause, definer, &functions, head.is_const)))

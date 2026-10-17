@@ -68,5 +68,5 @@ int32 loop_writes_past_tag() {
 ```
 
 ```expect
-fail: left side evaluated to at(<state A>, *(int32 *)((char *)&source + 8)), right side evaluated to 3
+fail: left side evaluated to at(<state A>, source.payload.number), right side evaluated to 3
 ```

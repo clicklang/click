@@ -7,8 +7,8 @@
         "click_header_catalog_sha256": "1eb5c9764e83c5a13e4d4fb5274581350b8dd3b03a35ab1038ebc30d1be51108",
         "compiler_path": "/usr/bin/x86_64-linux-gnu-gcc-13",
         "config_directory": "/home/user/click-b/design/charon-trial/zlib",
-        "config_sha256": "53ef34896e286f97bd5e923036291d85df5213c6dd3589031e96e34a23ecc99e",
-        "invocation_sha256": "a2175b25259a6ac67f84a0649cec026eb527277e90988bcde48d7d57529e51fa",
+        "config_sha256": "2562a7a6e1c446b404fdb12d7f976644bb3a79ebe7db4fe1c220d3fabc23175e",
+        "invocation_sha256": "f29d0ede71c3f7f1b6b20a47510c9978610dc1cd4bfaa20f630f60e7b096a281",
         "mode": "userspace",
         "schema": 3,
         "sources": [
@@ -32,7 +32,7 @@
               "/home/user/click-b/design/charon-trial/zlib/zlib.h": "8a5579af72ea4f427ff00a4150f0ccb3fc5c1e4379f726e101133b1ab9fc600c",
               "/home/user/click-b/design/charon-trial/zlib/zutil.h": "dddb2dc7a1dc339ecf2c8e089b366f08bb731c0839c7110240d17ce731bb4fea"
             },
-            "identity": "1dc6000ff338c244f60bf1ed9fee0ba1d092961b4e0518dabc9c7e59d3fb83d9",
+            "identity": "dfdc28cf93dddc49fef457cba3d1022064e437123eabc5e4c458405f56d50775",
             "local_dependencies": {
               "zconf.h": "f5134250a67d57459234b63858f0d9d3ef8dcc48e9e1028d3f4fdcf6eae677ae",
               "zlib.h": "8a5579af72ea4f427ff00a4150f0ccb3fc5c1e4379f726e101133b1ab9fc600c",
@@ -63,7 +63,7 @@
               "/home/user/click-b/design/charon-trial/zlib/zlib.h": "8a5579af72ea4f427ff00a4150f0ccb3fc5c1e4379f726e101133b1ab9fc600c",
               "/home/user/click-b/design/charon-trial/zlib/zutil.h": "dddb2dc7a1dc339ecf2c8e089b366f08bb731c0839c7110240d17ce731bb4fea"
             },
-            "identity": "234bf9eecb97f5d04d093c68ffd0a75e11d5bae9d60cc33bdd7949a0488589b1",
+            "identity": "7b3b0cf9dcf4a023b83cde06ebd8fa27d3f21f01609bd75795522bd19e086905",
             "local_dependencies": {
               "adler32.c": "9cd1443a24ff2a3053961695bd432035c58347386a420d3388232376ebabe211",
               "zconf.h": "f5134250a67d57459234b63858f0d9d3ef8dcc48e9e1028d3f4fdcf6eae677ae",
@@ -77,7 +77,7 @@
         ],
         "target": "x86_64-unknown-linux-gnu",
         "toolchain": {
-          "abi_probe_sha256": "5e7789053c4ff4b5cc64e011d8b266f733d5db1ed80e79d65713ab53b39571ed",
+          "abi_probe_sha256": "c332c12971be3c0a572c512a67e37c45666b1c0cdebd78e4aa122fc89c7bfc59",
           "cc1_path": "/usr/libexec/gcc/x86_64-linux-gnu/13/cc1",
           "cc1_sha256": "5d1679131184e2de4435b426eb264bf13472fe026db8e5c6bc97445814e8e2f4",
           "driver_sha256": "1b99826121ae6682a634e5efe09bd3e3df58ce58e0b28f849114ab5b89139c26",

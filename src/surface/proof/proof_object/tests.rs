@@ -5,6 +5,11 @@ use super::*;
 use crate::kernel::{IntegerRangeFoldIndex, IntegerTerm, LoweringIntroduction, SharedIntegerTerm};
 use crate::surface::planning::proposition_search::PropositionSearch;
 
+// These arithmetic tests measure local proof updates rather than fixture setup.
+// A 64-fold fact increase still rejects a linear exact-index copy under their
+// existing allocation ceilings.
+const LOCAL_ARITHMETIC_FACT_SIZES: [u32; 4] = [16, 64, 256, 1024];
+
 fn indexed_fact(index: u32) -> Proposition {
     Proposition::ConditionIs(
         ConditionTerm::Bitvector32SignedLessThan(
@@ -6810,7 +6815,7 @@ fn fixed_state_single_premise_arithmetic_simps_retain_indexed_theorem_steps() {
         .expect("the exact constant upper-bound premise should be indexed");
 
     for (goal, theorem_name, label, surface_premise, kernel_premise, shape) in goals {
-        for size in [16_u32, 64, 256, 1024, 4096] {
+        for size in LOCAL_ARITHMETIC_FACT_SIZES {
             let mut facts = (0..size).map(indexed_fact).collect::<Vec<_>>();
             facts.push(kernel_premise.clone());
             let root = Proof::for_fixed_state_goal(
@@ -7176,7 +7181,7 @@ fn increment_bound_family_retains_two_indexed_theorem_premises() {
         .expect("the exact upper premise should be indexed");
     let selected_premises = [lower_premise.clone(), upper_premise.clone()];
 
-    for size in [16_u32, 64, 256, 1024, 4096] {
+    for size in LOCAL_ARITHMETIC_FACT_SIZES {
         let mut facts = (0..size).map(indexed_fact).collect::<Vec<_>>();
         facts.extend([kernel_lower.clone(), kernel_upper.clone()]);
         for (goal, theorem_name, label) in &goals {
@@ -7289,7 +7294,7 @@ fn increment_bound_family_retains_two_indexed_theorem_premises() {
         .expect("the exact upper premise should be indexed");
     let strict_selected_premises = [strict_lower_premise.clone(), upper_premise.clone()];
 
-    for size in [16_u32, 64, 256, 1024, 4096] {
+    for size in LOCAL_ARITHMETIC_FACT_SIZES {
         let mut facts = (0..size).map(indexed_fact).collect::<Vec<_>>();
         facts.extend([kernel_strict_lower.clone(), kernel_upper.clone()]);
         let root = Proof::for_fixed_state_goal(
@@ -8391,7 +8396,7 @@ fn predecessor_simps_retain_indexed_named_rule_premises() {
             .expect("each exact predecessor premise should be indexed");
     }
 
-    for size in [16_u32, 64, 256, 1024, 4096] {
+    for size in LOCAL_ARITHMETIC_FACT_SIZES {
         let unrelated_facts = (0..size).map(indexed_fact).collect::<Vec<_>>();
         for (goal, theorem_name, selected, nested) in &goals {
             let mut facts = unrelated_facts.clone();

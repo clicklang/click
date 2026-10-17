@@ -19,7 +19,7 @@ use super::option_profile::OptionProfile;
 use super::provenance::CSourceMap;
 use super::syntax::PromiseAttributes;
 use super::system_headers::{self, HeaderKind};
-use super::target::CTarget;
+use super::target::{COptimization, CTarget};
 use crate::cli::write_file_atomically;
 use crate::languages::compiler_process::{CompilerLimits, run_compiler};
 
@@ -135,6 +135,9 @@ struct Config {
     schema: u32,
     #[serde(skip, default = "default_target")]
     target: CTarget,
+    /// The project's optimization level, which every source is prepared for.
+    #[serde(skip)]
+    optimization: COptimization,
     compiler: PathBuf,
     working_directory: String,
     environment: Environment,
@@ -342,6 +345,7 @@ pub(crate) struct UnitConfig {
     /// The digest of the unit's description, which its lock records.
     pub unit_digest: String,
     pub target: CTarget,
+    pub optimization: COptimization,
     pub compiler: PathBuf,
     /// The unit's source root, relative to the project root.
     pub root: String,
@@ -389,6 +393,7 @@ fn unit_config(unit: &UnitConfig, use_for: ConfigUse) -> Result<Config, String> 
     let mut config = Config {
         schema: SCHEMA,
         target: unit.target,
+        optimization: unit.optimization,
         compiler: unit.compiler.clone(),
         working_directory: unit.root.clone(),
         environment: Environment {
@@ -448,6 +453,7 @@ fn load_locked(config: &Config, lock: &Lock) -> Result<Vec<PreparedCImport>, Str
     if lock.invocation_sha256
         != invocation_digest_parts(
             config.target,
+            config.optimization,
             &lock.compiler_path,
             &lock.working_directory,
             &config.environment.allow,
@@ -507,7 +513,7 @@ fn load_locked(config: &Config, lock: &Lock) -> Result<Vec<PreparedCImport>, Str
                 source: clean,
                 source_map: map,
                 identity: locked.identity.clone(),
-                promises: if config.profile().is_some_and(OptionProfile::optimizes) {
+                promises: if config.optimization.optimizes() {
                     PromiseAttributes::Refuse
                 } else {
                     PromiseAttributes::Accept
@@ -637,7 +643,7 @@ fn preprocess(context: &Context<'_>, source: &SourceConfig) -> Result<Preprocess
     }
     let dep_path = unique_temp_path("click-import-deps", ".d")?;
     let _cleanup = RemoveFile(dep_path.clone());
-    let mut args = fixed_args(context.config.c_target());
+    let mut args = fixed_args(context.config.c_target(), context.config.optimization);
     append_user_args(&mut args, source, context.config)?;
     // Click's headers take the C library's place in GCC's search order:
     // after every `-iquote`, `-I`, and `-isystem` directory the project
@@ -948,7 +954,10 @@ fn source_identity_parts(
     hex_digest(&data)
 }
 
-fn fixed_args(target: CTarget) -> Vec<String> {
+/// The arguments every compilation for `target` at `optimization` carries.
+/// An optimizing build keeps `-fno-strict-aliasing` until the strict-aliasing
+/// check covers heap objects and globals (`design/effective-types.md`).
+fn fixed_args(target: CTarget, optimization: COptimization) -> Vec<String> {
     let standard = match target {
         CTarget::X86_64LinuxKernel => "-std=gnu11",
         CTarget::X86_64LinuxUserspace => "-std=c11",
@@ -967,6 +976,10 @@ fn fixed_args(target: CTarget) -> Vec<String> {
     ];
     if target == CTarget::X86_64LinuxUserspace {
         args.extend(["-pthread".into(), "-D_POSIX_C_SOURCE=200809L".into()]);
+    }
+    args.push(optimization.flag().into());
+    if optimization.optimizes() {
+        args.push("-fno-strict-aliasing".into());
     }
     args
 }
@@ -1304,13 +1317,19 @@ fn validate_config(config: &Config, use_for: ConfigUse) -> Result<(), String> {
 }
 
 fn validate_source_args(source: &SourceConfig, config: &Config) -> Result<(), String> {
-    validate_args(&source.args, config.c_target(), config.profile())
-        .map_err(|error| format!("source `{}`: {error}", source.logical_source))
+    validate_args(
+        &source.args,
+        config.c_target(),
+        config.optimization,
+        config.profile(),
+    )
+    .map_err(|error| format!("source `{}`: {error}", source.logical_source))
 }
 
 fn validate_args(
     args: &[String],
     target: CTarget,
+    optimization: COptimization,
     profile: Option<&OptionProfile>,
 ) -> Result<(), String> {
     if args.len() > MAX_ARGUMENTS
@@ -1318,7 +1337,7 @@ fn validate_args(
     {
         return Err("compiler argument list exceeds bounds".into());
     }
-    let profile_args = fixed_args(target);
+    let profile_args = fixed_args(target, optimization);
     let mut i = 0;
     while i < args.len() {
         let arg = &args[i];
@@ -1339,6 +1358,14 @@ fn validate_args(
         if profile_args.contains(arg) || profile.is_some_and(|profile| profile.accepts(arg)) {
             i += 1;
             continue;
+        }
+        if arg.starts_with("-O") {
+            return Err(format!(
+                "compiler argument {} `{arg}` names an optimization level; the project verifies \
+                 its units at `{}`, set by `optimization` in `click.project.json`",
+                i + 1,
+                optimization.flag()
+            ));
         }
         let separate = matches!(
             arg.as_str(),
@@ -1412,6 +1439,11 @@ fn reject_profile_define(value: &str, target: CTarget) -> Result<(), String> {
         )
     {
         return Err(format!("cannot override compiler ABI macro {name}"));
+    }
+    if matches!(name, "__OPTIMIZE__" | "__NO_INLINE__") {
+        return Err(format!(
+            "cannot override optimization macro {name}; set `optimization` in `click.project.json`"
+        ));
     }
     Ok(())
 }
@@ -1754,7 +1786,7 @@ fn abi_probe(config: &Config) -> Result<String, String> {
     let path = unique_temp_path("click-import-abi", ".c")?;
     let _cleanup = RemoveFile(path.clone());
     write_file_atomically(&path, b"int click_import_abi_probe;\n")?;
-    let mut args = fixed_args(config.c_target());
+    let mut args = fixed_args(config.c_target(), config.optimization);
     args.extend([
         "-dM".into(),
         "-E".into(),
@@ -1903,6 +1935,7 @@ fn limits() -> CompilerLimits {
 fn invocation_digest(config: &Config, toolchain: &ToolchainIdentity) -> String {
     invocation_digest_parts(
         config.target,
+        config.optimization,
         &config.compiler.to_string_lossy(),
         &config.working_directory,
         &config.environment.allow,
@@ -1912,6 +1945,7 @@ fn invocation_digest(config: &Config, toolchain: &ToolchainIdentity) -> String {
 
 fn invocation_digest_parts(
     target: CTarget,
+    optimization: COptimization,
     compiler_path: &str,
     working_directory: &str,
     environment: &BTreeMap<String, String>,
@@ -1925,7 +1959,7 @@ fn invocation_digest_parts(
         toolchain,
     ))
     .expect("identity serializes");
-    bytes.extend_from_slice(fixed_args(target).join("\0").as_bytes());
+    bytes.extend_from_slice(fixed_args(target, optimization).join("\0").as_bytes());
     hex_digest(&bytes)
 }
 fn unique_temp_path(prefix: &str, suffix: &str) -> Result<PathBuf, String> {
@@ -2191,6 +2225,7 @@ mod tests {
         let compiler_path = "/toolchain/not-installed/gcc".to_string();
         let invocation_sha256 = invocation_digest_parts(
             config.target,
+            config.optimization,
             &compiler_path,
             &config.working_directory,
             &config.environment.allow,
@@ -2428,9 +2463,27 @@ mod tests {
 
     #[test]
     fn rejects_ambient_or_executable_compiler_options() {
-        assert!(validate_args(&["-fplugin=evil.so".into()], CTarget::SUPPORTED, None).is_err());
-        assert!(validate_args(&["-c".into()], CTarget::SUPPORTED, None).is_err());
-        assert!(validate_args(&["@args.rsp".into()], CTarget::SUPPORTED, None).is_err());
+        assert!(
+            validate_args(
+                &["-fplugin=evil.so".into()],
+                CTarget::SUPPORTED,
+                COptimization::O2,
+                None
+            )
+            .is_err()
+        );
+        assert!(
+            validate_args(&["-c".into()], CTarget::SUPPORTED, COptimization::O2, None).is_err()
+        );
+        assert!(
+            validate_args(
+                &["@args.rsp".into()],
+                CTarget::SUPPORTED,
+                COptimization::O2,
+                None
+            )
+            .is_err()
+        );
     }
 
     #[test]
@@ -2453,6 +2506,7 @@ mod tests {
                 "config.h".into(),
             ],
             CTarget::X86_64LinuxKernel,
+            COptimization::O2,
             None,
         )
         .unwrap();
@@ -2475,16 +2529,22 @@ mod tests {
         validate_args(
             &args(profile.accepted()),
             CTarget::X86_64LinuxKernel,
+            COptimization::O2,
             kbuild(),
         )
         .unwrap();
         for spelling in profile.accepted() {
-            // `-mno-sse`, `-mno-sse2`, and `-O2` need their safety options.
+            // `-mno-sse` and `-mno-sse2` need the x87 disabled.
             let mut vector = args(&[spelling]);
             vector.extend(args(&profile.requirements(spelling)));
-            validate_args(&vector, CTarget::X86_64LinuxKernel, kbuild())
-                .unwrap_or_else(|error| panic!("{spelling}: {error}"));
-            let error = validate_args(&vector, CTarget::X86_64LinuxKernel, None)
+            validate_args(
+                &vector,
+                CTarget::X86_64LinuxKernel,
+                COptimization::O2,
+                kbuild(),
+            )
+            .unwrap_or_else(|error| panic!("{spelling}: {error}"));
+            let error = validate_args(&vector, CTarget::X86_64LinuxKernel, COptimization::O2, None)
                 .expect_err("profile options need the profile");
             assert!(
                 error.contains(&format!("argument 1 `{spelling}`"))
@@ -2561,6 +2621,7 @@ mod tests {
             let error = validate_args(
                 &args(&["-mno-80387", near_miss]),
                 CTarget::X86_64LinuxKernel,
+                COptimization::O2,
                 kbuild(),
             )
             .expect_err(near_miss);
@@ -2572,28 +2633,51 @@ mod tests {
     }
 
     #[test]
-    fn kbuild_profile_optimizes_only_beside_its_safety_options() {
-        let safety = [
-            "-fno-strict-aliasing",
-            "-fno-strict-overflow",
-            "-fno-delete-null-pointer-checks",
-        ];
-        assert!(kbuild().unwrap().optimizes());
-        let mut complete = args(&["-O2"]);
-        complete.extend(args(&safety));
-        validate_args(&complete, CTarget::X86_64LinuxKernel, kbuild()).unwrap();
-        for missing in safety {
-            let vector = complete
-                .iter()
-                .filter(|argument| argument.as_str() != missing)
-                .cloned()
-                .collect::<Vec<_>>();
-            let error = validate_args(&vector, CTarget::X86_64LinuxKernel, kbuild()).unwrap_err();
+    fn a_unit_names_only_the_projects_optimization_level() {
+        // The project's level is a fixed argument; a unit may repeat it, as
+        // the recorded Kbuild command line does, without the safety options
+        // GCC no longer needs once Click checks what they guarded.
+        for profile in [None, kbuild()] {
+            validate_args(
+                &args(&["-O2"]),
+                CTarget::X86_64LinuxKernel,
+                COptimization::O2,
+                profile,
+            )
+            .unwrap();
+        }
+        for (level, other) in [(COptimization::O2, "-O0"), (COptimization::O0, "-O2")] {
+            let error = validate_args(&args(&[other]), CTarget::X86_64LinuxKernel, level, kbuild())
+                .unwrap_err();
             assert!(
-                error.contains(&format!("argument 1 `-O2` needs `{missing}`")),
+                error.contains(&format!(
+                    "argument 1 `{other}` names an optimization level; the project verifies its units at `{}`",
+                    level.flag()
+                )),
                 "{error}"
             );
         }
+        let error = validate_args(
+            &args(&["-D__OPTIMIZE__"]),
+            CTarget::X86_64LinuxUserspace,
+            COptimization::O0,
+            None,
+        )
+        .unwrap_err();
+        assert!(
+            error.contains("cannot override optimization macro __OPTIMIZE__"),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn an_optimizing_build_keeps_strict_aliasing_off_until_the_check_is_complete() {
+        let optimized = fixed_args(CTarget::X86_64LinuxUserspace, COptimization::O2);
+        assert!(optimized.iter().any(|arg| arg == "-O2"));
+        assert!(optimized.iter().any(|arg| arg == "-fno-strict-aliasing"));
+        let unoptimized = fixed_args(CTarget::X86_64LinuxUserspace, COptimization::O0);
+        assert!(unoptimized.iter().any(|arg| arg == "-O0"));
+        assert!(!unoptimized.iter().any(|arg| arg == "-fno-strict-aliasing"));
     }
 
     #[test]
@@ -2602,6 +2686,7 @@ mod tests {
             let error = validate_args(
                 &args(&["-Wall", option]),
                 CTarget::X86_64LinuxKernel,
+                COptimization::O2,
                 kbuild(),
             )
             .unwrap_err();
@@ -2613,6 +2698,7 @@ mod tests {
             validate_args(
                 &args(&["-mno-80387", option]),
                 CTarget::X86_64LinuxKernel,
+                COptimization::O2,
                 kbuild(),
             )
             .unwrap();
@@ -2659,7 +2745,13 @@ mod tests {
             .iter()
             .map(|argument| argument.as_str().unwrap().to_string())
             .collect::<Vec<_>>();
-        validate_args(&vector, CTarget::X86_64LinuxKernel, kbuild()).unwrap();
+        validate_args(
+            &vector,
+            CTarget::X86_64LinuxKernel,
+            COptimization::O2,
+            kbuild(),
+        )
+        .unwrap();
     }
 
     /// The classification table in the `click import` reference lists exactly

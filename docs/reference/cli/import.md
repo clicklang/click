@@ -99,6 +99,12 @@ requires no layout or file names in it, and never writes into it.
   [Selecting a target](../language/c.md#selecting-a-target). A unit that still names its variables `environment` is refused with the
   new name, `env`. A retired single-name target such as `x86_64-linux-kernel` is
   refused with its replacement.
+- The project's top-level `optimization` is the one optimization level every
+  C unit is prepared and verified for: `-O2` (default) or `-O0`. Click's
+  checks cover what GCC's optimizer assumes at `-O2`, so a claim holds for
+  the optimized build; see
+  [Optimization level](#optimization-level). A unit argument that names
+  another level, or defines `__OPTIMIZE__`, is refused.
 
 A Rust unit is one crate or one single-file program; it takes no `compiler`,
 `env`, `option_profile` or `args`, and `sources` lists exactly one
@@ -1515,7 +1521,10 @@ field. A `const` method or `const Shape&` keeps it, so an `ensures` reads it
 as it was at entry; a mutable one may change it, which its `ensures` reads as
 new and `old(size(this))` as at entry
 (`mdtests/cpp_class_object_state_mutable.md`). A method of `Square` is stated on `Square`'s memory, `owns *this`, with
-`size(this)` read as the definition. An override of a `Shape` method
+`size(this)` read as the definition; a `const` one only views it, `views
+*this`, so a caller of it keeps every field of the object, not only the
+definitions (`mdtests/cpp_class_const_method_keeps_fields.md`,
+`mdtests/cpp_class_const_method_keeps_fields_rejects_overclaim.md`). An override of a `Shape` method
 inherits that method's clauses read the same way, labeled
 `Square::area.interface_ensures_0`. Its refinement is checked against the
 `contract` named for it with `_iface` that states them on that memory. Where a
@@ -1528,6 +1537,10 @@ passing a `Square` therefore knows the object's `size` is its `side`, and
 after lending it as a `Shape&` that its `side` is the object's new `size`
 and nothing of the `side` it lent
 (`mdtests/cpp_class_object_state_mutable_reference_returns_new_state.md`).
+After a `const Shape&` conversion it likewise knows only the definitions:
+its other fields are forgotten, since keeping the memory lent for the call
+needs one view backed by the several owned pieces of a polymorphic object,
+which stable views do not yet support.
 
 Limits:
 - An override in a class without a defining `class` block is refused.
@@ -1586,8 +1599,29 @@ Prepared imports retain their target through verification and expansion.
 
 | Mode | Fixed compiler profile |
 | --- | --- |
-| `kernel` | GCC, `-x c`, `-std=gnu11`, `-m64`, `-funsigned-char`, `-nostdinc`. |
-| `userspace` | GCC, `-x c`, `-std=c11`, `-m64`, `-fsigned-char`, `-nostdinc`, `-pthread`, `-D_POSIX_C_SOURCE=200809L`. |
+| `kernel` | GCC, `-x c`, `-std=gnu11`, `-m64`, `-funsigned-char`, `-nostdinc`, and the optimization level. |
+| `userspace` | GCC, `-x c`, `-std=c11`, `-m64`, `-fsigned-char`, `-nostdinc`, `-pthread`, `-D_POSIX_C_SOURCE=200809L`, and the optimization level. |
+
+Every source is also prepared at the project's optimization level, which the
+lock records with the target and mode.
+
+### Optimization level
+
+A project names one optimization level, `-O2` by default, and every C unit
+is preprocessed with it, so `__OPTIMIZE__` and the headers that test it read
+as the optimized build sees them. A unit's arguments may repeat the level but
+not name another. At `-O2`, GCC assumes the program never overflows signed
+arithmetic, never dereferences null, never accesses an object through an
+incompatible type, and keeps the promises of the attributes it trusts. Click
+proves the first two, checks the third
+([undefined behavior](../language/c.md#undefined-behavior)), and refuses the
+attributes ([Optimizer promises](#optimizer-promises)), so a verified claim
+holds for the `-O2` build without `-fno-strict-overflow` or
+`-fno-delete-null-pointer-checks`. Until the strict-aliasing check also covers
+heap objects and globals, an optimizing level adds `-fno-strict-aliasing`
+(`design/effective-types.md`). `"optimization": "-O0"` prepares the units
+unoptimized and accepts the promise attributes, which GCC does not act on at
+`-O0`.
 
 The user-space profile checks C11, POSIX and pthread feature macros as well as
 the LP64, eight-bit-byte, signed-char ABI: the probe requires that `__CHAR_UNSIGNED__` is not defined. It does not define `__KERNEL__`.
@@ -1712,11 +1746,10 @@ option is refused with the missing one named.
 
 Besides `-E` and the source operand, which the importer supplies itself, the
 recorded vector has 102 options: 15 base preprocessing options, 4 that the
-target fixes, and 83 others with 79 distinct spellings. All 79 are accepted:
-`-mno-sse` and `-mno-sse2` only beside `-mno-80387`, and `-O2` only beside
-`-fno-strict-aliasing`, `-fno-strict-overflow`, and
-`-fno-delete-null-pointer-checks`, with the optimizer promises below refused
-in the imported source.
+target fixes, 2 that the project's `-O2` level fixes, and 81 others with 77
+distinct spellings. All 77 are accepted, `-mno-sse` and `-mno-sse2` only
+beside `-mno-80387`. The optimizer promises below are refused in the imported
+source.
 
 | Recorded option | Verdict | Reason |
 | --- | --- | --- |
@@ -1770,7 +1803,7 @@ in the imported source.
 | `-Wno-unused-const-variable` (twice) | Accepted | Diagnostics only. |
 | `-fno-common` | Accepted | GCC 13's default; a tentative definition is one zero-initialized definition, as Click models it. |
 | `-fno-delete-null-pointer-checks` | Accepted | Stops GCC assuming that a dereferenced pointer is not null; Click refuses any access through a possibly null pointer. |
-| `-fno-strict-aliasing` | Accepted | Removes GCC's type-based alias assumptions; Click never assumes them, and refuses accesses that do not fit the cell. |
+| `-fno-strict-aliasing` | Fixed | Added at an optimizing level until the strict-aliasing check covers heap objects and globals (`design/effective-types.md`). |
 | `-fno-strict-overflow` | Accepted | Makes signed and pointer overflow wrap; Click treats both as undefined, which is stricter. |
 | `-fshort-wchar` | Accepted | Changes `wchar_t` and the wide-literal element type; the predefines are in the artifact and Click has no wide literals. |
 | `-fstrict-flex-arrays=3` | Accepted | Only `[]` is a flexible member; Click has no flexible or zero-length members and bounds every struct array by its declared length. |
@@ -1805,17 +1838,17 @@ in the imported source.
 | `-mpreferred-stack-boundary=3` | Accepted | Stack alignment only; GCC realigns frames that need more. |
 | `-mskip-rax-setup` | Accepted | Variadic-call register setup only. |
 | `-mtune=generic` | Accepted | Instruction scheduling only. |
-| `-O2` | Accepted with `-fno-strict-aliasing`, `-fno-strict-overflow`, `-fno-delete-null-pointer-checks` | Optimization preserves the meaning of a program without undefined behavior, which is what Click proves; GCC's remaining unchecked assumptions are refused in the source (see "Optimizer promises"), and `__builtin_constant_p` is an unknown 0 or 1. |
+| `-O2` | Fixed | The project's optimization level, `-O2` by default. Optimization preserves the meaning of a program without undefined behavior, which is what Click proves; GCC's remaining unchecked assumptions are refused in the source (see "Optimizer promises"), and `__builtin_constant_p` is an unknown 0 or 1. |
 
 ### Optimizer promises
 
-Under an option profile that accepts optimization, the frontend refuses, with
-the attribute's location and the reason, every attribute and qualifier that
-GCC's optimizer trusts as a promise from the programmer, because Click does not
-check those promises. Without such a profile, GCC 13 does not act on them and
-they are accepted and ignored as before.
+When the project verifies at an optimizing level, as it does by default, the
+frontend refuses, with the attribute's location and the reason, every
+attribute and qualifier that GCC's optimizer trusts as a promise from the
+programmer, because Click does not check those promises. At `-O0`, GCC 13
+does not act on them and they are accepted and ignored.
 
-| Construct | Under `linux-6.8-x86_64-kbuild` | Reason |
+| Construct | At `-O2` | Reason |
 | --- | --- | --- |
 | `nonnull` | Refused | GCC deletes the parameter's null checks, even with `-fno-delete-null-pointer-checks`. |
 | `const` | Refused | GCC merges calls and assumes the function touches no memory. |
