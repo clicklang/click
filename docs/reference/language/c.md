@@ -2113,9 +2113,18 @@ structs records its declared type
 (`mdtests/a_global_long_read_through_a_long_long_pointer_is_refused.md`,
 `mdtests/a_global_byte_buffer_read_through_a_uint32_pointer_is_refused.md`,
 `mdtests/a_global_struct_read_through_another_struct_is_refused.md`,
-`mdtests/globals_read_through_their_own_types_are_allowed.md`). The check does
-not yet cover heap objects; the effective-type design
-(`design/effective-types.md`) stages them next.
+`mdtests/globals_read_through_their_own_types_are_allowed.md`).
+
+Allocated storage has no declared type. A store gives the heap cell it writes
+the type of its lvalue (a member store, its struct; a character store, none),
+and a later read must be allowed for that type; a store through another type
+gives the cell that new type (C11 6.5p6). The type lasts while the cell holds
+the value that store wrote, and is tracked for cells at constant offsets: a
+cell written at a computed index, through `memcpy`, or by a callee falls back
+to the pointer's type
+(`mdtests/a_heap_long_read_through_a_long_long_pointer_is_refused.md`,
+`mdtests/a_heap_struct_read_through_another_struct_is_refused.md`,
+`mdtests/heap_cells_take_the_type_of_their_last_store.md`).
 
 Automatic scalar, pointer, and array declarations do not zero-initialize their
 storage. Reading a local before a value has been written is undefined behavior.

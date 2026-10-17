@@ -5206,7 +5206,17 @@ pub(in crate::kernel) fn effective_type_refusal(
         pointer,
         lvalue.access_class(),
         lvalue.object_class(),
+        CAccessKind::Read,
     )
+}
+
+/// Whether an access reads or writes. A write to heap storage gives the cell
+/// a new effective type (C11 6.5p6), so only a read is checked against the
+/// type an earlier store gave it.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(in crate::kernel) enum CAccessKind {
+    Read,
+    Write,
 }
 
 /// [`effective_type_refusal`] given the lvalue's two classes.
@@ -5215,9 +5225,17 @@ pub(in crate::kernel) fn effective_type_refusal_of(
     pointer: &Pointer,
     access: Option<crate::kernel::effective_type::CAccessClass>,
     object_class: Option<crate::kernel::effective_type::CAccessClass>,
+    kind: CAccessKind,
 ) -> Option<CUndefinedBehavior> {
     let access = access?;
-    let object = memory.declared_class(pointer).or(object_class)?;
+    let object = memory
+        .declared_class(pointer)
+        .or_else(|| {
+            (kind == CAccessKind::Read)
+                .then(|| memory.heap_effective_class(pointer))
+                .flatten()
+        })
+        .or(object_class)?;
     (!access.may_access(&object))
         .then_some(CUndefinedBehavior::IncompatibleAccess { access, object })
 }

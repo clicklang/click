@@ -222,7 +222,26 @@ allowed cases:
   records its declared class on its block when the block is first created
   at a function's entry, as a local does; a struct pointer global's class
   names its struct by tag.
-- **Step 3b (heap effective types):** next.
+- **Step 3b (heap effective types):** done.
+  - `CHeapMemory.effective_types` (`HeapEffectiveTypes`) records, for each
+    heap cell at a constant offset that a classed C store wrote, its class
+    and the value written. A member store records its struct; a character
+    store, or one without a class, records nothing and drops what it
+    overlapped; a store at a symbolic offset drops its block's entries.
+  - The store records its entry under its own store edge, as it records
+    the bytes it initialized, so the memory history stays connected.
+  - An entry counts only while the cell still holds that value, so havoc,
+    joins, calls and writes the record does not see need not maintain it: an
+    unconfirmed entry is ignored. Interface joins keep the record only where
+    every arm agrees; substitution rewrites its values as it rewrites cells.
+  - Reads are checked against a confirmed entry; writes are not, because a
+    store gives the cell a new effective type.
+  - Not covered: cells at computed offsets, `memcpy`'s copying of effective
+    types, and a callee's stores, which leave no entry.
+  - `one_classed_heap_store_and_read_are_logarithmic_in_recorded_effective_types`
+    measures one classed store and one checked read against up to 1024
+    unrelated recorded entries: both stay constant.
+- **Next:** drop `-fno-strict-aliasing` from optimizing builds.
 
 ## Validation
 
