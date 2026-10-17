@@ -438,10 +438,7 @@ fn prove_claims_by_checked_tactics(
     )?;
     let state = canonical_claim_caller_state(
         state,
-        function_block
-            .structural_clauses()
-            .iter()
-            .any(|clause| matches!(clause.region(), CodeRegion::Loop(_))),
+        function_block.structural_clauses().any_loop(),
         &function,
         &arguments,
         &pure_facts,

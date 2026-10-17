@@ -4321,7 +4321,7 @@ impl Parser {
             requires,
             requirement_source_clauses,
             decreases,
-            structural_clauses: Vec::new(),
+            structural_clauses: StructuralClauses::default(),
             constructs,
             ensures,
             exceptional_ensures,
