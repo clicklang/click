@@ -173,7 +173,9 @@ pub(super) fn click_type_from_algebraic_value_type(value_type: &AlgebraicValueTy
             name: name.clone(),
             arguments: Vec::new(),
         }),
-        AlgebraicValueType::C(c_type) => ClickType::C(c0_type_from_kernel(*c_type)),
+        AlgebraicValueType::C(c_type) | AlgebraicValueType::ObjectPointer(c_type, _) => {
+            ClickType::C(c0_type_from_kernel(*c_type))
+        }
         AlgebraicValueType::Integer => ClickType::Integer,
         AlgebraicValueType::Algebraic { name, arguments } => {
             ClickType::Algebraic(AlgebraicTypeApplication {

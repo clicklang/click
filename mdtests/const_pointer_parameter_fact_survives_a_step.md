@@ -15,6 +15,9 @@ object. Writes through a `const` view are still refused
 and a fact about `p` says nothing about another pointer
 ([`const_pointer_parameter_fact_does_not_name_another_pointer.md`](const_pointer_parameter_fact_does_not_name_another_pointer.md)).
 
+The logical pointer annotations below use `void*` for address identities;
+object access remains governed by the unchanged C types and resource ownership.
+
 ```c filename=const_parameter_fact.c
 struct node { int32 shade; };
 
@@ -27,7 +30,7 @@ int32 peek(const struct node* p) {
 ```click
 verifying "const_parameter_fact.c";
 
-function same(a: struct node*, b: struct node*) -> int32 {
+function same(a: void*, b: void*) -> int32 {
     if a == b { 1 } else { 0 }
 }
 

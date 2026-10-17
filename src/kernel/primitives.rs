@@ -388,6 +388,7 @@ pub enum Sort {
     CInt64,
     CMachineInteger(MachineIntegerType),
     CPointer(CType),
+    CObjectPointer(CType, crate::kernel::effective_type::CAccessClass),
     CValue,
     Sequence(Option<CType>),
     Algebraic(AlgebraicType),
@@ -398,6 +399,33 @@ pub enum Sort {
 }
 
 impl Sort {
+    pub(crate) fn pointer_type(&self) -> Option<CType> {
+        match self {
+            Self::CPointer(ty) | Self::CObjectPointer(ty, _) => Some(*ty),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn pointer_object_class(
+        &self,
+    ) -> Option<crate::kernel::effective_type::CAccessClass> {
+        match self {
+            Self::CObjectPointer(_, class) => Some(class.clone()),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn symbolic_pointer_value(&self, variable: Variable) -> Option<CValue> {
+        let ty = self.pointer_type()?;
+        if !ty.is_pointer() {
+            return None;
+        }
+        Some(
+            crate::kernel::symbolic_call_result(ty, variable)
+                .with_pointer_object_class(self.pointer_object_class()),
+        )
+    }
+
     pub fn machine_integer(integer_type: MachineIntegerType) -> Self {
         match integer_type {
             MachineIntegerType::Int32 => Self::CInt32,
@@ -1233,6 +1261,26 @@ pub(crate) struct LoadedPointerView {
     pub(crate) displacement: PointerOffsetTerm,
 }
 
+pub(crate) type ObjectTypeRequirements =
+    imbl::OrdMap<usize, crate::kernel::effective_type::CAccessClass>;
+
+/// Positive object-type evidence, with the entry assumptions its use consumes.
+/// The assumptions are proof metadata; they do not change a numeric address.
+#[derive(Clone, Debug)]
+pub struct ObjectTypeEvidence {
+    pub(super) class: crate::kernel::effective_type::CAccessClass,
+    pub(super) checked: bool,
+    pub(super) premise_fingerprint: u64,
+    pub(super) premises: imbl::OrdMap<(u64, usize), Arc<ObjectTypePremise>>,
+}
+
+#[derive(Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub(super) struct ObjectTypePremise {
+    pub(super) parameter: usize,
+    pub(super) class: crate::kernel::effective_type::CAccessClass,
+    pub(super) scope: u64,
+}
+
 /// A C pointer value carries both its raw address and the type through which
 /// the address is being viewed.  `Pointer` remains the untyped address
 /// identity used by memory, aliasing, and provenance; pointer casts retag the
@@ -1269,6 +1317,7 @@ struct CPointerQualifiers {
     /// arithmetic and copies, so an access through any later spelling is
     /// checked against it.
     object_class: Option<crate::kernel::effective_type::CAccessClass>,
+    object_type_evidence: Option<ObjectTypeEvidence>,
     local_reference: Option<super::loans::LocalScalarReference>,
     /// The opaque extent of the pointer this one selected a member of, if
     /// any (`design/pointer-subobject-extents.md`, Phase C): a clause
@@ -1670,19 +1719,59 @@ impl CPointerValue {
     }
 
     pub(crate) fn object_class(&self) -> Option<crate::kernel::effective_type::CAccessClass> {
-        self.qualifiers.as_ref()?.object_class.clone()
+        self.object_type_evidence()
+            .map(|evidence| evidence.class.clone())
+            .or_else(|| self.qualifiers.as_ref()?.object_class.clone())
     }
 
-    /// Records the class of the object the pointer designates. A pointer
-    /// that already carries one keeps it: the first declaration that formed
-    /// the pointer names the object, and a later typed spelling does not.
+    pub(crate) fn object_origin_evidence(&self) -> Option<&ObjectTypeEvidence> {
+        self.qualifiers.as_ref()?.object_type_evidence.as_ref()
+    }
+    pub(crate) fn object_type_evidence(&self) -> Option<&ObjectTypeEvidence> {
+        self.object_origin_evidence()
+            .filter(|evidence| evidence.checked)
+    }
+
+    pub(crate) fn supports_object_class(
+        &self,
+        class: &crate::kernel::effective_type::CAccessClass,
+    ) -> bool {
+        self.is_null()
+            || self
+                .object_type_evidence()
+                .is_some_and(|evidence| evidence.has_class(class))
+    }
+
+    /// A cast never replaces evidence for the object originally designated.
     pub(crate) fn with_object_class(
-        mut self,
-        object_class: Option<crate::kernel::effective_type::CAccessClass>,
+        self,
+        class: Option<crate::kernel::effective_type::CAccessClass>,
     ) -> Self {
-        if object_class.is_some() && self.object_class().is_none() {
+        self.with_object_type_evidence(class.map(ObjectTypeEvidence::from))
+    }
+
+    pub(crate) fn with_object_type_evidence(
+        mut self,
+        evidence: Option<ObjectTypeEvidence>,
+    ) -> Self {
+        if let Some(evidence) = evidence
+            && (self.object_origin_evidence().is_none()
+                || (evidence.checked && self.object_type_evidence().is_none()))
+        {
+            self = self.with_declared_object_class(Some(evidence.class.clone()));
+            Arc::make_mut(self.qualifiers.get_or_insert_with(Default::default))
+                .object_type_evidence = Some(evidence);
+        }
+        self
+    }
+
+    pub(crate) fn with_declared_object_class(
+        mut self,
+        class: Option<crate::kernel::effective_type::CAccessClass>,
+    ) -> Self {
+        if class.is_some() && self.object_class().is_none() {
             Arc::make_mut(self.qualifiers.get_or_insert_with(Default::default)).object_class =
-                object_class;
+                class;
         }
         self
     }
@@ -2473,8 +2562,9 @@ pub enum CIntegerCastMode {
     /// range (`narrowed_cast_identity`). `Standard` remains the
     /// specification's checked conversion.
     CConversion,
-    /// An inserted character-byte view changes the read type while retaining
-    /// the source pointer's bounds. Authored C casts still use CConversion.
+    /// An inserted byte/void view changes the carrier while retaining the
+    /// source pointer's designation and bounds. Authored pointer casts use
+    /// the separate explicit conversion rule.
     PointerCoercion,
     /// Legacy exact uint64-to-int64 boundary.
     UInt64BitsToInt64,
@@ -2747,6 +2837,15 @@ pub enum SpecMemory {
     Fixed(CMemory),
 }
 
+/// Body-derived origins of a pure function's pointer result. Null branches
+/// contribute no origin. Argument origins are instantiated from the actual
+/// value, never from the parameter's declared type or a destination cast.
+#[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub struct PurePointerResult {
+    pub(crate) classes: BTreeSet<crate::kernel::effective_type::CAccessClass>,
+    pub(crate) arguments: BTreeSet<usize>,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum SpecExpression {
     Value(CValue),
@@ -2807,6 +2906,7 @@ pub enum SpecExpression {
         name: String,
         arguments: Vec<SpecPureFunctionArgument>,
         result_type: CType,
+        pointer_result: Option<Arc<PurePointerResult>>,
         /// The class of the object a pointer result designates, from the
         /// function's declared return type (`design/effective-types.md`).
         result_object_class: Option<crate::kernel::effective_type::CAccessClass>,
@@ -2933,6 +3033,12 @@ pub struct ResourceFieldProjection {
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum SpecPureFunctionArgument {
+    /// Enforce a nominal pointer parameter without changing the argument's
+    /// value or the memory snapshot carried by an array reference.
+    ObjectPointer {
+        argument: Box<SpecPureFunctionArgument>,
+        object_class: crate::kernel::effective_type::CAccessClass,
+    },
     Value(SpecExpression),
     Integer(SpecIntegerExpression),
     Algebraic(SpecAlgebraicExpression),
@@ -3018,11 +3124,45 @@ pub struct AlgebraicType {
 pub enum AlgebraicValueType {
     Parameter(String),
     C(CType),
+    /// A pointer payload with a checked original object-class guarantee.
+    /// Null is allowed; a destination cast alone does not establish the class.
+    ObjectPointer(CType, crate::kernel::effective_type::CAccessClass),
     Integer,
     Algebraic {
         name: String,
         arguments: Vec<AlgebraicValueType>,
     },
+}
+
+impl AlgebraicValueType {
+    pub(crate) fn object_class(&self) -> Option<crate::kernel::effective_type::CAccessClass> {
+        match self {
+            Self::ObjectPointer(_, class) => Some(class.clone()),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn accepts_c_value(&self, value: &CValue) -> bool {
+        match self {
+            Self::C(ty) => *ty == value.c_type(),
+            Self::ObjectPointer(ty, class) => {
+                matches!(value, CValue::Pointer(pointer) if pointer.c_type() == *ty
+                    && pointer.supports_object_class(class))
+            }
+            _ => false,
+        }
+    }
+
+    pub(crate) fn symbolic_c_value(&self, variable: Variable) -> Option<CValue> {
+        let ty = match self {
+            Self::C(ty) | Self::ObjectPointer(ty, _) => *ty,
+            _ => return None,
+        };
+        Some(
+            crate::kernel::symbolic_call_result(ty, variable)
+                .with_pointer_object_class(self.object_class()),
+        )
+    }
 }
 
 /// A resource field has a logical type, never a C storage location.
@@ -3134,6 +3274,7 @@ impl AlgebraicSchemas {
                 if constructors.iter().any(|constructor| {
                     constructor.fields.iter().all(|field| match field {
                         AlgebraicValueType::C(_)
+                        | AlgebraicValueType::ObjectPointer(_, _)
                         | AlgebraicValueType::Integer
                         | AlgebraicValueType::Parameter(_) => true,
                         AlgebraicValueType::Algebraic { .. } => grounded.contains(field),
@@ -3540,11 +3681,21 @@ impl AlgebraicValue {
         }
     }
 
+    pub(crate) fn has_type(&self, expected: &AlgebraicValueType) -> bool {
+        match self {
+            Self::C(value) => expected.accepts_c_value(value),
+            _ => self.value_type() == *expected,
+        }
+    }
+
     fn is_well_formed_for(
         &self,
         expected: &AlgebraicValueType,
         schemas: &AlgebraicSchemas,
     ) -> bool {
+        if let Self::C(value) = self {
+            return expected.accepts_c_value(value);
+        }
         if &self.value_type() != expected {
             return false;
         }
@@ -3854,6 +4005,8 @@ pub enum CStatement {
         target: String,
         bytes: CExpression,
         zeroed: bool,
+        /// A directly bound struct object: class, complete size, and alignment.
+        object_type: Option<(crate::kernel::effective_type::CAccessClass, u32, u32)>,
     },
     /// End the heap allocation named by `pointer`. Null is a no-op.
     HeapFree {
@@ -4674,6 +4827,8 @@ impl CAggregateLayout {
 /// execute (or even inspect) the concrete body.
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct CFunctionContractInterface {
+    pub(crate) object_type_requirements: ObjectTypeRequirements,
+    pub(crate) return_object_type_guarantee: Option<crate::kernel::effective_type::CAccessClass>,
     pub(crate) return_type: CType,
     pub(crate) return_pointee_constant: bool,
     /// The class of the object a returned pointer designates, from the
@@ -5296,6 +5451,10 @@ impl<'a> CExecutionContext<'a> {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CVerifiedFunctionRule {
+    /// Only the positive object-type premises consumed by the checked proof.
+    /// Checked result origins, instantiated with the caller's actual types.
+    pub(super) pointer_result: Option<Arc<PurePointerResult>>,
+
     pub(super) function: CFunction,
     /// The loop semantics every claim of this rule was certified under, or
     /// `Verify` when any was, or when the rule is a recursion hypothesis
@@ -5710,6 +5869,8 @@ impl CVerifiedFunctionTerminationRule {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CVerifiedFunctionContractClaim {
+    pub(super) pointer_result: Option<Arc<PurePointerResult>>,
+
     pub(super) function: CFunction,
     pub(super) key: CFunctionContractClaimKey,
     /// Exact load equalities consumed while checking this claim. Keeping the
@@ -6909,6 +7070,9 @@ pub(super) struct CHeapMemory {
     /// control flow or direct return. Pending allocations carry no authority
     /// until resolved.
     pub(super) pending_allocations: SnapshotMap<Pointer, Bitvector32Term>,
+    /// Object classes established by a fresh allocation's checked typed binding.
+    pub(super) pending_object_classes:
+        SnapshotMap<Pointer, crate::kernel::effective_type::CAccessClass>,
     /// Successful malloc storage remains uninitialized until individual
     /// cells are written. Contract-imported allocations are not placed here.
     pub(super) uninitialized_allocations: SnapshotSet<Pointer>,
@@ -6958,6 +7122,10 @@ impl std::hash::Hash for CHeapMemory {
         self.zeroed_prefix_allocations.hash(state);
         self.zeroed_pending_allocations.hash(state);
         self.pending_reallocations.hash(state);
+        if !self.pending_object_classes.is_empty() {
+            "pending_object_classes".hash(state);
+            self.pending_object_classes.hash(state);
+        }
         if self.effective_types != HeapEffectiveTypes::default() {
             "effective_types".hash(state);
             self.effective_types.hash(state);
@@ -6982,6 +7150,9 @@ impl CHeapMemory {
             && self
                 .pending_allocations
                 .eq_relative_to(&other.pending_allocations, &base.pending_allocations)
+            && self
+                .pending_object_classes
+                .eq_relative_to(&other.pending_object_classes, &base.pending_object_classes)
             && self.uninitialized_allocations.eq_relative_to(
                 &other.uninitialized_allocations,
                 &base.uninitialized_allocations,
@@ -11248,6 +11419,7 @@ pub struct CVerifiedPureTheorem {
 /// cannot manufacture a refinement authority.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CFunctionContractRefinementContext {
+    pub(super) object_type_requirements: ObjectTypeRequirements,
     pub(super) contract: CFunctionContract,
     /// The implementation side of refinement is an interface judgment too;
     /// concrete body evidence is checked before this context is opened and is
@@ -12315,6 +12487,8 @@ pub struct CContractPathSet {
 /// contract evidence.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CFunctionContractExecution {
+    pub(super) pointer_result: Option<Arc<PurePointerResult>>,
+
     /// One entry per resource-guard case of the contract, each listing every
     /// path set available for that case. A claim holds when, in every case,
     /// one path set certifies it on all of its paths: each set is a complete
@@ -12419,6 +12593,7 @@ impl CFunctionContractExecution {
     /// nothing.
     pub(crate) fn failed(diagnostic: String) -> Self {
         Self {
+            pointer_result: None,
             cases: Vec::new(),
             reuse_diagnostic: Some(diagnostic),
             reuse_unauthorized_premise: None,

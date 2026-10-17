@@ -85,6 +85,7 @@ resource sized_at(p: struct rb_node*) {
             fact aligned(p, 8);
             fact aligned(parent, 8);
             fact p->__rb_parent_color == address(parent) + (p->__rb_parent_color & 1);
+            fact ((struct rb_node*)(p->__rb_parent_color & ~3)) == parent;
             fact (p->__rb_parent_color & 1) == color_bit(color);
             fact sized_parent_is(left_model, p) == 1;
             fact sized_parent_is(right_model, p) == 1;

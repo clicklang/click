@@ -294,6 +294,13 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                             let { metadata: p_size, sibling: p_left, up: g_path } = unfold(path);
                             let { metadata: g_size, sibling: u_tree, up: top } = unfold(g_path);
                             let { metadata: u_size, right: u_right, left: u_left } = unfold(u_tree);
+                            mark before_recolor;
+                            have x->rb_left != x by assumption();
+                            have x->rb_right != x by assumption();
+                            have y->rb_left != y by assumption();
+                            have y->rb_right != y by assumption();
+                            have z->rb_left != z by assumption();
+                            have z->rb_right != z by assumption();
                             unfold(color_bit(Color::Red)); unfold(color_bit(Color::Black));
                             have y->__rb_parent_color == address(x) by {
                                 rewrite(y->__rb_parent_color == address(x) + (y->__rb_parent_color & 1));
@@ -305,6 +312,24 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                             step(); step(); step(); step(); step();
                             have to_integer(sized_value(old(state.uncle))) == 1 + to_integer(sized_value(sized_left(old(state.uncle)))) + to_integer(sized_value(sized_right(old(state.uncle)))) by {
                                 assumption();
+                            }
+                            have x->rb_left != x by {
+                                transport(at(before_recolor, x->rb_left != x), x->rb_left != x);
+                            }
+                            have x->rb_right != x by {
+                                transport(at(before_recolor, x->rb_right != x), x->rb_right != x);
+                            }
+                            have y->rb_left != y by {
+                                transport(at(before_recolor, y->rb_left != y), y->rb_left != y);
+                            }
+                            have y->rb_right != y by {
+                                transport(at(before_recolor, y->rb_right != y), y->rb_right != y);
+                            }
+                            have z->rb_left != z by {
+                                transport(at(before_recolor, z->rb_left != z), z->rb_left != z);
+                            }
+                            have z->rb_right != z by {
+                                transport(at(before_recolor, z->rb_right != z), z->rb_right != z);
                             }
                             let u_tree = fold(sized_at(z), { model: SizedTree::Node(z, x, Color::Black, sized_value(old(state.uncle)), sized_left(old(state.uncle)), sized_right(old(state.uncle))) }, { metadata: u_size, right: u_right, left: u_left });
                             have sized_parent_is(focus.model,y) == 1 by {

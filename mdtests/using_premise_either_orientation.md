@@ -6,6 +6,9 @@ discharges a theorem requirement listed in `using` now does too: the
 requirement below instantiates to `x == y` and `p == q`, while the proof
 holds `y == x` and `q == p`.
 
+The logical pointer annotations below use `void*` for address identities;
+object access remains governed by the unchanged C types and resource ownership.
+
 ```c filename=using_premise_either_orientation.c
 struct cell { int32 value; };
 
@@ -27,7 +30,7 @@ theorem value_symmetric(a: int32, b: int32) {
     ensures b == a by simp();
 }
 
-theorem cell_symmetric(a: struct cell*, b: struct cell*) {
+theorem cell_symmetric(a: void*, b: void*) {
     requires a == b;
 
     ensures b == a by simp();

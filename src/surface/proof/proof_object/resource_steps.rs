@@ -1144,6 +1144,8 @@ impl<'a> Proof<'a> {
                     ))
                 },
             )?;
+        let checked_body =
+            crate::surface::lowering::pure_function_result_value(&definition, checked_body);
         let checked_equality = ClickProposition::Comparison {
             left: ContractExpression::Call {
                 name: application.name.clone(),
@@ -1346,6 +1348,8 @@ impl<'a> Proof<'a> {
                 }
                 let surface_body = substitute_contract_expression(selected_body, &bindings)
                     .map_err(|message| self.step_error(message))?;
+                let surface_body =
+                    crate::surface::lowering::pure_function_result_value(&definition, surface_body);
                 let surface_application = ContractExpression::Call {
                     name: application.name.clone(),
                     arguments: application.arguments.clone(),

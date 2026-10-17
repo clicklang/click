@@ -939,6 +939,12 @@ impl<'a> Proof<'a> {
                     );
                     ContractExpression::Binding(name.clone())
                 }
+                Sort::CObjectPointer(c_type, class) => {
+                    ContractExpression::CFragment(CExpression::Value(
+                        crate::kernel::symbolic_call_result(c_type, variable)
+                            .with_pointer_object_class(Some(class)),
+                    ))
+                }
                 Sort::CPointer(c_type) => ContractExpression::CFragment(CExpression::Value(
                     crate::kernel::symbolic_call_result(c_type, variable),
                 )),

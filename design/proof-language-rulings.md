@@ -109,3 +109,15 @@ only by the tests that read them.
   2026-10-16: the library `memcpy` and `memcmp` contracts read under
   `views`, as every external load needs a covering viewed or owned
   resource. `viewable` stays a bounds fact with no read authority.
+
+## Strengths the launch review credited
+
+The 2026-10-12 launch design review, whose items are all closed, credited
+these strengths. They are recorded so later fixes do not trade them away:
+verification of unchanged source with pinned hashes; deterministic verdicts
+from work budgets; smart search never trusted, expansion and audit
+re-checked; documentation tied to passing fixtures; precise statements of
+what is proved (termination, undefined behavior, `diverges`); readable
+resource verbs with the write footprint equal to ownership; allocation
+lifetime separate from access; candid scoping such as Adler-32's "remains
+unproved".

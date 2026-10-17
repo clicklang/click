@@ -102,7 +102,11 @@ pub(super) fn matched_resource_instance_case_read_projection(
             arm.binding_variables[index],
             value,
         ) {
-            (AlgebraicValueType::C(_), None, AlgebraicValue::C(value)) => {
+            (
+                AlgebraicValueType::C(_) | AlgebraicValueType::ObjectPointer(_, _),
+                None,
+                AlgebraicValue::C(value),
+            ) => {
                 let ty = value.c_type();
                 let value = arm_binding_program_spelling(value, assumptions)
                     .unwrap_or_else(|| value.clone());

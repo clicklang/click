@@ -3715,6 +3715,58 @@ fn budget_stopped_transport_retains_its_checked_loop_prefix() {
 }
 
 #[test]
+fn callback_refinement_hint_with_produced_resource_is_a_checked_proof() {
+    let source = r#"verifying "callback.c";
+        spec enum Ref { At(struct node*), }
+        resource token() { field model: Ref; }
+        contract void Callback(struct node* p) {
+            produces held: token(); ensures held.model == Ref::At(p);
+        }
+        void wrapped(struct node* p) {
+            produces held: token(); ensures held.model == Ref::At(p);
+        } by { execute(); let held = fold(token(), { model: Ref::At(p) }); }
+        /* REFINEMENT */
+        int32 accept(void (*f)(struct node*)) {
+            requires Callback(f); ensures result == 0;
+        } by { execute(); normalize(); }
+        int32 caller() { ensures result == 0; } by { /* APPLY */ execute(); }
+    "#;
+    let c = [(
+        "callback.c",
+        "struct node { uint64 word; }; void wrapped(struct node* p) {} int32 accept(void (*f)(struct node*)) { return 0; } int32 caller() { return accept(&wrapped); }",
+    )];
+    let error = verify_c0_sources(source, &c).unwrap_err();
+    let report = error.concise_report();
+    let suggestion = report
+        .split_once("prove it explicitly:\n")
+        .expect(&report)
+        .1;
+    let start = suggestion.find("theorem ").expect(&report);
+    let mut depth = 0;
+    let end = suggestion[start..]
+        .char_indices()
+        .find_map(|(offset, character)| {
+            match character {
+                '{' => depth += 1,
+                '}' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        return Some(offset + 1);
+                    }
+                }
+                _ => {}
+            }
+            None
+        })
+        .expect(&report);
+    let theorem = &suggestion[start..start + end];
+    let corrected = source
+        .replace("/* REFINEMENT */", theorem)
+        .replace("/* APPLY */", "apply(wrapped_is_callback());");
+    verify_c0_sources(&corrected, &c).unwrap();
+}
+
+#[test]
 fn failed_branch_interface_retains_its_arm_and_written_requirement() {
     let c = "int advance(int x) { int y; if (x >= 0) { y = x; } else { y = 0; } return y; }";
     for (requirement, precondition, chosen, other) in [

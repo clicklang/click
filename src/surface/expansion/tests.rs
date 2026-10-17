@@ -698,8 +698,10 @@ fn expansion_keeps_explicit_library_paths_and_unimported_predicates() {
 
 #[test]
 fn block_tactic_optional_semicolon_belongs_to_the_tactic() {
-    let source = "by { step(); simp(); }";
+    let source = "theorem t() {\n    ensures true by { step(); simp(); }\n}\n";
     let tokens = proof_source_tokens(source).expect("source should tokenize");
+    let file = parser::parse_file_items(source).expect("source should parse");
+    let tokens = ProofTokens::new(&file, &tokens);
     let by = tokens
         .iter()
         .position(|token| token.text == "by")
@@ -707,7 +709,8 @@ fn block_tactic_optional_semicolon_belongs_to_the_tactic() {
     let open = by + 1;
     let close = matching_delimiter(&tokens, open, "{", "}")
         .expect("proof block should have a closing brace");
-    let ranges = direct_tactic_token_ranges(&tokens, open, close)
+    let ranges = tokens
+        .tactic_ranges(open, close)
         .expect("block tactics should be indexable");
 
     assert_eq!(ranges.len(), 2, "{ranges:?}");
@@ -778,14 +781,14 @@ fn expand_top_level_tactic_for_test(
         .iter()
         .find(|function| function.signature().name() == function_name)
         .ok_or_else(|| ClickError::new(format!("unknown function `{function_name}`")))?;
-    let function = DeclarationSources::new(click_source, &tokens).function(function_block)?;
+    let function = DeclarationSources::new(&tokens).function(function_block)?;
     let proof = match claim {
         CProofClaim::Grouped => find_grouped_proof_span(&tokens, &function)?,
         CProofClaim::Ensure(_) | CProofClaim::ExceptionalEnsure(_) => {
             find_claim_proof_span(&tokens, &function, function_block, claim)?
         }
     };
-    let span = find_tactic_span(&tokens, &proof, tactic_index)?;
+    let span = find_tactic_span(&ProofTokens::new(&file, &tokens), &proof, tactic_index)?;
     let position = position_at_offset(click_source, span.start);
     expand_c0_tactic_source_at(click_source, c_sources, position.line, position.column)
 }
@@ -1233,9 +1236,13 @@ int32 nested_nonnegative(int32 x, int32 flag) {
 
 #[test]
 fn locates_a_block_tactic_as_one_source_statement() {
-    let source = "by { have x == x by simp(); simp(); }";
+    let source =
+        "theorem t(x: int32) {\n    ensures x == x by { have x == x by simp(); simp(); }\n}\n";
     let tokens = proof_source_tokens(source).expect("source should scan");
-    let proof = proof_span(&tokens, 0).expect("proof should have a span");
+    let file = parser::parse_file_items(source).expect("source should parse");
+    let tokens = ProofTokens::new(&file, &tokens);
+    let by = tokens.iter().position(|token| token.text == "by").unwrap();
+    let proof = proof_span(&tokens, by).expect("proof should have a span");
 
     let first = find_tactic_span(&tokens, &proof, 0).expect("first tactic should exist");
     let second = find_tactic_span(&tokens, &proof, 1).expect("second tactic should exist");
@@ -2140,7 +2147,7 @@ fn parsed_function_body(source: &str, name: &str) -> Result<FunctionSource, Clic
         .iter()
         .find(|block| block.signature().name() == name)
         .ok_or_else(|| ClickError::new(format!("no function block `{name}`")))?;
-    DeclarationSources::new(source, &tokens).function(block)
+    DeclarationSources::new(&tokens).function(block)
 }
 
 /// A Rust head's generic parameters come between its name and its
