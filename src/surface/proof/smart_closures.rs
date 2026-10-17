@@ -3017,6 +3017,12 @@ impl<'a> Proof<'a> {
             anchored_pairs =
                 self.resolve_simp_premises(&derivation.context_premises(), introduced_surfaces)?;
             let premise_pairs = &anchored_pairs;
+            // This rule constructs its checked nonnegative scope directly.
+            // Avoid a speculative generic candidate for this same predecessor
+            // goal before constructing that scope.
+            if let Some(closed) = self.try_selected_predecessor_upper_bound(&goal, premise_pairs) {
+                return Some(closed);
+            }
             // The same derivation already failed to check over the premises
             // it cites; the wider context does not translate it either.
             let typed_atomic =
@@ -3039,7 +3045,6 @@ impl<'a> Proof<'a> {
             typed_atomic
                 .or_else(|| self.try_selected_pointer_inequality_rewrite(&goal, premise_pairs))
                 .or_else(|| self.try_selected_equality_rewrite_chain(premise_pairs))
-                .or_else(|| self.try_selected_predecessor_upper_bound(&goal, premise_pairs))
                 .or_else(|| self.try_selected_constant_bound_weakening(&goal, &derivation))
                 .or_else(|| {
                     self.surface_goal().and_then(|surface_goal| {
