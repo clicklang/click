@@ -1579,6 +1579,51 @@ pub(super) fn proof_case_fact_conflicts(
     Ok(conflicts)
 }
 
+/// Continues the claim proof that earlier deferred tactics opened (an
+/// `intro`, a `witness`) with a closer, rather than starting over at the
+/// claims. `Ok(true)` means the closer applied there: a completed proof
+/// closes its claim, an incomplete one stays open. `Ok(false)` means the
+/// caller reads the closer against the claims instead, because no proof was
+/// open or because the closer did not apply after an `intro`. A proof a
+/// `witness` or `let` opened commits to that choice, so a closer that does
+/// not apply to it is an error: reading it against the claims could close
+/// one without the witness.
+fn continue_claim_existence_proof<'a>(
+    existence_proof: &mut Option<(usize, ClickProposition, Proof<'a>)>,
+    introduced_claim_scope: &mut bool,
+    closures: &mut [ClaimClosure],
+    claims: &[FunctionClaimRef<'_>],
+    outcome_proof: &Option<Proof<'a>>,
+    path_index: usize,
+    apply: impl FnOnce(&Proof<'a>) -> Result<Proof<'a>, ClickError>,
+) -> Result<bool, ClickError> {
+    let Some((claim_index, surface_goal, proof)) = existence_proof.take() else {
+        return Ok(false);
+    };
+    let refreshed = proof.refresh_outcome_from(required_outcome(outcome_proof)?)?;
+    match apply(&refreshed) {
+        Ok(proof) => {
+            if proof.is_complete() {
+                *introduced_claim_scope = false;
+                closures[claim_index] = ClaimClosure::by_continued_proposition(
+                    claims[claim_index].key(),
+                    path_index,
+                    Vec::new(),
+                    proof.completed_proposition()?,
+                );
+            } else {
+                *existence_proof = Some((claim_index, surface_goal, proof));
+            }
+            Ok(true)
+        }
+        Err(_) if *introduced_claim_scope => {
+            *existence_proof = Some((claim_index, surface_goal, refreshed));
+            Ok(false)
+        }
+        Err(error) => Err(error),
+    }
+}
+
 /// Whether a post-execution leaf refines one claim's goal and so runs on that
 /// claim's existence proof rather than on the path's outcome proof.
 fn opens_outcome_existence_proof(tactic: &ProofTactic) -> bool {
@@ -2885,59 +2930,29 @@ pub(super) fn finish_ordered_proof<'a>(
                                 }
                             }
                             PostExecutionTactic::Assumption => {
-                                // Earlier deferred tactics opened this
-                                // claim's own proof (an `intro`, a
-                                // `witness`); the closer continues that proof
-                                // rather than starting over at the claims.
-                                if let Some((claim_index, surface_goal, proof)) =
-                                    existence_proof.take()
-                                {
-                                    let refreshed = proof
-                                        .refresh_outcome_from(required_outcome(&outcome_proof)?)?;
-                                    // A closer that does not apply to the
-                                    // opened proof is read against the
-                                    // claims, as it is without one.
-                                    match refreshed.apply_step(ProofStep::Assumption) {
-                                        Ok(proof) => {
-                                            record_post_execution_surface_tactic(
-                                                &mut path_surface_post_tactics,
-                                                &mut path_deferred_capture_tactics,
-                                                path_capture,
-                                                post_execution_index,
-                                                *tactic_index,
-                                                ProofTactic::Assumption,
-                                            );
-                                            if proof.is_complete() {
-                                                introduced_claim_scope = false;
-                                                closures[claim_index] =
-                                                    ClaimClosure::by_continued_proposition(
-                                                        claims[claim_index].key(),
-                                                        path_index,
-                                                        Vec::new(),
-                                                        proof.completed_proposition()?,
-                                                    );
-                                            } else {
-                                                existence_proof =
-                                                    Some((claim_index, surface_goal, proof));
-                                            }
-                                            continue;
-                                        }
-                                        // After an `intro` the claims can still
-                                        // read the closer as before. A proof a
-                                        // `witness` or `let` opened commits to
-                                        // that choice: reading the closer
-                                        // against the claims instead could
-                                        // close one without the witness.
-                                        Err(_) if introduced_claim_scope => {
-                                            existence_proof =
-                                                Some((claim_index, surface_goal, refreshed));
-                                        }
-                                        Err(error) => {
-                                            return Err(error.with_context(format!(
-                                                "`{proof_label}` path {path_index}, tactic {tactic_index}"
-                                            )));
-                                        }
-                                    }
+                                if continue_claim_existence_proof(
+                                    &mut existence_proof,
+                                    &mut introduced_claim_scope,
+                                    &mut closures,
+                                    claims,
+                                    &outcome_proof,
+                                    path_index,
+                                    |proof| proof.apply_step(ProofStep::Assumption),
+                                )
+                                .map_err(|error| {
+                                    error.with_context(format!(
+                                        "`{proof_label}` path {path_index}, tactic {tactic_index}"
+                                    ))
+                                })? {
+                                    record_post_execution_surface_tactic(
+                                        &mut path_surface_post_tactics,
+                                        &mut path_deferred_capture_tactics,
+                                        path_capture,
+                                        post_execution_index,
+                                        *tactic_index,
+                                        ProofTactic::Assumption,
+                                    );
+                                    continue;
                                 }
                                 let mut closed_any = false;
                                 // A contract resource claim is visible only
@@ -3233,84 +3248,50 @@ pub(super) fn finish_ordered_proof<'a>(
                                     }
                                     _ => ProofStep::Normalize,
                                 };
-                                // Earlier deferred tactics opened this
-                                // claim's own proof (an `intro`, a
-                                // `witness`); the closer continues that proof
-                                // rather than starting over at the claims.
                                 let continued_tactic = match post_tactic {
-                                    PostExecutionTactic::Normalize => Some(ProofTactic::Normalize),
                                     PostExecutionTactic::NormalizeUsing(premises) => {
-                                        Some(ProofTactic::NormalizeUsing(premises.clone()))
+                                        ProofTactic::NormalizeUsing(premises.clone())
                                     }
                                     PostExecutionTactic::ArithmeticUsing(premises) => {
-                                        Some(ProofTactic::ArithmeticUsing(premises.clone()))
+                                        ProofTactic::ArithmeticUsing(premises.clone())
                                     }
                                     PostExecutionTactic::ArithmeticCertificate(certificate) => {
-                                        Some(ProofTactic::ArithmeticCertificate(
-                                            certificate.clone(),
-                                        ))
+                                        ProofTactic::ArithmeticCertificate(certificate.clone())
                                     }
                                     PostExecutionTactic::Both(both) => {
-                                        Some(ProofTactic::Both(both.clone()))
+                                        ProofTactic::Both(both.clone())
                                     }
-                                    _ => None,
+                                    _ => ProofTactic::Normalize,
                                 };
-                                if let Some(continued_tactic) = continued_tactic
-                                    && let Some((claim_index, surface_goal, proof)) =
-                                        existence_proof.take()
-                                {
-                                    let refreshed = proof
-                                        .refresh_outcome_from(required_outcome(&outcome_proof)?)?;
-                                    // A closer that does not apply to the
-                                    // opened proof is read against the
-                                    // claims, as it is without one.
-                                    let continued =
+                                if continue_claim_existence_proof(
+                                    &mut existence_proof,
+                                    &mut introduced_claim_scope,
+                                    &mut closures,
+                                    claims,
+                                    &outcome_proof,
+                                    path_index,
+                                    |proof| {
                                         if let PostExecutionTactic::Both(both) = post_tactic {
-                                            refreshed.apply_both_source(both)
+                                            proof.apply_both_source(both)
                                         } else {
-                                            refreshed.apply_step(normalization_step.clone())
-                                        };
-                                    match continued {
-                                        Ok(proof) => {
-                                            record_post_execution_surface_tactic(
-                                                &mut path_surface_post_tactics,
-                                                &mut path_deferred_capture_tactics,
-                                                path_capture,
-                                                post_execution_index,
-                                                *tactic_index,
-                                                continued_tactic,
-                                            );
-                                            if proof.is_complete() {
-                                                introduced_claim_scope = false;
-                                                closures[claim_index] =
-                                                    ClaimClosure::by_continued_proposition(
-                                                        claims[claim_index].key(),
-                                                        path_index,
-                                                        Vec::new(),
-                                                        proof.completed_proposition()?,
-                                                    );
-                                            } else {
-                                                existence_proof =
-                                                    Some((claim_index, surface_goal, proof));
-                                            }
-                                            continue;
+                                            proof.apply_step(normalization_step.clone())
                                         }
-                                        // After an `intro` the claims can still
-                                        // read the closer as before. A proof a
-                                        // `witness` or `let` opened commits to
-                                        // that choice: reading the closer
-                                        // against the claims instead could
-                                        // close one without the witness.
-                                        Err(_) if introduced_claim_scope => {
-                                            existence_proof =
-                                                Some((claim_index, surface_goal, refreshed));
-                                        }
-                                        Err(error) => {
-                                            return Err(error.with_context(format!(
-                                                "`{proof_label}` path {path_index}, tactic {tactic_index}"
-                                            )));
-                                        }
-                                    }
+                                    },
+                                )
+                                .map_err(|error| {
+                                    error.with_context(format!(
+                                        "`{proof_label}` path {path_index}, tactic {tactic_index}"
+                                    ))
+                                })? {
+                                    record_post_execution_surface_tactic(
+                                        &mut path_surface_post_tactics,
+                                        &mut path_deferred_capture_tactics,
+                                        path_capture,
+                                        post_execution_index,
+                                        *tactic_index,
+                                        continued_tactic,
+                                    );
+                                    continue;
                                 }
                                 let mut closed_any = false;
                                 // Each claim is focused from the evolving
