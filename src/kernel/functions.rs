@@ -14515,11 +14515,6 @@ pub(super) fn expand_composite_resource_fact_with_children(
     let CResource::Composite { name, arguments } = composite.resource() else {
         return None;
     };
-    // A possibly empty owned head supplies no body cell. A view already
-    // denotes read authority; an owner must provide at least one unit.
-    if !composite.is_view() && !composite.has_proven_positive_quantity(assumptions) {
-        return Some((context.clone(), Vec::new(), Vec::new()));
-    }
     let definition = &definitions[definitions
         .binary_search_by(|definition| {
             crate::instrumentation::record_deterministic_work(1);
@@ -14531,6 +14526,15 @@ pub(super) fn expand_composite_resource_fact_with_children(
     }
     if definition.parameters().len() != arguments.len() {
         return None;
+    }
+    // A possibly empty owned head supplies no body cell. Empty token
+    // populations have no body authority to expose, so their symbolic
+    // quantities still participate in ordinary transfer planning.
+    if !definition.contains().is_empty()
+        && !composite.is_view()
+        && !composite.has_proven_positive_quantity(assumptions)
+    {
+        return Some((context.clone(), Vec::new(), Vec::new()));
     }
     // A viewed composite carries its loan dependency on the folded
     // occurrence.  Expansion must transfer that exact bundle to only the
