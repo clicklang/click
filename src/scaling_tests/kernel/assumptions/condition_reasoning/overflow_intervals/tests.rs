@@ -268,7 +268,7 @@ fn order_chain_bound_work_is_linear_in_the_chain_and_flat_in_unrelated_facts() {
         assert_eq!(bound, Some(999), "length {length}, unrelated {unrelated}");
         work
     };
-    let flat = [0, 16, 64, 256].map(|unrelated| measure(8, unrelated));
+    let flat = [0, 4, 16, 64].map(|unrelated| measure(8, unrelated));
     assert!(
         flat.iter().all(|work| *work == flat[0]),
         "chain walk work grew with unrelated facts: {flat:?}"

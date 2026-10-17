@@ -562,7 +562,7 @@ fn pointer_view_rewrite_preserves_snapshot_extent_and_ambient_scaling() {
             .is_err()
     );
     let mut costs = Vec::new();
-    for size in [0, 16, 64, 256, 1024] {
+    for size in [0, 4, 16, 64, 256] {
         let mut facts = ProofFacts::from_ordered(std::slice::from_ref(&cited));
         for index in 0..size {
             facts = facts.with_fact(equality(

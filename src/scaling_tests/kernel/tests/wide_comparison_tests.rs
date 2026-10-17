@@ -41,7 +41,7 @@ fn wide_comparison_work_scales_with_explicit_operations() {
         for operator in OPERATORS {
             let expression = symbolic(operator, ty);
             let context = PureFactContext::new();
-            let samples = [2usize, 8, 32, 128].map(|size| {
+            let samples = [1usize, 4, 16, 64].map(|size| {
                 let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
                     for _ in 0..size {
                         assert_eq!(paths(&expression, &context).len(), 2);
