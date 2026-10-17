@@ -1224,6 +1224,54 @@ fn c_function_contract_entry_facts(
             }
         };
     }
+    // A Rust slice is already a valid bounded reference, even when the
+    // contract observes only its metadata. This supplies no readable bytes.
+    for parameters in [
+        function.parameters(),
+        function.contract_interface().value_parameters(),
+    ] {
+        for (index, parameter) in parameters.iter().enumerate() {
+            let Some(length_index) = parameter.slice_length_parameter else {
+                continue;
+            };
+            let Some(CValue::Pointer(pointer)) = entry_state.locals.get(parameter.name()) else {
+                return Err("slice entry argument is not a pointer value".into());
+            };
+            let length_parameter = &parameters[index + length_index];
+            let Some(CValue::UInt64(length)) = entry_state
+                .locals
+                .get(length_parameter.name())
+                .map(CValue::numeric_value)
+            else {
+                return Err("slice entry length is not a native unsigned value".into());
+            };
+            let width = parameter
+                .c_type()
+                .pointee_type()
+                .expect("slice pointer")
+                .byte_width();
+            assumptions = entry_facts.assume(
+                assumptions,
+                CContractEntryFactOrigin::Extent,
+                Proposition::ConditionIs(
+                    ConditionTerm::uint64_less_equal(
+                        length.clone(),
+                        Bitvector32Term::UInt64Constant(i64::MAX as u64 / u64::from(width)),
+                    ),
+                    true,
+                ),
+            );
+            if let Some(coverage) = pointer.opaque_coverage_fact(&CMemoryRange::new_wide(
+                pointer.pointer().clone(),
+                Bitvector32Term::UInt64Constant(0),
+                length.clone(),
+                width,
+            )) {
+                assumptions =
+                    entry_facts.assume(assumptions, CContractEntryFactOrigin::Extent, coverage);
+            }
+        }
+    }
     // A `_Bool` parameter holds `0` or `1`. Its entry value is a normalized
     // conditional over those constants, so the range disjunction is
     // context-free true; `c_bool_range_fact` checks that shape.

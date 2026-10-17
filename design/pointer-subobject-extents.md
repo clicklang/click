@@ -310,6 +310,15 @@ checks, while reference binding retains its existing complete-referent storage
 check. The Rust adapter rejects raw-pointer types (`rust/charon.rs`); safe slice
 indexing keeps its own bounds checks and grants no raw-pointer arithmetic rule.
 
+Rust slice entries publish formation coverage for the data pointer and native
+length from the slice's inherent validity, including the `isize::MAX` byte-size
+limit. This grants no readable bytes: metadata-only `split_at` proofs need no
+view, while indexing still requires one. The frontend marks the adjacent length
+argument, including across call/value-parameter splits; represented integer
+lengths are observed numerically. Raw C pointer parameters carry no such mark.
+Held resource bodies likewise retain their established bounds when projected
+for call framing or for evaluating another resource clause's argument.
+
 ### Transport and cost
 
 Unseen producers need no individual exemption: copies retain their domain,

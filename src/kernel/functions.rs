@@ -7510,7 +7510,9 @@ fn open_unmatched_instance_body<'a>(
     let evaluation_assumptions = assumptions
         .clone()
         .allow_symbolic_contract_loads()
-        .prefer_symbolic_external_loads();
+        .prefer_symbolic_external_loads()
+        // This opens a held body's established footprint, as unfold does.
+        .assume_entry_clause_extents();
     let mut budget = ExecutionBudget::beside_live_state();
     let Ok(Ok(body_resources)) = evaluate_function_resource_context_with_normalization(
         &evaluation,
@@ -16680,7 +16682,9 @@ fn resource_clause_memory_views(
     let evaluation_assumptions = assumptions
         .clone()
         .allow_symbolic_contract_loads()
-        .prefer_symbolic_external_loads();
+        .prefer_symbolic_external_loads()
+        // These are the established clauses of the held instance.
+        .assume_entry_clause_extents();
     let mut budget = ExecutionBudget::beside_live_state();
     let Ok(Ok(body_resources)) = evaluate_function_resource_context_with_normalization(
         evaluation,

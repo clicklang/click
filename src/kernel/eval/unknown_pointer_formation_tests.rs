@@ -142,6 +142,46 @@ fn allocation_bounds_require_positive_ownership_and_grant_no_read_permission() {
 }
 
 #[test]
+fn slice_entry_bounds_allow_formation_without_read_authority() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let p = pointer(930_450);
+    let state = CState::new()
+        .with_local("data", CValue::Pointer(p.clone()))
+        .with_local("length", CValue::UInt64(Bitvector32Term::UInt64Constant(2)));
+    let function = c_function(
+        CType::Void,
+        "slice_metadata",
+        vec![
+            c_parameter("p", CType::Int32Pointer).with_slice_length_parameter(1),
+            c_parameter("n", CType::UInt64),
+        ],
+        c_skip(),
+    );
+    let entry = crate::kernel::c_function_contract_entry(
+        &state,
+        &function,
+        &[
+            CExpression::Value(CValue::Pointer(p.clone())),
+            CExpression::Value(
+                CValue::UInt64(Bitvector32Term::UInt64Constant(2))
+                    .complete_word(Pointer::symbolic(Variable(930_451))),
+            ),
+        ],
+    )
+    .unwrap();
+    let context = entry
+        .facts()
+        .iter()
+        .fold(PureFactContext::new(), |facts, fact| {
+            facts.assume_proposition(fact.proposition().clone())
+        });
+    let resources = ResourceContext::new();
+    assert!(permits(&p, 8, &context, &resources));
+    assert!(!permits(&p, 12, &context, &resources));
+    assert!(!resources.permits_memory_read(p.pointer(), 4, &context));
+}
+
+#[test]
 fn well_formed_range_terms_do_not_establish_an_opaque_domain() {
     let _session = crate::kernel::VerificationSession::enter();
     let p = pointer(930_500);

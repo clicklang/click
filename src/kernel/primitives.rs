@@ -4158,6 +4158,10 @@ pub struct CParameter {
     /// The class of the object a pointer parameter's declaration says it
     /// designates, when the frontend supplied one.
     pub(super) pointee_class: Option<crate::kernel::effective_type::CAccessClass>,
+    /// Relative index of a Rust slice's adjacent length argument. Its valid
+    /// extent grants formation bounds across argument/value-parameter splits,
+    /// independently of byte access authority. C pointers have none.
+    pub(super) slice_length_parameter: Option<usize>,
 }
 
 /// A linked file-scope scalar. Globals use one stable memory block across all

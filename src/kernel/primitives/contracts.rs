@@ -11,11 +11,17 @@ impl CParameter {
             constant: false,
             pointee_constant: false,
             pointee_class: None,
+            slice_length_parameter: None,
         }
     }
 
     pub fn name(&self) -> &str {
         &self.name
+    }
+
+    pub(crate) fn with_slice_length_parameter(mut self, parameter: usize) -> Self {
+        self.slice_length_parameter = Some(parameter);
+        self
     }
 
     pub fn c_type(&self) -> CType {
