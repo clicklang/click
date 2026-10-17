@@ -2,6 +2,48 @@ use super::diagnostics::describe_contract_expression;
 use super::*;
 use crate::kernel::{AlgebraicValueType, int32};
 
+#[test]
+fn pure_function_returns_check_all_scalar_result_leaves() {
+    for source in [
+        "function wrong(p: int32*) -> int32 { p }",
+        "function wrong() -> int32* { 7 }",
+        "function wrong(p: int32*, n: int32) -> int32 { if n == 0 { 0 } else { p } }",
+        "spec enum Ptr { At(int32*) } function wrong(m: Ptr) -> int32 { match m { Ptr::At(p) => p, } }",
+        "function wrong(p: int32*) -> int32 { let saved = p; saved }",
+        "function wrong(p: int32*) -> Integer { p }",
+        "spec enum Ptr { At(int32*) } function wrong(m: Ptr) -> Integer { match m { Ptr::At(p) => p, } }",
+    ] {
+        let error = parser::parse(source).unwrap_err();
+        assert!(
+            error.message().contains("function `wrong` returns"),
+            "{error}"
+        );
+    }
+}
+
+#[test]
+fn pure_function_returns_keep_null_and_numeric_conversions() {
+    parser::parse(
+        "function narrow(n: uint64) -> int32 { n } function null() -> int32* { 0 } function choose(p: int32*, n: int32) -> int32* { if n == 0 { 0 } else { p } } spec enum Ptr { Empty, At(int32*) } function get(m: Ptr) -> int32* { match m { Ptr::Empty => 0, Ptr::At(p) => p, } } function inc(n: Integer) -> Integer { n + 1 } function big() -> Integer { 999999999999999999999999999999 }",
+    ).unwrap();
+    parser::parse("function id<T>(x: T) -> T { x } function flag(x: bool) -> bool { id(x) }")
+        .unwrap();
+}
+
+#[test]
+fn pure_function_return_types_cannot_be_forged_by_local_annotations() {
+    for source in [
+        "function wrong(p: int32*) -> int32 { let saved: int32 = p; saved }",
+        "function wrong(p: int32*) -> Integer { let saved: Integer = p; saved }",
+    ] {
+        let error = parser::parse(source).unwrap_err();
+        assert!(
+            error.message().contains("let binding `saved` expects"),
+            "{error}"
+        );
+    }
+}
+
 const GUARDED_CELL_SOURCE: &str = r#"verifying "read.c";
 resource cell(p: int32*) {
     field value: int32;

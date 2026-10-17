@@ -1051,11 +1051,39 @@ struct ProofDiagnosticProofState(
     // so the refusal shows the record its failed body fact reads.
     Option<Arc<crate::kernel::ResourceInstance>>,
     &'static str,
-    (Vec<syntax::C0Parameter>, Vec<CExpression>),
+    DiagnosticNaming,
     // The recorded snapshots an outcome goal's `at(...)` cites. A shared
     // handle; the citable ones are selected only when a report is rendered.
     Option<crate::surface::RecordedSnapshots>,
 );
+
+/// The names a captured diagnostic gives the proof's values: the naming
+/// tables themselves, or what they are built from when the diagnostic is
+/// rendered. A diagnostic is captured on every refused attempt and rendered
+/// for few of them, so the deferred form holds shared handles and copies no
+/// list of locals or parameters.
+pub(in crate::surface::proof) enum DiagnosticNaming {
+    Tables(Vec<syntax::C0Parameter>, Vec<CExpression>),
+    /// A state's locals, then the shared entry parameters and arguments.
+    LocalsThenParameters(CState, Arc<crate::surface::ParameterNaming>),
+}
+
+impl DiagnosticNaming {
+    fn register(&self, labels: &mut crate::surface::proof_diagnostics::render::SnapshotLabels) {
+        match self {
+            Self::Tables(names, values) => {
+                labels.register_naming(ParameterBinding::new(names, values));
+            }
+            Self::LocalsThenParameters(state, naming) => {
+                let (mut names, mut values) =
+                    crate::surface::diagnostics::local_naming_tables(state);
+                names.extend(naming.parameters.iter().cloned());
+                values.extend(naming.arguments.iter().cloned());
+                labels.register_naming(ParameterBinding::new(&names, &values));
+            }
+        }
+    }
+}
 
 fn diagnostic_value_variable(value: &CValue) -> Option<Variable> {
     match value.numeric_value() {
@@ -1179,7 +1207,7 @@ impl crate::surface::proof_diagnostics::ProofDiagnosticState for ProofDiagnostic
         &self,
         labels: &mut crate::surface::proof_diagnostics::render::SnapshotLabels,
     ) {
-        labels.register_naming(ParameterBinding::new(&self.13.0, &self.13.1));
+        self.13.register(labels);
         for (variable, name) in &self.2 {
             labels.source_name(*variable, name.clone());
         }
@@ -1760,7 +1788,7 @@ impl Proof<'_> {
             Vec::new(),
             None,
             self.proof_context_description(),
-            self.diagnostic_naming_tables(),
+            self.diagnostic_naming(),
             match self.context.as_ref() {
                 ProofContext::Pure(_) => None,
                 _ => self

@@ -305,3 +305,45 @@ fn realloc_reference_check_ignores_unrelated_resource_tokens() {
         "{samples:?}"
     );
 }
+
+#[test]
+fn typed_pending_heap_binding_uses_the_allocation_delta() {
+    let class = crate::kernel::effective_type::CAccessClass::Struct(
+        crate::kernel::effective_type::CStructClass::opaque("node"),
+    );
+    let mut samples = Vec::new();
+    for count in [16, 64, 256, 1024] {
+        let mut memory = CMemory::new();
+        for index in 0..count {
+            memory = memory.with_pending_typed_heap_allocation(
+                Pointer::symbolic(Variable(950_000 + index)),
+                Bitvector32Term::Constant(8),
+                false,
+                Some(class.clone()),
+            );
+        }
+        let ((next, resolved), work) = crate::instrumentation::measure_deterministic_work(|| {
+            let base = Pointer::symbolic(Variable(960_000));
+            let next = memory.clone().with_pending_typed_heap_allocation(
+                base.clone(),
+                Bitvector32Term::Constant(8),
+                false,
+                Some(class.clone()),
+            );
+            let (resolved, _, address) = next
+                .clone()
+                .resolve_pending_heap_allocation(&base, true)
+                .unwrap();
+            assert_eq!(resolved.declared_class(&address), Some(class.clone()));
+            (next, resolved)
+        });
+        assert_eq!(next.heap.pending_object_classes.len(), count as usize + 1);
+        assert_eq!(resolved.heap.pending_object_classes.len(), count as usize);
+        assert!(work > 0);
+        samples.push(work);
+    }
+    assert!(
+        samples.windows(2).all(|pair| pair[1] <= pair[0] + 16),
+        "{samples:?}"
+    );
+}

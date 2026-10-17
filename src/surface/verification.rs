@@ -5354,6 +5354,24 @@ impl parser::ProgramLayouts {
                     .virtual_overrides
                     .push((function.source_name().to_string(), interface.to_string()));
             }
+            if !function.receiver_calls().is_empty() {
+                tables.receiver_calls.insert(
+                    function.source_name().to_string(),
+                    function
+                        .receiver_calls()
+                        .iter()
+                        .map(|(callee, holder)| {
+                            (
+                                source_names
+                                    .get(callee.as_str())
+                                    .map_or(callee.as_str(), |name| name)
+                                    .to_string(),
+                                holder.clone(),
+                            )
+                        })
+                        .collect(),
+                );
+            }
             if let Some(method) = function.dispatched_method()
                 && let Some(method) = source_names.get(method)
             {
@@ -6042,9 +6060,11 @@ fn check_trait_method_implementations(
         let mut refines = true;
         for contract in contracts {
             refines &= match (contract, verified_interface) {
-                (None, Some(interface)) => {
-                    crate::kernel::c_function_refines_function_contract(interface, implementation)
-                }
+                (None, Some(interface)) => crate::kernel::c_function_refines_function_contract(
+                    environment,
+                    interface,
+                    implementation,
+                ),
                 (contract, _) => crate::kernel::c_function_refines_named_contract(
                     environment,
                     contract.unwrap_or(interface),

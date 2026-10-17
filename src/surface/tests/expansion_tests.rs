@@ -2209,7 +2209,7 @@ theorem force_bad_machine_body(n: int32) {
     }
 }
 "#,
-            "mathematical Integer expressions cannot be compared with C values",
+            "function `bad_machine_body` returns Integer, but its body can produce `k` of type int32",
         ),
         (
             r#"
@@ -2253,7 +2253,7 @@ theorem force_bad_c_body(x: int32, z: Integer) {
     }
 }
 "#,
-            "expected a specification-side Integer expression",
+            "function `bad_c_body` returns Integer, but its body can produce `x` of type int32",
         ),
     ] {
         let error = verify_c0_sources(source, &[])
@@ -18830,6 +18830,44 @@ fn branch_arm_source_selection_and_batch_expansion_follow_the_interface_rule() {
         let batch = expand_c0_tactics_source_at(&source, &c, &positions).unwrap();
         verify_c0_sources(&batch.source, &c).unwrap();
     }
+}
+
+#[test]
+fn address_only_model_constructor_cast_expands_and_checks() {
+    let (source, c) = mdtest_sources("mdtests/model_pointer_address_constructor_preserves_cast.md");
+    let c = c
+        .iter()
+        .map(|(name, source)| (name.as_str(), source.as_str()))
+        .collect::<Vec<_>>();
+    let expanded = expand_c0_claim_source(&source, &c, "caller", CProofClaim::Grouped)
+        .unwrap_or_else(|error| panic!("{}", error.message()));
+    verify_c0_sources(&expanded, &c).unwrap_or_else(|error| panic!("{}", error.message()));
+}
+
+#[test]
+fn address_only_model_implicit_view_expands_and_checks() {
+    let (source, c) =
+        mdtest_sources("mdtests/model_pointer_address_constructor_preserves_implicit_view.md");
+    let c = c
+        .iter()
+        .map(|(name, source)| (name.as_str(), source.as_str()))
+        .collect::<Vec<_>>();
+    let expanded = expand_c0_claim_source(&source, &c, "caller", CProofClaim::Grouped)
+        .unwrap_or_else(|error| panic!("{}", error.message()));
+    verify_c0_sources(&expanded, &c).unwrap_or_else(|error| panic!("{}", error.message()));
+}
+
+#[test]
+fn void_pointer_helper_selected_view_expands_and_checks() {
+    let (source, c) =
+        mdtest_sources("mdtests/model_pointer_void_helper_preserves_selected_view.md");
+    let c = c
+        .iter()
+        .map(|(name, source)| (name.as_str(), source.as_str()))
+        .collect::<Vec<_>>();
+    let expanded = expand_c0_claim_source(&source, &c, "keep", CProofClaim::Grouped)
+        .unwrap_or_else(|error| panic!("{}", error.message()));
+    verify_c0_sources(&expanded, &c).unwrap_or_else(|error| panic!("{}", error.message()));
 }
 
 #[test]

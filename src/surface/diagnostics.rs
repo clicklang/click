@@ -5529,6 +5529,7 @@ pub(super) fn describe_c_statement_head(statement: &CStatement) -> String {
             target,
             bytes,
             zeroed,
+            ..
         } => format!(
             "{target} = {}({});",
             if *zeroed { "calloc" } else { "malloc" },

@@ -108,19 +108,23 @@ pub(in crate::surface::proof) fn check_fixed_state_theorem_application_using_fac
         }
     }
 
-    let values = parameter_values(parameter_binding).map_err(|error| {
-        ClickError::new(format!(
-            "`{claim_label}` tactic {tactic_index}: {}",
-            error.message
-        ))
-    })?;
-    let array_refs = array_refs_for_parameters(
-        parameter_binding.parameters,
-        &values,
-        fixed_state.state.memory(),
-    );
+    // The application reads the caller's environment only through its
+    // arguments, so it needs only the names they mention.
+    let mut names = BTreeSet::new();
+    for argument in &application.arguments {
+        crate::surface::lowering::collect_contract_expression_referenced_names(
+            argument, &mut names,
+        );
+    }
     let (values, array_refs) =
-        contract_environment_at_state(&values, &array_refs, fixed_state.state);
+        contract_environment_for_names(parameter_binding, &names, fixed_state.state).map_err(
+            |error| {
+                ClickError::new(format!(
+                    "`{claim_label}` tactic {tactic_index}: {}",
+                    error.message
+                ))
+            },
+        )?;
     let application_context = TheoremApplicationContext {
         values: &values,
         array_refs: &array_refs,
@@ -130,7 +134,7 @@ pub(in crate::surface::proof) fn check_fixed_state_theorem_application_using_fac
         result: fixed_state.result,
         recorded_snapshots: fixed_state.recorded_snapshots,
         integer_values,
-        pointer_element_widths: parameter_pointer_element_widths(parameter_binding.parameters),
+        pointer_element_widths: parameter_pointer_element_widths_named(parameter_binding, &names),
     };
     let conclusions = instantiate_theorem_application_with_assumptions(
         theorem_environment,

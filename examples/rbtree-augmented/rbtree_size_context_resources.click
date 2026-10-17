@@ -31,6 +31,7 @@ resource sized_context_at(child: struct rb_node*, root: struct rb_node*,
             fact aligned(node, 8);
             fact aligned(parent, 8);
             fact node->__rb_parent_color == address(parent) + (node->__rb_parent_color & 1);
+            fact ((struct rb_node*)(node->__rb_parent_color & ~3)) == parent;
             fact (node->__rb_parent_color & 1) == color_bit(color);
             fact metadata.value == value;
             fact sibling.model == sibling_model;
@@ -54,6 +55,7 @@ resource sized_context_at(child: struct rb_node*, root: struct rb_node*,
             fact aligned(node, 8);
             fact aligned(parent, 8);
             fact node->__rb_parent_color == address(parent) + (node->__rb_parent_color & 1);
+            fact ((struct rb_node*)(node->__rb_parent_color & ~3)) == parent;
             fact (node->__rb_parent_color & 1) == color_bit(color);
             fact metadata.value == value;
             fact sibling.model == sibling_model;

@@ -257,9 +257,8 @@ that writes `int32` for such a source already writes the source's spelling.
    part, and override its methods, each keeping the object class's
    interface read with its own definitions; a reference to a class another
    derives from then holds the object, and a call through it is checked
-   against that interface. Remaining for C++: a defining class's method
-   that a class deriving from it inherits without overriding, checked
-   against the object class's interface under that class's definitions.
+   against that interface. A class may inherit a defining class's method
+   where the functions its interface reads are defined alike.
 
 ## Intended regressions
 

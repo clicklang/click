@@ -15,6 +15,10 @@ use std::sync::Arc;
 #[cfg(test)]
 mod aggregate_return_tests;
 mod construction_return;
+mod produced_argument_supply;
+#[cfg(test)]
+mod produced_argument_supply_tests;
+use produced_argument_supply::prepare_produced_argument_supply;
 
 fn execute_c_function_body_paths(
     state: &CState,
@@ -1662,6 +1666,7 @@ fn execute_function_paths(
             function.name(),
             function.contract_interface(),
             &arguments_path.values,
+            &path_assumptions,
         ) {
             paths.push(CFunctionPath::new(
                 CFunctionOutcome::RuntimeError(refusal),
@@ -1974,6 +1979,7 @@ pub(super) fn execute_c_function_call_paths(
         return execute_verified_function_applications(
             caller_state,
             &[CFunctionContractApplication {
+                pointer_result: None,
                 name: rule.function.name(),
                 interface_name: rule.function.name(),
                 interface: rule.function.contract_interface(),
@@ -2102,6 +2108,7 @@ pub(super) fn execute_c_function_call_paths(
             function.name(),
             function.contract_interface(),
             &arguments_path.values,
+            &path_assumptions,
         ) {
             paths.push(CFunctionPath::new(
                 CFunctionOutcome::RuntimeError(refusal),
@@ -2429,6 +2436,7 @@ fn execute_verified_function_rule(
     execute_verified_function_applications(
         caller_state,
         &[CFunctionContractApplication {
+            pointer_result: rule.pointer_result.as_deref(),
             name: rule.function.name(),
             interface_name: rule.function.name(),
             interface: rule.function.contract_interface(),
@@ -2472,6 +2480,7 @@ pub(super) fn suspend_verified_worker(
     let paths = execute_verified_function_applications_with_suspension(
         caller_state,
         &[CFunctionContractApplication {
+            pointer_result: rule.pointer_result.as_deref(),
             name: rule.function.name(),
             interface_name: rule.function.name(),
             interface: rule.function.contract_interface(),
@@ -2637,6 +2646,7 @@ fn instance_binder_shape(parameter: &CResourceSpec) -> Option<(&str, usize)> {
 /// proof evidence.
 #[derive(Clone, Copy)]
 struct CFunctionContractApplication<'a> {
+    pointer_result: Option<&'a PurePointerResult>,
     /// Concrete callee name used for diagnostics and call provenance.
     name: &'a str,
     /// Nominal interface name used to distinguish candidates and their source
@@ -3264,7 +3274,25 @@ fn execute_verified_function_applications_with_suspension(
             };
             result
         } else {
-            symbolic_contract_result(interface, result_identity)
+            // Only a modular call assumes the declared output guarantee.
+            // The function's own proof still checks its actual returned value.
+            let result = symbolic_contract_result(interface, result_identity)
+                .with_pointer_object_class(interface.return_object_type_guarantee.clone());
+            let arguments = argument_values
+                .iter()
+                .cloned()
+                .map(PureFunctionArgument::Value)
+                .collect::<Vec<_>>();
+            let (all_null, evidence) =
+                super::spec::pure_pointer_result_class(application.pointer_result, &arguments);
+            if let CValue::Pointer(mut pointer) = result {
+                if all_null {
+                    pointer.replace_pointer(Pointer::null());
+                }
+                CValue::Pointer(pointer.with_object_type_evidence(evidence))
+            } else {
+                result
+            }
         };
         let mut post_state = entry_state.clone().with_memory(memory);
         if interface.aggregate_return_mode() == CAggregateReturnMode::Construction
@@ -3425,6 +3453,7 @@ fn execute_verified_function_applications_with_suspension(
         // beside a consumed region). These views come only from the contract's inputs
         // and are computed once. Entry arguments use entry_contract_state.
         let mut produced_argument_state: Option<CState> = None;
+        let mut prepared_outputs = Vec::new();
         for resource in interface.resource_ensures() {
             let Some(identity) = resource.instance_identity() else {
                 continue;
@@ -3467,7 +3496,7 @@ fn execute_verified_function_applications_with_suspension(
             // This temporary clause evaluates C argument shape only. The
             // original spec's reference arguments are captured separately.
             let instance_resource = instance_resource.with_resource_arguments(Vec::new());
-            let argument_state = produced_argument_state.get_or_insert_with(|| {
+            if produced_argument_state.is_none() {
                 // Use the same decided-arm read authority as ordinary return
                 // clauses, visiting only this call's inputs, never its frame.
                 let mut views = instance_arm_views(
@@ -3484,14 +3513,22 @@ fn execute_verified_function_applications_with_suspension(
                         &effective_assumptions,
                     )
                 }));
-                if views.is_empty() {
-                    post_state.clone()
-                } else {
-                    post_state.clone().with_resource_context(
-                        post_state.resources().clone().unchecked_with_facts(views),
-                    )
-                }
-            });
+                let mut argument_state = post_state.clone().with_resource_context(
+                    post_state.resources().clone().unchecked_with_facts(views),
+                );
+                // A primitive output can make a named output's argument
+                // readable. Construct those facts once, before minting named
+                // outputs, and hand them to the return transition unchanged.
+                prepared_outputs = prepare_produced_argument_supply(
+                    &entry_contract_state,
+                    &mut argument_state,
+                    interface,
+                    &effective_assumptions,
+                    budget,
+                )?;
+                produced_argument_state = Some(argument_state);
+            }
+            let argument_state = produced_argument_state.as_ref().expect("initialized above");
             // Each argument keeps its declared snapshot. In particular, an
             // `old(...)` argument uses entry read authority, not the fresh
             // post-call memory used for current arguments.
@@ -3686,6 +3723,7 @@ fn execute_verified_function_applications_with_suspension(
             &output_resource_state,
             name,
             interface,
+            &prepared_outputs,
             &effective_assumptions,
             budget,
         )? {
@@ -5043,6 +5081,7 @@ fn prepare_verified_function_call<'a>(
         application.name,
         contract_interface,
         &arguments_path.values,
+        &path_assumptions,
     ) {
         return Ok(Err(CFunctionPath::new(
             CFunctionOutcome::RuntimeError(refusal),
@@ -5050,7 +5089,7 @@ fn prepare_verified_function_call<'a>(
             arguments_path.obligations,
         )));
     }
-    let Some((argument_values, argument_obligations)) = coerce_c_contract_arguments(
+    let Some((mut argument_values, argument_obligations)) = coerce_c_contract_arguments(
         contract_interface,
         &arguments_path.values,
         &arguments_path.obligations,
@@ -5076,6 +5115,20 @@ fn prepare_verified_function_call<'a>(
     ) {
         return Ok(Err(CFunctionPath::new(
             outcome,
+            arguments_path.facts,
+            argument_obligations,
+        )));
+    }
+    if let Some(refusal) = crate::kernel::object_types::check_requirements(
+        application.name,
+        contract_interface.parameters(),
+        contract_interface.object_type_requirements(),
+        &mut argument_values,
+        caller_state.memory(),
+        &path_assumptions,
+    ) {
+        return Ok(Err(CFunctionPath::new(
+            CFunctionOutcome::RuntimeError(refusal),
             arguments_path.facts,
             argument_obligations,
         )));
@@ -5140,6 +5193,26 @@ fn prepare_verified_function_call<'a>(
             argument_obligations,
         )));
     }
+    let mut checked_value_arguments = std::borrow::Cow::Borrowed(application_value_arguments);
+    if contract_interface
+        .object_type_requirements()
+        .get_max()
+        .is_some_and(|(index, _)| *index >= contract_interface.parameters().len())
+        && let Some(refusal) = crate::kernel::object_types::check_value_requirements(
+            application.name,
+            contract_interface,
+            checked_value_arguments.to_mut(),
+            caller_state.memory(),
+            &path_assumptions,
+        )
+    {
+        return Ok(Err(CFunctionPath::new(
+            CFunctionOutcome::RuntimeError(refusal),
+            arguments_path.facts,
+            argument_obligations,
+        )));
+    }
+    let application_value_arguments = checked_value_arguments.as_ref();
     for (parameter, value) in contract_interface
         .value_parameters()
         .iter()
@@ -6353,6 +6426,7 @@ pub(super) fn execute_c_function_contracts_paths(
     let applications = contracts
         .iter()
         .map(|contract| CFunctionContractApplication {
+            pointer_result: None,
             name: contract.callee_name(),
             interface_name: contract.name(),
             interface: contract.interface(),
@@ -6734,12 +6808,26 @@ fn function_contract_requirement_is_proven(
                 return Ok(false);
             };
             if let Some(rule) = environment.get_verified_function_rule(target) {
-                return function_refines_named_contract(contract, &rule.function, budget);
+                return function_refines_named_contract(
+                    contract,
+                    &rule.function,
+                    rule.function
+                        .contract_interface()
+                        .object_type_requirements(),
+                    budget,
+                );
             }
             let Some(rule) = environment.get_external_function_rule(target) else {
                 return Ok(false);
             };
-            function_refines_named_contract(contract, &rule.function, budget)
+            function_refines_named_contract(
+                contract,
+                &rule.function,
+                rule.function
+                    .contract_interface()
+                    .object_type_requirements(),
+                budget,
+            )
         }
         _ => Ok(false),
     }
@@ -11541,6 +11629,7 @@ pub(super) fn evaluate_function_return_resource_context(
         entry_state,
         post_state,
         count,
+        &[],
         assumptions,
         budget,
     )
@@ -11578,6 +11667,7 @@ fn evaluate_contract_return_resource_context(
     entry_state: &CState,
     post_state: &CState,
     count: usize,
+    prepared_outputs: &[Option<CResourceFact>],
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Result<ResourceContext, CRuntimeError>> {
@@ -11833,11 +11923,15 @@ fn evaluate_contract_return_resource_context(
     let mut entry_supply: Option<ReturnSupply> = None;
     let mut post_supply: Option<ReturnSupply> = None;
     type CanonicalOwners = BTreeMap<CResourceFact, VecDeque<CResourceFact>>;
-    let mut evaluate_returned = |resource: &CResourceSpec,
+    let mut evaluate_returned = |clause_index: usize,
+                                 resource: &CResourceSpec,
                                  returned: &[CResourceFact],
                                  canonical_by_checked: &mut CanonicalOwners,
                                  budget: &mut ExecutionBudget|
      -> ExecutionResult<Result<CResourceFact, CRuntimeError>> {
+        if let Some(Some(prepared)) = prepared_outputs.get(clause_index) {
+            return Ok(Ok(prepared.clone()));
+        }
         // Snapshot selection is carried by the normalized specification.
         // A named instance uses post fields while retaining entry identity.
         let (state, cached) = match resource.snapshot() {
@@ -11943,9 +12037,9 @@ fn evaluate_contract_return_resource_context(
     // A clause whose address loads a cell a later returned clause supplies
     // waits for it: clause order does not decide what a contract returns,
     // just as it does not decide what it requires.
-    let mut deferred: Vec<(&CResourceSpec, CRuntimeError)> = Vec::new();
+    let mut deferred: Vec<(usize, &CResourceSpec, CRuntimeError)> = Vec::new();
     let mut returned: Vec<CResourceFact> = Vec::new();
-    for resource in interface.resource_ensures().iter().take(count) {
+    for (clause_index, resource) in interface.resource_ensures().iter().take(count).enumerate() {
         if let Some(guard) = resource.guard() {
             match evaluate_guarded_contract_condition_with_loop_entry(
                 guard,
@@ -11973,10 +12067,16 @@ fn evaluate_contract_return_resource_context(
         let resource = if let Some(entry_borrow) = entry_borrow {
             entry_borrow
         } else {
-            match evaluate_returned(resource, &returned, &mut canonical_by_checked, budget)? {
+            match evaluate_returned(
+                clause_index,
+                resource,
+                &returned,
+                &mut canonical_by_checked,
+                budget,
+            )? {
                 Ok(resource) => resource,
                 Err(error) if resource_clause_failure_awaits_supply(&error) => {
-                    deferred.push((resource, error));
+                    deferred.push((clause_index, resource, error));
                     continue;
                 }
                 Err(error) => return Ok(Err(error)),
@@ -11998,8 +12098,14 @@ fn evaluate_contract_return_resource_context(
     while !deferred.is_empty() {
         let waited = deferred.len();
         let mut waiting = Vec::new();
-        for (resource, error) in std::mem::take(&mut deferred) {
-            match evaluate_returned(resource, &returned, &mut canonical_by_checked, budget)? {
+        for (clause_index, resource, error) in std::mem::take(&mut deferred) {
+            match evaluate_returned(
+                clause_index,
+                resource,
+                &returned,
+                &mut canonical_by_checked,
+                budget,
+            )? {
                 Ok(fact) => {
                     context = match context.try_compose_into_valid_context_delaying_normalization(
                         [fact.clone()],
@@ -12011,14 +12117,14 @@ fn evaluate_contract_return_resource_context(
                     returned.push(fact);
                 }
                 Err(retry_error) if resource_clause_failure_awaits_supply(&retry_error) => {
-                    waiting.push((resource, error));
+                    waiting.push((clause_index, resource, error));
                 }
                 Err(retry_error) => return Ok(Err(retry_error)),
             }
         }
         if waiting.len() == waited {
             // Nothing returned on this pass: no order supplies the cell.
-            let (_, error) = waiting.swap_remove(0);
+            let (_, _, error) = waiting.swap_remove(0);
             return Ok(Err(error));
         }
         deferred = waiting;
@@ -12108,6 +12214,7 @@ fn evaluate_function_return_resources(
         post_state,
         function.name(),
         function.contract_interface(),
+        &[],
         assumptions,
         budget,
     )
@@ -12124,6 +12231,7 @@ fn evaluate_contract_return_resources(
     post_state: &CState,
     interface_name: &str,
     interface: &CFunctionContractInterface,
+    prepared_outputs: &[Option<CResourceFact>],
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Result<ContractReturnResources, CRuntimeError>> {
@@ -12140,6 +12248,7 @@ fn evaluate_contract_return_resources(
                 entry_state,
                 post_state,
                 interface.resource_ensures().len(),
+                prepared_outputs,
                 assumptions,
                 budget,
             )
@@ -12960,14 +13069,24 @@ fn lower_selected_resource_body_clauses(
         let clause = rewrite.spec_proposition(clause).map_err(
             |_| "resource match Integer binding substitution exceeded its checked scope",
         )?;
-        let paths = crate::kernel::spec::lower_spec_proposition_at_state_with_algebraic_bindings(
-            evaluation,
-            &clause,
-            None,
-            &context,
-            algebraic_bindings,
-            budget,
-        )
+        let paths = if established_assumptions.is_none() {
+            crate::kernel::spec::lower_held_resource_body_clause(
+                evaluation,
+                &clause,
+                &context,
+                algebraic_bindings,
+                budget,
+            )
+        } else {
+            crate::kernel::spec::lower_spec_proposition_at_state_with_algebraic_bindings(
+                evaluation,
+                &clause,
+                None,
+                &context,
+                algebraic_bindings,
+                budget,
+            )
+        }
         .map_err(|limit| match limit {
             // A deadline is the budget, not a property of the body: say so
             // rather than suggest the fact cannot be evaluated at all.
@@ -13606,7 +13725,11 @@ fn rewrite_resource_instance_selecting_children_unspelled(
                 .get(index)
                 .ok_or("resource match Integer binding identity count mismatch")?;
             match (binding_type, binding_variable, value) {
-                (AlgebraicValueType::C(_), None, AlgebraicValue::C(value)) => {
+                (
+                    AlgebraicValueType::C(_) | AlgebraicValueType::ObjectPointer(_, _),
+                    None,
+                    AlgebraicValue::C(value),
+                ) => {
                     let ty = value.c_type();
                     // A pointer payload an exact equality identifies with a C
                     // pointer denotes that pointer, so the arm's cells are
@@ -14526,6 +14649,15 @@ pub(super) fn expand_composite_resource_fact_with_children(
     }
     if definition.parameters().len() != arguments.len() {
         return None;
+    }
+    // A possibly empty owned head supplies no body cell. Empty token
+    // populations have no body authority to expose, so their symbolic
+    // quantities still participate in ordinary transfer planning.
+    if !definition.contains().is_empty()
+        && !composite.is_view()
+        && !composite.has_proven_positive_quantity(assumptions)
+    {
+        return Some((context.clone(), Vec::new(), Vec::new()));
     }
     // A viewed composite carries its loan dependency on the folded
     // occurrence.  Expansion must transfer that exact bundle to only the
@@ -16021,8 +16153,35 @@ fn evaluate_resource_clauses_against_whole_section(
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Result<Vec<CCheckedResourceFact>, CRuntimeError>> {
-    let selected_load_values =
-        selected_instance_resource_load_values(state, definitions, assumptions);
+    evaluate_resource_clauses_in_section(
+        entry_state,
+        state,
+        resources,
+        definitions,
+        assumptions,
+        budget,
+        true,
+    )
+}
+
+/// The same indexed dependency queue also prepares the available part of a
+/// call's primitive outputs. Unresolved clauses then remain for the return
+/// transition, where fresh named outputs can supply their dependencies.
+#[allow(clippy::too_many_arguments)]
+fn evaluate_resource_clauses_in_section(
+    entry_state: &CState,
+    state: &CState,
+    resources: &[CResourceSpec],
+    definitions: &[CCompositeResourceDefinition],
+    assumptions: &PureFactContext,
+    budget: &mut ExecutionBudget,
+    require_complete: bool,
+) -> ExecutionResult<Result<Vec<CCheckedResourceFact>, CRuntimeError>> {
+    let selected_load_values = if definitions.is_empty() {
+        BTreeMap::new()
+    } else {
+        selected_instance_resource_load_values(state, definitions, assumptions)
+    };
     let mut evaluated: Vec<Option<CResourceFact>> = vec![None; resources.len()];
     let mut active = vec![true; resources.len()];
     let mut supplied: Vec<CResourceFact> = Vec::new();
@@ -16161,12 +16320,14 @@ fn evaluate_resource_clauses_against_whole_section(
             !awaits
         })
         .min_by_key(|index| resource_clause_position(resources, *index));
-    if let Some(index) = refused.or_else(|| {
-        unresolved
-            .iter()
-            .copied()
-            .min_by_key(|index| resource_clause_position(resources, *index))
-    }) {
+    if require_complete
+        && let Some(index) = refused.or_else(|| {
+            unresolved
+                .iter()
+                .copied()
+                .min_by_key(|index| resource_clause_position(resources, *index))
+        })
+    {
         let error = failures[index]
             .take()
             .unwrap_or_else(|| CRuntimeError::FunctionContract("unevaluated".to_string()));
@@ -16384,38 +16545,12 @@ pub(in crate::kernel) fn resource_clause_section_supply(
     // still readable through the folded clause, independently of that ledger.
     // Publish only views of those cells, never the authority or body ownership.
     for fact in supplied {
-        if !fact.is_view() && !fact.has_proven_positive_quantity(assumptions) {
-            continue;
-        }
-        let CResource::Composite { name, .. } = fact.resource() else {
-            continue;
-        };
-        let Ok(index) = definitions.binary_search_by(|definition| {
-            crate::instrumentation::record_deterministic_work(1);
-            definition.name().cmp(name)
-        }) else {
-            continue;
-        };
-        if let Some(loadable) = evaluate_composite_resource_loadable_propositions(
+        views.extend(resource_clause_composite_memory_views(
             fact,
-            &definitions[index..=index],
-            state.memory(),
+            definitions,
+            state,
             assumptions,
-        ) {
-            views.extend(loadable.into_iter().filter_map(|proposition| {
-                let Proposition::CMemoryLoadable { base, bytes, .. } = proposition else {
-                    return None;
-                };
-                Some(CResourceFact::view_memory(
-                    CMemoryRange::new_with_element_width(
-                        base,
-                        Bitvector32Term::Constant(0),
-                        bytes,
-                        1,
-                    ),
-                ))
-            }));
-        }
+        ));
     }
     // A field-bearing instance one of this section's own clauses supplied
     // publishes the cells its unconditional, unmatched body owns, the way a
@@ -17127,9 +17262,13 @@ fn symbolic_arm_binding_values(
             crate::instrumentation::record_deterministic_work(1);
             let variable = next_arm_refutation_variable();
             match value_type {
-                AlgebraicValueType::C(c_type) => Some(AlgebraicValue::C(
-                    algebraic_type.symbolic_c_field_value(&variant.name, index, *c_type, variable),
-                )),
+                AlgebraicValueType::C(c_type) | AlgebraicValueType::ObjectPointer(c_type, _) => {
+                    Some(AlgebraicValue::C(
+                        algebraic_type
+                            .symbolic_c_field_value(&variant.name, index, *c_type, variable)
+                            .with_pointer_object_class(value_type.object_class()),
+                    ))
+                }
                 AlgebraicValueType::Integer => None,
                 AlgebraicValueType::Algebraic { .. } | AlgebraicValueType::Parameter(_) => {
                     algebraic_type
@@ -17417,6 +17556,39 @@ fn spec_proposition_mentions_any_name(fact: &SpecProposition, names: &BTreeSet<S
     })
 }
 
+// Read-only cells declared by one positive folded composite. Both the
+// initial supply and a newly resolved dependent clause publish the same
+// projections, even when generic ownership expansion cannot open its head.
+fn resource_clause_composite_memory_views(
+    fact: &CResourceFact,
+    definitions: &[CCompositeResourceDefinition],
+    state: &CState,
+    assumptions: &PureFactContext,
+) -> Vec<CResourceFact> {
+    if !fact.is_view() && !fact.has_proven_positive_quantity(assumptions) {
+        return Vec::new();
+    }
+    let CResource::Composite { name, .. } = fact.resource() else {
+        return Vec::new();
+    };
+    let Ok(index) = definitions.binary_search_by(|definition| {
+        crate::instrumentation::record_deterministic_work(1);
+        definition.name().cmp(name)
+    }) else {
+        return Vec::new();
+    };
+    evaluate_composite_resource_memory_ranges(
+        fact,
+        &definitions[index..=index],
+        state.memory(),
+        assumptions,
+    )
+    .unwrap_or_default()
+    .into_iter()
+    .map(CResourceFact::view_memory)
+    .collect()
+}
+
 /// Incrementally exposes the memory cells beneath one newly evaluated
 /// composite clause.  The outer section supply already expanded all facts
 /// from the previous pass; walking only this fact and its nested children
@@ -17452,6 +17624,12 @@ fn resource_clause_supply_with_fact(
     }
     if !matches!(fact.resource(), CResource::Composite { .. }) {
         return (supply, added);
+    }
+    for view in resource_clause_composite_memory_views(&fact, definitions, state, assumptions) {
+        if !supply.facts().contains(&view) {
+            supply = supply.unchecked_with_fact(view.clone());
+            added.push(view);
+        }
     }
     let mut pending = VecDeque::from([fact]);
     let mut seen = BTreeSet::new();
@@ -19425,7 +19603,7 @@ fn function_outcome_from_body_changing_quantities(
             obligations,
         ));
     }
-    if let Some(refusal) = incompatible_pointer_return(&state, function, &value) {
+    if let Some(refusal) = incompatible_pointer_return(&state, function, &value, assumptions) {
         return Ok((CFunctionOutcome::RuntimeError(refusal), obligations));
     }
     let Some(value) = coerce_function_return_value(value, function, &mut obligations, assumptions)
@@ -19504,7 +19682,7 @@ fn function_outcome_from_body_with_resource_transfer(
             None,
         ));
     }
-    if let Some(refusal) = incompatible_pointer_return(&state, function, &value) {
+    if let Some(refusal) = incompatible_pointer_return(&state, function, &value, assumptions) {
         return Ok((CFunctionOutcome::RuntimeError(refusal), obligations, None));
     }
     let Some(value) = coerce_function_return_value(value, function, &mut obligations, assumptions)
@@ -20515,7 +20693,9 @@ pub(super) fn function_outcome_from_body(
                     obligations,
                 );
             }
-            if let Some(refusal) = incompatible_pointer_return(&state, function, &value) {
+            if let Some(refusal) =
+                incompatible_pointer_return(&state, function, &value, assumptions)
+            {
                 return (CFunctionOutcome::RuntimeError(refusal), obligations);
             }
             let Some(value) =

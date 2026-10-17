@@ -989,15 +989,36 @@ pub(super) fn validate_algebraic_type_uses(
             &definitions,
             &format!("function `{}`", definition.name()),
         )?;
-        if definition.return_type() == &ClickType::C(C0Type::Bool) {
+        if matches!(
+            definition.return_type(),
+            ClickType::C(_) | ClickType::Integer
+        ) {
             let click_variables = definition
                 .parameters()
                 .iter()
                 .map(|parameter| (parameter.name().to_string(), parameter.click_type().clone()))
-                .collect();
-            require_bool_value(
+                .collect::<BTreeMap<_, _>>();
+            // An ambient C name has no type in the pure parameter scope.
+            // Diagnose that forbidden dependency before reporting an unknown
+            // result carrier, retaining the existing purity diagnostic.
+            let mut referenced = BTreeSet::new();
+            crate::surface::lowering::collect_contract_expression_referenced_names(
                 definition.body(),
-                &click_variables,
+                &mut referenced,
+            );
+            if let Some(object) = referenced
+                .iter()
+                .find(|name| !click_variables.contains_key(*name))
+            {
+                return Err(ClickError::new(format!(
+                    "pure function `{}` reads the C object `{object}` by name; a pure function body may read only its parameters, so pass the object's value as an argument",
+                    definition.name()
+                )).with_kind(ClickErrorKind::Type));
+            }
+            require_scalar_return_value(
+                definition.body(),
+                definition.return_type(),
+                &mut ReturnTypes::new(click_variables),
                 click_functions,
                 &definitions,
                 &format!("function `{}`", definition.name()),
@@ -2449,34 +2470,157 @@ fn generic_click_types_compatible(actual: &ClickType, expected: &ClickType) -> b
     }
 }
 
-/// Refuse a `-> bool` body unless every value it can produce is a `bool`:
-/// `true`, `false`, a `bool` parameter or binding, a `bool` function's
-/// application, or a conditional, `match` or `let` whose results all are. A
-/// C integer is not read as a truth value here, so `-> bool { 1 }` and a
-/// conditional with an integer branch are type errors.
-fn require_bool_value(
-    expression: &ContractExpression,
-    variables: &BTreeMap<String, ClickType>,
+/// Lexical return-checking types. Bindings are updated and restored in place;
+/// branching and nested lets do not copy unrelated parameters or outer locals.
+struct ReturnTypes {
+    values: BTreeMap<String, ClickType>,
+    c_values: BTreeMap<String, C0Type>,
+    integers: BTreeSet<String>,
+}
+
+impl ReturnTypes {
+    fn new(values: BTreeMap<String, ClickType>) -> Self {
+        let c_values = values
+            .iter()
+            .filter_map(|(name, ty)| ty.c_type().map(|ty| (name.clone(), ty)))
+            .collect();
+        let integers = values
+            .iter()
+            .filter(|(_, ty)| **ty == ClickType::Integer)
+            .map(|(name, _)| name.clone())
+            .collect();
+        Self {
+            values,
+            c_values,
+            integers,
+        }
+    }
+
+    fn bind(&mut self, name: &str, value: Option<ClickType>) -> Option<ClickType> {
+        self.c_values.remove(name);
+        self.integers.remove(name);
+        if let Some(value) = value {
+            if let Some(ty) = value.c_type() {
+                self.c_values.insert(name.to_string(), ty);
+            }
+            if value == ClickType::Integer {
+                self.integers.insert(name.to_string());
+            }
+            self.values.insert(name.to_string(), value)
+        } else {
+            self.values.remove(name)
+        }
+    }
+}
+
+/// Check every return leaf against the declared scalar result type. Expected
+/// types flow through branches so null and Integer numerals stay contextual.
+/// Bool retains its strict rule, rather than accepting an implicit truth test.
+fn require_scalar_return_value(
+    mut expression: &ContractExpression,
+    expected: &ClickType,
+    types: &mut ReturnTypes,
     click_functions: &BTreeMap<String, ClickFunctionType>,
     definitions: &BTreeMap<&str, &AlgebraicTypeDefinition>,
     context: &str,
 ) -> Result<(), ClickError> {
+    let mut previous = Vec::new();
+    let checked = (|| {
+        while let ContractExpression::Let {
+            name,
+            click_type,
+            value,
+            body,
+        } = expression
+        {
+            crate::instrumentation::record_deterministic_work(1);
+            let inferred = infer_scoped_spec_value_type(
+                value,
+                &types.c_values,
+                &types.integers,
+                click_functions,
+                context,
+                click_type == &Some(ClickType::Integer),
+            )?;
+            let value_type = match inferred {
+                SpecValueType::Scalar(Some(ty)) => Some(ClickType::C(ty)),
+                SpecValueType::Integer => Some(ClickType::Integer),
+                SpecValueType::Algebraic(application) => Some(ClickType::Algebraic(application)),
+                _ => infer_generic_expression_type(
+                    value,
+                    &types.values,
+                    click_functions,
+                    definitions,
+                    context,
+                )?,
+            };
+            if let Some(declared) = click_type {
+                let null = declared.c_type().is_some_and(|ty| {
+                    crate::surface::lowering::argument_is_null_pointer_constant(value, ty)
+                });
+                let compatible = value_type.as_ref().is_some_and(|actual| {
+                    generic_click_types_compatible(actual, declared)
+                        && (declared != &ClickType::C(C0Type::Bool) || actual == declared)
+                });
+                if !null && !compatible {
+                    return Err(ClickError::new(format!(
+                        "let binding `{name}` expects {}, got {} in {context}",
+                        describe_click_type(declared),
+                        value_type
+                            .as_ref()
+                            .map(describe_click_type)
+                            .unwrap_or_else(|| "an unknown type".to_string())
+                    )));
+                }
+            }
+            previous.push((
+                name.as_str(),
+                types.bind(name, click_type.clone().or(value_type)),
+            ));
+            expression = body;
+        }
+        require_scalar_return_leaf(
+            expression,
+            expected,
+            types,
+            click_functions,
+            definitions,
+            context,
+        )
+    })();
+    for (name, value) in previous.into_iter().rev() {
+        types.bind(name, value);
+    }
+    checked
+}
+
+fn require_scalar_return_leaf(
+    expression: &ContractExpression,
+    expected: &ClickType,
+    types: &mut ReturnTypes,
+    click_functions: &BTreeMap<String, ClickFunctionType>,
+    definitions: &BTreeMap<&str, &AlgebraicTypeDefinition>,
+    context: &str,
+) -> Result<(), ClickError> {
+    crate::instrumentation::record_deterministic_work(1);
     match expression {
         ContractExpression::If {
             then_branch,
             else_branch,
             ..
         } => {
-            require_bool_value(
+            require_scalar_return_value(
                 then_branch,
-                variables,
+                expected,
+                types,
                 click_functions,
                 definitions,
                 context,
             )?;
-            require_bool_value(
+            require_scalar_return_value(
                 else_branch,
-                variables,
+                expected,
+                types,
                 click_functions,
                 definitions,
                 context,
@@ -2485,13 +2629,12 @@ fn require_bool_value(
         ContractExpression::AlgebraicMatch { scrutinee, arms } => {
             let scrutinee_type = infer_generic_expression_type(
                 scrutinee,
-                variables,
+                &types.values,
                 click_functions,
                 definitions,
                 context,
             )?;
             for arm in arms {
-                let mut arm_variables = variables.clone();
                 let fields = match &scrutinee_type {
                     Some(ClickType::Algebraic(application)) => definitions
                         .get(application.name.as_str())
@@ -2504,81 +2647,184 @@ fn require_bool_value(
                         }),
                     _ => None,
                 };
+                let mut previous = Vec::new();
                 for (index, binding) in arm.bindings.iter().enumerate() {
-                    match fields.and_then(|(definition, application, fields)| {
-                        Some((definition, application, fields.get(index)?))
-                    }) {
-                        Some((definition, application, field)) => {
-                            arm_variables.insert(
-                                binding.clone(),
-                                instantiate_field_type(definition, application, field)?,
-                            );
-                        }
-                        None => {
-                            arm_variables.remove(binding);
-                        }
-                    }
+                    let value = fields
+                        .and_then(|(definition, application, fields)| {
+                            Some((definition, application, fields.get(index)?))
+                        })
+                        .map(|(definition, application, field)| {
+                            instantiate_field_type(definition, application, field)
+                        })
+                        .transpose()?;
+                    previous.push((binding, types.bind(binding, value)));
                 }
-                require_bool_value(
+                let checked = require_scalar_return_value(
                     &arm.body,
-                    &arm_variables,
+                    expected,
+                    types,
                     click_functions,
                     definitions,
                     context,
-                )?;
+                );
+                for (name, value) in previous.into_iter().rev() {
+                    types.bind(name, value);
+                }
+                checked?;
             }
             Ok(())
         }
-        ContractExpression::Let {
-            name,
-            click_type,
-            value,
-            body,
-        } => {
-            let value_type = infer_generic_expression_type(
-                value,
-                variables,
+        ContractExpression::Add(left, right)
+        | ContractExpression::Subtract(left, right)
+        | ContractExpression::Multiply(left, right)
+            if expected == &ClickType::Integer =>
+        {
+            require_scalar_return_value(
+                left,
+                expected,
+                types,
                 click_functions,
                 definitions,
                 context,
             )?;
-            let mut body_variables = variables.clone();
-            match click_type.clone().or(value_type) {
-                Some(value_type) => {
-                    body_variables.insert(name.clone(), value_type);
-                }
-                None => {
-                    body_variables.remove(name);
-                }
-            }
-            require_bool_value(body, &body_variables, click_functions, definitions, context)
+            require_scalar_return_value(
+                right,
+                expected,
+                types,
+                click_functions,
+                definitions,
+                context,
+            )
         }
-        // A fold's result has its accumulator's type, so the initial value
-        // decides; the fold validator then checks the accumulator carrier.
-        ContractExpression::RangeFold { initial, .. } => {
-            require_bool_value(initial, variables, click_functions, definitions, context)
+        ContractExpression::Negate(inner) if expected == &ClickType::Integer => {
+            require_scalar_return_value(
+                inner,
+                expected,
+                types,
+                click_functions,
+                definitions,
+                context,
+            )
+        }
+        ContractExpression::RangeFold {
+            initial,
+            accumulator,
+            item,
+            body,
+            ..
+        } => {
+            let (accumulator_type, item_type) = infer_scoped_range_fold_bindings(
+                expression,
+                &types.c_values,
+                &types.integers,
+                click_functions,
+                context,
+                expected == &ClickType::Integer,
+            )?;
+            require_scalar_return_value(
+                initial,
+                &accumulator_type,
+                types,
+                click_functions,
+                definitions,
+                context,
+            )?;
+            let old_accumulator = types.bind(accumulator, Some(accumulator_type.clone()));
+            let old_item = types.bind(item, Some(item_type));
+            let checked = require_scalar_return_value(
+                body,
+                &accumulator_type,
+                types,
+                click_functions,
+                definitions,
+                context,
+            );
+            types.bind(item, old_item);
+            types.bind(accumulator, old_accumulator);
+            checked?;
+            if generic_click_types_compatible(&accumulator_type, expected)
+                && (expected != &ClickType::C(C0Type::Bool) || &accumulator_type == expected)
+            {
+                Ok(())
+            } else {
+                Err(ClickError::new(format!(
+                    "{context} returns {}, but its range fold has type {}",
+                    describe_click_type(expected),
+                    describe_click_type(&accumulator_type)
+                )))
+            }
+        }
+        value
+            if expected.c_type().is_some_and(|ty| {
+                crate::surface::lowering::argument_is_null_pointer_constant(value, ty)
+            }) =>
+        {
+            Ok(())
         }
         value => {
-            let actual = infer_generic_expression_type(
+            let actual = infer_scoped_spec_value_type(
                 value,
-                variables,
+                &types.c_values,
+                &types.integers,
                 click_functions,
-                definitions,
                 context,
+                expected == &ClickType::Integer,
             )?;
-            match actual {
-                Some(ClickType::C(C0Type::Bool)) => Ok(()),
-                Some(actual) => Err(ClickError::new(format!(
-                    "{context} returns bool, but its body can produce `{}` of type {}; \
-                     a `bool` body's values are `true`, `false`, comparisons and other `bool` values",
-                    crate::surface::diagnostics::describe_contract_expression(value),
-                    describe_click_type(&actual)
-                ))),
-                None => Err(ClickError::new(format!(
-                    "{context} returns bool, but its body can produce `{}`, whose type is not known to be bool",
-                    crate::surface::diagnostics::describe_contract_expression(value)
-                ))),
+            let compatible = match (&actual, expected) {
+                (SpecValueType::Integer, ClickType::Integer) => true,
+                (SpecValueType::Scalar(Some(actual)), ClickType::C(C0Type::Bool)) => {
+                    *actual == C0Type::Bool
+                }
+                (SpecValueType::Scalar(Some(actual)), ClickType::C(expected)) => {
+                    click_types_compatible(*actual, *expected)
+                }
+                _ => false,
+            };
+            if compatible {
+                return Ok(());
             }
+            // Generic applications can have a concrete instantiated result
+            // even though the C/Integer checker sees a type parameter.
+            let actual_type = if actual == SpecValueType::Scalar(None) {
+                infer_generic_expression_type(
+                    value,
+                    &types.values,
+                    click_functions,
+                    definitions,
+                    context,
+                )?
+            } else {
+                None
+            };
+            if let Some(actual_type) = &actual_type
+                && generic_click_types_compatible(actual_type, expected)
+                && (expected != &ClickType::C(C0Type::Bool) || actual_type == expected)
+            {
+                return Ok(());
+            }
+            let actual_description = actual_type
+                .as_ref()
+                .map(describe_click_type)
+                .unwrap_or_else(|| describe_spec_value_type(&actual));
+            if expected == &ClickType::C(C0Type::Bool) {
+                if actual == SpecValueType::Scalar(None) {
+                    return Err(ClickError::new(format!(
+                        "{context} returns bool, but its body can produce `{}`, whose type is not known to be bool",
+                        crate::surface::diagnostics::describe_contract_expression(value)
+                    )));
+                }
+                return Err(ClickError::new(format!(
+                    "{context} returns bool, but its body can produce `{}` of type {}; a `bool` body's values are `true`, `false`, comparisons and other `bool` values",
+                    crate::surface::diagnostics::describe_contract_expression(value),
+                    actual_description
+                )));
+            }
+            Err(ClickError::new(format!(
+                "{context} returns {}, but its body can produce `{}` of type {}",
+                describe_click_type(expected),
+                crate::surface::diagnostics::describe_contract_expression(value),
+                actual_description
+            )))
         }
     }
 }

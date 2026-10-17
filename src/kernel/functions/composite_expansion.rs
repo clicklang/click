@@ -509,12 +509,15 @@ pub(in crate::kernel) fn evaluate_composite_resource_relation_propositions(
     Some(propositions)
 }
 
-pub(in crate::kernel) fn evaluate_composite_resource_loadable_propositions(
+/// The held body's exact ranges, including their pointer designations and
+/// selected extents. Later clauses may read the cells declared before them
+/// in a scratch view context; the caller's composite remains folded.
+pub(in crate::kernel) fn evaluate_composite_resource_memory_ranges(
     composite: &CResourceFact,
     definitions: &[CCompositeResourceDefinition],
     memory: &CMemory,
     assumptions: &PureFactContext,
-) -> Option<Vec<Proposition>> {
+) -> Option<Vec<CMemoryRange>> {
     let CResource::Composite { name, arguments } = composite.resource() else {
         return None;
     };
@@ -553,27 +556,45 @@ pub(in crate::kernel) fn evaluate_composite_resource_loadable_propositions(
         return Some(Vec::new());
     }
 
-    let mut propositions = Vec::new();
-    for resource in definition.contains() {
-        let Some(segment) = resource.memory_segment() else {
-            continue;
-        };
-        let evaluated = match evaluate_function_resource_spec(
-            &state,
-            resource,
-            &evaluation_assumptions,
-            &mut budget,
-        )
-        .ok()?
-        {
+    let mut ranges = Vec::new();
+    let mut clauses = definition
+        .contains()
+        .iter()
+        .filter(|resource| resource.memory_segment().is_some())
+        .peekable();
+    while let Some(resource) = clauses.next() {
+        let outcome =
+            evaluate_function_resource_spec(&state, resource, &evaluation_assumptions, &mut budget);
+        let evaluated = match outcome.ok()? {
             Ok(resource) => resource,
             Err(_) => return None,
         };
         let range = evaluated.memory_range()?;
-        if range.element_width() != segment.element_width() {
-            return None;
+        ranges.push(range.clone());
+        // Later body cells may be addressed through this one. The held
+        // composite already supplies its declared cell; expose only a view
+        // in this scratch evaluation, leaving the actual head folded.
+        if clauses.peek().is_some() {
+            state.resources = state
+                .resources
+                .clone()
+                .unchecked_with_fact(CResourceFact::view_memory(range.clone()));
         }
-        propositions.extend(crate::kernel::admitted_memory_range_extent_facts(range));
+    }
+    Some(ranges)
+}
+
+pub(in crate::kernel) fn evaluate_composite_resource_loadable_propositions(
+    composite: &CResourceFact,
+    definitions: &[CCompositeResourceDefinition],
+    memory: &CMemory,
+    assumptions: &PureFactContext,
+) -> Option<Vec<Proposition>> {
+    let ranges =
+        evaluate_composite_resource_memory_ranges(composite, definitions, memory, assumptions)?;
+    let mut propositions = Vec::new();
+    for range in ranges {
+        propositions.extend(crate::kernel::admitted_memory_range_extent_facts(&range));
         propositions.push(range.loadable_fact(memory));
     }
     Some(propositions)

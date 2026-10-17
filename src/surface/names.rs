@@ -1,7 +1,9 @@
 //! Qualified Click library names: `click::list::append`, `list::append`
 //! when the module is in scope, and `append` after
-//! `import click::list::{append};`, resolved to the library declaration
-//! before parsing.
+//! `import click::list::{append};`. A library path is joined into the
+//! declaration it names before parsing, keeping its written spelling for a
+//! C or C++ declaration of the same spelling. A selectively imported bare
+//! name is resolved by the parser where it reads a Click reference.
 
 use super::parser::{Token, tokenizer};
 use super::*;
@@ -76,13 +78,14 @@ fn top_level_declaration_names(tokens: &[Token]) -> BTreeSet<String> {
                 depth = depth.saturating_sub(1);
             }
             Token::Ident(word) if depth == 0 => match word.as_str() {
-                "theorem" | "function" | "predicate" | "resource" | "enum" => {
+                "theorem" | "function" | "predicate" | "resource" | "enum" | "tactic" => {
                     if let Some(Token::Ident(name)) = tokens.get(index + 1) {
                         names.insert(name.clone());
                     }
                 }
                 // `extern <return type> name(...)`: the name precedes the
-                // parameter list.
+                // parameter list. A member such as `V::length` declares no
+                // bare name.
                 "extern" => {
                     let open = tokens[index..]
                         .iter()
@@ -90,6 +93,7 @@ fn top_level_declaration_names(tokens: &[Token]) -> BTreeSet<String> {
                         .map(|offset| index + offset);
                     if let Some(open) = open
                         && let Some(Token::Ident(name)) = tokens.get(open.wrapping_sub(1))
+                        && tokens.get(open.wrapping_sub(2)) != Some(&Token::ColonColon)
                     {
                         names.insert(name.clone());
                     }
@@ -115,8 +119,8 @@ const QUALIFIED_MODULES: &[&str] = &[
 
 /// The qualified identity a bare theorem citation names: a library theorem
 /// of a module that still accepts bare citations. A theorem of a qualified
-/// module is cited by its path or after a selective import, both rewritten
-/// before parsing.
+/// module is cited by its path, joined before parsing, or after a selective
+/// import, which the parser resolves.
 pub(in crate::surface) fn bare_theorem_citation(name: &str) -> Option<&'static String> {
     let identity = library_theorem_identities().get(name)?;
     let qualified = QUALIFIED_MODULES.iter().any(|module| {
@@ -209,7 +213,10 @@ fn module_identity(segments: &[&str]) -> Option<&'static str> {
         .find(|module| *module == identity)
 }
 
-/// Rewrites each qualified library name to the declaration it names.
+/// Rewrites each qualified library name to the declaration it names, and
+/// records how it was written ([`WrittenPath`]). A selectively imported bare
+/// name is left as written: only the parser knows whether it is read as a
+/// Click reference ([`FileSymbols::reference`]).
 ///
 /// `click::m::name` names `name` in module `click::m` and needs no import;
 /// its module joins the returned set, which the file adds to its library
@@ -223,6 +230,17 @@ pub(super) struct ResolvedLibraryTokens {
     pub(super) positions: Vec<SourcePosition>,
     pub(super) path_modules: BTreeSet<&'static str>,
     pub(super) symbols: FileSymbols,
+}
+
+/// A library path joined into one token, as it was written. A C or C++
+/// declaration name such as `list::append` reads this spelling: the join
+/// cannot tell a namespace member from a Click reference, but the parser can.
+/// A path through a library module the file does not import is joined as
+/// written and keeps the refusal a Click reference to it receives.
+#[derive(Clone, Debug)]
+pub(super) struct WrittenPath {
+    pub(super) written: String,
+    pub(super) refusal: Option<String>,
 }
 
 pub(super) fn resolve_library_paths(
@@ -241,9 +259,10 @@ pub(super) fn resolve_library_paths(
     }
     let names = library_declaration_names();
     let scope = FileSymbols::from_tokens(&tokens, &positions, file)?;
+    let mut scope = scope;
+    let mut written_paths = BTreeMap::new();
     let FileSymbols {
         in_scope,
-        selected,
         import_spans,
         own,
         ..
@@ -261,22 +280,26 @@ pub(super) fn resolve_library_paths(
             index = end;
             continue;
         }
-        if let Token::Ident(name) = &tokens[index]
-            && let Some(resolved) = selected.get(name)
-            && is_reference_position(&tokens, index)
-        {
-            resolved_tokens.push(Token::Ident(resolved.clone()));
-            resolved_positions.push(positions[index].clone());
-            index += 1;
-            continue;
-        }
-        if let Some((name, consumed, module)) =
+        if let Some((path, consumed, module)) =
             library_path_at(&tokens, index, names, in_scope, &positions)?
         {
             if let Some(module) = module
                 && Some(module) != *own
             {
                 path_modules.insert(module);
+            }
+            let written = (index..index + consumed)
+                .map(|token| match &tokens[token] {
+                    Token::Ident(segment) => segment.as_str(),
+                    _ => "::",
+                })
+                .collect::<String>();
+            let (name, refusal) = match path {
+                LibraryPath::Resolved(name) => (name, None),
+                LibraryPath::Unimported(refusal) => (written.clone(), Some(refusal)),
+            };
+            if name != written || refusal.is_some() {
+                written_paths.insert(positions[index].clone(), WrittenPath { written, refusal });
             }
             resolved_tokens.push(Token::Ident(name));
             resolved_positions.push(positions[index].clone());
@@ -287,28 +310,13 @@ pub(super) fn resolve_library_paths(
         resolved_positions.push(positions[index].clone());
         index += 1;
     }
+    scope.written_paths = written_paths;
     Ok(ResolvedLibraryTokens {
         tokens: resolved_tokens,
         positions: resolved_positions,
         path_modules,
         symbols: scope,
     })
-}
-
-/// Whether the identifier at `index` names a declaration rather than a
-/// variable: it is applied, `name(...)` or `name<T>(...)`, or it is the
-/// argument of `unfold(name)`.
-fn is_reference_position(tokens: &[Token], index: usize) -> bool {
-    tokens.get(index + 1) == Some(&Token::LParen)
-        || (tokens.get(index + 1) == Some(&Token::LessThan)
-            && matches!(tokens.get(index + 2), Some(Token::Ident(_)))
-            && matches!(
-                tokens.get(index + 3),
-                Some(Token::GreaterThan | Token::Comma | Token::LessThan)
-            ))
-        || (index >= 2
-            && tokens[index - 1] == Token::LParen
-            && tokens[index - 2] == Token::Ident("unfold".to_string()))
 }
 
 fn short_module_name(identity: &str) -> &str {
@@ -319,6 +327,15 @@ fn short_module_name(identity: &str) -> &str {
         .unwrap_or(identity)
 }
 
+/// What a qualified library name names.
+enum LibraryPath {
+    /// The declaration's resolved name.
+    Resolved(String),
+    /// A declaration of a module the file does not import, with the refusal
+    /// a Click reference to it receives.
+    Unimported(String),
+}
+
 /// The declaration a qualified library name at `start` names, the number of
 /// tokens it spans, and, for a full `click::` path, the module it brings.
 fn library_path_at(
@@ -327,7 +344,7 @@ fn library_path_at(
     names: &BTreeMap<&'static str, BTreeSet<String>>,
     in_scope: &BTreeMap<String, &'static str>,
     positions: &[SourcePosition],
-) -> Result<Option<(String, usize, Option<&'static str>)>, ClickError> {
+) -> Result<Option<(LibraryPath, usize, Option<&'static str>)>, ClickError> {
     let Some(Token::Ident(first)) = tokens.get(start) else {
         return Ok(None);
     };
@@ -361,7 +378,7 @@ fn library_path_at(
             ));
         }
         return Ok(Some((
-            resolved_name(identity, declaration),
+            LibraryPath::Resolved(resolved_name(identity, declaration)),
             consumed,
             Some(identity),
         )));
@@ -371,7 +388,11 @@ fn library_path_at(
     };
     if let Some(identity) = in_scope.get(*module) {
         if names[identity].contains(*declaration) {
-            return Ok(Some((resolved_name(identity, declaration), consumed, None)));
+            return Ok(Some((
+                LibraryPath::Resolved(resolved_name(identity, declaration)),
+                consumed,
+                None,
+            )));
         }
         return Ok(None);
     }
@@ -384,13 +405,13 @@ fn library_path_at(
         });
     if let Some(identity) = unimported {
         let path = crate::surface::library_module_path(identity);
-        return Err(path_error(
-            positions,
-            start,
-            format!(
+        return Ok(Some((
+            LibraryPath::Unimported(format!(
                 "`{module}::{declaration}` names Click library module `{path}`, which this file does not import; add `import {path};` or write `{path}::{declaration}`"
-            ),
-        ));
+            )),
+            consumed,
+            None,
+        )));
     }
     Ok(None)
 }
@@ -426,6 +447,8 @@ pub(super) struct FileSymbols {
     own: Option<&'static str>,
     local_theorems: BTreeSet<String>,
     explicit_paths: BTreeSet<String>,
+    /// The library paths joined into one token, by their first position.
+    written_paths: BTreeMap<SourcePosition, WrittenPath>,
 }
 
 impl FileSymbols {
@@ -531,7 +554,33 @@ impl FileSymbols {
                 top_level_theorem_names(tokens)
             },
             explicit_paths,
+            written_paths: BTreeMap::new(),
         })
+    }
+
+    /// The declaration a Click reference written `name` at `position` names:
+    /// a selectively imported name's library declaration, or the refusal of
+    /// a path through a module the file does not import.
+    pub(super) fn reference(
+        &self,
+        name: String,
+        position: &SourcePosition,
+    ) -> Result<String, String> {
+        if let Some(path) = self.written_paths.get(position) {
+            return match &path.refusal {
+                Some(refusal) => Err(refusal.clone()),
+                None => Ok(name),
+            };
+        }
+        Ok(self.selected.get(&name).cloned().unwrap_or(name))
+    }
+
+    /// How a library path joined at `position` was written, for a reader of
+    /// C and C++ declaration names.
+    pub(super) fn written_path(&self, position: &SourcePosition) -> Option<&str> {
+        self.written_paths
+            .get(position)
+            .map(|path| path.written.as_str())
     }
 
     pub(super) fn theorem_identity(&self, name: String) -> String {

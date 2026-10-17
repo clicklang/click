@@ -152,3 +152,21 @@ function sized_flip_node(tree: SizedTree) -> struct rb_node* {
         SizedTree::Node(node, parent, color, value, left, right) => node,
     }
 }
+
+function sized_flip_stopped(chain: SizedFlipChain) -> int32 {
+    match chain {
+        SizedFlipChain::Root => 1,
+        SizedFlipChain::Stop(ctx) => 1,
+        SizedFlipChain::LL(p, g, pv, gv, other, uncle, up) => 0,
+        SizedFlipChain::LR(p, g, pv, gv, other, uncle, up) => 0,
+        SizedFlipChain::RL(p, g, pv, gv, other, uncle, up) => 0,
+        SizedFlipChain::RR(p, g, pv, gv, other, uncle, up) => 0,
+    }
+}
+
+function sized_flip_color(tree: SizedTree) -> int32 {
+    match tree {
+        SizedTree::Empty => 1,
+        SizedTree::Node(node, parent, color, value, left, right) => color_bit(color),
+    }
+}
