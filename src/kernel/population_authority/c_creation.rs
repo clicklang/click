@@ -926,6 +926,16 @@ impl CreationEvents {
         {
             return Err(CreationRefusal::OpaqueImportConflict);
         }
+        if let Some(Bitvector32Term::Variable(variable)) = &entry_count {
+            crate::kernel::model_fields::register_population_entry_count(
+                *variable,
+                crate::kernel::model_fields::PopulationEntryCount {
+                    family: Arc::from(description.family()),
+                    anchor: pointer.pointer().clone(),
+                    wildcards: description.population_arity().map_or(0, |arity| arity - 1),
+                },
+            );
+        }
         let opaque_imports = self.0.opaque_imports.with_inserted(
             description.clone(),
             OpaqueImport {

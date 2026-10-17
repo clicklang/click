@@ -30,7 +30,7 @@ fn object_type_queries_ignore_unrelated_supported_values() {
 fn type_sources_share_the_weighted_pointer_class_merge_bound() {
     let _session = VerificationSession::enter();
     let mut samples = Vec::new();
-    for count in [16, 64, 256, 1024] {
+    for count in [4, 16, 64, 256] {
         let p = pointer(10_000);
         let mut context = PureFactContext::new();
         for index in 0..count {

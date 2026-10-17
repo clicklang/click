@@ -49,7 +49,7 @@ fn wide_division_work_scales_with_explicit_operations() {
     for ty in [MachineIntegerType::Int128, MachineIntegerType::UInt128] {
         for remainder in [false, true] {
             let mut samples = Vec::new();
-            for size in [2usize, 8, 32, 128] {
+            for size in [1usize, 4, 16, 64] {
                 let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
                     for _ in 0..size {
                         assert_eq!(

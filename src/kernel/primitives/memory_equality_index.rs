@@ -593,14 +593,41 @@ pub(super) struct MemoryAccessCandidates {
     entries: MemoryAccessEntries,
     query: Pointer,
     index: std::sync::Arc<PairedMemoryIndex>,
+    preferred_owner: Option<(ResourceEntryId, bool)>,
 }
 impl Iterator for MemoryAccessCandidates {
     type Item = ResourceEntryId;
     fn next(&mut self) -> Option<Self::Item> {
-        self.entries.next()
+        let Some((owner, pending)) = &mut self.preferred_owner else {
+            return self.entries.next();
+        };
+        if std::mem::take(pending) {
+            return Some(*owner);
+        }
+        let owner = *owner;
+        self.entries.find(|entry| *entry != owner)
     }
 }
 impl MemoryAccessCandidates {
+    // Affine interval hits are tentative. A view of a split prefix must not
+    // hide the sole owner of the query's selected base. Keep the supplier in
+    // this same graph checkpoint and let the ordinary consumer check it.
+    fn prefer_owned_supplier(mut self, read: bool) -> Self {
+        if read && !self.entries.exact() {
+            let direct = ResourceContext::sole_access_supplier(&self.index, &self.query, true);
+            let owner = direct.or_else(|| {
+                (!matches!(self.query.offset, PointerOffsetTerm::Add(_, _)))
+                    .then(|| self.index.graph.additive_address(&self.query))
+                    .flatten()
+                    .and_then(|query| {
+                        ResourceContext::sole_access_supplier(&self.index, &query, true)
+                    })
+            });
+            self.preferred_owner = owner.map(|entry| (entry, true));
+        }
+        self
+    }
+
     #[cfg(test)]
     fn exact(&self) -> bool {
         self.entries.exact()
@@ -1258,6 +1285,7 @@ impl ResourceContext {
                     entries,
                     query: pointer.clone(),
                     index: published,
+                    preferred_owner: None,
                 },
                 true,
             )
@@ -1918,11 +1946,15 @@ impl ResourceContext {
                 }
             });
         if let Some(entries) = direct_entries {
-            return Some(MemoryAccessCandidates {
-                entries,
-                query: pointer.clone(),
-                index: direct,
-            });
+            return Some(
+                MemoryAccessCandidates {
+                    entries,
+                    query: pointer.clone(),
+                    index: direct,
+                    preferred_owner: None,
+                }
+                .prefer_owned_supplier(!owned),
+            );
         }
         let index = self.pair_memory_equalities(assumptions, false, Some(pointer));
         // A reference result may capture an interior address without an
@@ -1951,14 +1983,23 @@ impl ResourceContext {
                 .and_then(|class| index.symbolic.sole_owned_start(class));
             let entry = starting_owner
                 .or_else(|| Self::sole_access_supplier(&index, selected_pointer, owned))
+                .or_else(|| {
+                    (!owned)
+                        .then(|| Self::sole_access_supplier(&index, selected_pointer, true))
+                        .flatten()
+                })
                 .or_else(|| Self::sole_affine_supplier(&index, selected_pointer, owned))?;
             MemoryAccessEntries::SingleSupplier(Some(entry))
         };
-        Some(MemoryAccessCandidates {
-            entries,
-            query: pointer.clone(),
-            index,
-        })
+        Some(
+            MemoryAccessCandidates {
+                entries,
+                query: pointer.clone(),
+                index,
+                preferred_owner: None,
+            }
+            .prefer_owned_supplier(!owned),
+        )
     }
 
     /// Owned whole-cell matches or complete affine interval candidates for
@@ -2002,6 +2043,7 @@ impl ResourceContext {
             entries,
             query: pointer.clone(),
             index,
+            preferred_owner: None,
         })
     }
 

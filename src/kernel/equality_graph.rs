@@ -1898,6 +1898,10 @@ impl EqualityGraph {
             ConditionTerm::PointerValueEqual(a, b) => {
                 self.register_logical_read_values(state, a.pointers().chain(b.pointers()));
                 state.register_blocks(a.pointers().chain(b.pointers()).map(|p| p.block.clone()));
+                // Late value queries need the current address-class bridges,
+                // just as raw pointer equality queries do.
+                state.register_pointer_address(a.pointer());
+                state.register_pointer_address(b.pointer());
                 state.close(Vec::new());
             }
             ConditionTerm::PointerEqual(a, b) => {

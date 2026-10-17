@@ -183,3 +183,62 @@ fn pointer_comparison_evidence_work_ignores_unrelated_facts() {
         assert!(pair[1].1 <= pair[0].1 * 2, "{costs:?}");
     }
 }
+
+#[test]
+fn full_pointer_alias_queries_do_not_walk_unrelated_conditions() {
+    let mut costs = Vec::new();
+    for size in [8_u64, 32, 128] {
+        let (goal, premises) = selected_cursor_chain();
+        let mut context = PureFactContext::new();
+        for index in [2, 1, 4, 0, 3] {
+            context = context.assume_proposition(premises[index].clone());
+        }
+        for index in 0..size {
+            context = context.assume_condition(
+                ConditionTerm::equal(
+                    Bitvector32Term::Variable(Variable(9_000_000 + index)),
+                    Bitvector32Term::Constant(index as u32),
+                ),
+                true,
+            );
+        }
+        let Proposition::ConditionIs(condition, value) = goal else {
+            unreachable!()
+        };
+        let (proved, work) = crate::instrumentation::measure_deterministic_work(|| {
+            context.equality_graph.knows_condition(&condition, value)
+        });
+        assert!(proved);
+        costs.push(work);
+    }
+    assert!(costs[0] > 0, "{costs:?}");
+    assert!(costs[2] <= costs[0] + 32, "{costs:?}");
+}
+
+#[test]
+fn cited_pointer_context_construction_scales_with_selected_conditions() {
+    let mut costs = Vec::new();
+    for size in [8_u64, 32, 128] {
+        let (goal, mut selected) = selected_cursor_chain();
+        for index in 0..size {
+            selected.push(Proposition::ConditionIs(
+                ConditionTerm::equal(
+                    Bitvector32Term::Variable(Variable(9_100_000 + index)),
+                    Bitvector32Term::Constant(index as u32),
+                ),
+                true,
+            ));
+        }
+        let facts = crate::kernel::proof::ProofFacts::from_ordered(&selected);
+        let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
+            crate::kernel::proof::fact_reasoning::normalize_using_conditions(
+                &goal, &selected, &facts,
+            )
+        });
+        result.expect("selected pointer context");
+        costs.push(work);
+    }
+    for pair in costs.windows(2) {
+        assert!(pair[1] <= pair[0] * 5 + 64, "{costs:?}");
+    }
+}
