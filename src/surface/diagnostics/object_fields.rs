@@ -34,6 +34,9 @@ struct ObjectField {
 struct ObjectFields {
     globals: std::collections::HashMap<String, (String, u32, Vec<ObjectField>)>,
     locals: std::collections::HashMap<String, Option<(String, u32, Vec<ObjectField>)>>,
+    /// The function's struct layouts by name, for the struct a pointer field
+    /// points at.
+    structs: syntax::DeclarationMap<syntax::C0StructLayout>,
 }
 
 thread_local! {
@@ -44,7 +47,10 @@ thread_local! {
 /// Starts naming the struct-typed globals `function` can reach and the
 /// struct-typed locals it declares.
 pub(crate) fn enter_ambient_object_fields(function: &syntax::C0Function) {
-    let mut objects = ObjectFields::default();
+    let mut objects = ObjectFields {
+        structs: function.structs().clone(),
+        ..ObjectFields::default()
+    };
     for aggregate in function.global_aggregates().values() {
         let block = if PointerBlock::is_global_name(aggregate.kernel_name()) {
             aggregate.kernel_name().to_string()
@@ -234,6 +240,15 @@ fn collect_union_fields(
 /// The field spelling of the `width` bytes at `offset` into the struct
 /// object in `block`, when exactly one scalar field occupies exactly those
 /// bytes.
+/// The layout of the struct named `name` in the function being described.
+pub(super) fn ambient_struct_layout(name: &str) -> Option<syntax::C0StructLayout> {
+    AMBIENT_OBJECT_FIELDS.with(|slot| {
+        slot.borrow()
+            .as_ref()
+            .and_then(|objects| objects.structs.get(name).cloned())
+    })
+}
+
 pub(super) fn object_field_spelling(block: &str, offset: u32, width: u32) -> Option<String> {
     AMBIENT_OBJECT_FIELDS.with(|slot| {
         let slot = slot.borrow();
