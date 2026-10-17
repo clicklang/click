@@ -2946,15 +2946,19 @@ theorem false_guard(x: int32) {
             .proof_tactics()
             .expect("expected false-guard certificate")
             .as_slice(),
-        [
-            ProofTactic::Have(ProofHave {
-                proof: SourceProof::Script(body),
-                ..
-            }),
-            ProofTactic::Intro,
-            ProofTactic::Contradiction(_)
-        ] if matches!(body.as_slice(), [ProofTactic::Normalize])
+        [ProofTactic::Intro, ProofTactic::Contradiction(_)]
     ));
+    verify_click_theorems(
+        r#"
+theorem false_guard(x: int32) {
+    ensures 1 == 2 implies x == 0 by {
+        intro();
+        contradiction(0u32 == 1u32);
+    }
+}
+"#,
+    )
+    .expect("the false guard's shorter certificate should verify independently");
 }
 
 #[test]

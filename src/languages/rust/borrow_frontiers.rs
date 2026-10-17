@@ -1190,10 +1190,9 @@ mod tests {
         let body = functions[0].to_kernel_function().body().clone();
         fn fragment(body: &CStatement, remove_declarations: bool) -> CStatement {
             match body {
-                CStatement::Seq(a, b) => c_seq(
-                    fragment(a, remove_declarations),
-                    fragment(b, remove_declarations),
-                ),
+                CStatement::Seq(statements) => CStatement::Seq(statements.map(|statement| {
+                    std::sync::Arc::new(fragment(statement, remove_declarations))
+                })),
                 CStatement::Return(_) => c_skip(),
                 CStatement::Declare { .. } if remove_declarations => c_skip(),
                 other => other.clone(),

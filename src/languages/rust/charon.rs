@@ -2357,10 +2357,13 @@ mod tests {
         fn shape(s: &crate::kernel::CStatement) -> (usize, usize) {
             use crate::kernel::CStatement;
             match s {
-                CStatement::Seq(a, b) => {
-                    let a = shape(a);
-                    let b = shape(b);
-                    (1 + a.0 + b.0, a.1 + b.1)
+                CStatement::Seq(statements) => {
+                    let mut total = (statements.len() - 1, 0);
+                    for statement in statements.iter() {
+                        let part = shape(statement);
+                        total = (total.0 + part.0, total.1 + part.1);
+                    }
+                    total
                 }
                 CStatement::DeclareAggregate { layout, .. } => (1, layout.fields().len()),
                 CStatement::If {
@@ -3093,9 +3096,10 @@ mod tests {
         fn visit(s: &crate::kernel::CStatement, depth: usize, loops: &mut Vec<usize>) {
             use crate::kernel::CStatement as C;
             match s {
-                C::Seq(a, b) => {
-                    visit(a, depth, loops);
-                    visit(b, depth, loops);
+                C::Seq(statements) => {
+                    for statement in statements.iter() {
+                        visit(statement, depth, loops);
+                    }
                 }
                 C::While { body, .. } => {
                     loops.push(depth);
@@ -3776,9 +3780,10 @@ mod tests {
         fn visit(statement: &crate::kernel::CStatement, guards: &mut Vec<String>) {
             use crate::kernel::CStatement as C;
             match statement {
-                C::Seq(a, b) => {
-                    visit(a, guards);
-                    visit(b, guards);
+                C::Seq(statements) => {
+                    for statement in statements.iter() {
+                        visit(statement, guards);
+                    }
                 }
                 C::While {
                     condition, body, ..

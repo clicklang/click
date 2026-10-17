@@ -827,14 +827,17 @@ fn sequential_loop_clauses_cost_the_same_at_every_position() {
 /// hand to their fact sets' reservations beyond already reserved
 /// snapshots; the whole-function annotation walks it makes
 /// (`LoopAnnotation`); the structural clauses it reads out of the function
-/// block's clause list (`StructuralClauses`); and the statements its loop
-/// lookups visit to find the loop in the C and kernel bodies. Each once grew
+/// block's clause list (`StructuralClauses`); the statements its loop
+/// lookups visit to find the loop in the C and kernel bodies; and the
+/// statements putting its lowered loop in place rebuilds
+/// (`KernelLoopPaths`). Each once grew
 /// with the loops before: the list was a flat copy indexed afresh at every
 /// loop, every rule and loop head collected the whole path context's
 /// variables, every fact re-collected its snapshots' variables, every loop
 /// re-annotated the whole function, binding a clause rebuilt the block's
 /// clause vector and its label, scope and region checks walked it, and each
-/// lookup walked the body from its first statement.
+/// lookup walked the body from its first statement, and the body's
+/// right-nested pair tree put every statement before the loop on its path.
 ///
 /// Across the twelve-loop run, the last clause also costs what the second
 /// does. A drift of a unit or two per earlier loop is below the band between
@@ -873,6 +876,10 @@ fn sequential_loops_build_the_same_context_entries_each() {
                 "loop lookup statements",
                 crate::surface::lowering::loop_lookup_nodes(),
             ),
+            (
+                "loop replacement statements",
+                crate::surface::lowering::kernel_loop_replacement_steps(),
+            ),
         ]
     };
     let runs = [3, 6, 12].map(|n| {
@@ -880,13 +887,13 @@ fn sequential_loops_build_the_same_context_entries_each() {
         let run = run(loops, n);
         let after = counts();
         (
-            std::array::from_fn::<_, 9, _>(|index| {
+            std::array::from_fn::<_, 10, _>(|index| {
                 (after[index].0, after[index].1 - before[index].1)
             }),
             run.loops,
         )
     });
-    for index in 0..9 {
+    for index in 0..10 {
         let name = runs[0].0[index].0;
         let entries = runs.each_ref().map(|(counts, _)| counts[index].1);
         let per_loop = [(entries[1] - entries[0]) / 3, (entries[2] - entries[1]) / 6];

@@ -12,7 +12,7 @@ fn checked_callee_summary_reuse_scales_with_input_not_product() {
     for size in [16, 64, 256, 1024] {
         let mut body = CStatement::Skip;
         for index in 0..size {
-            body = CStatement::Seq(
+            body = CStatement::seq(
                 Arc::new(body),
                 Arc::new(crate::kernel::c_call(format!("callee_{index}"), vec![])),
             );

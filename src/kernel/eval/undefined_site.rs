@@ -98,7 +98,7 @@ fn statement_expressions<'a>(
         }
         CStatement::Update { operand, .. } => expressions.push((operand, false)),
         CStatement::ForStep { step, .. } => statement_expressions(step, expressions),
-        CStatement::Seq(first, _) => statement_expressions(first, expressions),
+        CStatement::Seq(statements) => statement_expressions(statements.first(), expressions),
         CStatement::Skip
         | CStatement::EndScalarReference(_)
         | CStatement::ScalarReferenceScope(_)
