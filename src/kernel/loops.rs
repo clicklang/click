@@ -7795,7 +7795,12 @@ fn evaluate_loop_effect_segment_value_capturing(
     budget: &mut ExecutionBudget,
     diagnostic: Option<&mut Option<CRuntimeError>>,
 ) -> ExecutionResult<Result<(CValue, ExecutionFacts), ValueRefusal>> {
-    let paths = evaluate_c_expression_paths(state, expression, assumptions, budget)?;
+    // A contract's operand, such as a resource argument, is a specification:
+    // its reads are not C accesses.
+    let paths = {
+        let _specification = crate::kernel::eval::SpecificationAccessScope::enter();
+        evaluate_c_expression_paths(state, expression, assumptions, budget)?
+    };
     // An endpoint the facts do not keep defined splits into its defined value
     // and the undefined behavior beside it: name that behavior, which a
     // requirement can rule out, rather than the path count.

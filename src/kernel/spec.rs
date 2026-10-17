@@ -274,6 +274,7 @@ pub(in crate::kernel) fn evaluate_resource_child_argument_paths(
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Vec<CExpressionPath>> {
     if let SpecExpression::CExpression(expression) = expression {
+        let _specification = crate::kernel::eval::SpecificationAccessScope::enter();
         return evaluate_c_expression_paths(state, expression, assumptions, budget);
     }
     let rewritten;

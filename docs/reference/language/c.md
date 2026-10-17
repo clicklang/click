@@ -2108,6 +2108,14 @@ declared return type
 `mdtests/returning_a_struct_as_another_struct_is_refused.md`,
 `mdtests/a_returned_pointer_designates_its_declared_type.md`,
 `mdtests/calls_and_returns_of_matching_pointer_types_are_allowed.md`).
+The check applies to the C program's accesses only. A specification reads
+memory as a value, so a contract's reads, resource arguments included, are
+not checked: a contract may state a Linux augmented rbtree node's cached
+count as `((struct sized_node*)(void*)old)->size` for a `struct rb_node*`
+parameter, while a C read of the same object through an unrelated struct is
+still refused
+(`mdtests/a_resource_argument_reads_the_containing_struct_as_a_value.md`,
+`mdtests/a_resource_argument_does_not_exempt_the_c_read_beside_it.md`).
 The check does not yet cover globals or heap objects; the effective-type
 design (`design/effective-types.md`) stages them next.
 
