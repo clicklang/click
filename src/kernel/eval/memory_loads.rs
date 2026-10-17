@@ -1642,6 +1642,12 @@ fn symbolic_index_run_load(
 }
 
 fn complete_loaded_word(value: CValue, memory: &CMemory, address: &Pointer) -> CValue {
+    if !WordRepresentationScope::keeps_representation() {
+        return match value {
+            CValue::PointerInteger(record) => *record.numeric,
+            value => value,
+        };
+    }
     if !matches!(value, CValue::Int64(_) | CValue::UInt64(_)) {
         return value;
     }
@@ -1678,9 +1684,10 @@ fn canonicalized_symbolic_load_value_with_identity(
     if let Some(value @ CValue::PointerInteger(_)) = memory.known_value(&address)
         && value_type.accepts(&value)
     {
-        return Some(value);
+        return Some(complete_loaded_word(value, memory, &address));
     }
-    if matches!(value_type, CType::Int64 | CType::UInt64)
+    if WordRepresentationScope::keeps_representation()
+        && matches!(value_type, CType::Int64 | CType::UInt64)
         && let Some(value @ CValue::PointerInteger(_)) =
             crate::kernel::memory_provenance::complete_pointer_carrier_read_value(
                 &Pointer::loaded_value(&crate::kernel::intern_c_memory_ref(memory), &address),
@@ -1688,7 +1695,7 @@ fn canonicalized_symbolic_load_value_with_identity(
             )
         && value_type.accepts(&value)
     {
-        return Some(value);
+        return Some(complete_loaded_word(value, memory, &address));
     }
     // Canonical address selection can expose a materialized pointer cell that
     // the original spelling did not name. Reuse its complete stored value;
@@ -5246,6 +5253,51 @@ mod tests {
         );
         let partial = memory.store(field.offset_by_bytes(4), CValue::UInt32(0u32.into()));
         assert!(!context.pointer_designations_match(&read(&partial).0, &stored));
+    }
+
+    #[test]
+    fn a_pointer_cast_restores_complete_word_reads_inside_a_numeric_observation() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let field = Pointer {
+            block: "global:scoped-word".into(),
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        let target = Pointer::symbolic(Variable(210_199));
+        let pointer = CPointerValue::new(target.clone(), CType::Int32Pointer)
+            .with_extent(Some(SubobjectExtent::constant(target.clone(), 4)));
+        let stored = CValue::PointerInteger(PointerIntegerValue {
+            numeric: Box::new(CValue::UInt64(Bitvector32Term::pointer_address(target))),
+            pointer: Box::new(pointer.clone()),
+            kind: PointerIntegerKind::Exact,
+        });
+        let resources = ResourceContext::new().unchecked_with_fact(CResourceFact::own_memory(
+            CMemoryRange::new_with_element_width(field.clone(), 0u32.into(), 1u32.into(), 8),
+        ));
+        let state = CState::new()
+            .with_memory(CMemory::new().store(field.clone(), stored))
+            .with_resource_context(resources)
+            .with_local("word", CValue::typed_pointer(field, CType::UInt64Pointer));
+        let context = PureFactContext::new();
+        {
+            let _numeric = WordRepresentationScope::enter(false);
+            let paths = evaluate_c_expression_paths(
+                &state,
+                &crate::kernel::api::c_cast(
+                    CExpression::Load(Box::new(crate::kernel::api::c_variable("word"))),
+                    CType::Int32Pointer,
+                ),
+                &context,
+                &mut ExecutionBudget::default(),
+            )
+            .unwrap();
+            assert_eq!(paths.len(), 1);
+            assert_eq!(
+                paths[0].outcome,
+                CExpressionOutcome::Value(CValue::Pointer(pointer))
+            );
+            assert!(!WordRepresentationScope::keeps_representation());
+        }
+        assert!(WordRepresentationScope::keeps_representation());
     }
 
     #[test]

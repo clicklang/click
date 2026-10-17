@@ -319,3 +319,127 @@ fn arm_refutation_stops_before_unneeded_memory_facts() {
         assert!(work <= 128, "{size} unused clauses: {work}");
     }
 }
+
+#[test]
+fn numeric_resource_facts_do_not_repeat_the_canonical_read_walk() {
+    let mut costs = Vec::new();
+    for size in [2u64, 4, 8, 16] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let input = |name| Pointer {
+            block: PointerBlock::ExternalArgument,
+            offset: PointerOffsetTerm::scale_int32(Bitvector32Term::Variable(Variable(name)), 4),
+        };
+        let word = input(719_100);
+        let context = PureFactContext::new()
+            .allow_symbolic_contract_loads()
+            .keep_spec_loads_symbolic()
+            .prefer_symbolic_external_loads();
+        let definition = CCompositeResourceDefinition::new(
+            "unrelated_word",
+            vec![c_parameter("slot", CType::UInt64Pointer)],
+            None,
+            false,
+            vec![CResourceSpec::owned_memory(CMemorySegment {
+                base: c_variable("slot"),
+                start: c_int32_literal(0),
+                end: c_int32_literal(1),
+                element_width: 8,
+                guard: None,
+            })],
+            vec![],
+        );
+        let residual = ResourceContext::new().unchecked_with_facts((0..size).map(|i| {
+            CResourceFact::own(CResource::Composite {
+                name: "unrelated_word".into(),
+                arguments: vec![
+                    CValue::typed_pointer(input(720_000 + i), CType::UInt64Pointer).into(),
+                ]
+                .into(),
+            })
+        }));
+        let kept = crate::kernel::primitives::CallKeptOwnership::new(
+            residual,
+            crate::kernel::primitives::CallKeptRanges::new(
+                ResourceContext::new(),
+                vec![],
+                Some(std::sync::Arc::new(vec![definition])),
+            ),
+            &context,
+        );
+        let memory = CMemory::new().with_call_memory_havoc(
+            Variable(719_101),
+            &[CMemoryRange::new_with_element_width(
+                input(719_102),
+                0u32.into(),
+                1u32.into(),
+                8,
+            )],
+            &context,
+            Some(&kept),
+        );
+        // Each query uses another unconstrained address in the same block,
+        // so the canonical walk cannot be warmed by the preceding measurement.
+        let (_, canonical_work) = crate::instrumentation::measure_deterministic_work(|| {
+            crate::kernel::memory_provenance::canonicalize_atomic_loads(
+                &Bitvector32Term::MemoryLoad(
+                    crate::kernel::intern_c_memory_ref(&memory),
+                    Box::new(input(719_104)),
+                    LoadKind::Bits64,
+                ),
+            )
+        });
+        let state = CState::new()
+            .with_memory(memory)
+            .with_local("p", CValue::typed_pointer(word, CType::UInt64Pointer));
+        let arm = CResourceMatchArm {
+            variant: "Held".into(),
+            bindings: vec![],
+            binding_types: vec![],
+            binding_variables: vec![],
+            children: vec![],
+            contains: vec![CResourceSpec::owned_memory(CMemorySegment {
+                base: c_variable("p"),
+                start: c_int32_literal(0),
+                end: c_int32_literal(1),
+                element_width: 8,
+                guard: None,
+            })],
+            facts: vec![SpecProposition::Comparison {
+                left: SpecExpression::CExpression(CExpression::Load(Box::new(c_variable("p")))),
+                operator: CComparisonOperator::Equal,
+                right: SpecExpression::CExpression(CExpression::Value(CValue::UInt64(
+                    Bitvector32Term::UInt64Constant(0),
+                ))),
+            }],
+        };
+        let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
+            arm_premises_at_symbolic_bindings(&state, &arm, &[], &context, &context)
+        });
+        assert!(result.is_some());
+        let publishing_state = state.clone().with_local(
+            "p",
+            CValue::typed_pointer(input(719_103), CType::UInt64Pointer),
+        );
+        let (published, publication_work) =
+            crate::instrumentation::measure_deterministic_work(|| {
+                lower_selected_resource_body_clauses(
+                    &publishing_state,
+                    &arm.facts,
+                    Some("Held"),
+                    &BTreeMap::new(),
+                    &BTreeMap::new(),
+                    &context,
+                    None,
+                    &mut ExecutionBudget::default(),
+                )
+            });
+        assert!(published.is_ok(), "{published:?}");
+        costs.push([canonical_work, work, publication_work]);
+    }
+    assert!(
+        costs.iter().all(|[canonical, hypothetical, published]| {
+            *hypothetical <= canonical + 256 && *published <= canonical + 256
+        }),
+        "[canonical, hypothetical, published]: {costs:?}"
+    );
+}

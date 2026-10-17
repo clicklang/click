@@ -509,6 +509,31 @@ impl Drop for SpecificationReadScope {
     }
 }
 
+thread_local! {
+    static KEEP_WORD_REPRESENTATION: std::cell::Cell<bool> = const { std::cell::Cell::new(true) };
+}
+
+/// Publishing resource facts can observe a word numerically without recovering
+/// a discarded carrier. Value checks retain whole values; an explicit pointer
+/// cast restores that demand inside a numeric observation.
+pub(in crate::kernel) struct WordRepresentationScope(bool);
+
+impl WordRepresentationScope {
+    pub(in crate::kernel) fn enter(keep: bool) -> Self {
+        Self(KEEP_WORD_REPRESENTATION.with(|value| value.replace(keep)))
+    }
+
+    pub(in crate::kernel) fn keeps_representation() -> bool {
+        KEEP_WORD_REPRESENTATION.with(std::cell::Cell::get)
+    }
+}
+
+impl Drop for WordRepresentationScope {
+    fn drop(&mut self) {
+        KEEP_WORD_REPRESENTATION.with(|value| value.set(self.0));
+    }
+}
+
 /// Files the type range of a narrow integer value where the value is
 /// produced, as certified path facts. The facts are the ones
 /// [`crate::kernel::c_narrow_integer_range_facts`] states, so a parameter's
@@ -1805,6 +1830,9 @@ fn evaluate_c_cast_paths(
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Vec<CExpressionPath>> {
+    let _word_representation = target_type
+        .is_pointer()
+        .then(|| WordRepresentationScope::enter(true));
     let mut paths = Vec::new();
     for path in evaluate_c_expression_paths(state, expression, assumptions, budget)? {
         let CExpressionPath {

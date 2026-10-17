@@ -12911,6 +12911,10 @@ fn lower_selected_resource_body_clauses(
     let mut records = Vec::with_capacity(source.len());
     let mut retained_conditions = Vec::new();
     for (ordinal, clause) in source.iter().enumerate() {
+        // Unfold publishes numeric observations; fold checks existing values.
+        // A pointer cast restores complete-word demand in either case.
+        let _word_observation =
+            crate::kernel::eval::WordRepresentationScope::enter(established_assumptions.is_some());
         crate::instrumentation::record_deterministic_work(1);
         let clause = rewrite.spec_proposition(clause).map_err(
             |_| "resource match Integer binding substitution exceeded its checked scope",
@@ -17149,6 +17153,9 @@ fn arm_premises_at_symbolic_bindings(
             ));
     let mut arm_assumptions = assumptions.clone();
     for fact in &arm.facts {
+        // These facts assume a hypothetical constructor. Numeric clauses
+        // observe bits only; explicit pointer casts still recover whole values.
+        let _word_observation = crate::kernel::eval::WordRepresentationScope::enter(false);
         crate::instrumentation::record_deterministic_work(1);
         let Ok(paths) =
             crate::kernel::spec::lower_spec_proposition_at_state_with_algebraic_bindings(

@@ -144,6 +144,15 @@ cast names that value independently of its own assumed relationship; execution
 may then adopt bounds from full-pointer premises and choose numeric coordinates
 from ordinary address equations. These are separate operations.
 
+Resource-body publication and hypothetical arm checks request numeric word
+observations before loading. `WordRepresentationScope` avoids recovering a
+carrier that those observations discard. Explicit pointer casts restore whole
+value demand, including casts nested inside a numeric observation. Fold checks
+and ordinary proof expressions retain whole reads: their current numeric
+framing can depend on the stored producer's value, as the general erase
+store/call/reload control demonstrates. Do not broaden the numeric demand to
+those checks without preserving that identity.
+
 The latest scoped full-pointer premise retains its predecessor equality graph.
 Withdrawal uses exact persistent fact-map roots to restore that predecessor
 without rebuilding unrelated classes. Interleaved withdrawals continue through

@@ -5260,6 +5260,8 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_in(
             | SpecExpression::BitwiseNot(_)
     );
     let keep_representation = budget.pointer_cast_operand;
+    let _word_representation =
+        keep_representation.then(|| crate::kernel::eval::WordRepresentationScope::enter(true));
     let paths = evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
         scope,
         expression,
