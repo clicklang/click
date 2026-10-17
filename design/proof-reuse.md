@@ -286,13 +286,23 @@ example does not verify on master today.
 
 ### R4. Automatic opening and closing of resources
 
-When a step reads or writes a field covered by a folded recursive resource
-whose model is known to be one constructor, `step()` unfolds that layer. At
-function exit, loop back edges and arm joins, Click refolds layers whose
-fields still match the definition. This follows VeriFast's auto-open/close
-and Viper's fold heuristics. It must stay bounded: one layer per access, and
-no search over which resource to open. Explicit `fold`/`unfold` remain for
-everything else. This targets about 100 lines per arm.
+`step()` keeps its meaning: it executes one C operation and never opens or
+closes a resource on its own (maintainer, 2026-10-17). Opening and closing
+belong to `auto`, the smart closer, so a simple proof shows every layer it
+opens.
+
+When the C operation a step executes is refused because the field it reads
+or writes lies inside a folded recursive resource whose model is known to be
+one constructor, `auto` unfolds that one layer and retries the operation.
+At function exit, loop back edges and arm joins, `auto` refolds the layers
+whose fields still match the definition. It stays bounded: one layer per
+refused access, no search over which resource to open, and a refusal that
+one layer does not resolve is reported as before. Explicit `fold`/`unfold`
+remain for everything else. `click expand` writes each layer `auto` opened
+or closed as an explicit `unfold(...)` or `fold(...)`, so an expanded proof
+is the same simple script a person would have written. This follows
+VeriFast's auto-open/close and Viper's fold heuristics, and targets about
+100 lines per rbtree-erase arm.
 
 ### R5. One script for several goals
 
