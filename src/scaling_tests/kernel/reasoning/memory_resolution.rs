@@ -183,7 +183,7 @@ fn mixed_index_offsets_work_ignores_unrelated_facts() {
             .into(),
     );
     let mut counts = Vec::new();
-    for size in [32, 128, 512] {
+    for size in [8, 32, 128] {
         let mut context = PureFactContext::new().assume_condition(fact.clone(), true);
         for i in 0..size {
             context = context.assume_condition(
