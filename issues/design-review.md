@@ -156,20 +156,19 @@ global's or local's field (`g.b`, `s.b`) where exactly one scalar field
 occupies exactly the bytes accessed. An address inside an allocation a local
 held is spelled from that local (`*((char *)at(statement(2).exit, p) + 5)`),
 and the goal and premise lines of a refusal name what locals held at
-recorded points, as its proof context does. What remains:
+recorded points, as its proof context does. A quantified frame refusal's
+leaves name the binder and the parameter cell it indexes (`dst[k]`). What
+remains:
 
 - A callee's result that no local ever held, as in `return value() + 1;`,
   prints as `<unnamed A>`. Its only spelling is a translation temporary: the
   C call `value()` is not a Click expression, and re-evaluating it would be
   another call.
-- A cell at a quantified binder's index, `dst[k]` in a frame refusal,
-  prints as `*<pointer A>`: the report has no name for the binder `k`
-  (`mdtests/bare_transport_names_its_uncarried_leaf.md`).
 
 Union members sharing an offset and width keep the offset by design
 (`mdtests/global_union_members_sharing_bytes_keep_the_offset.md`).
 
-Proposed fix: name a quantified binder's cell by the binder.
+Proposed fix: none for the callee result; it has no Click spelling.
 
 Decision: in progress.
 

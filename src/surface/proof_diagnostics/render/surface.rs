@@ -1614,6 +1614,12 @@ impl Printer<'_> {
         {
             return Some(atom(self.labels.placeholder_pointer(pointer)));
         }
+        // An address past a pointer parameter by a term the structural
+        // spellings cannot name, such as a quantifier binder, is an element
+        // of that parameter, `&dst[k]`, or a byte offset from it.
+        if let Some(spelled) = self.parameter_relative_pointer(pointer, depth) {
+            return Some(spelled);
+        }
         // An address inside an allocation a local held is spelled from that
         // local: `(char *)at(statement(2).exit, p) + k * 4`.
         if self.labels.snapshot_pointer_name(pointer).is_none()
@@ -1779,6 +1785,44 @@ impl Printer<'_> {
                 _ => None,
             })
             .filter(|width| *width > 0)
+    }
+
+    /// `pointer` as an element of, or a byte offset from, a pointer
+    /// parameter whose value is `pointer` less one added offset term.
+    fn parameter_relative_pointer(&mut self, pointer: &Pointer, depth: usize) -> Option<Spelled> {
+        let PointerOffsetTerm::Add(base_offset, extra) = &pointer.offset else {
+            return None;
+        };
+        let tables = self.labels.naming.clone()?;
+        let name = tables
+            .0
+            .iter()
+            .zip(&tables.1)
+            .find_map(|(parameter, value)| match value {
+                crate::kernel::CExpression::Value(crate::kernel::CValue::Pointer(base))
+                    if base.pointer().block == pointer.block
+                        && base.pointer().offset == **base_offset
+                        && parameter.name().len() <= 256 =>
+                {
+                    Some(parameter.name().to_string())
+                }
+                _ => None,
+            })?;
+        let width = self.named_element_width(&name);
+        let index = match extra.as_ref() {
+            PointerOffsetTerm::Int32Scaled { value, byte_width }
+            | PointerOffsetTerm::Int64Scaled {
+                value, byte_width, ..
+            } if Some(*byte_width) == width => self.bitvector(value, None, depth + 1),
+            _ => None,
+        };
+        Some(match index {
+            Some(index) => spelled(format!("&{name}[{}]", index.text), UNARY),
+            None => spelled(
+                format!("(char *){name} + {}", self.offset(extra, depth + 1)),
+                0,
+            ),
+        })
     }
 
     /// The element width of the pointer a naming table binds to `base`.

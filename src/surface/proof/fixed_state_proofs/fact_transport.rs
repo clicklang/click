@@ -749,6 +749,15 @@ fn check_fixed_state_fact_transport_using_facts_inner(
                     for (selector, snapshot) in fixed_state.recorded_snapshots.recent(16) {
                         labels.source_state(snapshot, describe_snapshot_selector(selector));
                     }
+                    // A leaf reads at its binder, which the source names.
+                    for (kernel, surface) in [(&source, surface_source), (&target, surface_target)]
+                    {
+                        if let Proposition::ForAll { var, .. } = kernel
+                            && let Some(name) = quantifier_binder_name(surface)
+                        {
+                            labels.source_name(*var, name);
+                        }
+                    }
                     let had = render::render_proposition_labeled(from, &mut labels);
                     let wanted = render::render_proposition_labeled(to, &mut labels);
                     rendered.push_str(&format!(
@@ -776,6 +785,21 @@ const NO_FRAME_EVIDENCE: &str =
 
 /// Show the written and checked propositions with one shared snapshot legend.
 /// Include every frontier effect: a truncated list can hide the missing frame.
+/// The name a quantified proposition's source gives its binder: the written
+/// spelling when hygiene renamed it, through any `at(...)` around it.
+fn quantifier_binder_name(surface: &ClickProposition) -> Option<String> {
+    match surface {
+        ClickProposition::At { proposition, .. } => quantifier_binder_name(proposition),
+        ClickProposition::ForAll {
+            name, written_name, ..
+        } => Some(written_name.clone().unwrap_or_else(|| name.clone())),
+        ClickProposition::RangeAll {
+            item, written_item, ..
+        } => Some(written_item.clone().unwrap_or_else(|| item.clone())),
+        _ => None,
+    }
+}
+
 fn describe_unreachable_fact_transport(
     claim_label: &str,
     tactic_index: usize,
