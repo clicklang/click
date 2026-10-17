@@ -62,6 +62,7 @@ fn bridges_without_executing(tactic: &ProofTactic) -> bool {
     matches!(
         tactic,
         ProofTactic::Have(_)
+            | ProofTactic::Extract(_)
             | ProofTactic::UnfoldResource(_)
             | ProofTactic::UnfoldWitnesses { .. }
             | ProofTactic::UnfoldPredicate(_)
@@ -215,6 +216,7 @@ fn checked_execution_arm_tactics_end(
                 ProofTactic::ApplyTheorem(_)
                     | ProofTactic::Transport { .. }
                     | ProofTactic::Have(_)
+                    | ProofTactic::Extract(_)
                     | ProofTactic::LetSatisfy(_)
             )
         {
@@ -631,6 +633,27 @@ pub(in crate::surface::proof) fn apply_source_step_proofs<'a>(
     }
 }
 
+/// A written `extract(P)` adds `P` exactly as `have P by { extract(P); }`
+/// does, through the same checked scope, in every context that admits it.
+fn extract_as_have(proposition: &ClickProposition) -> ProofHave {
+    ProofHave {
+        proposition: proposition.clone(),
+        proof: SourceProof::Script(vec![ProofTactic::Extract(proposition.clone())]),
+    }
+}
+
+/// The `have` a frontier tactic proves: a written `have`, or the one a bare
+/// `extract` stands for.
+fn frontier_have(tactic: &ProofTactic) -> Option<std::borrow::Cow<'_, ProofHave>> {
+    match tactic {
+        ProofTactic::Have(have) => Some(std::borrow::Cow::Borrowed(have)),
+        ProofTactic::Extract(proposition) => {
+            Some(std::borrow::Cow::Owned(extract_as_have(proposition)))
+        }
+        _ => None,
+    }
+}
+
 fn flat_post_execution_tactic(tactic: &ProofTactic) -> Option<PostExecutionTactic> {
     if SourceContext::PostExecution.leaf_step(tactic).is_some() {
         return Some(PostExecutionTactic::Leaf(tactic.clone()));
@@ -645,12 +668,9 @@ fn flat_post_execution_tactic(tactic: &ProofTactic) -> Option<PostExecutionTacti
             Some(PostExecutionTactic::Apply(application.clone()))
         }
         ProofTactic::Have(have) => Some(PostExecutionTactic::Have(have.clone())),
-        // After execution, `extract(P)` adds `P` to every path exactly as
-        // `have P by { extract(P); }` does, through the same checked scope.
-        ProofTactic::Extract(proposition) => Some(PostExecutionTactic::Have(ProofHave {
-            proposition: proposition.clone(),
-            proof: SourceProof::Script(vec![ProofTactic::Extract(proposition.clone())]),
-        })),
+        ProofTactic::Extract(proposition) => {
+            Some(PostExecutionTactic::Have(extract_as_have(proposition)))
+        }
         ProofTactic::Both(both) => Some(PostExecutionTactic::Both(both.clone())),
         ProofTactic::Transport { source, target } => Some(PostExecutionTactic::Transport {
             source: source.clone(),
@@ -867,7 +887,8 @@ fn apply_frontier_source_tactic<'a>(
                 source_refusal.as_ref(),
             )?,
         }
-    } else if let ProofTactic::Have(have) = &indexed.tactic {
+    } else if let Some(have) = frontier_have(&indexed.tactic) {
+        let have = have.as_ref();
         let nested = proof.begin_source_have(have)?;
         let goal = nested.goal().cloned();
         let mut failed_check = None;

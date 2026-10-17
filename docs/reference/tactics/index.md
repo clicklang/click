@@ -943,6 +943,9 @@ Each leaf conjunct of a fact is already an available fact, so `extract` of a
 leaf conjunct is accepted but adds nothing; every tactic, including
 `assumption()` and an arithmetic certificate's premises, may cite it directly.
 
+Between execution steps and after execution, a bare `extract(P)` adds `P` to
+the current state exactly as `have P by { extract(P); }` does.
+
 **Failure, checking, and tools:**
 
 A noncomponent, missing antecedent, different constructor, or wrong field

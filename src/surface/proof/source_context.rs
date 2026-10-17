@@ -125,6 +125,7 @@ impl SourceContext {
                         | ProofTactic::ApplyTheorem(_)
                         | ProofTactic::Transport { .. }
                         | ProofTactic::Have(_)
+                        | ProofTactic::Extract(_)
                         | ProofTactic::ExecuteUntil(_)
                         | ProofTactic::SmartExecute
                         | ProofTactic::Loop(_)
