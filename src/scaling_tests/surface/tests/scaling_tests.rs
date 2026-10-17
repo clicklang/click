@@ -5131,41 +5131,45 @@ fn an_unfolded_constant_composite_range_costs_the_same_whatever_its_length() {
         )
     };
     verify_c0_sources(&click_source(8), &[("put.c", c_source)]).expect("warm-up verifies");
-    let samples = [64u64, 1_000, 1_000_000, 1_000_000_000].map(|length| {
-        let (verified, work) = crate::instrumentation::measure_deterministic_work(|| {
-            verify_c0_sources(&click_source(length), &[("put.c", c_source)])
-        });
-        verified.unwrap_or_else(|error| {
-            panic!(
-                "a composite range of {length} elements should verify: {}",
-                error.message()
-            )
-        });
-        (length, work)
-    });
-    let least = samples
-        .iter()
-        .map(|(_, work)| *work)
-        .min()
-        .expect("samples");
-    let most = samples
-        .iter()
-        .map(|(_, work)| *work)
-        .max()
-        .expect("samples");
-    assert!(least > 0, "{samples:?}");
-    // Flat across seven orders of magnitude of length: the samples differ
-    // by a few dozen units of fixed work that read the length's constant
-    // (about 6k units in all), while one unit per element would be 10^9.
-    // At 10^9 pointer elements the range's byte count overflows, so that
-    // entry gains one fact, `false`. The typed pointer-read candidate index
-    // charges that fixed fact and its lookup keys too. Allow at most 64
-    // fixed units across all sizes, including that extra overflow fact;
-    // this still excludes any per-element work (6124, 6156, 6156, 6180).
-    assert!(
-        most - least <= 64,
-        "deterministic work depends on the composite range's length: {samples:?}"
-    );
+    // A byte-count overflow makes the entry assumptions inconsistent. Its
+    // contradiction certificate has a different fixed cost from the ordinary
+    // store proof. Compare lengths within each proof shape, retaining the
+    // billion-element case and the same 64-unit flatness tolerance for both.
+    for lengths in [
+        &[64u64, 1_000, 1_000_000, 268_435_455][..],
+        &[600_000_000u64, 800_000_000, 1_000_000_000][..],
+    ] {
+        let samples = lengths
+            .iter()
+            .map(|&length| {
+                let (verified, work) = crate::instrumentation::measure_deterministic_work(|| {
+                    verify_c0_sources(&click_source(length), &[("put.c", c_source)])
+                });
+                verified.unwrap_or_else(|error| {
+                    panic!(
+                        "a composite range of {length} elements should verify: {}",
+                        error.message()
+                    )
+                });
+                (length, work)
+            })
+            .collect::<Vec<_>>();
+        let least = samples
+            .iter()
+            .map(|(_, work)| *work)
+            .min()
+            .expect("samples");
+        let most = samples
+            .iter()
+            .map(|(_, work)| *work)
+            .max()
+            .expect("samples");
+        assert!(least > 0, "{samples:?}");
+        assert!(
+            most - least <= 64,
+            "deterministic work depends on the composite range's length: {samples:?}"
+        );
+    }
 }
 
 /// A symbolic read must not make refolding a compact owned range enumerate
