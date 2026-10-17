@@ -3017,6 +3017,12 @@ impl<'a> Proof<'a> {
             anchored_pairs =
                 self.resolve_simp_premises(&derivation.context_premises(), introduced_surfaces)?;
             let premise_pairs = &anchored_pairs;
+            // This rule constructs its checked nonnegative scope directly.
+            // Avoid a speculative generic candidate for this same predecessor
+            // goal before constructing that scope.
+            if let Some(closed) = self.try_selected_predecessor_upper_bound(&goal, premise_pairs) {
+                return Some(closed);
+            }
             // The same derivation already failed to check over the premises
             // it cites; the wider context does not translate it either.
             let typed_atomic =
@@ -3039,7 +3045,6 @@ impl<'a> Proof<'a> {
             typed_atomic
                 .or_else(|| self.try_selected_pointer_inequality_rewrite(&goal, premise_pairs))
                 .or_else(|| self.try_selected_equality_rewrite_chain(premise_pairs))
-                .or_else(|| self.try_selected_predecessor_upper_bound(&goal, premise_pairs))
                 .or_else(|| self.try_selected_constant_bound_weakening(&goal, &derivation))
                 .or_else(|| {
                     self.surface_goal().and_then(|surface_goal| {
@@ -7965,9 +7970,10 @@ impl<'a> Proof<'a> {
             .iter()
             .map(|(kernel, _)| kernel.clone())
             .collect::<Vec<_>>();
-        // Signed-order rules have checked named theorem certificates. Try
-        // those before allocating speculative normalization contexts, including
-        // for predecessor and negated-bound rules without an explicit `+ 1`.
+        // Signed-order and definedness rules have checked named theorem
+        // certificates. Try those before allocating speculative normalization
+        // contexts, including for predecessor and negated-bound rules without
+        // an explicit `+ 1`.
         let signed_order = signed_nonstrict_parts(goal)
             .or_else(|| signed_strict_parts(goal))
             .is_some();
@@ -7986,7 +7992,8 @@ impl<'a> Proof<'a> {
                 theorem_application_closes_goal,
             )
         };
-        if signed_order && let Some(closed) = try_typed_derivation() {
+        let typed_first = signed_order || signed_definedness_operands(goal).is_some();
+        if typed_first && let Some(closed) = try_typed_derivation() {
             return Some(closed);
         }
         if crate::kernel::proof::fact_reasoning::is_single_normalization_condition(goal)
@@ -8062,7 +8069,7 @@ impl<'a> Proof<'a> {
         }
         // The selected context has not changed, so the ordinary derivation
         // slot need not repeat the early attempt.
-        let typed = if signed_order {
+        let typed = if typed_first {
             None
         } else {
             try_typed_derivation()
@@ -9464,6 +9471,41 @@ impl<'a> Proof<'a> {
         }))
     }
 
+    /// `auto`'s automatic opening (design/proof-reuse.md R4): a C operation
+    /// refused because the resource it reads or writes lies inside a folded
+    /// resource is retried once that resource is unfolded, one layer per
+    /// refused access. The certificate records each `unfold`, so expansion
+    /// writes it out. A refusal the opening does not resolve is reported as
+    /// the original refusal.
+    fn retry_statement_after_auto_open(
+        &self,
+        step: ProofStep,
+        retried_requirements: &mut std::collections::BTreeSet<PropositionIdentityKey>,
+        error: ClickError,
+    ) -> Result<Self, ClickError> {
+        let mut proof = self.clone();
+        let mut refusal = error.clone();
+        for _ in 0..MAX_AUTO_OPENINGS_PER_STATEMENT {
+            let Some(missing) = refusal.missing_resource() else {
+                break;
+            };
+            let Some(opened) = proof.auto_open_for_missing_resource(missing)? else {
+                break;
+            };
+            proof = opened;
+            match proof.apply_step(step.clone()) {
+                Ok(stepped) => return Ok(stepped),
+                Err(next) if next.missing_resource().is_some() => refusal = next,
+                Err(next) => {
+                    return proof
+                        .retry_statement_after_refusal(step, retried_requirements, Err(next))
+                        .map_err(|_| error);
+                }
+            }
+        }
+        Err(error)
+    }
+
     pub(in crate::surface::proof) fn retry_statement_after_refusal(
         &self,
         step: ProofStep,
@@ -9472,6 +9514,9 @@ impl<'a> Proof<'a> {
     ) -> Result<Self, ClickError> {
         match initial {
             Ok(proof) => Ok(proof),
+            Err(error) if error.missing_resource().is_some() => {
+                self.retry_statement_after_auto_open(step, retried_requirements, error)
+            }
             Err(error) => {
                 let Some(mut requirement) = error.unresolved_requirement().cloned() else {
                     return Err(error);
@@ -9942,6 +9987,11 @@ impl<'a> Proof<'a> {
         }
     }
 }
+
+/// How many resources `auto` opens for one C statement before it reports
+/// the statement's refusal. A statement touches a bounded number of places,
+/// and each opening must hold one of them.
+const MAX_AUTO_OPENINGS_PER_STATEMENT: usize = 4;
 
 /// How many variables simp's bound selection visits from a goal's own
 /// variables before it stops following bounds to further variables.

@@ -2776,7 +2776,7 @@ pub enum ContractExpression {
     SequenceConcat(Box<ContractExpression>, Box<ContractExpression>),
     /// A C expression fragment appearing inside Surface Click.
     CFragment(CExpression),
-    /// A C unary operation whose operand retains explicit binding syntax.
+    /// A C unary operation whose operand retains source and binding syntax.
     /// Scalar casts and typed loads may also wrap a pure or historical expression. `operand` is authoritative;
     /// in that case `lowered` retains the cast metadata with a placeholder, and
     /// conversion back to a C fragment must rebuild from `operand` or refuse.
@@ -6295,6 +6295,10 @@ struct ReportDetail {
     /// The written tactic being checked when a failure with no proof-step
     /// site of its own arose: its claim and source occurrence.
     source_tactic: Option<(String, Vec<usize>)>,
+    /// The resource fact a refused C operation needed and the state did not
+    /// hold. Planning input, like an unresolved requirement: `auto` opens the
+    /// one folded resource whose body holds it (design/proof-reuse.md R4).
+    missing_resource: Option<crate::kernel::CResourceFact>,
 }
 
 /// What the verifier is working on, for locating a failure that carries no
@@ -8445,6 +8449,33 @@ impl ClickError {
             self.rendered = std::sync::OnceLock::new();
         }
         self
+    }
+
+    pub(in crate::surface) fn missing_resource(&self) -> Option<&crate::kernel::CResourceFact> {
+        self.report_detail.as_ref()?.missing_resource.as_ref()
+    }
+
+    pub(in crate::surface) fn with_missing_resource(
+        mut self,
+        resource: &crate::kernel::CResourceFact,
+    ) -> Self {
+        std::sync::Arc::make_mut(self.report_detail.get_or_insert_default()).missing_resource =
+            Some(resource.clone());
+        self
+    }
+
+    /// Records the resource a refused C operation was missing, when that is
+    /// what refused it.
+    pub(in crate::surface) fn with_runtime_missing_resource(
+        self,
+        error: &crate::kernel::CRuntimeError,
+    ) -> Self {
+        match error {
+            crate::kernel::CRuntimeError::MissingResource { resource } => {
+                self.with_missing_resource(resource)
+            }
+            _ => self,
+        }
     }
 
     pub(crate) fn with_missing_tactic_requirement(mut self, required: String) -> Self {

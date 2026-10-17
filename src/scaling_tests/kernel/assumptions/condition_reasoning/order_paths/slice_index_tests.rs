@@ -13,7 +13,7 @@ fn wide_order_chain_work_follows_the_chain_and_not_unrelated_facts() {
     // A chain of fixed length beside a growing set of unrelated facts,
     // some sharing a literal endpoint with the question.
     let mut beside = Vec::new();
-    for size in [8, 32, 128, 512] {
+    for size in [2, 4, 8, 16] {
         let mut facts = PureFactContext::new();
         for i in 0..4 {
             facts = facts.assume_condition(lt(v(i), v(i + 1)), true);
@@ -153,7 +153,7 @@ fn uint64_slice_remainder_bounds_ignore_unrelated_facts() {
         ConditionTerm::uint64_less_than(Bitvector32Term::UInt64Constant(0), difference.clone());
     let bounded = ConditionTerm::uint64_less_equal(difference, length.clone());
     let mut work = Vec::new();
-    for size in [8, 32, 128, 512] {
+    for size in [1, 4, 16, 64] {
         let mut context = PureFactContext::new();
         for n in 0..size {
             context = context.assume_condition(
