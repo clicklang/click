@@ -23,6 +23,7 @@ resource erase_spine_at(focus: struct rb_node*, anchor: struct rb_node*) {
             fact identity->rb_left == focus;
             fact identity->__rb_parent_color
                 == address(grandparent) + (identity->__rb_parent_color & 1);
+            fact ((struct rb_node*)(identity->__rb_parent_color & ~3)) == grandparent;
             fact (identity->__rb_parent_color & 1) == color_bit(color);
             fact sibling.model == sibling_model;
             fact up.model == up_model;
@@ -57,6 +58,7 @@ resource erase_spine_frame(parent: struct rb_node*, anchor: struct rb_node*) {
             fact aligned(grandparent, 8);
             fact identity->__rb_parent_color
             == address(grandparent) + (identity->__rb_parent_color & 1);
+            fact ((struct rb_node*)(identity->__rb_parent_color & ~3)) == grandparent;
             fact (identity->__rb_parent_color & 1) == color_bit(color);
             fact sibling.model == sibling_model;
             fact up.model == up_model;
@@ -77,6 +79,7 @@ resource erase_anchor_frame(anchor: struct rb_node*, root: struct rb_root*) {
             fact aligned(anchor, 8);
             fact aligned(parent, 8);
             fact anchor->__rb_parent_color == address(parent) + (anchor->__rb_parent_color & 1);
+            fact ((struct rb_node*)(anchor->__rb_parent_color & ~3)) == parent;
             fact (anchor->__rb_parent_color & 1) == color_bit(color);
             fact right.model == sibling_model;
             fact up.model == above;

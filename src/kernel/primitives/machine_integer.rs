@@ -323,6 +323,7 @@ impl MachineIntegerType {
     /// existing term arena. The value wrapper supplies source signedness.
     pub(crate) fn convert_modulo_value(self, value: CValue) -> Option<CValue> {
         crate::instrumentation::record_deterministic_work(1);
+        let value = value.numeric_value().clone();
         // Boolean values are normalized 0/1 and have their own storage type.
         // Integer conversion observes that numeric value without retagging
         // arbitrary bytes as a Boolean.

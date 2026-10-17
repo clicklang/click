@@ -705,6 +705,10 @@ pub struct CppBaseReference {
     pub base_declaration_id: String,
     pub base_name: String,
     pub span: CppSpan,
+    /// The conversion's last edge yields a `const` base, as a `const Shape&`
+    /// argument does: the object is lent without the right to change it.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub is_const: bool,
 }
 
 impl CppProjection {
@@ -1076,6 +1080,16 @@ pub enum CppStatement {
     MemberConstruct {
         object: CppPlaceReference,
         field: CppFieldReference,
+        callee: CppFunctionReference,
+        arguments: Vec<CppCallArgument>,
+        span: CppSpan,
+    },
+    /// A polymorphic class's constructor's first statement: the resolved
+    /// constructor call of its polymorphic base on the base subobject, run
+    /// before the class's own members are initialized.
+    BaseConstruct {
+        object: CppPlaceReference,
+        base: CppBaseReference,
         callee: CppFunctionReference,
         arguments: Vec<CppCallArgument>,
         span: CppSpan,
@@ -1833,8 +1847,36 @@ impl CppRecord {
         if !self.polymorphic {
             return self.require_constructor_local_layout();
         }
+        // Its constructor's validation decides how the base is built: by
+        // the base's own constructor, or implicitly when it has no fields.
         if let Some(base) = &self.base {
-            self.require_empty_polymorphic_base(base, records)?;
+            self.require_constructed_polymorphic_base(base, records)?;
+        }
+        Ok(())
+    }
+
+    /// A polymorphic base its derived class's constructor builds by calling
+    /// the base's own constructor: polymorphic, with no base or destructor of
+    /// its own; its fields are the base constructor's to initialize.
+    fn require_constructed_polymorphic_base(
+        &self,
+        base: &CppBase,
+        records: &BTreeMap<String, &CppRecord>,
+    ) -> Result<(), String> {
+        let CppType::Record {
+            declaration_id,
+            name,
+            ..
+        } = &base.value_type
+        else {
+            return Err("C++ base subobject is not a record".into());
+        };
+        let base_record = validate_record_reference(records, declaration_id, name)?;
+        if !base_record.polymorphic
+            || base_record.base.is_some()
+            || base_record.destructor.is_some()
+        {
+            return Err("a C++ constructor builds only a polymorphic base with no base or destructor of its own".into());
         }
         Ok(())
     }
@@ -2436,20 +2478,59 @@ impl CppFunction {
         {
             let self_parameter = &self.parameters[0];
             let record = validate_record_reference(records, record_declaration_id, record_name)?;
+            // A base built by its own constructor comes first; a field-less
+            // base without one needs no statement.
+            let mut prefix = 0;
             if let Some(base) = &record.base {
                 if !record.polymorphic {
                     return Err("C++ constructors with base subobjects remain unsupported".into());
                 }
-                record.require_empty_polymorphic_base(base, records)?;
+                match self.body.first() {
+                    Some(CppStatement::BaseConstruct {
+                        object,
+                        base: reference,
+                        callee,
+                        arguments,
+                        span,
+                    }) => {
+                        record.require_constructed_polymorphic_base(base, records)?;
+                        let CppType::Record { declaration_id, .. } = &base.value_type else {
+                            unreachable!("checked polymorphic base record");
+                        };
+                        if object.declaration_id != self_parameter.declaration_id
+                            || object.name != self_parameter.name
+                            || !object.projections.is_empty()
+                            || reference.record_declaration_id != *record_declaration_id
+                            || reference.base_declaration_id != *declaration_id
+                        {
+                            return Err(format!(
+                                "C++ constructor `{}` has an invalid base initializer",
+                                self.name
+                            ));
+                        }
+                        if arguments
+                            .iter()
+                            .any(|argument| matches!(argument, CppCallArgument::Call { .. }))
+                        {
+                            return Err(
+                                "nested C++ calls in constructor arguments remain unsupported"
+                                    .into(),
+                            );
+                        }
+                        validate_call(callee, arguments, span, &places, records, logical_source)?;
+                        prefix = 1;
+                    }
+                    _ => record.require_empty_polymorphic_base(base, records)?,
+                }
             }
-            if self.body.len() < record.fields.len() {
+            if self.body.len() < prefix + record.fields.len() {
                 return Err(format!(
                     "C++ constructor `{}` does not initialize every field",
                     self.name
                 ));
             }
-            constructor_field_count = record.fields.len();
-            for (statement, expected_field) in self.body.iter().zip(&record.fields) {
+            constructor_field_count = prefix + record.fields.len();
+            for (statement, expected_field) in self.body[prefix..].iter().zip(&record.fields) {
                 let (object, field) = match statement {
                     CppStatement::MemberStore {
                         object,
@@ -2933,8 +3014,10 @@ impl CppFunction {
                     &self.name,
                 )?;
             } else {
-                if matches!(statement, CppStatement::MemberConstruct { .. })
-                    && statement_index < constructor_field_count
+                if matches!(
+                    statement,
+                    CppStatement::MemberConstruct { .. } | CppStatement::BaseConstruct { .. }
+                ) && statement_index < constructor_field_count
                 {
                     // The constructor prefix above checked this exact member.
                     continue;
@@ -3030,6 +3113,7 @@ impl CppStatement {
         }
         match self {
             Self::MemberConstruct { .. } => Err("C++ embedded construction is only supported in the constructor member-initializer prefix".into()),
+            Self::BaseConstruct { .. } => Err("C++ base construction is only supported first in a polymorphic class's constructor".into()),
             Self::Unreachable { span } => span.validate(logical_source),
             Self::AssignConstructionCall { target, callee, arguments, value_type, span } => {
                 let root = validate_root_reference(target, places, logical_source)?;
@@ -4573,6 +4657,7 @@ impl CppStatement {
             | Self::CallStore { .. }
             | Self::MemberStore { .. }
             | Self::MemberConstruct { .. }
+            | Self::BaseConstruct { .. }
             | Self::TrivialCopy { .. }
             | Self::AssignConstructionCall { .. }
             | Self::Assume { .. }
@@ -4664,6 +4749,9 @@ fn validate_reachable_calls(
                 callee, arguments, ..
             }
             | CollectedCall::MemberConstructor {
+                callee, arguments, ..
+            }
+            | CollectedCall::BaseConstructor {
                 callee, arguments, ..
             } => (*callee, *arguments),
             CollectedCall::Destructor { callee, .. } => (*callee, &[][..]),
@@ -4826,6 +4914,25 @@ fn validate_reachable_calls(
                     records,
                 )?;
             }
+            CollectedCall::BaseConstructor { base, .. } => {
+                if !matches!(&target.function_kind, CppFunctionKind::Constructor {
+                    record_declaration_id, record_name,
+                } if *record_declaration_id == base.base_declaration_id
+                    && *record_name == base.base_name)
+                {
+                    return Err("C++ base construction does not call its base's constructor".into());
+                }
+                let Some((_, explicit_parameters)) = target.parameters.split_first() else {
+                    return Err("C++ base constructor is missing its object parameter".into());
+                };
+                validate_call_arguments(
+                    &places,
+                    target.name.as_str(),
+                    explicit_parameters,
+                    arguments,
+                    records,
+                )?;
+            }
             CollectedCall::Destructor { object, .. } => {
                 let CppFunctionKind::Destructor {
                     record_declaration_id,
@@ -4930,6 +5037,11 @@ enum CollectedCall<'a> {
         callee: &'a CppFunctionReference,
         arguments: &'a [CppCallArgument],
     },
+    BaseConstructor {
+        base: &'a CppBaseReference,
+        callee: &'a CppFunctionReference,
+        arguments: &'a [CppCallArgument],
+    },
     Destructor {
         object: &'a CppPlaceReference,
         callee: &'a CppFunctionReference,
@@ -5012,6 +5124,19 @@ fn collect_calls<'a>(statements: &'a [CppStatement], calls: &mut Vec<CollectedCa
                 calls.push(CollectedCall::MemberConstructor {
                     object,
                     field,
+                    callee,
+                    arguments,
+                });
+                collect_nested_calls(arguments, calls);
+            }
+            CppStatement::BaseConstruct {
+                base,
+                callee,
+                arguments,
+                ..
+            } => {
+                calls.push(CollectedCall::BaseConstructor {
+                    base,
                     callee,
                     arguments,
                 });
@@ -5837,7 +5962,8 @@ fn validate_statement_constant_references(
             | CppStatement::ReturnAggregateCall { arguments, .. }
             | CppStatement::Call { arguments, .. }
             | CppStatement::ReturnCall { arguments, .. }
-            | CppStatement::MemberConstruct { arguments, .. } => {
+            | CppStatement::MemberConstruct { arguments, .. }
+            | CppStatement::BaseConstruct { arguments, .. } => {
                 for argument in arguments {
                     argument.validate_constant_references(
                         logical_source,

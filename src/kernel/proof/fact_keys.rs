@@ -6,9 +6,9 @@
 
 use crate::kernel::LoadKind;
 use crate::kernel::{
-    AlgebraicTerm, AlgebraicTermNode, AlgebraicValue, CType, CValue, IntegerComparisonOperator,
-    IntegerTerm, MachineIntegerType, PureFunctionArgument, SharedCMemory, SharedIntegerTerm, Sort,
-    Term,
+    AlgebraicTerm, AlgebraicTermNode, AlgebraicValue, CPointerValue, CType, CValue,
+    IntegerComparisonOperator, IntegerTerm, MachineIntegerType, PureFunctionArgument,
+    SharedCMemory, SharedIntegerTerm, Sort, Term,
 };
 use crate::kernel::{
     Bitvector32Term, BitvectorBinaryOp, BitvectorComparisonOp, BitvectorUnaryOp,
@@ -65,6 +65,7 @@ pub(crate) struct SnapshotBlindMemoryRangeKey {
 
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
 pub(crate) enum SnapshotBlindConditionKey {
+    PointerValueEqual(SnapshotBlindPointerValueKey, SnapshotBlindPointerValueKey),
     AlgebraicEqual(Box<AlgebraicTerm>, Box<AlgebraicTerm>),
     Constant(bool),
     Variable(Variable),
@@ -100,6 +101,50 @@ pub(crate) enum SnapshotBlindBitvectorKey {
     Unary(BitvectorUnaryOp, Box<Self>),
     If(Box<SnapshotBlindConditionKey>, Box<Self>, Box<Self>),
     Exact(Bitvector32Term),
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
+pub(crate) struct SnapshotBlindPointerValueKey {
+    c_type: CType,
+    address: SnapshotBlindPointerKey,
+    designation: SnapshotBlindPointerKey,
+    opaque_extent: Option<SnapshotBlindPointerKey>,
+    extent: Option<(SnapshotBlindPointerKey, SnapshotBlindBitvectorKey)>,
+    extent_known: bool,
+}
+
+impl SnapshotBlindPointerValueKey {
+    fn requires_checked_match(&self) -> bool {
+        self.address.requires_checked_match()
+            || self.designation.requires_checked_match()
+            || self
+                .opaque_extent
+                .as_ref()
+                .is_some_and(SnapshotBlindPointerKey::requires_checked_match)
+            || self.extent.as_ref().is_some_and(|(start, width)| {
+                start.requires_checked_match() || width.requires_checked_match()
+            })
+    }
+}
+
+fn snapshot_blind_pointer_value_key(pointer: &CPointerValue) -> SnapshotBlindPointerValueKey {
+    SnapshotBlindPointerValueKey {
+        c_type: pointer.c_type(),
+        address: snapshot_blind_pointer_key(pointer.pointer()),
+        designation: snapshot_blind_pointer_key(pointer.designation()),
+        opaque_extent: if pointer.extent_is_known() {
+            None
+        } else {
+            pointer.opaque_extent().map(snapshot_blind_pointer_key)
+        },
+        extent: pointer.extent().map(|extent| {
+            (
+                snapshot_blind_pointer_key(&extent.start),
+                snapshot_blind_bitvector_key(&extent.width),
+            )
+        }),
+        extent_known: pointer.extent_is_known(),
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
@@ -157,6 +202,9 @@ impl SnapshotBlindConditionKey {
     fn requires_checked_match(&self) -> bool {
         match self {
             Self::AlgebraicEqual(_, _) => false,
+            Self::PointerValueEqual(left, right) => {
+                left.requires_checked_match() || right.requires_checked_match()
+            }
             Self::Comparison(_, left, right) => {
                 left.requires_checked_match() || right.requires_checked_match()
             }
@@ -362,6 +410,13 @@ fn snapshot_blind_condition_key(condition: &ConditionTerm) -> SnapshotBlindCondi
         );
     }
     match condition {
+        ConditionTerm::PointerValueEqual(left, right) => {
+            SnapshotBlindConditionKey::PointerValueEqual(
+                snapshot_blind_pointer_value_key(left),
+                snapshot_blind_pointer_value_key(right),
+            )
+        }
+
         ConditionTerm::Constant(value) => SnapshotBlindConditionKey::Constant(*value),
         ConditionTerm::AlgebraicEqual(left, right) => {
             SnapshotBlindConditionKey::AlgebraicEqual(left.clone(), right.clone())
@@ -488,6 +543,9 @@ fn snapshot_blind_pointer_key(pointer: &Pointer) -> SnapshotBlindPointerKey {
     // This candidate key forgets snapshots, never proof authority. Bound
     // registry expansion across both defining addresses and their offsets.
     let read = match &pointer.block {
+        PointerBlock::LoadedPointer(_) if depth < 3 => {
+            pointer.as_loaded_value().map(|read| read.defining_address)
+        }
         PointerBlock::Symbolic(variable) if depth < 3 => {
             crate::kernel::registered_load_for_variable(variable).map(|(_, source)| source)
         }
@@ -799,6 +857,9 @@ enum AlphaCValueKey {
         pointee_volatile: bool,
         pointee_constant: bool,
         pointer: AlphaPointerKey,
+        designation: AlphaPointerKey,
+        extent_known: bool,
+        opaque_extent: Option<AlphaPointerKey>,
         /// The subobject extent's start key and byte width.
         extent: Option<(AlphaPointerKey, AlphaBitvectorKey)>,
     },
@@ -1089,6 +1150,7 @@ fn intern_alpha_registered_load(
 
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 enum AlphaConditionKey {
+    PointerValueEqual(Box<AlphaCValueKey>, Box<AlphaCValueKey>),
     Constant(bool),
     Variable(AlphaVariableKey),
     Binary(BitvectorComparisonOp, AlphaBitvectorKey, AlphaBitvectorKey),
@@ -1774,6 +1836,24 @@ fn alpha_c_value_key_with_bindings<const ALLOW_LOADS: bool>(
                 bindings,
                 next_binder,
             )?,
+            designation: alpha_pointer_key_with_bindings::<ALLOW_LOADS>(
+                pointer.designation(),
+                bindings,
+                next_binder,
+            )?,
+            extent_known: pointer.extent_is_known(),
+            opaque_extent: if pointer.extent_is_known() {
+                None
+            } else {
+                match pointer.opaque_extent() {
+                    Some(origin) => Some(alpha_pointer_key_with_bindings::<ALLOW_LOADS>(
+                        origin,
+                        bindings,
+                        next_binder,
+                    )?),
+                    None => None,
+                }
+            },
             extent: match pointer.extent() {
                 Some(extent) => Some((
                     alpha_pointer_key_with_bindings::<ALLOW_LOADS>(
@@ -1791,7 +1871,8 @@ fn alpha_c_value_key_with_bindings<const ALLOW_LOADS: bool>(
             },
         },
         other => {
-            let (ty, term) = match other {
+            let (ty, term) = match other.numeric_value() {
+                CValue::PointerInteger(_) => unreachable!("numeric projection"),
                 CValue::Int128(term) => (CType::Int128, term),
                 CValue::UInt128(term) => (CType::UInt128, term),
 
@@ -2252,6 +2333,18 @@ fn alpha_condition_key_with_bindings<const ALLOW_LOADS: bool>(
         ConditionTerm::PointerOffsetEqual(left, right) => AlphaConditionKey::PointerOffsetEqual(
             alpha_pointer_offset_key_with_bindings::<ALLOW_LOADS>(left, bindings, next_binder)?,
             alpha_pointer_offset_key_with_bindings::<ALLOW_LOADS>(right, bindings, next_binder)?,
+        ),
+        ConditionTerm::PointerValueEqual(left, right) => AlphaConditionKey::PointerValueEqual(
+            Box::new(alpha_c_value_key_with_bindings::<ALLOW_LOADS>(
+                &CValue::Pointer((**left).clone()),
+                bindings,
+                next_binder,
+            )?),
+            Box::new(alpha_c_value_key_with_bindings::<ALLOW_LOADS>(
+                &CValue::Pointer((**right).clone()),
+                bindings,
+                next_binder,
+            )?),
         ),
         ConditionTerm::PointerEqual(left, right) => AlphaConditionKey::PointerEqual(
             alpha_pointer_key_with_bindings::<ALLOW_LOADS>(left, bindings, next_binder)?,

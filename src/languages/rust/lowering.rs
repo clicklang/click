@@ -17,6 +17,25 @@ use crate::languages::c::syntax::{
 };
 use std::collections::{BTreeMap, BTreeSet};
 
+// Rust reference lowering changes the access type without introducing C's
+// authored character/void cast escape. Preserve the complete pointer domain.
+fn reference_view(
+    expression: CExpression,
+    target_type: CType,
+    pointee_volatile: bool,
+    pointee_constant: bool,
+) -> CExpression {
+    CExpression::Cast {
+        expression: Box::new(expression),
+        target_type,
+        integer_mode: CIntegerCastMode::PointerCoercion,
+        pointee_struct: None,
+        pointee_volatile,
+        pointee_constant,
+        explicit_qualification: false,
+    }
+}
+
 pub(crate) type LoweredRust = (Vec<C0Function>, BTreeMap<String, C0StructLayout>);
 fn scalar_type(t: &Type) -> Result<C0Type, String> {
     match t {
@@ -98,6 +117,8 @@ fn array_field_parts(t: CType) -> Option<(CType, u32)> {
 fn rust_scalar_cast(value: CExpression, target: CType) -> CExpression {
     if crate::kernel::MachineIntegerType::from_c_type(target).is_some() {
         c_integer_cast_modulo(value, target)
+    } else if target.is_pointer() {
+        reference_view(value, target, false, false)
     } else {
         c_cast(value, target)
     }
@@ -551,12 +572,7 @@ impl Context<'_> {
                             c_seq(
                                 c_assign(
                                     &place.name,
-                                    c_cast_with_pointee_qualifiers(
-                                        pointer,
-                                        CType::UInt8Pointer,
-                                        false,
-                                        !mutable,
-                                    ),
+                                    reference_view(pointer, CType::UInt8Pointer, false, !mutable),
                                 ),
                                 c_assign(length, length_value),
                             ),
@@ -585,10 +601,7 @@ impl Context<'_> {
                             false,
                             !mutable,
                         ),
-                        c_assign(
-                            &place.name,
-                            c_cast_with_pointee_qualifiers(pointer, t, false, !mutable),
-                        ),
+                        c_assign(&place.name, reference_view(pointer, t, false, !mutable)),
                     ));
                 }
                 let t = scalar_type(&place.value_type)?;
@@ -832,7 +845,7 @@ impl Context<'_> {
                 c_seq(
                     c_assign(
                         &place.name,
-                        c_cast_with_pointee_qualifiers(pointer, CType::UInt8Pointer, false, true),
+                        reference_view(pointer, CType::UInt8Pointer, false, true),
                     ),
                     c_assign(length_name, length),
                 ),
@@ -964,12 +977,7 @@ impl Context<'_> {
                 c_seq(
                     c_assign(
                         name,
-                        c_cast_with_pointee_qualifiers(
-                            pointer,
-                            CType::UInt8Pointer,
-                            false,
-                            constant,
-                        ),
+                        reference_view(pointer, CType::UInt8Pointer, false, constant),
                     ),
                     c_assign(length, length_value),
                 ),
@@ -988,7 +996,7 @@ impl Context<'_> {
             };
             return Ok(c_assign(
                 name,
-                c_cast_with_pointee_qualifiers(pointer, pointer_type, false, constant),
+                reference_view(pointer, pointer_type, false, constant),
             ));
         }
         match e {
@@ -1130,7 +1138,7 @@ impl Context<'_> {
         let c_type = scalar_type(value_type)?.to_kernel_type();
         let constant = matches!(value_type, Type::Reference { mutable: false, .. });
         let value = if matches!(value_type, Type::Reference { .. }) {
-            c_cast_with_pointee_qualifiers(value, c_type, false, constant)
+            reference_view(value, c_type, false, constant)
         } else {
             c_cast(value, c_type)
         };
@@ -1207,7 +1215,12 @@ impl Context<'_> {
                 let (checks, pointer) = self.prepared_address(place)?;
                 Ok((
                     checks,
-                    c_cast(pointer, scalar_type(value_type)?.to_kernel_type()),
+                    reference_view(
+                        pointer,
+                        scalar_type(value_type)?.to_kernel_type(),
+                        false,
+                        false,
+                    ),
                 ))
             }
             E::Binary {
@@ -1460,7 +1473,7 @@ impl Context<'_> {
                 };
                 let pointer = self.address(e)?;
                 Ok((
-                    c_cast_with_pointee_qualifiers(pointer, pointer_type, false, constant),
+                    reference_view(pointer, pointer_type, false, constant),
                     c_uint64_literal(u64::from(length)),
                     element,
                 ))
@@ -1479,7 +1492,7 @@ impl Context<'_> {
             CType::Int32 => CType::Int32Pointer,
             _ => return Err("unsupported fixed array element".into()),
         };
-        Ok(c_cast_with_pointee_qualifiers(
+        Ok(reference_view(
             c_variable(name),
             pointer_type,
             false,
@@ -1624,9 +1637,11 @@ impl Context<'_> {
                         "mutable array field borrow requires a mutable record reference".into(),
                     );
                 }
-                Ok(c_cast(
+                Ok(reference_view(
                     self.address(place)?,
                     scalar_type(value_type)?.to_kernel_type(),
+                    false,
+                    false,
                 ))
             }
             E::Cast { value, value_type } => Ok(rust_scalar_cast(

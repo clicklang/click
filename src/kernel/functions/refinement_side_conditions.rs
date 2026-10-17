@@ -212,9 +212,11 @@ pub(super) fn state_independent_node(node: SpecNode<'_>) -> Visit<()> {
             | SpecExpression::BitwiseNot(_)
             | SpecExpression::LoopEntrySnapshot(_)
             | SpecExpression::Cast(..)
+            | SpecExpression::PointerCoercion(..)
             | SpecExpression::If { .. }
             | SpecExpression::Let { .. }
             | SpecExpression::PureFunctionApplication { .. }
+            | SpecExpression::Subobject { .. }
             | SpecExpression::PointerOffset { .. } => Visit::Descend,
             _ => Visit::Stop(()),
         },
@@ -319,9 +321,11 @@ pub(super) fn stateful_memory_refinement_node(node: SpecNode<'_>) -> Visit<()> {
             crate::kernel::binary_spec_expression!(_, _)
             | SpecExpression::BitwiseNot(_)
             | SpecExpression::Cast(..)
+            | SpecExpression::PointerCoercion(..)
             | SpecExpression::If { .. }
             | SpecExpression::Let { .. }
             | SpecExpression::PureFunctionApplication { .. }
+            | SpecExpression::Subobject { .. }
             | SpecExpression::PointerOffset { .. }
             | SpecExpression::MemoryLoad {
                 memory: SpecMemory::Current | SpecMemory::FunctionEntry,
@@ -679,7 +683,8 @@ pub(super) fn spec_expression_constant(expression: &SpecExpression) -> Option<u3
     let SpecExpression::Value(value) = expression else {
         return None;
     };
-    match value {
+    match value.numeric_value() {
+        CValue::PointerInteger(_) => unreachable!("numeric projection"),
         CValue::Int8(term) => term.as_const(),
         CValue::Int16(term)
         | CValue::Int32(term)
@@ -706,9 +711,13 @@ pub(super) fn spec_expression_parameter_offset(
         SpecExpression::CExpression(expression) => {
             c_expression_parameter_offset(expression, parameter_name)
         }
-        SpecExpression::Cast(expression, _) | SpecExpression::LoopEntrySnapshot(expression) => {
-            spec_expression_parameter_offset(expression, parameter_name)
-        }
+        SpecExpression::Cast(expression, _)
+        | SpecExpression::PointerCoercion(expression, _)
+        | SpecExpression::LoopEntrySnapshot(expression)
+        | SpecExpression::Subobject {
+            pointer: expression,
+            ..
+        } => spec_expression_parameter_offset(expression, parameter_name),
         SpecExpression::PointerOffset {
             pointer,
             elements,

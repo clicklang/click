@@ -4724,7 +4724,7 @@ impl AnnotationLowerer<'_> {
                     .ok_or_else(|| {
                         "to_integer expects a signed or unsigned machine integer".to_string()
                     })?;
-                    let (crate::kernel::integer_c_value!(bits)) = value else {
+                    let (crate::kernel::integer_c_value!(bits)) = value.numeric_value() else {
                         return Err(
                             "to_integer expects a signed or unsigned machine integer".into()
                         );
@@ -5017,10 +5017,15 @@ impl AnnotationLowerer<'_> {
                     CExpression::Cast {
                         target_type,
                         pointee_struct,
+                        integer_mode,
                         ..
                     } => {
                         if *target_type == CType::UInt8Pointer
                             && pointee_struct.is_none()
+                            && !matches!(
+                                self.contract_expression_click_type(operand, environment),
+                                Some(ClickType::C(C0Type::Int64(_) | C0Type::UInt64(_)))
+                            )
                             && !self
                                 .contract_pointer_element_type(operand, environment)
                                 .is_some_and(|element| {
@@ -5032,7 +5037,13 @@ impl AnnotationLowerer<'_> {
                                     .to_string(),
                             );
                         }
-                        Ok(SpecExpression::Cast(Box::new(value), *target_type))
+                        Ok(
+                            if *integer_mode == crate::kernel::CIntegerCastMode::PointerCoercion {
+                                SpecExpression::PointerCoercion(Box::new(value), *target_type)
+                            } else {
+                                SpecExpression::Cast(Box::new(value), *target_type)
+                            },
+                        )
                     }
                     CExpression::PointerOffsetBytes { bytes, .. } => {
                         Ok(SpecExpression::PointerOffset {
@@ -5558,7 +5569,7 @@ impl AnnotationLowerer<'_> {
                 // C-valued subfolds can occur inside Integer expressions, so
                 // guard the kernel's carrier here as well as in validation.
                 let c_type = |expression: &SpecExpression| match expression {
-                    SpecExpression::Cast(_, ty) => {
+                    SpecExpression::Cast(_, ty) | SpecExpression::PointerCoercion(_, ty) => {
                         Some(ClickType::C(generics::c0_type_from_kernel(*ty)))
                     }
                     _ => spec_expression_click_type(expression),
@@ -6700,10 +6711,10 @@ impl AnnotationLowerer<'_> {
                 },
                 environment,
             ),
-            // A specification observes addresses; it does not designate.
-            CExpression::Subobject { pointer, .. } => {
-                self.lower_c_fragment_to_spec(pointer, environment)
-            }
+            CExpression::Subobject { pointer, width } => Ok(SpecExpression::Subobject {
+                pointer: Box::new(self.lower_c_fragment_to_spec(pointer, environment)?),
+                width: *width,
+            }),
             CExpression::PointerOffsetBytes { pointer, bytes } => {
                 Ok(SpecExpression::PointerOffset {
                     pointer: Box::new(self.lower_c_fragment_to_spec(pointer, environment)?),
@@ -6799,6 +6810,7 @@ impl AnnotationLowerer<'_> {
             CExpression::Cast {
                 expression,
                 target_type,
+                integer_mode,
                 ..
             } if matches!(target_type, CType::Int32 | CType::UInt32 | CType::Int64)
                 || *target_type == CType::UInt64
@@ -6809,10 +6821,14 @@ impl AnnotationLowerer<'_> {
                             .is_some())
                 || target_type.is_pointer() =>
             {
-                Ok(SpecExpression::Cast(
-                    Box::new(self.lower_c_fragment_to_spec(expression, environment)?),
-                    *target_type,
-                ))
+                let value = Box::new(self.lower_c_fragment_to_spec(expression, environment)?);
+                Ok(
+                    if *integer_mode == crate::kernel::CIntegerCastMode::PointerCoercion {
+                        SpecExpression::PointerCoercion(value, *target_type)
+                    } else {
+                        SpecExpression::Cast(value, *target_type)
+                    },
+                )
             }
             CExpression::Index(base, index) => {
                 let element_type = self

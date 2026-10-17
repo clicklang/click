@@ -1475,18 +1475,19 @@ fn framed_pointer_fragments_rejoin_through_their_checked_read_endpoint() {
             let pointer =
                 Pointer::loaded(field.block.clone(), Bitvector32Term::Variable(variable), 4);
             context.register_pointer_read(&pointer, &snapshot, &field);
-            pointer
+            CPointerValue::from_read(pointer, CType::Int32Pointer, &snapshot, &field)
         };
         let source = read(&PureFactContext::new(), &CMemory::new());
-        let before = CMemory::new().store(
-            field.clone(),
-            CValue::Pointer(CPointerValue::new(source.clone(), CType::Int32Pointer)),
-        );
-        let range = |base: Pointer, start: u32, end: u32| {
-            CMemoryRange::new_with_element_width(base, start.into(), end.into(), 4)
+        let before = CMemory::new().store(field.clone(), CValue::Pointer(source.clone()));
+        let range = |base: CPointerValue, start: u32, end: u32| {
+            CMemoryRange::from_pointer_value(&base, start.into(), end.into(), 4)
         };
         let separation = Proposition::CResourceSeparate {
-            left: Box::new(CResource::Memory(range(field.clone(), 0, 2))),
+            left: Box::new(CResource::Memory(range(
+                CPointerValue::new(field.clone(), CType::Int32Pointer),
+                0,
+                2,
+            ))),
             right: Box::new(CResource::Memory(range(source.clone(), 0, 8))),
         };
         let context = PureFactContext::new().assume_proposition(separation.clone());
@@ -1498,8 +1499,11 @@ fn framed_pointer_fragments_rejoin_through_their_checked_read_endpoint() {
         );
         let current = read(&context, &after);
         assert_eq!(
-            crate::kernel::memory_provenance::checked_pointer_read_endpoint(&current, &context),
-            Some(source.clone())
+            crate::kernel::memory_provenance::checked_pointer_read_endpoint(
+                current.pointer(),
+                &context
+            ),
+            Some(source.pointer().clone())
         );
         let tail = CResourceFact::own_memory(range(source.clone(), 1, 8));
         let mut resources = ResourceContext::new()
@@ -1507,7 +1511,10 @@ fn framed_pointer_fragments_rejoin_through_their_checked_read_endpoint() {
             .unchecked_with_fact(CResourceFact::own_memory(range(current.clone(), 0, 1)));
         for index in 0..size {
             resources = resources.unchecked_with_fact(CResourceFact::own_memory(range(
-                Pointer::symbolic(Variable(9_911_000 + index)),
+                CPointerValue::new(
+                    Pointer::symbolic(Variable(9_911_000 + index)),
+                    CType::Int32Pointer,
+                ),
                 0,
                 8,
             )));
@@ -1522,7 +1529,11 @@ fn framed_pointer_fragments_rejoin_through_their_checked_read_endpoint() {
         let remaining = remaining.expect("selected framed prefix and tail must rejoin");
         assert_eq!(remaining.iter().count(), size as usize);
         work_samples.push(work);
-        assert!(!context.equality_graph.are_equal(&source, &current));
+        assert!(
+            !context
+                .equality_graph
+                .are_equal(source.pointer(), current.pointer())
+        );
         let weakened = context.without_exact_fact(&separation);
         assert!(
             resources
@@ -1651,5 +1662,86 @@ fn framed_pointer_read_selects_interior_writes_under_live_authority() {
             .iter()
             .all(|work| *work <= work_samples[0] + 128),
         "unrelated owners changed selected interior-write work: {work_samples:?}"
+    );
+}
+
+#[test]
+fn cold_read_queries_ignore_unrelated_classes_and_resource_ranges() {
+    let pointer = |id| Pointer::symbolic(Variable(id));
+    let mut samples = Vec::new();
+    for size in [16u64, 64, 256, 1024] {
+        let mut context = PureFactContext::new();
+        let mut resources = ResourceContext::new();
+        for index in 0..size {
+            let a = pointer(990_000 + index * 2);
+            let b = pointer(990_001 + index * 2);
+            context = context.assume_condition(ConditionTerm::pointer_equal(a, b.clone()), true);
+            resources = resources.unchecked_with_fact(CResourceFact::view_memory(
+                CMemoryRange::new(b, 0u32.into(), 1u32.into()),
+            ));
+        }
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            assert!(resources.permits_memory_read(&pointer(990_000), 4, &context));
+            // The first query's disposable class view cannot hide another
+            // class's alias when the next query shares its graph input key.
+            assert!(resources.permits_memory_read(&pointer(990_002), 4, &context));
+        });
+        samples.push(work);
+    }
+    assert!(
+        samples.iter().max().unwrap() - samples.iter().min().unwrap() < 64,
+        "{samples:?}"
+    );
+}
+
+#[test]
+fn an_indexed_read_supplier_does_not_resolve_its_pointer_history() {
+    let mut samples = Vec::new();
+    for size in [4u64, 8, 16, 32] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let field = Pointer {
+            block: PointerBlock::ExternalArgument,
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        let stored = Pointer::symbolic(Variable(9_930_000));
+        let mut memory = CMemory::new().store(
+            field.clone(),
+            CValue::typed_pointer(stored, CType::Int32Pointer),
+        );
+        for i in 0..size {
+            memory = memory.store(
+                Pointer {
+                    block: PointerBlock::Heap(i),
+                    offset: PointerOffsetTerm::Constant(0),
+                },
+                CValue::Int32(1u32.into()),
+            );
+        }
+        let snapshot = crate::kernel::intern_c_memory_ref(&memory);
+        let variable = crate::kernel::load_variable_for_cell_with_origin(
+            &snapshot,
+            &field,
+            LoadKind::of_type(CType::Int32Pointer).unwrap(),
+            C_POINTER_BYTE_WIDTH,
+            &snapshot,
+        );
+        let pointer = Pointer::loaded(field.block.clone(), Bitvector32Term::Variable(variable), 4);
+        let context = PureFactContext::new();
+        context.register_pointer_read(&pointer, &snapshot, &field);
+        let resources = ResourceContext::new().unchecked_with_fact(CResourceFact::own_memory(
+            CMemoryRange::new_with_element_width(pointer.clone(), 0u32.into(), 8u32.into(), 1),
+        ));
+        resources.synchronize_memory_equalities(&context);
+        let (found, work) = crate::instrumentation::measure_deterministic_work(|| {
+            resources
+                .read_access_entries(&pointer, 4, &context)
+                .is_some()
+        });
+        assert!(found);
+        samples.push(work);
+    }
+    assert!(
+        samples.iter().all(|work| *work <= samples[0] + 16),
+        "an existing supplier walked pointer history: {samples:?}"
     );
 }

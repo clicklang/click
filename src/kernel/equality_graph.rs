@@ -651,6 +651,45 @@ impl EqualityGraph {
             NEXT_LOGICAL_READ_GENERATION.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     }
 
+    /// A logical observation can retain the load variable of an existing
+    /// exact typed read. Do not publish names computed only by program reads,
+    /// or names resolved through a different cell or a narrower scalar prefix.
+    pub(in crate::kernel) fn retain_canonical_pointer_read_definition(&self, value: &Pointer) {
+        let Some((block, bits @ crate::kernel::Bitvector32Term::MemoryLoad(..), width)) =
+            value.as_loaded()
+        else {
+            return;
+        };
+        let application = self
+            .logical_reads
+            .lock()
+            .expect("logical pointer reads")
+            .definitions
+            .get(value)
+            .map(|(application, _)| application.clone());
+        let Some(application) = application else {
+            return;
+        };
+        let Some((variable, _)) = crate::kernel::load_variable_for_term(bits) else {
+            return;
+        };
+        let Some((memory, address)) = crate::kernel::registered_load_for_variable(&variable) else {
+            return;
+        };
+        if crate::kernel::registered_load_bytes_for_variable(&variable)
+            != Some(crate::kernel::C_POINTER_BYTE_WIDTH)
+            || application != Pointer::loaded_value(&memory, &address)
+        {
+            return;
+        }
+        let canonical = Pointer::loaded(
+            block.clone(),
+            crate::kernel::Bitvector32Term::Variable(variable),
+            width,
+        );
+        self.register_pointer_read_definition(&canonical, &memory, &address);
+    }
+
     /// Whether this graph reads the thread's current logical-read table: a
     /// session restore or clear installs a fresh table, which a graph built
     /// before it does not see.
@@ -690,6 +729,45 @@ impl EqualityGraph {
             state.checked_read_generation =
                 NEXT_LOGICAL_READ_GENERATION.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         }
+    }
+
+    /// Retain the complete value supplied by the selected typed read producer.
+    /// The equality and its memo invalidation stay local to this branch.
+    pub(in crate::kernel) fn add_checked_pointer_value_equality(
+        &self,
+        left: &CPointerValue,
+        right: &CPointerValue,
+    ) {
+        self.add_checked_read_equality(left.pointer(), right.pointer());
+        let mut state = self.state.lock().expect("equality graph");
+        if state.terms.add_pointer_value_equality(left, right) {
+            state.remember_input(inputs::Input::PointerValue(left.clone(), right.clone()));
+            state.checked_read_generation =
+                NEXT_LOGICAL_READ_GENERATION.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        }
+        state.close(Vec::new());
+    }
+
+    /// Whole pointer reads linked by the selected memory producer share
+    /// their origin and opaque extent, independently of the eventual type.
+    pub(in crate::kernel) fn add_checked_pointer_read_equality(
+        &self,
+        left: &Pointer,
+        right: &Pointer,
+    ) {
+        self.add_checked_read_equality(left, right);
+        let mut state = self.state.lock().expect("equality graph");
+        if state.terms.merge_pointer_read_domains(left, right) {
+            state.remember_input(inputs::Input::PointerReadValue(left.clone(), right.clone()));
+            state.checked_read_generation =
+                NEXT_LOGICAL_READ_GENERATION.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        }
+        state.close(Vec::new());
+    }
+
+    pub(in crate::kernel) fn opaque_extents_equal(&self, left: &Pointer, right: &Pointer) -> bool {
+        let mut state = self.state.lock().expect("equality graph");
+        state.terms.opaque_extents_equal(left, right)
     }
 
     fn register_logical_read_values<'a>(
@@ -1385,6 +1463,47 @@ impl EqualityGraph {
         equal
     }
 
+    pub(in crate::kernel) fn designations_equal(&self, left: &Pointer, right: &Pointer) -> bool {
+        if left == right {
+            return true;
+        }
+        let mut state = self.state.lock().expect("equality graph");
+        state.register_blocks([left.block.clone(), right.block.clone()]);
+        let equal = state.terms.designations_equal(left, right);
+        state.close(Vec::new());
+        equal
+    }
+
+    pub(in crate::kernel) fn pointer_value_representative(
+        &self,
+        value: &CPointerValue,
+    ) -> CPointerValue {
+        let mut state = self.state.lock().expect("equality graph");
+        state.register_blocks(value.pointers().map(|p| p.block.clone()));
+        state.close(Vec::new());
+        state.terms.pointer_value_representative(value)
+    }
+
+    pub(in crate::kernel) fn add_pointer_value_equality(
+        &mut self,
+        left: &CPointerValue,
+        right: &CPointerValue,
+    ) {
+        self.add_equality(left.pointer(), right.pointer());
+        if left.pointer().block == right.pointer().block {
+            self.add_offset_equality(&left.pointer().offset, &right.pointer().offset);
+        }
+        let mut state = self.state.lock().expect("equality graph");
+        let origins_changed = state
+            .terms
+            .merge_designations(left.designation(), right.designation());
+        let changed = state.terms.add_pointer_value_equality(left, right) || origins_changed;
+        state.close(Vec::new());
+        if changed {
+            state.remember_input(inputs::Input::PointerValue(left.clone(), right.clone()));
+        }
+    }
+
     pub(in crate::kernel) fn known_algebraic_constructor(
         &self,
         model: &AlgebraicTerm,
@@ -1768,6 +1887,11 @@ impl EqualityGraph {
             ConditionTerm::AlgebraicEqual(a, b) => {
                 self.register_expression_operands(state, [], [a.as_ref(), b.as_ref()], []);
             }
+            ConditionTerm::PointerValueEqual(a, b) => {
+                self.register_logical_read_values(state, a.pointers().chain(b.pointers()));
+                state.register_blocks(a.pointers().chain(b.pointers()).map(|p| p.block.clone()));
+                state.close(Vec::new());
+            }
             ConditionTerm::PointerEqual(a, b) => {
                 self.register_logical_read_values(state, [a.as_ref(), b.as_ref()]);
                 state.register_blocks([a.block.clone(), b.block.clone()]);
@@ -1808,6 +1932,7 @@ impl EqualityGraph {
                 ConditionTerm::Bitvector32Equal(..)
                     | ConditionTerm::Bitvector64Equal(..)
                     | ConditionTerm::PointerEqual(..)
+                    | ConditionTerm::PointerValueEqual(..)
                     | ConditionTerm::PointerOffsetEqual(..)
                     | ConditionTerm::AlgebraicEqual(..)
             )
@@ -1833,6 +1958,11 @@ impl EqualityGraph {
         // nodes. A miss must not register an unrelated condition application.
         if value {
             match condition {
+                ConditionTerm::PointerValueEqual(a, b) => {
+                    let mut state = self.state.lock().expect("equality graph");
+                    self.prepare_condition(&mut state, condition);
+                    return state.terms.pointer_values_equal(a, b);
+                }
                 ConditionTerm::IntegerEqual(a, b) => return self.are_integer_equal(a, b),
                 ConditionTerm::AlgebraicEqual(a, b) => return self.are_algebraic_equal(a, b),
                 ConditionTerm::Bitvector32Equal(a, b) => return self.are_int32_equal(a, b),
@@ -1945,6 +2075,32 @@ impl EqualityGraph {
         let mut state = self.state.lock().expect("equality graph");
         state.register_blocks([block.clone()]);
         state.parent.contains_key(block) || state.members.contains_key(block)
+    }
+
+    /// The affine class containing one selected base, without rebuilding
+    /// unrelated admitted merges. Used only for a disposable cold resource
+    /// view; published indexes retain their incremental merge protocol.
+    pub(in crate::kernel) fn pointer_merges_for_block(
+        &self,
+        block: &PointerBlock,
+    ) -> Vec<PointerClassMerge> {
+        let mut state = self.state.lock().expect("equality graph");
+        state.register_blocks([block.clone()]);
+        let (kept, _) = state.find(block);
+        state
+            .members
+            .get(&kept)
+            .into_iter()
+            .flat_map(|members| members.iter())
+            .map(|(moved, delta)| {
+                crate::instrumentation::record_deterministic_work(1);
+                PointerClassMerge {
+                    moved: moved.clone(),
+                    kept: kept.clone(),
+                    moved_from_kept: delta.clone(),
+                }
+            })
+            .collect()
     }
 
     /// Transitional resource consumers still enumerate spellings. This is

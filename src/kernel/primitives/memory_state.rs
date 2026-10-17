@@ -537,6 +537,10 @@ fn write_havoc_identity(mut identity: String, mut tasks: Vec<HavocIdentityTask>)
             HavocIdentityTask::Condition(condition) => {
                 crate::instrumentation::record_deterministic_work(1);
                 match condition {
+                    ConditionTerm::PointerValueEqual(left, right) => {
+                        let _ = write!(identity, "pveq({left:?},{right:?});");
+                    }
+
                     ConditionTerm::AlgebraicEqual(left, right) => {
                         let _ = write!(identity, "aeq({left:?},{right:?});");
                     }
@@ -1903,6 +1907,12 @@ pub struct CallKeptRanges {
     /// from the residual's composites whose arguments can spell it
     /// ([`Self::range_holding`]), and the identity names the composites.
     direct: Option<std::sync::Arc<Vec<CCompositeResourceDefinition>>>,
+    /// The caller's composition before transferring call inputs. Its flat
+    /// owners exclude unchanged composite owners of the same bytes.
+    caller_before_transfer: Option<ResourceContext>,
+    /// Residual composite heads absent from that original composition. They
+    /// still need checking even inside an original flat owner.
+    introduced_composites: ResourceContext,
 }
 
 #[derive(Debug)]
@@ -1912,6 +1922,8 @@ struct KeptRangeSet {
     /// The residual's owned composites, with multiplicity, when some of
     /// their ranges are answered per address rather than listed in `ranges`.
     composites: SnapshotMap<CResourceFact, usize>,
+    original_memory: SnapshotMap<CResourceFact, ()>,
+    introduced_composites: SnapshotMap<CResourceFact, usize>,
 }
 
 impl PartialEq for CallKeptRanges {
@@ -1925,16 +1937,55 @@ fn intern_kept_range_set(
     ranges: SnapshotMap<CMemoryRange, ()>,
     composites: SnapshotMap<CResourceFact, usize>,
 ) -> std::sync::Arc<KeptRangeSet> {
+    intern_kept_range_set_with_exclusions(
+        ranges,
+        composites,
+        SnapshotMap::new(),
+        SnapshotMap::new(),
+    )
+}
+
+fn intern_kept_range_set_with_exclusions(
+    ranges: SnapshotMap<CMemoryRange, ()>,
+    composites: SnapshotMap<CResourceFact, usize>,
+    original_memory: SnapshotMap<CResourceFact, ()>,
+    introduced_composites: SnapshotMap<CResourceFact, usize>,
+) -> std::sync::Arc<KeptRangeSet> {
     let mut hash = std::collections::hash_map::DefaultHasher::new();
+    std::hash::Hash::hash(&original_memory, &mut hash);
+    std::hash::Hash::hash(&introduced_composites, &mut hash);
     std::hash::Hash::hash(&ranges, &mut hash);
     std::hash::Hash::hash(&composites, &mut hash);
     let hash = std::hash::Hasher::finish(&hash);
-    intern_kept_range_set_with_hash(ranges, composites, hash)
+    intern_kept_range_set_with_exclusions_and_hash(
+        ranges,
+        composites,
+        original_memory,
+        introduced_composites,
+        hash,
+    )
 }
 
+#[cfg(test)]
 fn intern_kept_range_set_with_hash(
     ranges: SnapshotMap<CMemoryRange, ()>,
     composites: SnapshotMap<CResourceFact, usize>,
+    hash: u64,
+) -> std::sync::Arc<KeptRangeSet> {
+    intern_kept_range_set_with_exclusions_and_hash(
+        ranges,
+        composites,
+        SnapshotMap::new(),
+        SnapshotMap::new(),
+        hash,
+    )
+}
+
+fn intern_kept_range_set_with_exclusions_and_hash(
+    ranges: SnapshotMap<CMemoryRange, ()>,
+    composites: SnapshotMap<CResourceFact, usize>,
+    original_memory: SnapshotMap<CResourceFact, ()>,
+    introduced_composites: SnapshotMap<CResourceFact, usize>,
     hash: u64,
 ) -> std::sync::Arc<KeptRangeSet> {
     type Buckets = std::collections::HashMap<u64, Vec<std::sync::Weak<KeptRangeSet>>>;
@@ -1954,6 +2005,17 @@ fn intern_kept_range_set_with_hash(
         ) && same(
             candidate.composites.ptr_eq(&composites),
             &mut candidate.composites.diff(&composites).map(|_| ()),
+        ) && same(
+            candidate.original_memory.ptr_eq(&original_memory),
+            &mut candidate.original_memory.diff(&original_memory).map(|_| ()),
+        ) && same(
+            candidate
+                .introduced_composites
+                .ptr_eq(&introduced_composites),
+            &mut candidate
+                .introduced_composites
+                .diff(&introduced_composites)
+                .map(|_| ()),
         ) {
             return candidate;
         }
@@ -1964,6 +2026,8 @@ fn intern_kept_range_set_with_hash(
         id,
         ranges,
         composites,
+        original_memory,
+        introduced_composites,
     });
     bucket.push(std::sync::Arc::downgrade(&result));
     result
@@ -1985,6 +2049,8 @@ impl CallKeptRanges {
             identity,
             premises,
             direct,
+            caller_before_transfer: None,
+            introduced_composites: ResourceContext::new(),
         }
     }
 
@@ -2001,12 +2067,41 @@ impl CallKeptRanges {
         } else {
             SnapshotMap::new()
         };
+        let introduced_composites = if let Some(original) = &self.caller_before_transfer {
+            let before = original.owned_composite_facts();
+            let after = residual.owned_composite_facts();
+            let mut introduced = ResourceContext::new();
+            for change in before.diff(after) {
+                crate::instrumentation::record_deterministic_work(1);
+                let fact = match change {
+                    SnapshotMapChange::Added(fact) => fact,
+                    SnapshotMapChange::Changed(fact) if after.get(fact) > before.get(fact) => fact,
+                    _ => continue,
+                };
+                introduced = introduced.unchecked_with_fact(fact.clone());
+            }
+            introduced
+        } else {
+            self.introduced_composites.clone()
+        };
+        let original_memory = self
+            .caller_before_transfer
+            .as_ref()
+            .map(|original| original.memory_input_facts().clone())
+            .unwrap_or_default();
         Self {
             ranges: self.ranges.clone(),
             residual: Some(residual.clone()),
-            identity: intern_kept_range_set(ranges, composites),
+            identity: intern_kept_range_set_with_exclusions(
+                ranges,
+                composites,
+                original_memory,
+                introduced_composites.owned_composite_facts().clone(),
+            ),
             premises: self.premises.clone(),
             direct: self.direct.clone(),
+            caller_before_transfer: self.caller_before_transfer.clone(),
+            introduced_composites,
         }
     }
 
@@ -2145,6 +2240,33 @@ impl CallKeptRanges {
                 for spelling in &spellings {
                     bases.extend(assumptions.exact_pointer_aliases(spelling).cloned());
                 }
+                // Exclusive owners in the caller's original composition cannot
+                // overlap. Once the flat caller frame has failed above, an
+                // original flat owner rules out every unchanged composite.
+                // A transferred owner may have been repackaged into a new
+                // composite, so retain those candidates rather than declaring
+                // the access changed merely from a mutable-range summary.
+                let residual = if self
+                    .caller_before_transfer
+                    .as_ref()
+                    .is_some_and(|original| {
+                        bases.iter().any(|base| {
+                            original
+                                .owned_memory_members_with_base(base)
+                                .any(|(_, range)| {
+                                    original
+                                        .exact_resource_facts(&CResource::Memory(range.clone()))
+                                        .into_iter()
+                                        .any(|fact| fact.has_proven_positive_quantity(assumptions))
+                                        && assumptions
+                                            .kept_range_holds_access(range, pointer, bytes)
+                                })
+                        })
+                    }) {
+                    &self.introduced_composites
+                } else {
+                    residual
+                };
                 let opened = |facts: &mut dyn Iterator<Item = &CResourceFact>| {
                     let mut seen = BTreeSet::new();
                     let mut ranges = Vec::new();
@@ -2187,6 +2309,18 @@ impl CallKeptRanges {
 }
 
 impl CallKeptOwnership {
+    /// Retain the actual pre-transfer caller composition, sharing its indexes.
+    /// This is an exclusion index, never another source of kept ownership.
+    pub(in crate::kernel) fn with_caller_before_transfer(
+        mut self,
+        caller: &ResourceContext,
+    ) -> Self {
+        if self.opened.direct.is_some() && !caller.flat_owned_memory_ranges().is_empty() {
+            self.opened.caller_before_transfer = Some(caller.clone());
+        }
+        self
+    }
+
     #[cfg(test)]
     pub(in crate::kernel) fn opened_resources_for_test(&self) -> &ResourceContext {
         &self.opened.ranges
@@ -2242,7 +2376,7 @@ impl CallKeptOwnership {
 
 /// How the call havoc rule treats one cell.
 enum CallHavocCellRule {
-    /// Kept by the separation rule, without the caller's ownership.
+    /// Kept by separation or the checked flat caller frame.
     Separate,
     /// Kept because this member of what the caller keeps owning holds it.
     KeptByCaller,
@@ -2296,6 +2430,16 @@ fn call_havoc_keeps_cell(
         };
     }
     let bytes = crate::kernel::reasoning::cell_access_byte_width(value);
+    // Whole parameter runs are filtered by the flat caller frame already.
+    // A partial borrow leaves the run as a candidate; apply the same rule
+    // to its individual slots before consulting older compositions.
+    if kept.is_some_and(|kept| {
+        assumptions
+            .parameter_partition_cell_base(&kept.residual, pointer, bytes)
+            .is_some()
+    }) {
+        return CallHavocCellRule::Separate;
+    }
     if assumptions.ranges_directly_disjoint_from_access(mutable_ranges, pointer, bytes)
         || assumptions.ranges_proven_disjoint_from_pointer(mutable_ranges, pointer)
     {
@@ -2758,6 +2902,32 @@ impl CMemory {
         }
     }
 
+    /// [`Self::with_block_or_read_only`] with the object's declared class
+    /// recorded in the same declaration, as [`Self::with_classed_block`]
+    /// records it.
+    pub(in crate::kernel) fn with_classed_block_or_read_only(
+        mut self,
+        block: impl Into<PointerBlock>,
+        size: u32,
+        read_only: bool,
+        declared_class: Option<crate::kernel::effective_type::CAccessClass>,
+    ) -> Self {
+        if declared_class.is_none() {
+            return self.with_block_or_read_only(block, size, read_only);
+        }
+        let block = block.into();
+        let base = intern_derivation_base(&mut self);
+        let mut declaration = if read_only {
+            CBlock::read_only(size)
+        } else {
+            CBlock::new(size)
+        };
+        declaration.declared_class = declared_class;
+        std::sync::Arc::make_mut(&mut self.blocks).insert(block.clone(), declaration);
+        record_c_memory_derivation(&mut self, CMemoryDerivation::BlockDeclared { base, block });
+        self
+    }
+
     pub(in crate::kernel) fn with_read_only_block(
         mut self,
         block: impl Into<PointerBlock>,
@@ -2774,6 +2944,21 @@ impl CMemory {
     /// program transition. Symbolic aggregate return values use this to make
     /// their known layout available for bounds checks while keeping the
     /// symbolic load identity independent of the caller's memory snapshot.
+    /// Gives a synthetic block the declared class of the storage it stands
+    /// for (`design/effective-types.md`). Synthetic memories record no
+    /// derivation, so the class needs none either.
+    pub(in crate::kernel) fn with_block_declared_class(
+        mut self,
+        block: &PointerBlock,
+        class: crate::kernel::effective_type::CAccessClass,
+    ) -> Self {
+        if let Some(mut declaration) = self.blocks.get(block).cloned() {
+            declaration.declared_class = Some(class);
+            std::sync::Arc::make_mut(&mut self.blocks).insert(block.clone(), declaration);
+        }
+        self
+    }
+
     pub(in crate::kernel) fn with_block_without_derivation(
         mut self,
         block: impl Into<PointerBlock>,
@@ -5064,11 +5249,25 @@ impl CMemory {
         self.store_with_context(pointer, value, &PureFactContext::new())
     }
 
+    /// Observe and cache a scalar cell without changing its physical bytes.
+    /// The observation is computed here so callers cannot supply a new value
+    /// under the guise of a read.
+    pub(crate) fn materialize_symbolic_cell(self, pointer: Pointer, c_type: CType) -> Self {
+        let value = crate::kernel::eval::symbolic_storage_cell_value(&self, &pointer, c_type, true);
+        match value {
+            Some(value) => self.materialize_named_cell(pointer, value),
+            None => self,
+        }
+    }
+
     /// Cache the canonical value of an already existing cell for a resource
     /// projection. This is not a C write and cannot establish initialization.
-    /// The conservative store edge keeps memory-DAG lookup connected without
-    /// granting any new initialized-cell or allocation authority.
-    pub(crate) fn materialize_named_cell(mut self, pointer: Pointer, value: CValue) -> Self {
+    /// Kernel producers supply the value they observed or proved at this point.
+    pub(in crate::kernel) fn materialize_named_cell(
+        mut self,
+        pointer: Pointer,
+        value: CValue,
+    ) -> Self {
         if self.cells.contains_key(&pointer) {
             return self;
         }
@@ -5099,15 +5298,8 @@ impl CMemory {
             }
         }
         let base = intern_derivation_base(&mut self);
-        std::sync::Arc::make_mut(&mut self.cells).insert(pointer.clone(), value.clone());
-        record_c_memory_derivation(
-            &mut self,
-            CMemoryDerivation::Store {
-                base,
-                pointer,
-                value,
-            },
-        );
+        std::sync::Arc::make_mut(&mut self.cells).insert(pointer, value);
+        record_c_memory_derivation(&mut self, CMemoryDerivation::CellObserved { base });
         self
     }
 
@@ -6548,7 +6740,9 @@ impl CMemory {
         // resource argument evaluator does not retain a C load's fact stream.
         crate::kernel::equality_graph::EqualityGraph::default()
             .register_pointer_read_definition(&value, &snapshot, pointer);
-        CValue::typed_pointer(value, value_type)
+        CValue::Pointer(CPointerValue::from_read(
+            value, value_type, &snapshot, pointer,
+        ))
     }
 }
 
@@ -9479,6 +9673,35 @@ mod kept_range_identity_tests {
         .join()
         .unwrap();
         assert_eq!(first.id, across.id);
+    }
+
+    #[test]
+    fn kept_range_hash_collisions_distinguish_composite_exclusions() {
+        let composite = ResourceContext::new().unchecked_with_fact(CResourceFact::own_composite(
+            "boxed".into(),
+            vec![CValue::pointer(Pointer::symbolic(Variable(9)))],
+        ));
+        let intern = |original, introduced| {
+            intern_kept_range_set_with_exclusions_and_hash(
+                ranges(7),
+                SnapshotMap::new(),
+                original,
+                introduced,
+                0,
+            )
+        };
+        let original = ResourceContext::new()
+            .unchecked_with_facts(ranges(8).keys().cloned().map(CResourceFact::own_memory));
+        let original = original.memory_input_facts();
+        let plain = intern(SnapshotMap::new(), SnapshotMap::new());
+        let excluded = intern(original.clone(), SnapshotMap::new());
+        let introduced = intern(original.clone(), composite.owned_composite_facts().clone());
+        assert_ne!(plain.id, excluded.id);
+        assert_ne!(excluded.id, introduced.id);
+        assert_eq!(
+            introduced.id,
+            intern(original.clone(), composite.owned_composite_facts().clone()).id
+        );
     }
 
     #[test]

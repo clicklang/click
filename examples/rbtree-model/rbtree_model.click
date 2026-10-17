@@ -6586,3 +6586,88 @@ theorem ctx_erase_right_sibling_is_node(above: struct rb_node*, parent: struct r
         }
     }
 }
+
+// Pure context helpers are shared without importing C resource declarations.
+function color_bit(color: Color) -> int {
+    match color {
+        Color::Red => 0,
+        Color::Black => 1,
+    }
+}
+
+function rb_color_bit(tree: RbTree) -> int {
+    match tree {
+        RbTree::Empty => 0,
+        RbTree::Node(identity, parent, color, left, right) => color_bit(color),
+    }
+}
+
+function rb_has_parent(tree: RbTree, p: struct rb_node*) -> int32 {
+    match tree {
+        RbTree::Empty => 0,
+        RbTree::Node(identity, parent, color, left, right) =>
+            if parent == p { 1 } else { 0 },
+    }
+}
+
+function ctx_node_is(ctx: Context, p: struct rb_node*) -> int32 {
+    match ctx {
+        Context::Top => if p == 0 { 1 } else { 0 },
+        Context::Left(identity, grandparent, color, sibling_model, up_model) =>
+            if p == identity { 1 } else { 0 },
+        Context::Right(identity, grandparent, color, sibling_model, up_model) =>
+            if p == identity { 1 } else { 0 },
+    }
+}
+
+function ctx_reroot(ctx: Context, p: struct rb_node*) -> Context {
+    match ctx {
+        Context::Top => Context::Top,
+        Context::Left(identity, grandparent, color, sibling_model, up_model) =>
+            Context::Left(p, grandparent, color, sibling_model, up_model),
+        Context::Right(identity, grandparent, color, sibling_model, up_model) =>
+            Context::Right(p, grandparent, color, sibling_model, up_model),
+    }
+}
+
+function rb_tree_parent_consistent(t: RbTree) -> int32 {
+    rb_parent_consistent(t, 0)
+}
+
+function ctx_holds(ctx: Context, sub: RbTree) -> int32 {
+    match ctx {
+        Context::Top => rb_has_parent(sub, 0),
+        Context::Left(identity, grandparent, color, sibling_model, up_model) =>
+            rb_has_parent(sub, identity),
+        Context::Right(identity, grandparent, color, sibling_model, up_model) =>
+            rb_has_parent(sub, identity),
+    }
+}
+
+function ctx_identity(ctx: Context) -> struct rb_node* {
+    match ctx {
+        Context::Top => 0,
+        Context::Left(identity, grandparent, color, sibling_model, up_model) => identity,
+        Context::Right(identity, grandparent, color, sibling_model, up_model) => identity,
+    }
+}
+
+
+theorem ctx_node_is_identity(ctx: Context, p: struct rb_node*) {
+    requires ctx_node_is(ctx, p) == 1;
+    ensures ctx_identity(ctx) == p by {
+        induct(ctx) as ih {
+            Context::Top => { unfold(ctx_identity(Context::Top)); have p == 0 by auto(); assumption(); },
+            Context::Left(identity, grandparent, color, sibling, up) => {
+                unfold(ctx_identity(Context::Left(identity, grandparent, color, sibling, up)));
+                have p == identity by auto();
+                assumption();
+            },
+            Context::Right(identity, grandparent, color, sibling, up) => {
+                unfold(ctx_identity(Context::Right(identity, grandparent, color, sibling, up)));
+                have p == identity by auto();
+                assumption();
+            },
+        }
+    }
+}

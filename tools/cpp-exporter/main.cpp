@@ -562,6 +562,59 @@ private:
              "supported constructors require records without stateless members");
         return std::nullopt;
       }
+      // A base built by its own constructor: that call, on the base
+      // subobject, before the members.
+      for (const clang::CXXCtorInitializer *initializer : constructor->inits()) {
+        if (!initializer->isBaseInitializer() || !initializer->isWritten())
+          continue;
+        const auto *construction = llvm::dyn_cast<clang::CXXConstructExpr>(
+            initializer->getInit()->IgnoreParenImpCasts());
+        const auto *selected =
+            construction == nullptr ? nullptr : construction->getConstructor();
+        const auto *definition =
+            selected == nullptr
+                ? nullptr
+                : llvm::dyn_cast_or_null<clang::CXXConstructorDecl>(
+                      selected->getDefinition());
+        const auto *base_record =
+            initializer->getBaseClass()->getAsCXXRecordDecl()->getDefinition();
+        if (definition == nullptr ||
+            construction->getNumArgs() != definition->getNumParams()) {
+          fail(initializer->getSourceLocation(),
+               "C++ base construction requires a resolved direct constructor call");
+          return std::nullopt;
+        }
+        llvm::json::Array arguments;
+        for (unsigned index = 0; index < construction->getNumArgs(); ++index) {
+          auto argument = lower_call_argument(construction->getArg(index),
+                                              definition->getParamDecl(index),
+                                              constructor);
+          if (!argument) return std::nullopt;
+          arguments.push_back(std::move(*argument));
+        }
+        if (!remember_function(definition)) return std::nullopt;
+        llvm::json::Object object;
+        object["declaration_id"] = object_self_id(constructor);
+        object["name"] = "self";
+        object["span"] = span(constructor->getNameInfo().getSourceRange());
+        llvm::json::Object base_reference;
+        base_reference["record_declaration_id"] = declaration_id(record);
+        base_reference["base_declaration_id"] = declaration_id(base_record);
+        base_reference["base_name"] = record_name(base_record);
+        base_reference["span"] = span(initializer->getSourceRange());
+        llvm::json::Object reference;
+        reference["declaration_id"] = declaration_id(definition);
+        reference["name"] = constructor_name(definition);
+        reference["span"] = span(initializer->getSourceRange());
+        llvm::json::Object statement;
+        statement["kind"] = "base_construct";
+        statement["object"] = std::move(object);
+        statement["base"] = std::move(base_reference);
+        statement["callee"] = std::move(reference);
+        statement["arguments"] = std::move(arguments);
+        statement["span"] = span(initializer->getSourceRange());
+        statements.push_back(std::move(statement));
+      }
       for (const clang::FieldDecl *field : record->fields()) {
         const clang::CXXCtorInitializer *initializer = nullptr;
         for (const clang::CXXCtorInitializer *candidate : constructor->inits()) {
@@ -4474,12 +4527,39 @@ private:
       const auto *base = specifier.getType()->getAsCXXRecordDecl();
       if (!record->isPolymorphic() || record->getNumBases() != 1 ||
           specifier.isVirtual() || base == nullptr || !base->isPolymorphic() ||
-          base->getNumBases() != 0 || !base->field_empty() ||
-          base->hasUserDeclaredConstructor()) {
+          base->getNumBases() != 0) {
         fail(constructor->getLocation(),
              "C++ constructors with base subobjects remain unsupported, except "
-             "a polymorphic class's polymorphic base with no fields or "
-             "constructors of its own");
+             "a polymorphic class's polymorphic base with no base of its own");
+        return false;
+      }
+      // A base with a constructor of its own is built by naming it in the
+      // initializer list; one without is field-less, and its implicit
+      // construction only sets the vtable pointer.
+      const clang::CXXCtorInitializer *base_initializer = nullptr;
+      for (const clang::CXXCtorInitializer *initializer : constructor->inits())
+        if (initializer->isBaseInitializer()) base_initializer = initializer;
+      const auto *construction =
+          base_initializer == nullptr
+              ? nullptr
+              : llvm::dyn_cast<clang::CXXConstructExpr>(
+                    base_initializer->getInit()->IgnoreParenImpCasts());
+      const bool constructed =
+          base->hasUserDeclaredConstructor() && base_initializer != nullptr &&
+          base_initializer->isWritten() && construction != nullptr &&
+          construction->getConstructor() != nullptr &&
+          construction->getConstructor()->getParent()->getCanonicalDecl() ==
+              base->getCanonicalDecl() &&
+          !construction->getConstructor()->isDefaultConstructor();
+      const bool implicit_empty = !base->hasUserDeclaredConstructor() &&
+                                  base->field_empty() &&
+                                  (base_initializer == nullptr ||
+                                   !base_initializer->isWritten());
+      if (!constructed && !implicit_empty) {
+        fail(constructor->getLocation(),
+             "a polymorphic C++ class's constructor names its base's own "
+             "non-default constructor in its initializer list, or its base has "
+             "no fields and no constructor of its own");
         return false;
       }
       empty_base = base->getCanonicalDecl();
@@ -4489,7 +4569,8 @@ private:
           llvm::dyn_cast_or_null<clang::CompoundStmt>(constructor->getBody());
       bool reads = body == nullptr || !body->body_empty();
       for (const clang::CXXCtorInitializer *initializer : constructor->inits()) {
-        reads = reads || (initializer->isMemberInitializer() &&
+        reads = reads || ((initializer->isMemberInitializer() ||
+                           initializer->isBaseInitializer()) &&
                           reads_this(initializer->getInit()));
       }
       if (reads) {
@@ -4541,15 +4622,28 @@ private:
     }
     std::vector<const clang::CXXCtorInitializer *> source_order(field_count,
                                                                 nullptr);
+    // A written base initializer comes first, as it runs first.
+    unsigned members_from = 0;
     for (const clang::CXXCtorInitializer *initializer : constructor->inits()) {
-      // The field-less base's implicit default construction.
+      if (initializer->isBaseInitializer() && initializer->isWritten()) {
+        if (initializer->getSourceOrder() != 0) {
+          fail(initializer->getSourceLocation(),
+               "the supported constructor names its base's construction first");
+          return false;
+        }
+        members_from = 1;
+      }
+    }
+    for (const clang::CXXCtorInitializer *initializer : constructor->inits()) {
+      // The base's construction, which the body emits first.
       if (empty_base != nullptr && initializer->isBaseInitializer() &&
-          !initializer->isWritten() &&
           initializer->getBaseClass()->getAsCXXRecordDecl()->getCanonicalDecl() ==
               empty_base) {
         continue;
       }
-      const unsigned order = initializer->getSourceOrder();
+      const unsigned order = initializer->isWritten()
+                                 ? initializer->getSourceOrder() - members_from
+                                 : field_count;
       if (!initializer->isWritten() || !initializer->isMemberInitializer() ||
           order >= field_count || source_order[order] != nullptr) {
         fail(constructor->getLocation(),
@@ -4785,7 +4879,12 @@ private:
             fail(cast->getExprLoc(), "C++ base conversion requires an explicit nominal base path");
             return std::nullopt;
           }
+          // A conversion to a `const` base reference, the last edge of the
+          // path, lends the object without the right to change it.
+          const bool to_const = cast->getType().isConstQualified();
+          std::size_t edge_index = 0;
           for (const auto *base : cast->path()) {
+            ++edge_index;
             if (owner == nullptr || !remember_record(owner) ||
                 owner->getNumBases() != 1 || base->isVirtual() ||
                 base->getAccessSpecifier() != clang::AS_public) {
@@ -4810,6 +4909,8 @@ private:
             reference["base_declaration_id"] = declaration_id(target);
             reference["base_name"] = record_name(target);
             reference["span"] = span(cast->getSourceRange());
+            if (to_const && edge_index == cast->path_size())
+              reference["is_const"] = true;
             llvm::json::Object projection;
             projection["base"] = std::move(reference);
             edges.push_back(Json(std::move(projection)));

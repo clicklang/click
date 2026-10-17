@@ -3211,7 +3211,8 @@ fn execute_verified_function_applications_with_suspension(
                 interface.composite_resource_definitions(),
                 &entry_state,
                 &effective_assumptions,
-            );
+            )
+            .with_caller_before_transfer(caller_state.resources());
             entry_state.memory.clone().with_call_memory_havoc(
                 memory_identity,
                 &transfer.memory_effects,
@@ -4954,6 +4955,8 @@ pub(super) fn retained_population_call_partition(
     callee_resources: &ResourceContext,
     assumptions: &PureFactContext,
 ) -> Option<ResourceContext> {
+    // Consumption already retained a valid caller frame. Extend it with
+    // the selected callee pieces without rechecking untouched owner pairs.
     let mut partition = caller_frame.clone();
     for fact in callee_resources
         .facts()
@@ -4962,7 +4965,7 @@ pub(super) fn retained_population_call_partition(
     {
         if !partition.contains_exact_representation(fact) {
             partition = partition
-                .try_compose_with_facts_delaying_normalization([fact.clone()], assumptions)
+                .try_compose_into_valid_context_delaying_normalization([fact.clone()], assumptions)
                 .ok()?;
         }
     }
@@ -10673,6 +10676,12 @@ fn prepare_contract_resource_transfer_unexplained(
                         .resources()
                         .view_occurrences_for_fact(&requirement.fact, assumptions)
                         .is_empty()
+                    // Owned pieces that together cover the range supply it:
+                    // the planner joins them into one owner and lends that.
+                    && caller_state
+                        .resources()
+                        .with_coalesced_owned_memory(&requirement.fact, assumptions)
+                        .is_none()
             };
             matches!(
                 requirement.fact.resource(),
@@ -12909,6 +12918,10 @@ fn lower_selected_resource_body_clauses(
     let mut records = Vec::with_capacity(source.len());
     let mut retained_conditions = Vec::new();
     for (ordinal, clause) in source.iter().enumerate() {
+        // Unfold publishes numeric observations; fold checks existing values.
+        // A pointer cast restores complete-word demand in either case.
+        let _word_observation =
+            crate::kernel::eval::WordRepresentationScope::enter(established_assumptions.is_some());
         crate::instrumentation::record_deterministic_work(1);
         let clause = rewrite.spec_proposition(clause).map_err(
             |_| "resource match Integer binding substitution exceeded its checked scope",
@@ -13138,7 +13151,7 @@ fn body_fact_is_established_through_a_pointer_alias(
             .exact_pointer_aliases(&Pointer::symbolic(variable))
             .any(|alias| {
                 let candidate =
-                    crate::kernel::proof::term_rewrite::TermRewrite::for_pointer_variable(
+                    crate::kernel::proof::term_rewrite::TermRewrite::for_pointer_address_variable(
                         variable, alias,
                     )
                     .proposition(proposition);
@@ -13914,10 +13927,13 @@ fn rewrite_resource_instance_selecting_children_unspelled(
                 // conservative equivalent of emitting the obligation.
                 if paths.len() != 1
                     || paths[0].facts.iter().any(|fact| {
-                        !required_obligation_is_exactly_discharged(
-                            &child_assumptions,
-                            fact.proposition(),
-                        )
+                        // Kernel-issued read definitions are producer outputs,
+                        // not prerequisites to prove again in the parent context.
+                        !fact.is_certified()
+                            && !required_obligation_is_exactly_discharged(
+                                &child_assumptions,
+                                fact.proposition(),
+                            )
                     })
                     || paths[0].obligations.iter().any(|goal| {
                         !required_obligation_is_exactly_discharged(
@@ -14228,8 +14244,8 @@ fn rewrite_resource_instance_selecting_children_unspelled(
     // Holding an instance lets C read the cells its body owns. A fold makes
     // the instance, so it publishes that read authority here, attached to
     // the new occurrence: it retires when the instance is unfolded, consumed
-    // or freed. The checker derives the rewrite again and gets the same
-    // views, so a checked execution and its record agree.
+    // or freed. These views belong to the constructed successor and travel
+    // with the resource exchange's retained evidence.
     if !unfold && let Some(folded) = next.resources.owned_instance(instance.identity).cloned() {
         let owner = CResourceFact::own(CResource::Instance(folded.clone()));
         if let Some((occurrence, _)) = next.resources.unique_owned_occurrence_for_fact(&owner) {
@@ -17017,14 +17033,29 @@ fn predicate_fact_refutes_constructor(
         return false;
     };
     let condition = if fact.wide {
-        ConditionTerm::int64_equal(value, fact.constant.clone())
+        ConditionTerm::int64_equal(value.clone(), fact.constant.clone())
     } else {
-        ConditionTerm::equal(value, fact.constant.clone())
+        ConditionTerm::equal(value.clone(), fact.constant.clone())
     };
     // The premise fixes the application's value; the arm is refuted when the
     // body's value at this constructor cannot be that one.
     let refutation = Proposition::ConditionIs(condition, !fact.equal);
-    if required_obligation_is_exactly_discharged(arm_assumptions, &refutation) {
+    // Refutation consumes indexed scalar evidence; a failed comparison must
+    // not resolve unrelated memory equations in the ambient path context.
+    let indexed_comparison = if fact.wide {
+        arm_assumptions
+            .wide_constant_from_equalities(&value)
+            .zip(arm_assumptions.wide_constant_from_equalities(fact.constant))
+            .map(|(left, right)| left == right)
+    } else {
+        arm_assumptions.decide_bitvector_equality_shallow(&value, fact.constant)
+    };
+    if indexed_comparison == Some(!fact.equal)
+        || super::reasoning::path_facts::call_input_fact_is_already_known(
+            arm_assumptions,
+            &refutation,
+        )
+    {
         super::assumptions::record_reasoning_provenance(arm_assumptions, premise);
         return true;
     }
@@ -17145,6 +17176,9 @@ fn arm_premises_at_symbolic_bindings(
             ));
     let mut arm_assumptions = assumptions.clone();
     for fact in &arm.facts {
+        // These facts assume a hypothetical constructor. Numeric clauses
+        // observe bits only; explicit pointer casts still recover whole values.
+        let _word_observation = crate::kernel::eval::WordRepresentationScope::enter(false);
         crate::instrumentation::record_deterministic_work(1);
         let Ok(paths) =
             crate::kernel::spec::lower_spec_proposition_at_state_with_algebraic_bindings(
@@ -17182,13 +17216,11 @@ fn arm_is_refuted_by_a_binding_free_fact(
     evaluation_assumptions: &PureFactContext,
     assumptions: &PureFactContext,
 ) -> bool {
-    arm_binding_free_facts(evaluation, arm, evaluation_assumptions)
-        .iter()
-        .any(|fact| {
-            refutation_of_body_fact(fact).is_some_and(|negation| {
-                required_obligation_is_exactly_discharged(assumptions, &negation)
-            })
+    arm_binding_free_facts(evaluation, arm, evaluation_assumptions).any(|fact| {
+        refutation_of_body_fact(&fact).is_some_and(|negation| {
+            required_obligation_is_exactly_discharged(assumptions, &negation)
         })
+    })
 }
 
 /// One arm's own facts that name no binding of the arm, lowered against the
@@ -17196,65 +17228,87 @@ fn arm_is_refuted_by_a_binding_free_fact(
 ///
 /// Facts are restricted to the comparison shape for the same reason arm
 /// selection restricts its guards: a comparison of C expressions is what a
-/// path condition decides. The arm's `owns` clauses are evaluated first,
-/// exactly as arm selection evaluates the selected arm's cells, so a fact that
-/// reads a cell the arm owns has the authority to read it. A fact that needs a
-/// conditional proof, or that the budget cannot lower, contributes nothing.
+/// path condition decides. Direct value comparisons need no owned memory.
+/// Other facts first evaluate the arm's `owns` clauses, exactly as arm
+/// selection does, so a fact reading an arm-owned cell has its authority.
+/// A fact that needs a conditional proof, or that the budget cannot lower, contributes nothing.
+/// Lower facts on demand so a refuting guard stops before unused memory facts.
 ///
 /// Cost is this arm's own clauses. Nothing outside the arm is visited.
-fn arm_binding_free_facts(
-    evaluation: &CState,
-    arm: &CResourceMatchArm,
-    evaluation_assumptions: &PureFactContext,
-) -> Vec<Proposition> {
+fn arm_binding_free_facts<'a>(
+    evaluation: &'a CState,
+    arm: &'a CResourceMatchArm,
+    evaluation_assumptions: &'a PureFactContext,
+) -> impl Iterator<Item = Proposition> + 'a {
     let bound = arm.bindings.iter().cloned().collect::<BTreeSet<_>>();
     let binding_free = arm
         .facts
         .iter()
         .filter(|fact| !spec_proposition_mentions_any_name(fact, &bound))
         .collect::<Vec<_>>();
-    if binding_free.is_empty() {
-        return Vec::new();
-    }
     let mut budget = ExecutionBudget::beside_live_state();
-    let Ok(Ok(body_resources)) = evaluate_function_resource_context_with_normalization(
-        evaluation,
-        &arm.contains,
-        &[],
-        evaluation_assumptions,
-        &mut budget,
-        false,
-    ) else {
-        return Vec::new();
-    };
-    let body_state = evaluation.clone().with_resource_context(body_resources.0);
-    let body_assumptions =
-        evaluation_assumptions
-            .clone()
-            .assume_proposition(Proposition::CResourceComposition(
-                body_state.resources().clone(),
-            ));
-    let bindings = BTreeMap::new();
-    binding_free
-        .into_iter()
-        .filter_map(|fact| {
-            crate::instrumentation::record_deterministic_work(1);
+    let prepared = std::cell::OnceCell::new();
+    binding_free.into_iter().filter_map(move |fact| {
+        crate::instrumentation::record_deterministic_work(1);
+        let lower = |state: &CState,
+                     assumptions: &PureFactContext,
+                     budget: &mut ExecutionBudget| {
             let paths =
                 crate::kernel::spec::lower_spec_proposition_at_state_with_algebraic_bindings(
-                    &body_state,
+                    state,
                     fact,
                     None,
-                    &body_assumptions,
-                    &bindings,
-                    &mut budget,
+                    assumptions,
+                    &BTreeMap::new(),
+                    budget,
                 )
                 .ok()?;
             let [path] = paths.as_slice() else {
                 return None;
             };
             (path.facts.is_empty() && path.obligations.is_empty()).then(|| path.proposition.clone())
-        })
-        .collect()
+        };
+        // Direct scalar comparisons need no owned cells. In particular,
+        // checking a null guard must not evaluate every memory clause.
+        let direct = match fact {
+            SpecProposition::Comparison { left, right, .. } => {
+                [left, right].into_iter().all(|side| {
+                    matches!(
+                        side,
+                        SpecExpression::Value(_)
+                            | SpecExpression::CExpression(
+                                CExpression::Value(_) | CExpression::Variable(_)
+                            )
+                    )
+                })
+            }
+            _ => false,
+        };
+        if direct && let Some(proposition) = lower(evaluation, evaluation_assumptions, &mut budget)
+        {
+            return Some(proposition);
+        }
+        let (body_state, body_assumptions) = prepared
+            .get_or_init(|| {
+                let body_resources = evaluate_function_resource_context_with_normalization(
+                    evaluation,
+                    &arm.contains,
+                    &[],
+                    evaluation_assumptions,
+                    &mut budget,
+                    false,
+                )
+                .ok()?
+                .ok()?;
+                let body_state = evaluation.clone().with_resource_context(body_resources.0);
+                let body_assumptions = evaluation_assumptions.clone().assume_proposition(
+                    Proposition::CResourceComposition(body_state.resources().clone()),
+                );
+                Some((body_state, body_assumptions))
+            })
+            .as_ref()?;
+        lower(body_state, body_assumptions, &mut budget)
+    })
 }
 
 /// The facts of the arm a frontier's premises decide for one folded matched
@@ -17305,7 +17359,7 @@ fn decided_instance_arm_facts(
         .clone()
         .allow_symbolic_contract_loads()
         .prefer_symbolic_external_loads();
-    arm_binding_free_facts(&evaluation, arm, &evaluation_assumptions)
+    arm_binding_free_facts(&evaluation, arm, &evaluation_assumptions).collect()
 }
 
 /// Whether a resource body fact is a comparison of C expressions in which one
@@ -18632,7 +18686,12 @@ fn evaluate_function_declared_resource_spec(
                 "resource `{name}` argument {index} has the wrong type"
             ))));
         }
-        values.push(value);
+        // Logical resource indices observe numbers; they do not store C
+        // representation records or carry those records through loop models.
+        values.push(match value {
+            CValue::PointerInteger(word) => *word.numeric,
+            value => value,
+        });
     }
     let resource = match family {
         ResourceFamily::Composite => CResource::Composite {

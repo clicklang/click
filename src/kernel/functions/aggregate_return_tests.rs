@@ -889,7 +889,13 @@ fn symbolic_construction_storage_respects_known_aliases() {
                     ));
                 let paths = execute_c_statement_paths(
                     &state,
-                    &c_return(c_typed_load(c_pointer_value(read.clone()), CType::Int32)),
+                    &c_return(c_typed_load(
+                        CExpression::Value(CValue::Pointer(
+                            CPointerValue::new(source.clone(), CType::Int32Pointer)
+                                .with_address(read.clone()),
+                        )),
+                        CType::Int32,
+                    )),
                     &assumptions,
                     CExecutionContext::execute_bodies(&CExecutionEnvironment::new()),
                     &mut ExecutionBudget::default(),

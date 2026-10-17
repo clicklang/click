@@ -593,15 +593,11 @@ fn structural_recursion_paths(
 }
 
 fn c_expression_mentions_variable(expression: &CExpression, variable: &str) -> bool {
-    let mut substitutions = BTreeMap::new();
-    substitutions.insert(
-        variable.to_string(),
-        CExpression::Value(CValue::Int32(Bitvector32Term::Constant(0))),
-    );
-    // Compare normalized spellings: the substitution also erases what the
-    // structural comparison ignores.
-    substitute_c_expression_variables(expression, &substitutions)
-        != substitute_c_expression_variables(expression, &BTreeMap::new())
+    // Substitution also normalizes subobject wrappers, even when no variable
+    // is replaced. Such normalization cannot establish a free occurrence.
+    let mut variables = BTreeSet::new();
+    collect_c_expression_variables(expression, &mut variables);
+    variables.contains(variable)
 }
 
 /// Assumes one evaluation path's facts. Loadability obligations are the
@@ -1455,9 +1451,11 @@ fn collect_spec_c_variables(
                     SpecExpression::Value(_)
                     | SpecExpression::ResourceField { .. }
                     | crate::kernel::binary_spec_expression!(_, _)
+                    | SpecExpression::Subobject { .. }
                     | SpecExpression::PointerOffset { .. }
                     | SpecExpression::BitwiseNot(_)
                     | SpecExpression::Cast(_, _)
+                    | SpecExpression::PointerCoercion(_, _)
                     | SpecExpression::PureFunctionApplication { .. }
                     | SpecExpression::IntegerToMachine { .. }
                     | SpecExpression::AlgebraicMatch { .. } => {}
@@ -2398,7 +2396,8 @@ struct RankingMachineTerm {
 
 impl RankingMachineTerm {
     fn from_value(value: &CValue) -> Option<Self> {
-        let (machine_type, term) = match value {
+        let (machine_type, term) = match value.numeric_value() {
+            CValue::PointerInteger(_) => unreachable!("numeric projection"),
             CValue::Bool(term)
             | CValue::Int8(term)
             | CValue::Int16(term)
@@ -5226,6 +5225,29 @@ fn termination_rules_recording_function<'a>(
 #[cfg(test)]
 mod address_escape_tests {
     use super::*;
+
+    #[test]
+    fn subobject_child_mentions_only_its_actual_source_variables() {
+        let child = CExpression::TypedLoad {
+            pointer: Box::new(CExpression::Subobject {
+                pointer: Box::new(CExpression::PointerOffsetBytes {
+                    pointer: Box::new(CExpression::Variable("p".into())),
+                    bytes: 8,
+                }),
+                width: 8,
+            }),
+            value_type: CType::Int32Pointer,
+            volatile: false,
+            pointee_constant: false,
+            access_class: None,
+            source: CExpressionLoadSource::none(),
+        };
+        assert!(c_expression_mentions_variable(&child, "p"));
+        for name in ["identity", "value", "left_model", "right_model"] {
+            assert!(!c_expression_mentions_variable(&child, name));
+        }
+    }
+
     use std::sync::Arc;
 
     fn variable(name: &str) -> CExpression {
@@ -6416,9 +6438,7 @@ mod local_descent_tests {
     #[test]
     fn a_diverging_named_contract_refuses_the_pointer_call_that_applies_it() {
         let mut applies = pointer_rule("applies", &[], Some("callback"), &[]);
-        applies
-            .function
-            .contract_interface
+        Arc::make_mut(&mut applies.function.contract_interface)
             .contract_requires
             .push(SpecProposition::Predicate {
                 resource_state_dependent: true,

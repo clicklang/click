@@ -69,14 +69,18 @@ checks.
 ### P1. Proofs are far larger than the code
 
 Today (2026-10-16, `scripts/proof-ratio.py`, comments and blank lines
-excluded): six of 53 examples are over the 20-lines-per-line-of-C target in
+excluded): five of 53 examples are over the 20-lines-per-line-of-C target in
 `docs/internals/verification-efficiency.md`.
 
 - `rbtree-augmented`: 40x by lines, 93x by tokens.
 - `rbtree-erase`: 36x by lines, 119x by tokens.
 - `rbtree-insert`: 35x by lines, 71x by tokens.
 - Both Rust iterator sums: 33x by lines.
-- `arena`: 21x by lines.
+
+`arena` was 21x and is 19.6x after its hand-written `have` proofs that
+`auto` closes within 10% of each claim's work were shortened; the edits
+inside one `have` of `arena_pipeline` are held back by
+`bugs/whole-file-verify-multiplies-a-control-tactics-work.md`.
 
 Token ratios run two to four times the line ratios because proof lines are
 long: `rbtree_erase_color_flips_red_all.click` is 518 KB with lines over
@@ -171,23 +175,23 @@ recorded snapshot's memory through that snapshot's locals. A pure theorem's
 `Integer` binder prints as its name in a conversion-condition refusal, and a
 memory-history sentence, a goal and an evaluated side name a struct-typed
 global's or local's field (`g.b`, `s.b`) where exactly one scalar field
-occupies exactly the bytes accessed. What remains:
+occupies exactly the bytes accessed. An address inside an allocation a local
+held is spelled from that local (`*((char *)at(statement(2).exit, p) + 5)`),
+and the goal and premise lines of a refusal name what locals held at
+recorded points, as its proof context does. What remains:
 
 - A callee's result that no local ever held, as in `return value() + 1;`,
   prints as `<unnamed A>`. Its only spelling is a translation temporary: the
   C call `value()` is not a Click expression, and re-evaluating it would be
   another call.
-- An address no local held exactly at a recorded snapshot, such as an
-  element `buf + u` of an allocation, prints as `<pointer A>`; so do the
-  `recent premises` lines, which are rendered without the execution's
-  snapshot names.
+- A cell at a quantified binder's index, `dst[k]` in a frame refusal,
+  prints as `*<pointer A>`: the report has no name for the binder `k`
+  (`mdtests/bare_transport_names_its_uncarried_leaf.md`).
 
 Union members sharing an offset and width keep the offset by design
 (`mdtests/global_union_members_sharing_bytes_keep_the_offset.md`).
 
-Proposed fix: spell an address inside an allocation as an offset from the
-local that held its base; give the `recent premises` lines the report's
-snapshot names.
+Proposed fix: name a quantified binder's cell by the binder.
 
 Decision: in progress.
 

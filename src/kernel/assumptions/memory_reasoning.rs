@@ -1811,6 +1811,12 @@ impl PureFactContext {
         pointer: &Pointer,
         bytes: u32,
     ) -> Option<&'a CMemoryRange> {
+        // Views and folded resources supply no flat owner to this lookup.
+        // Avoid resolving a pointer read's history just to query that empty
+        // index; composite ownership is queried separately by the caller.
+        if ranges.flat_owned_memory_ranges().is_empty() {
+            return None;
+        }
         // Checked pointer classes select owned memory for ordinary accesses.
         // A kept call frame must use that same selection: one-hop aliases
         // and a block-local fallback miss transitive model-pointer aliases

@@ -104,6 +104,14 @@ fn pure_application_arguments_keep_snapshots_types_and_argument_order() {
             ConditionTerm::PointerEqual(Box::new(pointer("p")), Box::new(pointer("q"))),
             true,
         );
+    assert!(!context.contains_known(&eq(f(&memory, pointer("q"), CType::Int32), var(30))));
+    let context = context.assume_condition(
+        ConditionTerm::PointerValueEqual(
+            Box::new(CPointerValue::new(pointer("p"), CType::Int32Pointer)),
+            Box::new(CPointerValue::new(pointer("q"), CType::Int32Pointer)),
+        ),
+        true,
+    );
     assert!(context.contains_known(&eq(f(&memory, pointer("q"), CType::Int32), var(30))));
     assert!(!context.contains_known(&eq(f(&changed, pointer("q"), CType::Int32), var(30))));
     assert!(!context.contains_known(&eq(f(&memory, pointer("q"), CType::UInt32), var(30))));

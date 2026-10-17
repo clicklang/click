@@ -1542,6 +1542,18 @@ permitted stores or a transition that drops the fact:
   costs the same beside any number of held argument-direct composites
   (`a_call_keeps_argument_direct_composites_in_work_independent_of_their_number`,
   `a_call_keeps_an_argument_direct_composites_memory_without_opening_it`).
+  Ordinary C calls also retain the caller's pre-transfer composition as an
+  exclusion index. After the listed and residual flat ranges fail, a positive
+  flat owner covering the queried bytes rules out every unchanged residual
+  composite: their owners were disjoint in that composition. The indexed
+  base lookup never scans unrelated owners. Residual composites newly added
+  by transfer or repackaging still participate, found by the persistent
+  composite-map delta. The retained memory facts (including quantities) and
+  added composites enter the kept-set identity, but never its diagnostic
+  list of kept ranges. Views and zero quantities cannot exclude an owner.
+  `a_transferred_flat_cell_does_not_open_unrelated_kept_composites` bounds both
+  recording and a negative lookup beside 2, 4, 8 and 16 unrelated composites;
+  positive controls keep new composites and retained flat fragments.
   Only exactly held bytes count: a residual *view* keeps nothing
   (the callee may hold its owner), an iterated clause in an opened body is
   skipped rather than counted at its span, a nested instance is not opened

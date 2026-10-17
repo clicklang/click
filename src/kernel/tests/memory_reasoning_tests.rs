@@ -1175,27 +1175,45 @@ fn direct_composite_resource_match_checks_pointer_load_across_block_declaration(
     let resource_at = |memory: CMemory| CResource::Composite {
         name: "tree".to_string(),
         arguments: vec![
-            CValue::pointer(Pointer {
-                block: PointerBlock::ExternalArgument,
-                offset: PointerOffsetTerm::scale_int32(
-                    Bitvector32Term::MemoryLoad(
-                        crate::kernel::intern_c_memory(memory),
-                        Box::new(field.clone()),
-                        crate::kernel::LoadKind::Bits32,
+            CValue::Pointer(CPointerValue::from_read(
+                Pointer {
+                    block: PointerBlock::ExternalArgument,
+                    offset: PointerOffsetTerm::scale_int32(
+                        Bitvector32Term::MemoryLoad(
+                            crate::kernel::intern_c_memory(memory.clone()),
+                            Box::new(field.clone()),
+                            crate::kernel::LoadKind::Bits32,
+                        ),
+                        4,
                     ),
-                    4,
-                ),
-            })
+                },
+                CType::Int32Pointer,
+                &crate::kernel::intern_c_memory(memory),
+                &field,
+            ))
             .into(),
         ]
         .into(),
     };
 
     assert!(c_resources_directly_match(
-        &resource_at(entry),
-        &resource_at(later),
+        &resource_at(entry.clone()),
+        &resource_at(later.clone()),
         &PureFactContext::new(),
     ));
+    // A write to either half of the complete pointer representation breaks
+    // the read identity even when the storage allocation remains live.
+    for displacement in [0, 4] {
+        let overwritten = later.clone().store(
+            field.clone().offset_by_bytes(displacement),
+            CValue::Int32(Bitvector32Term::Constant(0)),
+        );
+        assert!(!c_resources_directly_match(
+            &resource_at(entry.clone()),
+            &resource_at(overwritten),
+            &PureFactContext::new(),
+        ));
+    }
 }
 
 #[test]

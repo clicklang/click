@@ -222,6 +222,27 @@ pub(in crate::surface) struct ProgramLayouts {
     pub(in crate::surface) c_typedefs: BTreeMap<String, syntax::C0HeadTypedef>,
 }
 
+/// A braced proof block as the parser read it: the positions of its braces
+/// and of the first token of each tactic in it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(in crate::surface) struct ProofBlockSpan {
+    pub(in crate::surface) open: SourcePosition,
+    pub(in crate::surface) close: SourcePosition,
+    pub(in crate::surface) tactics: Vec<SourcePosition>,
+}
+
+/// The braced proof blocks of `source`, as the parser reads them.
+#[cfg(test)]
+pub(in crate::surface) fn proof_block_spans(
+    source: &str,
+    layouts: ProgramLayouts,
+) -> Result<Vec<ProofBlockSpan>, ClickError> {
+    let mut parser = Parser::with_program_layouts(source, layouts, None)?;
+    parser.plain_char = Some(crate::languages::c::target::CTarget::SUPPORTED.plain_char());
+    parser.parse_file_items()?;
+    Ok(parser.proof_block_spans)
+}
+
 pub(super) fn parse_with_layouts_and_aggregate_objects(
     source: &str,
     layouts: ProgramLayouts,
@@ -743,6 +764,9 @@ struct Parser {
     algebraic_type_nesting: usize,
     tokens: Vec<Token>,
     positions: Vec<SourcePosition>,
+    /// Every braced proof block parsed so far, in parse order: the block's
+    /// braces and the first token of each tactic it holds.
+    proof_block_spans: Vec<ProofBlockSpan>,
     matching_parentheses: Vec<Option<usize>>,
     position: usize,
     struct_layouts: BTreeMap<String, syntax::C0StructLayout>,
@@ -1252,6 +1276,7 @@ impl Parser {
             contract_value_parameter_names: BTreeMap::new(),
             in_function_block: false,
             integer_literal_context: false,
+            proof_block_spans: Vec::new(),
         })
     }
 
@@ -7632,7 +7657,10 @@ impl Parser {
                 Some(Token::Ident(name))
                     if is_tactic_name(name) && self.starts_standalone_smart_proof() =>
                 {
+                    let open = self.positions[self.position - 1].clone();
+                    let start = self.positions[self.position].clone();
                     let tactic = self.parse_tactic()?;
+                    self.record_proof_block(open, vec![start]);
                     self.expect(Token::RBrace)?;
                     SourceProof::Tactic(tactic)
                 }
@@ -7640,10 +7668,7 @@ impl Parser {
                     return Err(self.error("`by` block must contain at least one tactic"));
                 }
                 Some(_) => {
-                    let mut tactics = Vec::new();
-                    while self.peek() != Some(&Token::RBrace) {
-                        tactics.push(self.parse_proof_tactic()?);
-                    }
+                    let tactics = self.parse_tactic_list_to_rbrace()?;
                     self.expect(Token::RBrace)?;
                     SourceProof::Script(tactics)
                 }
@@ -8237,8 +8262,14 @@ impl Parser {
     #[inline(never)]
     fn parse_both_proof_tactic(&mut self) -> Result<ProofTactic, ClickError> {
         let mut nested_both = 0;
+        // The left blocks that hold only a nested `both`, outermost first.
+        let mut nested_left_blocks = Vec::new();
         self.expect(Token::LBrace)?;
         let mut left_tactics = if self.peek_ident() == Some("both") {
+            nested_left_blocks.push((
+                self.positions[self.position - 1].clone(),
+                self.positions[self.position].clone(),
+            ));
             self.position += 1;
             nested_both += 1;
             None
@@ -8254,6 +8285,10 @@ impl Parser {
             }
             self.expect(Token::LBrace)?;
             if self.peek_ident() == Some("both") {
+                nested_left_blocks.push((
+                    self.positions[self.position - 1].clone(),
+                    self.positions[self.position].clone(),
+                ));
                 self.position += 1;
                 nested_both += 1;
             } else {
@@ -8280,6 +8315,9 @@ impl Parser {
                 right_tactics,
             }));
             if level < nested_both {
+                if let Some((open, start)) = nested_left_blocks.pop() {
+                    self.record_proof_block(open, vec![start]);
+                }
                 self.expect(Token::RBrace)?;
             }
         }
@@ -9305,6 +9343,8 @@ impl Parser {
                 let then_tactics = self.parse_possibly_empty_tactic_block()?;
                 self.expect_ident_spelling("else")?;
                 self.expect(Token::LBrace)?;
+                let else_open = self.positions[self.position - 1].clone();
+                let mut else_starts = Vec::new();
                 scopes.push((
                     self.proof_let_restores.len(),
                     self.names.fact_name_restores.len(),
@@ -9312,9 +9352,20 @@ impl Parser {
                 ));
                 let mut else_tactics = Vec::new();
                 while self.peek() != Some(&Token::RBrace) && self.peek_ident() != Some("if") {
+                    else_starts.push(self.positions[self.position].clone());
                     else_tactics.push(self.parse_proof_tactic()?);
                 }
-                frames.push((condition, ensuring, then_tactics, else_tactics));
+                if self.peek_ident() == Some("if") {
+                    else_starts.push(self.positions[self.position].clone());
+                }
+                frames.push((
+                    condition,
+                    ensuring,
+                    then_tactics,
+                    else_tactics,
+                    else_open,
+                    else_starts,
+                ));
                 if self.peek_ident() == Some("if") {
                     self.position += 1;
                     continue;
@@ -9322,13 +9373,23 @@ impl Parser {
                 break;
             }
             let mut nested = None;
-            while let Some((condition, ensuring, then_tactics, mut else_tactics)) = frames.pop() {
+            while let Some((
+                condition,
+                ensuring,
+                then_tactics,
+                mut else_tactics,
+                else_open,
+                mut else_starts,
+            )) = frames.pop()
+            {
                 if let Some(nested) = nested.take() {
                     else_tactics.push(nested);
                 }
                 while self.peek() != Some(&Token::RBrace) {
+                    else_starts.push(self.positions[self.position].clone());
                     else_tactics.push(self.parse_proof_tactic()?);
                 }
+                self.record_proof_block(else_open, else_starts);
                 self.expect(Token::RBrace)?;
                 let (checkpoint, fact_checkpoint, names) =
                     scopes.pop().expect("an else block owns a scope");
@@ -9481,17 +9542,42 @@ impl Parser {
         Ok(tactics)
     }
 
+    /// Records a braced proof block whose `}` is at the cursor.
+    fn record_proof_block(&mut self, open: SourcePosition, tactics: Vec<SourcePosition>) {
+        if let Some(close) = self.positions.get(self.position) {
+            self.proof_block_spans.push(ProofBlockSpan {
+                open,
+                close: close.clone(),
+                tactics,
+            });
+        }
+    }
+
+    /// The tactics of a braced block whose `{` the cursor has just passed,
+    /// up to its `}`, recording the block's span.
+    fn parse_tactic_list_to_rbrace(&mut self) -> Result<Vec<ProofTactic>, ClickError> {
+        let open = self
+            .position
+            .checked_sub(1)
+            .filter(|index| self.tokens[*index] == Token::LBrace)
+            .map(|index| self.positions[index].clone());
+        let mut tactics = Vec::new();
+        let mut starts = Vec::new();
+        while self.peek() != Some(&Token::RBrace) {
+            starts.push(self.positions[self.position].clone());
+            tactics.push(self.parse_proof_tactic()?);
+        }
+        if let Some(open) = open {
+            self.record_proof_block(open, starts);
+        }
+        Ok(tactics)
+    }
+
     fn parse_tactics_until_rbrace(&mut self) -> Result<Vec<ProofTactic>, ClickError> {
         let let_checkpoint = self.proof_let_restores.len();
         let fact_checkpoint = self.names.fact_name_restores.len();
         let previous_proof_let_names = self.names.take(NameKind::ProofBinder);
-        let result = (|| {
-            let mut tactics = Vec::new();
-            while self.peek() != Some(&Token::RBrace) {
-                tactics.push(self.parse_proof_tactic()?);
-            }
-            Ok(tactics)
-        })();
+        let result = self.parse_tactic_list_to_rbrace();
         self.restore_proof_let_bindings(let_checkpoint);
         self.names.restore_fact_names(fact_checkpoint);
         self.names
@@ -11035,7 +11121,7 @@ impl Parser {
             {
                 let field = self.resolve_struct_field_metadata(base_struct_name, &field_name)?;
                 dereferences_pointer = field.c_type.is_pointer();
-                let pointer = self.offset_field_pointer(base, field.offset_bytes);
+                let pointer = self.member_field_pointer(base, &field);
                 let field_memory_pointer = field_has_direct_memory_place(&field);
                 scalar_field = field_memory_pointer
                     && matches!(
@@ -11681,7 +11767,7 @@ impl Parser {
             return Ok(CExpression::Load(Box::new(base)));
         };
         Ok(CExpression::TypedLoad {
-            pointer: Box::new(self.offset_field_pointer(base, field.offset_bytes)),
+            pointer: Box::new(self.member_field_pointer(base, &field)),
             value_type: field.c_type.to_kernel_type(),
             volatile: false,
             pointee_constant: field.pointee_constant,
@@ -12002,6 +12088,17 @@ impl Parser {
         Ok(())
     }
 
+    fn member_field_pointer(&self, base: CExpression, field: &ResolvedField) -> CExpression {
+        let pointer = self.offset_field_pointer(base, field.offset_bytes);
+        if field.byte_width == 0 {
+            return pointer;
+        }
+        CExpression::Subobject {
+            pointer: Box::new(pointer),
+            width: field.byte_width,
+        }
+    }
+
     fn offset_field_pointer(&self, base: CExpression, offset_bytes: u32) -> CExpression {
         crate::kernel::c_pointer_offset_bytes(base, offset_bytes)
     }
@@ -12077,6 +12174,17 @@ impl Parser {
         operand: &CExpression,
         struct_name: &str,
     ) -> Result<(), ClickError> {
+        // Integer casts name the complete word's reconstructed pointer.
+        // Unknown types (notably `result`) are checked after elaboration.
+        if matches!(
+            crate::surface::validation::infer_c_expression_type(
+                operand,
+                &self.names.c_parameter_types,
+            ),
+            None | Some(C0Type::Int64(_) | C0Type::UInt64(_))
+        ) {
+            return Ok(());
+        }
         // An explicit conversion through void retains its target layout on
         // the expression. It does not assign a layout to the source parameter.
         if matches!(
@@ -12129,7 +12237,14 @@ impl Parser {
                     "struct pointer cast expects a current C `void *` expression; put old(...) around the whole cast for an entry-state value",
                 ));
             };
-            self.record_parameter_struct_cast(&operand, &cast.struct_name)?;
+            let integer_source = crate::surface::validation::infer_c_expression_type(
+                &operand,
+                &self.names.c_parameter_types,
+            )
+            .is_some_and(|ty| matches!(ty, C0Type::Int64(_) | C0Type::UInt64(_)));
+            if !integer_source {
+                self.record_parameter_struct_cast(&operand, &cast.struct_name)?;
+            }
             return Ok(crate::surface::lowering::contract_c_unary(
                 source_operand,
                 CExpression::Cast {
@@ -12153,13 +12268,6 @@ impl Parser {
                     && (parsed_type.constant || parsed_type.pointee_constant))
             {
                 return Err(self.error("contract cast targets must be unqualified native types; byte views inherit the source qualification"));
-            }
-            if target_type.is_pointer()
-                && !matches!(target_type, CType::UInt8Pointer | CType::VoidPointer)
-            {
-                return Err(self.error(
-                    "native contract pointer casts require a `uint8*` byte-view target or a `void*` target",
-                ));
             }
             self.expect(Token::RParen)?;
             let operand = self.parse_contract_unary_at_depth(depth + 1)?;
@@ -12774,7 +12882,7 @@ impl Parser {
                     {
                         let field =
                             self.resolve_struct_field_metadata(base_struct_name, &field_name)?;
-                        let pointer = self.offset_field_pointer(base, field.offset_bytes);
+                        let pointer = self.member_field_pointer(base, &field);
                         struct_name = field.struct_name.clone();
                         union_name = field.union_name.clone();
                         struct_array_element_width = field.array_element_width;

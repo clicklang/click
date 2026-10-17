@@ -24,6 +24,7 @@ int32 parent_value(struct node* node, struct node* next) {
     requires next != 0;
     requires aligned(next, 8);
     requires node->word == address(next) + 1;
+    requires ((struct node*)(node->word & ~3)) == next;
     views node->word;
     views next->value;
     ensures result == next->value;

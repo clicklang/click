@@ -3165,7 +3165,9 @@ impl ResourceContext {
                 required.memory_view_range(),
             )
         {
-            memory_range_covers_with_separation(&available, required, assumptions, false)
+            (!required.typed_carrier
+                || assumptions.access_designations_match(required.access_designation(), &available))
+                && memory_range_covers_with_separation(&available, required, assumptions, false)
         } else {
             resource_fact_entails(available, required, assumptions)
         }
@@ -3721,6 +3723,7 @@ impl ResourceContext {
                 | CMemoryDerivation::HeapAllocationFailed { .. }
                 | CMemoryDerivation::ContractAllocationClaimsChanged { .. }
                 | CMemoryDerivation::ObjectInitializationRecorded { .. }
+                | CMemoryDerivation::CellObserved { .. }
                 | CMemoryDerivation::CellsForgotten { .. } => {}
             }
             let base = derivation.base().clone();
@@ -3782,6 +3785,7 @@ impl ResourceContext {
             | CMemoryDerivation::HeapAllocationFailed { .. }
             | CMemoryDerivation::ContractAllocationClaimsChanged { .. }
             | CMemoryDerivation::ObjectInitializationRecorded { .. }
+            | CMemoryDerivation::CellObserved { .. }
             | CMemoryDerivation::CellsForgotten { .. } => false,
         };
         if ambiguous_event {
@@ -3909,6 +3913,7 @@ impl ResourceContext {
             | CMemoryDerivation::HeapAllocationFailed { .. }
             | CMemoryDerivation::ContractAllocationClaimsChanged { .. }
             | CMemoryDerivation::ObjectInitializationRecorded { .. }
+            | CMemoryDerivation::CellObserved { .. }
             | CMemoryDerivation::CellsForgotten { .. } => {}
         }
         entries
@@ -6104,7 +6109,12 @@ impl ResourceContext {
                     resource_fact_read_core_range(available)
                 };
                 available.is_some_and(|available| {
-                    memory_range_structurally_covers(&available, required, None) == Some(true)
+                    (!required.typed_carrier
+                        || (available.designation == required.designation
+                            && (required.carrier_extent_known
+                                || available.opaque_extent == required.opaque_extent)))
+                        && memory_range_structurally_covers(&available, required, None)
+                            == Some(true)
                 })
             })
     }
@@ -6115,6 +6125,16 @@ impl ResourceContext {
         byte_width: u32,
         assumptions: &PureFactContext,
     ) -> bool {
+        self.permits_designated_memory_read(pointer, None, byte_width, assumptions)
+    }
+
+    pub(in crate::kernel) fn permits_designated_memory_read(
+        &self,
+        pointer: &Pointer,
+        designation: Option<(&Pointer, Option<&Pointer>)>,
+        byte_width: u32,
+        assumptions: &PureFactContext,
+    ) -> bool {
         if let Some(mut entries) = self.read_access_entries(pointer, byte_width, assumptions) {
             while let Some(entry) = entries.next() {
                 crate::instrumentation::record_deterministic_work(1);
@@ -6122,6 +6142,13 @@ impl ResourceContext {
                 let Some(address) = entries.address(entry) else {
                     continue;
                 };
+                if designation.is_some_and(|designation| {
+                    resource.memory_range().is_none_or(|range| {
+                        !assumptions.access_designations_match(designation, range)
+                    })
+                }) {
+                    continue;
+                }
                 if memory_resource_fact_permits_read(resource, &address, byte_width, assumptions) {
                     return true;
                 }
@@ -6134,9 +6161,10 @@ impl ResourceContext {
     /// A bulk read covers physical bytes, even when its width happens
     /// to equal the ABI pointer width. Scalar pointer-cell conventions do
     /// not shorten an array copy's footprint.
-    pub(in crate::kernel) fn permits_storage_read(
+    pub(in crate::kernel) fn permits_designated_storage_read(
         &self,
         pointer: &Pointer,
+        designation: Option<(&Pointer, Option<&Pointer>)>,
         bytes: u32,
         assumptions: &PureFactContext,
     ) -> bool {
@@ -6148,12 +6176,16 @@ impl ResourceContext {
             let Some(address) = entries.address(entry) else {
                 continue;
             };
-            let required = CResourceFact::view_memory(CMemoryRange::new_with_element_width(
-                address,
-                0u32.into(),
-                bytes.into(),
-                1,
-            ));
+            let Some(range) = self.fact(entry).memory_range() else {
+                continue;
+            };
+            if designation.is_some_and(|d| !assumptions.access_designations_match(d, range)) {
+                continue;
+            }
+            let required = CResourceFact::view_memory(
+                CMemoryRange::new_with_element_width(address, 0u32.into(), bytes.into(), 1)
+                    .with_carrier_of(range),
+            );
             if resource_fact_entails(self.fact(entry), &required, assumptions) {
                 return true;
             }
@@ -6170,7 +6202,18 @@ impl ResourceContext {
         bytes: u32,
         assumptions: &PureFactContext,
     ) -> bool {
-        self.owned_storage_access(pointer, bytes, assumptions)
+        self.owned_storage_access(pointer, None, bytes, assumptions)
+            .is_some()
+    }
+
+    pub(in crate::kernel) fn owns_designated_storage_access(
+        &self,
+        pointer: &Pointer,
+        designation: (&Pointer, Option<&Pointer>),
+        bytes: u32,
+        assumptions: &PureFactContext,
+    ) -> bool {
+        self.owned_storage_access(pointer, Some(designation), bytes, assumptions)
             .is_some()
     }
 
@@ -6182,13 +6225,14 @@ impl ResourceContext {
         bytes: u32,
         assumptions: &PureFactContext,
     ) -> Option<Self> {
-        let access = self.owned_storage_access(pointer, bytes, assumptions)?;
+        let access = self.owned_storage_access(pointer, None, bytes, assumptions)?;
         self.without_fact_delaying_normalization(&access, assumptions)
     }
 
     fn owned_storage_access(
         &self,
         pointer: &Pointer,
+        designation: Option<(&Pointer, Option<&Pointer>)>,
         bytes: u32,
         assumptions: &PureFactContext,
     ) -> Option<CResourceFact> {
@@ -6201,12 +6245,16 @@ impl ResourceContext {
             let Some(address) = entries.address(entry) else {
                 continue;
             };
-            let aligned = CResourceFact::own_memory(CMemoryRange::new_with_element_width(
-                address,
-                0u32.into(),
-                bytes.into(),
-                1,
-            ));
+            let Some(range) = self.fact(entry).memory_range() else {
+                continue;
+            };
+            if designation.is_some_and(|d| !assumptions.access_designations_match(d, range)) {
+                continue;
+            }
+            let aligned = CResourceFact::own_memory(
+                CMemoryRange::new_with_element_width(address, 0u32.into(), bytes.into(), 1)
+                    .with_carrier_of(range),
+            );
             if resource_fact_entails(self.fact(entry), &aligned, assumptions) {
                 return Some(aligned);
             }
@@ -6256,6 +6304,16 @@ impl ResourceContext {
         byte_width: u32,
         assumptions: &PureFactContext,
     ) -> Option<&CMemoryRange> {
+        self.designated_memory_write_range(pointer, None, byte_width, assumptions)
+    }
+
+    pub(in crate::kernel) fn designated_memory_write_range(
+        &self,
+        pointer: &Pointer,
+        designation: Option<(&Pointer, Option<&Pointer>)>,
+        byte_width: u32,
+        assumptions: &PureFactContext,
+    ) -> Option<&CMemoryRange> {
         if let Some(mut entries) = self.write_access_entries(pointer, byte_width, assumptions) {
             while let Some(entry) = entries.next() {
                 crate::instrumentation::record_deterministic_work(1);
@@ -6263,6 +6321,11 @@ impl ResourceContext {
                 let Some(range) = resource.memory_own_range() else {
                     continue;
                 };
+                if designation
+                    .is_some_and(|origin| !assumptions.access_designations_match(origin, range))
+                {
+                    continue;
+                }
                 let Some(address) = entries.address(entry) else {
                     continue;
                 };
@@ -6390,6 +6453,58 @@ impl ResourceContext {
             selected.insert_fact(residual.clone());
         }
         Some(selected)
+    }
+
+    /// Join the owned memory pieces that together cover `view`'s concrete
+    /// range, when no single piece does, into byte-granular owners in place:
+    /// the same join `without_fact_incrementally` composes to consume such a
+    /// footprint, kept rather than consumed, so one owner can then be lent
+    /// for a view that must stay lent. `None` when the range is symbolic,
+    /// one piece already covers it, the pieces leave a gap, or a piece is
+    /// loan-bound or projected. Proportional to the selected pieces.
+    pub(crate) fn with_coalesced_owned_memory(
+        &self,
+        view: &CResourceFact,
+        assumptions: &PureFactContext,
+    ) -> Option<Self> {
+        let CResource::Memory(range) = view.resource() else {
+            return None;
+        };
+        if range.constant_start().is_none() || range.constant_end().is_none() {
+            return None;
+        }
+        let owned = CResourceFact::own_memory(range.clone());
+        let candidates = self.memory_fact_candidates(range, true, assumptions);
+        // Fewer than two pieces, or a bound one, joins nothing.
+        let joined = self.normalized_memory_suppliers(
+            &candidates.entries.iter().collect::<Vec<_>>(),
+            &candidates,
+            range.base(),
+            assumptions,
+        )?;
+        let support = joined.memory_fact_candidates(range, true, assumptions);
+        let covered = support.entries.iter().any(|entry| {
+            support.requirement(entry, &owned).is_some_and(|required| {
+                joined.clone().consume_fact_from_candidates(
+                    &required,
+                    assumptions,
+                    std::iter::once(entry),
+                )
+            })
+        });
+        if !covered {
+            return None;
+        }
+        let mut coalesced = self.clone();
+        for entry in candidates.entries.iter() {
+            if coalesced.storage.facts.contains_key(&entry) {
+                coalesced.remove_entry(entry);
+            }
+        }
+        for piece in joined.iter() {
+            coalesced.insert_fact(piece.clone());
+        }
+        Some(coalesced)
     }
 
     /// Join only the suppliers selected for the explicit footprint. Loan-bound
@@ -7693,6 +7808,12 @@ fn memory_resource_fact_entails(
     required: &CResourceFact,
     assumptions: &PureFactContext,
 ) -> bool {
+    if let (Some(available), Some(required)) = (available.memory_range(), required.memory_range())
+        && required.typed_carrier
+        && !assumptions.access_designations_match(required.access_designation(), available)
+    {
+        return false;
+    }
     if available == required {
         return true;
     }
@@ -7720,6 +7841,12 @@ fn consume_memory_resource_fact(
     required: &CResourceFact,
     assumptions: &PureFactContext,
 ) -> Option<ResourceFactConsumption> {
+    if let (Some(available), Some(required)) = (available.memory_range(), required.memory_range())
+        && required.typed_carrier
+        && !assumptions.access_designations_match(required.access_designation(), available)
+    {
+        return None;
+    }
     if let Some(required) = required.memory_view_range() {
         // `Preserve` here is the owner-observation rule in consumption form
         // (the owner-observation rule in docs/internals/stable-views.md, and see `owner_observation_core`): a viewed clause is
@@ -9142,6 +9269,7 @@ fn pointer_offsets_equal_with_load_bridging(
 fn byte_normalized_memory_range(range: &CMemoryRange) -> CMemoryRange {
     let (base, bytes) = range.byte_footprint();
     CMemoryRange::new_with_element_width(base, Bitvector32Term::Constant(0), bytes, 1)
+        .with_carrier_of(range)
 }
 
 /// Re-spells a range in another element width, naming the same bytes.
@@ -9167,12 +9295,15 @@ fn memory_range_in_element_width(range: &CMemoryRange, width: u32) -> Option<CMe
     }
     let start = i32::try_from(start / target_width).ok()?;
     let end = i32::try_from(end / target_width).ok()?;
-    Some(CMemoryRange::new_with_element_width(
-        range.base().clone(),
-        Bitvector32Term::Constant(start as u32),
-        Bitvector32Term::Constant(end as u32),
-        width,
-    ))
+    Some(
+        CMemoryRange::new_with_element_width(
+            range.base().clone(),
+            Bitvector32Term::Constant(start as u32),
+            Bitvector32Term::Constant(end as u32),
+            width,
+        )
+        .with_carrier_of(range),
+    )
 }
 
 pub(in crate::kernel) fn memory_range_covers(
@@ -10023,12 +10154,10 @@ fn wide_range_rebased(
             Bitvector32Term::uint64_add(index.clone(), bound)
         }
     };
-    Some(CMemoryRange::new_wide(
-        base.clone(),
-        shifted(start),
-        shifted(end),
-        width,
-    ))
+    Some(
+        CMemoryRange::new_wide(base.clone(), shifted(start), shifted(end), width)
+            .with_carrier_of(range),
+    )
 }
 
 /// The pieces of `available` left once `required` is taken. Each piece lies
@@ -10095,20 +10224,26 @@ fn split_untagged_memory_range(
         };
         let mut residues = Vec::new();
         if !equal(&start, &first) {
-            residues.push(CMemoryRange::new_wide(
-                available.base().clone(),
-                start,
-                first,
-                available.element_width(),
-            ));
+            residues.push(
+                CMemoryRange::new_wide(
+                    available.base().clone(),
+                    start,
+                    first,
+                    available.element_width(),
+                )
+                .with_carrier_of(available),
+            );
         }
         if !equal(&last, &end) {
-            residues.push(CMemoryRange::new_wide(
-                available.base().clone(),
-                last,
-                end,
-                available.element_width(),
-            ));
+            residues.push(
+                CMemoryRange::new_wide(
+                    available.base().clone(),
+                    last,
+                    end,
+                    available.element_width(),
+                )
+                .with_carrier_of(available),
+            );
         }
         return Some(residues);
     }
@@ -10441,10 +10576,19 @@ impl CResourceFact {
     }
 
     pub fn own_allocation(base: Pointer, bytes: impl Into<Bitvector32Term>) -> Self {
-        let bytes = bytes.into();
+        Self::own_designated_allocation(CPointerValue::new(base, CType::Int32Pointer), bytes)
+    }
+
+    pub(in crate::kernel) fn own_designated_allocation(
+        base: CPointerValue,
+        bytes: impl Into<Bitvector32Term>,
+    ) -> Self {
         Self::own_token(
             Self::ALLOCATION_RESOURCE_NAME.to_string(),
-            vec![CValue::pointer(base), int32(bytes)],
+            vec![
+                CValue::Pointer(base.with_type(CType::Int32Pointer)),
+                int32(bytes.into()),
+            ],
         )
     }
 
@@ -10729,6 +10873,18 @@ fn merge_memory_ranges(
     right: &CMemoryRange,
     assumptions: &PureFactContext,
 ) -> Option<CMemoryRange> {
+    if !assumptions.designations_equal(&left.designation, &right.designation)
+        || !match (
+            left.opaque_extent.as_deref(),
+            right.opaque_extent.as_deref(),
+        ) {
+            (None, None) => true,
+            (Some(a), Some(b)) => assumptions.opaque_extents_equal(a, b),
+            _ => false,
+        }
+    {
+        return None;
+    }
     let right_designations = right.designations();
     let mut common = left
         .designations()
@@ -10770,20 +10926,16 @@ fn merge_untagged_memory_ranges(
                     == Some(true)
         };
         if equal(&middle, &next) {
-            return Some(CMemoryRange::new_wide(
-                left.base().clone(),
-                first,
-                last,
-                left.element_width(),
-            ));
+            return Some(
+                CMemoryRange::new_wide(left.base().clone(), first, last, left.element_width())
+                    .with_carrier_of(left),
+            );
         }
         if equal(&last, &first) {
-            return Some(CMemoryRange::new_wide(
-                left.base().clone(),
-                next,
-                middle,
-                left.element_width(),
-            ));
+            return Some(
+                CMemoryRange::new_wide(left.base().clone(), next, middle, left.element_width())
+                    .with_carrier_of(left),
+            );
         }
         return None;
     }
@@ -10810,22 +10962,28 @@ fn merge_untagged_memory_ranges(
     if left.end() == right.start()
         || bitvector_terms_proven_equal(left.end(), right.start(), assumptions)
     {
-        return Some(CMemoryRange::new_with_element_width(
-            left.base().clone(),
-            left.start().clone(),
-            right.end().clone(),
-            left.element_width(),
-        ));
+        return Some(
+            CMemoryRange::new_with_element_width(
+                left.base().clone(),
+                left.start().clone(),
+                right.end().clone(),
+                left.element_width(),
+            )
+            .with_carrier_of(left),
+        );
     }
     if right.end() == left.start()
         || bitvector_terms_proven_equal(right.end(), left.start(), assumptions)
     {
-        return Some(CMemoryRange::new_with_element_width(
-            left.base().clone(),
-            right.start().clone(),
-            left.end().clone(),
-            left.element_width(),
-        ));
+        return Some(
+            CMemoryRange::new_with_element_width(
+                left.base().clone(),
+                right.start().clone(),
+                left.end().clone(),
+                left.element_width(),
+            )
+            .with_carrier_of(left),
+        );
     }
     None
 }
@@ -10864,12 +11022,10 @@ fn memory_range_rebased(
         start.clone(),
         Bitvector32Term::Constant(i32::try_from(count).ok()? as u32),
     );
-    Some(CMemoryRange::new_with_element_width(
-        base.clone(),
-        start,
-        end,
-        range.element_width(),
-    ))
+    Some(
+        CMemoryRange::new_with_element_width(base.clone(), start, end, range.element_width())
+            .with_carrier_of(range),
+    )
 }
 
 fn bitvector_terms_proven_equal(

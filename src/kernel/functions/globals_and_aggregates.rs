@@ -57,10 +57,11 @@ pub(super) fn initialize_c_function_globals_owned(
         let slot = CMemory::global_pointer(global.kernel_name());
         register_block_alignment(&slot.block, global.c_type().abi_alignment());
         if !state.memory.has_block(&slot.block) {
-            state.set_memory(state.memory.clone().with_block_or_read_only(
+            state.set_memory(state.memory.clone().with_classed_block_or_read_only(
                 slot.block.clone(),
                 global.c_type().byte_width(),
                 global.is_constant(),
+                global.declared_class(),
             ));
             if initialize_missing_storage || global.is_constant() {
                 state.set_memory(
@@ -122,10 +123,11 @@ pub(super) fn initialize_c_function_globals_owned(
             .checked_mul(global_array.element_type().byte_width())
             .expect("validated C global array size");
         if !state.memory.has_block(&slot.block) {
-            state.set_memory(state.memory.clone().with_block_or_read_only(
+            state.set_memory(state.memory.clone().with_classed_block_or_read_only(
                 slot.block.clone(),
                 bytes,
                 global_array.is_constant(),
+                global_array.declared_class(),
             ));
             if initialize_missing_storage || global_array.is_constant() {
                 state.set_memory(store_array_contents(
@@ -166,10 +168,11 @@ pub(super) fn initialize_c_function_globals_owned(
         let slot = CMemory::global_pointer(global_aggregate.kernel_name());
         register_block_alignment(&slot.block, global_aggregate.layout().alignment_bytes());
         if !state.memory.has_block(&slot.block) {
-            state.set_memory(state.memory.clone().with_block_or_read_only(
+            state.set_memory(state.memory.clone().with_classed_block_or_read_only(
                 slot.block.clone(),
                 global_aggregate.layout().size_bytes(),
                 global_aggregate.is_constant(),
+                global_aggregate.declared_class(),
             ));
             if initialize_missing_storage || global_aggregate.is_constant() {
                 state.set_memory(zero_aggregate_fields(
@@ -218,10 +221,11 @@ pub(super) fn initialize_c_function_globals_owned(
             .checked_mul(global_aggregate_array.layout().size_bytes())
             .expect("validated C global aggregate array size");
         if !state.memory.has_block(&slot.block) {
-            state.set_memory(state.memory.clone().with_block_or_read_only(
+            state.set_memory(state.memory.clone().with_classed_block_or_read_only(
                 slot.block.clone(),
                 bytes,
                 global_aggregate_array.is_constant(),
+                global_aggregate_array.declared_class(),
             ));
             if initialize_missing_storage || global_aggregate_array.is_constant() {
                 state.set_memory(zero_aggregate_array_fields(
@@ -524,7 +528,13 @@ pub(super) fn symbolic_memory_base(memory: &CMemory, pointer: &Pointer) -> CMemo
         .get(&pointer.block)
         .and_then(|block| block.size().as_const())
         .expect("symbolic static-storage block has a constant size");
-    CMemory::new().with_block_without_derivation(pointer.block.clone(), size)
+    let base = CMemory::new().with_block_without_derivation(pointer.block.clone(), size);
+    // The base's block is the storage's, declared class included; otherwise
+    // the storage's own snapshots and this base would name its loads apart.
+    match memory.declared_class(pointer) {
+        Some(class) => base.with_block_declared_class(&pointer.block, class),
+        None => base,
+    }
 }
 
 /// Stores `contents` into the just-declared array storage at `base`, as a
@@ -1151,11 +1161,22 @@ pub(super) fn aggregate_argument_read_refusal(
         let CValue::Pointer(source) = value else {
             continue;
         };
+        if let Some(refusal) = crate::kernel::eval::subobject_access_refusal(
+            source.pointer(),
+            source.extent(),
+            layout.size_bytes(),
+            &ExecutionFacts::new(),
+            &[],
+            assumptions,
+            state.resources(),
+        ) {
+            return Some(CFunctionOutcome::UndefinedBehavior(refusal));
+        }
         // Actual calls use the same read boundary as ordinary aggregate
         // assignment. Entry images are evaluated values, not caller reads.
         if let Some(resource) = crate::kernel::eval::missing_aggregate_copy_read_resource(
             state,
-            source.pointer(),
+            source,
             layout,
             assumptions,
         ) {

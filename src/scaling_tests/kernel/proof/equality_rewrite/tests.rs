@@ -596,7 +596,10 @@ fn pointer_rewrite_enters_scalar_calls_and_preserves_scope_and_snapshots() {
     let source = Pointer::symbolic(variable);
     let target = Pointer::symbolic(Variable(921));
     let cited = Proposition::ConditionIs(
-        ConditionTerm::pointer_equal(source.clone(), target.clone()),
+        ConditionTerm::PointerValueEqual(
+            Box::new(CPointerValue::new(source.clone(), CType::Int32Pointer)),
+            Box::new(CPointerValue::new(target.clone(), CType::Int32Pointer)),
+        ),
         true,
     );
     let memory = CMemory::new().with_block("unchanged", 4);

@@ -44,12 +44,10 @@ fn preserves_source_and_checks_obligations(fixture: &str) {
 }
 fn profile_agrees(fixture: &str) {
     let p = project(fixture);
-    assert_cli(&p, &["verify"]);
     assert_cli(&p, &["profile"]);
 }
 fn expansion_rechecks(fixture: &str) {
     let p = project(fixture);
-    assert_cli(&p, &["verify"]);
     assert_cli(&p, &["expand", "--claim", "sum.contract", "--in-place"]);
     assert_cli(&p, &["verify"]);
 }

@@ -151,6 +151,9 @@ pub(crate) fn reverse_equality(equality: &Proposition) -> Option<Proposition> {
         Proposition::ConditionIs(ConditionTerm::PointerOffsetEqual(a, b), true) => {
             ConditionTerm::PointerOffsetEqual(b.clone(), a.clone())
         }
+        Proposition::ConditionIs(ConditionTerm::PointerValueEqual(a, b), true) => {
+            ConditionTerm::PointerValueEqual(b.clone(), a.clone())
+        }
         Proposition::ConditionIs(ConditionTerm::PointerEqual(a, b), true) => {
             ConditionTerm::PointerEqual(b.clone(), a.clone())
         }
@@ -577,7 +580,9 @@ fn pointer_congruence_rewrite(
     let mut rewrite = if let PointerBlock::Symbolic(variable) = left.block
         && left.offset == PointerOffsetTerm::Constant(0)
     {
-        crate::kernel::proof::term_rewrite::TermRewrite::for_pointer_variable(variable, right)
+        crate::kernel::proof::term_rewrite::TermRewrite::for_pointer_address_variable(
+            variable, right,
+        )
     } else {
         crate::kernel::proof::term_rewrite::TermRewrite::for_pointer_exact(left, right)
     };
@@ -636,12 +641,55 @@ fn rewrite_atomic_proposition_by_exact_equality(
     goal: &Proposition,
     equality: &Proposition,
 ) -> Result<Proposition, AtomicRewriteRefusal> {
+    if let Proposition::ConditionIs(ConditionTerm::PointerValueEqual(left, right), true) = equality
+    {
+        let mut rewrite = super::term_rewrite::TermRewrite::for_pointer_value_exact(left, right);
+        let rewritten = rewrite.proposition(goal);
+        if rewrite.refusal().is_some() {
+            return Err(AtomicRewriteRefusal::Refused(
+                "pointer value rewrite exceeded its supported scope".into(),
+            ));
+        }
+        if rewritten != *goal {
+            return Ok(rewritten);
+        }
+        return rewrite_atomic_proposition_by_exact_equality(
+            goal,
+            &Proposition::ConditionIs(
+                ConditionTerm::pointer_equal(left.pointer().clone(), right.pointer().clone()),
+                true,
+            ),
+        );
+    }
+    if matches!(
+        goal,
+        Proposition::ConditionIs(ConditionTerm::PointerValueEqual(..), _)
+    ) && let Proposition::ConditionIs(
+        ConditionTerm::Bitvector32Equal(left, right) | ConditionTerm::Bitvector64Equal(left, right),
+        true,
+    ) = equality
+    {
+        let mut rewrite = super::term_rewrite::TermRewrite::for_bits(left, right);
+        let rewritten = rewrite.proposition(goal);
+        if rewrite.refusal().is_none() && rewritten != *goal {
+            return Ok(rewritten);
+        }
+    }
     fn rewrite_c_value(
         value: &CValue,
         rewrite_term: &impl Fn(&Bitvector32Term) -> Bitvector32Term,
         rewrite_pointer: &impl Fn(&Pointer) -> Pointer,
     ) -> CValue {
         match value {
+            CValue::PointerInteger(record) => CValue::PointerInteger(PointerIntegerValue {
+                kind: record.kind.clone(),
+                numeric: Box::new(rewrite_c_value(
+                    &record.numeric,
+                    rewrite_term,
+                    rewrite_pointer,
+                )),
+                pointer: Box::new(record.pointer.map_addresses(rewrite_pointer)),
+            }),
             CValue::Void => CValue::Void,
             CValue::Bool(term) => CValue::Bool(rewrite_term(term)),
             CValue::Int8(term) => CValue::Int8(rewrite_term(term)),
@@ -656,7 +704,7 @@ fn rewrite_atomic_proposition_by_exact_equality(
             CValue::UInt128(term) => CValue::UInt128(rewrite_term(term)),
             CValue::Float32(term) => CValue::Float32(rewrite_term(term)),
             CValue::Float64(term) => CValue::Float64(rewrite_term(term)),
-            CValue::Pointer(pointer) => CValue::Pointer(pointer.map_pointers(rewrite_pointer)),
+            CValue::Pointer(pointer) => CValue::Pointer(pointer.map_addresses(rewrite_pointer)),
         }
     }
 
@@ -1275,6 +1323,16 @@ fn rewrite_atomic_proposition_by_exact_equality(
                 ),
                 *expected,
             ),
+            Proposition::ConditionIs(
+                ConditionTerm::PointerValueEqual(goal_left, goal_right),
+                expected,
+            ) => Proposition::ConditionIs(
+                ConditionTerm::PointerValueEqual(
+                    Box::new(goal_left.map_addresses(&rewrite_pointer)),
+                    Box::new(goal_right.map_addresses(&rewrite_pointer)),
+                ),
+                *expected,
+            ),
             Proposition::ConditionIs(condition, expected) => {
                 let rewrite_term =
                     |term: &Bitvector32Term| rewrite_load_pointers(term, &rewrite_pointer);
@@ -1360,6 +1418,26 @@ fn rewrite_atomic_proposition_by_exact_equality(
         _ => return Err("`rewrite` expects a mathematical Integer, native 32-bit/64-bit, pointer, or algebraic equality".into()),
 
     };
+    // Address annotations describe a producer's object class, not the bits
+    // observed by a numeric equality. Keep the pointer and mask themselves
+    // exact; no pointer-value or memory-snapshot identity is substituted.
+    fn same_address_observation(left: &Bitvector32Term, right: &Bitvector32Term) -> bool {
+        fn key(term: &Bitvector32Term) -> Option<(&Pointer, Option<u64>)> {
+            if let Some(pointer) = term.address_pointer() {
+                return Some((pointer, None));
+            }
+            let Bitvector32Term::UInt64BitwiseAnd(left, right) = term else {
+                return None;
+            };
+            let (pointer, mask) = if let Some(pointer) = left.address_pointer() {
+                (pointer, right.as_ref())
+            } else {
+                (right.address_pointer()?, left.as_ref())
+            };
+            Some((pointer, Some(mask.uint64_as_const()?)))
+        }
+        matches!((key(left), key(right)), (Some(a), Some(b)) if a == b)
+    }
     fn rewrite_term(
         term: &Bitvector32Term,
         from: &Bitvector32Term,
@@ -1391,6 +1469,7 @@ fn rewrite_atomic_proposition_by_exact_equality(
             }
         }
         if term == from
+            || same_address_observation(term, from)
             // Load variables and load terms of one atom are the
             // same occurrence.
             || crate::kernel::terms_have_same_canonical_form(term, from)
@@ -1773,6 +1852,18 @@ fn rewrite_atomic_proposition_by_exact_equality(
                         return Err("`rewrite` cannot substitute this native equality in the selected condition".into());
                     }
                 }
+            };
+            // Rewriting can expose an address mask that the normal
+            // comparison constructor canonicalizes. Present that same form.
+            let rewritten_condition = if rewritten_condition.as_pointer_alignment().is_some() {
+                match rewritten_condition {
+                    ConditionTerm::Bitvector64Equal(left, right) => {
+                        ConditionTerm::int64_equal(*left, *right)
+                    }
+                    other => other,
+                }
+            } else {
+                rewritten_condition
             };
             Proposition::ConditionIs(rewritten_condition, *expected)
         }
@@ -2844,5 +2935,94 @@ mod wide_bound_equality_reader_tests {
         let (_, range) = rewritten.memory_containment().unwrap();
         assert_eq!(range.kind(), wide.kind());
         assert_eq!(range.bound_terms().1, &high);
+    }
+}
+
+#[cfg(test)]
+mod numeric_address_annotation_tests {
+    use super::*;
+
+    fn check(p: Pointer, q: Pointer) {
+        let class = crate::kernel::effective_type::CAccessClass::Struct(
+            crate::kernel::effective_type::CStructClass::opaque("node"),
+        );
+        let observed = |pointer: &Pointer| {
+            Bitvector32Term::object_pointer_address(pointer.clone(), Some(class.clone()))
+        };
+        let equality = Proposition::ConditionIs(
+            ConditionTerm::uint64_equal(observed(&p), observed(&q)),
+            true,
+        );
+        let mask = |pointer: &Pointer| {
+            Proposition::ConditionIs(
+                ConditionTerm::uint64_equal(
+                    Bitvector32Term::uint64_bitwise_and(
+                        observed(pointer),
+                        Bitvector32Term::UInt64Constant(1),
+                    ),
+                    Bitvector32Term::UInt64Constant(0),
+                ),
+                true,
+            )
+        };
+        let goal = mask(&p);
+        let expected = mask(&q);
+        let facts = ProofFacts::from_ordered(std::slice::from_ref(&equality));
+        let checked = facts.check_equality_rewrite(&goal, &equality).unwrap();
+        assert_eq!(checked.proposition(), &expected);
+        assert_eq!(
+            rewrite_proposition_by_exact_equality(
+                &goal,
+                &equality,
+                std::slice::from_ref(&equality)
+            )
+            .unwrap(),
+            expected
+        );
+        let nested = Proposition::ConditionIs(
+            ConditionTerm::uint64_equal(
+                observed(&p),
+                Bitvector32Term::uint64_add(
+                    observed(&q),
+                    Bitvector32Term::uint64_bitwise_and(
+                        observed(&p),
+                        Bitvector32Term::UInt64Constant(1),
+                    ),
+                ),
+            ),
+            true,
+        );
+        let masked = mask(&p);
+        let mask_facts = ProofFacts::from_ordered(std::slice::from_ref(&masked));
+        assert_eq!(
+            mask_facts
+                .check_equality_rewrite(&nested, &masked)
+                .unwrap()
+                .proposition(),
+            &equality,
+        );
+        let left = CPointerValue::new(p.clone(), CType::Int32Pointer)
+            .with_extent(Some(SubobjectExtent::constant(p, 4)));
+        for width in [4, 8] {
+            let right = CPointerValue::new(q.clone(), CType::Int32Pointer)
+                .with_extent(Some(SubobjectExtent::constant(q.clone(), width)));
+            assert!(
+                !facts
+                    .assumptions()
+                    .pointer_designations_match(&left, &right)
+            );
+        }
+    }
+    #[test]
+    fn address_equality_rewrites_canonical_alignment_masks_without_pointer_authority() {
+        let _session = VerificationSession::enter();
+        check(
+            Pointer::symbolic(Variable(998_821)),
+            Pointer::symbolic(Variable(998_822)),
+        );
+        check(
+            Pointer::integer_address(Bitvector32Term::Variable(Variable(998_823))),
+            Pointer::integer_address(Bitvector32Term::Variable(Variable(998_824))),
+        );
     }
 }

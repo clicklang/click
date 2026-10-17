@@ -458,6 +458,25 @@ impl C0Global {
         .with_pointee_volatile(self.pointee_is_volatile())
         .with_constant(self.is_constant())
         .with_pointee_constant(self.pointee_is_constant())
+        .with_declared_class(self.declared_class())
+    }
+
+    /// The global's strict-aliasing class (`design/effective-types.md`). A
+    /// struct pointer's class names its struct by tag, which is all a
+    /// pointer class compares.
+    fn declared_class(&self) -> Option<crate::kernel::effective_type::CAccessClass> {
+        match self.struct_name.as_deref() {
+            Some(name) => struct_pointer_class(
+                self.c_type,
+                crate::kernel::effective_type::CPointeeBase::Struct(
+                    crate::kernel::effective_type::CStructClass::opaque(name),
+                ),
+            ),
+            None => self
+                .c_type
+                .access_class()
+                .or_else(|| int_pointer_class(self.c_type)),
+        }
     }
 }
 
@@ -661,6 +680,7 @@ impl C0GlobalArray {
             values,
         )
         .with_constant(self.is_constant())
+        .with_declared_class(self.element_type.access_class())
     }
 }
 
@@ -841,7 +861,13 @@ impl C0GlobalAggregateArray {
                 self.length(),
                 initializers,
             )
-            .with_constant(self.is_constant()),
+            .with_constant(self.is_constant())
+            .with_declared_class(
+                self.layout
+                    .class
+                    .clone()
+                    .map(crate::kernel::effective_type::CAccessClass::Struct),
+            ),
         )
     }
 }
@@ -957,6 +983,12 @@ impl C0GlobalAggregate {
                 initializers,
             )
             .with_constant(self.is_constant())
+            .with_declared_class(
+                self.layout
+                    .class
+                    .clone()
+                    .map(crate::kernel::effective_type::CAccessClass::Struct),
+            )
         })
     }
 }

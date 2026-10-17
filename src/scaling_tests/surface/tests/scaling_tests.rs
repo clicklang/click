@@ -8604,3 +8604,89 @@ fn proof_if_split_ignores_earlier_unrelated_facts() {
         "a proof `if` rebuilds context entries for earlier unrelated facts: {added:?}"
     );
 }
+
+/// Premise synthesis must reuse the ambient context, including on refusal.
+#[test]
+fn failing_bare_transport_reuses_candidate_assumptions() {
+    use crate::instrumentation::{VerificationEvent, collect};
+    let mut samples = Vec::new();
+    for size in [4, 16, 64] {
+        let requirements = (0..size)
+            .map(|i| format!("requires extra != {i};\n"))
+            .collect::<String>();
+        let source = format!(
+            r#"verifying "fill.c"; void fill(uint8* dst, int32 extra) {{ owns dst[0..4]; {requirements} }} by {{
+step(); mark filled; step();
+transport(at(filled, dst[0]) == 7, dst[0] == 7);
+}}"#
+        );
+        let before = crate::kernel::reasoning::path_facts::context_rebuild_entries();
+        let (result, events) = collect(|| {
+            verify_c0_sources(
+                &source,
+                &[(
+                    "fill.c",
+                    "void fill(uint8* dst, int32 extra) { dst[0] = 7; dst[0] = 0; }",
+                )],
+            )
+        });
+        let entries = crate::kernel::reasoning::path_facts::context_rebuild_entries() - before;
+        let error = result.expect_err("overwritten value cannot be transported");
+        assert!(
+            !error.message().contains("budget exhausted"),
+            "{}",
+            error.message()
+        );
+        let synthesized = events.iter().any(|event| {
+            matches!(event, VerificationEvent::OperationFinished { name, .. }
+                if name == "explicit fact transport: candidate synthesis")
+        });
+        assert!(
+            synthesized,
+            "the refusal must exercise candidate synthesis: {}",
+            error.message()
+        );
+        samples.push((size, entries));
+    }
+    eprintln!("bare transport context rebuilds: {samples:?}");
+    for pair in samples.windows(2) {
+        assert!(
+            pair[1].1 <= pair[0].1 * 5,
+            "repeated ambient rebuilds: {samples:?}"
+        );
+    }
+}
+
+#[test]
+fn branch_interface_fact_publication_extends_one_indexed_context() {
+    let c_source = "struct cell { int32 value; }; int32 bump(struct cell* p, int32 x, int32 flag) { p->value = flag; return 0; }";
+    let mut samples = Vec::new();
+    for size in [16usize, 32, 64, 128] {
+        let exported = (1..=size)
+            .map(|i| format!("fact x <= {i};\n"))
+            .collect::<String>();
+        let required = exported.replace("fact", "requires");
+        let click_source = format!(
+            r#"
+            verifying "joins.c";
+            resource slot(p: struct cell*) {{ field model: int32; owns p->value; fact p->value == model; }}
+            int32 bump(struct cell* p, int32 x, int32 flag) {{
+                requires p != 0; {required} owns c: slot(p); ensures result == 0;
+            }} by {{
+                if flag == 0 ensuring {{ owns c: slot(p); {exported} }} then {{
+                    unfold(c); step(); let c = fold(slot(p), {{ model: 0 }});
+                }} else {{
+                    unfold(c); step(); let c = fold(slot(p), {{ model: flag }});
+                }}
+                step(); simp();
+            }}
+        "#
+        );
+        let (verified, sample) = scaling_sample(size, || {
+            verify_c0_sources(&click_source, &[("joins.c", c_source)])
+        });
+        verified.unwrap_or_else(|error| panic!("{}", error.message()));
+        samples.push(sample);
+    }
+    assert_near_linear_scaling("branch interface exported facts", &samples);
+}

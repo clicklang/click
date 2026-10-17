@@ -534,22 +534,47 @@ impl CLoopFinalExitCandidate {
 /// state the path reached and the facts retained there; the loop rule joins
 /// every break exit with the guard-false exit into the single successor the
 /// enclosing frontier continues from, so no way out of the loop is dropped.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug)]
 pub(crate) struct CLoopBreakExit {
     state: CState,
     /// A checked exit is copied into the loop rule; its facts stay shared.
     pure_facts: std::sync::Arc<[Proposition]>,
+    fact_context: Option<PureFactContext>,
     loan_evidence: crate::kernel::loans::CheckedLoanCallEvidenceSequence,
 }
+
+impl PartialEq for CLoopBreakExit {
+    fn eq(&self, other: &Self) -> bool {
+        self.state == other.state
+            && self.pure_facts == other.pure_facts
+            && self.loan_evidence == other.loan_evidence
+    }
+}
+impl Eq for CLoopBreakExit {}
 
 impl CLoopBreakExit {
     pub(crate) fn new(state: CState, pure_facts: Vec<Proposition>) -> Self {
         crate::instrumentation::record_deterministic_work(pure_facts.len());
         Self {
             state,
+            fact_context: None,
             pure_facts: pure_facts.into(),
             loan_evidence: crate::kernel::loans::empty_checked_loan_evidence_sequence(),
         }
+    }
+
+    /// Retain the checked context alongside the exact facts it indexed.
+    pub(crate) fn from_proof_facts(
+        state: CState,
+        facts: &crate::kernel::proof::ProofFacts,
+    ) -> Self {
+        let mut exit = Self::new(state, facts.to_vec());
+        exit.fact_context = Some(facts.assumptions().clone());
+        exit
+    }
+
+    pub(crate) fn fact_context(&self) -> Option<&PureFactContext> {
+        self.fact_context.as_ref()
     }
 
     pub(crate) fn with_loan_evidence(
@@ -693,6 +718,14 @@ impl CLoopPreservationContext {
         facts: &crate::kernel::proof::ProofFacts,
         assumptions: &PureFactContext,
     ) -> (CState, Vec<Proposition>) {
+        (self.restored_exit_state(state, assumptions), facts.to_vec())
+    }
+
+    pub(crate) fn restored_exit_state(
+        &self,
+        state: &CState,
+        assumptions: &PureFactContext,
+    ) -> CState {
         let rebound = crate::kernel::c_loop_state_with_loop_binders_rebound(
             &self.state,
             state,
@@ -700,7 +733,17 @@ impl CLoopPreservationContext {
             assumptions,
         )
         .unwrap_or_else(|_| state.clone());
-        self.restored_return(&rebound, facts, assumptions)
+        self.exit_frame.as_ref().map_or_else(
+            || rebound.clone(),
+            |frame| {
+                crate::kernel::loops::restore_loop_exit_state(
+                    &rebound,
+                    self.state.resources(),
+                    frame,
+                    assumptions,
+                )
+            },
+        )
     }
 
     // A return has no post-loop scope. Preserve the body's output bindings;

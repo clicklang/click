@@ -61,7 +61,7 @@ fn exit_local_argument_context_indexing_is_linear_and_shared() {
             })
             .collect::<ExecutionFacts>();
         let (contexts, work) = crate::instrumentation::measure_deterministic_work(|| {
-            loop_exit_argument_contexts(&[&facts, &facts], &PureFactContext::new(), true)
+            loop_exit_argument_contexts(&[&facts, &facts], &[], &PureFactContext::new(), true)
         });
         assert!(work > 0 && work <= size as usize * 200, "{size}: {work}");
         let before = crate::kernel::reasoning::path_facts::context_rebuild_entries();
@@ -76,4 +76,57 @@ fn exit_local_argument_context_indexing_is_linear_and_shared() {
             before
         );
     }
+}
+
+#[test]
+fn exit_argument_checks_reuse_the_checked_path_context() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let fact = |id, value| {
+        Proposition::ConditionIs(
+            ConditionTerm::equal(
+                Bitvector32Term::Variable(Variable(id)),
+                Bitvector32Term::Constant(value),
+            ),
+            true,
+        )
+    };
+    let selected = fact(930_000, 7);
+    let ambient_only = fact(930_001, 9);
+    let mut costs = Vec::new();
+    for count in [4u64, 8, 16, 32] {
+        let mut root = crate::kernel::proof::ProofFacts::default();
+        for index in 0..count {
+            root = root.with_fact(fact(931_000 + index, index as u32));
+        }
+        let path = root.with_fact(selected.clone());
+        let exit = CLoopBreakExit::from_proof_facts(CState::new(), &path);
+        let facts = exit
+            .pure_facts()
+            .iter()
+            .cloned()
+            .map(ExecutionPureFact::certified)
+            .collect::<ExecutionFacts>();
+        let Proposition::ConditionIs(selected_condition, _) = &selected else {
+            unreachable!()
+        };
+        let older_truth = Proposition::ConditionIs(selected_condition.clone(), false);
+        let ambient = root
+            .assumptions()
+            .clone()
+            .assume_proposition(ambient_only.clone())
+            .assume_proposition(older_truth.clone());
+        let (contexts, work) = crate::instrumentation::measure_deterministic_work(|| {
+            loop_exit_argument_contexts(&[&facts], &[exit.fact_context().cloned()], &ambient, true)
+        });
+        assert!(contexts[0].contains_assumed_exact(&selected));
+        assert!(!contexts[0].contains_assumed_exact(&older_truth));
+        assert!(contexts[0].contains_known(&ambient_only));
+        assert!(!root.contains(&selected));
+        assert!(!path.contains(&ambient_only));
+        costs.push(work);
+    }
+    assert!(
+        costs.iter().all(|work| *work <= costs[0] + 64),
+        "exit join rebuilt the checked path context: {costs:?}"
+    );
 }

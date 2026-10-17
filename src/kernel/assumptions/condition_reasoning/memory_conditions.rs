@@ -14,6 +14,20 @@ impl PureFactContext {
         left: &ConditionTerm,
         right: &ConditionTerm,
     ) -> bool {
+        if let (ConditionTerm::PointerValueEqual(a, b), ConditionTerm::PointerValueEqual(c, d)) =
+            (left, right)
+        {
+            let same_value = |a: &CPointerValue, b: &CPointerValue| {
+                a.c_type() == b.c_type()
+                    && self.pointer_designations_match(a, b)
+                    && (crate::kernel::reasoning::pointers_proven_equal_for_memory_resolution(
+                        a.pointer(), b.pointer(), self,
+                    ) || crate::kernel::memory_provenance::complete_pointer_reads_equal_across_frame(
+                        a.pointer(), b.pointer(), self,
+                    ))
+            };
+            return same_value(a, c) && same_value(b, d);
+        }
         conditions_equal_with_load_atoms(left, right, &|left, right| {
             left == right || self.memory_loads_proven_equal(left, right)
         })
@@ -31,6 +45,20 @@ impl PureFactContext {
         left: &ConditionTerm,
         right: &ConditionTerm,
     ) -> bool {
+        if let (ConditionTerm::PointerValueEqual(a, b), ConditionTerm::PointerValueEqual(c, d)) =
+            (left, right)
+        {
+            let same_value = |a: &CPointerValue, b: &CPointerValue| {
+                a.c_type() == b.c_type()
+                    && self.pointer_designations_match(a, b)
+                    && (crate::kernel::reasoning::pointers_proven_equal_for_memory_resolution(
+                        a.pointer(), b.pointer(), self,
+                    ) || crate::kernel::memory_provenance::complete_pointer_reads_equal_across_frame(
+                        a.pointer(), b.pointer(), self,
+                    ))
+            };
+            return same_value(a, c) && same_value(b, d);
+        }
         conditions_equal_with_load_atoms(left, right, &|left, right| {
             // The recorded-DAG check runs first: the broad fact-matching
             // check below records generation-scoped negative answers for the
@@ -223,7 +251,12 @@ impl PureFactContext {
         let Bitvector32Term::MemoryLoad(memory, pointer, kind) = &viewed else {
             return None;
         };
-        let value = match self.resolve_memory_load_value(memory, pointer, *kind)? {
+        let value = match self
+            .resolve_memory_load_value(memory, pointer, *kind)?
+            .numeric_value()
+            .clone()
+        {
+            CValue::PointerInteger(_) => unreachable!("numeric projection"),
             CValue::Int8(value) => value,
             CValue::Bool(value)
             | CValue::Int16(value)

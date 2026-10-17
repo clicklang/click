@@ -19,6 +19,13 @@ fn argument(id: u64) -> PureFunctionArgument {
 fn pointer_argument(p: Pointer) -> PureFunctionArgument {
     PureFunctionArgument::Value(CValue::Pointer(CPointerValue::new(p, CType::Int32Pointer)))
 }
+fn equal_pointer_arguments(graph: &mut EqualityGraph, p: &Pointer, q: &Pointer) {
+    graph.add_pointer_value_equality(
+        &CPointerValue::new(p.clone(), CType::Int32Pointer),
+        &CPointerValue::new(q.clone(), CType::Int32Pointer),
+    );
+}
+
 fn equal(a: &Pointer, b: &Pointer) -> Proposition {
     Proposition::ConditionIs(
         ConditionTerm::PointerEqual(Box::new(a.clone()), Box::new(b.clone())),
@@ -68,6 +75,8 @@ fn pointer_calls_keep_sorts_order_snapshots_and_noninjectivity() {
     let b = call("select", vec![array(&memory, q.clone(), CType::Int32)]);
     assert!(!graph.are_equal(&a, &b));
     graph.add_equality(&p, &q);
+    assert!(!graph.are_equal(&a, &b));
+    equal_pointer_arguments(&mut graph, &p, &q);
     assert!(graph.are_equal(&a, &b));
     assert!(!graph.are_equal(
         &a,
@@ -120,6 +129,8 @@ fn nested_pointer_calls_feed_scalar_calls_and_checked_reads() {
     assert!(!graph.are_int32_equal(&scalar(a.clone()), &scalar(b.clone())));
     assert!(!graph.are_int32_equal(&read(a.clone()), &read(b.clone())));
     graph.add_equality(&p, &q);
+    assert!(!graph.are_equal(&a, &b));
+    equal_pointer_arguments(&mut graph, &p, &q);
     assert!(graph.are_equal(&a, &b));
     assert!(graph.are_int32_equal(&scalar(a.clone()), &scalar(b.clone())));
     assert!(graph.are_int32_equal(&read(a), &read(b)));
@@ -148,4 +159,21 @@ fn pointer_call_evidence_stays_scoped_and_is_withdrawable() {
 #[cfg(test)]
 mod scaling_tests {
     include!("../../scaling_tests/kernel/equality_graph/pointer_call_tests.rs");
+}
+
+#[test]
+fn pointer_call_address_equality_does_not_merge_result_domains() {
+    let _session = VerificationSession::enter();
+    let a = call("left", vec![argument(61)]);
+    let b = call("right", vec![argument(61)]);
+    let left = CPointerValue::new(a.clone(), CType::Int32Pointer);
+    let right = CPointerValue::new(b.clone(), CType::Int32Pointer);
+    let context = PureFactContext::new().assume_proposition(equal(&a, &b));
+    assert!(!context.pointer_designations_match(&left, &right));
+    let complete = context.clone().assume_condition(
+        ConditionTerm::pointer_value_equal(left.clone(), right.clone()),
+        true,
+    );
+    assert!(complete.pointer_designations_match(&left, &right));
+    assert!(!context.pointer_designations_match(&left, &right));
 }
