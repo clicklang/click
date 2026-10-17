@@ -467,6 +467,50 @@ mod certificate_tests {
     }
 
     #[test]
+    fn sequential_control_tactics_build_walk_clone_and_drop_without_deep_recursion() {
+        // A script of N sequential `branch`es is a continuation chain N nodes
+        // deep. Building, walking, copying and freeing it must not take a
+        // Rust stack frame per node: a recursive builder overflowed the main
+        // thread's 8 MiB stack at about 250 branches.
+        let branches = 2_000;
+        let branch = ProofTactic::Branch(ProofBranch {
+            ensuring: None,
+            then_tactics: vec![ProofTactic::Step],
+            else_tactics: vec![ProofTactic::Step],
+        });
+        let tactics = vec![branch; branches];
+        // Each branch spans three source tactics; this is the last `else` step.
+        let last_source_index = 3 * (branches - 1) + 2;
+        std::thread::Builder::new()
+            .stack_size(1024 * 1024)
+            .spawn(move || {
+                let mut proof =
+                    build_internal_proof(&tactics, "deep").expect("the chain should build");
+                assert!(internal_proof_contains_source_index(
+                    &proof,
+                    last_source_index
+                ));
+                let copy = proof.clone();
+                detach_generated_suffix_from_source_indices(&mut proof, 0);
+                assert!(!internal_proof_contains_source_index(
+                    &proof,
+                    last_source_index
+                ));
+                assert!(internal_proof_contains_source_index(
+                    &copy,
+                    last_source_index
+                ));
+                set_generated_proof_source_index(&mut proof, 7);
+                assert!(internal_proof_contains_source_index(&proof, 7));
+                drop(copy);
+                drop(proof);
+            })
+            .expect("the test thread should start")
+            .join()
+            .expect("a long sequential chain must not overflow a small stack");
+    }
+
+    #[test]
     fn deferred_tactics_retain_their_owning_source_occurrence() {
         let mut execution = ExecutionProofState::at_entry(
             CState::new(),
@@ -813,7 +857,6 @@ struct IndexedTactic {
     tactic: ProofTactic,
 }
 
-#[derive(Clone)]
 enum InternalProofNode {
     Done,
     Match {
@@ -907,65 +950,55 @@ fn build_generated_certificate_proof(
 }
 
 fn set_generated_proof_source_index(node: &mut InternalProofNode, owning_source_index: usize) {
-    match node {
-        InternalProofNode::Match {
-            source_index,
-            arms,
-            continuation,
-            ..
-        } => {
-            *source_index = owning_source_index;
-            for arm in arms {
-                set_generated_proof_source_index(arm, owning_source_index);
+    let mut node = node;
+    loop {
+        match node {
+            InternalProofNode::Done => return,
+            InternalProofNode::Match {
+                source_index, arms, ..
+            } => {
+                *source_index = owning_source_index;
+                for arm in arms {
+                    set_generated_proof_source_index(arm, owning_source_index);
+                }
             }
-            set_generated_proof_source_index(continuation, owning_source_index);
-        }
-        InternalProofNode::Done => {}
-        InternalProofNode::Linear {
-            tactics,
-            continuation,
-        } => {
-            for tactic in tactics {
-                tactic.source_index = owning_source_index;
+            InternalProofNode::Linear { tactics, .. } => {
+                for tactic in tactics {
+                    tactic.source_index = owning_source_index;
+                }
             }
-            set_generated_proof_source_index(continuation, owning_source_index);
+            InternalProofNode::Open {
+                source_index, body, ..
+            } => {
+                *source_index = owning_source_index;
+                set_generated_proof_source_index(body, owning_source_index);
+            }
+            InternalProofNode::If {
+                source_index,
+                then_branch,
+                else_branch,
+                ..
+            }
+            | InternalProofNode::Branch {
+                source_index,
+                then_branch,
+                else_branch,
+                ..
+            }
+            | InternalProofNode::CallOutcomes {
+                source_index,
+                returned_branch: then_branch,
+                threw_branch: else_branch,
+                ..
+            } => {
+                *source_index = owning_source_index;
+                set_generated_proof_source_index(then_branch, owning_source_index);
+                set_generated_proof_source_index(else_branch, owning_source_index);
+            }
         }
-        InternalProofNode::Open {
-            source_index,
-            body,
-            continuation,
-            ..
-        } => {
-            *source_index = owning_source_index;
-            set_generated_proof_source_index(body, owning_source_index);
-            set_generated_proof_source_index(continuation, owning_source_index);
-        }
-        InternalProofNode::If {
-            source_index,
-            then_branch,
-            else_branch,
-            continuation,
-            ..
-        }
-        | InternalProofNode::Branch {
-            source_index,
-            then_branch,
-            else_branch,
-            continuation,
-            ..
-        }
-        | InternalProofNode::CallOutcomes {
-            source_index,
-            returned_branch: then_branch,
-            threw_branch: else_branch,
-            continuation,
-            ..
-        } => {
-            *source_index = owning_source_index;
-            set_generated_proof_source_index(then_branch, owning_source_index);
-            set_generated_proof_source_index(else_branch, owning_source_index);
-            set_generated_proof_source_index(continuation, owning_source_index);
-        }
+        node = node
+            .continuation_mut()
+            .expect("only `Done` lacks a continuation");
     }
 }
 
@@ -973,234 +1006,391 @@ fn detach_generated_suffix_from_source_indices(
     node: &mut InternalProofNode,
     first_generated_tactic_index: usize,
 ) {
-    match node {
-        InternalProofNode::Match {
-            index,
-            source_index,
-            arms,
-            continuation,
-            ..
-        } => {
-            if *index >= first_generated_tactic_index {
-                *source_index = usize::MAX;
-            }
-            for arm in arms {
-                detach_generated_suffix_from_source_indices(arm, first_generated_tactic_index);
-            }
-            detach_generated_suffix_from_source_indices(continuation, first_generated_tactic_index);
+    let detach = |index: usize, source_index: &mut usize| {
+        if index >= first_generated_tactic_index {
+            *source_index = usize::MAX;
         }
-        InternalProofNode::Done => {}
-        InternalProofNode::Linear {
-            tactics,
-            continuation,
-        } => {
-            for tactic in tactics {
-                if tactic.index >= first_generated_tactic_index {
-                    tactic.source_index = usize::MAX;
+    };
+    let mut node = node;
+    loop {
+        match node {
+            InternalProofNode::Done => return,
+            InternalProofNode::Match {
+                index,
+                source_index,
+                arms,
+                ..
+            } => {
+                detach(*index, source_index);
+                for arm in arms {
+                    detach_generated_suffix_from_source_indices(arm, first_generated_tactic_index);
                 }
             }
-            detach_generated_suffix_from_source_indices(continuation, first_generated_tactic_index);
-        }
-        InternalProofNode::Open {
-            index,
-            source_index,
-            body,
-            continuation,
-            ..
-        } => {
-            if *index >= first_generated_tactic_index {
-                *source_index = usize::MAX;
+            InternalProofNode::Linear { tactics, .. } => {
+                for tactic in tactics {
+                    detach(tactic.index, &mut tactic.source_index);
+                }
             }
-            detach_generated_suffix_from_source_indices(body, first_generated_tactic_index);
-            detach_generated_suffix_from_source_indices(continuation, first_generated_tactic_index);
-        }
-        InternalProofNode::If {
-            index,
-            source_index,
-            then_branch,
-            else_branch,
-            continuation,
-            ..
-        }
-        | InternalProofNode::Branch {
-            index,
-            source_index,
-            then_branch,
-            else_branch,
-            continuation,
-            ..
-        }
-        | InternalProofNode::CallOutcomes {
-            index,
-            source_index,
-            returned_branch: then_branch,
-            threw_branch: else_branch,
-            continuation,
-        } => {
-            if *index >= first_generated_tactic_index {
-                *source_index = usize::MAX;
+            InternalProofNode::Open {
+                index,
+                source_index,
+                body,
+                ..
+            } => {
+                detach(*index, source_index);
+                detach_generated_suffix_from_source_indices(body, first_generated_tactic_index);
             }
-            detach_generated_suffix_from_source_indices(then_branch, first_generated_tactic_index);
-            detach_generated_suffix_from_source_indices(else_branch, first_generated_tactic_index);
-            detach_generated_suffix_from_source_indices(continuation, first_generated_tactic_index);
+            InternalProofNode::If {
+                index,
+                source_index,
+                then_branch,
+                else_branch,
+                ..
+            }
+            | InternalProofNode::Branch {
+                index,
+                source_index,
+                then_branch,
+                else_branch,
+                ..
+            }
+            | InternalProofNode::CallOutcomes {
+                index,
+                source_index,
+                returned_branch: then_branch,
+                threw_branch: else_branch,
+                ..
+            } => {
+                detach(*index, source_index);
+                detach_generated_suffix_from_source_indices(
+                    then_branch,
+                    first_generated_tactic_index,
+                );
+                detach_generated_suffix_from_source_indices(
+                    else_branch,
+                    first_generated_tactic_index,
+                );
+            }
+        }
+        node = node
+            .continuation_mut()
+            .expect("only `Done` lacks a continuation");
+    }
+}
+
+impl InternalProofNode {
+    /// The rest of the proof after this node, or `None` for `Done`.
+    fn continuation_mut(&mut self) -> Option<&mut Box<InternalProofNode>> {
+        match self {
+            InternalProofNode::Done => None,
+            InternalProofNode::Match { continuation, .. }
+            | InternalProofNode::Linear { continuation, .. }
+            | InternalProofNode::Open { continuation, .. }
+            | InternalProofNode::If { continuation, .. }
+            | InternalProofNode::Branch { continuation, .. }
+            | InternalProofNode::CallOutcomes { continuation, .. } => Some(continuation),
         }
     }
 }
 
+/// The empty proof, for a driver that holds a borrowed node after consuming
+/// the rest of a script.
+static DONE_PROOF: InternalProofNode = InternalProofNode::Done;
+
+impl Clone for InternalProofNode {
+    /// Copies the continuation chain node by node in a loop, as `Drop` frees
+    /// it, so a long run of sequential control tactics is copied without a
+    /// Rust stack frame per node.
+    fn clone(&self) -> Self {
+        let mut copies = Vec::new();
+        let mut node = self;
+        loop {
+            let (copy, continuation) = match node {
+                InternalProofNode::Done => break,
+                InternalProofNode::Match {
+                    index,
+                    source_index,
+                    proof_match,
+                    arms,
+                    continuation,
+                } => (
+                    InternalProofNode::Match {
+                        index: *index,
+                        source_index: *source_index,
+                        proof_match: proof_match.clone(),
+                        arms: arms.clone(),
+                        continuation: Box::new(InternalProofNode::Done),
+                    },
+                    continuation,
+                ),
+                InternalProofNode::Linear {
+                    tactics,
+                    continuation,
+                } => (
+                    InternalProofNode::Linear {
+                        tactics: tactics.clone(),
+                        continuation: Box::new(InternalProofNode::Done),
+                    },
+                    continuation,
+                ),
+                InternalProofNode::Open {
+                    index,
+                    source_index,
+                    resource,
+                    close_proof,
+                    body,
+                    continuation,
+                } => (
+                    InternalProofNode::Open {
+                        index: *index,
+                        source_index: *source_index,
+                        resource: resource.clone(),
+                        close_proof: close_proof.clone(),
+                        body: body.clone(),
+                        continuation: Box::new(InternalProofNode::Done),
+                    },
+                    continuation,
+                ),
+                InternalProofNode::If {
+                    index,
+                    source_index,
+                    condition,
+                    ensuring,
+                    then_branch,
+                    else_branch,
+                    continuation,
+                } => (
+                    InternalProofNode::If {
+                        index: *index,
+                        source_index: *source_index,
+                        condition: condition.clone(),
+                        ensuring: ensuring.clone(),
+                        then_branch: then_branch.clone(),
+                        else_branch: else_branch.clone(),
+                        continuation: Box::new(InternalProofNode::Done),
+                    },
+                    continuation,
+                ),
+                InternalProofNode::Branch {
+                    index,
+                    source_index,
+                    ensuring,
+                    then_branch,
+                    else_branch,
+                    continuation,
+                } => (
+                    InternalProofNode::Branch {
+                        index: *index,
+                        source_index: *source_index,
+                        ensuring: ensuring.clone(),
+                        then_branch: then_branch.clone(),
+                        else_branch: else_branch.clone(),
+                        continuation: Box::new(InternalProofNode::Done),
+                    },
+                    continuation,
+                ),
+                InternalProofNode::CallOutcomes {
+                    index,
+                    source_index,
+                    returned_branch,
+                    threw_branch,
+                    continuation,
+                } => (
+                    InternalProofNode::CallOutcomes {
+                        index: *index,
+                        source_index: *source_index,
+                        returned_branch: returned_branch.clone(),
+                        threw_branch: threw_branch.clone(),
+                        continuation: Box::new(InternalProofNode::Done),
+                    },
+                    continuation,
+                ),
+            };
+            copies.push(copy);
+            node = continuation;
+        }
+        link_proof_segments(copies)
+    }
+}
+
+/// Links `segments`, each holding a `Done` continuation, into one chain in
+/// order, from the back.
+fn link_proof_segments(mut segments: Vec<InternalProofNode>) -> InternalProofNode {
+    let mut proof = InternalProofNode::Done;
+    while let Some(mut segment) = segments.pop() {
+        **segment
+            .continuation_mut()
+            .expect("every segment holds a continuation") = proof;
+        proof = segment;
+    }
+    proof
+}
+
+impl Drop for InternalProofNode {
+    /// Unlinks the continuation chain so dropping a long run of sequential
+    /// control tactics takes no Rust stack frame per node.
+    fn drop(&mut self) {
+        let Some(continuation) = self.continuation_mut() else {
+            return;
+        };
+        if matches!(continuation.as_ref(), InternalProofNode::Done) {
+            return;
+        }
+        let mut next = std::mem::replace(continuation.as_mut(), InternalProofNode::Done);
+        while let Some(continuation) = next.continuation_mut() {
+            next = std::mem::replace(continuation.as_mut(), InternalProofNode::Done);
+        }
+    }
+}
+
+/// Each control tactic holds the rest of its script as its continuation, so
+/// a script of N sequential control tactics is a chain N nodes deep. The
+/// chain is built front to back in a loop and linked from the back; only a
+/// written nesting (an arm, a case, an `open` body) recurses.
 fn build_internal_proof_at(
     tactics: &[ProofTactic],
     index_offset: usize,
     source_index_offset: usize,
 ) -> Result<InternalProofNode, ClickError> {
-    let Some((control_index, control_tactic)) = tactics.iter().enumerate().find(|(_, tactic)| {
-        matches!(
-            tactic,
-            ProofTactic::If(_)
-                | ProofTactic::Branch(_)
-                | ProofTactic::CallOutcomes(_)
-                | ProofTactic::Open(_)
-                | ProofTactic::Match(_)
-        )
-    }) else {
-        if tactics.is_empty() {
-            return Ok(InternalProofNode::Done);
-        }
-        return Ok(InternalProofNode::Linear {
-            tactics: indexed_linear_tactics(tactics, index_offset, source_index_offset),
-            continuation: Box::new(InternalProofNode::Done),
-        });
-    };
+    let mut segments = Vec::new();
+    let (mut tactics, mut index_offset, mut source_index_offset) =
+        (tactics, index_offset, source_index_offset);
+    loop {
+        let Some((control_index, control_tactic)) =
+            tactics.iter().enumerate().find(|(_, tactic)| {
+                matches!(
+                    tactic,
+                    ProofTactic::If(_)
+                        | ProofTactic::Branch(_)
+                        | ProofTactic::CallOutcomes(_)
+                        | ProofTactic::Open(_)
+                        | ProofTactic::Match(_)
+                )
+            })
+        else {
+            if !tactics.is_empty() {
+                segments.push(InternalProofNode::Linear {
+                    tactics: indexed_linear_tactics(tactics, index_offset, source_index_offset),
+                    continuation: Box::new(InternalProofNode::Done),
+                });
+            }
+            break;
+        };
 
-    let index = index_offset + control_index;
-    let source_index = source_index_offset
-        + tactics[..control_index]
-            .iter()
-            .map(source_tactic_width)
-            .sum::<usize>();
-    let control = match control_tactic {
-        ProofTactic::Match(proof_match) => {
-            let mut next_source = source_index + 1;
-            let mut arms = Vec::with_capacity(proof_match.arms.len());
-            for arm in &proof_match.arms {
-                arms.push(build_internal_proof_at(
-                    &arm.tactics,
-                    index + 1,
-                    next_source,
-                )?);
-                next_source += source_tactic_count(&arm.tactics);
-            }
-            InternalProofNode::Match {
-                index,
-                source_index,
-                proof_match: proof_match.clone(),
-                arms,
-                continuation: Box::new(build_internal_proof_at(
-                    &tactics[control_index + 1..],
-                    index + 1,
-                    next_source,
-                )?),
-            }
+        let index = index_offset + control_index;
+        let source_index = source_index_offset
+            + tactics[..control_index]
+                .iter()
+                .map(source_tactic_width)
+                .sum::<usize>();
+        if control_index > 0 {
+            segments.push(InternalProofNode::Linear {
+                tactics: indexed_linear_tactics(
+                    &tactics[..control_index],
+                    index_offset,
+                    source_index_offset,
+                ),
+                continuation: Box::new(InternalProofNode::Done),
+            });
         }
-        ProofTactic::If(proof_if) => {
-            let then_width = source_tactic_count(&proof_if.then_tactics);
-            InternalProofNode::If {
+        let control = match control_tactic {
+            ProofTactic::Match(proof_match) => {
+                let mut next_source = source_index + 1;
+                let mut arms = Vec::with_capacity(proof_match.arms.len());
+                for arm in &proof_match.arms {
+                    arms.push(build_internal_proof_at(
+                        &arm.tactics,
+                        index + 1,
+                        next_source,
+                    )?);
+                    next_source += source_tactic_count(&arm.tactics);
+                }
+                InternalProofNode::Match {
+                    index,
+                    source_index,
+                    proof_match: proof_match.clone(),
+                    arms,
+                    continuation: Box::new(InternalProofNode::Done),
+                }
+            }
+            ProofTactic::If(proof_if) => {
+                let then_width = source_tactic_count(&proof_if.then_tactics);
+                InternalProofNode::If {
+                    index,
+                    source_index,
+                    condition: proof_if.condition.clone(),
+                    ensuring: proof_if.ensuring.clone(),
+                    then_branch: Box::new(build_internal_proof_at(
+                        &proof_if.then_tactics,
+                        index + 1,
+                        source_index + 1,
+                    )?),
+                    else_branch: Box::new(build_internal_proof_at(
+                        &proof_if.else_tactics,
+                        index + 1,
+                        source_index + 1 + then_width,
+                    )?),
+                    continuation: Box::new(InternalProofNode::Done),
+                }
+            }
+            ProofTactic::Branch(proof_branch) => {
+                let then_width = source_tactic_count(&proof_branch.then_tactics);
+                InternalProofNode::Branch {
+                    index,
+                    source_index,
+                    ensuring: proof_branch.ensuring.clone(),
+                    then_branch: Box::new(build_internal_proof_at(
+                        &proof_branch.then_tactics,
+                        index + 1,
+                        source_index + 1,
+                    )?),
+                    else_branch: Box::new(build_internal_proof_at(
+                        &proof_branch.else_tactics,
+                        index + 1,
+                        source_index + 1 + then_width,
+                    )?),
+                    continuation: Box::new(InternalProofNode::Done),
+                }
+            }
+            ProofTactic::CallOutcomes(outcomes) => {
+                let returned_width = source_tactic_count(&outcomes.returned_tactics);
+                InternalProofNode::CallOutcomes {
+                    index,
+                    source_index,
+                    returned_branch: Box::new(build_internal_proof_at(
+                        &outcomes.returned_tactics,
+                        index + 1,
+                        source_index + 1,
+                    )?),
+                    threw_branch: Box::new(build_internal_proof_at(
+                        &outcomes.threw_tactics,
+                        index + 1,
+                        source_index + 1 + returned_width,
+                    )?),
+                    continuation: Box::new(InternalProofNode::Done),
+                }
+            }
+            ProofTactic::Open(proof_open) => InternalProofNode::Open {
                 index,
                 source_index,
-                condition: proof_if.condition.clone(),
-                ensuring: proof_if.ensuring.clone(),
-                then_branch: Box::new(build_internal_proof_at(
-                    &proof_if.then_tactics,
+                resource: proof_open.resource.clone(),
+                close_proof: proof_open.close_proof.clone(),
+                body: Box::new(build_internal_proof_at(
+                    &proof_open.tactics,
                     index + 1,
                     source_index + 1,
                 )?),
-                else_branch: Box::new(build_internal_proof_at(
-                    &proof_if.else_tactics,
-                    index + 1,
-                    source_index + 1 + then_width,
-                )?),
-                continuation: Box::new(build_internal_proof_at(
-                    &tactics[control_index + 1..],
-                    index + 1,
-                    source_index + source_tactic_width(control_tactic),
-                )?),
-            }
-        }
-        ProofTactic::Branch(proof_branch) => {
-            let then_width = source_tactic_count(&proof_branch.then_tactics);
-            InternalProofNode::Branch {
-                index,
-                source_index,
-                ensuring: proof_branch.ensuring.clone(),
-                then_branch: Box::new(build_internal_proof_at(
-                    &proof_branch.then_tactics,
-                    index + 1,
-                    source_index + 1,
-                )?),
-                else_branch: Box::new(build_internal_proof_at(
-                    &proof_branch.else_tactics,
-                    index + 1,
-                    source_index + 1 + then_width,
-                )?),
-                continuation: Box::new(build_internal_proof_at(
-                    &tactics[control_index + 1..],
-                    index + 1,
-                    source_index + source_tactic_width(control_tactic),
-                )?),
-            }
-        }
-        ProofTactic::CallOutcomes(outcomes) => {
-            let returned_width = source_tactic_count(&outcomes.returned_tactics);
-            InternalProofNode::CallOutcomes {
-                index,
-                source_index,
-                returned_branch: Box::new(build_internal_proof_at(
-                    &outcomes.returned_tactics,
-                    index + 1,
-                    source_index + 1,
-                )?),
-                threw_branch: Box::new(build_internal_proof_at(
-                    &outcomes.threw_tactics,
-                    index + 1,
-                    source_index + 1 + returned_width,
-                )?),
-                continuation: Box::new(build_internal_proof_at(
-                    &tactics[control_index + 1..],
-                    index + 1,
-                    source_index + source_tactic_width(control_tactic),
-                )?),
-            }
-        }
-        ProofTactic::Open(proof_open) => InternalProofNode::Open {
-            index,
-            source_index,
-            resource: proof_open.resource.clone(),
-            close_proof: proof_open.close_proof.clone(),
-            body: Box::new(build_internal_proof_at(
-                &proof_open.tactics,
-                index + 1,
-                source_index + 1,
-            )?),
-            continuation: Box::new(build_internal_proof_at(
-                &tactics[control_index + 1..],
-                index + 1,
-                source_index + source_tactic_width(control_tactic),
-            )?),
-        },
-        _ => unreachable!("control-tactic search only returns structured tactics"),
-    };
-
-    if control_index == 0 {
-        Ok(control)
-    } else {
-        Ok(InternalProofNode::Linear {
-            tactics: indexed_linear_tactics(
-                &tactics[..control_index],
-                index_offset,
-                source_index_offset,
-            ),
-            continuation: Box::new(control),
-        })
+                continuation: Box::new(InternalProofNode::Done),
+            },
+            _ => unreachable!("control-tactic search only returns structured tactics"),
+        };
+        segments.push(control);
+        tactics = &tactics[control_index + 1..];
+        index_offset = index + 1;
+        source_index_offset = source_index + source_tactic_width(control_tactic);
     }
+
+    Ok(link_proof_segments(segments))
 }
 
 fn indexed_linear_tactics(
@@ -1301,57 +1491,71 @@ fn indexed_tactic_contains_source_index(indexed: &IndexedTactic, wanted: usize) 
 }
 
 fn internal_proof_contains_source_index(node: &InternalProofNode, wanted: usize) -> bool {
-    match node {
-        InternalProofNode::Match {
-            source_index,
-            arms,
-            continuation,
-            ..
-        } => {
-            *source_index == wanted
-                || arms
+    let mut node = node;
+    loop {
+        node = match node {
+            InternalProofNode::Done => return false,
+            InternalProofNode::Match {
+                source_index,
+                arms,
+                continuation,
+                ..
+            } => {
+                if *source_index == wanted
+                    || arms
+                        .iter()
+                        .any(|arm| internal_proof_contains_source_index(arm, wanted))
+                {
+                    return true;
+                }
+                continuation
+            }
+            InternalProofNode::Linear {
+                tactics,
+                continuation,
+            } => {
+                if tactics
                     .iter()
-                    .any(|arm| internal_proof_contains_source_index(arm, wanted))
-                || internal_proof_contains_source_index(continuation, wanted)
-        }
-        InternalProofNode::Done => false,
-        InternalProofNode::Linear {
-            tactics,
-            continuation,
-        } => {
-            tactics
-                .iter()
-                .any(|tactic| indexed_tactic_contains_source_index(tactic, wanted))
-                || internal_proof_contains_source_index(continuation, wanted)
-        }
-        InternalProofNode::Open {
-            body, continuation, ..
-        } => {
-            internal_proof_contains_source_index(body, wanted)
-                || internal_proof_contains_source_index(continuation, wanted)
-        }
-        InternalProofNode::If {
-            then_branch,
-            else_branch,
-            continuation,
-            ..
-        }
-        | InternalProofNode::Branch {
-            then_branch,
-            else_branch,
-            continuation,
-            ..
-        }
-        | InternalProofNode::CallOutcomes {
-            returned_branch: then_branch,
-            threw_branch: else_branch,
-            continuation,
-            ..
-        } => {
-            internal_proof_contains_source_index(then_branch, wanted)
-                || internal_proof_contains_source_index(else_branch, wanted)
-                || internal_proof_contains_source_index(continuation, wanted)
-        }
+                    .any(|tactic| indexed_tactic_contains_source_index(tactic, wanted))
+                {
+                    return true;
+                }
+                continuation
+            }
+            InternalProofNode::Open {
+                body, continuation, ..
+            } => {
+                if internal_proof_contains_source_index(body, wanted) {
+                    return true;
+                }
+                continuation
+            }
+            InternalProofNode::If {
+                then_branch,
+                else_branch,
+                continuation,
+                ..
+            }
+            | InternalProofNode::Branch {
+                then_branch,
+                else_branch,
+                continuation,
+                ..
+            }
+            | InternalProofNode::CallOutcomes {
+                returned_branch: then_branch,
+                threw_branch: else_branch,
+                continuation,
+                ..
+            } => {
+                if internal_proof_contains_source_index(then_branch, wanted)
+                    || internal_proof_contains_source_index(else_branch, wanted)
+                {
+                    return true;
+                }
+                continuation
+            }
+        };
     }
 }
 
