@@ -900,7 +900,7 @@ impl ProofStep {
                 returned_tactics: returned_proof.to_proof_tactics(),
                 threw_tactics: threw_proof.to_proof_tactics(),
             }),
-            Self::Loop(clause) => ProofTactic::Loop(StructuralClause {
+            Self::Loop(clause) => ProofTactic::Loop(StructuralClause::from(StructuralClauseData {
                 region: clause.region,
                 label: clause.label.clone(),
                 decreases: clause.decreases.clone(),
@@ -923,7 +923,7 @@ impl ProofStep {
                     .as_ref()
                     .map(|proof| proof.to_source_proof()),
                 scope: BTreeMap::new(),
-            }),
+            })),
         }
     }
 }

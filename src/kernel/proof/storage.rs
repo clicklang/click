@@ -506,14 +506,19 @@ impl<T> PersistentSequence<T> {
     /// The entries appended after `ancestor`'s tail, oldest first.
     ///
     /// Returns `None` when `ancestor` is not a prefix of this sequence by
-    /// identity and visits only the appended suffix.
+    /// identity and visits only the appended suffix: a prefix lies exactly
+    /// `self.len - ancestor.len` entries back, so the walk stops there.
     pub(crate) fn suffix_since(&self, ancestor: &Self) -> Option<Vec<T>>
     where
         T: Clone,
     {
-        let mut suffix = Vec::with_capacity(self.len.saturating_sub(ancestor.len));
+        let appended = self.len.checked_sub(ancestor.len)?;
+        let mut suffix = Vec::with_capacity(appended);
         let mut current = self.tail.clone();
         loop {
+            if suffix.len() > appended {
+                return None;
+            }
             match (&current, &ancestor.tail) {
                 (Some(node), Some(ancestor_tail)) if Arc::ptr_eq(node, ancestor_tail) => break,
                 (None, None) => break,

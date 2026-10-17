@@ -1667,8 +1667,53 @@ pub struct EnsureClause {
     condition: Option<ClickProposition>,
 }
 
+/// A loop or function region's clause. Its contents are shared by its
+/// copies: a proof binds every earlier loop's clause into the function block
+/// at each `loop` tactic, and copying the clauses whole made each loop pay
+/// for the loops before it. Writing a field of a shared clause copies it.
+#[derive(Clone, Eq, PartialEq)]
+pub struct StructuralClause(std::sync::Arc<StructuralClauseData>);
+
+impl std::ops::Deref for StructuralClause {
+    type Target = StructuralClauseData;
+
+    fn deref(&self) -> &StructuralClauseData {
+        &self.0
+    }
+}
+
+impl std::ops::DerefMut for StructuralClause {
+    fn deref_mut(&mut self) -> &mut StructuralClauseData {
+        std::sync::Arc::make_mut(&mut self.0)
+    }
+}
+
+impl From<StructuralClauseData> for StructuralClause {
+    fn from(data: StructuralClauseData) -> Self {
+        Self(std::sync::Arc::new(data))
+    }
+}
+
+impl std::fmt::Debug for StructuralClause {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let data = &self.0;
+        formatter
+            .debug_struct("StructuralClause")
+            .field("region", &data.region)
+            .field("label", &data.label)
+            .field("decreases", &data.decreases)
+            .field("diverges", &data.diverges)
+            .field("items", &data.items)
+            .field("scope", &data.scope)
+            .field("resources", &data.resources)
+            .field("initialize_proof", &data.initialize_proof)
+            .field("preserve_proof", &data.preserve_proof)
+            .finish()
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct StructuralClause {
+pub struct StructuralClauseData {
     region: CodeRegion,
     label: Option<String>,
     decreases: Option<TerminationMeasure>,
@@ -3252,6 +3297,21 @@ impl RecordedSnapshots {
         self.iter().map(|(selector, _)| selector)
     }
 
+    /// The entries newest selector first, read from the persistent tree as
+    /// they are taken: a reader that stops at the first one it wants visits
+    /// a logarithm of the tree, not every snapshot the path recorded.
+    fn iter_newest_first(&self) -> RecordedSnapshotsNewestFirst<'_> {
+        let mut entries = RecordedSnapshotsNewestFirst {
+            pending: Vec::new(),
+        };
+        entries.push_right_spine(self.version.root.as_deref());
+        entries
+    }
+
+    fn keys_newest_first(&self) -> impl Iterator<Item = &SnapshotSelector> {
+        self.iter_newest_first().map(|(selector, _)| selector)
+    }
+
     /// Statement entries at/before the anchor in reverse order, then later
     /// entries in forward order. Seek through the persistent tree rather than
     /// materializing and sorting every snapshot before the first candidate.
@@ -3493,6 +3553,34 @@ fn recorded_snapshot_insert(
         std::cmp::Ordering::Equal => {
             recorded_snapshot_node(selector, state, root.left.clone(), root.right.clone())
         }
+    }
+}
+
+/// [`RecordedSnapshots::iter_newest_first`].
+struct RecordedSnapshotsNewestFirst<'a> {
+    pending: Vec<&'a RecordedSnapshotNode>,
+}
+
+impl<'a> RecordedSnapshotsNewestFirst<'a> {
+    fn push_right_spine(&mut self, mut node: Option<&'a RecordedSnapshotNode>) {
+        while let Some(current) = node {
+            self.pending.push(current);
+            node = current.right.as_deref();
+        }
+    }
+}
+
+impl<'a> Iterator for RecordedSnapshotsNewestFirst<'a> {
+    type Item = (&'a SnapshotSelector, &'a CState);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        while let Some(node) = self.pending.pop() {
+            self.push_right_spine(node.left.as_deref());
+            if let Some(state) = &node.state {
+                return Some((&node.selector, state));
+            }
+        }
+        None
     }
 }
 

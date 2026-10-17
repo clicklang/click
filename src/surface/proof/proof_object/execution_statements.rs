@@ -2894,7 +2894,16 @@ impl<'a> Proof<'a> {
         // proof keeps their transport context from here on, so a later loop
         // extends it by the facts added since instead of rebuilding it.
         let source_facts = self.facts().with_direct_transport_assumptions();
-        let mut facts = PureFactList::from_proof_facts(&source_facts);
+        let mut facts = execution
+            .presentation
+            .loop_fact_list
+            .as_ref()
+            .and_then(|base| PureFactList::extended_to_proof_facts(base, &source_facts))
+            .unwrap_or_else(|| PureFactList::from_proof_facts(&source_facts));
+        // The next loop extends this copy; the indexes it builds here are
+        // the ones every copy of it shares.
+        facts.prepare_indexes();
+        execution.presentation.loop_fact_list = Some(facts.clone());
         let base_facts = facts.len();
         let capture_this_tactic = begin_tactic_expansion_capture(
             expansion_capture.as_deref_mut(),
@@ -2941,7 +2950,7 @@ impl<'a> Proof<'a> {
             finish_tactic_expansion_capture(expansion_capture, &expansion, false);
         }
         debug_assert!(facts.len() >= base_facts);
-        let added = facts[base_facts..].to_vec();
+        let added = facts.facts_after(base_facts);
         let mut proof_facts = source_facts;
         for fact in &added {
             proof_facts = proof_facts.with_kernel_checked_fact(fact.clone());

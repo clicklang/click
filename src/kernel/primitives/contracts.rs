@@ -3707,7 +3707,9 @@ impl CExecutionEnvironment {
     ) -> Self {
         // Loop rules keep their own variable indexes, so the environment's
         // index of its other parts stays valid.
-        std::sync::Arc::make_mut(&mut self.verified_loop_rules).extend(rules);
+        for rule in rules {
+            self.verified_loop_rules.push(rule);
+        }
         self
     }
 
@@ -3795,7 +3797,9 @@ impl CExecutionEnvironment {
     #[cfg(test)]
     pub(crate) fn shares_all_storage_with(&self, other: &Self) -> bool {
         self.shares_project_storage_with(other)
-            && std::sync::Arc::ptr_eq(&self.verified_loop_rules, &other.verified_loop_rules)
+            && self
+                .verified_loop_rules
+                .shares_storage_with(&other.verified_loop_rules)
             && self
                 .variable_index
                 .shares_storage_with(&other.variable_index)
@@ -3841,14 +3845,23 @@ impl CExecutionEnvironment {
         statement: &CStatement,
         assumptions: &PureFactContext,
     ) -> Option<&CVerifiedLoopRule> {
-        self.verified_loop_rules.iter().find(|rule| {
-            // Every rule this environment holds is a candidate; only the one
-            // for this loop statement is worth checking further. The checks
-            // below read the rule's whole prerequisite context and state.
+        self.verified_loop_rules.for_statement(statement).find(|rule| {
+            // Every rule for this loop statement is a candidate, found through
+            // the rules' statement index, in the order the rules were added.
+            // The checks below read the rule's whole prerequisite context and
+            // state.
             if rule.loop_statement != *statement || !self.loop_rule_answers_for_recursion(rule) {
                 return false;
             }
-            let assumptions_match = || rule
+            // A rule stepped under the very context it was certified under
+            // finds each prerequisite exactly there: the two hold the same
+            // fact sets by identity. Asking each still records reasoning
+            // provenance, so a capture asks them all.
+            let same_context = || {
+                !crate::kernel::assumptions::implicit_reasoning_provenance_capturing()
+                    && rule.required_assumptions.holds_the_facts_of(assumptions)
+            };
+            let assumptions_match = || same_context() || rule
                 .required_assumptions
                 .pure_facts()
                 .iter()
@@ -3914,6 +3927,10 @@ impl CVerifiedLoopRule {
             .0
             .as_deref()
             .unwrap_or_default()
+    }
+
+    pub(crate) fn loop_index(&self) -> Option<usize> {
+        self.loop_index
     }
 
     pub(crate) fn with_loop_index(mut self, loop_index: usize) -> Self {

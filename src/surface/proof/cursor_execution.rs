@@ -3783,22 +3783,7 @@ pub(super) fn split_next_source_operation(
     }
 }
 
-pub(super) fn flatten_top_level_sequence(
-    statement: &CStatement,
-    statements: &mut Vec<CStatement>,
-) -> Result<(), String> {
-    match statement {
-        CStatement::Seq(first, second) => {
-            flatten_top_level_sequence(first, statements)?;
-            flatten_top_level_sequence(second, statements)
-        }
-        statement => {
-            statements.push(statement.clone());
-            Ok(())
-        }
-    }
-}
-
+#[cfg(test)]
 pub(super) fn sequence_from_statements(statements: &[CStatement]) -> Option<CStatement> {
     let mut level = statements.to_vec();
     while level.len() > 1 {

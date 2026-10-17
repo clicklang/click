@@ -8746,19 +8746,21 @@ impl Parser {
                 return Err(self
                     .error("`loop` block must contain at least one item or a `decreases` clause"));
             }
-            return Ok(ProofTactic::Loop(StructuralClause {
-                // The actual loop identity is bound from the execution
-                // frontier during check.  This sentinel is never lowered.
-                region: CodeRegion::Loop(usize::MAX),
-                label,
-                decreases,
-                diverges,
-                items,
-                resources,
-                initialize_proof,
-                preserve_proof,
-                scope: BTreeMap::new(),
-            }));
+            return Ok(ProofTactic::Loop(StructuralClause::from(
+                StructuralClauseData {
+                    // The actual loop identity is bound from the execution
+                    // frontier during check.  This sentinel is never lowered.
+                    region: CodeRegion::Loop(usize::MAX),
+                    label,
+                    decreases,
+                    diverges,
+                    items,
+                    resources,
+                    initialize_proof,
+                    preserve_proof,
+                    scope: BTreeMap::new(),
+                },
+            )));
         }
         self.parse_named_proof_tactic(name)
     }

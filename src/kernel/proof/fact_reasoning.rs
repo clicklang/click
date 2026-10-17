@@ -1133,12 +1133,18 @@ pub(crate) fn proposition_has_contextual_derivation_rules(proposition: &Proposit
     )
 }
 
+/// Whether two exact facts directly contradict each other. Execution steps
+/// decide this against a whole fact list through the list's conjunct index
+/// (`PureFactList::directly_conflicts_with`); this pairwise form is its
+/// specification, which the list's tests check it against.
+#[cfg(test)]
 pub(crate) fn exact_facts_directly_conflict(left: &Proposition, right: &Proposition) -> bool {
     let left = left.clone();
     let right = right.clone();
     normalized_exact_facts_directly_conflict(&left, &right)
 }
 
+#[cfg(test)]
 fn normalized_exact_facts_directly_conflict(left: &Proposition, right: &Proposition) -> bool {
     match (left, right) {
         (Proposition::And(first, second), _) => {

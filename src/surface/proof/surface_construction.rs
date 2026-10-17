@@ -75,7 +75,7 @@ fn checked_surface_fact_in_state_with_assumptions(
             else {
                 continue;
             };
-            for selector in view.recorded_snapshots.keys().rev() {
+            for selector in view.recorded_snapshots.keys_newest_first() {
                 let candidate = ClickProposition::PredicateCall {
                     name: surface_name.clone(),
                     arguments: surface_arguments
@@ -256,7 +256,7 @@ pub(super) fn snapshot_indexed_selectors<'a>(
     let memories = proposition_snapshot_memories(kernel);
     let mut exact = Vec::new();
     let mut compatible = Vec::new();
-    for (selector, state) in recorded_snapshots.iter().rev() {
+    for (selector, state) in recorded_snapshots.iter_newest_first() {
         if memories.iter().any(|memory| memory == state.memory()) {
             exact.push((selector, state));
         } else if memories
