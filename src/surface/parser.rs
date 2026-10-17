@@ -9,7 +9,7 @@ mod rust_trait_objects;
 pub(crate) use rust_trait_objects::implementation_interface_contract;
 pub(super) mod tokenizer;
 use cpp_model::rewrite_model_accessors;
-use name_table::{NameKind, NameTable};
+use name_table::{NameKind, NameTable, ShadowRestore};
 use rust_syntax::rust_signature_hint;
 
 use crate::languages::SourceLanguage;
@@ -642,22 +642,6 @@ fn reduce_contract_binary_expression(
     values.push(constructor(Box::new(left), Box::new(right)));
 }
 
-/// A binding a proof binder hid, put back when the binder's block ends.
-enum ShadowRestore {
-    /// A fact name: its previous proposition, or none when `have` bound it
-    /// fresh and its block's end ends it.
-    Fact {
-        name: String,
-        previous: Option<ClickProposition>,
-    },
-    /// A resource instance a value binder of the same spelling hid.
-    Resource {
-        name: String,
-        binding: (Variable, String),
-        target: Option<ResourceClause>,
-    },
-}
-
 struct ProofLetParserRestore {
     name: String,
     was_integer_let: bool,
@@ -687,18 +671,11 @@ struct Parser {
     tactic_names: BTreeSet<String>,
     contract_proof_bindings: BTreeMap<String, Vec<ResourceClause>>,
     next_resource_identity: u64,
-    current_resource_bindings: BTreeMap<String, (Variable, String)>,
     /// Instances introduced by `let { slot: name } = unfold(parent)`. The slot's
     /// resource is declared by the parent's matched arm, which may not be
     /// parsed yet, so the recorded family is the parent's and every family
     /// comparison against these instances is left to declaration expansion.
     child_slot_identities: BTreeSet<Variable>,
-    current_resource_fields: BTreeMap<String, ResourceFieldAccess>,
-    current_resource_targets: BTreeMap<String, ResourceClause>,
-    /// The current function block's value binders, `views s: R(a, _);`.
-    current_value_binders: BTreeMap<String, ValueBinder>,
-    /// Their declaration order, for the function block.
-    current_value_binder_order: Vec<String>,
     in_resource_definition: bool,
     /// The fields of each resource declared so far, hidden ones included.
     declared_resource_fields: BTreeMap<String, Vec<ResourceFieldDefinition>>,
@@ -770,13 +747,6 @@ struct Parser {
     position: usize,
     struct_layouts: BTreeMap<String, syntax::C0StructLayout>,
     union_layouts: BTreeMap<String, syntax::C0UnionLayout>,
-    current_struct_params: BTreeMap<String, String>,
-    /// The `void *` parameters of the function block being parsed, which a
-    /// contract may cast to a struct pointer, and the struct each has been
-    /// cast to so far.
-    current_void_pointer_params: BTreeSet<String>,
-    current_c_parameter_types: BTreeMap<String, C0Type>,
-    current_parameter_struct_casts: BTreeMap<String, String>,
     aggregate_objects_by_function: BTreeMap<String, BTreeMap<String, String>>,
     aggregate_array_objects_by_function: BTreeMap<String, BTreeSet<String>>,
     global_array_shapes_by_function: BTreeMap<String, BTreeMap<String, GlobalArrayShape>>,
@@ -786,13 +756,7 @@ struct Parser {
     /// names one has the same layout the parameter would have. A parameter of
     /// the same spelling wins: the contract is written against the signature.
     local_struct_pointers_by_function: BTreeMap<String, FunctionLocals>,
-    current_aggregate_objects: BTreeMap<String, String>,
-    current_struct_array_params: BTreeSet<String>,
-    current_reference_params: BTreeSet<String>,
     current_reference_result: bool,
-    current_global_array_shapes: BTreeMap<String, GlobalArrayShape>,
-    current_algebraic_params: BTreeMap<String, (AlgebraicTypeApplication, usize)>,
-    current_click_type_parameters: BTreeSet<String>,
     /// The lexical names bound at the cursor that carry no further data:
     /// contract bindings, Integer parameters and lets, theorem parameters
     /// and proof binders (see [`NameKind`]).
@@ -803,10 +767,6 @@ struct Parser {
     /// expected reads as `f(args) == true` when it names one of these, and
     /// as a predicate call otherwise.
     pure_function_names: BTreeSet<String>,
-    /// The C names (parameters, locals and file-scope objects) visible to the
-    /// C function block being parsed. `true` and `false` are specification
-    /// literals unless one of these names spells them.
-    current_c_object_names: Option<std::sync::Arc<BTreeSet<String>>>,
     /// Set immediately before an `if`, `match` or `let` expression that is
     /// the value of a `bool` context, and taken by that expression's parser:
     /// its branches are then `bool` values too.
@@ -818,27 +778,10 @@ struct Parser {
     /// declared above or below the resource: declaration order does not create
     /// scope.
     algebraic_variant_fields: BTreeMap<(String, String), Vec<AlgebraicFieldType>>,
-    /// The constructor bindings of the match arm currently being parsed, with
-    /// their declared field types. A struct-pointer binding is also in
-    /// `current_struct_params`; the others are here only so using one as a
-    /// memory base is refused by name instead of lowering to a width-unknown
-    /// load.
-    current_arm_binding_types: BTreeMap<String, AlgebraicFieldType>,
     /// Whether specification comparisons with arithmetic are Integer
     /// comparisons (`arithmetic "integer";`).
     integer_arithmetic: bool,
     proof_let_restores: Vec<ProofLetParserRestore>,
-    /// The facts `have name: P` named, visible from the `have` to the end
-    /// of its block, nested blocks included. A citation by name is read as
-    /// the proposition, exactly as if it were restated there.
-    fact_names: BTreeMap<String, ClickProposition>,
-    /// The bindings each name shadowed, undone when its block ends.
-    fact_name_restores: Vec<ShadowRestore>,
-    /// Names whose `have` proof is being parsed, and names whose block has
-    /// ended inside the current proof, so citing one is refused by name
-    /// rather than read as an unbound variable.
-    fact_names_being_proved: BTreeSet<String>,
-    ended_fact_names: BTreeSet<String>,
     /// Quantifier variables open at the cursor, innermost last. Each hides
     /// a fact of the same name inside its body.
     quantifier_binders: Vec<String>,
@@ -1244,12 +1187,7 @@ impl Parser {
             tactic_names: BTreeSet::new(),
             contract_proof_bindings: BTreeMap::new(),
             next_resource_identity: 0,
-            current_resource_bindings: BTreeMap::new(),
             child_slot_identities: BTreeSet::new(),
-            current_resource_fields: BTreeMap::new(),
-            current_resource_targets: BTreeMap::new(),
-            current_value_binders: BTreeMap::new(),
-            current_value_binder_order: Vec::new(),
             in_resource_definition: false,
             declared_resource_fields: BTreeMap::new(),
             declared_resource_child_slots: BTreeMap::new(),
@@ -1278,38 +1216,22 @@ impl Parser {
             position: 0,
             struct_layouts,
             union_layouts,
-            current_struct_params: BTreeMap::new(),
-            current_void_pointer_params: BTreeSet::new(),
             c_object_names_by_function: BTreeMap::new(),
             recursion_peers_by_function: BTreeMap::new(),
             implied_library_modules: path_library_modules,
             library_module,
             symbols,
-            current_c_parameter_types: BTreeMap::new(),
-            current_parameter_struct_casts: BTreeMap::new(),
             aggregate_objects_by_function,
             aggregate_array_objects_by_function,
             global_array_shapes_by_function,
             local_struct_pointers_by_function: BTreeMap::new(),
-            current_aggregate_objects: BTreeMap::new(),
-            current_struct_array_params: BTreeSet::new(),
-            current_reference_params: BTreeSet::new(),
             current_reference_result: false,
-            current_global_array_shapes: BTreeMap::new(),
-            current_algebraic_params: BTreeMap::new(),
-            current_click_type_parameters: BTreeSet::new(),
             names: NameTable::default(),
             pure_function_names: BTreeSet::new(),
-            current_c_object_names: None,
             bool_value_context: false,
             algebraic_variant_fields: BTreeMap::new(),
-            current_arm_binding_types: BTreeMap::new(),
             integer_arithmetic,
             proof_let_restores: Vec::new(),
-            fact_names: BTreeMap::new(),
-            fact_name_restores: Vec::new(),
-            fact_names_being_proved: BTreeSet::new(),
-            ended_fact_names: BTreeSet::new(),
             quantifier_binders: Vec::new(),
             callee_resource_binders: BTreeMap::new(),
             contract_resource_binders: BTreeMap::new(),
@@ -2212,7 +2134,8 @@ impl Parser {
             return expression.clone();
         };
         match self
-            .current_global_array_shapes
+            .names
+            .global_array_shapes
             .get(name)
             .and_then(|array| array.element_type.pointer_to())
         {
@@ -2233,8 +2156,8 @@ impl Parser {
         self.expect_ident_spelling("predicate")?;
         let name = self.expect_ident("predicate name")?;
         let type_parameters = self.parse_click_type_parameters()?;
-        let previous_type_parameters = std::mem::replace(
-            &mut self.current_click_type_parameters,
+        let previous_type_parameters = self.names.replace(
+            NameKind::TypeParameter,
             type_parameters.iter().cloned().collect(),
         );
         self.expect(Token::LParen)?;
@@ -2242,27 +2165,30 @@ impl Parser {
         self.expect(Token::RParen)?;
         self.expect(Token::LBrace)?;
         let previous_struct_params = std::mem::replace(
-            &mut self.current_struct_params,
+            &mut self.names.struct_params,
             parsed_parameters.struct_params,
         );
-        let previous_struct_array_params = std::mem::replace(
-            &mut self.current_struct_array_params,
+        let previous_struct_array_params = self.names.replace(
+            NameKind::StructArrayParameter,
             parsed_parameters.struct_array_params,
         );
-        let previous_reference_params = std::mem::replace(
-            &mut self.current_reference_params,
+        let previous_reference_params = self.names.replace(
+            NameKind::ReferenceParameter,
             parsed_parameters.reference_params,
         );
         let previous_algebraic_params = std::mem::replace(
-            &mut self.current_algebraic_params,
+            &mut self.names.algebraic_params,
             algebraic_parameter_types(&parsed_parameters.parameters),
         );
         let body = self.parse_proposition()?;
-        self.current_struct_params = previous_struct_params;
-        self.current_struct_array_params = previous_struct_array_params;
-        self.current_reference_params = previous_reference_params;
-        self.current_algebraic_params = previous_algebraic_params;
-        self.current_click_type_parameters = previous_type_parameters;
+        self.names.struct_params = previous_struct_params;
+        self.names
+            .replace(NameKind::StructArrayParameter, previous_struct_array_params);
+        self.names
+            .replace(NameKind::ReferenceParameter, previous_reference_params);
+        self.names.algebraic_params = previous_algebraic_params;
+        self.names
+            .replace(NameKind::TypeParameter, previous_type_parameters);
         self.expect(Token::RBrace)?;
         Ok(PredicateDefinition {
             name,
@@ -2276,8 +2202,8 @@ impl Parser {
         self.expect_ident_spelling("function")?;
         let name = self.expect_ident("function name")?;
         let type_parameters = self.parse_click_type_parameters()?;
-        let previous_type_parameters = std::mem::replace(
-            &mut self.current_click_type_parameters,
+        let previous_type_parameters = self.names.replace(
+            NameKind::TypeParameter,
             type_parameters.iter().cloned().collect(),
         );
         self.expect(Token::LParen)?;
@@ -2301,27 +2227,30 @@ impl Parser {
         };
         self.expect(Token::LBrace)?;
         let previous_struct_params = std::mem::replace(
-            &mut self.current_struct_params,
+            &mut self.names.struct_params,
             parsed_parameters.struct_params,
         );
-        let previous_struct_array_params = std::mem::replace(
-            &mut self.current_struct_array_params,
+        let previous_struct_array_params = self.names.replace(
+            NameKind::StructArrayParameter,
             parsed_parameters.struct_array_params,
         );
-        let previous_reference_params = std::mem::replace(
-            &mut self.current_reference_params,
+        let previous_reference_params = self.names.replace(
+            NameKind::ReferenceParameter,
             parsed_parameters.reference_params,
         );
         let previous_algebraic_params = std::mem::replace(
-            &mut self.current_algebraic_params,
+            &mut self.names.algebraic_params,
             algebraic_parameter_types(&parsed_parameters.parameters),
         );
         let body = self.parse_branch_value(return_type == ClickType::C(C0Type::Bool))?;
-        self.current_struct_params = previous_struct_params;
-        self.current_struct_array_params = previous_struct_array_params;
-        self.current_reference_params = previous_reference_params;
-        self.current_algebraic_params = previous_algebraic_params;
-        self.current_click_type_parameters = previous_type_parameters;
+        self.names.struct_params = previous_struct_params;
+        self.names
+            .replace(NameKind::StructArrayParameter, previous_struct_array_params);
+        self.names
+            .replace(NameKind::ReferenceParameter, previous_reference_params);
+        self.names.algebraic_params = previous_algebraic_params;
+        self.names
+            .replace(NameKind::TypeParameter, previous_type_parameters);
         self.expect(Token::RBrace)?;
         Ok(ClickFunctionDefinition {
             name,
@@ -2343,8 +2272,8 @@ impl Parser {
         self.expect_ident_spelling("resource")?;
         let name = self.expect_ident("resource name")?;
         self.expect(Token::LParen)?;
-        let previous_resource_bindings = std::mem::take(&mut self.current_resource_bindings);
-        let previous_resource_targets = std::mem::take(&mut self.current_resource_targets);
+        let previous_resource_bindings = std::mem::take(&mut self.names.resource_bindings);
+        let previous_resource_targets = std::mem::take(&mut self.names.resource_targets);
         let (parsed_parameters, resource_parameters) = self.parse_resource_parameters()?;
         self.expect(Token::RParen)?;
         for parameter in &resource_parameters {
@@ -2360,19 +2289,19 @@ impl Parser {
             }
         }
         let previous_struct_params = std::mem::replace(
-            &mut self.current_struct_params,
+            &mut self.names.struct_params,
             parsed_parameters.struct_params,
         );
-        let previous_struct_array_params = std::mem::replace(
-            &mut self.current_struct_array_params,
+        let previous_struct_array_params = self.names.replace(
+            NameKind::StructArrayParameter,
             parsed_parameters.struct_array_params,
         );
-        let previous_reference_params = std::mem::replace(
-            &mut self.current_reference_params,
+        let previous_reference_params = self.names.replace(
+            NameKind::ReferenceParameter,
             parsed_parameters.reference_params,
         );
         let previous_algebraic_params = std::mem::replace(
-            &mut self.current_algebraic_params,
+            &mut self.names.algebraic_params,
             algebraic_parameter_types(&parsed_parameters.parameters),
         );
         let previous_contract_bindings = self.names.take(NameKind::ContractBinding);
@@ -2421,12 +2350,14 @@ impl Parser {
             self.declared_resource_child_slots
                 .insert(name.clone(), composite_body_child_slots(body));
         }
-        self.current_struct_params = previous_struct_params;
-        self.current_struct_array_params = previous_struct_array_params;
-        self.current_reference_params = previous_reference_params;
-        self.current_algebraic_params = previous_algebraic_params;
-        self.current_resource_bindings = previous_resource_bindings;
-        self.current_resource_targets = previous_resource_targets;
+        self.names.struct_params = previous_struct_params;
+        self.names
+            .replace(NameKind::StructArrayParameter, previous_struct_array_params);
+        self.names
+            .replace(NameKind::ReferenceParameter, previous_reference_params);
+        self.names.algebraic_params = previous_algebraic_params;
+        self.names.resource_bindings = previous_resource_bindings;
+        self.names.resource_targets = previous_resource_targets;
         self.names
             .replace(NameKind::ContractBinding, previous_contract_bindings);
         Ok(ResourceDefinition {
@@ -2459,17 +2390,17 @@ impl Parser {
         for (binding, field) in bindings.iter().zip(fields) {
             match field.struct_pointer_name() {
                 Some(struct_name) => {
-                    self.current_struct_params
+                    self.names
+                        .struct_params
                         .insert(binding.clone(), struct_name.to_string());
                 }
                 // The binding shadows any enclosing name for the arm, so an
                 // outer struct parameter must not keep lending it a layout.
                 None => {
-                    self.current_struct_params.remove(binding);
+                    self.names.struct_params.remove(binding);
                 }
             }
-            self.current_arm_binding_types
-                .insert(binding.clone(), field);
+            self.names.arm_binding_types.insert(binding.clone(), field);
         }
     }
 
@@ -2603,9 +2534,9 @@ impl Parser {
             self.expect(Token::Semicolon)?;
             fields.push(ResourceFieldDefinition { name, click_type });
         }
-        let previous_resource_fields = self.current_resource_fields.clone();
+        let previous_resource_fields = self.names.resource_fields.clone();
         if !fields.is_empty() {
-            self.current_resource_fields = fields
+            self.names.resource_fields = fields
                 .iter()
                 .enumerate()
                 .map(|(field_index, field)| {
@@ -2661,18 +2592,18 @@ impl Parser {
                     .cloned()
                     .collect::<Vec<_>>();
                 self.match_nesting += 1;
-                let saved_bindings = self.current_resource_bindings.clone();
-                let saved_targets = self.current_resource_targets.clone();
+                let saved_bindings = self.names.resource_bindings.clone();
+                let saved_targets = self.names.resource_targets.clone();
                 let saved_child_fields = self.hidden_child_fields.clone();
-                let saved_struct_params = self.current_struct_params.clone();
-                let saved_arm_binding_types = std::mem::take(&mut self.current_arm_binding_types);
+                let saved_struct_params = self.names.struct_params.clone();
+                let saved_arm_binding_types = std::mem::take(&mut self.names.arm_binding_types);
                 self.bind_arm_binding_types(&type_name, &variant, &bindings);
                 let body = self.parse_composite_resource_body(resource_name);
-                self.current_resource_bindings = saved_bindings;
-                self.current_resource_targets = saved_targets;
+                self.names.resource_bindings = saved_bindings;
+                self.names.resource_targets = saved_targets;
                 self.hidden_child_fields = saved_child_fields;
-                self.current_struct_params = saved_struct_params;
-                self.current_arm_binding_types = saved_arm_binding_types;
+                self.names.struct_params = saved_struct_params;
+                self.names.arm_binding_types = saved_arm_binding_types;
                 self.match_nesting -= 1;
                 let body = body?;
                 for name in inserted {
@@ -2708,7 +2639,7 @@ impl Parser {
             }
             self.expect(Token::RBrace)?;
             self.expect(Token::RBrace)?;
-            self.current_resource_fields = previous_resource_fields;
+            self.names.resource_fields = previous_resource_fields;
             return Ok(CompositeResourceBody {
                 children: vec![],
                 fields,
@@ -2833,7 +2764,7 @@ impl Parser {
             .into_iter()
             .flat_map(expand_aggregate_resource_clause)
             .collect();
-        self.current_resource_fields = previous_resource_fields;
+        self.names.resource_fields = previous_resource_fields;
         Ok(CompositeResourceBody {
             children: vec![],
             fields,
@@ -3098,8 +3029,8 @@ impl Parser {
         self.expect_ident_spelling("theorem")?;
         let name = self.expect_ident("theorem name")?;
         let type_parameters = self.parse_click_type_parameters()?;
-        let previous_type_parameters = std::mem::replace(
-            &mut self.current_click_type_parameters,
+        let previous_type_parameters = self.names.replace(
+            NameKind::TypeParameter,
             type_parameters.iter().cloned().collect(),
         );
         self.expect(Token::LParen)?;
@@ -3151,19 +3082,20 @@ impl Parser {
             .names
             .replace(NameKind::TheoremParameter, parameter_names.clone());
         let previous_struct_params = std::mem::replace(
-            &mut self.current_struct_params,
+            &mut self.names.struct_params,
             parsed_parameters.struct_params,
         );
-        let previous_struct_array_params = std::mem::replace(
-            &mut self.current_struct_array_params,
+        let previous_struct_array_params = self.names.replace(
+            NameKind::StructArrayParameter,
             parsed_parameters.struct_array_params,
         );
         let mut theorem_reference_params = parsed_parameters.reference_params;
         theorem_reference_params.extend(executed_reference_params);
-        let previous_reference_params =
-            std::mem::replace(&mut self.current_reference_params, theorem_reference_params);
+        let previous_reference_params = self
+            .names
+            .replace(NameKind::ReferenceParameter, theorem_reference_params);
         let previous_algebraic_params = std::mem::replace(
-            &mut self.current_algebraic_params,
+            &mut self.names.algebraic_params,
             algebraic_parameter_types(&parsed_parameters.parameters),
         );
         let mut contract_lets = Vec::new();
@@ -3308,15 +3240,20 @@ impl Parser {
                         names.extend(contract_let_names.iter().cloned());
                         // Executed arguments are in scope in this proof block,
                         // including the record metadata needed for field paths.
-                        let previous_structs = self.current_struct_params.clone();
-                        let previous_arrays = self.current_struct_array_params.clone();
-                        self.current_struct_params
+                        let previous_structs = self.names.struct_params.clone();
+                        let previous_arrays =
+                            self.names.set(NameKind::StructArrayParameter).clone();
+                        self.names
+                            .struct_params
                             .extend(execution_struct_params.clone());
-                        self.current_struct_array_params
-                            .extend(execution_struct_array_params.clone());
+                        self.names.extend(
+                            NameKind::StructArrayParameter,
+                            execution_struct_array_params.clone(),
+                        );
                         let parsed = self.parse_ensure_clause_with_execution_scope(Some(&names));
-                        self.current_struct_params = previous_structs;
-                        self.current_struct_array_params = previous_arrays;
+                        self.names.struct_params = previous_structs;
+                        self.names
+                            .replace(NameKind::StructArrayParameter, previous_arrays);
                         let (ensure, introduced) = parsed?;
                         target_instances.extend(introduced);
                         ensure
@@ -3342,11 +3279,14 @@ impl Parser {
             }
         }
         self.expect(Token::RBrace)?;
-        self.current_struct_params = previous_struct_params;
-        self.current_struct_array_params = previous_struct_array_params;
-        self.current_reference_params = previous_reference_params;
-        self.current_algebraic_params = previous_algebraic_params;
-        self.current_click_type_parameters = previous_type_parameters;
+        self.names.struct_params = previous_struct_params;
+        self.names
+            .replace(NameKind::StructArrayParameter, previous_struct_array_params);
+        self.names
+            .replace(NameKind::ReferenceParameter, previous_reference_params);
+        self.names.algebraic_params = previous_algebraic_params;
+        self.names
+            .replace(NameKind::TypeParameter, previous_type_parameters);
         self.names
             .replace(NameKind::TheoremParameter, previous_theorem_param_names);
         self.names
@@ -3387,10 +3327,10 @@ impl Parser {
 
     fn parse_function_block(&mut self, external: bool) -> Result<FunctionBlock, ClickError> {
         let previous_function_block = std::mem::replace(&mut self.in_function_block, true);
-        let previous_resource_targets = std::mem::take(&mut self.current_resource_targets);
-        let previous_resource_bindings = std::mem::take(&mut self.current_resource_bindings);
-        let previous_value_binders = std::mem::take(&mut self.current_value_binders);
-        let previous_value_binder_order = std::mem::take(&mut self.current_value_binder_order);
+        let previous_resource_targets = std::mem::take(&mut self.names.resource_targets);
+        let previous_resource_bindings = std::mem::take(&mut self.names.resource_bindings);
+        let previous_value_binders = std::mem::take(&mut self.names.value_binders);
+        let previous_value_binder_order = std::mem::take(&mut self.names.value_binder_order);
         // A crate trait's method is declared without `extern`, as Rust
         // writes it in the `trait` block.
         if external && self.rust_trait_interface.is_none() {
@@ -3479,9 +3419,9 @@ impl Parser {
                 .or_insert_with(|| struct_name.clone());
         }
         let previous_struct_params =
-            std::mem::replace(&mut self.current_struct_params, struct_params);
-        let previous_void_pointer_params = std::mem::replace(
-            &mut self.current_void_pointer_params,
+            std::mem::replace(&mut self.names.struct_params, struct_params);
+        let previous_void_pointer_params = self.names.replace(
+            NameKind::VoidPointerParameter,
             signature
                 .parameters()
                 .iter()
@@ -3490,11 +3430,11 @@ impl Parser {
                 .collect(),
         );
         let previous_c_object_names = std::mem::replace(
-            &mut self.current_c_object_names,
+            &mut self.names.c_object_names,
             self.c_object_names_by_function.get(&table_name).cloned(),
         );
         let previous_c_parameter_types = std::mem::replace(
-            &mut self.current_c_parameter_types,
+            &mut self.names.c_parameter_types,
             signature
                 .parameters()
                 .iter()
@@ -3502,14 +3442,14 @@ impl Parser {
                 .collect(),
         );
         let previous_parameter_struct_casts =
-            std::mem::take(&mut self.current_parameter_struct_casts);
+            std::mem::take(&mut self.names.parameter_struct_casts);
         let aggregate_objects = self
             .aggregate_objects_by_function
             .get(&table_name)
             .cloned()
             .unwrap_or_default();
         let previous_aggregate_objects =
-            std::mem::replace(&mut self.current_aggregate_objects, aggregate_objects);
+            std::mem::replace(&mut self.names.aggregate_objects, aggregate_objects);
         // A parameter shadowing a file-scope array hides it inside this
         // function, for indexing shapes and element widths alike.
         let global_array_shapes = self
@@ -3521,7 +3461,7 @@ impl Parser {
             .filter(|(name, _)| !parameter_names.contains(name))
             .collect();
         let previous_global_array_shapes =
-            std::mem::replace(&mut self.current_global_array_shapes, global_array_shapes);
+            std::mem::replace(&mut self.names.global_array_shapes, global_array_shapes);
         let mut visible_struct_array_params = struct_array_params;
         if let Some(aggregate_array_objects) =
             self.aggregate_array_objects_by_function.get(&table_name)
@@ -3533,12 +3473,12 @@ impl Parser {
                     .cloned(),
             );
         }
-        let previous_struct_array_params = std::mem::replace(
-            &mut self.current_struct_array_params,
-            visible_struct_array_params,
-        );
-        let previous_reference_params =
-            std::mem::replace(&mut self.current_reference_params, reference_params);
+        let previous_struct_array_params = self
+            .names
+            .replace(NameKind::StructArrayParameter, visible_struct_array_params);
+        let previous_reference_params = self
+            .names
+            .replace(NameKind::ReferenceParameter, reference_params);
         let previous_reference_result = std::mem::replace(
             &mut self.current_reference_result,
             signature.returns_reference(),
@@ -3981,37 +3921,41 @@ impl Parser {
             .cloned()
             .unwrap_or_else(|| {
                 std::sync::Arc::new(
-                    self.current_aggregate_objects
+                    self.names
+                        .aggregate_objects
                         .keys()
-                        .chain(self.current_global_array_shapes.keys())
+                        .chain(self.names.global_array_shapes.keys())
                         .cloned()
                         .collect(),
                 )
             });
-        self.current_struct_params = previous_struct_params;
-        self.current_void_pointer_params = previous_void_pointer_params;
-        self.current_c_parameter_types = previous_c_parameter_types;
-        self.current_c_object_names = previous_c_object_names;
+        self.names.struct_params = previous_struct_params;
+        self.names
+            .replace(NameKind::VoidPointerParameter, previous_void_pointer_params);
+        self.names.c_parameter_types = previous_c_parameter_types;
+        self.names.c_object_names = previous_c_object_names;
         let parameter_struct_casts = std::mem::replace(
-            &mut self.current_parameter_struct_casts,
+            &mut self.names.parameter_struct_casts,
             previous_parameter_struct_casts,
         );
         self.in_function_block = previous_function_block;
-        self.current_resource_bindings = previous_resource_bindings;
-        self.current_resource_targets = previous_resource_targets;
+        self.names.resource_bindings = previous_resource_bindings;
+        self.names.resource_targets = previous_resource_targets;
         let mut value_binders_by_name =
-            std::mem::replace(&mut self.current_value_binders, previous_value_binders);
+            std::mem::replace(&mut self.names.value_binders, previous_value_binders);
         let value_binders = std::mem::replace(
-            &mut self.current_value_binder_order,
+            &mut self.names.value_binder_order,
             previous_value_binder_order,
         )
         .into_iter()
         .filter_map(|name| value_binders_by_name.remove(&name))
         .collect::<Vec<_>>();
-        self.current_aggregate_objects = previous_aggregate_objects;
-        self.current_global_array_shapes = previous_global_array_shapes;
-        self.current_struct_array_params = previous_struct_array_params;
-        self.current_reference_params = previous_reference_params;
+        self.names.aggregate_objects = previous_aggregate_objects;
+        self.names.global_array_shapes = previous_global_array_shapes;
+        self.names
+            .replace(NameKind::StructArrayParameter, previous_struct_array_params);
+        self.names
+            .replace(NameKind::ReferenceParameter, previous_reference_params);
         self.current_reference_result = previous_reference_result;
         self.names
             .replace(NameKind::IntegerParameter, previous_integer_params);
@@ -4423,13 +4367,14 @@ impl Parser {
             "false" => false,
             _ => return None,
         };
-        let shadowed = self.current_c_parameter_types.contains_key(name)
+        let shadowed = self.names.c_parameter_types.contains_key(name)
             || self
-                .current_c_object_names
+                .names
+                .c_object_names
                 .as_ref()
                 .is_some_and(|names| names.contains(name))
             || self.names.contains(NameKind::ProofBinder, name)
-            || self.current_arm_binding_types.contains_key(name);
+            || self.names.arm_binding_types.contains_key(name);
         (!shadowed).then_some(value)
     }
 
@@ -4902,7 +4847,7 @@ impl Parser {
             self.position += 1;
             return Ok((ClickType::Integer, None));
         }
-        if self.current_click_type_parameters.contains(name) {
+        if self.names.contains(NameKind::TypeParameter, name) {
             let name = name.to_string();
             self.position += 1;
             return Ok((ClickType::Parameter(name), None));
@@ -5569,7 +5514,7 @@ impl Parser {
                     ValueBinderArgument::Term(term)
                 } else {
                     let caller = self.expect_ident("resource term or value binder")?;
-                    let Some(caller_binder) = self.current_value_binders.get(&caller) else {
+                    let Some(caller_binder) = self.names.value_binders.get(&caller) else {
                         return Err(self.error(format!(
                             "`{caller}` is not a value binder of this function; name the instance with a resource term such as `{binder}: {}(...)`",
                             declaration.family.as_deref().unwrap_or("resource")
@@ -5623,7 +5568,7 @@ impl Parser {
             if !bound.insert(binder.clone()) {
                 return Err(self.error(format!("duplicate binder `{binder}` in the call map")));
             }
-            let Some((identity, family)) = self.current_resource_bindings.get(&instance).cloned()
+            let Some((identity, family)) = self.names.resource_bindings.get(&instance).cloned()
             else {
                 return Err(self.error(format!("unknown resource instance `{instance}`")));
             };
@@ -5683,7 +5628,7 @@ impl Parser {
             let protected = binders
                 .iter()
                 .find(|b| b.binder == "access")
-                .and_then(|b| self.current_resource_targets.get(&b.instance))
+                .and_then(|b| self.names.resource_targets.get(&b.instance))
                 .and_then(|target| match target {
                     ResourceClause::Named { resource, .. } => match resource.as_ref() {
                         ResourceClause::Declared {
@@ -5835,13 +5780,13 @@ impl Parser {
             self.error("produced resource assertion parameter has no instantiated target")
         })?;
         if matches!(family.as_str(), "mutex_live" | "mutex_use" | "mutex_guard")
-            && self.current_resource_bindings.contains_key(name)
+            && self.names.resource_bindings.contains_key(name)
         {
             return Err(self.error(format!(
                 "produced mutex authority requires a fresh name; `{name}` is already bound"
             )));
         }
-        let identity = match self.current_resource_bindings.get(name) {
+        let identity = match self.names.resource_bindings.get(name) {
             Some((identity, family)) => {
                 if Some(family) != declaration.family.as_ref()
                     && !self.child_slot_identities.contains(identity)
@@ -5856,7 +5801,8 @@ impl Parser {
                 identity
             }
         };
-        self.current_resource_bindings
+        self.names
+            .resource_bindings
             .insert(name.to_string(), (identity, family.clone()));
         let substitutions = declaration
             .parameter_names
@@ -5871,7 +5817,7 @@ impl Parser {
                 "produced resource binder `{produced}` has no named resource target"
             )));
         };
-        self.current_resource_targets.insert(
+        self.names.resource_targets.insert(
             name.to_string(),
             ResourceClause::Named {
                 binding: ResourceInstanceBinding {
@@ -6054,8 +6000,8 @@ impl Parser {
         }
         let name = self.expect_ident("binder name")?;
         self.expect(Token::Colon)?;
-        if self.current_value_binders.contains_key(&name)
-            || self.current_resource_bindings.contains_key(&name)
+        if self.names.value_binders.contains_key(&name)
+            || self.names.resource_bindings.contains_key(&name)
             || self.names.contains(NameKind::ContractBinding, &name)
             || parameter_names.contains(&name)
         {
@@ -6103,8 +6049,8 @@ impl Parser {
             arguments: written,
             requirement_index,
         };
-        self.current_value_binders.insert(name.clone(), binder);
-        self.current_value_binder_order.push(name.clone());
+        self.names.value_binders.insert(name.clone(), binder);
+        self.names.value_binder_order.push(name.clone());
         crate::instrumentation::record_deterministic_work(1);
         self.callee_resource_binders
             .entry(function.to_string())
@@ -6180,9 +6126,9 @@ impl Parser {
         let name = self.expect_ident("resource instance name")?;
         self.expect(Token::Colon)?;
         let rebound = rebinding
-            .then(|| self.current_resource_bindings.get(&name).cloned())
+            .then(|| self.names.resource_bindings.get(&name).cloned())
             .flatten();
-        if (rebound.is_none() && self.current_resource_bindings.contains_key(&name))
+        if (rebound.is_none() && self.names.resource_bindings.contains_key(&name))
             || self.names.contains(NameKind::ContractBinding, &name)
         {
             return Err(self.error(format!("duplicate resource instance binding `{name}`")));
@@ -6227,7 +6173,8 @@ impl Parser {
                 identity
             }
         };
-        self.current_resource_bindings
+        self.names
+            .resource_bindings
             .insert(name.clone(), (identity, resource_name.clone()));
         let target = ResourceClause::Named {
             binding: ResourceInstanceBinding {
@@ -6242,7 +6189,7 @@ impl Parser {
             },
             resource: Box::new(resource),
         };
-        self.current_resource_targets.insert(name, target.clone());
+        self.names.resource_targets.insert(name, target.clone());
         Ok(target)
     }
 
@@ -6260,7 +6207,7 @@ impl Parser {
     /// The binder an unnamed hidden-record resource is held under, if this
     /// exact resource is held.
     fn hidden_binder(&self, resource: &ResourceClause) -> Option<ResourceClause> {
-        self.current_resource_targets
+        self.names.resource_targets
             .iter()
             .find(|(name, target)| {
                 name.starts_with('#')
@@ -6288,7 +6235,8 @@ impl Parser {
         let identity = Variable(self.next_resource_identity);
         self.next_resource_identity += 1;
         let binder = format!("#{name}{}", identity.0);
-        self.current_resource_bindings
+        self.names
+            .resource_bindings
             .insert(binder.clone(), (identity, name.clone()));
         let named = ResourceClause::Named {
             binding: ResourceInstanceBinding {
@@ -6303,14 +6251,14 @@ impl Parser {
             },
             resource: Box::new(target),
         };
-        self.current_resource_targets.insert(binder, named.clone());
+        self.names.resource_targets.insert(binder, named.clone());
         named
     }
 
     fn parse_owned_resource_target(&mut self) -> Result<ResourceClause, ClickError> {
         if let Some(mut target) = self
             .peek_ident()
-            .and_then(|name| self.current_resource_targets.get(name))
+            .and_then(|name| self.names.resource_targets.get(name))
             .cloned()
         {
             self.position += 1;
@@ -6400,8 +6348,8 @@ impl Parser {
         let ensure = self.parse_ensure_condition()?;
         let previous = execution_names.map(|_| {
             (
-                std::mem::take(&mut self.current_resource_bindings),
-                std::mem::take(&mut self.current_resource_targets),
+                std::mem::take(&mut self.names.resource_bindings),
+                std::mem::take(&mut self.names.resource_targets),
             )
         });
         let introduced = match execution_names {
@@ -6410,8 +6358,8 @@ impl Parser {
         };
         let proof = self.parse_proof_clause_or_default()?;
         if let Some((bindings, targets)) = previous {
-            self.current_resource_bindings = bindings;
-            self.current_resource_targets = targets;
+            self.names.resource_bindings = bindings;
+            self.names.resource_targets = targets;
         }
 
         Ok((
@@ -6525,13 +6473,13 @@ impl Parser {
             };
             bindings.push(((*name).to_string(), (binding.identity, family.clone())));
             binding.name = (*name).to_string();
-            self.current_resource_targets.insert(
+            self.names.resource_targets.insert(
                 binding.name.clone(),
                 ResourceClause::Named { binding, resource },
             );
             ordered.push((parameter, (*name).to_string()));
         }
-        self.current_resource_bindings.extend(bindings);
+        self.names.resource_bindings.extend(bindings);
         Ok(ordered)
     }
 
@@ -6650,18 +6598,18 @@ impl Parser {
         if let Some(name) = self.standalone_proposition_name()
             && !self.quantifier_binders.iter().any(|binder| binder == name)
         {
-            if let Some(proposition) = self.fact_names.get(name) {
+            if let Some(proposition) = self.names.fact_names.get(name) {
                 let proposition = proposition.clone();
                 self.position += 1;
                 return Ok(proposition);
             }
-            if !self.name_bound_in_scope(name) {
-                if self.fact_names_being_proved.contains(name) {
+            if !self.names.is_bound(name) {
+                if self.names.fact_names_being_proved.contains(name) {
                     return Err(self.error(format!(
                         "`{name}` names the fact this `have` is proving, so it cannot be cited inside its own proof; restate the proposition"
                     )));
                 }
-                if self.ended_fact_names.contains(name) {
+                if self.names.ended_fact_names.contains(name) {
                     return Err(self.error(format!(
                         "the fact name `{name}` is out of scope here: `have {name}: ...` names its fact only to the end of the block that holds it"
                     )));
@@ -7350,7 +7298,8 @@ impl Parser {
             }
             ContractExpression::CBinding(name)
             | ContractExpression::CFragment(CExpression::Variable(name)) => self
-                .current_c_parameter_types
+                .names
+                .c_parameter_types
                 .get(name)
                 .is_some_and(|c_type| c_type.is_pointer()),
             _ => false,
@@ -7454,11 +7403,11 @@ impl Parser {
     fn parse_by_clause(&mut self) -> Result<SourceProof, ClickError> {
         self.expect_ident_spelling("by")?;
         let let_checkpoint = self.proof_let_restores.len();
-        let fact_checkpoint = self.fact_name_restores.len();
+        let fact_checkpoint = self.names.fact_name_restores.len();
         let previous_proof_let_names = self.names.take(NameKind::ProofBinder);
         let result = self.parse_by_clause_body();
         self.restore_proof_let_bindings(let_checkpoint);
-        self.restore_fact_names(fact_checkpoint);
+        self.names.restore_fact_names(fact_checkpoint);
         self.names
             .replace(NameKind::ProofBinder, previous_proof_let_names);
         // A `;` after a closing brace ends nothing; accept it after a block
@@ -7472,42 +7421,6 @@ impl Parser {
         result
     }
 
-    /// Ends the fact names bound since `checkpoint` and puts back each fact
-    /// or resource a later binder hid.
-    fn restore_fact_names(&mut self, checkpoint: usize) {
-        while self.fact_name_restores.len() > checkpoint {
-            match self
-                .fact_name_restores
-                .pop()
-                .expect("restore above checkpoint")
-            {
-                ShadowRestore::Fact {
-                    name,
-                    previous: Some(proposition),
-                } => {
-                    self.fact_names.insert(name, proposition);
-                }
-                ShadowRestore::Fact {
-                    name,
-                    previous: None,
-                } => {
-                    self.fact_names.remove(&name);
-                    self.ended_fact_names.insert(name);
-                }
-                ShadowRestore::Resource {
-                    name,
-                    binding,
-                    target,
-                } => {
-                    if let Some(target) = target {
-                        self.current_resource_targets.insert(name.clone(), target);
-                    }
-                    self.current_resource_bindings.insert(name, binding);
-                }
-            }
-        }
-    }
-
     /// Makes `name` a proof binder of a value or a resource instance. The
     /// newest binding of a name wins everywhere it is read: a fact or a
     /// resource of the same spelling is hidden until the binder's block
@@ -7516,39 +7429,13 @@ impl Parser {
     /// the program's variable, so a proof binder of its name would change
     /// what the proof's propositions mean without changing what runs.
     fn bind_proof_name(&mut self, name: &str, resource: bool) -> Result<(), ClickError> {
-        if self.current_c_parameter_types.contains_key(name)
-            || self
-                .current_c_object_names
-                .as_ref()
-                .is_some_and(|names| names.contains(name))
-        {
+        if self.names.is_c_variable(name) {
             return Err(self.error(format!(
                 "`{name}` names a C variable here; a proof binder cannot hide it, since execution keeps reading the program's `{name}`; choose another name"
             )));
         }
-        self.hide_for_proof_binder(name, resource);
+        self.names.hide_for_proof_binder(name, resource);
         Ok(())
-    }
-
-    /// Hides the fact, and for a value binder the resource instance, that
-    /// `name` names, until the block that binds it ends. `intro() as` uses
-    /// this directly: an introduced binder may hide a C parameter, which
-    /// `outer.name` still reaches.
-    fn hide_for_proof_binder(&mut self, name: &str, resource: bool) {
-        if let Some(previous) = self.fact_names.remove(name) {
-            self.fact_name_restores.push(ShadowRestore::Fact {
-                name: name.to_string(),
-                previous: Some(previous),
-            });
-        }
-        if !resource && let Some(binding) = self.current_resource_bindings.remove(name) {
-            let target = self.current_resource_targets.remove(name);
-            self.fact_name_restores.push(ShadowRestore::Resource {
-                name: name.to_string(),
-                binding,
-                target,
-            });
-        }
     }
 
     fn restore_proof_let_bindings(&mut self, checkpoint: usize) {
@@ -7696,7 +7583,7 @@ impl Parser {
                     })
                 });
             if introduce && scalar_field {
-                if self.current_resource_bindings.contains_key(&name) {
+                if self.names.resource_bindings.contains_key(&name) {
                     return Err(self.error("field output conflicts with a resource binding"));
                 }
                 let identity = Variable(self.next_resource_identity);
@@ -7705,7 +7592,7 @@ impl Parser {
                 result.push((slot, name, identity));
                 continue;
             }
-            let existing = self.current_resource_bindings.get(&name).cloned();
+            let existing = self.names.resource_bindings.get(&name).cloned();
             let identity = if let Some((identity, _)) = &existing {
                 // A child slot's resource comes from the parent's matched
                 // arm, which the parser cannot resolve; declaration
@@ -7727,9 +7614,10 @@ impl Parser {
                 // `whole.model`. Only a new binder records the parent, which
                 // declaration expansion replaces with the slot's resource.
                 let recorded = existing.map_or_else(|| family.clone(), |(_, family)| family);
-                self.current_resource_bindings
+                self.names
+                    .resource_bindings
                     .insert(name.clone(), (identity, recorded));
-                self.current_resource_targets.insert(
+                self.names.resource_targets.insert(
                     name.clone(),
                     ResourceClause::Named {
                         binding: ResourceInstanceBinding {
@@ -7931,8 +7819,7 @@ impl Parser {
             return Err(self.error("fold result conflicts with a C or pure binding"));
         }
         self.bind_proof_name(&name, true)?;
-        let identity = if let Some((identity, previous)) = self.current_resource_bindings.get(&name)
-        {
+        let identity = if let Some((identity, previous)) = self.names.resource_bindings.get(&name) {
             if previous != resource_name && !self.child_slot_identities.contains(identity) {
                 return Err(self.error("fold result changes the named resource family"));
             }
@@ -7994,9 +7881,10 @@ impl Parser {
             child_bindings: Some(Vec::new().into()),
             default_child_bindings: None,
         };
-        self.current_resource_bindings
+        self.names
+            .resource_bindings
             .insert(name.clone(), (identity, resource_name.clone()));
-        self.current_resource_targets.insert(
+        self.names.resource_targets.insert(
             name,
             ResourceClause::Named {
                 binding: binding.clone(),
@@ -8045,7 +7933,7 @@ impl Parser {
                     && !self.names.contains(NameKind::ProofBinder, slot)
             })
             .filter_map(|slot| {
-                let (identity, _) = self.current_resource_bindings.get(slot)?;
+                let (identity, _) = self.names.resource_bindings.get(slot)?;
                 Some((slot.clone(), slot.clone(), *identity))
             })
             .collect()
@@ -8073,7 +7961,7 @@ impl Parser {
             else {
                 continue;
             };
-            let Some((_, family)) = self.current_resource_bindings.get(child) else {
+            let Some((_, family)) = self.names.resource_bindings.get(child) else {
                 continue;
             };
             fields.push((
@@ -8260,19 +8148,21 @@ impl Parser {
             None
         };
         if let Some(name) = &name {
-            self.fact_names_being_proved.insert(name.clone());
+            self.names.fact_names_being_proved.insert(name.clone());
         }
         let have = self.parse_have_after_name();
         if let Some(name) = &name {
-            self.fact_names_being_proved.remove(name);
+            self.names.fact_names_being_proved.remove(name);
         }
         let have = have?;
         if let (Some(name), ProofTactic::Have(have)) = (name, &have) {
-            self.ended_fact_names.remove(&name);
+            self.names.ended_fact_names.remove(&name);
             let previous = self
+                .names
                 .fact_names
                 .insert(name.clone(), have.proposition.clone());
-            self.fact_name_restores
+            self.names
+                .fact_name_restores
                 .push(ShadowRestore::Fact { name, previous });
         }
         Ok(have)
@@ -8283,27 +8173,15 @@ impl Parser {
     /// a name that already binds anything visible is refused.
     fn refuse_fact_name_in_scope(&self, name: &str) -> Result<(), ClickError> {
         self.refuse_bool_literal_binder(name)?;
-        if self.fact_names.contains_key(name)
-            || self.fact_names_being_proved.contains(name)
-            || self.name_bound_in_scope(name)
+        if self.names.fact_names.contains_key(name)
+            || self.names.fact_names_being_proved.contains(name)
+            || self.names.is_bound(name)
         {
             return Err(self.error(format!(
                 "`have {name}: ...` names a fact `{name}`, but `{name}` already names something in scope; choose another name"
             )));
         }
         Ok(())
-    }
-
-    /// Whether `name` binds a parameter, binding or C object visible here.
-    fn name_bound_in_scope(&self, name: &str) -> bool {
-        self.names.contains_any(NameKind::ALL, name)
-            || self.current_resource_bindings.contains_key(name)
-            || self.current_arm_binding_types.contains_key(name)
-            || self.current_c_parameter_types.contains_key(name)
-            || self
-                .current_c_object_names
-                .as_ref()
-                .is_some_and(|names| names.contains(name))
     }
 
     /// `have P ...` after any `name:`.
@@ -8434,17 +8312,17 @@ impl Parser {
                 // lowers as a width-unknown load, which reads a different cell
                 // from the `p->word` the same arm's `fact p == id` identifies
                 // it with.
-                let saved_struct_params = self.current_struct_params.clone();
-                let saved_arm_binding_types = std::mem::take(&mut self.current_arm_binding_types);
-                let shadow_checkpoint = self.fact_name_restores.len();
+                let saved_struct_params = self.names.struct_params.clone();
+                let saved_arm_binding_types = std::mem::take(&mut self.names.arm_binding_types);
+                let shadow_checkpoint = self.names.fact_name_restores.len();
                 for binding in &bindings {
                     self.bind_proof_name(binding, false)?;
                 }
                 self.bind_arm_binding_types(&type_name, &variant, &bindings);
                 let tactics = self.parse_possibly_empty_tactic_block();
-                self.restore_fact_names(shadow_checkpoint);
-                self.current_struct_params = saved_struct_params;
-                self.current_arm_binding_types = saved_arm_binding_types;
+                self.names.restore_fact_names(shadow_checkpoint);
+                self.names.struct_params = saved_struct_params;
+                self.names.arm_binding_types = saved_arm_binding_types;
                 for name in newly_bound {
                     self.names.remove(NameKind::ContractBinding, &name);
                 }
@@ -8777,7 +8655,8 @@ impl Parser {
                             self.expect(Token::Colon)?;
                             let name = self.expect_ident("resource instance")?;
                             let (identity, resource_name) = self
-                                .current_resource_bindings
+                                .names
+                                .resource_bindings
                                 .get(&name)
                                 .cloned()
                                 .ok_or_else(|| {
@@ -8847,7 +8726,7 @@ impl Parser {
                     || self.peek_ident() == Some("authority")
                     || self
                         .peek_ident()
-                        .is_some_and(|name| self.current_resource_targets.contains_key(name))
+                        .is_some_and(|name| self.names.resource_targets.contains_key(name))
                 {
                     ProofTactic::UnfoldResource(self.parse_owned_resource_target()?)
                 } else if matches!(self.peek(), Some(Token::Ident(_)))
@@ -8857,7 +8736,7 @@ impl Parser {
                         self.parse_call_arguments("function or resource name")?;
                     ProofTactic::UnfoldFunction(ClickFunctionApplication { name, arguments })
                 } else if let Some(name) = self.peek_ident()
-                    && self.current_resource_bindings.contains_key(name)
+                    && self.names.resource_bindings.contains_key(name)
                 {
                     return Err(self.error(format!(
                         "resource instance `{name}` is not available as an unfold target"
@@ -9031,8 +8910,8 @@ impl Parser {
                 if self.peek_ident() == Some("as") {
                     self.position += 1;
                     let name = self.expect_ident("name for the introduced variable")?;
-                    self.hide_for_proof_binder(&name, false);
-                    self.ended_fact_names.remove(&name);
+                    self.names.hide_for_proof_binder(&name, false);
+                    self.names.ended_fact_names.remove(&name);
                     ProofTactic::IntroAs(name)
                 } else {
                     ProofTactic::Intro
@@ -9214,7 +9093,7 @@ impl Parser {
         else {
             return Err(self.error("a named interface resource requires a declared resource"));
         };
-        let identity = match self.current_resource_bindings.get(&name) {
+        let identity = match self.names.resource_bindings.get(&name) {
             // A binder an `unfold` introduced for a child slot is recorded
             // under its parent's resource, so it is taken by identity alone,
             // as a loop header takes it.
@@ -9234,7 +9113,8 @@ impl Parser {
                 identity
             }
         };
-        self.current_resource_bindings
+        self.names
+            .resource_bindings
             .insert(name.clone(), (identity, resource_name.clone()));
         let target = ResourceClause::Named {
             binding: ResourceInstanceBinding {
@@ -9249,7 +9129,7 @@ impl Parser {
             },
             resource: Box::new(resource),
         };
-        self.current_resource_targets.insert(name, target.clone());
+        self.names.resource_targets.insert(name, target.clone());
         Ok(target)
     }
 
@@ -9269,7 +9149,7 @@ impl Parser {
                 self.expect(Token::LBrace)?;
                 scopes.push((
                     self.proof_let_restores.len(),
-                    self.fact_name_restores.len(),
+                    self.names.fact_name_restores.len(),
                     self.names.take(NameKind::ProofBinder),
                 ));
                 let mut else_tactics = Vec::new();
@@ -9295,7 +9175,7 @@ impl Parser {
                 let (checkpoint, fact_checkpoint, names) =
                     scopes.pop().expect("an else block owns a scope");
                 self.restore_proof_let_bindings(checkpoint);
-                self.restore_fact_names(fact_checkpoint);
+                self.names.restore_fact_names(fact_checkpoint);
                 self.names.replace(NameKind::ProofBinder, names);
                 self.skip_redundant_semicolon();
                 nested = Some(ProofTactic::If(ProofIf {
@@ -9310,7 +9190,7 @@ impl Parser {
         // Error exits restore exactly the same bindings as a recursive block.
         while let Some((checkpoint, fact_checkpoint, names)) = scopes.pop() {
             self.restore_proof_let_bindings(checkpoint);
-            self.restore_fact_names(fact_checkpoint);
+            self.names.restore_fact_names(fact_checkpoint);
             self.names.replace(NameKind::ProofBinder, names);
         }
         result
@@ -9445,7 +9325,7 @@ impl Parser {
 
     fn parse_tactics_until_rbrace(&mut self) -> Result<Vec<ProofTactic>, ClickError> {
         let let_checkpoint = self.proof_let_restores.len();
-        let fact_checkpoint = self.fact_name_restores.len();
+        let fact_checkpoint = self.names.fact_name_restores.len();
         let previous_proof_let_names = self.names.take(NameKind::ProofBinder);
         let result = (|| {
             let mut tactics = Vec::new();
@@ -9455,7 +9335,7 @@ impl Parser {
             Ok(tactics)
         })();
         self.restore_proof_let_bindings(let_checkpoint);
-        self.restore_fact_names(fact_checkpoint);
+        self.names.restore_fact_names(fact_checkpoint);
         self.names
             .replace(NameKind::ProofBinder, previous_proof_let_names);
         result
@@ -9554,7 +9434,7 @@ impl Parser {
         let mut resource_arguments = Vec::new();
         let first_reference = arguments.iter().position(|argument| {
             matches!(argument, ContractExpression::CFragment(CExpression::Variable(name)) | ContractExpression::Binding(name)
-                if self.current_resource_bindings.contains_key(name))
+                if self.names.resource_bindings.contains_key(name))
         });
         if let Some(first) = first_reference {
             for argument in arguments.drain(first..) {
@@ -9567,7 +9447,7 @@ impl Parser {
                         )),
                     };
                 let Some(ResourceClause::Named { binding, .. }) =
-                    self.current_resource_targets.get(&reference)
+                    self.names.resource_targets.get(&reference)
                 else {
                     return Err(self.error(format!("unknown resource argument `{reference}`")));
                 };
@@ -10476,7 +10356,7 @@ impl Parser {
             Some(Token::Ident(kind)) if kind == "assignment" && self.peek() == Some(&Token::LParen) => {
                 self.expect(Token::LParen)?;
                 let local = self.expect_ident("assignment local")?;
-                if self.current_reference_params.contains(&local) {
+                if self.names.contains(NameKind::ReferenceParameter, &local) {
                     return Err(self.error(format!(
                         "`{local}` is a reference, and binding a reference is not an assignment; a store through `{local}` is a store to what it refers to, so select the statement itself with `statement(N)`"
                     )));
@@ -10659,9 +10539,10 @@ impl Parser {
         let mut struct_name = match &surface_base {
             ContractExpression::Binding(name)
             | ContractExpression::CFragment(CExpression::Variable(name)) => self
-                .current_struct_params
+                .names
+                .struct_params
                 .get(name)
-                .or_else(|| self.current_aggregate_objects.get(name))
+                .or_else(|| self.names.aggregate_objects.get(name))
                 .or_else(|| {
                     self.qualified_object(name)
                         .and_then(|object| object.struct_name.as_ref())
@@ -10679,7 +10560,8 @@ impl Parser {
         if let ContractExpression::Binding(name)
         | ContractExpression::CFragment(CExpression::Variable(name)) = &surface_base
             && self
-                .current_struct_params
+                .names
+                .struct_params
                 .contains_key(&struct_pointer_pointer_key(name))
         {
             struct_name = None;
@@ -10687,8 +10569,8 @@ impl Parser {
         let names_aggregate_object = match &surface_base {
             ContractExpression::Binding(name)
             | ContractExpression::CFragment(CExpression::Variable(name)) => {
-                self.current_aggregate_objects.contains_key(name)
-                    || self.current_global_array_shapes.contains_key(name)
+                self.names.aggregate_objects.contains_key(name)
+                    || self.names.global_array_shapes.contains_key(name)
                     || self.qualified_object(name).is_some()
             }
             _ => false,
@@ -10698,7 +10580,7 @@ impl Parser {
         let mut struct_array_element_width = match &surface_base {
             ContractExpression::Binding(name)
             | ContractExpression::CFragment(CExpression::Variable(name))
-                if self.current_struct_array_params.contains(name) =>
+                if self.names.contains(NameKind::StructArrayParameter, name) =>
             {
                 struct_name
                     .as_ref()
@@ -10723,7 +10605,8 @@ impl Parser {
         let mut scalar_array_shape = match &surface_base {
             ContractExpression::Binding(name)
             | ContractExpression::CFragment(CExpression::Variable(name)) => self
-                .current_global_array_shapes
+                .names
+                .global_array_shapes
                 .get(name)
                 .map(|array| array.shape.clone())
                 .or_else(|| {
@@ -11110,7 +10993,7 @@ impl Parser {
         // A struct reference written alone is the struct it refers to.
         let carries_reference = |name: &str| {
             syntax::referent_of_carrier(name)
-                .is_some_and(|referent| self.current_reference_params.contains(referent))
+                .is_some_and(|referent| self.names.contains(NameKind::ReferenceParameter, referent))
         };
         let names_reference = match &surface_base {
             ContractExpression::Binding(name)
@@ -11206,9 +11089,9 @@ impl Parser {
             && self.peek() != Some(&Token::LBracket)
             && let ContractExpression::CFragment(CExpression::Variable(name)) = &surface_base
         {
-            let object = if !self.current_c_parameter_types.contains_key(name)
-                && !self.current_struct_array_params.contains(name)
-                && let Some(struct_name) = self.current_aggregate_objects.get(name)
+            let object = if !self.names.c_parameter_types.contains_key(name)
+                && !self.names.contains(NameKind::StructArrayParameter, name)
+                && let Some(struct_name) = self.names.aggregate_objects.get(name)
             {
                 Some((struct_name, CExpression::AddressOf(Box::new(base.clone()))))
             } else {
@@ -11234,7 +11117,7 @@ impl Parser {
         // address.
         if self.peek() != Some(&Token::LBracket) {
             if let CExpression::Variable(name) = &base
-                && self.current_struct_params.contains_key(name)
+                && self.names.struct_params.contains_key(name)
                 && !names_aggregate_object
             {
                 return Err(self.error(format!(
@@ -11670,9 +11553,10 @@ impl Parser {
         }
         let struct_name = match &base {
             C0Expression::Variable(base_name) => self
-                .current_struct_params
+                .names
+                .struct_params
                 .get(base_name)
-                .or_else(|| self.current_aggregate_objects.get(base_name)),
+                .or_else(|| self.names.aggregate_objects.get(base_name)),
             C0Expression::Field {
                 field_struct_name, ..
             } => field_struct_name.as_ref(),
@@ -11741,9 +11625,10 @@ impl Parser {
             return Ok(None);
         };
         let Some(struct_name) = self
-            .current_struct_params
+            .names
+            .struct_params
             .get(base_name)
-            .or_else(|| self.current_aggregate_objects.get(base_name))
+            .or_else(|| self.names.aggregate_objects.get(base_name))
         else {
             self.reject_non_struct_arm_base(base_name, field_name)?;
             return Ok(None);
@@ -11773,9 +11658,10 @@ impl Parser {
                 .and_then(|object| object.struct_name.clone()),
             ContractExpression::Binding(name)
             | ContractExpression::CFragment(CExpression::Variable(name)) => self
-                .current_struct_params
+                .names
+                .struct_params
                 .get(name)
-                .or_else(|| self.current_aggregate_objects.get(name))
+                .or_else(|| self.names.aggregate_objects.get(name))
                 .cloned(),
             ContractExpression::Field { base, field, .. } => {
                 let struct_name = self.contract_expression_struct_name(base)?;
@@ -11801,7 +11687,7 @@ impl Parser {
         base_name: &str,
         field_name: &str,
     ) -> Result<(), ClickError> {
-        let Some(field) = self.current_arm_binding_types.get(base_name) else {
+        let Some(field) = self.names.arm_binding_types.get(base_name) else {
             return Ok(());
         };
         Err(self.error(format!(
@@ -12049,7 +11935,7 @@ impl Parser {
         if matches!(
             crate::surface::validation::infer_c_expression_type(
                 operand,
-                &self.current_c_parameter_types,
+                &self.names.c_parameter_types,
             ),
             None | Some(C0Type::Int64(_) | C0Type::UInt64(_))
         ) {
@@ -12070,18 +11956,19 @@ impl Parser {
             CExpression::Variable(name) => Some(name.as_str()),
             _ => None,
         };
-        let Some(name) = name.filter(|name| self.current_void_pointer_params.contains(*name))
+        let Some(name) =
+            name.filter(|name| self.names.contains(NameKind::VoidPointerParameter, name))
         else {
             return Err(self.error(
                 "a struct pointer cast applies to a `void *` parameter of the function under contract",
             ));
         };
-        match self.current_parameter_struct_casts.get(name) {
+        match self.names.parameter_struct_casts.get(name) {
             Some(previous) if previous != struct_name => Err(self.error(format!(
                 "parameter `{name}` is already cast to `struct {previous}`; a contract casts a parameter to one struct"
             ))),
             _ => {
-                self.current_parameter_struct_casts
+                self.names.parameter_struct_casts
                     .insert(name.to_string(), struct_name.to_string());
                 Ok(())
             }
@@ -12108,7 +11995,7 @@ impl Parser {
             };
             let integer_source = crate::surface::validation::infer_c_expression_type(
                 &operand,
-                &self.current_c_parameter_types,
+                &self.names.c_parameter_types,
             )
             .is_some_and(|ty| matches!(ty, C0Type::Int64(_) | C0Type::UInt64(_)));
             if !integer_source {
@@ -12150,7 +12037,7 @@ impl Parser {
             if target_type == CType::VoidPointer {
                 crate::surface::validation::validate_void_pointer_cast_source(
                     &expression,
-                    &self.current_c_parameter_types,
+                    &self.names.c_parameter_types,
                     "contract expression",
                 )?;
             }
@@ -12269,7 +12156,7 @@ impl Parser {
 
     /// Native parameter and result aliases name their referents.
     fn is_reference_binding(&self, name: &str) -> bool {
-        self.current_reference_params.contains(name)
+        self.names.contains(NameKind::ReferenceParameter, name)
             || (self.current_reference_result && name == "result")
     }
 
@@ -12321,7 +12208,7 @@ impl Parser {
         {
             let name = name.clone();
             let carrier = self.reference_binding_carrier(&name);
-            let is_struct = self.current_struct_params.contains_key(&carrier);
+            let is_struct = self.names.struct_params.contains_key(&carrier);
             if is_struct && !matches!(self.peek(), Some(Token::Arrow | Token::Dot)) {
                 return Err(self.error(format!(
                     "`{name}` is a struct reference; name a field as `{name}.field`, or its address as `&{name}`"
@@ -12365,9 +12252,10 @@ impl Parser {
                 .and_then(|object| object.struct_name.clone()),
             ContractExpression::Binding(name)
             | ContractExpression::CFragment(CExpression::Variable(name)) => self
-                .current_struct_params
+                .names
+                .struct_params
                 .get(name)
-                .or_else(|| self.current_aggregate_objects.get(name))
+                .or_else(|| self.names.aggregate_objects.get(name))
                 .cloned(),
             ContractExpression::Old(inner)
             | ContractExpression::At {
@@ -12379,7 +12267,8 @@ impl Parser {
         if let ContractExpression::Binding(name)
         | ContractExpression::CFragment(CExpression::Variable(name)) = &expression
             && self
-                .current_struct_params
+                .names
+                .struct_params
                 .contains_key(&struct_pointer_pointer_key(name))
         {
             struct_name = None;
@@ -12388,8 +12277,8 @@ impl Parser {
         let mut struct_array_element_width = match &expression {
             ContractExpression::Binding(name)
             | ContractExpression::CFragment(CExpression::Variable(name)) => self
-                .current_struct_array_params
-                .contains(name)
+                .names
+                .contains(NameKind::StructArrayParameter, name)
                 .then(|| {
                     struct_name
                         .as_ref()
@@ -12418,7 +12307,8 @@ impl Parser {
                 .and_then(|object| object.array_shape.clone()),
             ContractExpression::Binding(name)
             | ContractExpression::CFragment(CExpression::Variable(name)) => self
-                .current_global_array_shapes
+                .names
+                .global_array_shapes
                 .get(name)
                 .map(|array| array.shape.clone()),
             _ => None,
@@ -12673,7 +12563,7 @@ impl Parser {
                         continue;
                     }
                     if let ContractExpression::CFragment(CExpression::Variable(owner)) = &expression
-                        && self.current_value_binders.contains_key(owner)
+                        && self.names.value_binders.contains_key(owner)
                     {
                         if self.peek() != Some(&Token::Dot) {
                             return Err(self.error("binder parameters use `.`, not `->`"));
@@ -12688,7 +12578,7 @@ impl Parser {
                     }
                     if let ContractExpression::CFragment(CExpression::Variable(owner)) = &expression
                         && let Some((identity, resource_name)) =
-                            self.current_resource_bindings.get(owner).cloned()
+                            self.names.resource_bindings.get(owner).cloned()
                     {
                         if self.peek() != Some(&Token::Dot) {
                             return Err(self.error("resource fields use `.`, not `->`"));
@@ -13125,14 +13015,14 @@ impl Parser {
                 Err(self.error("expected contract expression, got `by`"))
             }
             Some(Token::Ident(name)) => {
-                if let Some(field) = self.current_resource_fields.get(&name) {
+                if let Some(field) = self.names.resource_fields.get(&name) {
                     return Ok(ContractExpression::ResourceField(field.clone()));
                 }
                 if self.names.contains_any(NameKind::VALUES, &name)
                 {
                     Ok(ContractExpression::Binding(name))
                 } else {
-                    match self.current_algebraic_params.get(&name) {
+                    match self.names.algebraic_params.get(&name) {
                         Some((algebraic_type, binder_index)) => {
                             Ok(ContractExpression::AlgebraicVariable {
                                 name,
@@ -13801,7 +13691,7 @@ impl Parser {
             }
             Some(Token::Ident(name)) if self.is_reference_binding(&name) => {
                 let carrier = self.reference_binding_carrier(&name);
-                let is_struct = self.current_struct_params.contains_key(&carrier);
+                let is_struct = self.names.struct_params.contains_key(&carrier);
                 let carrier = C0Expression::Variable(carrier);
                 Ok(if is_struct {
                     carrier
@@ -13841,7 +13731,7 @@ impl Parser {
                     self.position += 4;
                     let operand = self.parse_ensure_unary()?;
                     crate::surface::validation::validate_void_pointer_cast_source(
-                        &operand.to_kernel_expression(), &self.current_c_parameter_types, "contract expression"
+                        &operand.to_kernel_expression(), &self.names.c_parameter_types, "contract expression"
                     )?;
                     return Ok(C0Expression::Cast {
                         expression: Box::new(operand),
