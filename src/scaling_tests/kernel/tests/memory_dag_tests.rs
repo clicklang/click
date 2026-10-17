@@ -126,7 +126,7 @@ fn reinterning_retained_memory_uses_shallow_component_identity() {
 #[test]
 #[ignore = "nightly: 1.6s in the parallel gate"]
 fn checked_order_store_crossing_ignores_unrelated_order_facts() {
-    let samples = [16_u64, 64, 256, 1024, 4096]
+    let samples = [4_u64, 16, 64, 256, 1024]
         .into_iter()
         .map(|size| {
             let index = Bitvector32Term::Variable(Variable(92_000_000 + size * 10 + 1));

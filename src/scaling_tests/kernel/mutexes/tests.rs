@@ -47,13 +47,15 @@ fn symbolic_guard_lookup_and_exchange_use_indexed_paths() {
     for size in [16usize, 64, 256, 1024] {
         let mut state = CState::new();
         state.preserves_mutex_protocols = true;
-        for index in 0..size {
-            let fact = evaluate_guard(&state, &state, mutex(index), CResourceSnapshot::Current);
-            state.resources = state
-                .resources
-                .try_compose_with_fact(fact, &assumptions)
-                .unwrap();
-        }
+        // Every input is a distinct opaque guard over the same empty memory.
+        // Assemble and validate that frame once; the measured exchange below
+        // still consumes and reinstalls its selected guard through checked APIs.
+        let guards = (0..size)
+            .map(|index| evaluate_guard(&state, &state, mutex(index), CResourceSnapshot::Current))
+            .collect::<Vec<_>>();
+        state.resources = ResourceContext::new()
+            .try_compose_with_facts(guards, &assumptions)
+            .unwrap();
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             let fact = evaluate_guard(&state, &state, mutex(size / 2), CResourceSnapshot::Current);
             assert!(state.resources.satisfies_fact(&fact, &assumptions));

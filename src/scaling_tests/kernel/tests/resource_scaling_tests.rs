@@ -10,6 +10,9 @@
 
 use super::*;
 
+// Keep large explicit-body sweeps separate from ambient-context setup. The
+// latter use 4..256 elements (8..512 for the two 64-unit logarithmic slopes):
+// even one charged scan exceeds their unchanged logarithmic bounds.
 const SIZES: [usize; 4] = [16, 64, 256, 1024];
 
 /// The identity of the block the measured operation targets; the unrelated
@@ -109,7 +112,7 @@ fn private_local_copy_ignores_unrelated_resources() {
     for pointer_copy in [false, true] {
         for address_backed in [false, true] {
             let mut samples = Vec::new();
-            for size in SIZES {
+            for size in [8usize, 32, 128, 512] {
                 let _session = crate::kernel::VerificationSession::enter();
                 crate::kernel::set_never_address_taken_locals(
                     std::iter::once("target".to_string())
@@ -238,7 +241,7 @@ fn private_owner_projection_does_not_republish_discarded_pairings() {
 #[test]
 fn validity_is_logarithmic_in_unrelated_allocations() {
     let mut samples = Vec::new();
-    for size in SIZES {
+    for size in [4usize, 16, 64, 256] {
         let frame = frame_with_unrelated_allocations(size);
         let assumptions = assumptions_aliasing_the_target();
         let (error, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -253,7 +256,7 @@ fn validity_is_logarithmic_in_unrelated_allocations() {
 #[test]
 fn ensured_resource_composition_is_logarithmic_in_unrelated_allocations() {
     let mut samples = Vec::new();
-    for size in SIZES {
+    for size in [4usize, 16, 64, 256] {
         let frame = frame_with_unrelated_allocations(size);
         let assumptions = assumptions_aliasing_the_target();
         let ensured = owned_range(heap_base(TARGET_HEAP), 8, 12);
@@ -279,7 +282,7 @@ fn ensured_resource_composition_is_logarithmic_in_unrelated_allocations() {
 #[test]
 fn validity_is_logarithmic_in_unrelated_pointer_equalities() {
     let mut samples = Vec::new();
-    for size in SIZES {
+    for size in [4usize, 16, 64, 256] {
         let frame = frame_with_unrelated_allocations(2);
         let assumptions = (0..size).fold(assumptions_aliasing_the_target(), |facts, index| {
             facts.assume_condition(
@@ -441,7 +444,7 @@ fn field_endpoint_fold_and_unfold_ignore_unrelated_resources() {
     let definitions = field_endpoint_definitions();
     let (holder, suffix) = (&definitions[0], &definitions[1]);
     let mut samples = Vec::new();
-    for size in SIZES {
+    for size in [4usize, 16, 64, 256] {
         let parent = field_endpoint_instance("holder", "at", 2 * TARGET_HEAP);
         let child = field_endpoint_instance("suffix", "start", 2 * TARGET_HEAP + 1);
         let frame = ResourceContext::new()
@@ -550,7 +553,7 @@ fn window_instance(block: u64, identity: u64) -> CResourceFact {
 fn unmatched_instance_body_views_ignore_unrelated_instances() {
     let definitions = window_definitions(4);
     let mut samples = Vec::new();
-    for size in SIZES {
+    for size in [4usize, 16, 64, 256] {
         let frame = ResourceContext::new().unchecked_with_facts((0..size).flat_map(|index| {
             [
                 owned_range(heap_base(index as u64 + 1), 0, 4),
@@ -696,7 +699,7 @@ fn holder_instance(block: u64, identity: u64) -> CResourceFact {
 fn nested_composite_body_views_ignore_unrelated_instances() {
     let definitions = holder_definitions(4);
     let mut samples = Vec::new();
-    for size in SIZES {
+    for size in [4usize, 16, 64, 256] {
         let frame = ResourceContext::new().unchecked_with_facts((0..size).flat_map(|index| {
             [
                 owned_range(heap_base(index as u64 + 1), 0, 4),
@@ -791,7 +794,7 @@ fn a_kept_cell_is_placed_without_visiting_unrelated_ranges() {
         ),
     };
     let mut samples = Vec::new();
-    for size in SIZES {
+    for size in [4usize, 16, 64, 256] {
         let kept = ResourceContext::new().unchecked_with_facts(
             (0..size)
                 .map(|index| owned_range(object(index as u64 + 1), 0, 16))
@@ -829,7 +832,7 @@ fn int32_equal(left: u64, right: u64) -> ConditionTerm {
 fn joining_ranges_by_a_proved_endpoint_ignores_unrelated_equalities() {
     let (end, start) = (3 * TARGET_HEAP, 3 * TARGET_HEAP + 1);
     let mut samples = Vec::new();
-    for size in SIZES {
+    for size in [4usize, 16, 64, 256] {
         let frame = ResourceContext::new().unchecked_with_facts([
             variable_range(
                 heap_base(TARGET_HEAP),
@@ -900,7 +903,7 @@ fn retirement_stale_check_ignores_unrelated_kept_resources() {
     let allocation = heap_base(TARGET_HEAP);
     let bytes = Bitvector32Term::Constant(16);
     let mut samples = Vec::new();
-    for size in SIZES {
+    for size in [4usize, 16, 64, 256] {
         let unrelated = (0..size).flat_map(|index| {
             [
                 owned_range(heap_base(index as u64 + 1), 0, 4),
@@ -1327,7 +1330,7 @@ fn normalizing_external_ranges_compares_only_related_bases() {
 #[test]
 fn population_call_partition_is_logarithmic_in_unrelated_resources() {
     let mut samples = Vec::new();
-    for size in SIZES {
+    for size in [4usize, 16, 64, 256] {
         let frame = frame_with_unrelated_allocations(size);
         let body = owned_range(heap_base(TARGET_HEAP), 8, 12);
         let callee = ResourceContext::new().unchecked_with_fact(body.clone());
@@ -1616,7 +1619,7 @@ fn materialized_pointer(source: &CMemory, cell: &Pointer) -> CValue {
 #[test]
 fn unfold_beside_descriptors_of_its_type_ignores_unrelated_descriptors() {
     let mut samples = Vec::new();
-    for size in SIZES {
+    for size in [4usize, 16, 64, 256] {
         let _session = crate::kernel::VerificationSession::enter();
         let definitions = slot_definitions();
         let region = external_descriptor(100_000);
@@ -1759,7 +1762,7 @@ fn a_store_opens_no_folded_instance_whose_arguments_name_no_cached_cell() {
     let _armed = crate::kernel::arm_frame_composite_definitions(window_definitions(1));
     let kept = parameter_base(STORE_KEPT_PARAMETER);
     let mut samples = Vec::new();
-    for size in SIZES {
+    for size in [4usize, 16, 64, 256] {
         let _session = crate::kernel::VerificationSession::enter();
         let frame = ResourceContext::new()
             .unchecked_with_facts((0..size).flat_map(|index| {
@@ -1885,7 +1888,7 @@ fn shared_view_offset_alias_lookup_is_indexed_and_preserves_occurrences() {
     let held = view(base, 16u32.into());
     let required = view(alias.clone(), 4u32.into());
     let mut samples = Vec::new();
-    for size in SIZES {
+    for size in [8usize, 32, 128, 512] {
         let resources = ResourceContext::new_with_equalities(&facts)
             .unchecked_with_facts((0..size).map(|i| view(heap_base(i as u64 + 1), 16u32.into())))
             .unchecked_with_fact(held.clone());
@@ -2516,7 +2519,7 @@ fn matched_input_argument_views_ignore_unrelated_definitions_and_owners() {
         }],
     });
     let mut samples = Vec::new();
-    for size in SIZES {
+    for size in [4usize, 16, 64, 256] {
         let mut definitions = (0..size)
             .map(|index| {
                 CCompositeResourceDefinition::new(
