@@ -1629,9 +1629,9 @@ proves the first two, checks the third
 ([undefined behavior](../language/c.md#undefined-behavior)), and refuses the
 attributes ([Optimizer promises](#optimizer-promises)), so a verified claim
 holds for the `-O2` build without `-fno-strict-overflow` or
-`-fno-delete-null-pointer-checks`. Until the strict-aliasing check also covers
-heap objects and globals, an optimizing level adds `-fno-strict-aliasing`
-(`design/effective-types.md`). `"optimization": "-O0"` prepares the units
+`-fno-delete-null-pointer-checks`. An optimizing level still adds
+`-fno-strict-aliasing`, because the check does not see the effective types a
+callee or `memcpy` gives heap cells (`design/effective-types.md`). `"optimization": "-O0"` prepares the units
 unoptimized and accepts the promise attributes, which GCC does not act on at
 `-O0`.
 
@@ -1815,7 +1815,7 @@ source.
 | `-Wno-unused-const-variable` (twice) | Accepted | Diagnostics only. |
 | `-fno-common` | Accepted | GCC 13's default; a tentative definition is one zero-initialized definition, as Click models it. |
 | `-fno-delete-null-pointer-checks` | Accepted | Stops GCC assuming that a dereferenced pointer is not null; Click refuses any access through a possibly null pointer. |
-| `-fno-strict-aliasing` | Fixed | Added at an optimizing level until the strict-aliasing check covers heap objects and globals (`design/effective-types.md`). |
+| `-fno-strict-aliasing` | Fixed | Added at an optimizing level: the strict-aliasing check does not see the effective types a callee or `memcpy` gives heap cells (`design/effective-types.md`). |
 | `-fno-strict-overflow` | Accepted | Makes signed and pointer overflow wrap; Click treats both as undefined, which is stricter. |
 | `-fshort-wchar` | Accepted | Changes `wchar_t` and the wide-literal element type; the predefines are in the artifact and Click has no wide literals. |
 | `-fstrict-flex-arrays=3` | Accepted | Only `[]` is a flexible member; Click has no flexible or zero-length members and bounds every struct array by its declared length. |
