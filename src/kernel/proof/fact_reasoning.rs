@@ -174,8 +174,28 @@ pub(crate) fn normalize_using_conditions(
         u64,
         Vec<(super::fact_keys::IntegerEqualityAlphaKey, bool)>,
     > = std::collections::HashMap::new();
+    // A listed conjunction, such as a pointer value equality, cites each of
+    // its conditions; each must be available as a part or as the whole.
+    let mut cited = Vec::new();
     for (index, premise) in premises.iter().enumerate() {
-        if !crate::kernel::proposition_holds_without_facts(premise)
+        if matches!(premise, Proposition::And(..))
+            && crate::kernel::listed_premise_holds(premise, |part| {
+                facts.available(part)
+                    || condition_polarity_forms(part)
+                        .iter()
+                        .any(|form| facts.available(form))
+            })
+        {
+            let mut parts = Vec::new();
+            atomic_conjuncts(premise, &mut parts);
+            cited.extend(parts.into_iter().map(|part| (index, part, true)));
+        } else {
+            cited.push((index, premise, false));
+        }
+    }
+    for (index, premise, checked) in cited {
+        if !checked
+            && !crate::kernel::proposition_holds_without_facts(premise)
             && !facts.available(premise)
             && !condition_polarity_forms(premise)
                 .iter()
