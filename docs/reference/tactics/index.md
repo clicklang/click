@@ -1801,12 +1801,14 @@ arms are not `P` and `not P`; otherwise use `if`. Eliminate an exact available
 disjunction, proving the same goal once under each arm's disjunct. Use `if P` to
 split on a proposition you choose, which needs no premise because `P or not P`
 always holds, and whose arms rejoin; use `cases` to use a disjunction already
-proved, whose arms continue separately.
+proved while proving a focused proposition.
 
 There is one arm per disjunct, any number from two, and the disjunction of the
 arms grouped left to right as `or` parses (`A or B or C` is `(A or B) or C`)
-must be available. At an execution frontier every arm begins from the same
-checked C state and continues separately.
+must be available. Every arm proves the same focused proposition; `cases`
+does not split C execution. In a contract proof, put the case split inside
+`have P by { cases { ... } }`. Use proof `if P { ... } else { ... }` to split
+execution and rejoin its arms.
 
 **Failure, checking, and tools:**
 
@@ -1814,7 +1816,7 @@ An unavailable disjunction or unfinished arm fails; this never substitutes `not
 A` for `B` or implicitly branches C. Click checks both proof branches, expansion
 recurses, and profiling reports descendants.
 
-**Checked examples:** [`logical_tactics.rs`](https://github.com/clicklang/click/blob/master/src/surface/tests/tactic_tests/logical_tactics.rs)
+**Checked examples:** [`logical_tactics.rs`](https://github.com/clicklang/click/blob/master/src/surface/tests/tactic_tests/logical_tactics.rs), [`cases_in_have_before_and_after_execute.md`](https://github.com/clicklang/click/blob/master/mdtests/cases_in_have_before_and_after_execute.md), [`cases_before_execute_requires_proposition_goal.md`](https://github.com/clicklang/click/blob/master/mdtests/cases_before_execute_requires_proposition_goal.md), [`cases_after_execute_requires_proposition_goal.md`](https://github.com/clicklang/click/blob/master/mdtests/cases_after_execute_requires_proposition_goal.md)
 
 ### Scoped resource opening
 

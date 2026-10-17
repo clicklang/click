@@ -248,6 +248,14 @@ fn unsupported_proof_shape(
             .join(", ");
         format!("these {} contract claims: {labels}", claim_labels.len())
     };
+    if let Some(index) = tactics
+        .iter()
+        .position(|tactic| matches!(tactic, ProofTactic::Cases(_)))
+    {
+        return ClickError::new(format!(
+            "`{proof_label}`: tactic {index} uses `cases` while checking {claim_description}, but `cases` requires a focused proposition goal. Put this case split inside `have P by {{ cases {{ ... }} }}`; use proof `if P {{ ... }} else {{ ... }}` to split execution and rejoin its arms."
+        ));
+    }
     let shape = proof_shape_hint(tactics).map_or_else(
         || "the supplied tactic sequence".to_string(),
         |(index, shape)| format!("tactic {index} ({shape})"),
