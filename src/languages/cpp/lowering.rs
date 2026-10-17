@@ -1834,6 +1834,24 @@ impl LoweringContext<'_> {
                 }
                 let address = self.lower_place(place)?;
                 let root = self.place(place)?;
+                // Binding a reference to a scalar field selects the same
+                // member bounds as taking its address. This checks storage
+                // without loading the field value.
+                if !place.projections.is_empty() {
+                    let (value_type, _) = self
+                        .records
+                        .resolve_path(&root.value_type, &place.projections)?;
+                    if let Some(element) = Scalar::pointer_element(value_type, true) {
+                        let member_type = element.kind.kernel_type();
+                        return Ok(c_checked_object_address(c_typed_load(
+                            CExpression::Subobject {
+                                pointer: Box::new(address),
+                                width: member_type.byte_width(),
+                            },
+                            member_type,
+                        )));
+                    }
+                }
                 if !matches!(root.value_type, CppType::Record { .. }) {
                     return Ok(address);
                 }
