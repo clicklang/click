@@ -1952,7 +1952,7 @@ fn compared_pointer_holders_composition(
     left: &Pointer,
     right: &Pointer,
     assumptions: &PureFactContext,
-) -> Option<ResourceContext> {
+) -> Option<(ResourceContext, Proposition)> {
     let resources = state.resources();
     let holder = |pointer: &Pointer| {
         assumptions
@@ -1973,14 +1973,19 @@ fn compared_pointer_holders_composition(
     if left_member == right_member {
         return None;
     }
-    ResourceContext::new()
+    let separation = Proposition::CResourceSeparate {
+        left: Box::new(CResource::Memory(left_member.clone())),
+        right: Box::new(CResource::Memory(right_member.clone())),
+    };
+    let composition = ResourceContext::new()
         .try_compose_with_facts_delaying_normalization(
             [left_member, right_member]
                 .into_iter()
                 .map(CResourceFact::own_memory),
             assumptions,
         )
-        .ok()
+        .ok()?;
+    Some((composition, separation))
 }
 
 fn apply_c_comparison(
@@ -4633,12 +4638,16 @@ fn apply_c_equality(
             } else {
                 let (left, right) = (left.into_pointer(), right.into_pointer());
                 let mut facts = facts;
-                if let Some(holders) =
+                if let Some((holders, separation)) =
                     compared_pointer_holders_composition(state, &left, &right, assumptions)
                 {
                     facts.push(ExecutionPureFact::new(Proposition::CResourceComposition(
                         holders,
                     )));
+                    // This is the separation projection of the selected owned
+                    // pair, constructed with its composition. Publish it once
+                    // for the shared address-class lookup, not for all owners.
+                    facts.push(ExecutionPureFact::new(separation));
                 }
                 let (compared_left, compared_right) = (left.clone(), right.clone());
                 apply_pointer_adjacency_guard(

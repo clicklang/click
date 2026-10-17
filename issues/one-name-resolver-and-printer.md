@@ -81,10 +81,14 @@ arm of an `if`, `match`, `cases`, `branch` or induction starts from the state
 before the arms, and afterwards an instance the arms gave different resources
 is refused where it is used
 (`mdtests/one_name_may_bind_children_of_different_resources_in_two_arms.md`).
-The parser still records a child under its parent's resource, so an `unfold`
-of that child decides "field or child slot" from the parent and can refuse a
-correct pattern; and a slot whose resource differs between the parent's arms
-fixes no resource for its child.
+A resource's child slots and the resource each owns are one definition,
+`CompositeResourceBody::child_slot_resources`, read by both the parser and
+declaration expansion. The parser records a new child under its slot's
+resource when the parent's arms agree on it, so an `unfold` of the child
+reads the child's own fields and slots
+(`mdtests/an_unfold_of_a_child_reads_the_child_resource_slots.md`). A slot
+whose resource differs between the parent's arms still fixes no resource for
+its child.
 
 The complete scoped table for parameters, fields, binders, constructors,
 resources, program points and project modules remains open. Proof inventories

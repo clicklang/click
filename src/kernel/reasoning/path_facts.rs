@@ -1814,10 +1814,16 @@ pub(in crate::kernel) fn decide_with_facts(
         })
         .or_else(|| {
             let merged = facts.fact_iter().fold(
-                if assumptions.should_defer_non_exact_condition_reasoning() {
-                    PureFactContext::new()
-                } else {
+                // Address comparisons need the checked aliases when adding
+                // their two-holder separation projection. Keep the deferred
+                // policy; other comparisons retain their existing cheap path.
+                if !assumptions.should_defer_non_exact_condition_reasoning()
+                    || matches!(condition, ConditionTerm::Bitvector64Equal(a,b)
+                        if a.address_pointer().is_some() && b.address_pointer().is_some())
+                {
                     assumptions.clone()
+                } else {
+                    PureFactContext::new()
                 },
                 |assumptions, fact| assumptions.assume_proposition(fact.proposition().clone()),
             );

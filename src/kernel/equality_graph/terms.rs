@@ -30,6 +30,7 @@ pub(super) fn take_pointer_fact_merge_visits() -> usize {
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub(in crate::kernel::equality_graph) enum PointerFactKey {
+    AddressSeparation,
     Predicate(u64),
     PredicateShape(String, usize, usize, crate::kernel::CType),
     FunctionContracts,
@@ -325,7 +326,7 @@ impl Clone for RootLookupCache {
 pub(super) struct TermClasses {
     scalar_witnesses: constants::ScalarWitnesses,
     scalar_conflicts: PersistentSet<u64>,
-    /// Source propositions follow address classes. Only the moved class is
+    /// Source propositions follow address and condition classes. Only the moved class is
     /// visited on union; queries select one key and never enumerate aliases.
     pointer_facts: PersistentMap<u64, PersistentMap<PointerFactKey, PointerFactBucket>>,
     // Retain the exact schema allocation used by each key, even when the
