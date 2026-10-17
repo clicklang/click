@@ -8604,3 +8604,55 @@ fn proof_if_split_ignores_earlier_unrelated_facts() {
         "a proof `if` rebuilds context entries for earlier unrelated facts: {added:?}"
     );
 }
+
+/// Premise synthesis must reuse the ambient context, including on refusal.
+#[test]
+fn failing_bare_transport_reuses_candidate_assumptions() {
+    use crate::instrumentation::{VerificationEvent, collect};
+    let mut samples = Vec::new();
+    for size in [4, 16, 64] {
+        let requirements = (0..size)
+            .map(|i| format!("requires extra != {i};\n"))
+            .collect::<String>();
+        let source = format!(
+            r#"verifying "fill.c"; void fill(uint8* dst, int32 extra) {{ owns dst[0..4]; {requirements} }} by {{
+step(); mark filled; step();
+transport(at(filled, dst[0]) == 7, dst[0] == 7);
+}}"#
+        );
+        let before = crate::kernel::reasoning::path_facts::context_rebuild_entries();
+        let (result, events) = collect(|| {
+            verify_c0_sources(
+                &source,
+                &[(
+                    "fill.c",
+                    "void fill(uint8* dst, int32 extra) { dst[0] = 7; dst[0] = 0; }",
+                )],
+            )
+        });
+        let entries = crate::kernel::reasoning::path_facts::context_rebuild_entries() - before;
+        let error = result.expect_err("overwritten value cannot be transported");
+        assert!(
+            !error.message().contains("budget exhausted"),
+            "{}",
+            error.message()
+        );
+        let synthesized = events.iter().any(|event| {
+            matches!(event, VerificationEvent::OperationFinished { name, .. }
+                if name == "explicit fact transport: candidate synthesis")
+        });
+        assert!(
+            synthesized,
+            "the refusal must exercise candidate synthesis: {}",
+            error.message()
+        );
+        samples.push((size, entries));
+    }
+    eprintln!("bare transport context rebuilds: {samples:?}");
+    for pair in samples.windows(2) {
+        assert!(
+            pair[1].1 <= pair[0].1 * 5,
+            "repeated ambient rebuilds: {samples:?}"
+        );
+    }
+}

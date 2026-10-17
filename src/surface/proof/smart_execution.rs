@@ -224,7 +224,7 @@ impl<'a> Proof<'a> {
             source,
             &source_kernel,
             &target_kernel,
-            &self.facts().to_vec(),
+            self.facts(),
             &transition_facts,
             context.parameter_binding(),
             execution.view(context),
