@@ -164,48 +164,61 @@ pub(crate) fn reserved_fact_variable_entries() -> usize {
     RESERVED_FACT_VARIABLES.with(std::cell::Cell::get)
 }
 
-/// `reserved` and `snapshots` once `fact`'s variables are reserved too:
-/// every variable `proposition_variables(fact)` lists is then in the
-/// reserved set, and every snapshot named in `snapshots` has all its
-/// variables there.
+/// Adds `fact`'s variables to `pending` and the snapshots they reserve to
+/// `snapshots`: afterwards every variable `proposition_variables(fact)`
+/// lists is in `reserved` or `pending`, and every snapshot named in
+/// `snapshots` has all its variables there. Several facts accumulate into
+/// one plain set, so a variable many of them mention costs one persistent
+/// insertion when the caller commits `pending`.
 fn reserve_fact_variables(
     fact: &Proposition,
-    mut reserved: PersistentSet<Variable>,
-    mut snapshots: PersistentSet<(u32, u32)>,
-) -> (PersistentSet<Variable>, PersistentSet<(u32, u32)>) {
+    reserved: &PersistentSet<Variable>,
+    pending: &mut BTreeSet<Variable>,
+    snapshots: &mut PersistentSet<(u32, u32)>,
+) {
     #[cfg(debug_assertions)]
     let before = crate::instrumentation::lazy_reservation_cross_checks_enabled().then(|| {
         let mut whole = BTreeSet::new();
         crate::instrumentation::uncharged_debug_check(|| {
             whole = crate::kernel::proposition_variables(fact);
         });
-        (reserved.clone(), whole)
+        (pending.clone(), whole)
     });
     let (variables, met) =
         crate::kernel::reasoning::variable_collection::proposition_variables_reserving(
-            fact, &snapshots,
+            fact, snapshots,
         );
     #[cfg(test)]
     RESERVED_FACT_VARIABLES.with(|count| count.set(count.get() + variables.len()));
-    for variable in variables {
-        if !reserved.contains(&variable) {
-            reserved = reserved.with_value(variable);
-        }
-    }
+    pending.extend(variables);
     for snapshot in met {
-        snapshots = snapshots.with_value(snapshot);
+        *snapshots = snapshots.with_value(snapshot);
     }
     #[cfg(debug_assertions)]
     if let Some((earlier, whole)) = before {
         assert!(
-            whole.iter().all(|variable| reserved.contains(variable))
-                && reserved
+            whole
+                .iter()
+                .all(|variable| reserved.contains(variable) || pending.contains(variable))
+                && pending
                     .iter()
                     .all(|variable| earlier.contains(variable) || whole.contains(variable)),
             "a fact's reserved variables differ from its whole collection"
         );
     }
-    (reserved, snapshots)
+}
+
+/// `reserved` with every variable of `pending` added.
+fn commit_reserved_variables(
+    mut reserved: PersistentSet<Variable>,
+    pending: BTreeSet<Variable>,
+) -> PersistentSet<Variable> {
+    for variable in pending {
+        if !reserved.contains(&variable) {
+            reserved = reserved.with_value(variable);
+        }
+    }
+    reserved
 }
 
 /// Persistent semantic fact state shared by every checked proof kind.
@@ -686,7 +699,7 @@ impl ProofFacts {
     /// Uncached sources build their context once through PropositionSource.
     pub(crate) fn from_source(facts: &(impl PropositionSource + ?Sized)) -> Self {
         let mut ordered = PersistentSequence::default();
-        let mut reserved_variables = PersistentSet::default();
+        let reserved_variables = PersistentSet::default();
         let mut reserved_snapshots = PersistentSet::default();
         let mut top_level_exact = PersistentSet::default();
         let mut exact = PersistentSet::default();
@@ -705,9 +718,16 @@ impl ProofFacts {
         let assumptions = facts.pure_context();
         let mut implicit_transport_assumptions = PureFactContext::new();
         let mut by_predicate = PersistentMap::default();
+        // Many facts read one entry memory: its variables are reserved once,
+        // and the facts' variables are committed together after the loop.
+        let mut pending_variables = BTreeSet::new();
         for fact in facts.propositions() {
-            (reserved_variables, reserved_snapshots) =
-                reserve_fact_variables(fact, reserved_variables, reserved_snapshots);
+            reserve_fact_variables(
+                fact,
+                &reserved_variables,
+                &mut pending_variables,
+                &mut reserved_snapshots,
+            );
             if top_level_exact.contains(fact) {
                 continue;
             }
@@ -768,6 +788,7 @@ impl ProofFacts {
             implicit_transport_assumptions =
                 index_implicit_transport_context(implicit_transport_assumptions, fact.as_ref());
         }
+        let reserved_variables = commit_reserved_variables(reserved_variables, pending_variables);
         Self {
             ordered,
             reserved_variables,
@@ -912,11 +933,16 @@ impl ProofFacts {
             self.implicit_transport_assumptions.clone(),
             fact.as_ref(),
         );
-        let (reserved_variables, reserved_snapshots) = reserve_fact_variables(
+        let mut pending_variables = BTreeSet::new();
+        let mut reserved_snapshots = self.reserved_snapshots.clone();
+        reserve_fact_variables(
             fact.as_ref(),
-            self.reserved_variables.clone(),
-            self.reserved_snapshots.clone(),
+            &self.reserved_variables,
+            &mut pending_variables,
+            &mut reserved_snapshots,
         );
+        let reserved_variables =
+            commit_reserved_variables(self.reserved_variables.clone(), pending_variables);
         Self {
             ordered,
             reserved_variables,
