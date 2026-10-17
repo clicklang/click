@@ -11035,9 +11035,10 @@ int128 nested(int128 value) { ensures to_integer(result) == to_integer(result); 
     let sidecar = project.directory.join("nested.click");
     fs::write(&sidecar, &false_result).unwrap();
     let parsed = read_click_project(&sidecar, &false_result).unwrap();
-    let error = verify_program_prepared_project(&parsed, &import)
-        .err()
-        .expect("composing identity calls must not prove an off-by-one result");
+    let error = match verify_program_prepared_project(&parsed, &import) {
+        Err(error) => error,
+        Ok(_) => panic!("composing identity calls must not prove an off-by-one result"),
+    };
     assert!(
         error.message().contains("unclosed goal"),
         "{}",
