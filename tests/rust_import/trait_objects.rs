@@ -13,10 +13,10 @@ fn trait_objects_project() -> Project {
 // mutable; each implementation defines them from its own fields and is
 // verified on its memory against the interface read through those
 // definitions; and a caller that passes a struct as the object knows the
-// struct's definitions, and after a mutable call only what the interface
-// says of the new state.
+// struct's definitions, keeps its other fields across a shared call, and
+// after a mutable call knows only what the interface says of the new state.
 #[test]
-#[ignore = "nightly: 8s in the parallel gate"]
+#[ignore = "nightly: 13s in the parallel gate"]
 fn charon_trait_object_functions_are_defined_per_implementation() {
     let p = trait_objects_project();
     let prepared = p.prepared().unwrap();
@@ -62,6 +62,13 @@ fn charon_trait_object_functions_are_defined_per_implementation() {
             "        ensures result == size(self) + scale + scale;",
             "        ensures result == size(self) + scale;",
             "trait_objects::Shape::area_twice.ensures_0",
+        ),
+        // A shared call lends the struct: the caller keeps the fields the
+        // trait's functions do not read, and only their values.
+        (
+            "fn trait_objects::tag_after_dyn(scale: i32) -> i32 {\n    requires 0 <= scale and scale <= 100;\n    ensures result == 7;",
+            "fn trait_objects::tag_after_dyn(scale: i32) -> i32 {\n    requires 0 <= scale and scale <= 100;\n    ensures result == 8;",
+            "trait_objects::tag_after_dyn.ensures_0",
         ),
         // Every implementation defines each of the trait's functions.
         (

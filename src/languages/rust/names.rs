@@ -80,13 +80,28 @@ pub(crate) fn is_rust_name(name: &str) -> bool {
     name.starts_with(PREFIX)
 }
 
+/// The method names of the pack and unpack placed where a shared crate
+/// struct reference becomes a crate trait's object: the memory stays with
+/// the caller, lent until the unpack.
+pub(crate) const SHARED_PACK: &str = "__pack_shared";
+pub(crate) const SHARED_UNPACK: &str = "__unpack_shared";
+
+/// The resource a shared pack produces beside the object, holding the
+/// struct's memory lent: `<S as Trait>::__lent`.
+pub(crate) fn object_lend_name(type_name: &str, trait_name: &str) -> String {
+    trait_method_name(type_name, trait_name, "__lent")
+}
+
 /// Whether `name` is a function the importer places where a crate struct
 /// reference becomes a crate trait's object, or back:
-/// `<S as Trait>::__pack` or `<S as Trait>::__unpack`.
+/// `<S as Trait>::__pack` or `<S as Trait>::__unpack`, or their shared pair.
 pub(crate) fn is_object_coercion(name: &str) -> bool {
     name.starts_with(PREFIX)
         && name.contains("_R")
-        && (name.ends_with("_I6___pack") || name.ends_with("_I8___unpack"))
+        && (name.ends_with("_I6___pack")
+            || name.ends_with("_I8___unpack")
+            || name.ends_with("_I13___pack_shared")
+            || name.ends_with("_I15___unpack_shared"))
 }
 
 /// The importer name of the item at a path, `quad::walk` or

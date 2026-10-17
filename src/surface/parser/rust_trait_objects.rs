@@ -810,10 +810,17 @@ fn rewrite_implementation(
                     .collect::<BTreeMap<_, _>>()
             })
             .unwrap_or_default();
-        let memory = receiver.map(|_| {
+        // A shared receiver only views its memory, so a caller keeps every
+        // field across the call, not only the functions' definitions.
+        let memory = receiver.map(|mutable| {
             at(
                 &position,
-                vec![ident("owns"), Token::Star, ident("self"), Token::Semicolon],
+                vec![
+                    ident(if mutable { "owns" } else { "views" }),
+                    Token::Star,
+                    ident("self"),
+                    Token::Semicolon,
+                ],
             )
         });
         let own_clauses = split_clauses(&source[body_open + 1..body_close])
@@ -991,7 +998,8 @@ fn method_at(
 /// `<Type as Trait>::__pack` consumes the struct's memory and produces the
 /// object, whose fields are the type's definitions of the trait's functions
 /// on that memory; `__unpack` returns the memory, whose definitions are the
-/// object's fields.
+/// object's fields. A shared reference's pair leaves the memory with the
+/// caller, lent until the unpack.
 fn coercion_contracts(
     object: &ObjectTrait,
     trait_name: &str,
@@ -1088,6 +1096,78 @@ fn coercion_contracts(
         tokens.extend(field_read("object", function, position));
         tokens.extend(at(position, vec![Token::RParen, Token::Semicolon]));
     }
+    tokens.push((Token::RBrace, position.clone()));
+    // Where the reference is shared, the memory stays the caller's, lent to
+    // a resource the pack produces beside the object: while the callee holds
+    // the object nothing changes the memory or hands it over again, so the
+    // caller keeps every field. The unpack gives both up.
+    let lend = crate::languages::rust::names::object_lend_name(type_name, trait_name);
+    let lent = |verb: &str| {
+        at(
+            position,
+            vec![
+                ident(verb),
+                ident(&lend),
+                Token::LParen,
+                ident("object"),
+                Token::RParen,
+                Token::Semicolon,
+            ],
+        )
+    };
+    tokens.extend(at(
+        position,
+        vec![
+            ident("resource"),
+            ident(&lend),
+            Token::LParen,
+            ident("object"),
+            Token::Colon,
+            Token::Star,
+            ident("const"),
+        ],
+    ));
+    for (index, segment) in type_segments.iter().enumerate() {
+        if index > 0 {
+            tokens.push((Token::ColonColon, position.clone()));
+        }
+        tokens.push((ident(segment), position.clone()));
+    }
+    tokens.extend(at(
+        position,
+        vec![
+            Token::RParen,
+            Token::LBrace,
+            ident("views"),
+            Token::Star,
+            ident("object"),
+            Token::Semicolon,
+            Token::RBrace,
+        ],
+    ));
+    tokens.extend(head(&crate::languages::rust::names::trait_method_name(
+        type_name,
+        trait_name,
+        crate::languages::rust::names::SHARED_PACK,
+    )));
+    tokens.extend(memory("views"));
+    tokens.extend(lent("produces"));
+    tokens.extend(instance("produces"));
+    for (function, definition) in definitions {
+        tokens.push((ident("ensures"), position.clone()));
+        tokens.extend(field_read("object", function, position));
+        tokens.extend(at(position, vec![Token::EqualEqual, Token::LParen]));
+        tokens.extend(rename(definition, &receiver));
+        tokens.extend(at(position, vec![Token::RParen, Token::Semicolon]));
+    }
+    tokens.push((Token::RBrace, position.clone()));
+    tokens.extend(head(&crate::languages::rust::names::trait_method_name(
+        type_name,
+        trait_name,
+        crate::languages::rust::names::SHARED_UNPACK,
+    )));
+    tokens.extend(lent("consumes"));
+    tokens.extend(instance("consumes"));
     tokens.push((Token::RBrace, position.clone()));
     tokens
 }

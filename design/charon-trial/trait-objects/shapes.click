@@ -42,6 +42,14 @@ impl trait_objects::Shape for trait_objects::Circle {
     } by { execute(); simp(); }
 }
 
+impl trait_objects::Shape for trait_objects::Tagged {
+    function size(self) -> i32 { self.side }
+    fn area(&self, scale: i32) -> i32 {
+    } by { execute(); simp(); }
+    fn set(&mut self, half: i32) {
+    } by { execute(); simp(); }
+}
+
 // A reference to a bound type parameter, or a `&dyn Shape`, holds the
 // object, read through the trait's functions.
 fn trait_objects::total<T: trait_objects::Shape>(shape: &T, scale: i32) -> i32 {
@@ -96,4 +104,16 @@ fn trait_objects::reset_dyn_square(half: i32) -> i32 {
 fn trait_objects::default_square(scale: i32) -> i32 {
     requires 0 <= scale and scale <= 50;
     ensures result == 3 + scale + scale;
+} by { execute(); simp(); }
+
+// A shared object lends the struct's memory for the call, so the caller keeps
+// the fields the trait's functions do not read, `tag` here.
+fn trait_objects::tag_after_dyn(scale: i32) -> i32 {
+    requires 0 <= scale and scale <= 100;
+    ensures result == 7;
+} by { execute(); simp(); }
+
+fn trait_objects::tag_after_bound(scale: i32) -> i32 {
+    requires 0 <= scale and scale <= 100;
+    ensures result == 7;
 } by { execute(); simp(); }

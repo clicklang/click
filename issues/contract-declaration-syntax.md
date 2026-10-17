@@ -221,8 +221,10 @@ that writes `int32` for such a source already writes the source's spelling.
    sealed object resource, each `impl` defines it from its fields and is
    verified on its own memory against an `_iface` contract, and the
    importer packs the struct into the object at generic instantiation and
-   `dyn` coercion; a mutable reference may change the state, which its
-   `ensures` read as new and `old(...)` as at entry. Remaining:
+   `dyn` coercion; a shared reference keeps the struct's memory lent for
+   the call, so its caller keeps every field; a mutable reference may
+   change the state, which its `ensures` read as new and `old(...)` as at
+   entry. Remaining:
    implementations of function-free traits that rename the interface's parameters, generic
    traits, and C++ virtual methods. Done for default methods: the `trait`
    block writes a default method's interface with the proof of its default
