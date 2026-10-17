@@ -11,8 +11,7 @@ use conversion_conditions::{
 
 pub(super) use fact_transport::{
     certified_fact_transport_reaches, check_fixed_state_fact_transport_using_facts,
-    fact_transport_candidates_at_outcome, fact_transport_planning_failure,
-    path_condition_equivalent, plan_explicit_fact_transport,
+    fact_transport_planning_failure, path_condition_equivalent, plan_explicit_fact_transport,
 };
 pub(super) use have_proofs::{
     FixedStateLowering, capture_fixed_state_algebraic_expression,
