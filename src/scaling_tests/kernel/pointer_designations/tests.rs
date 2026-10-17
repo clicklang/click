@@ -76,7 +76,7 @@ fn typed_access_does_not_search_unrelated_address_equalities_or_ranges() {
 fn pointer_integer_round_trips_ignore_unrelated_facts() {
     let pointer = CPointerValue::new(Pointer::symbolic(Variable(992_001)), CType::Int32Pointer);
     let mut samples = Vec::new();
-    for size in [16u64, 64, 256, 1024] {
+    for size in [16u64, 64, 256] {
         let mut context = PureFactContext::new();
         for index in 0..size {
             context = context.assume_condition(

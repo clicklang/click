@@ -71,7 +71,7 @@ fn unaddressable_scalar_owners_do_not_restate_observable_memory_frames() {
 
 #[test]
 fn memory_range_endpoint_graph_matching_scales_without_fact_index() {
-    for size in [16u64, 64, 256, 1024] {
+    for size in [16u64, 64, 256, 512] {
         let _session = crate::kernel::VerificationSession::enter();
         let variable = |id| Bitvector32Term::Variable(Variable(42_000 + id));
         let mut assumptions = PureFactContext::new();

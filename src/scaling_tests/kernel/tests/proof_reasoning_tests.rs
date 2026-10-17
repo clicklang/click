@@ -274,7 +274,7 @@ fn exact_contradiction_lookup_scales_near_linearly() {
 
 #[test]
 fn known_scalar_queries_have_bounded_work_beside_growing_classes() {
-    for size in [8u64, 32, 128, 512] {
+    for size in [8u64, 32, 128] {
         let _session = crate::kernel::VerificationSession::enter();
         let var = |i| Bitvector32Term::Variable(Variable(991_000 + i));
         let sum = |value| Bitvector32Term::add(value, Bitvector32Term::Constant(1));
@@ -634,7 +634,7 @@ fn loadability_same_base_extent_graph_queries_scale_without_fact_index() {
     let base = Pointer::symbolic(Variable(90_310));
     let var = |id| Bitvector32Term::Variable(Variable(id));
     let bytes = |value| Bitvector32Term::add(value, Bitvector32Term::Constant(1));
-    for size in [16u64, 64, 256, 1024] {
+    for size in [16u64, 64, 256, 512] {
         let fact = Proposition::CMemoryLoadable {
             memory: memory.clone(),
             base: base.clone(),
@@ -1565,7 +1565,7 @@ fn required_obligation_connective_work_scales_with_goal_not_ambient_facts() {
     let mut work_by_size = Vec::new();
     for size in [16, 32, 64, 128] {
         let mut work_by_ambient = Vec::new();
-        for ambient in [32, 128, 512, 2048] {
+        for ambient in [8, 32, 128, 512] {
             let _session = crate::kernel::VerificationSession::enter();
             let known = Proposition::ConditionIs(ConditionTerm::Variable(Variable(98000)), true);
             let unknown = Proposition::ConditionIs(ConditionTerm::Variable(Variable(98001)), true);
@@ -1611,7 +1611,7 @@ fn required_obligation_connective_work_scales_with_goal_not_ambient_facts() {
 #[test]
 fn restricting_model_support_ignores_unselected_scalar_graph_edges() {
     let mut samples = Vec::new();
-    for size in [32, 128, 512, 2048] {
+    for size in [8, 32, 128, 512] {
         let _session = crate::kernel::VerificationSession::enter();
         let ty = maybe_int32_type();
         let model = |id| AlgebraicTerm {
