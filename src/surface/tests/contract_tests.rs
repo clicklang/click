@@ -17,6 +17,7 @@ fn inline_array_element_addresses_are_logical_without_granting_access() {
             views p->bytes[0..4];
             requires i < 4u32;
             ensures result == &p->bytes[i];
+            ensures result == &p->bytes[0] + i;
         } by { execute(); simp(); }
     "#;
     verify_c0_sources(proof, &inputs).unwrap();

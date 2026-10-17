@@ -7618,14 +7618,14 @@ impl AnnotationLowerer<'_> {
         {
             // An inline array decays to its logical address without reading
             // its elements. Preserve that rule when taking an element's address.
-            return Ok(SpecExpression::PointerCoercion(
-                Box::new(SpecExpression::PointerOffset {
-                    pointer: Box::new(self.lower_c_fragment_to_spec(base, environment)?),
-                    elements: Box::new(self.lower_c_fragment_to_spec(index, environment)?),
-                    byte_width: element_type.byte_width(),
-                }),
-                pointer_type,
-            ));
+            return Ok(SpecExpression::PointerOffset {
+                pointer: Box::new(SpecExpression::PointerCoercion(
+                    Box::new(self.lower_c_fragment_to_spec(base, environment)?),
+                    pointer_type,
+                )),
+                elements: Box::new(self.lower_c_fragment_to_spec(index, environment)?),
+                byte_width: element_type.byte_width(),
+            });
         }
         match expression {
             CExpression::Value(value) => Ok(SpecExpression::Value(value.clone())),
