@@ -419,19 +419,22 @@ theorem literal_forms(word: u16, index: usize, signed_word: i32) {
 A Rust sidecar's pure functions, predicates and theorems, their quantifier
 and `let` binders, and algebraic datatype fields take Rust types too: the
 scalars (`u8`, `i32`, `u32`, `u64`, `usize`, `bool`, ...) and a raw pointer
-to one, `*const T` or `*mut T`. Such a function takes values, not borrows:
-a fn's slice parameter `bytes` passes the pointer to its first element, so a
-function over its bytes takes `bytes: *const u8` and a `usize` length. A
-reference, `&T` or `&[T]`, is refused there. `x as T` casts in a body as in
-a contract. The C spellings (`uint8`, `const uint8*`, `(int32)x`) still read
-the same types. The
-[byte-sum example](https://github.com/clicklang/click/blob/master/examples/rust-byte-sum/sum.click)
-sums a prefix with
-`function prefix(bytes: *const u8, end: usize) -> Integer`, whose body adds
-`to_integer(bytes[k] as i32)`.
+to one, `*const T` or `*mut T`. Such a function takes values, not borrows,
+and a reference `&T` is refused there. `x as T` casts in a body as in a
+contract. The C spellings (`uint8`, `const uint8*`, `(int32)x`) still read
+the same types.
 
-A slice parameter of a pure function, with its own `.len()`, is not
-supported yet.
+A pure function may take a slice of scalars, `bytes: &[u8]`. As in a `fn`
+signature, the slice is its pointer and a `bytes_len` length: the body reads
+`bytes[k]`, `bytes.len()` and `*bytes`. A call passes it a slice parameter in
+scope, such as a `fn`'s `bytes` or another pure function's, and the call
+stands for the pointer and the length. A caller with no slice in scope, such
+as a theorem over `p: *const u8` and `n: usize`, writes both, `size(p, n)`;
+printed proofs write calls that way too, as `size(bytes, bytes.len())`. The
+[byte-sum example](https://github.com/clicklang/click/blob/master/examples/rust-byte-sum/sum.click)
+sums a prefix with `function prefix(bytes: &[u8], end: usize) -> Integer`,
+whose body adds `to_integer(bytes[k] as i32)`, and calls it as
+`prefix(bytes, i)`.
 
 A method's contract is written in an `impl` block, `impl Type { ... }` or
 `impl Trait for Type { ... }`, and its receiver is `self`, `&self` or

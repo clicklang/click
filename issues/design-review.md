@@ -200,17 +200,17 @@ Decision: in progress.
 Today: Rust sidecars write Rust types, `*const u8`, `as` and `bool` in pure
 functions, predicates and theorems, a parenthesized comparison is a `bool`
 value, a C or C++ `bool` parameter is a claim, and Rust literal spellings
-(`4usize`, `4i32`, `1_000`) are accepted. What remains: a pure
-function cannot take a slice (`bytes: &[u8]` with its own `.len()`), so it
-takes `*const u8` and a `usize` length; the shared lemma
+(`4usize`, `4i32`, `1_000`) are accepted, and a pure function takes a slice
+(`bytes: &[u8]` with its own `.len()`). What remains: the shared lemma
 library is named by C types (`uint64_less_than_to_integer`); and the
 archived Charon-trial sidecars under `design/charon-trial` keep the C
 spellings they were written in.
 
-Proposed fix: slice parameters for pure functions, passed as the slice, and
-Rust-spelled aliases or names for the lemmas a Rust proof applies.
+Proposed fix: Rust-spelled aliases or names for the lemmas a Rust proof
+applies, after P2's Integer-default specification arithmetic settles which
+lemmas remain.
 
-Decision: fix (maintainer, 2026-10-13), after L2: Rust types, `as` and `bool` throughout Rust sidecars. Types, `as`, `bool` and literal suffixes done; the items above remain.
+Decision: fix (maintainer, 2026-10-13), after L2: Rust types, `as` and `bool` throughout Rust sidecars. Types, `as`, `bool`, literal suffixes and pure-function slices done; the items above remain.
 
 ## M. Memory model, semantics and trust
 
