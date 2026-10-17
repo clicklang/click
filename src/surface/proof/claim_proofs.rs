@@ -2767,11 +2767,21 @@ pub(super) fn finish_ordered_proof<'a>(
                                     surface_have,
                                 );
                             }
-                            PostExecutionTactic::Transport {
+                            PostExecutionTactic::Transport { source, target }
+                            | PostExecutionTactic::Leaf(ProofTactic::TransportUsing {
                                 source,
                                 target,
-                                premises,
-                            } => {
+                                ..
+                            }) => {
+                                // A written `transport using` is the same
+                                // checked leaf it is at an execution
+                                // frontier; a bare `transport` searches.
+                                let written = match post_tactic {
+                                    PostExecutionTactic::Leaf(tactic) => {
+                                        SourceContext::PostExecution.leaf_step(tactic)
+                                    }
+                                    _ => None,
+                                };
                                 let CFunctionOutcome::Return {
                                     value: result,
                                     state: post_state,
@@ -2788,7 +2798,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                 );
                                 let transport_available = required_outcome(&outcome_proof)?.facts();
                                 let path_unfolds = direct_view.unfolded_predicates.to_vec();
-                                let candidates = if premises.is_none() {
+                                let candidates = if written.is_none() {
                                     Some(fact_transport_candidates_at_outcome(
                                         &transport_available.to_vec(),
                                         ParameterBinding::new(
@@ -2817,12 +2827,8 @@ pub(super) fn finish_ordered_proof<'a>(
                                     // goal atomically.
                                     let prepared = evolving.with_outcome_store_consequences()?;
                                     let before = prepared.checkpoint();
-                                    let transported = if let Some(premises) = premises {
-                                        prepared.apply_step(ProofStep::TransportUsing {
-                                            source: source.clone(),
-                                            target: target.clone(),
-                                            premises: premises.clone(),
-                                        })
+                                    let transported = if let Some(step) = written {
+                                        prepared.apply_step(step)
                                     } else {
                                         prepared.search_fixed_state_fact_transport(
                                             source,

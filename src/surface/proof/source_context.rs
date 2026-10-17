@@ -90,6 +90,7 @@ impl SourceContext {
                     | ProofTactic::ArithmeticUsing(_)
                     | ProofTactic::ArithmeticCertificate(_)
                     | ProofTactic::Rewrite(_)
+                    | ProofTactic::TransportUsing { .. }
             ),
         }
     }
