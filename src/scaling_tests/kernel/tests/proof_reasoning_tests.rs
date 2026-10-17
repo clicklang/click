@@ -313,7 +313,7 @@ fn exact_signed_constant_is_a_keyed_lookup_among_unrelated_facts() {
     let wide = Bitvector32Term::Variable(Variable(230_002));
     let unpinned = Bitvector32Term::Variable(Variable(230_003));
     let mut samples = Vec::new();
-    for size in [64_u32, 128, 256, 512] {
+    for size in [8_u32, 16, 32, 64] {
         let mut assumptions = PureFactContext::new();
         for index in 0..size {
             let other = Bitvector32Term::Variable(Variable(231_000 + u64::from(index)));

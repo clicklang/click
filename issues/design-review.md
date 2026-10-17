@@ -119,7 +119,8 @@ Proposed fix: [design/proof-reuse.md](../design/proof-reuse.md):
 - R2: one general contract per function, including one general `rb_erase`
   contract with a theorem that its cases are exhaustive.
 - R3: automatic unfolding of recursive spec functions.
-- R4: automatic opening and closing of resources.
+- R4: automatic opening and closing of resources, by `auto`; `step()` keeps
+  its meaning (maintainer, 2026-10-17).
 - R5: one script for several arms.
 
 Decision: fix (maintainer, 2026-10-14), starting with R2.

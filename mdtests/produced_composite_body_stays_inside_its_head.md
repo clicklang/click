@@ -2,7 +2,7 @@
 
 After `make_zero` produces `zero_box(box)`, the caller holds the head and
 nothing else: the body `box->value` is inside it. A store through the body
-without unfolding has no owner. Before 2026-09-13 the verified-rule path
+without unfolding has no owner, so the written step is refused. Before 2026-09-13 the verified-rule path
 installed the body as owned memory beside the head, so this pipeline
 verified `result == 0` while the program returns 5.
 
@@ -83,8 +83,11 @@ int32 zero_pipeline(struct box* box) {
     ensures result == 0;
     ensures box->value == 0;
 } by {
-    execute();
-    simp();
+    step();
+    step();
+    step();
+    step();
+    step();
 }
 ```
 

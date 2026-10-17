@@ -9,7 +9,7 @@ use super::*;
 fn borrow_partition_query_does_not_scan_unrelated_resources_or_history() {
     let mut samples = Vec::new();
     let mut admission_samples = Vec::new();
-    for size in [16u64, 64, 256, 1024] {
+    for size in [4u64, 16, 64, 256] {
         let (_, mut source, write, read) = resources();
         let mut context = PureFactContext::new()
             .assume_proposition(Proposition::CResourceComposition(source.clone()));

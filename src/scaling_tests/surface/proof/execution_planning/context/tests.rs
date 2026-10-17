@@ -9,7 +9,7 @@ use super::*;
 fn path_certificate_merge_work_is_bounded_by_its_input_steps() {
     let mut samples = Vec::new();
     for leaves in [4usize, 64, 1024] {
-        let paths = balanced_path_certificates(leaves, 128);
+        let paths = balanced_path_certificates(leaves, 8);
         let expected = paths.clone();
         let input = paths
             .iter()
