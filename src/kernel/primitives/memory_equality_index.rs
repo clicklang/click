@@ -813,10 +813,13 @@ impl ObjectEvidenceSources {
             .facts
             .get(&entry)?
             .memory_range()?;
+        // A loaded pointer can have a variable offset within its storage
+        // block. Preserve the supplier's complete base, rather than asking
+        // for a constant displacement from that block's zero coordinate.
         candidates
             .index
             .graph
-            .pointer_at_constant_base(pointer, &range.base().object_base())
+            .pointer_at_constant_base(pointer, range.base())
     }
 
     pub(in crate::kernel) fn memory_object_evidence(
