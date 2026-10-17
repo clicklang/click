@@ -1,7 +1,9 @@
 # Proof reuse and case structure
 
-Design for [design-review](../issues/design-review.md) item P5 ("copy-paste
-across case files and sidecars"). It measures where the repetition in
+Design for the launch design review's item P5 ("copy-paste across case
+files and sidecars"), now closed: R2 and R3 are done, R4 is done for
+ordinary resources, and the rest of R4 and R5 are not pursued (maintainer,
+2026-10-17). It measures where the repetition in
 `examples/rbtree-erase` comes from, compares that with what Dafny, Verus,
 Lean and separation-logic tools do, and lists what Click needs. It assumes
 [SMT-backed `auto`](smt-auto-stage1.md) lands; it has. Measurements are from master at
@@ -334,6 +336,21 @@ lines stay per arm.
 
 Measure it after R3 and R4. If they shrink each arm to tens of lines, as in
 Dafny, R5 may not be worth its language surface.
+
+Measured, not pursued (maintainer, 2026-10-17). The two mirrored arms of the
+erase-color repair proof in `rbtree_erase_color_flips_red_all.click` (1,482
+and 1,466 lines) share 808 identical lines, and 1,040 (71%) after swapping
+every `left`/`right` and `Left`/`Right`. The roughly 440 lines per arm that
+still differ are constructor fields in mirrored order
+(`RbTree::Node(sid, sp, sc, srm, slm)` against `(..., slm, srm)`, in about 210
+`have`s and 35 `apply`s), fold child slots (`{ right: tl, left: tr }`, about
+70 lines), and C fields (`parent->rb_right` against `parent->rb_left`). A
+shared block needs text identical up to the pattern's bindings, so R5 alone
+removes nothing; it needs a direction-generic model layer and a
+direction-generic spelling of C field access first. The model layer is a
+rewrite of the rbtree specification, and choosing a C field by direction
+approaches the checked mirroring rejected below. Either would be its own
+roadmap decision.
 
 Not proposed: checked mirroring of C code. The Linux arms are not textual
 mirrors, and checking that two C regions are mirror images is a large new

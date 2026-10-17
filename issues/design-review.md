@@ -10,7 +10,10 @@ without a known false acceptance. Each item that becomes a reproduced false acce
 Items P1–P4, W4 and W5 waited on the SMT-backed `auto`
 ([design/smt-auto-stage1.md](../design/smt-auto-stage1.md)), which landed;
 P3 and P4 are done, W4, W5 and W6 are closed in
-[design/proof-language-rulings.md](../design/proof-language-rulings.md), P2
+[design/proof-language-rulings.md](../design/proof-language-rulings.md), P5
+(copy-paste across case files) is closed in
+[design/proof-reuse.md](../design/proof-reuse.md) with R2, R3 and part of R4
+done and the rest of R4 and R5 not pursued, P2
 (Integer-default specification arithmetic) moved to
 [standard-library.md](standard-library.md), and P1 is below. Also depends on [simplify-step.md](simplify-step.md), which now holds the
 critique that "simple" `step()` is not simple (formerly W3).
@@ -105,38 +108,6 @@ Progress: the report is in. `scripts/check.sh` ends by listing the examples
 over the target, with token ratios beside line ratios. What remains is
 bringing those examples under the target, or publishing the reason each one
 exceeds it.
-
-### P5. Copy-paste across case files and sidecars
-
-Today: `rb_erase` and `__rb_erase_augmented` each have one general contract
-(R2, below). The general erase-color repair proof's left and right arms
-(about 1,380 lines each) are mirror images, and so are the general unlink's
-left and right exits. C++ caller sidecars repeat callee contracts
-(`examples/basic-cpp/with_restore_caller.click`).
-
-Proposed fix: [design/proof-reuse.md](../design/proof-reuse.md):
-
-- R2: one general contract per function, including one general `rb_erase`
-  contract with a theorem that its cases are exhaustive.
-- R3: automatic unfolding of recursive spec functions.
-- R4: automatic opening of resources, by `auto`; `step()` keeps its meaning
-  (maintainer, 2026-10-17).
-- R5: one script for several arms.
-
-Decision: fix (maintainer, 2026-10-14), starting with R2.
-
-R2 is done (2026-10-14): general `__rb_erase_augmented` and `rb_erase`
-contracts replace 16 per-case sidecars of `examples/rbtree-erase`; see
-[design/proof-reuse.md](../design/proof-reuse.md#r2-one-general-contract-per-function).
-R3 is in: `simp` evaluates recursive specification functions over known
-constructors to a fixed fuel (see the status under R3 in
-[design/proof-reuse.md](../design/proof-reuse.md#r3-automatic-unfolding-of-recursive-specification-functions)).
-Rewriting the erase-color arms with it waits on the object-class regression
-that keeps `rbtree-erase` from verifying. R4 is done (2026-10-17): `auto` opens
-the one ordinary resource whose body holds a refused place; opening recursive
-instances and refolding by `auto` are not pursued (maintainer, 2026-10-17; see
-[design/proof-reuse.md](../design/proof-reuse.md#r4-automatic-opening-and-closing-of-resources)).
-R5 remains.
 
 ## L. Surface language
 
