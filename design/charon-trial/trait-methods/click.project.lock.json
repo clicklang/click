@@ -4,7 +4,7 @@
     "trait_methods": {
       "language": "rust",
       "lock": {
-        "artifact": "b82bbd5b3c42cd6d315d7077fcf4cc61b1e9b623fe3582f23df72a53e3d389df",
+        "artifact": "cddda8bc3b88598e074453a54b09916618814f6c34f91aeeda2b119172452407",
         "config": "63a9435964a6ce6a019c53b8ade6f536199f26cc9f999f62cf25fba20943f451",
         "frontend": {
           "click_version": "0.1.0",
@@ -13,11 +13,11 @@
           "extractor_version": "0.1.279",
           "profile": "38b817cc5760845d2e37b8f72a333f6d36a3ccdbfbf19e8c22da436e67a79ab1"
         },
-        "identity": "63d13a81d2cac34e7fd14e54faf449cf06f20c8043a716d1b1d8767c4bf4a2f3",
+        "identity": "fee8b268e227458c7e9542c86f9a3e13ff9d3b2f60a284b0d39eaca4f48edb1e",
         "schema": 9,
-        "source": "62fc44c0429e59f38c015a9fb67103c8af3c22f624e5b50550e58ef6ed9c6081",
+        "source": "5cefd4657f0924c35399ed5b47238eb5d692117302e261bb69b19c3e8e653e00",
         "source_files": {
-          "shapes.rs": "5471c9d842593098023a4be669782b1a4eba716cc2dbe51e352a8c5b5b6c89cb"
+          "shapes.rs": "baf05a761747b96f348595a8f5399cef8701244882de2437626be87d21fbb1b5"
         }
       }
     }

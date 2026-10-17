@@ -1460,8 +1460,9 @@ method it overrides, as a Rust trait implementation does
 `ensures` join its own, labeled `Square::area.interface_ensures_0`, and its
 proof establishes them; an override that writes no `requires` takes the
 interface's, and written ones must follow from the interface's, each clause
-read exactly or decided as a bare comparison. It names its parameters as the
-interface does. An override whose `requires` do not follow, or that the
+read exactly or decided as a bare comparison. The inherited clauses are read
+with the override's own names for its parameters
+(`mdtests/cpp_virtual_override_renames_its_parameters.md`). An override whose `requires` do not follow, or that the
 sidecar does not state, is refused naming both methods:
 
 <!-- verified-example: mdtests/cpp_virtual_method_interface.md -->
