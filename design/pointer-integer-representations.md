@@ -144,6 +144,13 @@ cast names that value independently of its own assumed relationship; execution
 may then adopt bounds from full-pointer premises and choose numeric coordinates
 from ordinary address equations. These are separate operations.
 
+A resource's numeric word key observes its bits. When its contract also needs
+the complete decoded value, pass that value as a pointer argument, for example
+`owns h: held(w, (struct node*)w);`, and relate that pointer parameter to the
+resource's model. Pointer arguments preserve designation and bounds. A fact
+about a word stored in memory can name that storage directly, as in
+`fact ((struct node*)p->parent_word) == q;`.
+
 Resource-body publication and hypothetical arm checks request numeric word
 observations before loading. `WordRepresentationScope` avoids recovering a
 carrier that those observations discard. Explicit pointer casts restore whole

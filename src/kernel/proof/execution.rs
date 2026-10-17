@@ -9740,7 +9740,7 @@ impl ExecutionProofCore {
 
     /// Derive an ordinary instance fold and retain its checked event together.
     /// The caller supplies the instance and child choices, never a proposed
-    /// successor or fact delta that would require replaying the fold.
+    /// successor or fact delta that would require recomputing the fold.
     pub(crate) fn fold_resource_instance_with_children(
         &mut self,
         function: &CFunction,
