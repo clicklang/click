@@ -332,7 +332,12 @@ explicit steps, splits, and branches, and profiling attributes them to the
 tactic. Automatic path selectors must re-lower to the exact checked condition;
 their native load widths and short-circuit operand facts are preserved.
 
-**Checked examples:** [`tactic_execute.md`](https://github.com/clicklang/click/blob/master/mdtests/tactic_execute.md)
+Inside an explicit `branch` arm, `execute()` can succeed when the arm reaches
+function exit, for example through a `return`. A continuing arm must stop at
+its shared continuation; an unsuccessful `execute()` there names that arm
+limit. Use `step()` to finish a continuing arm and `execute()` after the join.
+
+**Checked examples:** [`execute_branch_arm_stops_at_shared_continuation.md`](https://github.com/clicklang/click/blob/master/mdtests/execute_branch_arm_stops_at_shared_continuation.md), [`tactic_execute.md`](https://github.com/clicklang/click/blob/master/mdtests/tactic_execute.md)
 
 ### Execution to a program point
 

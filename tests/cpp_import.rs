@@ -18450,14 +18450,14 @@ fn virtual_dispatch_refuses_construction_recursion_and_other_class_shapes() {
             ][..],
             "names its base's own non-default constructor in its initializer list",
         ),
-        // A base destructor that runs code, which the derived class's
-        // destruction would have to execute.
+        // A base destructor that runs code, under a class with no
+        // destructor of its own to run it from.
         (
             &[(
                 "= 0; };",
                 "= 0;\n    virtual ~Shape() noexcept { int unused = 0; (void)unused; }\n};",
             )][..],
-            "its base's destructor is trivial, defaulted, or empty",
+            "runs after it only its base's written destructor or nothing",
         ),
         // A call back through the interface from an override.
         (

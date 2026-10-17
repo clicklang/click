@@ -251,8 +251,9 @@ that writes `int32` for such a source already writes the source's spelling.
    keeps the object's memory lent until the call returns, so its caller
    keeps every field too. A base with fields is built by its own
    constructor, named first in the derived constructor's initializer list.
-   Remaining for C++: overriding a defining class's method and base
-   destructors with effects.
+   A base destructor with effects runs after the derived class's written
+   destructor, on the base subobject. Remaining for C++: overriding a
+   defining class's method.
 
 ## Intended regressions
 

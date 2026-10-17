@@ -955,8 +955,9 @@ fn source_identity_parts(
 }
 
 /// The arguments every compilation for `target` at `optimization` carries.
-/// An optimizing build keeps `-fno-strict-aliasing` until the strict-aliasing
-/// check covers heap objects and globals (`design/effective-types.md`).
+/// An optimizing build keeps `-fno-strict-aliasing`: the strict-aliasing check
+/// does not see effective types a callee or `memcpy` writes
+/// (`design/effective-types.md`).
 fn fixed_args(target: CTarget, optimization: COptimization) -> Vec<String> {
     let standard = match target {
         CTarget::X86_64LinuxKernel => "-std=gnu11",
