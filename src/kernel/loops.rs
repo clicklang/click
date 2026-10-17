@@ -5608,6 +5608,7 @@ pub(super) struct EvaluatedMemorySegment {
     /// The opaque extents the clause's pointer makes claims about
     /// ([`CPointerValue::designations`]).
     pub(super) base_designations: [Option<Variable>; 2],
+    pub(super) formation_coverage: std::sync::Arc<[Proposition]>,
 }
 
 impl EvaluatedMemorySegment {
@@ -5626,6 +5627,8 @@ impl EvaluatedMemorySegment {
                 CMemoryRange::new_wide(self.base, self.start, self.end, self.element_width)
             }
         };
+        let mut range = range;
+        range.formation_coverage = self.formation_coverage;
         range
             .with_designation(designation)
             .with_opaque_extent(self.opaque_extent, self.extent_known)
@@ -7496,6 +7499,7 @@ pub(super) fn collect_loop_effect_check_obligations(
                             element_width: range.element_width,
                             kind: range.kind(),
                             base_designations: [None, None],
+                            formation_coverage: range.formation_coverage.clone(),
                         })
                         .collect()
                 } else if matches!(
@@ -7599,106 +7603,25 @@ pub(super) fn evaluate_loop_effect_segment(
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Result<EvaluatedMemorySegment, ValueRefusal>> {
-    let base = match evaluate_loop_effect_segment_value(
-        state,
-        &segment.base,
-        assumptions,
-        "segment base",
-        budget,
-    )? {
-        Ok(CValue::Pointer(pointer)) => pointer,
-        Ok(value) => {
-            return Ok(Err(ValueRefusal::from(format!(
-                "segment base evaluated to a {} value, not a pointer",
-                super::functions::c_type_spelling(value.c_type())
-            ))));
-        }
-        Err(message) => return Ok(Err(message)),
-    };
-    let base_value = base;
-    let base = base_value.pointer().clone();
-    let start_value = evaluate_loop_effect_segment_value(
-        state,
-        &segment.start,
-        assumptions,
-        "segment start",
-        budget,
-    )?;
-    let end_value = evaluate_loop_effect_segment_value(
-        state,
-        &segment.end,
-        assumptions,
-        "segment end",
-        budget,
-    )?;
-    // A range with a 64-bit bound retains that bound's width.
-    // Evaluate each endpoint only once.
-    if let (Ok(start), Ok(end)) = (&start_value, &end_value)
-        && let Some((start, end)) = crate::kernel::wide_range_bounds(start, end)
-    {
-        let evaluated = EvaluatedMemorySegment {
-            designation: std::sync::Arc::new(base_value.designation().clone()),
-            opaque_extent: base_value.opaque_extent().cloned().map(std::sync::Arc::new),
-            extent_known: base_value.extent_is_known(),
-            base,
-            start,
-            end,
-            element_width: segment.element_width,
-            kind: RangeIndexKind::UInt64,
-            base_designations: base_value.designations(),
-        };
-        if let Some(refusal) =
-            segment_extent_refusal(&base_value, &evaluated, assumptions, state.resources())
-        {
-            return Ok(Err(refusal.into()));
-        }
-        return Ok(Ok(evaluated));
-    }
-    let start = match start_value {
-        Ok(CValue::Int32(value)) => value,
-        Ok(value) if crate::kernel::narrow_range_constant(&value).is_some() => {
-            crate::kernel::narrow_range_constant(&value).expect("checked above")
-        }
-        Ok(value) => {
-            return Ok(Err(ValueRefusal::from(format!(
-                "segment start evaluated to a {} value, not an int32",
-                super::functions::c_type_spelling(value.c_type())
-            ))));
-        }
-        Err(message) => return Ok(Err(message)),
-    };
-    let end = match end_value {
-        Ok(CValue::Int32(value)) => value,
-        Ok(value) if crate::kernel::narrow_range_constant(&value).is_some() => {
-            crate::kernel::narrow_range_constant(&value).expect("checked above")
-        }
-        Ok(value) => {
-            return Ok(Err(ValueRefusal::from(format!(
-                "segment end evaluated to a {} value, not an int32",
-                super::functions::c_type_spelling(value.c_type())
-            ))));
-        }
-        Err(message) => return Ok(Err(message)),
-    };
-    let element_width = segment.element_width;
-
-    let evaluated = EvaluatedMemorySegment {
-        designation: std::sync::Arc::new(base_value.designation().clone()),
-        opaque_extent: base_value.opaque_extent().cloned().map(std::sync::Arc::new),
-        extent_known: base_value.extent_is_known(),
-        base,
-        start,
-        end,
-        element_width,
-        kind: RangeIndexKind::Int32,
-        base_designations: base_value.designations(),
-    };
-    if let Some(refusal) =
-        segment_extent_refusal(&base_value, &evaluated, assumptions, state.resources())
-    {
-        return Ok(Err(refusal.into()));
-    }
-    Ok(Ok(evaluated))
+    Ok(
+        evaluate_loop_effect_segment_with_facts(state, segment, assumptions, budget)?.map(
+            |(mut segment, facts)| {
+                segment.formation_coverage = facts
+                    .iter()
+                    .filter_map(|fact| match fact.proposition() {
+                        Proposition::Predicate { name, .. }
+                            if name
+                                .starts_with(crate::kernel::SUBOBJECT_COVERS_PREDICATE_PREFIX) =>
+                        {
+                            Some(fact.proposition().clone())
+                        }
+                        _ => None,
+                    })
+                    .collect();
+                segment
+            },
+        ),
+    )
 }
 
 pub(super) fn evaluate_loop_effect_segment_with_facts(
@@ -7757,6 +7680,7 @@ pub(super) fn evaluate_loop_effect_segment_with_facts(
             element_width: segment.element_width,
             kind: RangeIndexKind::UInt64,
             base_designations: base_value.designations(),
+            formation_coverage: Default::default(),
         };
         let context = assumptions_with_path_context(assumptions, &facts, &[]);
         if let Some(refusal) =
@@ -7803,6 +7727,7 @@ pub(super) fn evaluate_loop_effect_segment_with_facts(
         element_width,
         kind: RangeIndexKind::Int32,
         base_designations: base_value.designations(),
+        formation_coverage: Default::default(),
     };
     let context = assumptions_with_path_context(assumptions, &facts, &[]);
     if let Some(refusal) =

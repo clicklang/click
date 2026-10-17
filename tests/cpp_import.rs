@@ -16224,6 +16224,36 @@ const int32& run(int32* data) { views data[0..2]; ensures &result == data + 1; e
 }
 
 #[test]
+#[ignore = "nightly: 0.6s for unknown-pointer fresh, expanded and retained checks"]
+fn cpp_unknown_pointer_formation_requires_bounds_before_any_dereference() {
+    let project = Project::with_fixture(
+        "formation.cpp",
+        "run",
+        "int* run(int* data) noexcept { return data + 1; }",
+    );
+    refresh_import(&project.config()).unwrap();
+    fs::remove_file(&project.exporter).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let sidecar = r#"verifying "formation.cpp";
+int32* run(int32* data) { ensures true; } by { execute(); simp(); }
+"#;
+    let path = project.directory.join("bad.click");
+    fs::write(&path, sidecar).unwrap();
+    let error =
+        verify_program_prepared_project(&read_click_project(&path, sidecar).unwrap(), &import)
+            .unwrap_err();
+    assert!(error.to_string().contains("pointer arithmetic"), "{error}");
+    check_arithmetic_sidecar(
+        &project,
+        &import,
+        &sidecar.replace(
+            "ensures true;",
+            "views data[0..1]; ensures result == data + 1;",
+        ),
+    );
+}
+
+#[test]
 fn cpp_reference_formation_rejects_one_past_even_under_trivial_postconditions() {
     let project = Project::with_fixture(
         "return.cpp",

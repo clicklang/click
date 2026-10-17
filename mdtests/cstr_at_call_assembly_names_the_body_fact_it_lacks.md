@@ -5,7 +5,8 @@ without its three `have`s. The entry facts state each byte of `bytes`
 separately, but `cstr_at(bytes, 2u64)`'s body states the nonzero bytes as one
 quantified fact. Assembling the view `strlen` requires from the owned bytes
 is a fold, so the refusal names the assembled instance and the first body
-fact the caller has not established, beside the facts it has.
+fact the caller has not established, beside the facts it has. The written
+clause keeps the definition's names, with their call argument bindings.
 
 ```c filename=cstr_at_call_assembly_names_the_body_fact_it_lacks.c
 uint64 fixed_string_length(uint8 bytes[]) {
@@ -33,5 +34,5 @@ uint64 fixed_string_length(uint8 bytes[]) {
 ```
 
 ```expect
-fail: assembling `views cstr_at(bytes, 2u64)` from owned pieces requires an exact body fact: missing pure fact: forall (k: uint64) { true and k < 2u64 implies
+fail: assembling `views cstr_at(bytes, 2u64)` from owned pieces requires an exact body fact: missing pure fact: `forall (k: uint64) { 0u64 <= k and k < len implies p[k] != 0u8 }` (with p = bytes, len = 2u64)
 ```

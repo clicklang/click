@@ -22,5 +22,5 @@ void inspect(struct pool* pool) {
 ```
 
 ```expect
-fail: declared resource quantity could not be evaluated: required access authority is unavailable
+fail: access outside the subobject the pointer designates
 ```

@@ -156,7 +156,7 @@ fn trace_source_index_indexes_many_case_arms() {
 }
 
 #[test]
-fn qualified_c_declaration_inventory_scales_with_source() {
+fn locating_every_declaration_scales_with_source() {
     let mut measurements = Vec::new();
     for size in [8, 32, 128, 512] {
         let mut source = String::new();
@@ -164,17 +164,27 @@ fn qualified_c_declaration_inventory_scales_with_source() {
             source.push_str(&format!("verifying \"unit{index}.c\" as unit{index};\nint32 unit{index}::helper() {{ ensures result == 1; }} by {{ execute(); simp(); }}\n"));
         }
         let tokens = proof_source_tokens(&source).unwrap();
-        let (declarations, work) = crate::instrumentation::measure_deterministic_work(|| {
-            declaration_source_index(&tokens).unwrap()
+        let file = parser::parse_file_items(&source).unwrap();
+        let (located, work) = crate::instrumentation::measure_deterministic_work(|| {
+            let declarations = DeclarationSources::new(&source, &tokens);
+            file.function_blocks()
+                .iter()
+                .map(|block| declarations.function(block).unwrap())
+                .collect::<Vec<_>>()
         });
-        assert_eq!(declarations.len(), size);
-        assert!(declarations.contains_key(&format!("unit{}::helper", size - 1)));
+        assert_eq!(located.len(), size);
+        assert!(
+            located
+                .windows(2)
+                .all(|pair| pair[0].body_close < pair[1].body_open)
+        );
+        assert!(located.iter().all(|body| body.clauses.len() == 1));
         measurements.push(work);
     }
     for pair in measurements.windows(2) {
         assert!(
             pair[1] <= 5 * pair[0],
-            "qualified declaration index must walk source once: {measurements:?}"
+            "locating declarations must walk source once: {measurements:?}"
         );
     }
 }

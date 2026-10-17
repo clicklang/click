@@ -5688,6 +5688,16 @@ impl PureFactContext {
         Self::default()
     }
 
+    /// Whether this context's facts (`pure_facts`) are `other`'s by storage
+    /// identity: the two hold one and the same condition and proposition
+    /// sets, so every fact of either is exactly a fact of the other. A
+    /// `false` says nothing.
+    pub(crate) fn holds_the_facts_of(&self, other: &Self) -> bool {
+        self.condition_facts
+            .shares_root_with(&other.condition_facts)
+            && self.prop_facts.ptr_eq(&other.prop_facts)
+    }
+
     #[cfg(test)]
     pub(crate) fn shares_fact_storage_with(&self, other: &Self) -> bool {
         self.condition_facts

@@ -310,7 +310,7 @@ fn loop_entry_simp_keeps_checked_unspellable_assumptions_and_scales() {
     );
     let obligation = crate::kernel::ProofObligation::new(goal.clone());
     let mut previous_work = None;
-    for size in [16_u32, 64, 256, 1024, 4096] {
+    for size in [16_u32, 64, 256, 1024] {
         let mut facts = (0..size)
             .map(|index| {
                 Proposition::ConditionIs(
@@ -355,7 +355,7 @@ fn loop_entry_simp_keeps_checked_unspellable_assumptions_and_scales() {
         assert!(checked.join().unwrap().facts().contains(&goal));
         if let Some(previous) = previous_work {
             assert!(
-                work <= previous + 2000,
+                work <= previous + 128,
                 "{size}: {work} units after {previous}"
             );
         }

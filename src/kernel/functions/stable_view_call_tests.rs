@@ -2681,3 +2681,43 @@ fn an_abnormal_sequence_exit_keeps_its_loan_evidence_under_both_judgments() {
         );
     }
 }
+
+#[test]
+fn refused_composite_assembly_retains_the_failed_source_clause() {
+    let always = SpecProposition::Comparison {
+        left: SpecExpression::CExpression(c_int32_literal(0)),
+        operator: CComparisonOperator::Equal,
+        right: SpecExpression::CExpression(c_int32_literal(0)),
+    };
+    let missing = SpecProposition::Comparison {
+        left: SpecExpression::CExpression(c_load(c_variable("p"))),
+        operator: CComparisonOperator::Equal,
+        right: SpecExpression::CExpression(c_int32_literal(0)),
+    };
+    let definition = cell_definition(1, vec![always.clone(), always, missing])
+        .with_fact_source_indices(vec![0, 0, 1])
+        .with_fact_source_spellings(vec!["0 == 0".into(), "*p == 0".into()]);
+    let function = adapter_reader(
+        "source_clause_adapter_reader",
+        definition,
+        wide_definition(2),
+    );
+    let (_, transfer) = plan_adapter_lend(&function);
+    let CRuntimeError::UnestablishedAssemblyFact {
+        fact,
+        source: Some(source),
+        ..
+    } = transfer.unwrap_err()
+    else {
+        panic!("the failed body fact must retain its source");
+    };
+    assert_eq!(
+        *fact,
+        Proposition::ConditionIs(ConditionTerm::Constant(false), true)
+    );
+    assert_eq!(source.spelling, "*p == 0");
+    assert_eq!(
+        source.bindings,
+        vec![("p".into(), CValue::pointer(pointer()))]
+    );
+}

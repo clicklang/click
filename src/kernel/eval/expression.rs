@@ -527,7 +527,7 @@ impl SpecificationAccessScope {
         Self(())
     }
 
-    fn is_active() -> bool {
+    pub(in crate::kernel) fn is_active() -> bool {
         SPECIFICATION_ACCESSES.with(|depth| depth.get() > 0)
     }
 }

@@ -482,6 +482,7 @@ pub(super) fn instantiate_theorem(
         })
         .collect::<BTreeMap<_, _>>();
     Ok(TheoremDefinition {
+        body: definition.parsed_body().clone(),
         executes: definition.executes.clone(),
         name: instance_name(
             definition.name(),

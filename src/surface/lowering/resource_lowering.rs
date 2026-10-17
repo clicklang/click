@@ -2729,7 +2729,10 @@ fn lower_resource_segment_with_values(
     // demand concrete loadability.
     let assumptions = PureFactContext::new()
         .allow_symbolic_contract_loads()
-        .prefer_symbolic_external_loads();
+        .prefer_symbolic_external_loads()
+        // This pass names a clause; the kernel checks its establishment
+        // against the actual pointer and resources at a call or fold.
+        .assume_entry_clause_extents();
     let (surface_base, surface_start, surface_end) = match &segment.surface {
         ContractSegmentSurface::Range { base, start, end }
         | ContractSegmentSurface::StructRange {

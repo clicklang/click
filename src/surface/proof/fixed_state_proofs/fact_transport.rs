@@ -950,43 +950,6 @@ pub(in crate::surface::proof) fn fact_transport_planning_failure(
     )
 }
 
-/// Produces surface forms that an outcome-level smart transport may try
-/// as explicit auxiliary premises. This is heuristic discovery only: the
-/// returned forms carry no authority until `Proof::apply_step` accepts a
-/// `TransportUsing` step containing them.
-#[allow(clippy::too_many_arguments)]
-pub(in crate::surface::proof) fn fact_transport_candidates_at_outcome(
-    available: &[Proposition],
-    parameter_binding: ParameterBinding<'_>,
-    pre_state: &CState,
-    post_state: &CState,
-    result: &CValue,
-    view: ExecutionView<'_>,
-    unfolded_predicates: &[String],
-    spec_definitions: SpecDefinitions<'_>,
-) -> Result<Vec<ClickProposition>, ClickError> {
-    let mut candidates = Vec::new();
-    for kernel in available {
-        check_verification_deadline()?;
-        if let Ok(surface) = checked_surface_fact_at_outcome(
-            view,
-            unfolded_predicates,
-            kernel,
-            SurfaceFactMatch::CanonicalExact,
-            available,
-            parameter_binding,
-            pre_state,
-            post_state,
-            result,
-            spec_definitions,
-        ) && !candidates.contains(&surface)
-        {
-            candidates.push(surface);
-        }
-    }
-    Ok(candidates)
-}
-
 /// Erases every embedded memory snapshot from a comparison proposition so
 /// two forms of the same comparison at different snapshots compare
 /// equal; used as a cheap prefilter before attempting a transport proof.

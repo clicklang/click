@@ -1224,6 +1224,54 @@ fn c_function_contract_entry_facts(
             }
         };
     }
+    // A Rust slice is already a valid bounded reference, even when the
+    // contract observes only its metadata. This supplies no readable bytes.
+    for parameters in [
+        function.parameters(),
+        function.contract_interface().value_parameters(),
+    ] {
+        for (index, parameter) in parameters.iter().enumerate() {
+            let Some(length_index) = parameter.slice_length_parameter else {
+                continue;
+            };
+            let Some(CValue::Pointer(pointer)) = entry_state.locals.get(parameter.name()) else {
+                return Err("slice entry argument is not a pointer value".into());
+            };
+            let length_parameter = &parameters[index + length_index];
+            let Some(CValue::UInt64(length)) = entry_state
+                .locals
+                .get(length_parameter.name())
+                .map(CValue::numeric_value)
+            else {
+                return Err("slice entry length is not a native unsigned value".into());
+            };
+            let width = parameter
+                .c_type()
+                .pointee_type()
+                .expect("slice pointer")
+                .byte_width();
+            assumptions = entry_facts.assume(
+                assumptions,
+                CContractEntryFactOrigin::Extent,
+                Proposition::ConditionIs(
+                    ConditionTerm::uint64_less_equal(
+                        length.clone(),
+                        Bitvector32Term::UInt64Constant(i64::MAX as u64 / u64::from(width)),
+                    ),
+                    true,
+                ),
+            );
+            if let Some(coverage) = pointer.opaque_coverage_fact(&CMemoryRange::new_wide(
+                pointer.pointer().clone(),
+                Bitvector32Term::UInt64Constant(0),
+                length.clone(),
+                width,
+            )) {
+                assumptions =
+                    entry_facts.assume(assumptions, CContractEntryFactOrigin::Extent, coverage);
+            }
+        }
+    }
     // A `_Bool` parameter holds `0` or `1`. Its entry value is a normalized
     // conditional over those constants, so the range disjunction is
     // context-free true; `c_bool_range_fact` checks that shape.
@@ -1434,7 +1482,7 @@ fn c_function_contract_entry_facts(
             continue;
         };
         let mut well_formed = true;
-        for guard in crate::kernel::memory_range_extent_guard_spellings(range) {
+        for guard in crate::kernel::admitted_memory_range_extent_facts(range) {
             let guard_is_false = match &guard {
                 Proposition::ConditionIs(condition, true) => {
                     assumptions.decide(condition) == Some(false)
@@ -1479,13 +1527,17 @@ fn c_function_contract_entry_facts(
         );
     }
     for fact in required_resources.facts() {
+        if let Some(coverage) = fact.allocation_bounds_fact(&assumptions) {
+            assumptions =
+                entry_facts.assume(assumptions, CContractEntryFactOrigin::Extent, coverage);
+        }
         // Owned ranges carry their byte-count guards exactly as viewed ranges
         // do: the clause states the same range, and the loadability rules read
         // both at element granularity.
         let Some(range) = fact.memory_view_range().or_else(|| fact.memory_own_range()) else {
             continue;
         };
-        for guard in crate::kernel::memory_range_extent_guard_spellings(range) {
+        for guard in crate::kernel::admitted_memory_range_extent_facts(range) {
             let guard_is_false = match &guard {
                 Proposition::ConditionIs(condition, true) => {
                     assumptions.decide(condition) == Some(false)
@@ -1515,10 +1567,14 @@ fn c_function_contract_entry_facts(
     // them here as well, so what the certified entry context knows about an
     // expanded range matches what the proof side installed for it.
     for fact in expanded_resources.facts() {
+        if let Some(coverage) = fact.allocation_bounds_fact(&assumptions) {
+            assumptions =
+                entry_facts.assume(assumptions, CContractEntryFactOrigin::Extent, coverage);
+        }
         let Some(range) = fact.memory_view_range().or_else(|| fact.memory_own_range()) else {
             continue;
         };
-        for guard in crate::kernel::memory_range_extent_guard_spellings(range) {
+        for guard in crate::kernel::admitted_memory_range_extent_facts(range) {
             let guard_is_false = match &guard {
                 Proposition::ConditionIs(condition, true) => {
                     assumptions.decide(condition) == Some(false)

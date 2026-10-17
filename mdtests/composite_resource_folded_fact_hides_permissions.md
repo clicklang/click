@@ -1,7 +1,8 @@
 # composite resource folded fact hides permissions
 
 This checks that folded composite-resource facts are visible, but contained
-write permission is still hidden until `unfold(...)`.
+write permission is still hidden until `unfold(...)`. The proof is a written
+`step()`, which never opens a resource; `auto` would open it.
 
 ```c filename=write_flag_without_unfold.c
 int32 write_flag_without_unfold(int32* flag) {
@@ -19,7 +20,9 @@ resource zero_flag(flag: int32*) {
 verifying "write_flag_without_unfold.c";
 
 int32 write_flag_without_unfold(int32* flag) {
-    owns zero_flag(flag) by auto();
+    owns zero_flag(flag) by {
+        step();
+    }
 
 }
 ```

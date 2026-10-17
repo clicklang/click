@@ -5271,7 +5271,11 @@ impl CMemory {
                 holes.insert(index);
             }
         }
-        for run in self.cells.runs_in_block(&base.block) {
+        // A slot can match only on its exact address line. Reuse the cover
+        // index before examining slots: unrelated parameter stems share the
+        // external-argument block, but none of their elements can match.
+        for run in self.cells.runs_meeting_slot_span(&probe) {
+            crate::instrumentation::record_deterministic_work(1);
             if run.base() == &base && run.element_width() == element_width {
                 // One spelling, one stride: the live slots of the older run
                 // are the elements it has in common with this one.
@@ -5281,6 +5285,7 @@ impl CMemory {
                 continue;
             }
             for index in run.live_indexes() {
+                crate::instrumentation::record_deterministic_work(1);
                 if let Some(slot) = probe.slot_index(&run.slot_pointer(index)) {
                     holes.insert(slot);
                 }

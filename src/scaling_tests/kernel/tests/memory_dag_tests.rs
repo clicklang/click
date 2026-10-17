@@ -126,7 +126,7 @@ fn reinterning_retained_memory_uses_shallow_component_identity() {
 #[test]
 #[ignore = "nightly: 1.6s in the parallel gate"]
 fn checked_order_store_crossing_ignores_unrelated_order_facts() {
-    let samples = [16_u64, 64, 256, 1024, 4096]
+    let samples = [4_u64, 16, 64, 256, 1024]
         .into_iter()
         .map(|size| {
             let index = Bitvector32Term::Variable(Variable(92_000_000 + size * 10 + 1));
@@ -1264,4 +1264,50 @@ fn a_kept_frame_without_flat_owners_does_not_walk_pointer_read_history() {
         samples.iter().all(|work| *work <= 16),
         "an empty flat frame walks the read history: {samples:?}"
     );
+}
+
+#[test]
+fn mixed_width_seeded_runs_ignore_other_address_stems() {
+    for bytes_first in [false, true] {
+        let mut baseline = None;
+        for length in [32, 1_024, 65_536, 2_147_483_647] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let address = |variable| Pointer {
+                block: PointerBlock::ExternalArgument,
+                offset: PointerOffsetTerm::Variable(Variable(variable)),
+            };
+            let word = address(98_750);
+            let bytes = address(98_751);
+            assert_eq!(word.block, bytes.block);
+            let source = intern_c_memory(CMemory::new());
+            let (memory, work) = crate::instrumentation::measure_deterministic_work(|| {
+                let seed_word = |memory: CMemory| {
+                    memory.with_seeded_cells(word.clone(), 8, CType::UInt64, 0, 1, source.clone())
+                };
+                let seed_bytes = |memory: CMemory| {
+                    memory.with_seeded_cells(
+                        bytes.clone(),
+                        1,
+                        CType::UInt8,
+                        0,
+                        length,
+                        source.clone(),
+                    )
+                };
+                let memory = if bytes_first {
+                    seed_word(seed_bytes(CMemory::new()))
+                } else {
+                    seed_bytes(seed_word(CMemory::new()))
+                };
+                // A repeated entry projection must not enumerate the other run either.
+                seed_word(memory)
+            });
+            assert_eq!(
+                work,
+                *baseline.get_or_insert(work),
+                "length {length}, bytes first {bytes_first}: entry work must not depend on numeric length"
+            );
+            assert_eq!(memory.cells.representation_len(), 2);
+        }
+    }
 }

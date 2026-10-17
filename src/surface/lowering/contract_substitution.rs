@@ -3192,8 +3192,31 @@ pub(in crate::surface) fn c_unary_with_operand(
 ) -> CExpression {
     let mut lowered = lowered.clone();
     match &mut lowered {
+        CExpression::AddressOf(expression) => {
+            let mut operand = operand;
+            // A member address selects the field's own extent. Rebuilding
+            // its source operand must keep that selection around the new
+            // field pointer, including after a binding substitution.
+            if let (
+                CExpression::TypedLoad {
+                    pointer: original, ..
+                },
+                CExpression::TypedLoad {
+                    pointer: replacement,
+                    ..
+                },
+            ) = (expression.as_ref(), &mut operand)
+                && let CExpression::Subobject { width, .. } = original.as_ref()
+                && !matches!(replacement.as_ref(), CExpression::Subobject { .. })
+            {
+                **replacement = CExpression::Subobject {
+                    pointer: Box::new((**replacement).clone()),
+                    width: *width,
+                };
+            }
+            **expression = operand;
+        }
         CExpression::Cast { expression, .. }
-        | CExpression::AddressOf(expression)
         | CExpression::CheckedObjectAddress(expression)
         | CExpression::Load(expression) => **expression = operand,
         CExpression::PointerOffsetBytes { pointer, .. }

@@ -368,12 +368,13 @@ pub(in crate::surface::proof) fn certified_condition_transitions(
     evaluation
         .paths()
         .iter()
+        // `exact_facts_directly_conflict` against every listed fact, decided
+        // through the list's conjunct index.
         .filter(|path| {
-            !path.facts().iter().any(|path_fact| {
-                pure_facts.iter().any(|available| {
-                    exact_facts_directly_conflict(available, path_fact.proposition())
-                })
-            })
+            !path
+                .facts()
+                .iter()
+                .any(|path_fact| pure_facts.directly_conflicts_with(path_fact.proposition()))
         })
         .map(|path| {
             // Cloned after the context is consulted above, so every
@@ -381,8 +382,11 @@ pub(in crate::surface::proof) fn certified_condition_transitions(
             let mut successor_facts = pure_facts.clone();
             successor_facts.extend(path.facts().iter().map(|fact| fact.proposition().clone()));
             let prerequisite_assumptions = match context {
-                Some(context) => successor_facts
+                // The successor facts beyond `pure_facts` are the path's.
+                Some(context) => path
+                    .facts()
                     .iter()
+                    .map(|fact| fact.proposition())
                     .filter(|fact| !pure_facts.contains(fact))
                     .fold(context.clone(), |assumptions, fact| {
                         assumptions.assume_proposition(fact.clone())
@@ -728,12 +732,13 @@ fn certified_transitions_from_execution(
             limit.describe()
         )));
     }
+    // `exact_facts_directly_conflict` against every listed fact, decided
+    // through the list's conjunct index.
     let feasible = |path: &&crate::kernel::SymbolicCExecutionPath| {
-        !path.facts().iter().any(|path_fact| {
-            pure_facts
-                .iter()
-                .any(|available| exact_facts_directly_conflict(available, path_fact.proposition()))
-        })
+        !path
+            .facts()
+            .iter()
+            .any(|path_fact| pure_facts.directly_conflicts_with(path_fact.proposition()))
     };
     let transitions = execution
         .paths()
@@ -821,12 +826,10 @@ fn certified_transitions_from_execution(
                 let proposition = obligation.proposition();
                 let derivation = match prerequisite_policy {
                     StatementPrerequisitePolicy::Exact | StatementPrerequisitePolicy::Explicit => {
-                        if exact_fact_is_available(proposition, pure_facts)
-                            || exactly_available_fact(
-                                proposition,
-                                pure_facts,
-                            )
-                            .is_some()
+                        // An exact conjunct is also the availability the
+                        // polarity-aware check below accepts.
+                        if pure_facts.has_exact_conjunct(proposition)
+                            || exact_fact_is_available(proposition, pure_facts)
                             || directly_matching_separation_fact(proposition, pure_facts).is_some()
                             || directly_covering_loadability_fact(proposition, pure_facts).is_some()
                             || matches!(normalize_proposition(proposition), SimpProposition::True)
@@ -977,8 +980,8 @@ fn certified_transitions_from_execution(
                             ));
                         }
                         if prerequisite_assumptions.states_required_goal(proposition)
+                            || pure_facts.has_exact_conjunct(proposition)
                             || exact_fact_is_available(proposition, pure_facts)
-                            || exactly_available_fact(proposition, pure_facts).is_some()
                             // The same rule for a prerequisite the resolution
                             // above leaves symbolic: an earlier fact about the
                             // same cells, load atoms proven unchanged in
@@ -1114,11 +1117,7 @@ fn certified_transitions_from_execution(
                                 || !is_internal_snapshot_frame_witness(
                                     execution_fact.proposition(),
                                 ))
-                            && exactly_available_fact(
-                                execution_fact.proposition(),
-                                pure_facts,
-                            )
-                            .is_none()
+                            && !pure_facts.has_exact_conjunct(execution_fact.proposition())
                             && !normalization_sources.contains(execution_fact.proposition())
                         {
                             normalization_sources.push(execution_fact.proposition().clone());
@@ -1144,7 +1143,7 @@ fn certified_transitions_from_execution(
                         // (its cells are named by epoch); a later premise
                         // may cite it at the statement entry. Keep it.
                         if !crate::kernel::proposition_mentions_registered_load_variable(&fact) {
-                            successor_facts.retain(|available| available != &fact);
+                            successor_facts.remove_all(&fact);
                         }
                         if !successor_facts.contains(target) {
                             successor_facts.push(target.clone());
@@ -1170,10 +1169,12 @@ fn certified_transitions_from_execution(
                 if !matches!(fact_transport_policy, StatementFactTransportPolicy::None)
                     && statement_memory_changed
                 {
+                    // Only a fact the test below can accept is read; the
+                    // list keeps those apart, in its order.
                     let automatic_sources = if normalize_statement_facts_to_exit {
-                        pure_facts.to_vec()
+                        pure_facts.transport_candidates()
                     } else {
-                        successor_facts.to_vec()
+                        successor_facts.transport_candidates()
                     };
                     for fact in automatic_sources {
                         if !c_condition_fact_has_memory(&fact)

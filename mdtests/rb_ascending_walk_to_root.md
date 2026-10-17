@@ -9,8 +9,11 @@ rbtree fixup loop climbs this way, so the boundary the walk ends at is the one
 `rb_insert_color`, `rb_next` and `__rb_erase_color` need.
 
 The parent is a *payload*, not a resource parameter: `rb_at`'s `Node` arm owns
-the packed parent word and states it as the payload's address plus the color
-bit, and `ctx_at`'s `Left` frame owns the cells of the node its own
+the packed parent word and states both its numeric value (the payload's address
+plus the color bit) and its full decoded pointer relationship. The explicit
+`((struct rb_node*)(word & ~3)) == parent` fact preserves designation and
+selected extent; numeric address equality alone does not grant those bounds.
+`ctx_at`'s `Left` frame owns the cells of the node its own
 `identity` payload carries. Nothing in the C program is written through
 `identity`. The loop's own C local `parent` is the pointer the statements read,
 and the two are tied together by the loop's invariants: `ctx_node_is(c.model,
@@ -21,15 +24,15 @@ parent` inside each framed arm.
 
 Three verifier rules meet here, and each was a gap.
 
-The head refutes `Context::Top`. The failed-guard fact `parent != 0` decides
+The head explicitly refutes `Context::Top`. The failed-guard fact `parent != 0` decides
 `ctx_node_is`'s declared body at `Top`, `if parent == 0 { 1 } else { 0 }`, to
 be `0` where the invariant says `1` (package A21).
 
-The exit refutes `Left` and `Right`. There the body at
-`Context::Left(identity, ..)` is `if identity == parent { 1 } else { 0 }`, and
-the arm's own `fact identity != 0` decides it against the exit's `parent == 0`,
-so the walk learns what its frame *is*, `c.model == Context::Top`, and can fold
-the root frame (package A21).
+The exit explicitly refutes `Left` and `Right`. Constructor injectivity on the
+`ctx_reroot` invariant gives `identity == parent`. Unfolding that frame names
+its cells at `parent` and exposes its nonnull fact, contradicting the exit's
+`parent == 0`. The surviving arm states `c.model == Context::Top`, so the walk
+can fold the root frame.
 
 The body reads the frame through the C local. `unfold(c)` owns, names, and
 states the arm's cells at the pointer the proved equality identifies the
@@ -177,6 +180,7 @@ resource rb_at(p: struct rb_node*) {
             fact aligned(p, 8);
             fact aligned(parent, 8);
             fact p->__rb_parent_color == address(parent) + (p->__rb_parent_color & 1);
+            fact ((struct rb_node*)(p->__rb_parent_color & ~3)) == parent;
             fact (p->__rb_parent_color & 1) == color_bit(color);
             fact left.model == left_model;
             fact right.model == right_model;
@@ -206,6 +210,7 @@ resource ctx_at(child: struct rb_node*, root: struct rb_root*) {
             fact identity->rb_left == child;
             fact identity->__rb_parent_color
                 == address(grandparent) + (identity->__rb_parent_color & 1);
+            fact ((struct rb_node*)(identity->__rb_parent_color & ~3)) == grandparent;
             fact (identity->__rb_parent_color & 1) == color_bit(color);
             fact sibling.model == sibling_model;
             fact up.model == up_model;
@@ -225,6 +230,7 @@ resource ctx_at(child: struct rb_node*, root: struct rb_root*) {
             fact identity->rb_right == child;
             fact identity->__rb_parent_color
                 == address(grandparent) + (identity->__rb_parent_color & 1);
+            fact ((struct rb_node*)(identity->__rb_parent_color & ~3)) == grandparent;
             fact (identity->__rb_parent_color & 1) == color_bit(color);
             fact sibling.model == sibling_model;
             fact up.model == up_model;
@@ -272,7 +278,14 @@ struct rb_node* rb_root_of(struct rb_node* node, struct rb_node* parent,
         initialize by simp();
         preserve by {
             match c.model {
-                Context::Top => { contradiction(c.model == Context::Top); },
+                Context::Top => {
+                    have ctx_node_is(c.model, parent) != 1 by {
+                        rewrite(c.model == Context::Top);
+                        unfold(ctx_node_is(Context::Top, parent));
+                        normalize() using { parent != 0; };
+                    }
+                    contradiction(ctx_node_is(c.model, parent) == 1);
+                },
                 Context::Left(identity, grandparent, color, sibling_model, up_model) => {
                     have ctx_reroot(Context::Left(identity, grandparent, color,
                                                   sibling_model, up_model), parent)
@@ -391,6 +404,32 @@ struct rb_node* rb_root_of(struct rb_node* node, struct rb_node* parent,
                 },
             }
         }
+    }
+    match c.model ensuring {
+        owns c: ctx_at(node, root);
+        fact c.model == Context::Top;
+    } {
+        Context::Top => {},
+        Context::Left(identity, grandparent, color, sibling_model, up_model) => {
+            have Context::Left(identity, grandparent, color, sibling_model, up_model) == Context::Left(parent, grandparent, color, sibling_model, up_model) by {
+                unfold(ctx_reroot(Context::Left(identity, grandparent, color, sibling_model, up_model), parent));
+                rewrite(Context::Left(identity, grandparent, color, sibling_model, up_model) == c.model);
+                assumption();
+            }
+            have identity == parent by { extract(identity == parent); }
+            let { sibling: exit_sibling, up: exit_up } = unfold(c);
+            contradiction(parent == 0);
+        },
+        Context::Right(identity, grandparent, color, sibling_model, up_model) => {
+            have Context::Right(identity, grandparent, color, sibling_model, up_model) == Context::Right(parent, grandparent, color, sibling_model, up_model) by {
+                unfold(ctx_reroot(Context::Right(identity, grandparent, color, sibling_model, up_model), parent));
+                rewrite(Context::Right(identity, grandparent, color, sibling_model, up_model) == c.model);
+                assumption();
+            }
+            have identity == parent by { extract(identity == parent); }
+            let { sibling: exit_sibling, up: exit_up } = unfold(c);
+            contradiction(parent == 0);
+        },
     }
     have plug(c.model, t.model) == t.model by {
         rewrite(c.model == Context::Top);

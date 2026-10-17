@@ -47,6 +47,7 @@ int32 compare_forwarded(int32* left, int32* right) {
 
 int32 members_in_order(struct pair* pair) {
     requires pair != 0;
+    views *pair;
     ensures result == 1;
 } by { execute(); simp(); }
 ```

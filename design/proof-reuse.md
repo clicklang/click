@@ -286,13 +286,30 @@ example does not verify on master today.
 
 ### R4. Automatic opening and closing of resources
 
-When a step reads or writes a field covered by a folded recursive resource
-whose model is known to be one constructor, `step()` unfolds that layer. At
-function exit, loop back edges and arm joins, Click refolds layers whose
-fields still match the definition. This follows VeriFast's auto-open/close
-and Viper's fold heuristics. It must stay bounded: one layer per access, and
-no search over which resource to open. Explicit `fold`/`unfold` remain for
-everything else. This targets about 100 lines per arm.
+`step()` keeps its meaning: it executes one C operation and never opens or
+closes a resource on its own (maintainer, 2026-10-17). Opening and closing
+belong to `auto`, the smart closer, so a simple proof shows every layer it
+opens.
+
+When the C operation `auto` or `execute()` executes is refused because the
+place it reads or writes lies inside a folded resource the frontier owns,
+`auto` unfolds the one owned, non-`authorized` resource whose body holds that
+place and retries the operation, one layer per refused access. It never
+chooses between resources: when none holds the place, or more than one does,
+the refusal stands. `click expand` writes each opening as an explicit
+`unfold(...)`, and the contract's exit transition refolds the resource. This
+is done (2026-10-17).
+
+Not pursued (maintainer, 2026-10-17): opening recursive named instances, and
+refolding by `auto`. Opening an instance requires its model to be known as
+one constructor, so whether `auto` opens it would depend on what the proof
+happens to know at that point; `auto` would also have to invent names for the
+unfolded children. Refolding an instance needs its new model, which `auto`
+would have to derive from the body's facts and the current memory. Each adds
+behavior a reader cannot predict from the script for an uncertain saving:
+about 40 opening lines in the largest rbtree-erase file, while most of its 130
+folds spell a model that only automatic refolding would remove. Explicit
+`unfold` and `fold` remain the way to open and close instances.
 
 ### R5. One script for several goals
 

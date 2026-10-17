@@ -36,5 +36,5 @@ int32 consume_again(struct channel* channel) diverges {
 ```
 
 ```expect
-fail: missing resource fact `views channel->payload`
+fail: pointer arithmetic left the pointed-to object
 ```

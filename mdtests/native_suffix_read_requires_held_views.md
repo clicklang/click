@@ -20,5 +20,5 @@ uint8 first(const uint8* p, uint64 whole, uint64 remaining) {
 ```
 
 ```expect
-fail: missing resource fact
+fail: pointer arithmetic left the pointed-to object
 ```

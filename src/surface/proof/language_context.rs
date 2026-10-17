@@ -26,6 +26,24 @@ pub(in crate::surface::proof) struct PureProofContext<'a> {
         Option<PureStructuralInductionBranchSetup>,
 }
 
+/// The facts a fixed-state phase started from, in order. A phase over a
+/// path's fact list keeps the list itself, so the facts are copied into a
+/// slice only when a tactic reads them as one.
+#[derive(Clone, Copy)]
+pub(in crate::surface::proof) enum FixedStateFacts<'a> {
+    Slice(&'a [Proposition]),
+    List(&'a crate::surface::PureFactList),
+}
+
+impl<'a> FixedStateFacts<'a> {
+    pub(in crate::surface::proof) fn as_slice(self) -> &'a [Proposition] {
+        match self {
+            Self::Slice(facts) => facts,
+            Self::List(facts) => facts.as_slice(),
+        }
+    }
+}
+
 #[derive(Clone)]
 pub(in crate::surface::proof) struct FixedStateProofContext<'a> {
     pub(in crate::surface::proof) claim_label: &'a str,
@@ -38,9 +56,11 @@ pub(in crate::surface::proof) struct FixedStateProofContext<'a> {
     pub(in crate::surface::proof) theorem_environment: &'a TheoremEnvironment,
     pub(in crate::surface::proof) unfolded_predicates: &'a [String],
     pub(in crate::surface::proof) effect_facts: ExecutionFacts,
-    pub(in crate::surface::proof) lowering_context: Arc<Vec<Proposition>>,
+    /// The facts a recorded surface lowering must name to be reused here:
+    /// the phase's facts with its state's observable resource facts.
+    pub(in crate::surface::proof) lowering_context: ProofFacts,
     pub(in crate::surface::proof) original_requirements: &'a [Requirement],
-    pub(in crate::surface::proof) requirement_facts: &'a [Proposition],
+    pub(in crate::surface::proof) requirement_facts: FixedStateFacts<'a>,
     /// The recorder for a selected expansion target written inside a `have`
     /// body this phase checks, as for an execution proof's constants.
     /// Presentation metadata only; it grants no authority and changes no

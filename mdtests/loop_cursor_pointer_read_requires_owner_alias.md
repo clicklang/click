@@ -66,5 +66,5 @@ void inspect(struct node* root) {
 ```
 
 ```expect
-fail: missing resource fact
+fail: pointer arithmetic left the pointed-to object
 ```

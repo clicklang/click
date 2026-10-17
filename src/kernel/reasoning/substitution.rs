@@ -1588,7 +1588,7 @@ fn walk_c_memory_range<S: VariableSubstitution + ?Sized>(
     range: &CMemoryRange,
     s: &S,
 ) -> CMemoryRange {
-    range
+    let mut result = range
         .with_bounds(
             s.pointer(&range.base),
             s.bitvector(range.bound_terms().0),
@@ -1601,7 +1601,15 @@ fn walk_c_memory_range<S: VariableSubstitution + ?Sized>(
                 .as_deref()
                 .map(|origin| std::sync::Arc::new(s.pointer(origin))),
             range.carrier_extent_known,
-        )
+        );
+    if !range.formation_coverage.is_empty() {
+        result.formation_coverage = range
+            .formation_coverage
+            .iter()
+            .map(|fact| walk_proposition(fact, s))
+            .collect();
+    }
+    result
 }
 
 #[cfg(test)]

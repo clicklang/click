@@ -128,10 +128,10 @@ pub(in crate::surface::proof) fn internal_proof_first_index(
         InternalProofNode::Linear {
             tactics,
             continuation,
-        } => tactics
-            .first()
-            .map(|indexed| indexed.index)
-            .or_else(|| internal_proof_first_index(continuation)),
+        } => match tactics.first() {
+            Some(indexed) => Some(indexed.index),
+            None => internal_proof_first_index(continuation),
+        },
         InternalProofNode::Open { index, .. }
         | InternalProofNode::Match { index, .. }
         | InternalProofNode::If { index, .. }
@@ -685,80 +685,74 @@ fn flat_post_execution_tactic(tactic: &ProofTactic) -> Option<PostExecutionTacti
 
 /// Converts a supported post-execution syntax region into cursor metadata.
 /// This performs no proof transition and stores no semantic state; each leaf
-/// operation is checked later against the focused outcome `Proof`.
-fn deferred_post_execution_linear_region(
-    tactics: &[IndexedTactic],
-    continuation: &InternalProofNode,
-) -> Option<Vec<DeferredPostExecutionTactic>> {
-    let mut deferred = tactics
-        .iter()
-        .map(|indexed| {
-            let tactic = flat_post_execution_tactic(&indexed.tactic)?;
-            Some(DeferredPostExecutionTactic {
-                lexical_bindings: None,
-                tactic_index: indexed.index,
-                source_index: indexed.source_index,
-                tactic,
-            })
-        })
-        .collect::<Option<Vec<_>>>()?;
-    deferred.extend(deferred_post_execution_region(continuation)?);
-    Some(deferred)
-}
-
+/// operation is checked later against the focused outcome `Proof`. A region's
+/// sequential nodes are walked in a loop; only written nesting recurses.
 fn deferred_post_execution_region(
     node: &InternalProofNode,
 ) -> Option<Vec<DeferredPostExecutionTactic>> {
-    match node {
-        InternalProofNode::Match { .. } => None,
-        InternalProofNode::Done => Some(Vec::new()),
-        InternalProofNode::Linear {
-            tactics,
-            continuation,
-        } => deferred_post_execution_linear_region(tactics, continuation),
-        InternalProofNode::If {
-            index,
-            source_index,
-            condition,
-            then_branch,
-            else_branch,
-            continuation,
-            ..
-        } => {
-            let mut deferred = vec![DeferredPostExecutionTactic {
-                lexical_bindings: None,
-                tactic_index: *index,
-                source_index: *source_index,
-                tactic: PostExecutionTactic::If {
-                    condition: condition.clone(),
-                    execution_route: None,
-                    then_tactics: deferred_post_execution_region(then_branch)?,
-                    else_tactics: deferred_post_execution_region(else_branch)?,
-                },
-            }];
-            deferred.extend(deferred_post_execution_region(continuation)?);
-            Some(deferred)
-        }
-        InternalProofNode::CallOutcomes {
-            index,
-            source_index,
-            returned_branch,
-            threw_branch,
-            continuation,
-        } => {
-            let mut deferred = vec![DeferredPostExecutionTactic {
-                lexical_bindings: None,
-                tactic_index: *index,
-                source_index: *source_index,
-                tactic: PostExecutionTactic::CallOutcomes {
-                    returned_tactics: deferred_post_execution_region(returned_branch)?,
-                    threw_tactics: deferred_post_execution_region(threw_branch)?,
-                },
-            }];
-            deferred.extend(deferred_post_execution_region(continuation)?);
-            Some(deferred)
-        }
-        InternalProofNode::Open { .. } | InternalProofNode::Branch { .. } => None,
+    let mut deferred = Vec::new();
+    let mut node = node;
+    loop {
+        node = match node {
+            InternalProofNode::Done => return Some(deferred),
+            InternalProofNode::Linear {
+                tactics,
+                continuation,
+            } => {
+                for indexed in tactics {
+                    deferred.push(DeferredPostExecutionTactic {
+                        lexical_bindings: None,
+                        tactic_index: indexed.index,
+                        source_index: indexed.source_index,
+                        tactic: flat_post_execution_tactic(&indexed.tactic)?,
+                    });
+                }
+                continuation
+            }
+            InternalProofNode::If {
+                index,
+                source_index,
+                condition,
+                then_branch,
+                else_branch,
+                continuation,
+                ..
+            } => {
+                deferred.push(DeferredPostExecutionTactic {
+                    lexical_bindings: None,
+                    tactic_index: *index,
+                    source_index: *source_index,
+                    tactic: PostExecutionTactic::If {
+                        condition: condition.clone(),
+                        execution_route: None,
+                        then_tactics: deferred_post_execution_region(then_branch)?,
+                        else_tactics: deferred_post_execution_region(else_branch)?,
+                    },
+                });
+                continuation
+            }
+            InternalProofNode::CallOutcomes {
+                index,
+                source_index,
+                returned_branch,
+                threw_branch,
+                continuation,
+            } => {
+                deferred.push(DeferredPostExecutionTactic {
+                    lexical_bindings: None,
+                    tactic_index: *index,
+                    source_index: *source_index,
+                    tactic: PostExecutionTactic::CallOutcomes {
+                        returned_tactics: deferred_post_execution_region(returned_branch)?,
+                        threw_tactics: deferred_post_execution_region(threw_branch)?,
+                    },
+                });
+                continuation
+            }
+            InternalProofNode::Match { .. }
+            | InternalProofNode::Open { .. }
+            | InternalProofNode::Branch { .. } => return None,
+        };
     }
 }
 
@@ -1390,7 +1384,7 @@ fn try_check_structural_function_proof_inner<'a>(
                     );
                 }
                 current = if consumed_continuation {
-                    &InternalProofNode::Done
+                    &DONE_PROOF
                 } else {
                     continuation
                 };
@@ -1571,7 +1565,7 @@ fn try_check_structural_function_proof_inner<'a>(
                     proof.note_trace_join_continuation_arm(arms.continuation_arm);
                     saw_structure = true;
                     current = if arms.consumed_continuation {
-                        &InternalProofNode::Done
+                        &DONE_PROOF
                     } else {
                         continuation
                     };
@@ -1716,7 +1710,7 @@ fn try_check_structural_function_proof_inner<'a>(
                     proof = advanced.join_focused_execution_if_terminal(&record)?;
                     saw_structure = true;
                     current = if consumed_continuation {
-                        &InternalProofNode::Done
+                        &DONE_PROOF
                     } else {
                         continuation
                     };
@@ -1781,7 +1775,7 @@ fn try_check_structural_function_proof_inner<'a>(
                 proof = advanced.join_focused_execution_if_terminal(&record)?;
                 saw_structure = true;
                 current = if consumed_continuation {
-                    &InternalProofNode::Done
+                    &DONE_PROOF
                 } else {
                     continuation
                 };
@@ -2681,7 +2675,7 @@ pub(in crate::surface::proof) fn advance_preservation_region<'a>(
             advance_preservation_region(
                 advanced,
                 if consumed_continuation {
-                    &InternalProofNode::Done
+                    &DONE_PROOF
                 } else {
                     continuation
                 },
@@ -3775,7 +3769,7 @@ fn advance_focused_execution_region_with_branch_continuation<'a>(
                         .restore_execution_tactic_attribution(&owner)?;
                     proof.note_trace_join_continuation_arm(arms.continuation_arm);
                     region = if arms.consumed_continuation {
-                        &InternalProofNode::Done
+                        &DONE_PROOF
                     } else {
                         continuation
                     };
@@ -4688,7 +4682,7 @@ fn advance_checked_open_scope<'a>(
         return advance_checked_open_scope(
             scope,
             if consumed_continuation {
-                &InternalProofNode::Done
+                &DONE_PROOF
             } else {
                 continuation
             },
@@ -4727,7 +4721,7 @@ fn advance_checked_open_scope<'a>(
     advance_checked_open_scope(
         scope,
         if arms.consumed_continuation {
-            &InternalProofNode::Done
+            &DONE_PROOF
         } else {
             continuation
         },

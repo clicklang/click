@@ -1954,6 +1954,7 @@ pub struct C0Parameter {
     /// Whether the source declares a reference, as C++ `int&` does. The
     /// parameter's type is the pointer that carries it.
     reference: bool,
+    slice_length_parameter: Option<usize>,
     struct_name: Option<String>,
     union_name: Option<String>,
     struct_layout: Option<C0StructLayout>,
@@ -4740,6 +4741,11 @@ impl C0Parameter {
         self
     }
 
+    pub(crate) fn with_slice_length_parameter(mut self, parameter: usize) -> Self {
+        self.slice_length_parameter = Some(parameter);
+        self
+    }
+
     pub(crate) fn with_struct_value(mut self, name: String, layout: C0StructLayout) -> Self {
         self.c_type = struct_value_type(&layout);
         self.struct_name = Some(name);
@@ -4769,6 +4775,7 @@ impl C0Parameter {
             function_pointer_signature: None,
             array_element_width: None,
             pointee_struct_class: None,
+            slice_length_parameter: None,
         }
     }
 
@@ -4873,12 +4880,16 @@ impl C0Parameter {
             })
             .flatten()
             .or_else(|| self.pointee_struct_class.clone());
-        crate::kernel::c_parameter(self.name.clone(), c_type)
+        let mut parameter = crate::kernel::c_parameter(self.name.clone(), c_type)
             .with_volatile(self.is_volatile())
             .with_pointee_volatile(self.pointee_is_volatile())
             .with_constant(self.is_constant())
             .with_pointee_constant(self.pointee_is_constant())
-            .with_pointee_class(pointee_class)
+            .with_pointee_class(pointee_class);
+        if let Some(index) = self.slice_length_parameter {
+            parameter = parameter.with_slice_length_parameter(index);
+        }
+        parameter
     }
 }
 
@@ -10804,6 +10815,7 @@ impl Parser {
                     union_name: None,
                     array_element_width: None,
                     pointee_struct_class: None,
+                    slice_length_parameter: None,
                 });
                 if self.peek() != Some(&Token::Comma) {
                     return Ok(parameters);
@@ -10926,6 +10938,7 @@ impl Parser {
                         union_name: None,
                         array_element_width: None,
                         pointee_struct_class: None,
+                        slice_length_parameter: None,
                     });
                     if self.peek() != Some(&Token::Comma) {
                         return Ok(parameters);
@@ -10964,6 +10977,7 @@ impl Parser {
                         union_name: None,
                         array_element_width: Some(element_width),
                         pointee_struct_class: None,
+                        slice_length_parameter: None,
                     });
                     if self.peek() != Some(&Token::Comma) {
                         return Ok(parameters);
@@ -10975,6 +10989,7 @@ impl Parser {
             parameters.push(C0Parameter {
                 c_type,
                 name: kernel_name,
+                slice_length_parameter: None,
                 volatile: object_volatile,
                 pointee_volatile,
                 constant: object_constant,

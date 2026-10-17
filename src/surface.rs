@@ -538,6 +538,9 @@ pub struct ClickFile {
     /// The module whose proofs this resolved file selects. Imported modules
     /// contribute declarations, never executable proof targets.
     entry_module: Option<String>,
+    /// Where the parser read the entry module's declarations and proofs, so
+    /// a tool addresses the source through what the parser read.
+    source_spans: std::sync::Arc<parser::SourceSpans>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -958,6 +961,8 @@ impl ResourceWitness {
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct TheoremDefinition {
+    /// Where the parser read this theorem's clauses.
+    body: parser::DeclarationBody,
     name: String,
     type_parameters: Vec<String>,
     parameters: Vec<FunctionParameter>,
@@ -1316,6 +1321,8 @@ struct ClickFunctionType {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct FunctionBlock {
+    /// Where the parser read this block's clauses.
+    body: parser::DeclarationBody,
     /// C objects visible in this declaration, supplied by the source frontend.
     c_object_names: std::sync::Arc<BTreeSet<String>>,
     signature: FunctionSignature,
@@ -1661,8 +1668,53 @@ pub struct EnsureClause {
     condition: Option<ClickProposition>,
 }
 
+/// A loop or function region's clause. Its contents are shared by its
+/// copies: a proof binds every earlier loop's clause into the function block
+/// at each `loop` tactic, and copying the clauses whole made each loop pay
+/// for the loops before it. Writing a field of a shared clause copies it.
+#[derive(Clone, Eq, PartialEq)]
+pub struct StructuralClause(std::sync::Arc<StructuralClauseData>);
+
+impl std::ops::Deref for StructuralClause {
+    type Target = StructuralClauseData;
+
+    fn deref(&self) -> &StructuralClauseData {
+        &self.0
+    }
+}
+
+impl std::ops::DerefMut for StructuralClause {
+    fn deref_mut(&mut self) -> &mut StructuralClauseData {
+        std::sync::Arc::make_mut(&mut self.0)
+    }
+}
+
+impl From<StructuralClauseData> for StructuralClause {
+    fn from(data: StructuralClauseData) -> Self {
+        Self(std::sync::Arc::new(data))
+    }
+}
+
+impl std::fmt::Debug for StructuralClause {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let data = &self.0;
+        formatter
+            .debug_struct("StructuralClause")
+            .field("region", &data.region)
+            .field("label", &data.label)
+            .field("decreases", &data.decreases)
+            .field("diverges", &data.diverges)
+            .field("items", &data.items)
+            .field("scope", &data.scope)
+            .field("resources", &data.resources)
+            .field("initialize_proof", &data.initialize_proof)
+            .field("preserve_proof", &data.preserve_proof)
+            .finish()
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct StructuralClause {
+pub struct StructuralClauseData {
     region: CodeRegion,
     label: Option<String>,
     decreases: Option<TerminationMeasure>,
@@ -2335,6 +2387,7 @@ pub(crate) fn clone_theorem_definition_iteratively(
     #[cfg(test)]
     THEOREM_DEFINITION_COPIES.with(|copies| copies.set(copies.get() + 1));
     TheoremDefinition {
+        body: theorem.body.clone(),
         name: theorem.name.clone(),
         type_parameters: theorem.type_parameters.clone(),
         parameters: theorem.parameters.clone(),
@@ -2724,7 +2777,7 @@ pub enum ContractExpression {
     SequenceConcat(Box<ContractExpression>, Box<ContractExpression>),
     /// A C expression fragment appearing inside Surface Click.
     CFragment(CExpression),
-    /// A C unary operation whose operand retains explicit binding syntax.
+    /// A C unary operation whose operand retains source and binding syntax.
     /// Scalar casts and typed loads may also wrap a pure or historical expression. `operand` is authoritative;
     /// in that case `lowered` retains the cast metadata with a placeholder, and
     /// conversion back to a C fragment must rebuild from `operand` or refuse.
@@ -3245,6 +3298,21 @@ impl RecordedSnapshots {
         self.iter().map(|(selector, _)| selector)
     }
 
+    /// The entries newest selector first, read from the persistent tree as
+    /// they are taken: a reader that stops at the first one it wants visits
+    /// a logarithm of the tree, not every snapshot the path recorded.
+    fn iter_newest_first(&self) -> RecordedSnapshotsNewestFirst<'_> {
+        let mut entries = RecordedSnapshotsNewestFirst {
+            pending: Vec::new(),
+        };
+        entries.push_right_spine(self.version.root.as_deref());
+        entries
+    }
+
+    fn keys_newest_first(&self) -> impl Iterator<Item = &SnapshotSelector> {
+        self.iter_newest_first().map(|(selector, _)| selector)
+    }
+
     /// Statement entries at/before the anchor in reverse order, then later
     /// entries in forward order. Seek through the persistent tree rather than
     /// materializing and sorting every snapshot before the first candidate.
@@ -3486,6 +3554,34 @@ fn recorded_snapshot_insert(
         std::cmp::Ordering::Equal => {
             recorded_snapshot_node(selector, state, root.left.clone(), root.right.clone())
         }
+    }
+}
+
+/// [`RecordedSnapshots::iter_newest_first`].
+struct RecordedSnapshotsNewestFirst<'a> {
+    pending: Vec<&'a RecordedSnapshotNode>,
+}
+
+impl<'a> RecordedSnapshotsNewestFirst<'a> {
+    fn push_right_spine(&mut self, mut node: Option<&'a RecordedSnapshotNode>) {
+        while let Some(current) = node {
+            self.pending.push(current);
+            node = current.right.as_deref();
+        }
+    }
+}
+
+impl<'a> Iterator for RecordedSnapshotsNewestFirst<'a> {
+    type Item = (&'a SnapshotSelector, &'a CState);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        while let Some(node) = self.pending.pop() {
+            self.push_right_spine(node.left.as_deref());
+            if let Some(state) = &node.state {
+                return Some((&node.selector, state));
+            }
+        }
+        None
     }
 }
 
@@ -6206,6 +6302,10 @@ struct ReportDetail {
     /// The written tactic being checked when a failure with no proof-step
     /// site of its own arose: its claim and source occurrence.
     source_tactic: Option<(String, Vec<usize>)>,
+    /// The resource fact a refused C operation needed and the state did not
+    /// hold. Planning input, like an unresolved requirement: `auto` opens the
+    /// one folded resource whose body holds it (design/proof-reuse.md R4).
+    missing_resource: Option<crate::kernel::CResourceFact>,
 }
 
 /// What the verifier is working on, for locating a failure that carries no
@@ -6384,6 +6484,11 @@ impl ClickFile {
     /// import only checks that its module exists.
     pub fn library_imports(&self) -> &[String] {
         &self.library_imports
+    }
+
+    /// Where the parser read the entry module's declarations and proofs.
+    pub(in crate::surface) fn source_spans(&self) -> &parser::SourceSpans {
+        &self.source_spans
     }
 
     pub(crate) fn entry_module(&self) -> Option<&str> {
@@ -6620,6 +6725,11 @@ impl CompositeResourceBody {
 }
 
 impl TheoremDefinition {
+    /// Where the parser read this theorem's clauses.
+    pub(in crate::surface) fn parsed_body(&self) -> &parser::DeclarationBody {
+        &self.body
+    }
+
     pub fn name(&self) -> &str {
         &self.name
     }
@@ -6750,6 +6860,11 @@ impl ContractDefinition {
 }
 
 impl FunctionBlock {
+    /// Where the parser read this block's clauses.
+    pub(in crate::surface) fn parsed_body(&self) -> &parser::DeclarationBody {
+        &self.body
+    }
+
     pub fn signature(&self) -> &FunctionSignature {
         &self.signature
     }
@@ -8341,6 +8456,33 @@ impl ClickError {
             self.rendered = std::sync::OnceLock::new();
         }
         self
+    }
+
+    pub(in crate::surface) fn missing_resource(&self) -> Option<&crate::kernel::CResourceFact> {
+        self.report_detail.as_ref()?.missing_resource.as_ref()
+    }
+
+    pub(in crate::surface) fn with_missing_resource(
+        mut self,
+        resource: &crate::kernel::CResourceFact,
+    ) -> Self {
+        std::sync::Arc::make_mut(self.report_detail.get_or_insert_default()).missing_resource =
+            Some(resource.clone());
+        self
+    }
+
+    /// Records the resource a refused C operation was missing, when that is
+    /// what refused it.
+    pub(in crate::surface) fn with_runtime_missing_resource(
+        self,
+        error: &crate::kernel::CRuntimeError,
+    ) -> Self {
+        match error {
+            crate::kernel::CRuntimeError::MissingResource { resource } => {
+                self.with_missing_resource(resource)
+            }
+            _ => self,
+        }
     }
 
     pub(crate) fn with_missing_tactic_requirement(mut self, required: String) -> Self {

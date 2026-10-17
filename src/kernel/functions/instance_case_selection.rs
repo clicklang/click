@@ -149,10 +149,13 @@ pub(super) fn matched_resource_instance_case_read_projection(
     evaluation.resources = body_resources.clone();
     let mut supporting_facts = body_resources.observable_facts_assuming_valid(assumptions);
     for fact in body_resources.facts() {
+        if let Some(coverage) = fact.allocation_bounds_fact(assumptions) {
+            supporting_facts.push(coverage);
+        }
         let Some(range) = fact.memory_range() else {
             continue;
         };
-        supporting_facts.extend(crate::kernel::memory_range_extent_guard_spellings(range));
+        supporting_facts.extend(crate::kernel::admitted_memory_range_extent_facts(range));
         supporting_facts.push(range.loadable_fact(&state.memory));
     }
     supporting_facts.push(Proposition::CResourceComposition(body_resources));
