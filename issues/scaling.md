@@ -173,9 +173,16 @@ instead of from what the step changed.
    lists. Those are now shared (`Arc`), so a clone copies none of them
    (`cloned_functions_and_specifications_share_their_contracts`);
    `objects_and_calls` at N = 128, 8.59 to 8.17 billion instructions.
-   Still superlinear for wide functions: building a proof's fact set from
-   its entry facts (`ProofFacts::from_source`, `from_ordered`) grows x3 to
-   x4 from N = 64 to 128 in a single call.
+   Also fixed: building a proof's fact set reserved every variable its
+   facts mention, and the entry states one loadability fact per object over
+   the one entry memory holding every object, so each fact added that whole
+   memory's variables again. A fact set now collects each interned memory's
+   variables once (`collecting_each_memory_once`;
+   `facts_over_one_memory_reserve_its_variables_once`: 6,083, 106,895 and
+   2,141,373 units at 16, 64 and 256 facts before; 2,033, 8,993 and 46,803
+   after). Against current master, the entry-only shape at N = 128 went
+   from 3.66 to 3.52 billion instructions, and `objects_and_calls` from 9.13
+   to 8.99 billion.
 9. **Fixed: comparing equal resource contexts walked every fact.** A call
    that takes the caller's ownership and returns it rebuilds a context with
    the same facts in fresh storage. Contexts order by content hash first, so
