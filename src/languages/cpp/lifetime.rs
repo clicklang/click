@@ -226,6 +226,7 @@ mod tests {
     fn reference(name: &str) -> CppFunctionReference {
         CppFunctionReference {
             through_pointer: false,
+            qualified: false,
             declaration_id: name.into(),
             name: name.into(),
             span: span(),

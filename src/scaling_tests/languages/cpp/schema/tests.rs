@@ -122,6 +122,7 @@ fn graph_reference_checks_index_growing_caller_places_once() {
             caller.body.push(CppStatement::Call {
                 callee: CppFunctionReference {
                     through_pointer: false,
+                    qualified: false,
                     declaration_id: "read".into(),
                     name: "read".into(),
                     span: cleanup_span(),
@@ -181,6 +182,7 @@ fn call_depth_budget_accounts_for_previously_checked_subgraphs() {
     for size in [8usize, 32, 63, 64] {
         let reference = |index| CppFunctionReference {
             through_pointer: false,
+            qualified: false,
             declaration_id: format!("f{index}"),
             name: format!("f{index}"),
             span: cleanup_span(),
@@ -696,6 +698,7 @@ fn cross_header_call_origins_have_linear_graph_work() {
     let call = |name: String, source: String| CppStatement::Call {
         callee: CppFunctionReference {
             through_pointer: false,
+            qualified: false,
             declaration_id: name.clone(),
             name,
             span: span_in(source.clone()),
@@ -779,6 +782,7 @@ fn converted_call_chain_validation_has_linear_work() {
         let initializer = CppInitializer::Call {
             callee: CppFunctionReference {
                 through_pointer: false,
+                qualified: false,
                 declaration_id: "echo".into(),
                 name: "echo".into(),
                 span: cleanup_span(),
@@ -815,6 +819,7 @@ fn converted_return_chain_validation_has_linear_work_and_bounded_nesting() {
         ];
         let callee = CppFunctionReference {
             through_pointer: false,
+            qualified: false,
             declaration_id: "echo".into(),
             name: "echo".into(),
             span: cleanup_span(),
