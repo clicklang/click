@@ -1217,3 +1217,51 @@ fn numeric_byte_geometry_ignores_unrelated_address_classes() {
         previous = Some(work);
     }
 }
+
+/// A frame containing views or folded resources but no flat owner cannot
+/// retain a cell through this flat-range lookup. Do not first resolve the
+/// queried pointer's read history to discover the empty owner index.
+#[test]
+fn a_kept_frame_without_flat_owners_does_not_walk_pointer_read_history() {
+    let mut samples = Vec::new();
+    for size in [4u32, 8, 16, 32] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let context = PureFactContext::new();
+        let field = Pointer {
+            block: PointerBlock::ExternalArgument,
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        let target = Pointer::symbolic(Variable(995_600));
+        let mut memory = CMemory::new().store(
+            field.clone(),
+            CValue::typed_pointer(target, CType::Int32Pointer),
+        );
+        for index in 0..size {
+            memory = memory.store(
+                CMemory::local_pointer("empty-frame-counter").offset_by_bytes(index * 4),
+                CValue::Int32(index.into()),
+            );
+        }
+        let snapshot = crate::kernel::intern_c_memory_ref(&memory);
+        let variable = crate::kernel::load_variable_for_cell_with_origin(
+            &snapshot,
+            &field,
+            LoadKind::Bits32,
+            C_POINTER_BYTE_WIDTH,
+            &snapshot,
+        );
+        let pointer = Pointer::loaded(field.block.clone(), Bitvector32Term::Variable(variable), 4);
+        context.register_pointer_read(&pointer, &snapshot, &field);
+        let ranges = ResourceContext::new_with_equalities(&context)
+            .unchecked_with_fact(CResourceFact::view_memory(memory_range(field, 0, 2)));
+        let (found, work) = crate::instrumentation::measure_deterministic_work(|| {
+            context.kept_range_holding_access(&ranges, || None, &pointer, 4)
+        });
+        assert!(found.is_none());
+        samples.push(work);
+    }
+    assert!(
+        samples.iter().all(|work| *work <= 16),
+        "an empty flat frame walks the read history: {samples:?}"
+    );
+}
