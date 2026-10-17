@@ -44,7 +44,10 @@ expansion checks.
 ## File defects; ask before adding roadmap work
 
 File reproduced verifier, tooling, or diagnostic defects in `bugs/` without
-asking; tell the user what was filed. New `issues/` files and issue-list entries
+asking when they are unrelated to your current work and it does not make sense
+for you to fix them now; tell the user what was filed. Do not file a bug you
+are about to fix as part of your current work: put its reproduction in the fix
+PR and land its regression with the fix. New `issues/` files and issue-list entries
 require an explicit user request. A general request to investigate or implement
 something does not authorize new roadmap entries. Do not disguise roadmap work
 as a bug; report uncertain classifications to the user.
