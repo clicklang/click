@@ -18399,17 +18399,17 @@ fn virtual_dispatch_refuses_construction_recursion_and_other_class_shapes() {
         ),
         (
             &[
-                ("= 0; };", "= 0;\n    explicit Shape(int) noexcept {}\n};"),
+                ("= 0; };", "= 0;\n    Shape() noexcept {}\n};"),
                 (
                     "    int side;\n",
-                    "    int side;\n    explicit Square(int s) noexcept : Shape(s), side(s) {}\n",
+                    "    int side;\n    explicit Square(int s) noexcept : side(s) {}\n",
                 ),
                 (
                     "{ return shape.area(scale); }",
                     "{ Square square(scale); return square.area(scale); }",
                 ),
             ][..],
-            "polymorphic base with no fields or constructors of its own",
+            "names its base's own non-default constructor in its initializer list",
         ),
         // A base destructor that runs code, which the derived class's
         // destruction would have to execute.
