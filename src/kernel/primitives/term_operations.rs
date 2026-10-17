@@ -3154,6 +3154,26 @@ impl CType {
         }
     }
 
+    /// An array object type.
+    pub(crate) fn is_array(self) -> bool {
+        matches!(
+            self,
+            Self::Int8Array(_)
+                | Self::Int32Array(_)
+                | Self::UInt8Array(_)
+                | Self::Int16Array(_)
+                | Self::UInt16Array(_)
+                | Self::UInt32Array(_)
+                | Self::Int128Array(_)
+                | Self::Int64Array(_)
+                | Self::UInt128Array(_)
+                | Self::UInt64Array(_)
+                | Self::Float32Array(_)
+                | Self::Float64Array(_)
+                | Self::PointerArray(_, _)
+        )
+    }
+
     /// `unsigned char *` or `signed char *` (plain `char *` is one of them).
     pub(crate) fn is_character_pointer(self) -> bool {
         matches!(self, Self::UInt8Pointer | Self::Int8Pointer)

@@ -12227,6 +12227,29 @@ impl Parser {
                     },
                 ));
             }
+            // An element of a member array lies in that member, as the C
+            // frontend narrows `r->arr` to it, so `&r->arr[i]` is the
+            // program's pointer value.
+            if let ContractExpression::Index(base, index) = &expression
+                && let ContractExpression::Field {
+                    lowered:
+                        member @ CExpression::TypedLoad {
+                            value_type: member_type,
+                            ..
+                        },
+                    ..
+                } = base.as_ref()
+                && member_type.is_array()
+                && let Some(index_fragment) = contract_expression_as_c_fragment(index)
+            {
+                return Ok(crate::surface::lowering::contract_c_unary(
+                    expression.clone(),
+                    CExpression::AddressOf(Box::new(CExpression::Index(
+                        Box::new(contract_member_lvalue(member)),
+                        Box::new(index_fragment),
+                    ))),
+                ));
+            }
             let source_expression = expression.clone();
             let Some(expression) = contract_expression_as_c_fragment(&expression) else {
                 return Err(self.error("address-of is only supported on current C expressions"));
