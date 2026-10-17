@@ -6292,7 +6292,7 @@ pub(in crate::surface) fn function_resource_summary(
                 )
                 .map_err(ClickError::new)?;
                 crate::surface::lowering::elaborate_requirement_proposition(
-                    parsed_function.parameters(),
+                    ParameterBinding::new(parsed_function.parameters(), &[]),
                     guard_entry_state.get_or_init(|| {
                         crate::kernel::initialize_c_function_globals(
                             &CState::new(),

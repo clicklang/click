@@ -855,7 +855,7 @@ rejected unless an explicit conversion is present.
 
 `arithmetic "integer";` opts a file into Integer-default specification
 arithmetic, the decided default
-([design-review P2](https://github.com/clicklang/click/blob/master/issues/design-review.md)).
+([standard library issue](https://github.com/clicklang/click/blob/master/issues/standard-library.md)).
 The directive is a migration switch: files adopt it one by one, and it is
 removed once the default changes. In such a file, a specification comparison
 that does `+`, `-`, `*` or negation, or that compares an Integer with a

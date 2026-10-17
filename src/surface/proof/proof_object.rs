@@ -3072,7 +3072,6 @@ impl ExecutionProofPresentation {
                 tactic_index,
                 source_index,
                 tactic,
-                surface_recorded: false,
             });
     }
 }

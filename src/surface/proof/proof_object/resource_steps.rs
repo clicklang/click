@@ -229,10 +229,7 @@ impl<'a> Proof<'a> {
                                 instantiate_resource_clause(clause, &substitutions).ok()?;
                             let fact = lower_resource_clause_at_state(
                                 &clause,
-                                ParameterBinding::new(
-                                    context.parsed_function.parameters(),
-                                    context.arguments,
-                                ),
+                                context.parameter_binding(),
                                 &execution.core.state,
                             )
                             .ok()?;
@@ -457,10 +454,7 @@ impl<'a> Proof<'a> {
             if supplied.len() != schema.fields().len() {
                 return Err(self.step_error("fold must explicitly supply every resource field"));
             }
-            let values = parameter_values(ParameterBinding::new(
-                context.parsed_function.parameters(),
-                context.arguments,
-            ))?;
+            let values = parameter_values(context.parameter_binding())?;
             let array_refs = array_refs_for_parameters(
                 context.parsed_function.parameters(),
                 &values,
@@ -492,10 +486,7 @@ impl<'a> Proof<'a> {
                             &expression,
                             before,
                             pre_state,
-                            ParameterBinding::new(
-                                context.parsed_function.parameters(),
-                                context.arguments,
-                            ),
+                            context.parameter_binding(),
                         )
                         .unwrap_or(message);
                     self.step_error(format!("fold field `{name}`: {message}"))
@@ -708,10 +699,7 @@ impl<'a> Proof<'a> {
                 context.spec_definitions.functions,
                 instance,
                 &rewrite.body_clauses,
-                &parameter_values(ParameterBinding::new(
-                    context.parsed_function.parameters(),
-                    context.arguments,
-                ))?,
+                &parameter_values(context.parameter_binding())?,
                 in_scope,
             )?
         } else {
@@ -1036,10 +1024,7 @@ impl<'a> Proof<'a> {
                 let execution = self.execution().ok_or_else(|| {
                     self.step_error("function `unfold` lost its semantic execution state")
                 })?;
-                let values = parameter_values(ParameterBinding::new(
-                    context.parsed_function.parameters(),
-                    context.arguments,
-                ))?;
+                let values = parameter_values(context.parameter_binding())?;
                 let array_refs = array_refs_for_parameters(
                     context.parsed_function.parameters(),
                     &values,
@@ -2008,10 +1993,7 @@ impl<'a> Proof<'a> {
                         lower_fixed_state_proposition_with_assumptions(
                             &surface,
                             checked.facts.assumptions(),
-                            ParameterBinding::new(
-                                context.parsed_function.parameters(),
-                                context.arguments,
-                            ),
+                            context.parameter_binding(),
                             FixedStateFrame::new(
                                 pre_state,
                                 &execution.core.state,
