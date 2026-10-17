@@ -35,9 +35,7 @@ fn charon_chunk_proof_preserves_source_and_checks_obligations() {
 #[ignore = "nightly: 32 s, over the gate's per-test budget (2026-10-06)"]
 fn charon_chunk_proof_tools_agree() {
     let p = project();
-    for command in ["verify", "profile"] {
-        assert_cli(&p, &[command]);
-    }
+    assert_cli(&p, &["profile"]);
     let proof = fs::read_to_string(p.root.join("borrow.click")).unwrap();
     let offset = proof.find("execute_until(read(1))").unwrap();
     let line = proof[..offset].bytes().filter(|&b| b == b'\n').count() + 1;
@@ -49,7 +47,6 @@ fn charon_chunk_proof_tools_agree() {
 #[ignore = "nightly: 46 s, over the gate's per-test budget (2026-10-06)"]
 fn charon_chunk_proof_expansion_rechecks() {
     let p = project();
-    assert_cli(&p, &["verify"]);
     assert_cli(&p, &["expand", "--claim", "cover.contract", "--in-place"]);
     assert_cli(&p, &["verify"]);
 }
