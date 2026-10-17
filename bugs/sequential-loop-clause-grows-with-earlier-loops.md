@@ -186,10 +186,11 @@ What remains:
   flat fact copies, fact index entries, transport-candidacy tests,
   reservation collections, reserved fact variables and annotation walks
   per loop, and the list's indexed answers have unit tests against the
-  pairwise rules they replace (`src/surface/pure_fact_list.rs`). None of
-  these has run: the session's disk fell below its 2 GB floor before the
-  test build, and neither has the full gate. Run them, and fix forward a
-  count that is not constant.
+  pairwise rules they replace (`src/surface/pure_fact_list.rs`). Both pass:
+  every per-loop count is constant at 3, 6 and 12 loops. The regression
+  takes 2.2 s, so it runs in nightly; the gate keeps
+  `sequential_loop_clauses_cost_the_same_at_every_position`. The full gate
+  passes.
 - Pointer walks linear in the earlier loops with a small constant: binding
   the frontier clauses into the function block
   (`FunctionBlock::with_bound_frontier_loop_clauses`, whose clauses are a
