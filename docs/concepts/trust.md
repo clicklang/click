@@ -14,7 +14,9 @@ found, is fixed first: it is a bug, tracked in `bugs/`. Proving the kernel
 sound as a whole is separate work, such as an independent proof checker and a
 written semantics, and it is not a current priority. Click's priorities are
 performance at the scale of large real-world projects, then completeness on
-such projects, both measured in practice on real code rather than in theory.
+such projects, both measured in practice on real code rather than in theory. Both
+are longer-term work, after those priorities (maintainer, 2026-10-14 and
+2026-10-17).
 
 ## Summary
 
