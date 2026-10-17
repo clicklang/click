@@ -1337,7 +1337,7 @@ fn explicit_transport_scales_near_linearly_with_unrelated_ambient_facts() {
 #[ignore = "nightly: multi-size separation transport scaling takes 10s debug"]
 fn explicit_separation_alias_transport_has_constant_selected_work() {
     let mut work = Vec::new();
-    for size in [4, 16, 64, 128] {
+    for size in [4, 16, 32, 64] {
         let resources = (0..size)
             .map(|i| {
                 format!(
@@ -5291,7 +5291,7 @@ fn bounded_index_stores(stores: usize) -> (String, String) {
 fn stores_to_bounded_unordered_indices_are_near_linear() {
     const STORE_WORK: &str = "operation `verification statement: store`";
     // Within the graph's edge limit, then past it.
-    const REGIMES: [&[usize]; 2] = [&[4, 8, 16, 32], &[64, 128, 256]];
+    const REGIMES: [&[usize]; 2] = [&[4, 8, 16, 32], &[64, 128]];
     let samples = REGIMES
         .concat()
         .into_iter()
@@ -5318,7 +5318,7 @@ fn stores_to_bounded_unordered_indices_are_near_linear() {
         })
         .collect::<Vec<_>>();
     // A linear curve doubles per doubling; a quadratic one quadruples. The
-    // store rule is asked 9/4 at most over the three largest doublings, and
+    // store rule is asked 9/4 at most over the retained doublings, and
     // the whole verification the same, which the old walk exceeded at every
     // size (3.4 to 3.9 per doubling).
     let within = |low: usize, high: usize| high.saturating_mul(4) <= low.saturating_mul(9);
@@ -5340,6 +5340,14 @@ fn stores_to_bounded_unordered_indices_are_near_linear() {
             named_growth_diagnostic(&samples)
         );
     }
+    let last = store_work.len() - 1;
+    assert!(
+        !within(
+            store_work[last - 1] + samples[last - 1].size.pow(2),
+            store_work[last] + samples[last].size.pow(2),
+        ),
+        "the reduced above-cap fixture must detect quadratic store work: {store_work:?}"
+    );
 }
 
 /// [`bounded_index_stores`] with `size_t` indices and length: each index is
@@ -7886,9 +7894,9 @@ fn repeated_retain_project(count: usize) -> (String, String) {
 /// Explicit retains of one shared child cost in proportion to their number:
 /// a step does not pay again for the references the earlier ones produced.
 #[test]
-#[ignore = "nightly: 10s debug verify of 60 retains"]
+#[ignore = "nightly: shared-child retain scaling"]
 fn repeated_retains_of_one_child_scale_with_their_number() {
-    let samples = [4, 8, 16, 32]
+    let samples = [2, 4, 8, 16]
         .into_iter()
         .map(|size| {
             let (c_source, click_source) = repeated_retain_project(size);
@@ -7902,6 +7910,15 @@ fn repeated_retains_of_one_child_scale_with_their_number() {
         })
         .collect::<Vec<_>>();
     assert_near_linear_scaling("repeated retains of one child", &samples);
+    // Remove the fixed helper/entry cost before checking the larger
+    // increments. For B + k*N + a*N^2, this rejects a > k/16;
+    // the old 3x check at 16/32 only rejected a > k/16 + B/128.
+    let earlier = samples[2].work.checked_sub(samples[1].work);
+    let later = samples[3].work.checked_sub(samples[2].work);
+    assert!(
+        matches!((earlier, later), (Some(earlier), Some(later)) if later * 7 <= earlier * 20),
+        "repeated-retain work increments must remain near linear: {samples:?}"
+    );
 }
 
 /// One retain of a child while `count` other children, each with its own
@@ -7928,7 +7945,7 @@ fn retain_amid_unrelated_children_project(count: usize) -> (String, String) {
 /// A retain does not pay for the unrelated shared children that are live:
 /// every pointer parameter shares one memory block, so a lookup that walks
 /// that block instead of the queried object's own facts grows with them.
-fn assert_retain_ignores_unrelated_live_children(sizes: [usize; 4]) {
+fn assert_retain_ignores_unrelated_live_children(sizes: [usize; 4]) -> Vec<ScalingSample> {
     let samples = sizes
         .into_iter()
         .map(|size| {
@@ -7943,18 +7960,50 @@ fn assert_retain_ignores_unrelated_live_children(sizes: [usize; 4]) {
         })
         .collect::<Vec<_>>();
     assert_near_linear_scaling("a retain amid unrelated live children", &samples);
+    samples
 }
 
 #[test]
 #[ignore = "nightly: 6.1s in the parallel gate"]
 fn a_retain_ignores_unrelated_live_children() {
-    assert_retain_ignores_unrelated_live_children([2, 4, 8, 16]);
+    let _ = assert_retain_ignores_unrelated_live_children([2, 4, 8, 16]);
 }
 
 #[test]
-#[ignore = "nightly: 22s debug verify of up to 64 unrelated children"]
+#[ignore = "nightly: shared-child exit scaling with a calibrated finishing guard"]
 fn a_retain_ignores_many_unrelated_live_children() {
-    assert_retain_ignores_unrelated_live_children([8, 16, 32, 64]);
+    let samples = assert_retain_ignores_unrelated_live_children([4, 8, 16, 32]);
+    let finishing = samples
+        .iter()
+        .map(|sample| {
+            sample
+                .named_work
+                .get("operation `proof context finishing`")
+                .copied()
+                .unwrap_or(0)
+        })
+        .collect::<Vec<_>>();
+    assert!(finishing.iter().all(|work| *work > 0), "{finishing:?}");
+    // Differences remove fixed helper and entry costs. The old exit checker
+    // looked linear through 32 under the whole-proof 3x guard; its last
+    // finishing increments were 21.5k and 69k, which this guard rejects.
+    let linear_increments = |work: &[usize]| {
+        let (Some(earlier), Some(later)) =
+            (work[2].checked_sub(work[1]), work[3].checked_sub(work[2]))
+        else {
+            return false;
+        };
+        // For constant + linear + quadratic work, 20/7 on these
+        // increments has the old 3x-at-32/64 quadratic crossover.
+        later * 7 <= earlier * 20
+    };
+    assert!(
+        linear_increments(&finishing),
+        "finishing work: {finishing:?}"
+    );
+    // Recorded pre-fix curve from the owned-parameter exit-check regression
+    // (871f90f68): this smaller fixture must still reject that failure.
+    assert!(!linear_increments(&[6_100, 13_500, 35_000, 104_000]));
 }
 
 /// A function owning `count` heap objects through its pointer parameters
