@@ -4058,3 +4058,100 @@ fn owned_byte_separation_survives_an_unknown_numeric_displacement() {
         .is_none()
     );
 }
+
+#[test]
+fn seeded_mixed_width_runs_match_per_cell_caching() {
+    use crate::kernel::primitives::{CellRun, IndexIntervals};
+    for reverse in [false, true] {
+        for shift in [None, Some(0), Some(1), Some(8)] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let base = Pointer {
+                block: PointerBlock::ExternalArgument,
+                offset: PointerOffsetTerm::Variable(Variable(98_760)),
+            };
+            let other = match shift {
+                Some(shift) => base.offset_by_bytes(shift),
+                None => Pointer {
+                    block: base.block.clone(),
+                    offset: PointerOffsetTerm::Variable(Variable(98_761)),
+                },
+            };
+            let source = intern_c_memory(CMemory::new());
+            let word = CellRun::new(
+                base,
+                8,
+                CType::UInt64,
+                12,
+                source.clone(),
+                IndexIntervals::default(),
+            );
+            let bytes = CellRun::new(
+                other,
+                1,
+                CType::UInt8,
+                12,
+                source,
+                IndexIntervals::default(),
+            );
+            let runs = if reverse {
+                [&bytes, &word, &bytes]
+            } else {
+                [&word, &bytes, &word]
+            };
+            let mut expected = std::collections::BTreeMap::new();
+            let mut memory = CMemory::new();
+            for run in runs {
+                memory = memory.with_seeded_cells(
+                    run.base().clone(),
+                    run.element_width(),
+                    run.element_type(),
+                    0,
+                    run.count(),
+                    run.source().clone(),
+                );
+                for index in 0..run.count() {
+                    expected
+                        .entry(run.slot_pointer(index))
+                        .or_insert_with(|| run.value(index));
+                }
+                assert_eq!(memory.cells.len(), expected.len());
+                for (pointer, value) in &expected {
+                    assert_eq!(
+                        memory.cells.get(pointer).as_ref(),
+                        Some(value),
+                        "reverse {reverse}, shift {shift:?}, {pointer:?}"
+                    );
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn seeded_mixed_width_aliases_still_invalidate_overlapping_reads() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let address = |variable| Pointer {
+        block: PointerBlock::ExternalArgument,
+        offset: PointerOffsetTerm::Variable(Variable(variable)),
+    };
+    let word = address(98_770);
+    let bytes = address(98_771);
+    let source = intern_c_memory(CMemory::new());
+    let memory = CMemory::new()
+        .with_seeded_cells(bytes.clone(), 1, CType::UInt8, 0, 16, source.clone())
+        .with_seeded_cells(word.clone(), 8, CType::UInt64, 0, 1, source);
+    assert!(memory.cells.contains_key(&word));
+    let assumptions = PureFactContext::new().assume_condition(
+        ConditionTerm::pointer_equal(word.clone(), bytes.clone()),
+        true,
+    );
+    let written = bytes.offset_by_bytes(4);
+    let memory = memory
+        .without_possible_aliasing_cells(&written, 1, &assumptions)
+        .store_with_context(written.clone(), CValue::UInt8(9u32.into()), &assumptions);
+    assert!(
+        !memory.cells.contains_key(&word),
+        "a byte written through an alias overlaps the cached word"
+    );
+    assert_eq!(memory.cells.get(&written), Some(CValue::UInt8(9u32.into())));
+}
