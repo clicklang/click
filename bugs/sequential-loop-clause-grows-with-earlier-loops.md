@@ -180,24 +180,32 @@ work is flat as before, nine units higher per clause from counting the
 snapshots a fact's changed entries reach. The verdict and output of every
 mdtest, nightly included, are unchanged.
 
-What remains:
+The clause-list walks are gone. A function block's clauses are a
+persistent `StructuralClauses` indexed by loop and label: binding a clause,
+the rebound-label check and the region check cost the clause, and the
+previous loop's checked block is reused. The frontier clauses index their
+loops, and the source layout counts the function's loops once. Lowering one
+loop alone finds its C0 node through a per-claim loop index and hands back
+its kernel loop, so neither body is searched. A fact set also walks each
+snapshot's bound variables once
+(`bugs/fact-set-walks-each-snapshot-for-bound-variables-per-fact.md`, fixed
+with it). `sequential_loops_build_the_same_context_entries_each` now also
+counts the clauses read and the statements loop lookups visit, flat at 3, 6
+and 12 loops. Under callgrind, one more loop costs 41.0 million
+instructions between 64 and 128 loops and 42.1 million between 128 and 192
+(41.4 and 42.6 before). Charged clause work is unchanged: 1,469 for the
+second clause, 1,479 to 1,481 for the last.
 
-- `sequential_loops_build_the_same_context_entries_each` now also counts
-  flat fact copies, fact index entries, transport-candidacy tests,
-  reservation collections, reserved fact variables and annotation walks
-  per loop, and the list's indexed answers have unit tests against the
-  pairwise rules they replace (`src/surface/pure_fact_list.rs`). Both pass:
-  every per-loop count is constant at 3, 6 and 12 loops. The regression
-  takes 2.2 s, so it runs in nightly; the gate keeps
-  `sequential_loop_clauses_cost_the_same_at_every_position`. The full gate
-  passes.
-- Pointer walks linear in the earlier loops with a small constant: binding
-  the frontier clauses into the function block
-  (`FunctionBlock::with_bound_frontier_loop_clauses`, whose clauses are a
-  `Vec`), the label and scope checks over its clauses, and finding the
-  loop's node in the source and kernel bodies (`c0_loop_by_index`,
-  `kernel_loop_by_index`). A persistent clause map keyed by region would
-  remove them.
+What remains: putting the lowered loop in place rebuilds the path from the
+kernel body's root to it (`kernel_loop_replaced` in
+`annotated_loop_function_extending`). The body's statement sequence is
+right-nested, so that path is as long as the statements before the loop:
+about half a million instructions at the last of 192 loops, roughly 8
+million of the 69 million second difference across 64, 128 and 192 loops.
+The rest is logarithmic. Removing it needs a body representation whose
+path to a loop is shorter than the statements before it, for example a
+balanced sequence. That changes the kernel statements every consumer
+reads, so it is not a performance-only change.
 
 Acceptance: a multi-size regression over `loops` shows each loop clause's
 work and time constant in the number of earlier loops, up to logarithmic

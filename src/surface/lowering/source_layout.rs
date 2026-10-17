@@ -100,6 +100,9 @@ struct SourceExecutionLayoutData {
     /// The pointee type of each local pointer and array, indexed once for
     /// every loop's re-annotation of the function rather than once per loop.
     local_pointer_element_types: std::sync::OnceLock<BTreeMap<String, crate::kernel::CType>>,
+    /// The function's loop regions, counted once for every loop's clause
+    /// validation rather than once per loop.
+    loop_region_count: std::sync::OnceLock<usize>,
 }
 
 #[derive(Clone, Copy)]
@@ -890,6 +893,11 @@ impl SourceExecutionLayout {
         self.data.local_pointer_element_types.get_or_init(build)
     }
 
+    /// The function's loop regions, counted by `count` on first use.
+    pub(in crate::surface) fn loop_region_count(&self, count: impl FnOnce() -> usize) -> usize {
+        *self.data.loop_region_count.get_or_init(count)
+    }
+
     pub(in crate::surface) fn site(
         &self,
         index: usize,
@@ -1390,6 +1398,7 @@ mod source_execution_layout_tests {
                 diagnostic_places: std::sync::OnceLock::new(),
                 address_taken_locals: std::sync::OnceLock::new(),
                 local_pointer_element_types: std::sync::OnceLock::new(),
+                loop_region_count: std::sync::OnceLock::new(),
             }),
         };
         let cloned = layout.clone();

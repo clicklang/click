@@ -199,8 +199,11 @@ fn reserve_fact_variables(
     fact: &Proposition,
     reserved: &PersistentSet<Variable>,
     pending: &mut BTreeSet<Variable>,
-    snapshots: &mut PersistentSet<(u32, u32)>,
+    snapshots: &mut crate::kernel::reasoning::variable_collection::ReservedSnapshots,
 ) {
+    // Only the debug cross-check reads the already reserved set.
+    #[cfg(not(debug_assertions))]
+    let _ = reserved;
     #[cfg(debug_assertions)]
     let before = crate::instrumentation::lazy_reservation_cross_checks_enabled().then(|| {
         let mut whole = BTreeSet::new();
@@ -209,16 +212,12 @@ fn reserve_fact_variables(
         });
         (pending.clone(), whole)
     });
-    let (variables, met) =
-        crate::kernel::reasoning::variable_collection::proposition_variables_reserving(
-            fact, snapshots,
-        );
+    let variables = crate::kernel::reasoning::variable_collection::proposition_variables_reserving(
+        fact, snapshots,
+    );
     #[cfg(test)]
     RESERVED_FACT_VARIABLES.with(|count| count.set(count.get() + variables.len()));
     pending.extend(variables);
-    for snapshot in met {
-        *snapshots = snapshots.with_value(snapshot);
-    }
     #[cfg(debug_assertions)]
     if let Some((earlier, whole)) = before {
         assert!(
@@ -258,7 +257,7 @@ pub(crate) struct ProofFacts {
     /// The interned snapshots whose every variable `reserved_variables`
     /// holds, so a fact naming one again, or naming a snapshot derived from
     /// one, reserves only what differs (`proposition_variables_reserving`).
-    reserved_snapshots: PersistentSet<(u32, u32)>,
+    reserved_snapshots: crate::kernel::reasoning::variable_collection::ReservedSnapshots,
     prioritized: Option<Arc<PrioritizedProofFacts>>,
     top_level_exact: PersistentSet<Arc<Proposition>>,
     exact: PersistentSet<Arc<Proposition>>,
@@ -725,7 +724,8 @@ impl ProofFacts {
     pub(crate) fn from_source(facts: &(impl PropositionSource + ?Sized)) -> Self {
         let mut ordered = PersistentSequence::default();
         let reserved_variables = PersistentSet::default();
-        let mut reserved_snapshots = PersistentSet::default();
+        let mut reserved_snapshots =
+            crate::kernel::reasoning::variable_collection::ReservedSnapshots::default();
         let mut top_level_exact = PersistentSet::default();
         let mut exact = PersistentSet::default();
         let mut proper_conjuncts = PersistentSet::default();

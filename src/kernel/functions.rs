@@ -15,6 +15,10 @@ use std::sync::Arc;
 #[cfg(test)]
 mod aggregate_return_tests;
 mod construction_return;
+mod produced_argument_supply;
+#[cfg(test)]
+mod produced_argument_supply_tests;
+use produced_argument_supply::prepare_produced_argument_supply;
 
 fn execute_c_function_body_paths(
     state: &CState,
@@ -3449,6 +3453,7 @@ fn execute_verified_function_applications_with_suspension(
         // beside a consumed region). These views come only from the contract's inputs
         // and are computed once. Entry arguments use entry_contract_state.
         let mut produced_argument_state: Option<CState> = None;
+        let mut prepared_outputs = Vec::new();
         for resource in interface.resource_ensures() {
             let Some(identity) = resource.instance_identity() else {
                 continue;
@@ -3491,7 +3496,7 @@ fn execute_verified_function_applications_with_suspension(
             // This temporary clause evaluates C argument shape only. The
             // original spec's reference arguments are captured separately.
             let instance_resource = instance_resource.with_resource_arguments(Vec::new());
-            let argument_state = produced_argument_state.get_or_insert_with(|| {
+            if produced_argument_state.is_none() {
                 // Use the same decided-arm read authority as ordinary return
                 // clauses, visiting only this call's inputs, never its frame.
                 let mut views = instance_arm_views(
@@ -3508,14 +3513,22 @@ fn execute_verified_function_applications_with_suspension(
                         &effective_assumptions,
                     )
                 }));
-                if views.is_empty() {
-                    post_state.clone()
-                } else {
-                    post_state.clone().with_resource_context(
-                        post_state.resources().clone().unchecked_with_facts(views),
-                    )
-                }
-            });
+                let mut argument_state = post_state.clone().with_resource_context(
+                    post_state.resources().clone().unchecked_with_facts(views),
+                );
+                // A primitive output can make a named output's argument
+                // readable. Construct those facts once, before minting named
+                // outputs, and hand them to the return transition unchanged.
+                prepared_outputs = prepare_produced_argument_supply(
+                    &entry_contract_state,
+                    &mut argument_state,
+                    interface,
+                    &effective_assumptions,
+                    budget,
+                )?;
+                produced_argument_state = Some(argument_state);
+            }
+            let argument_state = produced_argument_state.as_ref().expect("initialized above");
             // Each argument keeps its declared snapshot. In particular, an
             // `old(...)` argument uses entry read authority, not the fresh
             // post-call memory used for current arguments.
@@ -3710,6 +3723,7 @@ fn execute_verified_function_applications_with_suspension(
             &output_resource_state,
             name,
             interface,
+            &prepared_outputs,
             &effective_assumptions,
             budget,
         )? {
@@ -11615,6 +11629,7 @@ pub(super) fn evaluate_function_return_resource_context(
         entry_state,
         post_state,
         count,
+        &[],
         assumptions,
         budget,
     )
@@ -11652,6 +11667,7 @@ fn evaluate_contract_return_resource_context(
     entry_state: &CState,
     post_state: &CState,
     count: usize,
+    prepared_outputs: &[Option<CResourceFact>],
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Result<ResourceContext, CRuntimeError>> {
@@ -11907,11 +11923,15 @@ fn evaluate_contract_return_resource_context(
     let mut entry_supply: Option<ReturnSupply> = None;
     let mut post_supply: Option<ReturnSupply> = None;
     type CanonicalOwners = BTreeMap<CResourceFact, VecDeque<CResourceFact>>;
-    let mut evaluate_returned = |resource: &CResourceSpec,
+    let mut evaluate_returned = |clause_index: usize,
+                                 resource: &CResourceSpec,
                                  returned: &[CResourceFact],
                                  canonical_by_checked: &mut CanonicalOwners,
                                  budget: &mut ExecutionBudget|
      -> ExecutionResult<Result<CResourceFact, CRuntimeError>> {
+        if let Some(Some(prepared)) = prepared_outputs.get(clause_index) {
+            return Ok(Ok(prepared.clone()));
+        }
         // Snapshot selection is carried by the normalized specification.
         // A named instance uses post fields while retaining entry identity.
         let (state, cached) = match resource.snapshot() {
@@ -12017,9 +12037,9 @@ fn evaluate_contract_return_resource_context(
     // A clause whose address loads a cell a later returned clause supplies
     // waits for it: clause order does not decide what a contract returns,
     // just as it does not decide what it requires.
-    let mut deferred: Vec<(&CResourceSpec, CRuntimeError)> = Vec::new();
+    let mut deferred: Vec<(usize, &CResourceSpec, CRuntimeError)> = Vec::new();
     let mut returned: Vec<CResourceFact> = Vec::new();
-    for resource in interface.resource_ensures().iter().take(count) {
+    for (clause_index, resource) in interface.resource_ensures().iter().take(count).enumerate() {
         if let Some(guard) = resource.guard() {
             match evaluate_guarded_contract_condition_with_loop_entry(
                 guard,
@@ -12047,10 +12067,16 @@ fn evaluate_contract_return_resource_context(
         let resource = if let Some(entry_borrow) = entry_borrow {
             entry_borrow
         } else {
-            match evaluate_returned(resource, &returned, &mut canonical_by_checked, budget)? {
+            match evaluate_returned(
+                clause_index,
+                resource,
+                &returned,
+                &mut canonical_by_checked,
+                budget,
+            )? {
                 Ok(resource) => resource,
                 Err(error) if resource_clause_failure_awaits_supply(&error) => {
-                    deferred.push((resource, error));
+                    deferred.push((clause_index, resource, error));
                     continue;
                 }
                 Err(error) => return Ok(Err(error)),
@@ -12072,8 +12098,14 @@ fn evaluate_contract_return_resource_context(
     while !deferred.is_empty() {
         let waited = deferred.len();
         let mut waiting = Vec::new();
-        for (resource, error) in std::mem::take(&mut deferred) {
-            match evaluate_returned(resource, &returned, &mut canonical_by_checked, budget)? {
+        for (clause_index, resource, error) in std::mem::take(&mut deferred) {
+            match evaluate_returned(
+                clause_index,
+                resource,
+                &returned,
+                &mut canonical_by_checked,
+                budget,
+            )? {
                 Ok(fact) => {
                     context = match context.try_compose_into_valid_context_delaying_normalization(
                         [fact.clone()],
@@ -12085,14 +12117,14 @@ fn evaluate_contract_return_resource_context(
                     returned.push(fact);
                 }
                 Err(retry_error) if resource_clause_failure_awaits_supply(&retry_error) => {
-                    waiting.push((resource, error));
+                    waiting.push((clause_index, resource, error));
                 }
                 Err(retry_error) => return Ok(Err(retry_error)),
             }
         }
         if waiting.len() == waited {
             // Nothing returned on this pass: no order supplies the cell.
-            let (_, error) = waiting.swap_remove(0);
+            let (_, _, error) = waiting.swap_remove(0);
             return Ok(Err(error));
         }
         deferred = waiting;
@@ -12182,6 +12214,7 @@ fn evaluate_function_return_resources(
         post_state,
         function.name(),
         function.contract_interface(),
+        &[],
         assumptions,
         budget,
     )
@@ -12198,6 +12231,7 @@ fn evaluate_contract_return_resources(
     post_state: &CState,
     interface_name: &str,
     interface: &CFunctionContractInterface,
+    prepared_outputs: &[Option<CResourceFact>],
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Result<ContractReturnResources, CRuntimeError>> {
@@ -12214,6 +12248,7 @@ fn evaluate_contract_return_resources(
                 entry_state,
                 post_state,
                 interface.resource_ensures().len(),
+                prepared_outputs,
                 assumptions,
                 budget,
             )
@@ -16118,8 +16153,35 @@ fn evaluate_resource_clauses_against_whole_section(
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Result<Vec<CCheckedResourceFact>, CRuntimeError>> {
-    let selected_load_values =
-        selected_instance_resource_load_values(state, definitions, assumptions);
+    evaluate_resource_clauses_in_section(
+        entry_state,
+        state,
+        resources,
+        definitions,
+        assumptions,
+        budget,
+        true,
+    )
+}
+
+/// The same indexed dependency queue also prepares the available part of a
+/// call's primitive outputs. Unresolved clauses then remain for the return
+/// transition, where fresh named outputs can supply their dependencies.
+#[allow(clippy::too_many_arguments)]
+fn evaluate_resource_clauses_in_section(
+    entry_state: &CState,
+    state: &CState,
+    resources: &[CResourceSpec],
+    definitions: &[CCompositeResourceDefinition],
+    assumptions: &PureFactContext,
+    budget: &mut ExecutionBudget,
+    require_complete: bool,
+) -> ExecutionResult<Result<Vec<CCheckedResourceFact>, CRuntimeError>> {
+    let selected_load_values = if definitions.is_empty() {
+        BTreeMap::new()
+    } else {
+        selected_instance_resource_load_values(state, definitions, assumptions)
+    };
     let mut evaluated: Vec<Option<CResourceFact>> = vec![None; resources.len()];
     let mut active = vec![true; resources.len()];
     let mut supplied: Vec<CResourceFact> = Vec::new();
@@ -16258,12 +16320,14 @@ fn evaluate_resource_clauses_against_whole_section(
             !awaits
         })
         .min_by_key(|index| resource_clause_position(resources, *index));
-    if let Some(index) = refused.or_else(|| {
-        unresolved
-            .iter()
-            .copied()
-            .min_by_key(|index| resource_clause_position(resources, *index))
-    }) {
+    if require_complete
+        && let Some(index) = refused.or_else(|| {
+            unresolved
+                .iter()
+                .copied()
+                .min_by_key(|index| resource_clause_position(resources, *index))
+        })
+    {
         let error = failures[index]
             .take()
             .unwrap_or_else(|| CRuntimeError::FunctionContract("unevaluated".to_string()));

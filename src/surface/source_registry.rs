@@ -584,7 +584,7 @@ mod tests {
             tactic_procedure: false,
             requires,
             decreases: None,
-            structural_clauses: Vec::new(),
+            structural_clauses: StructuralClauses::default(),
             constructs: Vec::new(),
             ensures: Vec::new(),
             exceptional_ensures: Vec::new(),
