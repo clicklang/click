@@ -638,6 +638,9 @@ impl PureFactContext {
         &self,
         condition: &ConditionTerm,
     ) -> Option<bool> {
+        if self.addresses_separated_by_class(condition) {
+            return Some(false);
+        }
         match condition {
             ConditionTerm::PointerEqual(left, right) => self
                 .pointers_distinct_by_nullness(left, right)
