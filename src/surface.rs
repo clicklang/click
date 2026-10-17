@@ -3293,7 +3293,9 @@ impl RecordedSnapshots {
     /// they are taken: a reader that stops at the first one it wants visits
     /// a logarithm of the tree, not every snapshot the path recorded.
     fn iter_newest_first(&self) -> RecordedSnapshotsNewestFirst<'_> {
-        let mut entries = RecordedSnapshotsNewestFirst { pending: Vec::new() };
+        let mut entries = RecordedSnapshotsNewestFirst {
+            pending: Vec::new(),
+        };
         entries.push_right_spine(self.version.root.as_deref());
         entries
     }

@@ -1205,13 +1205,15 @@ pub(in crate::surface) fn annotated_loop_function_extending(
         // loop is given the ranges every other loop of `previous` holds.
         let checked_entry = match frame_entry.checked_entry_state {
             Some(state) => state.clone(),
-            None => crate::kernel::c_function_entry_state(entry_state, &previous.function, arguments)
-                .ok_or_else(|| {
-                    ClickError::new(format!(
-                        "could not construct the resource-derived loop entry for `{}`",
-                        parsed_function.name()
-                    ))
-                })?,
+            None => {
+                crate::kernel::c_function_entry_state(entry_state, &previous.function, arguments)
+                    .ok_or_else(|| {
+                        ClickError::new(format!(
+                            "could not construct the resource-derived loop entry for `{}`",
+                            parsed_function.name()
+                        ))
+                    })?
+            }
         };
         let mut budget = crate::kernel::ExecutionBudget::for_new_execution();
         match crate::kernel::establish_resource_derived_loop_frames(
@@ -1263,7 +1265,10 @@ pub(in crate::surface) fn annotated_loop_function_extending(
 /// in that walk's order: `while`, `do` and `for` loops number themselves
 /// before their bodies, and only sequences, loops and `if` arms are
 /// descended, as `AnnotationLowerer::lower_statement` descends them.
-fn c0_loop_by_index(statement: &syntax::C0Statement, target: usize) -> Option<&syntax::C0Statement> {
+fn c0_loop_by_index(
+    statement: &syntax::C0Statement,
+    target: usize,
+) -> Option<&syntax::C0Statement> {
     fn find<'s>(
         statement: &'s syntax::C0Statement,
         target: usize,

@@ -4856,7 +4856,9 @@ fn extend_with_snapshot_variables(
         let counts = shared_memory_variable_counts(memory, whole);
         variables.extend(
             counts
-                .get_greater_than(&Variable(crate::kernel::eval::LOAD_VARIABLE_RANGE.start - 1))
+                .get_greater_than(&Variable(
+                    crate::kernel::eval::LOAD_VARIABLE_RANGE.start - 1,
+                ))
                 .map(|(variable, _)| *variable)
                 .filter(crate::kernel::is_load_variable),
         );

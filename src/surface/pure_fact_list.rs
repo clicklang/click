@@ -111,7 +111,10 @@ impl BuiltContext {
             .0
             .get_mut()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        if built.as_ref().is_some_and(|(through, _)| *through > sequence) {
+        if built
+            .as_ref()
+            .is_some_and(|(through, _)| *through > sequence)
+        {
             *built = None;
         }
     }
@@ -401,10 +404,12 @@ impl PureFactList {
         list.adopt_proof_facts(source);
         #[cfg(debug_assertions)]
         if fact_list_check_enabled() {
-            assert!(
-                list.iter().eq(source.propositions()),
-                "an extended loop fact list lost the order its proof facts present"
-            );
+            crate::instrumentation::uncharged_debug_check(|| {
+                assert!(
+                    list.iter().eq(source.propositions()),
+                    "an extended loop fact list lost the order its proof facts present"
+                );
+            });
         }
         Some(list)
     }
@@ -550,10 +555,7 @@ impl PureFactList {
                     Some(Proposition::ConditionIs(condition.clone(), !value))
                 }
                 Proposition::Not(body)
-                    if !matches!(
-                        body.as_ref(),
-                        Proposition::Not(_) | Proposition::And(_, _)
-                    ) =>
+                    if !matches!(body.as_ref(), Proposition::Not(_) | Proposition::And(_, _)) =>
                 {
                     Some(body.as_ref().clone())
                 }
@@ -814,4 +816,131 @@ pub(crate) fn fact_list_entry_counts() -> [usize; 3] {
         FACT_INDEX_ENTRIES.with(std::cell::Cell::get),
         TRANSPORT_CANDIDATE_TESTS.with(std::cell::Cell::get),
     ]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::kernel::{Bitvector32Term, ConditionTerm, Variable};
+
+    fn condition(variable: u64) -> ConditionTerm {
+        ConditionTerm::Bitvector32Equal(
+            Box::new(Bitvector32Term::Variable(Variable(variable))),
+            Box::new(Bitvector32Term::Constant(0)),
+        )
+    }
+
+    fn predicate(name: &str) -> Proposition {
+        Proposition::Predicate {
+            name: name.to_string(),
+            arguments: Vec::new(),
+        }
+    }
+
+    /// Leaves and small compounds of every shape the direct-conflict rule
+    /// distinguishes: conditions of both values, negations of conditions,
+    /// of negations and of conjunctions, other facts and their negations,
+    /// and conjunctions of those.
+    fn shapes() -> Vec<Proposition> {
+        let not = |fact: Proposition| Proposition::Not(Box::new(fact));
+        let and = |left: Proposition, right: Proposition| {
+            Proposition::And(Box::new(left), Box::new(right))
+        };
+        let mut leaves = Vec::new();
+        for variable in [1, 2] {
+            for value in [true, false] {
+                let fact = Proposition::ConditionIs(condition(variable), value);
+                leaves.push(fact.clone());
+                leaves.push(not(fact.clone()));
+                leaves.push(not(not(fact)));
+            }
+        }
+        leaves.push(predicate("p"));
+        leaves.push(not(predicate("p")));
+        leaves.push(not(not(predicate("p"))));
+        leaves.push(predicate("q"));
+        let mut shapes = leaves.clone();
+        for (index, left) in leaves.iter().enumerate() {
+            for right in leaves.iter().skip(index).step_by(3) {
+                shapes.push(and(left.clone(), right.clone()));
+                shapes.push(not(and(left.clone(), right.clone())));
+            }
+        }
+        shapes
+    }
+
+    #[test]
+    fn indexed_conflicts_agree_with_the_pairwise_rule() {
+        let shapes = shapes();
+        for listed in shapes.chunks(5) {
+            let list = PureFactList::from(listed.to_vec());
+            for fact in &shapes {
+                let expected = listed.iter().any(|available| {
+                    crate::kernel::proof::fact_reasoning::exact_facts_directly_conflict(
+                        available, fact,
+                    )
+                });
+                assert_eq!(
+                    list.directly_conflicts_with(fact),
+                    expected,
+                    "{fact:?} against {listed:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn indexed_membership_follows_every_mutation() {
+        let shapes = shapes();
+        let mut list = PureFactList::from(shapes[..12].to_vec());
+        let mut flat = shapes[..12].to_vec();
+        let check = |list: &PureFactList, flat: &[Proposition]| {
+            assert!(list.iter().eq(flat.iter()), "order");
+            for fact in &shapes {
+                assert_eq!(list.contains(fact), flat.contains(fact), "{fact:?}");
+                let conjunct = flat.iter().any(|available| {
+                    let mut found = false;
+                    conjunction_nodes(available, &mut |node| found |= node == fact);
+                    found
+                });
+                assert_eq!(list.has_exact_conjunct(fact), conjunct, "{fact:?}");
+            }
+        };
+        check(&list, &flat);
+        let copy = list.clone();
+        list.replace_fact_in_place(&shapes[3], &shapes[20]);
+        let position = flat.iter().position(|fact| fact == &shapes[3]).unwrap();
+        flat[position] = shapes[20].clone();
+        check(&list, &flat);
+        list.replace_fact_in_place(&shapes[4], &shapes[20]);
+        flat.retain(|fact| fact != &shapes[4]);
+        check(&list, &flat);
+        list.remove_all(&shapes[5]);
+        flat.retain(|fact| fact != &shapes[5]);
+        check(&list, &flat);
+        list.extend(shapes[30..34].iter().cloned());
+        flat.extend(shapes[30..34].iter().cloned());
+        check(&list, &flat);
+        list.retain(|fact| !matches!(fact, Proposition::Predicate { .. }));
+        flat.retain(|fact| !matches!(fact, Proposition::Predicate { .. }));
+        check(&list, &flat);
+        assert_eq!(list.to_vec(), flat);
+        // The copy taken before the mutations keeps its facts and indexes.
+        check(&copy, &shapes[..12]);
+    }
+
+    #[test]
+    fn transport_candidates_follow_replacements() {
+        let list = PureFactList::from(vec![predicate("p"), predicate("q")]);
+        assert!(list.transport_candidates().is_empty());
+        let mut list = list;
+        list.push(predicate("r"));
+        assert!(list.transport_candidates().is_empty());
+        list.replace_fact_in_place(&predicate("q"), &predicate("s"));
+        assert!(list.transport_candidates().is_empty());
+        assert_eq!(
+            list.iter().cloned().collect::<Vec<_>>(),
+            vec![predicate("p"), predicate("s"), predicate("r")]
+        );
+    }
 }

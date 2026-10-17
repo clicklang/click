@@ -180,20 +180,28 @@ pub(in crate::surface::proof) fn execute_frontier_local_loop(
     };
     #[cfg(debug_assertions)]
     if crate::surface::lowering::loop_annotation_check_enabled() {
-        let whole = annotated_function_with_assumptions(
-            &bound_function_block,
-            parsed_function,
-            &initial_state,
-            arguments,
-            SpecDefinitions::new(predicate_environment, click_function_environment),
-            resource_environment,
-            frame_entry,
-            Some(pointer_element_types),
-        )?;
-        assert!(
-            &whole == annotation.function(),
-            "loop({loop_index})'s annotation differs from the whole-function walk's"
-        );
+        crate::instrumentation::uncharged_debug_check(|| {
+            let whole = annotated_function_with_assumptions(
+                &bound_function_block,
+                parsed_function,
+                &initial_state,
+                arguments,
+                SpecDefinitions::new(predicate_environment, click_function_environment),
+                resource_environment,
+                frame_entry,
+                Some(pointer_element_types),
+            )
+            .unwrap_or_else(|error| {
+                panic!(
+                    "the whole-function walk refuses loop({loop_index}): {}",
+                    error.message()
+                )
+            });
+            assert!(
+                &whole == annotation.function(),
+                "loop({loop_index})'s annotation differs from the whole-function walk's"
+            );
+        });
     }
     let annotated = annotation.function().clone();
     execution.presentation.loop_annotation = Some(Arc::new(LoopAnnotationCache {

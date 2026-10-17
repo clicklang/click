@@ -560,8 +560,10 @@ impl<'a> Proof<'a> {
         indexed: Option<ProofFacts>,
     ) -> Self {
         let facts = indexed.unwrap_or_else(|| ProofFacts::from_ordered(available.as_slice()));
-        let lowering_context =
-            resource_context_observable_facts_for_proof(fixed_state.state.resources(), facts.clone());
+        let lowering_context = resource_context_observable_facts_for_proof(
+            fixed_state.state.resources(),
+            facts.clone(),
+        );
         let goal = goal(BranchState {
             facts,
             unfolded_predicates: PersistentOrderedSet::default(),

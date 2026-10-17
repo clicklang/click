@@ -361,11 +361,13 @@ impl LazyReservedVariables {
         if execution_range && self.execution_bound.is_none_or(|bound| *variable > bound) {
             #[cfg(debug_assertions)]
             if lazy_reservation_check_enabled() {
-                assert!(
-                    !self.collected().contains(variable),
-                    "a lazy reservation's execution bound {:?} is below its variable {variable:?}",
-                    self.execution_bound,
-                );
+                crate::instrumentation::uncharged_debug_check(|| {
+                    assert!(
+                        !self.collected().contains(variable),
+                        "a lazy reservation's execution bound {:?} is below its variable {variable:?}",
+                        self.execution_bound,
+                    );
+                });
             }
             return false;
         }
@@ -4996,9 +4998,10 @@ impl VerifiedLoopRules {
     }
 
     pub(super) fn push(&mut self, rule: CVerifiedLoopRule) {
-        let bound = crate::kernel::reasoning::variable_collection::verified_loop_rule_execution_bound(
-            &rule,
-        );
+        let bound =
+            crate::kernel::reasoning::variable_collection::verified_loop_rule_execution_bound(
+                &rule,
+            );
         self.execution_bound = self.execution_bound.max(bound);
         self.by_statement
             .entry(Self::statement_key(&rule.loop_statement))
