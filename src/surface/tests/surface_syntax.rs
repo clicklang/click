@@ -5363,7 +5363,7 @@ fn a_cpp_class_function_is_its_object_field() {
         (
             "class Square : Shape",
             "class Square : Other",
-            "only a direct subclass",
+            "names a base without a `class` block",
         ),
     ] {
         let source = source.replace(from.trim_start(), to);
