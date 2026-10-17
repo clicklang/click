@@ -173,6 +173,8 @@ pub struct C0Function {
     /// The interface function a crate trait method's implementation
     /// implements, whose contract its own must refine.
     trait_interface: Option<String>,
+    /// The C++ virtual method a dispatch the importer names stands for.
+    dispatched_method: Option<String>,
     parameters: Vec<C0Parameter>,
     body: C0Statement,
     /// Compiler-created carriers for statement-form callback calls. Keeping
@@ -3316,6 +3318,11 @@ impl C0Function {
         self.trait_interface.as_deref()
     }
 
+    /// The C++ virtual method this function, a dispatch, stands for.
+    pub(crate) fn dispatched_method(&self) -> Option<&str> {
+        self.dispatched_method.as_deref()
+    }
+
     /// A closure's function whose first `count` parameters are captures.
     pub(crate) fn with_closure_captures(mut self, count: usize) -> Self {
         self.closure_captures = count;
@@ -3363,6 +3370,19 @@ impl C0Function {
         self.return_pointee_constant
     }
 
+    /// A declaration with this function's interface and no body, named
+    /// `name`: the dispatch a C++ importer names for a virtual method.
+    pub(crate) fn external_alias(&self, name: String) -> Self {
+        let mut alias = Self::external(self.return_type, name, self.parameters.clone());
+        alias.return_pointee_constant = self.return_pointee_constant;
+        alias.return_reference = self.return_reference;
+        alias.return_struct_name = self.return_struct_name.clone();
+        alias.return_pointer_struct_name = self.return_pointer_struct_name.clone();
+        alias.requires_read_only_contract = self.requires_read_only_contract;
+        alias.dispatched_method = Some(self.name.clone());
+        alias
+    }
+
     pub(crate) fn external(
         return_type: C0Type,
         name: String,
@@ -3382,6 +3402,7 @@ impl C0Function {
             positional_parameters: false,
             closure_captures: 0,
             trait_interface: None,
+            dispatched_method: None,
             program_entry_state: None,
             prelowered_kernel_function: None,
             parameters,
@@ -10169,6 +10190,7 @@ impl Parser {
             positional_parameters: false,
             closure_captures: 0,
             trait_interface: None,
+            dispatched_method: None,
             program_entry_state: None,
             prelowered_kernel_function: None,
             parameters: header.parameters,

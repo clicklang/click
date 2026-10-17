@@ -214,6 +214,11 @@ pub(in crate::surface) struct ProgramLayouts {
     /// Each C++ override with the virtual method it overrides, by their
     /// sidecar names: the override inherits that method's interface.
     pub(in crate::surface) virtual_overrides: Vec<(String, String)>,
+    /// Each dispatch a C++ importer names for a call through a reference to
+    /// a class another derives from, with the virtual method it stands for,
+    /// by their sidecar names: without a contract of its own, it has the
+    /// method's.
+    pub(in crate::surface) virtual_dispatches: Vec<(String, String)>,
     /// The layout name of each C++ record a head spells otherwise, by that
     /// spelling: `Stored<long long>` is `Stored__long_long`.
     pub(in crate::surface) record_spellings: BTreeMap<String, String>,
@@ -783,6 +788,7 @@ struct Parser {
     /// Each crate trait method implementation read, by name, with the
     /// interface it inherits.
     rust_trait_implementations: Vec<(String, String)>,
+    cpp_dispatches: Vec<(String, String)>,
     /// The crate traits whose objects carry state, by importer name: the
     /// token rewrite already gave their implementations their interfaces.
     rust_object_traits: BTreeSet<String>,
@@ -1168,6 +1174,7 @@ impl Parser {
             }
             parser.language = SourceLanguage::Cpp;
             parser.rust_trait_implementations = layouts.virtual_overrides;
+            parser.cpp_dispatches = layouts.virtual_dispatches;
             parser.record_spellings = layouts.record_spellings;
         }
         Ok(parser)
@@ -1274,6 +1281,7 @@ impl Parser {
             rust_trait_interface: None,
             rust_trait_type_parameters: BTreeSet::new(),
             rust_trait_implementations: Vec::new(),
+            cpp_dispatches: Vec::new(),
             tokens,
             positions,
             matching_parentheses,
@@ -1644,24 +1652,23 @@ impl Parser {
         // virtual method overridden, whose contract a call through it assumes.
         let cpp = self.language == SourceLanguage::Cpp;
         for (implementation, interface) in std::mem::take(&mut self.rust_trait_implementations) {
-            // A defining class's method is stated on that class's memory, which
-            // an override's class lays out differently.
-            if cpp && self.cpp_object_methods.on_memory.contains(&interface) {
-                return Err(ClickError::new(format!(
-                    "`{implementation}` overrides `{interface}`, which is stated on its class's \
-                     memory by that class's definitions of its object's state; overriding it \
-                     remains unsupported"
-                ))
-                .at_declaration(&implementation));
-            }
-            // An override of a method of a class whose object carries state is
-            // stated on its own memory, by its class's definitions.
-            if cpp && self.cpp_object_methods.interfaces.contains(&interface) {
+            // An override of a method of a class whose object carries state, or
+            // of a defining class's method, is stated on its own memory, by its
+            // class's definitions.
+            if cpp
+                && (self.cpp_object_methods.interfaces.contains(&interface)
+                    || self.cpp_object_methods.on_memory.contains(&interface))
+            {
                 if !self.cpp_object_methods.on_memory.contains(&implementation) {
+                    let overridden = if self.cpp_object_methods.on_memory.contains(&interface) {
+                        "a method of a class that defines its object's state"
+                    } else {
+                        "whose class's object carries state"
+                    };
                     return Err(ClickError::new(format!(
-                        "`{implementation}` overrides `{interface}`, whose class's object \
-                         carries state: its class defines that state on its own memory, \
-                         `class Derived : Base {{ function f(this) -> T {{ ... }} }}`"
+                        "`{implementation}` overrides `{interface}`, {overridden}: its class \
+                         defines that state on its own memory, `class Derived : Base {{ \
+                         function f(this) -> T {{ ... }} }}`"
                     ))
                     .at_declaration(&implementation));
                 }
@@ -1697,6 +1704,23 @@ impl Parser {
                         ))
                         .at_declaration(&implementation)
                     })?;
+            }
+        }
+        // A dispatch the sidecar does not state has the contract of the
+        // method it stands for.
+        for (dispatch, method) in std::mem::take(&mut self.cpp_dispatches) {
+            if function_blocks
+                .iter()
+                .any(|block| block.signature().name() == dispatch)
+            {
+                continue;
+            }
+            if let Some(block) = function_blocks
+                .iter()
+                .find(|block| block.signature().name() == method)
+            {
+                let alias = block.dispatch_alias(&dispatch);
+                function_blocks.push(alias);
             }
         }
         let end = self.position;
