@@ -45,5 +45,5 @@ struct node* caller(struct root* root) {
 ```
 
 ```expect
-fail: missing resource fact `views root->node`
+fail: access outside the subobject the pointer designates
 ```

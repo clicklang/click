@@ -2683,7 +2683,7 @@ fn append_resource_clause_loadable_fact_with_store<F: ResourcePureFacts>(
         return Ok(());
     };
     for range in ranges {
-        for guard in crate::kernel::memory_range_extent_guard_spellings(&range) {
+        for guard in crate::kernel::admitted_memory_range_extent_facts(&range) {
             propositions.insert(guard);
         }
     }

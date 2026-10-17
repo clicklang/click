@@ -27,13 +27,14 @@ mod memory_construction_tests;
 #[cfg(test)]
 pub(crate) use contracts::memory_range_byte_count_guards;
 pub(crate) use contracts::{
-    MemoryRangeExtent, element_count_limit_constrains_int32, is_unnamed_footprint_base,
-    memory_range_byte_count, memory_range_byte_count_extent, memory_range_element_count,
-    memory_range_element_count_guards, memory_range_element_count_limit,
-    memory_range_extent_guard_spellings, memory_range_extent_guards, narrow_range_constant,
-    scaled_extent_element_width, stated_loadable_extent_guard_spellings,
-    stated_loadable_extent_guards, stated_separation_extent_bounds,
-    stated_separation_extent_guards, wide_loadable_element_count, wide_range_bounds,
+    MemoryRangeExtent, admitted_memory_range_extent_facts, element_count_limit_constrains_int32,
+    is_unnamed_footprint_base, memory_range_byte_count, memory_range_byte_count_extent,
+    memory_range_element_count, memory_range_element_count_guards,
+    memory_range_element_count_limit, memory_range_extent_guard_spellings,
+    memory_range_extent_guards, narrow_range_constant, scaled_extent_element_width,
+    stated_loadable_extent_guard_spellings, stated_loadable_extent_guards,
+    stated_separation_extent_bounds, stated_separation_extent_guards, wide_loadable_element_count,
+    wide_range_bounds,
 };
 mod integer;
 mod machine_integer;
@@ -1352,6 +1353,24 @@ impl CPointerValue {
     pub(in crate::kernel) fn with_opaque_extent(mut self, extent: Option<Arc<Pointer>>) -> Self {
         self.opaque_extent = extent;
         self
+    }
+
+    /// Entry member selection establishes bounds for its parent's opaque domain.
+    pub(in crate::kernel) fn opaque_coverage_fact(
+        &self,
+        range: &CMemoryRange,
+    ) -> Option<Proposition> {
+        if self.extent_is_known() {
+            return None;
+        }
+        let origin = self.opaque_extent()?;
+        Some(
+            SubobjectExtent {
+                start: origin.clone(),
+                width: Bitvector32Term::Constant(0),
+            }
+            .coverage_fact(range),
+        )
     }
 
     pub(in crate::kernel) fn access_designation(&self) -> (&Pointer, Option<&Pointer>) {
@@ -3865,6 +3884,9 @@ pub struct CMemoryRange {
     /// The opaque extent of the pointer whose clause named this range, if
     /// any. Not part of the range's identity.
     extent_claims: RangeDesignation<[Option<Variable>; 2]>,
+    /// Parent-member bounds established while evaluating this footprint.
+    /// Evidence only: it never changes the identity or authority of the range.
+    pub(super) formation_coverage: Arc<[Proposition]>,
 }
 
 /// The opaque subobject extent a held range was named through

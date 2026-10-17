@@ -3839,6 +3839,10 @@ fn interface_join_resources(
         if let Some(proposition) = interface_resource_intrinsic_fact(spec, &fact, &lowering_state) {
             successor_interface_resource_facts.push(proposition);
         }
+        if let Some(range) = fact.memory_range() {
+            successor_interface_resource_facts
+                .extend(crate::kernel::admitted_memory_range_extent_facts(range));
+        }
         successor_interface_resources.push(fact);
     }
     // A view already established by the common residual needs no second

@@ -2255,6 +2255,7 @@ impl CMemoryRange {
             element_width,
             kind: RangeIndexKind::Int32,
             extent_claims: Default::default(),
+            formation_coverage: Default::default(),
         }
     }
 
@@ -2333,6 +2334,7 @@ impl CMemoryRange {
     pub(in crate::kernel) fn with_carrier_of(mut self, source: &Self) -> Self {
         self.designation = source.designation.clone();
         self.extent_claims = source.extent_claims;
+        self.formation_coverage = source.formation_coverage.clone();
         self.typed_carrier = source.typed_carrier;
         self.opaque_extent = source.opaque_extent.clone();
         self.carrier_extent_known = source.carrier_extent_known;
@@ -2523,6 +2525,7 @@ impl CMemoryRange {
         Self {
             kind: self.kind,
             extent_claims: self.extent_claims,
+            formation_coverage: self.formation_coverage.clone(),
             designation: self.designation.clone(),
             typed_carrier: self.typed_carrier,
             opaque_extent: self.opaque_extent.clone(),
@@ -3186,6 +3189,19 @@ pub(crate) fn memory_range_extent_guard_spellings(range: &CMemoryRange) -> Vec<P
         if !guards.contains(&guard) {
             guards.push(guard);
         }
+    }
+    guards
+}
+
+/// Intrinsic bounds of a resource footprint whose admission was established.
+/// A merely stated viewability/separation condition grants no domain evidence.
+pub(crate) fn admitted_memory_range_extent_facts(range: &CMemoryRange) -> Vec<Proposition> {
+    let mut guards = memory_range_extent_guard_spellings(range);
+    guards.extend(range.formation_coverage.iter().cloned());
+    if range.typed_carrier
+        && let Some(coverage) = range.pointer_carrier().opaque_coverage_fact(range)
+    {
+        guards.push(coverage);
     }
     guards
 }

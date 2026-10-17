@@ -54,5 +54,5 @@ int32 read_cell(struct cell* node) {
 ```
 
 ```expect
-fail: missing resource fact
+fail: access outside the subobject the pointer designates
 ```

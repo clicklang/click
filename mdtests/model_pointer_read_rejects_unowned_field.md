@@ -33,5 +33,5 @@ struct node *read_right(struct node *p) {
 ```
 
 ```expect
-fail: missing resource fact
+fail: access outside the subobject the pointer designates
 ```

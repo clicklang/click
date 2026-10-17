@@ -2374,7 +2374,20 @@ fn pointer_offset_by_elements_paths(
     // offset and compared unequal to null, which decided a branch C leaves
     // undefined. Displacing by zero is left alone: it is the shape real code
     // writes, and C23 defines it.
-    if pointer.is_in_null_block() && offset != Bitvector32Term::Constant(0) {
+    let zero = if wide {
+        ConditionTerm::uint64_equal(offset.clone(), Bitvector32Term::UInt64Constant(0))
+    } else {
+        ConditionTerm::equal(offset.clone(), Bitvector32Term::Constant(0))
+    };
+    let zero = Proposition::ConditionIs(zero, true);
+    let zero_is_known = crate::kernel::reasoning::path_facts::call_input_fact_is_already_known;
+    let displaces = !(zero_is_known(assumptions, &zero)
+        || (!facts.is_empty()
+            && zero_is_known(
+                &assumptions_with_path_context(assumptions, &facts, &[]),
+                &zero,
+            )));
+    if pointer.is_in_null_block() && displaces {
         return vec![CExpressionPath {
             outcome: CExpressionOutcome::UndefinedBehavior(CUndefinedBehavior::PointerArithmetic),
             facts,
@@ -2382,11 +2395,14 @@ fn pointer_offset_by_elements_paths(
         }];
     }
 
-    let result = match byte_stride_index(&offset, byte_width, unsigned, wide, &facts, assumptions) {
-        Some((index, stride)) => pointer.offset_by_typed_elements(index, stride, false, false),
-        None => pointer.offset_by_typed_elements(offset.clone(), byte_width, unsigned, wide),
+    let result = if !displaces {
+        pointer.clone()
+    } else {
+        match byte_stride_index(&offset, byte_width, unsigned, wide, &facts, assumptions) {
+            Some((index, stride)) => pointer.offset_by_typed_elements(index, stride, false, false),
+            None => pointer.offset_by_typed_elements(offset.clone(), byte_width, unsigned, wide),
+        }
     };
-    let displaces = offset != Bitvector32Term::Constant(0);
     let mut guards = Vec::new();
     let mut owed = Vec::new();
 
@@ -5252,9 +5268,34 @@ fn subobject_formation_guards(
     resources: &ResourceContext,
 ) -> Result<Vec<PointerFormationGuard>, ()> {
     let Some(extent) = value.extent() else {
-        return Ok(Vec::new());
+        if value.extent_is_known()
+            || value.opaque_extent().is_none()
+            || result == value.pointer()
+            || assumptions.should_assume_entry_clause_extents()
+            // Spec offsets name mathematical addresses, as SpecExpression::PointerOffset
+            // does. Executed C arithmetic must establish its bounds here.
+            || crate::kernel::eval::SpecificationAccessScope::is_active()
+        {
+            return Ok(Vec::new());
+        }
+        let context = assumptions_with_path_context(assumptions, facts, obligations);
+        if context.pointers_known_equal(result, value.pointer())
+            || context.opaque_pointer_covers(value, result, 0)
+        {
+            return Ok(Vec::new());
+        }
+        return resources
+            .permits_designated_pointer_position(
+                result,
+                value.pointer(),
+                value.access_designation(),
+                &context,
+            )
+            .then(Vec::new)
+            .ok_or(());
     };
-    // Unknown extents are checked through coverage evidence at access.
+    // The legacy symbolic-extent prototype is checked at access; production
+    // unseen values use the opaque domain branch above.
     if extent.is_opaque() {
         return Ok(Vec::new());
     }
@@ -5287,6 +5328,42 @@ pub(in crate::kernel) fn subobject_paths(
     assumptions: &PureFactContext,
     resources: &ResourceContext,
 ) -> Vec<CExpressionPath> {
+    // A pointer type alone does not establish the extent of an enclosing
+    // object. Entry clauses establish their selected member's full bounds;
+    // subsequent selections consume that evidence or a matching held range.
+    if pointer.extent().is_none() && !pointer.extent_is_known() && pointer.opaque_extent().is_some()
+    {
+        if assumptions.should_assume_entry_clause_extents() {
+            if let Some(coverage) =
+                pointer.opaque_coverage_fact(&CMemoryRange::new_with_element_width(
+                    pointer.pointer().clone(),
+                    0u32.into(),
+                    width.into(),
+                    1,
+                ))
+            {
+                facts.push(ExecutionPureFact::new(coverage));
+            }
+        } else {
+            let context = assumptions_with_path_context(assumptions, &facts, &obligations);
+            if !context.opaque_pointer_covers(&pointer, pointer.pointer(), width)
+                && !resources.permits_designated_storage_read(
+                    pointer.pointer(),
+                    Some(pointer.access_designation()),
+                    width,
+                    &context,
+                )
+            {
+                return vec![CExpressionPath {
+                    outcome: CExpressionOutcome::UndefinedBehavior(
+                        CUndefinedBehavior::SubobjectAccess,
+                    ),
+                    facts,
+                    obligations,
+                }];
+            }
+        }
+    }
     // A contract entry's own requirement or clause selects the member
     // through a pointer of unseen formation: the caller checked the
     // selection against the argument it passed, so the entry assumes the
@@ -5499,3 +5576,7 @@ mod opaque_extent_tests {
         assert!(!covered(&right, 4, 4, &assumptions));
     }
 }
+
+#[cfg(test)]
+#[path = "unknown_pointer_formation_tests.rs"]
+mod unknown_pointer_formation_tests;

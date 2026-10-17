@@ -93,5 +93,5 @@ struct cell* read_unowned_offset(struct cell* node, struct cell* parent) {
 ```
 
 ```expect
-fail: missing resource fact
+fail: access outside the subobject the pointer designates
 ```

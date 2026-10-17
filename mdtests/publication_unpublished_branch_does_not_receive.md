@@ -34,5 +34,5 @@ int32 try_consume(struct channel* channel) {
 ```
 
 ```expect
-fail: missing resource fact `views channel->payload`
+fail: pointer arithmetic left the pointed-to object
 ```

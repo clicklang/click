@@ -1,10 +1,9 @@
 # Pointer subobject extents: closing the scalar-subobject P1
 
-Status: approved 2026-10-15; decisions D1-D5 accepted as recommended. It targets
-[the scalar-subobject bug](../bugs/pointer-arithmetic-crosses-scalar-subobject.md)
-on current master. It does not revive the archived object model. It reuses that
-model's semantic conclusions (`design/cpp-object-model.md` at `e3d84a785`) where they
-still apply, but proposes a narrower representation.
+Status: implemented; decisions D1-D5 and E1-E3 approved. This closes the
+[scalar-subobject bug](https://github.com/clicklang/click/blob/8d8a621cc2fbbab3d9af29af22530fea8af8c26b/bugs/pointer-arithmetic-crosses-scalar-subobject.md) through the staged repairs below. It reuses
+semantic conclusions from the archived object model (`design/cpp-object-model.md`
+at `e3d84a785`) with a narrower representation.
 
 ## The hole, as it exists on master
 
@@ -92,19 +91,16 @@ enum PointerExtent {
 | Typed pointer arithmetic `q + n`, `q - n`, `&q[n]` | same extent as `q` |
 | Copy, local assignment, argument binding, return | same extent |
 | Store to memory, then reload of that exact cell | same extent: cached `CValue::Pointer` cells already return the stored value. The `pointer_read_stored_value` family in `memory_provenance.rs` must return the whole `CPointerValue`, not `Pointer`. |
-| Reload of an unknown cell, havoc, modular result | `Root` (today's behavior; Phase B covers what can still go wrong) |
+| Reload of an unknown cell, havoc, modular result | Fresh opaque domain; formation and access require matching bounds evidence (Phase C) |
 | Cast to a non-character object pointer type | same extent (a cast neither narrows nor widens; D3) |
 | Cast between character-pointer types | same extent, including signedness changes (D4 refinement) |
 | Cast from another pointer type to a character pointer, or any cast to `void*` | `Root` (byte view of the enclosing object; keeps `container_of`, D4) |
 
-The frontend already knows each field's type and size when it forms
-`&p->field` (`resolve_field_access`, `C0StructField.byte_width`). Today it lowers
-the member to a bare `PointerOffsetBytes{pointer, bytes}`. Phase A replaces that
-for members with `CExpression::MemberAddress{pointer, offset, width}`, or an
-optional `member_width` on `PointerOffsetBytes`, so the kernel learns the
-extent. Rust has no raw pointers yet (`rust/charon.rs:485`), and its slice
-indexing already asserts `index < length`. Record in the docs that safe-Rust
-borrows never justify raw arithmetic, once raw pointers exist.
+The frontend supplies each field's type and ABI size
+(`C0StructField::byte_width`). C member lowering records a `CExpression::Subobject`
+at the selected address; C++ member and checked-object lowering use the same
+kernel bounds rules. The Rust adapter currently refuses raw-pointer types;
+its supported safe slice indexing checks `index < length` independently.
 
 ### Consumers
 
@@ -248,128 +244,91 @@ none of that.
 
 ## Phase C: pointers of unseen formation
 
-Status: approved 2026-10-16; decisions E1-E3 accepted as recommended. Step 1
-and the evidence infrastructure of step 2 are delivered; no producer assigns
-an opaque extent yet (see *Evidence as built*).
+Status: implemented. Decisions E1-E3 were approved 2026-10-16. Phase B supplied
+opaque complete-pointer identities uniformly for parameters, entry loads,
+modular results, model payloads and havocked values. Phase C uses those identities
+for formation and selection checks; it does not activate the earlier
+`SubobjectExtent::opaque` prototype or reserve another set of producer variables.
 
-### The hole
+### What is checked
 
-Today a value without an extent means two different things. A pointer the
-function formed from a declared object, an allocation or a string literal
-is bounded by its complete object, and that bound is exact. A pointer whose
-formation the function never saw also has no extent: a parameter, a pointer
-loaded from memory at entry, a call result, or a pointer reloaded from a
-cell a call or loop havocs. Its actual designation may be a single member.
-Neither kind is checked against an extent, and authority stays
-address-based, so the second kind can step past its member and read a
-sibling with permission held through another pointer at the same address.
-[The bug file](../bugs/pointer-arithmetic-crosses-scalar-subobject.md#pointers-of-unseen-formation)
-has two complete programs that verify on master: a callee steps a pointer
-field its caller set to `&p->first`, and a callee reads through a parameter
-its caller formed as `&p->first + 1`. In both, the contract states the
-designation exactly (`requires h->link == &p->first`), but the comparison
-stays an address equality because one side has no extent.
+`extent == None` does not imply a complete object. `extent_is_known()` distinguishes
+a declared object, allocation result or explicit widening cast from an unseen
+pointer carrying `opaque_extent`. Executed arithmetic through the latter must
+prove that the resulting position lies inside its own domain, including its
+one-past endpoint. Zero displacement, including a symbolic displacement proved
+zero, preserves the original pointer. Selecting a member through an unseen
+struct pointer also needs bounds for the complete selected member. A `T*` alone
+does not supply `sizeof(T)` bytes.
 
-### Principle
+Two complete programs already rejected by Phase B remain regression fixtures:
+`a_loaded_member_pointer_keeps_its_subobject_in_a_callee.md` and
+`an_incoming_one_past_pointer_keeps_its_subobject.md`. The remaining escape was
+formation without a read: an unknown `p` could return `p + 2` using a wider
+range named through an address alias, or no range at all. The new parameter,
+loaded-pointer and modular-result fixtures reject that formation even with
+`ensures true`. An uncovered member selection is rejected too.
 
-Every pointer value has a designation. A pointer of unseen formation gets
-a fresh **symbolic extent**: its start and width are new variables, and
-accesses and arithmetic through it are checked against them exactly as
-against a member's extent. Only facts can prove such a check, and the facts
-come from what the contract already says:
+### Bounds evidence
 
-1. **Memory clauses (D1, callee side).** A clause naming a range through a
-   pointer value claims the pointer designates that range. At a call this
-   is the caller's obligation today (`segment_extent_refusal`). Where the
-   same clause is assumed (function entry, a call's results, an unfold), it
-   adds the fact that the range lies inside the pointer's extent.
-   `views p->second` through a `struct Pair* p` covers `p`'s bytes 4 to 8,
-   which is what narrowing `p` to `second` needs.
-2. **Pointer equality (D2).** A contract `v == w` between two values with
-   extents already requires equal starts and widths (#1241). With symbolic
-   extents it pins the unknown one to the known one. `requires
-   h->link == &p->first` then tells the callee that `h->link` designates
-   `first`, and `*(h->link + 1)` is refused.
-3. **Nothing from the type.** A `T*` does not designate a `T`: a one-past
-   pointer has the same type.
+A typed memory clause establishes bounds for the pointer value that names it.
+The held-range index supplies candidate ranges; complete domain identity admits
+evidence. Numeric address equality selects addresses but never joins opaque
+domains. Complete pointer equality can transfer bounds. A selected member keeps
+its exact member extent, so a larger containing range cannot widen it.
 
-A pointer the function forms itself keeps today's exact extent, or none
-when it is a complete object. Equalities between two symbolic extents
-relate their variables, so `requires q == p` with `views p[0..2]` still
-lets the callee read `q[1]`.
+Entry clauses, opened composites and unfolded instances retain coverage facts
+under the existing `__click_subobject_covers_*` predicate. Facts are indexed by
+the source pointer class and checked against its opaque domain. A nested clause
+such as `views root->base.left` also retains the intermediate member coverage
+established while its footprint was evaluated. `EvaluatedMemorySegment` and
+`CMemoryRange::formation_coverage` carry that evidence to the producer that
+publishes clause facts. Range identity and authority ignore this metadata;
+rebasing and splitting retain it, and substitution maps its variables.
 
-### Representation and cost
+An owned allocation supplies bounds independently of byte ownership. Entry,
+unfold and verified allocation-return producers publish its coverage, requiring
+positive ownership. This permits taking a member address without making its
+bytes readable. Internal coverage facts are omitted from ordinary proof-context
+lists; the source clauses and the actual refusal remain visible.
 
-`SubobjectExtent::width` becomes a term; constant widths are the existing
-case. The guards in `subobject_extent_guards` already compare the access
-against `start` and `width`, and `pointer_access_in_range` decides them
-from facts when they are not constant. Coverage facts are ordinary pure
-facts over the extent's own variables, added once per assumed clause, so
-each check stays a local decision with no scan of unrelated pointers.
+A position check does not require a readable element. The supplier's end is
+included, and native 64-bit endpoints retain their width. Checked nonnegative
+32-bit endpoints can be promoted; native constants can be re-spelled narrowly
+only when their complete byte footprint fits. Suffix windows retain the
+non-wrapping subtraction evidence used by ordinary range containment. An empty
+range cannot justify moving a pointer into it: either both operand and result
+are the same contained position, or the supplying range must be nonempty.
 
-### Steps
+Specification offsets remain mathematical address terms. Naming a footprint
+is not executing C arithmetic; actual C formation and resource establishment
+have their own checks. A resource clause's range still cannot claim beyond a
+known selected member. C++ raw pointers use the common executed formation
+checks, while reference binding retains its existing complete-referent storage
+check. The Rust adapter rejects raw-pointer types (`rust/charon.rs`); safe slice
+indexing keeps its own bounds checks and grants no raw-pointer arithmetic rule.
 
-1. Width as a term, constant everywhere: no behavior change. Done:
-   `SubobjectExtent::width` is a `Bitvector32Term`. A consumer that still
-   needs a constant (an unsigned 64-bit clause range, the refusal's byte
-   count) treats an unknown width as not proven. Substitution and variable
-   collection map only `start`; step 2 extends them to the width when it
-   first carries variables.
-2. Symbolic extents for parameters and pointers loaded at entry, with
-   coverage from entry clauses. Add the bug's two programs as rejected
-   fixtures and run the full corpus; investigate each new failure as either
-   reliance on an unstated designation (a finding) or a lost fact (a bug).
-   The evidence infrastructure is delivered without a producer. Activating
-   parameters alone regressed valid programs whose authority is named
-   through model payloads, loaded pointers or loop-reassigned locals, which
-   have no extent yet, so activation lands with step 3.
-3. Call results, havocked reloads, model payload pointers and loop-carried
-   values. A loop-carried local the body reassigns from a load gets a fresh
-   opaque extent at the head instead of keeping its entry extent.
-4. C++ references and pointers; documentation.
+### Transport and cost
 
-### Evidence as built
+Unseen producers need no individual exemption: copies retain their domain,
+complete equality relates domains, and havoc gets a fresh one. A loop's captured
+entry view does not bound an independently reassigned cursor. The cursor fixture
+now states and preserves its relation to the entry buffer without changing C.
 
-A pointer of unseen formation carries `SubobjectExtent::opaque(v)`: a
-symbolic start and width named by one variable from a reserved range. What it
-covers is known only from evidence:
+Queries use the selected pointer-class coverage bucket and the held-range
+interval index, with no walk over unrelated resources. Deterministic multi-size
+regressions cover formation beside unrelated ranges and facts. Withdrawal tests
+remove equality or coverage evidence and require the old bounds to disappear.
+Fresh, expanded and retained checks cover full aliases, allocation-only bounds,
+nested members and the moving cursor; a numeric-only alias is rejected again
+in the retained session.
 
-- **Tagged held ranges.** A memory range evaluated from a clause records the
-  opaque extents its pointer makes claims about (`CMemoryRange::designations`):
-  its own, and, for a member pointer, the one it selected the member of.
-  The tag is not part of the range's identity. Splits keep it, a join keeps
-  only a tag both pieces carry, and a range that loses it only loses
-  evidence. An access through an opaque extent, and a clause naming a range
-  through one, must lie inside a held range carrying that extent's tag, or
-  the tag of an extent a pointer equality identified with it.
-- **Equalities.** A contract `==` between an opaque and a constant extent
-  records that the opaque one covers the constant one's bytes
-  (`__click_subobject_covers_*`, indexed by the extent's pointer class); two
-  opaque extents are identified by their starts and widths.
-- **Assume sites.** A function's own entry requirements and clauses, opening
-  or unfolding a held composite and a held population control are evaluated
-  under `PureFactContext::assume_entry_clause_extents`: the clause was
-  checked where it was established, so it is not checked again and its
-  ranges become evidence. Every other evaluation checks.
+### Approved decisions
 
-Diagnostics keep their order. An access with no authority at all, or a call
-clause no held range could supply, is left to the permission check or the
-transfer, which name the missing resource; only an access or clause the
-context could otherwise perform is refused for its designation. Pointer
-arithmetic through an opaque extent is not checked; accesses through the
-result are.
-
-### Decisions
-
-- **E1. Parameters get symbolic extents, not only loaded pointers.**
-  Recommended: yes. The parameter program above needs it.
-- **E2. A struct pointer used with `->` does not imply one complete
-  struct.** Recommended: yes, rely on clauses. The alternative assumes
-  `sizeof(T)` bytes whenever the body selects a member, which a one-past
-  `struct T*` violates.
-- **E3. Width as a term rather than a separate "unknown extent" variant.**
-  Recommended: a term. Equalities and coverage facts then work on one kind
-  of extent, and constant widths need no special case.
+- **E1. Parameters need opaque bounds too.** Applied to every unseen producer.
+- **E2. `T*` and `->` do not imply a complete `T`.** Selection uses stated bounds.
+- **E3. Keep term-valued extent widths.** The existing term representation stays;
+  Phase B's opaque domain identities select the coverage evidence used here.
 
 ## Decisions (approved as recommended)
 

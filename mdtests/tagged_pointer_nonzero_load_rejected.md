@@ -34,5 +34,5 @@ unsigned long read_forged(struct node* node) {
 ```
 
 ```expect
-fail: missing resource
+fail: access outside the subobject the pointer designates
 ```

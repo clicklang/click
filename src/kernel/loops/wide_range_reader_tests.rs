@@ -20,6 +20,7 @@ fn wide_loop_frames_cover_native_accesses_and_refuse_cross_width_ranges() {
         element_width: 4,
         kind: RangeIndexKind::UInt64,
         base_designations: [None, None],
+        formation_coverage: Default::default(),
     };
     let facts = PureFactContext::new();
     assert!(loop_effect_segment_contains_range(&segment, &wide, &facts));
