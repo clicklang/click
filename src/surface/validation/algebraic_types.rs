@@ -997,7 +997,24 @@ pub(super) fn validate_algebraic_type_uses(
                 .parameters()
                 .iter()
                 .map(|parameter| (parameter.name().to_string(), parameter.click_type().clone()))
-                .collect();
+                .collect::<BTreeMap<_, _>>();
+            // An ambient C name has no type in the pure parameter scope.
+            // Diagnose that forbidden dependency before reporting an unknown
+            // result carrier, retaining the existing purity diagnostic.
+            let mut referenced = BTreeSet::new();
+            crate::surface::lowering::collect_contract_expression_referenced_names(
+                definition.body(),
+                &mut referenced,
+            );
+            if let Some(object) = referenced
+                .iter()
+                .find(|name| !click_variables.contains_key(*name))
+            {
+                return Err(ClickError::new(format!(
+                    "pure function `{}` reads the C object `{object}` by name; a pure function body may read only its parameters, so pass the object's value as an argument",
+                    definition.name()
+                )).with_kind(ClickErrorKind::Type));
+            }
             require_scalar_return_value(
                 definition.body(),
                 definition.return_type(),

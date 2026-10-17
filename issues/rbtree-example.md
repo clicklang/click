@@ -1744,3 +1744,9 @@ four context/size helper tactics and two sized-model theorems also verify.
 Repeated-flip model definitions now check with nominal model-pointer typing;
 the owned cursor and its whole-tree restoration helper are being developed
 before the general C loop proof.
+
+Pure helpers now check their declared return types at definition boundaries.
+Recursive pointer getters use those checked interfaces, with the existing
+termination checks, so `rb_min_parent` retains its model field's object class.
+All ten sidecars in the default `rbtree-model` project verify. This removes the
+getter typing blocker without adding proof steps to the affected theorem.
