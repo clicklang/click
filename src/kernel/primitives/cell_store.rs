@@ -2408,17 +2408,17 @@ impl CellStore {
     pub(crate) fn differs_only_within(
         &self,
         other: &Self,
-        blocks: &BTreeSet<PointerBlock>,
+        blocks: &dyn super::memory_state::BlockMembership,
     ) -> bool {
         self.concrete
             .diff(&other.concrete)
-            .all(|change| blocks.contains(&change.key().block))
+            .all(|change| blocks.contains_block(&change.key().block))
             && self.runs.diff(&other.runs).all(|change| {
                 let key = change.key();
                 self.runs
                     .get(key)
                     .or_else(|| other.runs.get(key))
-                    .is_some_and(|run| blocks.contains(&run.base().block))
+                    .is_some_and(|run| blocks.contains_block(&run.base().block))
             })
     }
 

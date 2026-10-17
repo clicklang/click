@@ -436,10 +436,9 @@ pub(super) fn parse_file_items_for_module(
     parser.in_contract_definition = false;
     for definition in imported_resources {
         if let Some(body) = definition.composite_body() {
-            parser.declared_resource_child_slots.insert(
-                definition.name().to_string(),
-                composite_body_child_slots(body),
-            );
+            parser
+                .declared_resource_child_slots
+                .insert(definition.name().to_string(), body.child_slot_resources());
         }
     }
     for definition in imported_algebraic_types {
@@ -751,9 +750,11 @@ struct Parser {
     /// The fields of each resource declared so far, hidden ones included.
     declared_resource_fields: BTreeMap<String, Vec<ResourceFieldDefinition>>,
     /// The named child slots of each resource declared so far, across its
-    /// unmatched body and every match arm. A `fold` may leave out a slot
-    /// whose child is the in-scope resource of the same name.
-    declared_resource_child_slots: BTreeMap<String, BTreeSet<String>>,
+    /// unmatched body and every match arm, with the resource each owns when
+    /// the arms agree ([`CompositeResourceBody::child_slot_resources`]). A
+    /// `fold` may leave out a slot whose child is the in-scope resource of
+    /// the same name.
+    declared_resource_child_slots: BTreeMap<String, BTreeMap<String, Option<String>>>,
     /// In a resource that declares no fields and names a child: the hidden
     /// parent field that holds each `child.field`.
     hidden_child_fields: BTreeMap<(String, String), ResourceFieldAccess>,
@@ -2636,7 +2637,7 @@ impl Parser {
             self.declared_resource_fields
                 .insert(name.clone(), body.fields.clone());
             self.declared_resource_child_slots
-                .insert(name.clone(), composite_body_child_slots(body));
+                .insert(name.clone(), body.child_slot_resources());
         }
         self.names.struct_params = previous_struct_params;
         self.names
@@ -7908,18 +7909,23 @@ impl Parser {
             self.position += 1;
         }
         self.expect(Token::RBrace)?;
-        self.bind_resource_child_names(parent, bindings, introduce)
+        self.bind_resource_child_names(parent, None, bindings, introduce)
     }
 
+    /// Binds the names of an unfold or fold pattern over `parent`, whose
+    /// resource is `family` when the instance recorded one other than its
+    /// clause's.
     fn bind_resource_child_names(
         &mut self,
         parent: &ResourceClause,
+        family: Option<&str>,
         bindings: Vec<(String, String)>,
         introduce: bool,
     ) -> Result<Vec<(String, String, Variable)>, ClickError> {
-        let ResourceClause::Declared { name: family, .. } = parent else {
+        let ResourceClause::Declared { name: written, .. } = parent else {
             return Err(self.error("child bindings require a declared resource family"));
         };
+        let family = &family.map_or_else(|| written.clone(), str::to_string);
         let mut result = Vec::new();
         let mut slots = BTreeSet::new();
         let mut names = BTreeSet::new();
@@ -7970,9 +7976,20 @@ impl Parser {
                 // whole: ...` that the unfold's child becomes, keeps the
                 // resource it was declared with: its fields are that
                 // resource's, not the parent's, when a later `have` reads
-                // `whole.model`. Only a new binder records the parent, which
-                // declaration expansion replaces with the slot's resource.
-                let recorded = existing.map_or_else(|| family.clone(), |(_, family)| family);
+                // `whole.model`. A new binder takes the slot's resource when
+                // every arm of the parent's declaration agrees on it, so an
+                // unfold of the child reads the child's own fields and
+                // slots. Otherwise it records the parent, which declaration
+                // expansion replaces with the slot's resource.
+                let recorded = existing.map_or_else(
+                    || {
+                        self.declared_resource_child_slots
+                            .get(family)
+                            .and_then(|slots| slots.get(&slot).cloned().flatten())
+                            .unwrap_or_else(|| family.clone())
+                    },
+                    |(_, family)| family,
+                );
                 self.names
                     .resource_bindings
                     .insert(name.clone(), (identity, recorded));
@@ -8133,8 +8150,16 @@ impl Parser {
                 return Err(self.error("resource unfold outputs require a named resource"));
             };
             self.expect(Token::RParen)?;
+            // A child an earlier unfold introduced keeps its parent's clause
+            // as its target, since the parser cannot instantiate the slot's
+            // arguments; the resource it recorded is the slot's.
+            let family = self
+                .names
+                .resource_bindings
+                .get(&binding.name)
+                .map(|(_, family)| family.clone());
             binding.child_bindings = Some(
-                self.bind_resource_child_names(&resource, bindings, true)?
+                self.bind_resource_child_names(&resource, family.as_deref(), bindings, true)?
                     .into(),
             );
             self.expect(Token::Semicolon)?;
@@ -8280,7 +8305,7 @@ impl Parser {
             return Vec::new();
         };
         slots
-            .iter()
+            .keys()
             .filter(|slot| {
                 slot.as_str() != result
                     && !explicit
@@ -15224,22 +15249,6 @@ fn struct_byte_base(base: CExpression) -> CExpression {
 
 /// Every named child slot of a composite resource body: its unmatched
 /// body's and each match arm's, whichever resource each one owns.
-fn composite_body_child_slots(body: &CompositeResourceBody) -> BTreeSet<String> {
-    std::iter::once(body)
-        .chain(
-            body.matched
-                .iter()
-                .flat_map(|matched| &matched.arms)
-                .map(|arm| &arm.body),
-        )
-        .flat_map(|body| &body.contains)
-        .filter_map(|clause| match clause {
-            ResourceClause::Named { binding, .. } => Some(binding.name.clone()),
-            _ => None,
-        })
-        .collect()
-}
-
 /// Whether `expression` or an operand of its arithmetic is a population
 /// count, looking through `old`.
 fn has_count_operand(expression: &ContractExpression) -> bool {
