@@ -79,6 +79,11 @@ impl SourceContext {
                     | ProofTactic::UnfoldFunction(_)
                     | ProofTactic::PeelFunction { .. }
                     | ProofTactic::ApplyTheoremUsing { .. }
+                    | ProofTactic::Choose(_)
+                    | ProofTactic::LetSatisfy(_)
+                    | ProofTactic::Witness(_)
+                    | ProofTactic::Intro
+                    | ProofTactic::IntroAs(_)
             ),
         }
     }
