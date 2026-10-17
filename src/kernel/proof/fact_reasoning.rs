@@ -158,6 +158,12 @@ pub(crate) fn normalize_using_conditions(
     premises: &[Proposition],
     facts: &super::ProofFacts,
 ) -> Result<(), ConditionalNormalizationError> {
+    // A conjunction normalizes when each side does from the same premises:
+    // a pointer value equality is its addresses' and its designations'.
+    if let Proposition::And(left, right) = goal {
+        normalize_using_conditions(left, premises, facts)?;
+        return normalize_using_conditions(right, premises, facts);
+    }
     let mut conditions = std::collections::HashMap::new();
     // Equality is symmetric; signed comparisons also have an exact mirrored
     // spelling with swapped operands. Retain those spellings so

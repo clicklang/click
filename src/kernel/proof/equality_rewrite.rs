@@ -251,10 +251,7 @@ fn designated_pointer_equality(equality: &Proposition) -> Option<(&Proposition, 
             {
                 conjuncts.push(conjunct);
             }
-            Proposition::Predicate { .. }
-                if SubobjectExtent::covered_range(conjunct).is_some()
-                    || SubobjectExtent::is_complete_object_fact(conjunct) =>
-            {
+            Proposition::Predicate { .. } if SubobjectExtent::covered_range(conjunct).is_some() => {
                 conjuncts.push(conjunct);
             }
             _ => return None,

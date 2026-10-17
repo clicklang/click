@@ -19,6 +19,9 @@ pub(crate) const SAME_OBJECT_PREDICATE_NAME: &str = "__click_same_object";
 /// `element_width`-byte elements: `{prefix}{element_width}(start, from, to)`
 /// (`design/pointer-subobject-extents.md`, Phase C).
 pub(crate) const SUBOBJECT_COVERS_PREDICATE_PREFIX: &str = "__click_subobject_covers_";
+/// The pure function naming the complete object a pointer points into
+/// ([`SubobjectExtent::complete_object_designation`]).
+pub(crate) const COMPLETE_OBJECT_DESIGNATION: &str = "__click_complete_object";
 pub(crate) const MUTEX_HELD_PREDICATE_NAME: &str = "__click_mutex_held";
 
 mod contracts;
@@ -1255,30 +1258,40 @@ impl SubobjectExtent {
     }
 
     /// The fact that this opaque extent designates the complete object of
-    /// `pointer`, a pointer bounded only by its complete object: a coverage
-    /// fact of element width 0. An access through it is then bounded as an
-    /// access through `pointer` is.
+    /// `object`, a pointer bounded only by its complete object: its start is
+    /// that object's designation ([`Self::complete_object_designation`]).
+    /// Two extents designating one object are then one designation, and an
+    /// access through either is bounded as an access through `object` is.
     pub(crate) fn complete_object_fact(&self, object: &Pointer) -> Proposition {
-        let pointer = |pointer: Pointer| {
-            Term::CValue(CValue::Pointer(CPointerValue::new(
-                pointer,
-                CType::VoidPointer,
-            )))
-        };
-        Proposition::Predicate {
-            name: format!("{SUBOBJECT_COVERS_PREDICATE_PREFIX}0"),
-            arguments: vec![
-                pointer(self.start.clone()),
-                pointer(object.clone()),
-                pointer(object.clone()),
-            ],
+        Proposition::ConditionIs(
+            ConditionTerm::PointerEqual(
+                Box::new(self.start.clone()),
+                Box::new(Self::complete_object_designation(object)),
+            ),
+            true,
+        )
+    }
+
+    /// The designation of the complete object `object` points into, as a
+    /// pointer term. It is a function of the address: a pointer without an
+    /// extent is bounded by its address's complete object.
+    pub(crate) fn complete_object_designation(object: &Pointer) -> Pointer {
+        Pointer {
+            block: PointerBlock::PureFunctionApplication(SharedPureApplication::intern(
+                COMPLETE_OBJECT_DESIGNATION.to_string(),
+                vec![PureFunctionArgument::Value(CValue::Pointer(CPointerValue::new(
+                    object.clone(),
+                    CType::VoidPointer,
+                )))],
+            )),
+            offset: PointerOffsetTerm::Constant(0),
         }
     }
 
-    /// Whether `proposition` is a [`Self::complete_object_fact`].
-    pub(crate) fn is_complete_object_fact(proposition: &Proposition) -> bool {
-        matches!(proposition, Proposition::Predicate { name, .. }
-            if name.strip_prefix(SUBOBJECT_COVERS_PREDICATE_PREFIX) == Some("0"))
+    /// Whether `pointer` is a [`Self::complete_object_designation`].
+    pub(crate) fn is_complete_object_designation(pointer: &Pointer) -> bool {
+        matches!(&pointer.block, PointerBlock::PureFunctionApplication(application)
+            if application.name() == COMPLETE_OBJECT_DESIGNATION)
     }
 
     /// The range a coverage fact names: its first element's address, its
@@ -1292,8 +1305,7 @@ impl SubobjectExtent {
         let width = name
             .strip_prefix(SUBOBJECT_COVERS_PREDICATE_PREFIX)?
             .parse::<u32>()
-            .ok()
-            .filter(|width| *width != 0)?;
+            .ok()?;
         let [
             _,
             Term::CValue(CValue::Pointer(from)),
