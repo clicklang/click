@@ -8690,3 +8690,24 @@ fn branch_interface_fact_publication_extends_one_indexed_context() {
     }
     assert_near_linear_scaling("branch interface exported facts", &samples);
 }
+
+#[test]
+fn mixed_width_owned_entry_work_is_independent_of_segment_length() {
+    let program = "void entry(unsigned long *word, unsigned char *bytes) {}";
+    verify_c0_sources("theorem warm() { ensures true by normalize(); }", &[]).unwrap();
+    let mut baseline = None;
+    for length in [32, 1_024, 65_536, 2_147_483_647] {
+        let source = format!(
+            "verifying \"entry.c\"; void entry(uint64* word, uint8* bytes) {{ owns word[0..1]; owns bytes[0..{length}]; }} by {{ execute(); }}"
+        );
+        let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
+            verify_c0_sources(&source, &[("entry.c", program)])
+        });
+        result.expect("the original empty function must verify at every byte length");
+        assert_eq!(
+            work,
+            *baseline.get_or_insert(work),
+            "length {length}: full entry work depends on numeric length"
+        );
+    }
+}
