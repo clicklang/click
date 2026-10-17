@@ -1660,8 +1660,53 @@ pub struct EnsureClause {
     condition: Option<ClickProposition>,
 }
 
+/// A loop or function region's clause. Its contents are shared by its
+/// copies: a proof binds every earlier loop's clause into the function block
+/// at each `loop` tactic, and copying the clauses whole made each loop pay
+/// for the loops before it. Writing a field of a shared clause copies it.
+#[derive(Clone, Eq, PartialEq)]
+pub struct StructuralClause(std::sync::Arc<StructuralClauseData>);
+
+impl std::ops::Deref for StructuralClause {
+    type Target = StructuralClauseData;
+
+    fn deref(&self) -> &StructuralClauseData {
+        &self.0
+    }
+}
+
+impl std::ops::DerefMut for StructuralClause {
+    fn deref_mut(&mut self) -> &mut StructuralClauseData {
+        std::sync::Arc::make_mut(&mut self.0)
+    }
+}
+
+impl From<StructuralClauseData> for StructuralClause {
+    fn from(data: StructuralClauseData) -> Self {
+        Self(std::sync::Arc::new(data))
+    }
+}
+
+impl std::fmt::Debug for StructuralClause {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let data = &self.0;
+        formatter
+            .debug_struct("StructuralClause")
+            .field("region", &data.region)
+            .field("label", &data.label)
+            .field("decreases", &data.decreases)
+            .field("diverges", &data.diverges)
+            .field("items", &data.items)
+            .field("scope", &data.scope)
+            .field("resources", &data.resources)
+            .field("initialize_proof", &data.initialize_proof)
+            .field("preserve_proof", &data.preserve_proof)
+            .finish()
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct StructuralClause {
+pub struct StructuralClauseData {
     region: CodeRegion,
     label: Option<String>,
     decreases: Option<TerminationMeasure>,
