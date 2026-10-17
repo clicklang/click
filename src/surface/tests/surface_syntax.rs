@@ -5121,8 +5121,14 @@ fn a_rust_sidecar_writes_click_types_in_rust() {
     .expect_err("the comparison is false");
     assert!(!error.message.is_empty());
     for (source, expected) in [
+        // A pure function takes a slice; a theorem does not, and no binder
+        // takes `&T`.
         (
-            "verifying \"bytes.rs\"; function first(bytes: &[u8]) -> u8 { bytes[0] }",
+            "verifying \"bytes.rs\"; theorem t(bytes: &[u8]) { ensures true; }",
+            "takes values, not references",
+        ),
+        (
+            "verifying \"bytes.rs\"; function first(p: &u32) -> u32 { *p }",
             "takes values, not references",
         ),
         (
