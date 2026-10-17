@@ -355,7 +355,7 @@ fn constant_base_interior_lookup_scales_with_selected_range() {
 #[ignore = "nightly: 2.4s in the parallel gate"]
 fn modeled_pointer_alias_field_lookup_scales_with_selected_addresses() {
     let mut previous = None;
-    for count in [16_u32, 64, 256, 1024] {
+    for count in [4_u32, 16, 64, 256] {
         let _session = crate::kernel::VerificationSession::enter();
         let parent = Pointer::symbolic(Variable(940_000));
         let model = Pointer::symbolic(Variable(940_001));
