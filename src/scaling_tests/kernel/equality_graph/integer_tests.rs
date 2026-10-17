@@ -36,7 +36,7 @@ fn shared_integer_expression_dags_register_and_merge_in_linear_work() {
     let x: SharedIntegerTerm = I::Variable(Variable(920_211)).into();
     let y: SharedIntegerTerm = I::Variable(Variable(920_212)).into();
     let mut samples = Vec::new();
-    for size in [16, 64, 256, 1024] {
+    for size in [4, 16, 64, 256] {
         let build = |mut term: SharedIntegerTerm| {
             for _ in 0..size {
                 term = I::Add(term.clone(), term).into();

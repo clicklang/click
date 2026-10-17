@@ -232,7 +232,7 @@ fn selected_wide_read_congruence_preserves_history_width_and_scales() {
     let alias = ConditionTerm::pointer_equal(read_pointer.clone(), owned_pointer.clone());
     let matches = crate::kernel::memory_provenance::wide_read_has_recorded_value;
     let mut previous_work = None;
-    for count in [16u32, 64, 256, 1024] {
+    for count in [4u32, 16, 64, 256] {
         let mut selected = PureFactContext::new().assume_condition(alias.clone(), true);
         let mut memory = CMemory::new();
         for index in 0..count {

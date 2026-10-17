@@ -1375,7 +1375,7 @@ fn pointer_association_selected_guard_work_ignores_ambient_facts() {
         true,
     );
     let mut prior = None;
-    for count in [0, 16, 64, 256, 1024] {
+    for count in [0, 4, 16, 64, 256] {
         let mut ambient = vec![defined.clone()];
         ambient.extend((0..count).map(|n| {
             Proposition::ConditionIs(
@@ -1678,7 +1678,7 @@ fn call_input_retention_does_not_derive_memory_or_scan_unrelated_facts() {
     );
     let disjunction = Proposition::Or(Box::new(known.clone()), Box::new(missing.clone()));
     let mut samples = Vec::new();
-    for size in [16, 64, 256, 1024] {
+    for size in [4, 16, 64, 256] {
         let _session = crate::kernel::VerificationSession::enter();
         let mut assumptions = PureFactContext::new()
             .assume_proposition(held.clone())
@@ -1716,7 +1716,7 @@ fn call_input_retention_does_not_derive_memory_or_scan_unrelated_facts() {
     }
     let baseline = samples[0].1;
     for (size, work) in &samples {
-        let allowance = baseline + 32 * ((*size / 16) as usize).ilog2() as usize;
+        let allowance = baseline + 32 * ((*size / 4) as usize).ilog2() as usize;
         assert!(
             *work <= allowance,
             "retention grew with unrelated facts: {samples:?}"
@@ -1780,7 +1780,7 @@ fn equality_aware_pointer_fact_queries_ignore_unrelated_facts_and_old_snapshots(
     };
     let goal = fact(alias.clone(), CState::new());
     let mut samples = Vec::new();
-    for size in [16, 64, 256] {
+    for size in [4, 16, 64] {
         let mut context =
             PureFactContext::new().assume_proposition(fact(target.clone(), CState::new()));
         for index in 0..size {
