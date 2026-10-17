@@ -6096,8 +6096,9 @@ struct TheoremEnvironment {
     /// The name index of the library selection `standard_library` is a
     /// prefix of.
     standard_library_index: &'static BTreeMap<String, usize>,
-    /// Theorems declared after `standard_library`; a later declaration of a
-    /// name shadows an earlier one.
+    /// Theorems declared after `standard_library`, by identity. The parser
+    /// resolved every citation to one: a library theorem's is qualified, so
+    /// no file theorem shares it, and a file refuses a duplicate theorem.
     definitions: BTreeMap<String, TheoremDefinition>,
     verified_generic_instances: RefCell<BTreeSet<String>>,
     active_generic_instances: RefCell<BTreeSet<String>>,
