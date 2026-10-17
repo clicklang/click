@@ -5265,6 +5265,59 @@ fn a_rust_trait_implementation_inherits_its_interface() {
     );
 }
 
+// A generic crate trait's block is read at each instance the import uses,
+// its type parameter replaced by the instance's argument, and an instance's
+// own block adds its clauses to that instance's interface.
+#[test]
+fn a_generic_rust_trait_block_is_read_at_each_instance() {
+    let source = "verifying \"shapes.rs\";
+trait shapes::Scale<T> { fn scale(&self, x: T) -> T { ensures result != x; } }
+trait shapes::Scale<i32> { fn scale(&self, x: i32) -> i32 { requires 0 <= x; ensures x < result; } }";
+    let trait_name = crate::languages::rust::names::qualified_name(["shapes", "Scale"]);
+    let layouts = parser::ProgramLayouts {
+        rust_trait_instances: [(
+            trait_name,
+            [vec!["i32".to_string()], vec!["u32".to_string()]].into(),
+        )]
+        .into(),
+        ..Default::default()
+    };
+    let file = parser::parse_with_layouts_and_aggregate_objects(source, layouts)
+        .expect("the generic and instance blocks parse");
+    let interface = |name: &str| {
+        file.function_blocks()
+            .iter()
+            .find(|block| {
+                crate::languages::rust::names::rust_display_name(block.signature().name())
+                    .as_deref()
+                    == Some(name)
+            })
+            .unwrap_or_else(|| panic!("{name}"))
+    };
+    let narrow = interface("shapes::Scale<i32>::scale");
+    assert!(narrow.is_external());
+    assert_eq!(narrow.requires().len(), 1);
+    assert_eq!(narrow.ensures().len(), 2);
+    let wide = interface("shapes::Scale<u32>::scale");
+    assert!(wide.requires().is_empty());
+    assert_eq!(wide.ensures().len(), 1);
+    assert_eq!(wide.ensures()[0].ensure(), narrow.ensures()[0].ensure());
+    for (block, expected) in [
+        (
+            "trait shapes::Scale<T, i32> { }",
+            "names its type parameters",
+        ),
+        (
+            "trait shapes::Scale<i32> { } trait shapes::Scale<i32> { }",
+            "has two `trait` blocks",
+        ),
+    ] {
+        let error =
+            parser::parse(&format!("verifying \"shapes.rs\"; {block}")).expect_err(expected);
+        assert!(error.message().contains(expected), "{}", error.message());
+    }
+}
+
 /// A crate trait's `function`s are its object's fields: the object is a
 /// field-bearing abstract resource, a `&self` method's interface holds it and
 /// reads `size(self)` as its field, an implementation's method is stated on

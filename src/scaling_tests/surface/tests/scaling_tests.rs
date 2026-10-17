@@ -1913,13 +1913,22 @@ fn scaling_assertion_rejects_a_quadratic_curve() {
 #[ignore = "nightly: 9s in the parallel gate"]
 fn recorded_snapshot_history_drops_without_recursing() {
     let build = |size: usize| {
+        let state = CState::new();
         let mut snapshots = RecordedSnapshots::new();
         for index in 0..size {
             snapshots.insert(
                 SnapshotSelector::Mark(format!("step-{index:06}")),
-                CState::new(),
+                state.clone(),
             );
         }
+        // Reusing an empty state must not shorten the history under test.
+        let mut changes = 0;
+        let mut history = snapshots.version.history.as_deref();
+        while let Some(change) = history {
+            changes += 1;
+            history = change.parent.as_deref();
+        }
+        assert_eq!(changes, size);
         snapshots
     };
     std::thread::Builder::new()
@@ -4149,7 +4158,7 @@ fn counter_call_chain_ensure_lowering_stays_flat_per_call() {
     const LOWERING: &str = "verified call provisional ensure lowering";
     let mut last_lowering = Vec::new();
     let mut totals = Vec::new();
-    for size in [8, 16, 32, 64] {
+    for size in [2, 4, 8, 16] {
         let (c_source, click_source) = counter_call_chain(size);
         let ((verified, work), events) = crate::instrumentation::collect(|| {
             crate::instrumentation::measure_deterministic_work(|| {
@@ -4192,6 +4201,18 @@ fn counter_call_chain_ensure_lowering_stays_flat_per_call() {
     assert!(
         largest <= smallest.max(1) * 2,
         "a call's ensure lowering must not grow with the prior call chain: {last_lowering:?}"
+    );
+    let indexed =
+        |costs: &[(usize, usize)]| costs.iter().all(|(_, work)| *work <= costs[0].1 + 128);
+    eprintln!("counter-call ensure lowering: {last_lowering:?}");
+    assert!(indexed(&last_lowering), "{last_lowering:?}");
+    let rescanned = last_lowering
+        .iter()
+        .map(|(size, work)| (*size, work + size * (size - 1) / 2))
+        .collect::<Vec<_>>();
+    assert!(
+        !indexed(&rescanned),
+        "the smaller fixture must detect a quadratic call lowering: {last_lowering:?}"
     );
     assert_near_linear_scaling("counter call chain", &totals);
 }
@@ -4572,7 +4593,8 @@ fn failing_fact_transport_plan_ignores_unrelated_candidates() {
     let mut samples = Vec::new();
     let mut plan_checks = Vec::new();
     let mut simp_work = Vec::new();
-    for size in [6, 12, 24, 48] {
+    const SIZES: [usize; 4] = [3, 6, 12, 24];
+    for size in SIZES {
         let click_source = copy_loop_with_unrelated_requirements(size);
         let ((verified, work), events) = crate::instrumentation::collect(|| {
             crate::instrumentation::measure_deterministic_work(|| {
@@ -4632,7 +4654,7 @@ fn failing_fact_transport_plan_ignores_unrelated_candidates() {
     // Each unrelated requirement is still read, lowered, and offered as a
     // candidate, which is linear; a check per candidate cost an order of
     // magnitude more per fact.
-    let per_fact = (simp_work[3] - simp_work[0]) / (48 - 6);
+    let per_fact = (simp_work[3] - simp_work[0]) / (SIZES[3] - SIZES[0]);
     assert!(
         per_fact <= 4_000,
         "simp work grew by {per_fact} units per unrelated requirement: {simp_work:?}"
@@ -8473,7 +8495,8 @@ ensures result == {expected};
 #[test]
 fn source_only_transport_does_not_reconstruct_unrelated_integer_facts() {
     let mut work = Vec::new();
-    for size in [8, 32, 128] {
+    let sizes = [8usize, 16, 32];
+    for size in sizes {
         let (_, mut source) = function_with_unrelated_facts(
             size,
             "    step();\n    transport(target == 7, target == 7);\n    execute();\n    assumption();\n",
@@ -8504,6 +8527,18 @@ fn source_only_transport_does_not_reconstruct_unrelated_integer_facts() {
         work.windows(2).all(|pair| pair[1] <= pair[0] * 2),
         "source-only transport must not reconstruct an ambient fact per input: {work:?}"
     );
+    let indexed = |costs: &[usize]| costs.iter().all(|work| *work <= costs[0] + 16);
+    eprintln!("source-only transport work: {work:?}");
+    assert!(indexed(&work), "{work:?}");
+    let rebuilt = work
+        .iter()
+        .zip(sizes)
+        .map(|(work, size)| work + size)
+        .collect::<Vec<_>>();
+    assert!(
+        !indexed(&rebuilt),
+        "the smaller fixture must detect a visit per unrelated fact: {work:?}"
+    );
 }
 
 /// Branches that call through a pointer-field resource retain their statement
@@ -8524,7 +8559,7 @@ fn pointer_field_call_branch_join_scales_with_unrelated_caller_facts() {
     let source = fixture.click_source.unwrap();
     let c_source = &fixture.c_sources[0].1;
     let mut samples = Vec::new();
-    for size in [64, 128, 256, 512] {
+    for size in [32, 64, 128, 256] {
         let parameters = (0..size)
             .map(|index| format!(", int32 noise_{index}"))
             .collect::<String>();
