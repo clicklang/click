@@ -5740,26 +5740,25 @@ impl AnnotationLowerer<'_> {
                         value_type: self.contract_array_element_type(operand, environment),
                     }),
                     CExpression::AddressOf(_) | CExpression::CheckedObjectAddress(_) => {
-                        let lowered = if environment.contract_result_in_scope {
-                            // Rebuild from the surface operand so built-in
-                            // `result` is bound without renaming `c(result)`.
-                            // Keep the complete address operation and its
-                            // selected member extent.
-                            let values = BTreeMap::from([(
+                        // Rebuild from the authoritative surface operand,
+                        // including values already bound into a postcondition.
+                        // Keep the address operation and selected member extent.
+                        let values = if environment.contract_result_in_scope {
+                            BTreeMap::from([(
                                 "result".to_string(),
                                 ContractExpression::CFragment(CExpression::Variable(
                                     crate::kernel::C_CONTRACT_RESULT_NAME.to_string(),
                                 )),
-                            )]);
-                            let rebound = substitute_contract_expression_in(
-                                expression,
-                                &ContractSubstitutions::for_contract_result(&values),
-                            )?;
-                            contract_expression_as_c_fragment(&rebound)
-                                .ok_or("address operand is not a C expression")?
+                            )])
                         } else {
-                            lowered.clone()
+                            BTreeMap::new()
                         };
+                        let rebound = substitute_contract_expression_in(
+                            expression,
+                            &ContractSubstitutions::for_contract_result(&values),
+                        )?;
+                        let lowered = contract_expression_as_c_fragment(&rebound)
+                            .ok_or("address operand is not a C expression")?;
                         Ok(SpecExpression::CExpression(lowered))
                     }
                     _ => Err("invalid C unary operation".to_string()),

@@ -31,14 +31,28 @@ fn addressed_result_members_bind_the_builtin_and_preserve_explicit_c_names() {
             CType::Int32,
         )
     };
-    for (base, expected) in [
+    for (base, expected, in_scope, operand_name) in [
         (
             ContractExpression::CFragment(CExpression::Variable("result".into())),
             crate::kernel::C_CONTRACT_RESULT_NAME,
+            true,
+            "result",
         ),
-        (ContractExpression::CBinding("result".into()), "result"),
+        (
+            ContractExpression::CBinding("result".into()),
+            "result",
+            true,
+            "result",
+        ),
+        (
+            ContractExpression::CFragment(CExpression::Variable("bound".into())),
+            "bound",
+            false,
+            "bound",
+        ),
     ] {
-        let place = member("result");
+        context.contract_result_in_scope = in_scope;
+        let place = member(operand_name);
         let expression = ContractExpression::CUnary {
             operand: Box::new(ContractExpression::Field {
                 base: Box::new(base),
@@ -46,7 +60,7 @@ fn addressed_result_members_bind_the_builtin_and_preserve_explicit_c_names() {
                 lowered: place.clone(),
                 offset_bytes: 8,
             }),
-            lowered: CExpression::AddressOf(Box::new(place)),
+            lowered: CExpression::AddressOf(Box::new(member("result"))),
         };
         let lowered = lowerer
             .lower_contract_expression_to_spec(&expression, &context)
