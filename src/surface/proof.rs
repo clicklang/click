@@ -1745,10 +1745,21 @@ pub(super) fn initial_claim_context_with_caller_owner(
             resource_environment,
             spec_definitions,
         )?;
+        let (requires, _, ensures, exceptional, mutable, claims, supported, _, _) =
+            function_contract_summary(
+                function_block,
+                parsed_function,
+                spec_definitions,
+                resource_environment,
+            )?;
+        let declared = parsed_function
+            .to_kernel_function()
+            .with_contract(requires, ensures, mutable, claims, supported)
+            .with_exceptional_ensures(exceptional);
         initial_call_state(
             function_block.requires(),
             parsed_function.parameters(),
-            &parsed_function.to_kernel_function(),
+            &declared,
             &authority_definitions,
         )?
     };

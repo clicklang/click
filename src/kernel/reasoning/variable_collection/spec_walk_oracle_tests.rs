@@ -211,6 +211,11 @@ fn old_collect_spec_integer_variables(
             SpecIntegerExpression::PureFunctionApplication { arguments, .. } => {
                 for argument in arguments {
                     match argument {
+                        SpecPureFunctionArgument::ObjectPointer { argument, .. } => {
+                            old_collect_spec_function_argument_bitvector_variables(
+                                argument, variables,
+                            )
+                        }
                         SpecPureFunctionArgument::Value(value) => {
                             old_collect_spec_expression_bitvector_variables(value, variables)
                         }
@@ -337,6 +342,9 @@ fn old_collect_spec_integer_bound_argument(
     integer_seen: &mut SeenTerms,
 ) {
     match argument {
+        SpecPureFunctionArgument::ObjectPointer { argument, .. } => {
+            old_collect_spec_integer_bound_argument(argument, variables, integer_seen)
+        }
         SpecPureFunctionArgument::Value(value) => {
             old_collect_spec_integer_bound_expression(value, variables, integer_seen);
         }
@@ -666,6 +674,9 @@ fn old_collect_spec_function_argument_bitvector_variables(
     variables: &mut BTreeSet<Variable>,
 ) {
     match argument {
+        SpecPureFunctionArgument::ObjectPointer { argument, .. } => {
+            old_collect_spec_function_argument_bitvector_variables(argument, variables)
+        }
         // Correct the historical omission alongside the production collector:
         // Integer arguments carry free identities regardless of the result type.
         SpecPureFunctionArgument::Integer(expression) => {

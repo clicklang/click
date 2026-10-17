@@ -2870,6 +2870,7 @@ pub enum C0Statement {
         target: String,
         bytes: C0Expression,
         zeroed: bool,
+        object_type: Option<(crate::kernel::effective_type::CAccessClass, u32, u32)>,
         /// Where the source statement was written; see [`C0Site`].
         site: C0Site,
     },
@@ -5455,12 +5456,14 @@ impl C0Statement {
                 target,
                 bytes,
                 zeroed,
+                object_type,
                 ..
-            } => crate::kernel::c_heap_allocate_sized_with_zeroed(
-                target.clone(),
-                bytes.to_kernel_expression(),
-                *zeroed,
-            ),
+            } => crate::kernel::CStatement::HeapAllocate {
+                target: target.clone(),
+                bytes: bytes.to_kernel_expression(),
+                zeroed: *zeroed,
+                object_type: object_type.clone(),
+            },
             Self::HeapFree { pointer, .. } => {
                 crate::kernel::c_heap_free(pointer.to_kernel_expression())
             }
@@ -14181,10 +14184,25 @@ impl Parser {
             };
             bytes.clone()
         };
+        let object_type = self
+            .variable_structs
+            .get(&target)
+            .filter(|_| self.variable_types.get(&target) == Some(&C0Type::Int32Pointer))
+            .and_then(|tag| self.structs.get(tag))
+            .and_then(|layout| {
+                layout.class.clone().map(|class| {
+                    (
+                        crate::kernel::effective_type::CAccessClass::Struct(class),
+                        layout.size_bytes,
+                        layout.alignment_bytes,
+                    )
+                })
+            });
         Ok(C0Statement::HeapAllocate {
             target,
             bytes,
             zeroed,
+            object_type,
             site: C0Site::NONE,
         })
     }
@@ -15276,6 +15294,7 @@ impl Parser {
                 target,
                 bytes,
                 zeroed,
+                object_type,
                 site,
             } => {
                 let (prefix, bytes) = self.lower_expression_calls(bytes)?;
@@ -15285,6 +15304,7 @@ impl Parser {
                         target,
                         bytes,
                         zeroed,
+                        object_type,
                         site,
                     },
                 ))

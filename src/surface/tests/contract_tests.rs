@@ -2793,3 +2793,30 @@ uint64 nested(uint64 total) {
         assert!(verify_c0_sources(&invalid, &[("nested.c", c)]).is_err());
     }
 }
+
+#[test]
+fn a_function_cannot_assume_its_own_pointer_return_type_guarantee() {
+    let c = [(
+        "return.c",
+        "struct node { unsigned long long word; }; struct node* get(void* p) { return (struct node*)p; }",
+    )];
+    let source = r#"verifying "return.c";
+        function node_type(p: struct node*) -> int32 { 1 }
+        struct node* get(void* p) { POST } by { execute(); simp(); }
+    "#;
+    verify_c0_sources(
+        &source.replace("POST", "ensures address(result) == address(p);"),
+        &c,
+    )
+    .unwrap();
+    assert!(
+        verify_c0_sources(
+            &source.replace(
+                "POST",
+                "ensures result != 0 implies node_type(result) == 1;"
+            ),
+            &c
+        )
+        .is_err()
+    );
+}

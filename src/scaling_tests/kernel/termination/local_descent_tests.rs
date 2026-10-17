@@ -50,6 +50,7 @@ fn a_recursion_check_is_linear_in_sequential_branches() {
         };
         body = CStatement::Seq(Arc::new(body), Arc::new(guarded_call(argument)));
         [CVerifiedFunctionRule {
+            pointer_result: None,
             loop_semantics: CLoopSemantics::ApplyVerifiedRules,
             checked_callees: None,
             applied_tactics: Default::default(),

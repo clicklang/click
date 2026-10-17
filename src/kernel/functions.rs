@@ -1662,6 +1662,7 @@ fn execute_function_paths(
             function.name(),
             function.contract_interface(),
             &arguments_path.values,
+            &path_assumptions,
         ) {
             paths.push(CFunctionPath::new(
                 CFunctionOutcome::RuntimeError(refusal),
@@ -1974,6 +1975,7 @@ pub(super) fn execute_c_function_call_paths(
         return execute_verified_function_applications(
             caller_state,
             &[CFunctionContractApplication {
+                pointer_result: None,
                 name: rule.function.name(),
                 interface_name: rule.function.name(),
                 interface: rule.function.contract_interface(),
@@ -2102,6 +2104,7 @@ pub(super) fn execute_c_function_call_paths(
             function.name(),
             function.contract_interface(),
             &arguments_path.values,
+            &path_assumptions,
         ) {
             paths.push(CFunctionPath::new(
                 CFunctionOutcome::RuntimeError(refusal),
@@ -2429,6 +2432,7 @@ fn execute_verified_function_rule(
     execute_verified_function_applications(
         caller_state,
         &[CFunctionContractApplication {
+            pointer_result: rule.pointer_result.as_deref(),
             name: rule.function.name(),
             interface_name: rule.function.name(),
             interface: rule.function.contract_interface(),
@@ -2472,6 +2476,7 @@ pub(super) fn suspend_verified_worker(
     let paths = execute_verified_function_applications_with_suspension(
         caller_state,
         &[CFunctionContractApplication {
+            pointer_result: rule.pointer_result.as_deref(),
             name: rule.function.name(),
             interface_name: rule.function.name(),
             interface: rule.function.contract_interface(),
@@ -2637,6 +2642,7 @@ fn instance_binder_shape(parameter: &CResourceSpec) -> Option<(&str, usize)> {
 /// proof evidence.
 #[derive(Clone, Copy)]
 struct CFunctionContractApplication<'a> {
+    pointer_result: Option<&'a PurePointerResult>,
     /// Concrete callee name used for diagnostics and call provenance.
     name: &'a str,
     /// Nominal interface name used to distinguish candidates and their source
@@ -3264,7 +3270,25 @@ fn execute_verified_function_applications_with_suspension(
             };
             result
         } else {
-            symbolic_contract_result(interface, result_identity)
+            // Only a modular call assumes the declared output guarantee.
+            // The function's own proof still checks its actual returned value.
+            let result = symbolic_contract_result(interface, result_identity)
+                .with_pointer_object_class(interface.return_object_type_guarantee.clone());
+            let arguments = argument_values
+                .iter()
+                .cloned()
+                .map(PureFunctionArgument::Value)
+                .collect::<Vec<_>>();
+            let (all_null, evidence) =
+                super::spec::pure_pointer_result_class(application.pointer_result, &arguments);
+            if let CValue::Pointer(mut pointer) = result {
+                if all_null {
+                    pointer.replace_pointer(Pointer::null());
+                }
+                CValue::Pointer(pointer.with_object_type_evidence(evidence))
+            } else {
+                result
+            }
         };
         let mut post_state = entry_state.clone().with_memory(memory);
         if interface.aggregate_return_mode() == CAggregateReturnMode::Construction
@@ -5043,6 +5067,7 @@ fn prepare_verified_function_call<'a>(
         application.name,
         contract_interface,
         &arguments_path.values,
+        &path_assumptions,
     ) {
         return Ok(Err(CFunctionPath::new(
             CFunctionOutcome::RuntimeError(refusal),
@@ -5050,7 +5075,7 @@ fn prepare_verified_function_call<'a>(
             arguments_path.obligations,
         )));
     }
-    let Some((argument_values, argument_obligations)) = coerce_c_contract_arguments(
+    let Some((mut argument_values, argument_obligations)) = coerce_c_contract_arguments(
         contract_interface,
         &arguments_path.values,
         &arguments_path.obligations,
@@ -5076,6 +5101,20 @@ fn prepare_verified_function_call<'a>(
     ) {
         return Ok(Err(CFunctionPath::new(
             outcome,
+            arguments_path.facts,
+            argument_obligations,
+        )));
+    }
+    if let Some(refusal) = crate::kernel::object_types::check_requirements(
+        application.name,
+        contract_interface.parameters(),
+        contract_interface.object_type_requirements(),
+        &mut argument_values,
+        caller_state.memory(),
+        &path_assumptions,
+    ) {
+        return Ok(Err(CFunctionPath::new(
+            CFunctionOutcome::RuntimeError(refusal),
             arguments_path.facts,
             argument_obligations,
         )));
@@ -5140,6 +5179,26 @@ fn prepare_verified_function_call<'a>(
             argument_obligations,
         )));
     }
+    let mut checked_value_arguments = std::borrow::Cow::Borrowed(application_value_arguments);
+    if contract_interface
+        .object_type_requirements()
+        .get_max()
+        .is_some_and(|(index, _)| *index >= contract_interface.parameters().len())
+        && let Some(refusal) = crate::kernel::object_types::check_value_requirements(
+            application.name,
+            contract_interface,
+            checked_value_arguments.to_mut(),
+            caller_state.memory(),
+            &path_assumptions,
+        )
+    {
+        return Ok(Err(CFunctionPath::new(
+            CFunctionOutcome::RuntimeError(refusal),
+            arguments_path.facts,
+            argument_obligations,
+        )));
+    }
+    let application_value_arguments = checked_value_arguments.as_ref();
     for (parameter, value) in contract_interface
         .value_parameters()
         .iter()
@@ -6353,6 +6412,7 @@ pub(super) fn execute_c_function_contracts_paths(
     let applications = contracts
         .iter()
         .map(|contract| CFunctionContractApplication {
+            pointer_result: None,
             name: contract.callee_name(),
             interface_name: contract.name(),
             interface: contract.interface(),
@@ -6734,12 +6794,26 @@ fn function_contract_requirement_is_proven(
                 return Ok(false);
             };
             if let Some(rule) = environment.get_verified_function_rule(target) {
-                return function_refines_named_contract(contract, &rule.function, budget);
+                return function_refines_named_contract(
+                    contract,
+                    &rule.function,
+                    rule.function
+                        .contract_interface()
+                        .object_type_requirements(),
+                    budget,
+                );
             }
             let Some(rule) = environment.get_external_function_rule(target) else {
                 return Ok(false);
             };
-            function_refines_named_contract(contract, &rule.function, budget)
+            function_refines_named_contract(
+                contract,
+                &rule.function,
+                rule.function
+                    .contract_interface()
+                    .object_type_requirements(),
+                budget,
+            )
         }
         _ => Ok(false),
     }
@@ -12960,14 +13034,24 @@ fn lower_selected_resource_body_clauses(
         let clause = rewrite.spec_proposition(clause).map_err(
             |_| "resource match Integer binding substitution exceeded its checked scope",
         )?;
-        let paths = crate::kernel::spec::lower_spec_proposition_at_state_with_algebraic_bindings(
-            evaluation,
-            &clause,
-            None,
-            &context,
-            algebraic_bindings,
-            budget,
-        )
+        let paths = if established_assumptions.is_none() {
+            crate::kernel::spec::lower_held_resource_body_clause(
+                evaluation,
+                &clause,
+                &context,
+                algebraic_bindings,
+                budget,
+            )
+        } else {
+            crate::kernel::spec::lower_spec_proposition_at_state_with_algebraic_bindings(
+                evaluation,
+                &clause,
+                None,
+                &context,
+                algebraic_bindings,
+                budget,
+            )
+        }
         .map_err(|limit| match limit {
             // A deadline is the budget, not a property of the body: say so
             // rather than suggest the fact cannot be evaluated at all.
@@ -13606,7 +13690,11 @@ fn rewrite_resource_instance_selecting_children_unspelled(
                 .get(index)
                 .ok_or("resource match Integer binding identity count mismatch")?;
             match (binding_type, binding_variable, value) {
-                (AlgebraicValueType::C(_), None, AlgebraicValue::C(value)) => {
+                (
+                    AlgebraicValueType::C(_) | AlgebraicValueType::ObjectPointer(_, _),
+                    None,
+                    AlgebraicValue::C(value),
+                ) => {
                     let ty = value.c_type();
                     // A pointer payload an exact equality identifies with a C
                     // pointer denotes that pointer, so the arm's cells are
@@ -17127,9 +17215,13 @@ fn symbolic_arm_binding_values(
             crate::instrumentation::record_deterministic_work(1);
             let variable = next_arm_refutation_variable();
             match value_type {
-                AlgebraicValueType::C(c_type) => Some(AlgebraicValue::C(
-                    algebraic_type.symbolic_c_field_value(&variant.name, index, *c_type, variable),
-                )),
+                AlgebraicValueType::C(c_type) | AlgebraicValueType::ObjectPointer(c_type, _) => {
+                    Some(AlgebraicValue::C(
+                        algebraic_type
+                            .symbolic_c_field_value(&variant.name, index, *c_type, variable)
+                            .with_pointer_object_class(value_type.object_class()),
+                    ))
+                }
                 AlgebraicValueType::Integer => None,
                 AlgebraicValueType::Algebraic { .. } | AlgebraicValueType::Parameter(_) => {
                     algebraic_type
@@ -19425,7 +19517,7 @@ fn function_outcome_from_body_changing_quantities(
             obligations,
         ));
     }
-    if let Some(refusal) = incompatible_pointer_return(&state, function, &value) {
+    if let Some(refusal) = incompatible_pointer_return(&state, function, &value, assumptions) {
         return Ok((CFunctionOutcome::RuntimeError(refusal), obligations));
     }
     let Some(value) = coerce_function_return_value(value, function, &mut obligations, assumptions)
@@ -19504,7 +19596,7 @@ fn function_outcome_from_body_with_resource_transfer(
             None,
         ));
     }
-    if let Some(refusal) = incompatible_pointer_return(&state, function, &value) {
+    if let Some(refusal) = incompatible_pointer_return(&state, function, &value, assumptions) {
         return Ok((CFunctionOutcome::RuntimeError(refusal), obligations, None));
     }
     let Some(value) = coerce_function_return_value(value, function, &mut obligations, assumptions)
@@ -20515,7 +20607,9 @@ pub(super) fn function_outcome_from_body(
                     obligations,
                 );
             }
-            if let Some(refusal) = incompatible_pointer_return(&state, function, &value) {
+            if let Some(refusal) =
+                incompatible_pointer_return(&state, function, &value, assumptions)
+            {
                 return (CFunctionOutcome::RuntimeError(refusal), obligations);
             }
             let Some(value) =

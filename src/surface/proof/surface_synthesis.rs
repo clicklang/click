@@ -4287,6 +4287,33 @@ fn synthesize_surface_algebraic(
                         .or_else(|| {
                             synthesize_loaded_pointer_value(pointer, parameter_binding, state)
                         })
+                        .map(|expression| {
+                            // Constructors implicitly retag object pointers
+                            // without widening their views. An explicit cast
+                            // is needed only for a checked root view; adding
+                            // it to a saved narrow view would change the value.
+                            if pointer.c_type() == CType::VoidPointer
+                                && pointer.extent_is_known()
+                                && pointer.extent().is_none()
+                            {
+                                ContractExpression::CUnary {
+                                    lowered: CExpression::Cast {
+                                        expression: Box::new(CExpression::Value(CValue::Pointer(
+                                            pointer.clone(),
+                                        ))),
+                                        target_type: CType::VoidPointer,
+                                        integer_mode: crate::kernel::CIntegerCastMode::Standard,
+                                        pointee_struct: None,
+                                        pointee_volatile: false,
+                                        pointee_constant: false,
+                                        explicit_qualification: false,
+                                    },
+                                    operand: Box::new(expression),
+                                }
+                            } else {
+                                expression
+                            }
+                        })
                     }
                     crate::kernel::AlgebraicValue::C(CValue::Int32(value)) => {
                         synthesize_surface_bitvector(

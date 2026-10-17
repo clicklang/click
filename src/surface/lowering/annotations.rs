@@ -706,6 +706,10 @@ fn lower_kernel_pure_function_definition(
     let body = lowerer
         .lower_contract_expression_to_spec(definition.body(), &context)
         .ok()?;
+    let body = match pure_function_result_scalar_type(definition) {
+        Some(target) => SpecExpression::Cast(Box::new(body), target),
+        None => body,
+    };
     Some(crate::kernel::CPureFunctionDefinition::new(
         definition.name(),
         parameters,
@@ -5063,7 +5067,7 @@ impl AnnotationLowerer<'_> {
                 let mut body_environment = environment.clone();
                 for (binding, binding_type) in arm.bindings.iter().zip(&variant.fields) {
                     match binding_type {
-                        AlgebraicValueType::C(_) => {
+                        AlgebraicValueType::C(_) | AlgebraicValueType::ObjectPointer(_, _) => {
                             body_environment.integer_values.remove(binding);
                             body_environment.algebraic_values.remove(binding);
                             body_environment.values.insert(
@@ -5691,7 +5695,8 @@ impl AnnotationLowerer<'_> {
                         let mut body_environment = environment.clone();
                         for (binding, binding_type) in arm.bindings.iter().zip(&variant.fields) {
                             match binding_type {
-                                AlgebraicValueType::C(_) => {
+                                AlgebraicValueType::C(_)
+                                | AlgebraicValueType::ObjectPointer(_, _) => {
                                     body_environment.values.remove(binding);
                                     body_environment.algebraic_values.remove(binding);
                                 }
@@ -6291,6 +6296,7 @@ impl AnnotationLowerer<'_> {
                         // field's declared type the literal lowers as an
                         // `int32` zero and the constructor denotes no value.
                         AlgebraicValueType::C(c_type)
+                        | AlgebraicValueType::ObjectPointer(c_type, _)
                             if c_type.is_pointer()
                                 && matches!(
                                     argument,
@@ -6304,9 +6310,16 @@ impl AnnotationLowerer<'_> {
                                 ),
                             )))
                         }
-                        AlgebraicValueType::C(_) => self
-                            .lower_contract_expression_to_spec(argument, environment)
-                            .map(SpecAlgebraicValue::C),
+                        AlgebraicValueType::C(c_type)
+                        | AlgebraicValueType::ObjectPointer(c_type, _) => {
+                            let value =
+                                self.lower_contract_expression_to_spec(argument, environment)?;
+                            Ok(SpecAlgebraicValue::C(if *c_type == CType::VoidPointer {
+                                SpecExpression::PointerCoercion(Box::new(value), *c_type)
+                            } else {
+                                value
+                            }))
+                        }
                         AlgebraicValueType::Integer => self
                             .lower_contract_integer_to_spec(argument, environment)
                             .map(SpecAlgebraicValue::Integer),
@@ -6373,7 +6386,7 @@ impl AnnotationLowerer<'_> {
                     let mut body_environment = environment.clone();
                     for (binding, binding_type) in arm.bindings.iter().zip(&variant.fields) {
                         match binding_type {
-                            AlgebraicValueType::C(_) => {
+                            AlgebraicValueType::C(_) | AlgebraicValueType::ObjectPointer(_, _) => {
                                 body_environment.values.remove(binding);
                                 body_environment.algebraic_values.remove(binding);
                             }
@@ -6599,76 +6612,91 @@ impl AnnotationLowerer<'_> {
             .parameters()
             .iter()
             .zip(arguments)
-            .map(|(parameter, argument)| match parameter.click_type() {
-                ClickType::Parameter(name) => Err(format!(
-                    "function `{}` has unresolved type parameter `{name}`",
-                    definition.name()
-                )),
-                ClickType::Integer => self
-                    .lower_contract_integer_to_spec(argument, environment)
-                    .map(crate::kernel::SpecPureFunctionArgument::Integer),
-                ClickType::Algebraic(_) => self
-                    .lower_contract_algebraic_to_spec(argument, environment)
-                    .map(crate::kernel::SpecPureFunctionArgument::Algebraic),
-                // The C null pointer constant stands at a pointer-typed pure
-                // parameter and lowers to that pointer type's null value, not
-                // to an `int32` zero, so `rb_parent_is(sub, 0)` compares the
-                // model's parent payload with a pointer.
-                ClickType::C(c_type)
-                    if crate::surface::lowering::argument_is_null_pointer_constant(
-                        argument, *c_type,
-                    ) =>
-                {
-                    let pointer = SpecExpression::Value(CValue::typed_pointer(
-                        crate::kernel::Pointer::null(),
-                        c_type.to_kernel_type(),
-                    ));
-                    Ok(match click_array_element_type(*c_type) {
-                        Some(element_type) => crate::kernel::SpecPureFunctionArgument::ArrayRef {
+            .map(|(parameter, argument)| {
+                let lowered = match parameter.click_type() {
+                    ClickType::Parameter(name) => Err(format!(
+                        "function `{}` has unresolved type parameter `{name}`",
+                        definition.name()
+                    )),
+                    ClickType::Integer => self
+                        .lower_contract_integer_to_spec(argument, environment)
+                        .map(crate::kernel::SpecPureFunctionArgument::Integer),
+                    ClickType::Algebraic(_) => self
+                        .lower_contract_algebraic_to_spec(argument, environment)
+                        .map(crate::kernel::SpecPureFunctionArgument::Algebraic),
+                    // The C null pointer constant stands at a pointer-typed pure
+                    // parameter and lowers to that pointer type's null value, not
+                    // to an `int32` zero, so `rb_parent_is(sub, 0)` compares the
+                    // model's parent payload with a pointer.
+                    ClickType::C(c_type)
+                        if crate::surface::lowering::argument_is_null_pointer_constant(
+                            argument, *c_type,
+                        ) =>
+                    {
+                        let pointer = SpecExpression::Value(CValue::typed_pointer(
+                            crate::kernel::Pointer::null(),
+                            c_type.to_kernel_type(),
+                        ));
+                        Ok(match click_array_element_type(*c_type) {
+                            Some(element_type) => {
+                                crate::kernel::SpecPureFunctionArgument::ArrayRef {
+                                    memory: if memory_independent {
+                                        crate::kernel::SpecMemory::Fixed(
+                                            crate::kernel::value_independent_click_memory(),
+                                        )
+                                    } else {
+                                        environment.current_memory.clone()
+                                    },
+                                    pointer,
+                                    element_type,
+                                }
+                            }
+                            None => crate::kernel::SpecPureFunctionArgument::Value(pointer),
+                        })
+                    }
+                    ClickType::C(_) if parameter_is_click_array_ref(parameter) => {
+                        let array_ref = self.lower_array_ref_to_spec(argument, environment)?;
+                        Ok(crate::kernel::SpecPureFunctionArgument::ArrayRef {
+                            // A function that reads no memory is a function of
+                            // its argument values, so its pointer arguments are
+                            // anchored to one canonical snapshot instead of the
+                            // ambient one. Without this the same proposition is a
+                            // different term on either side of a C write, and a
+                            // `fold` cannot discharge a body fact that applies a
+                            // pure predicate to a pointer (gap 42).
                             memory: if memory_independent {
                                 crate::kernel::SpecMemory::Fixed(
                                     crate::kernel::value_independent_click_memory(),
                                 )
                             } else {
-                                environment.current_memory.clone()
+                                array_ref.memory
                             },
-                            pointer,
-                            element_type,
-                        },
-                        None => crate::kernel::SpecPureFunctionArgument::Value(pointer),
-                    })
-                }
-                ClickType::C(_) if parameter_is_click_array_ref(parameter) => {
-                    let array_ref = self.lower_array_ref_to_spec(argument, environment)?;
-                    Ok(crate::kernel::SpecPureFunctionArgument::ArrayRef {
-                        // A function that reads no memory is a function of
-                        // its argument values, so its pointer arguments are
-                        // anchored to one canonical snapshot instead of the
-                        // ambient one. Without this the same proposition is a
-                        // different term on either side of a C write, and a
-                        // `fold` cannot discharge a body fact that applies a
-                        // pure predicate to a pointer (gap 42).
-                        memory: if memory_independent {
-                            crate::kernel::SpecMemory::Fixed(
-                                crate::kernel::value_independent_click_memory(),
-                            )
-                        } else {
-                            array_ref.memory
-                        },
-                        pointer: array_ref.pointer,
-                        element_type: array_ref.element_type,
-                    })
-                }
-                ClickType::C(_) => {
-                    // Lower the borrowed argument once; wrapping its surface
-                    // tree first would clone every nested call's subtree.
-                    let value = self.lower_contract_expression_to_spec(argument, environment)?;
-                    let value = match pure_function_parameter_scalar_type(parameter) {
-                        Some(target) => SpecExpression::Cast(Box::new(value), target),
-                        None => value,
-                    };
-                    Ok(crate::kernel::SpecPureFunctionArgument::Value(value))
-                }
+                            pointer: array_ref.pointer,
+                            element_type: array_ref.element_type,
+                        })
+                    }
+                    ClickType::C(_) => {
+                        // Lower the borrowed argument once; wrapping its surface
+                        // tree first would clone every nested call's subtree.
+                        let value =
+                            self.lower_contract_expression_to_spec(argument, environment)?;
+                        let value = match pure_function_parameter_conversion(parameter) {
+                            Some((target, crate::kernel::CIntegerCastMode::PointerCoercion)) => {
+                                SpecExpression::PointerCoercion(Box::new(value), target)
+                            }
+                            Some((target, _)) => SpecExpression::Cast(Box::new(value), target),
+                            None => value,
+                        };
+                        Ok(crate::kernel::SpecPureFunctionArgument::Value(value))
+                    }
+                }?;
+                Ok(match parameter.pointer_object_class() {
+                    Some(object_class) => crate::kernel::SpecPureFunctionArgument::ObjectPointer {
+                        argument: Box::new(lowered),
+                        object_class,
+                    },
+                    None => lowered,
+                })
             })
             .collect()
     }
@@ -7470,6 +7498,13 @@ impl AnnotationLowerer<'_> {
                 environment,
             )?,
             result_type: result_type.to_kernel_type(),
+            pointer_result: self
+                .spec_definitions
+                .functions
+                .pointer_results
+                .get(generic_instance_source_name(definition.name()))
+                .cloned()
+                .flatten(),
             result_object_class: definition.return_object_class().cloned(),
         })
     }
@@ -8166,7 +8201,10 @@ fn instantiate_algebraic_kernel_field_type(
 ) -> Result<AlgebraicValueType, String> {
     match field {
         AlgebraicFieldType::Integer => Ok(AlgebraicValueType::Integer),
-        AlgebraicFieldType::C { c_type, .. } => Ok(AlgebraicValueType::C(c_type.to_kernel_type())),
+        AlgebraicFieldType::C { c_type, .. } => Ok(match field.pointer_object_class() {
+            Some(class) => AlgebraicValueType::ObjectPointer(c_type.to_kernel_type(), class),
+            None => AlgebraicValueType::C(c_type.to_kernel_type()),
+        }),
         AlgebraicFieldType::Parameter(name) => definition
             .type_parameters()
             .iter()

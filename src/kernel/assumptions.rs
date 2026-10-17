@@ -4205,6 +4205,7 @@ impl PureFactContext {
         self.equality_graph
             .admitted
             .pointer_alias_endpoints_by_object = crate::persistent::PersistentMap::default();
+        self.equality_graph.clear_condition_pointer_facts();
         self.equality_graph.reset_closure();
         self.equality_graph.admitted.algebraic_graph_equalities = Default::default();
         self.equality_graph.admitted.congruence_conditions =
@@ -4228,6 +4229,10 @@ impl PureFactContext {
         self.equality_graph.admitted.pointer_value_equalities = Default::default();
         let conditions = self.condition_facts.clone();
         for (condition, value) in conditions.iter() {
+            self.adjust_pointer_class_fact(
+                &Proposition::ConditionIs(condition.clone(), *value),
+                true,
+            );
             if matches!(condition, ConditionTerm::PointerValueEqual(..)) {
                 self.adjust_pointer_value_equality(
                     &Proposition::ConditionIs(condition.clone(), *value),
@@ -4292,8 +4297,8 @@ impl PureFactContext {
         let propositions = self.prop_facts.clone();
         for proposition in propositions.iter() {
             self.adjust_algebraic_graph_equality(proposition, true);
+            self.adjust_pointer_class_fact(proposition, true);
             self.adjust_pointer_value_equality(proposition, true);
-            self.adjust_pointer_predicate_fact(proposition, true);
         }
     }
 
@@ -4777,7 +4782,7 @@ impl PureFactContext {
 
     fn clear_proposition_facts_with_graph_rebuild(&mut self, rebuild_graph: bool) {
         self.prop_facts = imbl::OrdSet::new();
-        self.equality_graph.clear_pointer_predicates();
+        self.equality_graph.clear_proposition_pointer_facts();
         self.execution_fact_projection = self
             .execution_fact_projection
             .iter()
@@ -4852,23 +4857,32 @@ impl PureFactContext {
         self.rebuild_memory_loadable_facts();
         self.rebuild_memory_separation_facts();
         self.recompute_content_fingerprint();
-        self.equality_graph.clear_pointer_predicates();
+        self.equality_graph.clear_proposition_pointer_facts();
         let propositions = self.prop_facts.clone();
         for proposition in propositions.iter() {
-            self.adjust_pointer_predicate_fact(proposition, true);
+            self.adjust_pointer_class_fact(proposition, true);
         }
         self.rebuild_algebraic_graph_equalities();
     }
 
-    fn adjust_pointer_predicate_fact(&mut self, proposition: &Proposition, insert: bool) {
-        if !matches!(proposition, Proposition::Predicate { .. }) {
+    fn adjust_pointer_class_fact(&mut self, proposition: &Proposition, insert: bool) {
+        if !matches!(
+            proposition,
+            Proposition::Equal(..)
+                | Proposition::Predicate { .. }
+                | Proposition::ConditionIs(
+                    ConditionTerm::AlgebraicEqual(..) | ConditionTerm::PointerValueEqual(..),
+                    true
+                )
+        ) {
             return;
         }
-        if let Some(source) = self
-            .execution_fact_projection
-            .get(&ContextFactKey::Proposition(proposition.clone()))
-        {
-            self.equality_graph.adjust_pointer_predicate(source, insert);
+        let key = match proposition {
+            Proposition::ConditionIs(condition, _) => ContextFactKey::Condition(condition.clone()),
+            _ => ContextFactKey::Proposition(proposition.clone()),
+        };
+        if let Some(source) = self.execution_fact_projection.get(&key) {
+            self.equality_graph.adjust_pointer_fact(source, insert);
         }
     }
 
@@ -5599,14 +5613,14 @@ impl PureFactContext {
             self.adjust_memory_loadable_fact(&proposition, true);
             self.adjust_memory_separation_fact(&proposition, true);
             self.adjust_nonmemory_separation_fact(&proposition, true);
-            self.adjust_pointer_predicate_fact(&proposition, true);
+            self.adjust_pointer_class_fact(&proposition, true);
             self.content_fingerprint ^= Self::fingerprint(2, &proposition);
         }
     }
 
     pub(super) fn remove_proposition_fact(&mut self, proposition: &Proposition) {
         if self.prop_facts.remove(proposition).is_some() {
-            self.adjust_pointer_predicate_fact(proposition, false);
+            self.adjust_pointer_class_fact(proposition, false);
             self.execution_fact_projection
                 .remove(&ContextFactKey::Proposition(proposition.clone()));
             self.adjust_atomic_connection_fact(proposition, false);
@@ -6280,6 +6294,12 @@ impl PureFactContext {
         let old = self.condition_facts.get(&condition).copied();
         self.execution_variable_ceiling.file_condition(&condition);
         self.condition_facts = self.condition_facts.with_inserted(condition.clone(), value);
+        if let Some(source) = self
+            .execution_fact_projection
+            .get(&ContextFactKey::Condition(condition.clone()))
+        {
+            self.equality_graph.adjust_pointer_fact(source, false);
+        }
         self.execution_fact_projection.insert(
             ContextFactKey::Condition(condition.clone()),
             std::sync::Arc::new(ExecutionPureFact::new(Proposition::ConditionIs(
@@ -6287,6 +6307,7 @@ impl PureFactContext {
                 value,
             ))),
         );
+        self.adjust_pointer_class_fact(&Proposition::ConditionIs(condition.clone(), value), true);
         self.memory_load_condition_facts = std::sync::Arc::new(std::sync::OnceLock::new());
         if let Some(old) = old {
             if self
@@ -6866,6 +6887,10 @@ impl PureFactContext {
                 .remove(condition);
             self.rebuild_equality_graph();
         }
+        self.adjust_pointer_class_fact(
+            &Proposition::ConditionIs(condition.clone(), assumed),
+            false,
+        );
         self.execution_fact_projection
             .remove(&ContextFactKey::Condition(condition.clone()));
         self.adjust_condition_match_indexes(condition, assumed, false);

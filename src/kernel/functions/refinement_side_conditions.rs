@@ -358,6 +358,7 @@ pub(super) fn stateful_memory_refinement_node(node: SpecNode<'_>) -> Visit<()> {
             SpecAlgebraicValue::Integer(_) => Visit::Stop(()),
         },
         SpecNode::Argument(argument) => match argument {
+            SpecPureFunctionArgument::ObjectPointer { .. } => Visit::Descend,
             SpecPureFunctionArgument::Value(_) | SpecPureFunctionArgument::Algebraic(_) => {
                 Visit::Descend
             }

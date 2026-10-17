@@ -32,6 +32,7 @@ fn caller_state(pointer: &Pointer) -> CState {
 fn apply(function: CFunction, state: &CState, pointer: &Pointer) -> Vec<CFunctionPath> {
     let environment =
         CExecutionEnvironment::new().with_verified_function_rule(CVerifiedFunctionRule {
+            pointer_result: None,
             function: function.clone(),
             loop_semantics: CLoopSemantics::Verify,
             checked_callees: None,

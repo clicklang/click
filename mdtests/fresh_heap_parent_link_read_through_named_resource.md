@@ -10,6 +10,9 @@ and the named instance passes through the call's population transfer
 unchanged. This catches a direct call that rejects a callee read covered by a
 named resource arm.
 
+The logical pointer annotations below use `void*` for address identities;
+object access remains governed by the unchanged C types and resource ownership.
+
 ```c filename=fresh_heap_parent_link.c
 struct child { int32 refs; };
 struct parent { struct child* kid; };
@@ -33,7 +36,7 @@ int32 adopt(struct child* kid) {
 ```click
 spec enum ParentLink {
     Empty,
-    Linked(struct child*),
+    Linked(void*),
 }
 resource parent(p: struct parent*) {
     field link: ParentLink;
