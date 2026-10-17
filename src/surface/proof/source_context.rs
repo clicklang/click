@@ -89,6 +89,7 @@ impl SourceContext {
                     | ProofTactic::NormalizeUsing(_)
                     | ProofTactic::ArithmeticUsing(_)
                     | ProofTactic::ArithmeticCertificate(_)
+                    | ProofTactic::Rewrite(_)
             ),
         }
     }
