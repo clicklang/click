@@ -37,6 +37,37 @@ pub(crate) fn push_path_segment(encoded: &mut String, segment: &str) {
     }
 }
 
+/// Appends a type argument of the segment before it, a generic trait's
+/// instance `Scale<i32>`: `_A`, its length, `_`, and its Rust spelling.
+pub(crate) fn push_type_argument(encoded: &mut String, argument: &str) {
+    encoded.push_str(&format!("_A{}_{argument}", argument.len()));
+}
+
+/// The generic crate trait instance whose method's interface function
+/// `name` is, `traits::Scale<i32>::scale`: the trait's importer name and its
+/// type arguments. `None` for any other name.
+pub(crate) fn interface_instance(name: &str) -> Option<(String, Vec<String>)> {
+    let mut rest = name.strip_prefix(PREFIX)?;
+    let mut trait_name = PREFIX.to_string();
+    let mut arguments = Vec::new();
+    let mut method = false;
+    while let Some(tail) = rest.strip_prefix('_') {
+        let kind = *tail.as_bytes().first()?;
+        let tail = &tail[1..];
+        let digits = tail.bytes().take_while(u8::is_ascii_digit).count();
+        let length = tail[..digits].parse::<usize>().ok()?;
+        let segment = tail[digits..].strip_prefix('_')?.get(..length)?;
+        rest = &tail[digits + 1 + length..];
+        match (kind, arguments.is_empty(), method) {
+            (b'I', true, false) => push_path_segment(&mut trait_name, segment),
+            (b'A', _, false) => arguments.push(segment.to_string()),
+            (b'I', false, false) => method = true,
+            _ => return None,
+        }
+    }
+    (rest.is_empty() && method).then_some((trait_name, arguments))
+}
+
 /// The index of a closure segment, `{closure#0}`.
 fn closure_index(segment: &str) -> Option<u32> {
     let digits = segment.strip_prefix("{closure#")?.strip_suffix('}')?;
@@ -266,6 +297,7 @@ fn decode(text: &str) -> Option<(String, &str)> {
             Some(b'I') => ('I', &tail[1..]),
             Some(b'T') => ('T', &tail[1..]),
             Some(b'R') => ('R', &tail[1..]),
+            Some(b'A') => ('A', &tail[1..]),
             _ => break,
         };
         let digits = tail.bytes().take_while(u8::is_ascii_digit).count();
@@ -281,7 +313,22 @@ fn decode(text: &str) -> Option<(String, &str)> {
         let Some(segment) = segment_start.get(..length) else {
             break;
         };
-        if kind == 'R' {
+        if kind == 'A' {
+            // A type argument of the segment before it.
+            let Some(last) = segments.last_mut() else {
+                break;
+            };
+            if !segment
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
+            {
+                break;
+            }
+            match last.strip_suffix('>') {
+                Some(open) => *last = format!("{open}, {segment}>"),
+                None => last.push_str(&format!("<{segment}>")),
+            }
+        } else if kind == 'R' {
             // The trait an `impl` block for the type before it implements.
             let (Some((trait_path, "")), [type_path]) = (decode(segment), segments.as_slice())
             else {
@@ -351,6 +398,30 @@ pub fn display_rust_names(text: &str) -> Cow<'_, str> {
 mod tests {
     use super::*;
     use crate::languages::claim_label_matches;
+
+    #[test]
+    fn generic_trait_instances_read_with_their_arguments() {
+        let mut instance = qualified_name(["shapes", "Scale"]);
+        push_type_argument(&mut instance, "i32");
+        let mut method = instance.clone();
+        push_path_segment(&mut method, "scale");
+        assert_eq!(
+            rust_display_name(&method).as_deref(),
+            Some("shapes::Scale<i32>::scale")
+        );
+        let mut pair = instance.clone();
+        push_type_argument(&mut pair, "u8");
+        assert_eq!(
+            rust_display_name(&pair).as_deref(),
+            Some("shapes::Scale<i32, u8>")
+        );
+        let implementation =
+            trait_method_name(&qualified_name(["shapes", "Square"]), &instance, "scale");
+        assert_eq!(
+            rust_display_name(&implementation).as_deref(),
+            Some("<shapes::Square as shapes::Scale<i32>>::scale")
+        );
+    }
 
     #[test]
     fn importer_names_read_as_their_paths() {

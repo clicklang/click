@@ -6548,6 +6548,10 @@ pub struct CLocalEnvironment {
     /// every binding: a frame of N locals bound one at a time costs N log N.
     pub(super) bindings: crate::persistent::PersistentMap<String, CLocalBinding>,
     pub(super) slots: crate::persistent::PersistentMap<Pointer, String>,
+    /// Each scalar object's name under a fingerprint of the integer term it
+    /// holds, kept with `bindings`: naming a value looks up the objects that
+    /// may hold it instead of comparing it with every binding.
+    pub(super) held_terms: crate::persistent::PersistentMap<(u64, String), ()>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]

@@ -5372,6 +5372,15 @@ impl parser::ProgramLayouts {
                         .collect(),
                 );
             }
+            if let Some((trait_name, arguments)) =
+                crate::languages::rust::names::interface_instance(function.name())
+            {
+                tables
+                    .rust_trait_instances
+                    .entry(trait_name)
+                    .or_default()
+                    .insert(arguments);
+            }
             if let Some(method) = function.dispatched_method()
                 && let Some(method) = source_names.get(method)
             {
