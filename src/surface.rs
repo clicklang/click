@@ -6931,6 +6931,17 @@ impl FunctionBlock {
         Ok(())
     }
 
+    /// This contract, without its proof, as the contract of `name`: a C++
+    /// dispatch that stands for this block's virtual method.
+    pub(in crate::surface) fn dispatch_alias(&self, name: &str) -> FunctionBlock {
+        let mut alias = self.clone();
+        alias.signature.name = name.to_string();
+        alias.signature.c_source = None;
+        alias.external = true;
+        alias.grouped_proof = None;
+        alias
+    }
+
     pub fn parameter_struct_casts(&self) -> &BTreeMap<String, String> {
         &self.parameter_struct_casts
     }
