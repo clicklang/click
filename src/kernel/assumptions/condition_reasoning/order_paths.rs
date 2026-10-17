@@ -3343,8 +3343,9 @@ mod annotated_alignment_premise_tests {
         use crate::kernel::effective_type::{CAccessClass, CScalarClass};
         let _session = crate::kernel::VerificationSession::enter();
         let pointer = Pointer::symbolic(Variable(996_210));
-        // The factory now canonicalizes alignment annotations. Keep a raw
-        // source occurrence to check exact citation and independent removal.
+        // Address annotations share identity. Keep the written stronger
+        // premise for exact citation and withdraw it independently of a
+        // weaker alignment premise.
         let source = ConditionTerm::Bitvector64Equal(
             Box::new(Bitvector32Term::uint64_bitwise_and(
                 Bitvector32Term::object_pointer_address(
@@ -3355,7 +3356,8 @@ mod annotated_alignment_premise_tests {
             )),
             Box::new(Bitvector32Term::UInt64Constant(0)),
         );
-        let bare = ConditionTerm::pointer_aligned(pointer.clone(), 8);
+        assert_eq!(source, ConditionTerm::pointer_aligned(pointer.clone(), 8));
+        let bare = ConditionTerm::pointer_aligned(pointer.clone(), 4);
         let context = PureFactContext::new().assume_condition(source.clone(), true);
         assert_eq!(
             context.pointer_alignment_certificate_decision(&pointer, 4),
