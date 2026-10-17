@@ -125,6 +125,14 @@ A named nightly regression independently varies four resource sizes and
 three claim sizes, retaining the full matrix without slowing the regular gate. It does not bound every part of contract
 verification or eliminate preparation after a frontier-changing tactic.
 
+A whole-cell memory query first uses its admitted address-class index. An
+existing exact supplier needs no resolution of the queried pointer's defining
+read. Only a miss enters the checked read-endpoint route. Supplier quantities
+and permissions retain their ordinary checks; this selection adds no equality
+to the ambient context. The four-size regression
+`an_indexed_read_supplier_does_not_resolve_its_pointer_history` varies unrelated
+stores before the same indexed loaded-pointer query.
+
 ### Refused ownership separation
 
 A refused separation of fixed fields on independent pointer parameters uses

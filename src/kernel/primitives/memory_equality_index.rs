@@ -1900,6 +1900,30 @@ impl ResourceContext {
         assumptions: &PureFactContext,
         owned: bool,
     ) -> Option<MemoryAccessCandidates> {
+        // An admitted footprint at this address already supplies coordinates.
+        // Resolve a pointer's recorded read only when the ordinary index has
+        // no supplier; otherwise its defining history is unrelated to selection.
+        let direct = self.pair_memory_equalities_in_graph(
+            assumptions.equality_graph.clone(),
+            false,
+            Some(MemoryQuery::Address(pointer)),
+        );
+        let direct_entries =
+            Self::indexed_access_entries(&direct, pointer, bytes, owned).and_then(|entries| {
+                match entries {
+                    MemoryAccessEntries::Intervals(mut entries) => entries
+                        .next()
+                        .map(|first| MemoryAccessEntries::Prefixed(Some(first), entries)),
+                    entries => Some(entries),
+                }
+            });
+        if let Some(entries) = direct_entries {
+            return Some(MemoryAccessCandidates {
+                entries,
+                query: pointer.clone(),
+                index: direct,
+            });
+        }
         let index = self.pair_memory_equalities(assumptions, false, Some(pointer));
         // A reference result may capture an interior address without an
         // additive syntax tree. Its checked class retains a producer spelling

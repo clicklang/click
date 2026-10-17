@@ -1693,3 +1693,55 @@ fn cold_read_queries_ignore_unrelated_classes_and_resource_ranges() {
         "{samples:?}"
     );
 }
+
+#[test]
+fn an_indexed_read_supplier_does_not_resolve_its_pointer_history() {
+    let mut samples = Vec::new();
+    for size in [4u64, 8, 16, 32] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let field = Pointer {
+            block: PointerBlock::ExternalArgument,
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        let stored = Pointer::symbolic(Variable(9_930_000));
+        let mut memory = CMemory::new().store(
+            field.clone(),
+            CValue::typed_pointer(stored, CType::Int32Pointer),
+        );
+        for i in 0..size {
+            memory = memory.store(
+                Pointer {
+                    block: PointerBlock::Heap(i),
+                    offset: PointerOffsetTerm::Constant(0),
+                },
+                CValue::Int32(1u32.into()),
+            );
+        }
+        let snapshot = crate::kernel::intern_c_memory_ref(&memory);
+        let variable = crate::kernel::load_variable_for_cell_with_origin(
+            &snapshot,
+            &field,
+            LoadKind::of_type(CType::Int32Pointer).unwrap(),
+            C_POINTER_BYTE_WIDTH,
+            &snapshot,
+        );
+        let pointer = Pointer::loaded(field.block.clone(), Bitvector32Term::Variable(variable), 4);
+        let context = PureFactContext::new();
+        context.register_pointer_read(&pointer, &snapshot, &field);
+        let resources = ResourceContext::new().unchecked_with_fact(CResourceFact::own_memory(
+            CMemoryRange::new_with_element_width(pointer.clone(), 0u32.into(), 8u32.into(), 1),
+        ));
+        resources.synchronize_memory_equalities(&context);
+        let (found, work) = crate::instrumentation::measure_deterministic_work(|| {
+            resources
+                .read_access_entries(&pointer, 4, &context)
+                .is_some()
+        });
+        assert!(found);
+        samples.push(work);
+    }
+    assert!(
+        samples.iter().all(|work| *work <= samples[0] + 16),
+        "an existing supplier walked pointer history: {samples:?}"
+    );
+}
