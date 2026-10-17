@@ -1951,7 +1951,7 @@ fn rewrite_verified_pure_theorem(
     let replacement = theorem.expanded_proof_source()?;
     let source =
         DeclarationSources::new(click_source, &tokens).theorem(&theorem.theorem_definition)?;
-    let edit = find_ensure_proof_edit(&tokens, source.body_open, source.body_close, ensure_index)?;
+    let edit = find_ensure_proof_edit(&tokens, &source, ensure_index)?;
     let span = edit.span();
     let replacement = indent_replacement(click_source, span.start, &replacement);
     let replacement = match edit {
@@ -2063,10 +2063,13 @@ fn select_expansion_theorem<'a>(
 
 use super::parser::SourceToken;
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 struct FunctionSource {
     body_open: usize,
     body_close: usize,
+    /// The first token of each written claim clause, where the parser read
+    /// it, in source order.
+    clauses: Vec<Option<usize>>,
 }
 
 /// Finds the bodies the parser recorded for declarations among the tokens
@@ -2100,10 +2103,10 @@ impl<'a> DeclarationSources<'a> {
         starts.get(line.checked_sub(1)?).copied()
     }
 
-    /// The written brace `text` at `position`. An implicit proof block's
-    /// zero-width brace can share a token's start, so the written one is
-    /// chosen among the tokens there.
-    fn brace_at(&self, position: &SourcePosition, text: &str) -> Option<usize> {
+    /// The written token at `position`, when `text` is given the one with
+    /// that text. An implicit proof block's zero-width brace can share a
+    /// token's start, so the written token is chosen among the tokens there.
+    fn token_at(&self, position: &SourcePosition, text: Option<&str>) -> Option<usize> {
         let start = self.line_start(position.line)?;
         let byte = self.source[start..]
             .char_indices()
@@ -2117,7 +2120,7 @@ impl<'a> DeclarationSources<'a> {
         self.tokens[first..]
             .iter()
             .take_while(|token| token.span.start == offset)
-            .position(|token| token.text == text && !token.span.is_empty())
+            .position(|token| text.is_none_or(|text| token.text == text) && !token.span.is_empty())
             .map(|found| first + found)
     }
 
@@ -2129,15 +2132,24 @@ impl<'a> DeclarationSources<'a> {
         body: &parser::DeclarationBody,
     ) -> Result<FunctionSource, ClickError> {
         let open = body
-            .0
+            .open
             .as_ref()
             .ok_or_else(|| ClickError::new(format!("`{name}` was not read from source text")))?;
         let body_open = self
-            .brace_at(open, "{")
+            .token_at(open, Some("{"))
             .ok_or_else(|| ClickError::new(format!("could not locate the source of `{name}`")))?;
         Ok(FunctionSource {
             body_open,
             body_close: matching_delimiter(self.tokens, body_open, "{", "}")?,
+            clauses: body
+                .clauses
+                .iter()
+                .map(|clause| {
+                    clause
+                        .as_ref()
+                        .and_then(|clause| self.token_at(clause, None))
+                })
+                .collect(),
         })
     }
 
@@ -2313,143 +2325,6 @@ fn proof_function_blocks(file: &ClickFile) -> impl Iterator<Item = &FunctionBloc
         .filter(|block| !block.is_external())
 }
 
-/// An imported inherent method's name as the source index spells it. The
-/// importer names the method by the module its `impl` block is in; a
-/// sidecar writes `impl path::Type { fn method }` with no module, and the
-/// index, which reads tokens alone, takes the block to be in its type's
-/// module. This rewrites `<module>_T<n>_<Type>_I<m>_<method>` to that
-/// spelling, or answers nothing for any other name.
-fn rust_inherent_method_in_its_type_module(name: &str) -> Option<String> {
-    let at = name.find("_T")?;
-    if !name.starts_with("__rust_q") {
-        return None;
-    }
-    let rest = &name[at + 2..];
-    let digits = rest.find('_')?;
-    let length: usize = rest[..digits].parse().ok()?;
-    let impl_type = rest.get(digits + 1..digits + 1 + length)?;
-    let method = &rest[digits + 1 + length..];
-    // The type's module is its qualified name less its last segment,
-    // `_I<n>_<Name>`.
-    let last = impl_type.rfind("_I")?;
-    let module = &impl_type[..last];
-    Some(format!("{module}_T{length}_{impl_type}{method}"))
-}
-
-/// The segments of the Rust path that ends at token `end`, `a::b::name`.
-/// The name the parser gives a C++ head's declarator whose last token is at
-/// `end`, the token before its `(`: the importer name of its C++ path,
-/// `Rec::m`, `Rec::~Rec`, `Rec::operator+=`, `Stored<long long>::Read` or
-/// `choose<true>`.
-fn cpp_declarator_name_ending_at(tokens: &[SourceToken], end: usize) -> String {
-    let text = |at: usize| tokens[at].text.as_str();
-    let mut segments = Vec::new();
-    let mut at = end;
-    loop {
-        let mut arguments = String::new();
-        if text(at) == ">" {
-            let close = at;
-            let mut depth = 0usize;
-            while at > 0 {
-                match text(at) {
-                    ">" => depth += 1,
-                    "<" => {
-                        depth -= 1;
-                        if depth == 0 {
-                            break;
-                        }
-                    }
-                    _ => {}
-                }
-                at -= 1;
-            }
-            arguments = printed_template_arguments(&tokens[at + 1..close]);
-            at = at.saturating_sub(1);
-        }
-        let segment = match text(at) {
-            "]" if at >= 2 && text(at - 2) == "operator" => {
-                at -= 2;
-                "operator[]".to_string()
-            }
-            "=" if at >= 2 && text(at - 2) == "operator" => {
-                let operator = format!("operator{}=", text(at - 1));
-                at -= 2;
-                operator
-            }
-            name if at >= 1 && text(at - 1) == "~" => {
-                at -= 1;
-                format!("~{name}")
-            }
-            name => name.to_string(),
-        };
-        segments.insert(0, format!("{segment}{arguments}"));
-        if at >= 2 && text(at - 1) == "::" {
-            at -= 2;
-            continue;
-        }
-        break;
-    }
-    crate::languages::cpp::names::path_name(&segments)
-}
-
-/// Template argument tokens as Clang prints them, `<long long, true>`.
-fn printed_template_arguments(tokens: &[SourceToken]) -> String {
-    let mut printed = String::from("<");
-    let mut word_before = false;
-    let mut index = 0;
-    while index < tokens.len() {
-        let text = tokens[index].text.as_str();
-        match text {
-            "::" => {
-                printed.push_str("::");
-                word_before = false;
-            }
-            "," => {
-                printed.push_str(", ");
-                word_before = false;
-            }
-            "*" => {
-                printed.push_str(" *");
-                word_before = false;
-            }
-            "<" | ">" | "-" => {
-                printed.push_str(text);
-                word_before = false;
-            }
-            word => {
-                if word_before {
-                    printed.push(' ');
-                }
-                printed.push_str(word);
-                word_before = true;
-            }
-        }
-        index += 1;
-    }
-    printed.push('>');
-    printed
-}
-
-/// The `>` closing the generic list opened at `open`. A parser arrow token
-/// `->` closes nothing.
-fn rust_generic_list_end(tokens: &[SourceToken], open: usize) -> Option<usize> {
-    let mut depth = 0usize;
-    for (at, token) in tokens.iter().enumerate().skip(open) {
-        match token.text.as_str() {
-            "<" => depth += 1,
-            ">" => {
-                depth -= 1;
-                if depth == 0 {
-                    return Some(at);
-                }
-            }
-            "{" | ";" => return None,
-            _ => {}
-        }
-    }
-    None
-}
-
 fn rust_path_ending_at(tokens: &[SourceToken], end: usize) -> Vec<&str> {
     let mut segments = vec![tokens[end].text.as_str()];
     let mut at = end;
@@ -2463,78 +2338,22 @@ fn rust_path_ending_at(tokens: &[SourceToken], end: usize) -> Vec<&str> {
 
 fn find_ensure_proof_edit(
     tokens: &[SourceToken],
-    body_open: usize,
-    body_close: usize,
+    source: &FunctionSource,
     wanted: usize,
 ) -> Result<ProofSourceEdit, ClickError> {
-    let clause = find_ensure_clause(tokens, body_open, body_close, wanted)?;
-    find_proof_edit_after(tokens, clause, body_close)
+    let clause = written_clause(source, wanted)?;
+    find_proof_edit_after(tokens, clause, source.body_close)
 }
 
-/// The keyword token of written `ensures`, `owns`, or `produces` clause
-/// `wanted`, counted together in source order. A `produces` clause written
-/// in a contract `if` block is a clause of its own, in its place.
-fn find_ensure_clause(
-    tokens: &[SourceToken],
-    body_open: usize,
-    body_close: usize,
-    wanted: usize,
-) -> Result<usize, ClickError> {
-    let mut depth = 0;
-    let mut found = 0;
-    // Whether the contract clause being read began with `if`, and whether
-    // the block open at depth one is that `if`'s clause block.
-    let mut in_if_header = false;
-    let mut in_if_block = false;
-    let mut index = body_open + 1;
-    while index < body_close {
-        match tokens[index].text.as_str() {
-            "{" => {
-                if depth == 0 {
-                    in_if_block = in_if_header;
-                }
-                depth += 1;
-            }
-            "}" => depth -= 1,
-            "if" if depth == 0 => in_if_header = true,
-            ";" | "requires" | "consumes" | "views" | "let" | "decreases" | "constructs"
-                if depth == 0 =>
-            {
-                in_if_header = false;
-            }
-            "produces" if depth == 1 && in_if_block => {
-                if found == wanted {
-                    return Ok(index);
-                }
-                found += 1;
-            }
-            "ensures"
-                if depth == 0
-                    && tokens
-                        .get(index.wrapping_sub(1))
-                        .map(|token| token.text.as_str())
-                        != Some("exceptional") =>
-            {
-                in_if_header = false;
-                if found == wanted {
-                    return Ok(index);
-                }
-                found += 1;
-            }
-            "owns" | "produces" if depth == 0 => {
-                in_if_header = false;
-                if found == wanted {
-                    return Ok(index);
-                }
-                found += 1;
-            }
-            _ => {}
-        }
-        index += 1;
-    }
-    Err(ClickError::new(format!(
-        "could not locate source ensure {wanted}"
-    )))
+/// The first token of written `ensures`, `owns` or `produces` clause
+/// `wanted`, counted together in source order, as the parser read it.
+fn written_clause(source: &FunctionSource, wanted: usize) -> Result<usize, ClickError> {
+    source
+        .clauses
+        .get(wanted)
+        .copied()
+        .flatten()
+        .ok_or_else(|| ClickError::new(format!("could not locate source ensure {wanted}")))
 }
 
 fn find_exceptional_ensure_proof_edit(
@@ -2714,12 +2533,9 @@ fn find_claim_proof_edit(
     match claim {
         // The source is searched by written clause; a flattened aggregate
         // clause gives several ensures one written clause.
-        CProofClaim::Ensure(index) => find_ensure_proof_edit(
-            tokens,
-            function.body_open,
-            function.body_close,
-            function_block.ensure_source_clause(index),
-        ),
+        CProofClaim::Ensure(index) => {
+            find_ensure_proof_edit(tokens, function, function_block.ensure_source_clause(index))
+        }
         CProofClaim::ExceptionalEnsure(index) => find_exceptional_ensure_proof_edit(
             tokens,
             function.body_open,
@@ -3807,7 +3623,7 @@ fn claim_source_regions(
     scope: ClaimLocationScope,
 ) -> Result<Vec<ClaimRegion>, ClickError> {
     let tokens = proof_source_tokens(click_source)?;
-    let declarations = declaration_source_index(&tokens)?;
+    let declarations = DeclarationSources::new(click_source, &tokens);
     let mut regions = Vec::new();
     let clause_region = |clause: usize, edit: &ProofSourceEdit| {
         let start = tokens[clause].span.start;
@@ -3817,13 +3633,11 @@ fn claim_source_regions(
         if !file.theorem_is_selected(theorem.name()) {
             continue;
         }
-        let Some(source) = declarations.get(theorem.name()) else {
+        let Ok(source) = declarations.theorem(theorem) else {
             continue;
         };
         for index in 0..theorem.ensures().len() {
-            let Ok(clause) =
-                find_ensure_clause(&tokens, source.body_open, source.body_close, index)
-            else {
+            let Ok(clause) = written_clause(&source, index) else {
                 continue;
             };
             let Ok(edit) = find_proof_edit_after(&tokens, clause, source.body_close) else {
@@ -3844,11 +3658,7 @@ fn claim_source_regions(
             continue;
         }
         let function_name = function_block.signature().name();
-        let Some(function) = declarations
-            .get(function_name)
-            .or_else(|| declarations.get(&rust_inherent_method_in_its_type_module(function_name)?))
-            .copied()
-        else {
+        let Ok(function) = declarations.function(function_block) else {
             continue;
         };
         let owner = function_name.to_string();
@@ -3875,9 +3685,7 @@ fn claim_source_regions(
             if written.replace(source) == Some(source) {
                 continue;
             }
-            let Ok(clause) =
-                find_ensure_clause(&tokens, function.body_open, function.body_close, source)
-            else {
+            let Ok(clause) = written_clause(&function, source) else {
                 continue;
             };
             let Ok(edit) = find_proof_edit_after(&tokens, clause, function.body_close) else {
@@ -4212,223 +4020,6 @@ fn locate_source_tactic_file(
     }
 }
 
-/// The suffix a trait's type argument gives its methods' names, read from
-/// the tokens of an `impl Trait<Arg> for Type` header as the parser reads it
-/// (`parse_rust_trait_argument`): `<u32>` is `u32`, `<&Lanes>` is
-/// `ref_Lanes`, and a record by value is `value_<length><name>`.
-fn rust_trait_argument_suffix(header: &[SourceToken], impl_type: &str) -> Option<String> {
-    let open = header.iter().position(|token| token.text == "<")?;
-    let close = header.iter().position(|token| token.text == ">")?;
-    let argument: Vec<&str> = header
-        .get(open + 1..close)?
-        .iter()
-        .map(|token| token.text.as_str())
-        .collect();
-    let (reference, mutable, path) = match argument.as_slice() {
-        ["&", "mut", path @ ..] => (true, true, path),
-        ["&", path @ ..] => (true, false, path),
-        path => (false, false, path),
-    };
-    let segments: Vec<&str> = path.iter().copied().filter(|text| *text != "::").collect();
-    if segments.is_empty() {
-        return None;
-    }
-    let name = crate::languages::rust::names::path_name(&segments);
-    let name = name.as_str();
-    let name = if name == "Self" { impl_type } else { name };
-    let scalar = matches!(name, "i32" | "u8" | "u16" | "u32" | "usize" | "bool");
-    Some(match (reference, scalar) {
-        (false, true) => name.to_string(),
-        (false, false) => format!("value_{}{name}", name.len()),
-        (true, _) => format!("ref_{}{name}", if mutable { "mut_" } else { "" }),
-    })
-}
-
-/// Index top-level declaration bodies once. Proof bodies are skipped as a
-/// whole, so a use of a name inside a proof never shadows its declaration.
-fn declaration_source_index(
-    tokens: &[SourceToken],
-) -> Result<std::collections::HashMap<String, FunctionSource>, ClickError> {
-    let mut result = std::collections::HashMap::new();
-    let mut candidate = None;
-    // A C++ sidecar's heads are C++ declarators: `Rec::Rec`, `Rec::~Rec`,
-    // `Rec::operator+=`, `f<true>`.
-    let cpp = tokens.windows(2).any(|pair| {
-        pair[0].text == "verifying"
-            && [".cpp\"", ".cc\"", ".cxx\"", ".h\"", ".hpp\""]
-                .iter()
-                .any(|extension| pair[1].text.ends_with(extension))
-    });
-    let c_aliases = tokens
-        .windows(4)
-        .filter_map(|items| {
-            (items[0].text == "verifying"
-                && items[2].text == "as"
-                && crate::languages::SourceLanguage::of_source_path(
-                    items[1].text.trim_matches('"'),
-                ) == crate::languages::SourceLanguage::C)
-                .then_some(items[3].text.as_str())
-        })
-        .collect::<BTreeSet<_>>();
-    // Inside a Rust `impl` block a method `name` is the function `Type_name`.
-    // The block's type, its module when it is an inherent block for a type
-    // named by a path, its trait argument's suffix, and where it closes.
-    let mut impl_block: Option<(String, Option<String>, Option<String>, usize)> = None;
-    // The crate trait an `impl` block implements, whose methods are
-    // `<Type as Trait>::name`, or whose `trait` block declares its methods'
-    // interfaces, `Trait::name`.
-    let mut impl_trait: Option<String> = None;
-    let mut trait_block: Option<(String, usize)> = None;
-    let mut index = 0;
-    while index < tokens.len() {
-        crate::instrumentation::record_deterministic_work(1);
-        if impl_block
-            .as_ref()
-            .is_some_and(|(_, _, _, close)| index >= *close)
-        {
-            impl_block = None;
-            impl_trait = None;
-        }
-        if trait_block
-            .as_ref()
-            .is_some_and(|(_, close)| index >= *close)
-        {
-            trait_block = None;
-        }
-        match tokens[index].text.as_str() {
-            "trait"
-                if !cpp && impl_block.is_none() && trait_block.is_none() && candidate.is_none() =>
-            {
-                // `trait path {`: the path is all that comes between.
-                if let Some(open) = (index..tokens.len()).find(|at| tokens[*at].text == "{")
-                    && open > index + 1
-                    && open - 1 - 2 * (rust_path_ending_at(tokens, open - 1).len() - 1) == index + 1
-                {
-                    let close = matching_delimiter(tokens, open, "{", "}")?;
-                    let path = rust_path_ending_at(tokens, open - 1);
-                    trait_block = Some((crate::languages::rust::names::path_name(&path), close));
-                    index = open + 1;
-                    continue;
-                }
-            }
-            "impl" if impl_block.is_none() && candidate.is_none() => {
-                if let Some(open) = (index..tokens.len()).find(|at| tokens[*at].text == "{") {
-                    let close = matching_delimiter(tokens, open, "{", "}")?;
-                    let path = rust_path_ending_at(tokens, open - 1);
-                    let impl_type = crate::languages::rust::names::path_name(&path);
-                    let inherent = tokens[index..open].iter().all(|token| token.text != "for");
-                    let module = (inherent && path.len() > 1).then(|| {
-                        path[..path.len() - 1]
-                            .iter()
-                            .fold("__rust_q".to_string(), |encoded, segment| {
-                                format!("{encoded}_I{}_{segment}", segment.len())
-                            })
-                    });
-                    let suffix = rust_trait_argument_suffix(&tokens[index..open], &impl_type);
-                    // `impl crate_name::Shape for Type`: a crate trait is
-                    // named by a path, the standard library's by a word.
-                    if let Some(at) = (index..open).find(|at| tokens[*at].text == "for")
-                        && suffix.is_none()
-                    {
-                        let trait_path = rust_path_ending_at(tokens, at - 1);
-                        if trait_path.len() > 1 {
-                            impl_trait =
-                                Some(crate::languages::rust::names::path_name(&trait_path));
-                        }
-                    }
-                    impl_block = Some((impl_type, module, suffix, close));
-                    index = open + 1;
-                    continue;
-                }
-            }
-            "theorem" | "tactic" => {
-                candidate = tokens.get(index + 1).map(|token| token.text.clone());
-            }
-            // A Rust head's generic parameters, `fn apply<F: Fn(i32) ->
-            // i32>(`, follow the name; the function is the path before them.
-            "<" if candidate.is_none() && !cpp && index > 0 => {
-                let path = rust_path_ending_at(tokens, index - 1);
-                let path_start = index - 1 - 2 * (path.len() - 1);
-                if path_start
-                    .checked_sub(1)
-                    .is_some_and(|before| tokens[before].text == "fn")
-                    && let Some(close) = rust_generic_list_end(tokens, index)
-                {
-                    candidate = Some(match &impl_block {
-                        Some(_) => crate::languages::rust::names::method_path_name(&path),
-                        None => crate::languages::rust::names::path_name(&path),
-                    });
-                    index = close + 1;
-                    continue;
-                }
-            }
-            "(" => {
-                if candidate.is_none() {
-                    candidate = index.checked_sub(1).map(|before| {
-                        if cpp {
-                            return cpp_declarator_name_ending_at(tokens, before);
-                        }
-                        let path = rust_path_ending_at(tokens, before);
-                        if path.len() == 2 && c_aliases.contains(path[0]) {
-                            return path.join("::");
-                        }
-                        match &impl_block {
-                            // A method's own name, and an item inside it.
-                            Some(_) => crate::languages::rust::names::method_path_name(&path),
-                            None => crate::languages::rust::names::path_name(&path),
-                        }
-                    });
-                }
-                index = matching_delimiter(tokens, index, "(", ")")?;
-            }
-            "{" => {
-                let body_close = matching_delimiter(tokens, index, "{", "}")?;
-                if let Some(name) = candidate.take() {
-                    let name = match (&impl_block, &impl_trait, &trait_block) {
-                        (Some((impl_type, ..)), Some(trait_name), _) => {
-                            crate::languages::rust::names::trait_method_name(
-                                impl_type, trait_name, &name,
-                            )
-                        }
-                        (None, _, Some((trait_name, _))) => {
-                            let mut encoded = trait_name.clone();
-                            crate::languages::rust::names::push_path_segment(&mut encoded, &name);
-                            encoded
-                        }
-                        (impl_block, ..) => match impl_block {
-                            Some((impl_type, _, Some(suffix), _)) => {
-                                format!("{impl_type}_{name}_{suffix}")
-                            }
-                            Some((impl_type, module, None, _)) => {
-                                crate::languages::rust::names::inherent_method_name(
-                                    module.as_deref(),
-                                    impl_type,
-                                    &name,
-                                )
-                            }
-                            None => name,
-                        },
-                    };
-                    result.insert(
-                        name,
-                        FunctionSource {
-                            body_open: index,
-                            body_close,
-                        },
-                    );
-                }
-                index = body_close;
-            }
-            ";" => {
-                candidate = None;
-            }
-            _ => {}
-        }
-        index += 1;
-    }
-    Ok(result)
-}
-
 /// Records every written tactic of every selected proof, keyed by span.
 fn source_tactic_entries(
     click_source: &str,
@@ -4436,17 +4027,12 @@ fn source_tactic_entries(
 ) -> Result<Vec<SourceTacticEntry>, ClickError> {
     let tokens = proof_source_tokens(click_source)?;
     let mut entries = Vec::new();
-    let declarations = declaration_source_index(&tokens)?;
+    let declarations = DeclarationSources::new(click_source, &tokens);
     for theorem in file.theorem_definitions() {
         if !file.theorem_is_selected(theorem.name()) {
             continue;
         }
-        let source = declarations.get(theorem.name()).copied().ok_or_else(|| {
-            ClickError::new(format!(
-                "could not locate Click theorem `{}`",
-                theorem.name()
-            ))
-        })?;
+        let source = declarations.theorem(theorem)?;
         let kernel_axiom_name = proof::is_kernel_standard_theorem_name(theorem.name())
             && theorem
                 .parameters()
@@ -4461,8 +4047,7 @@ fn source_tactic_entries(
             {
                 continue;
             }
-            let edit =
-                find_ensure_proof_edit(&tokens, source.body_open, source.body_close, ensure_index)?;
+            let edit = find_ensure_proof_edit(&tokens, &source, ensure_index)?;
             let label = theorem.ensure_claim_label(ensure_index);
             let site = ProofSite::TheoremEnsure {
                 theorem_name: theorem.name().to_string(),
@@ -4476,15 +4061,7 @@ fn source_tactic_entries(
             continue;
         }
         let function_name = function_block.signature().name();
-        let function = declarations
-            .get(function_name)
-            .or_else(|| declarations.get(&rust_inherent_method_in_its_type_module(function_name)?))
-            .copied()
-            .ok_or_else(|| {
-                ClickError::new(format!(
-                    "could not locate Click function block `{function_name}`"
-                ))
-            })?;
+        let function = declarations.function(function_block)?;
         if let Some(proof) = function_block.covering_proof() {
             let edit = find_grouped_proof_edit(&tokens, &function, function_block)?;
             proof_tactic_entries(
@@ -5226,8 +4803,7 @@ fn c0_tactic_source_offsets_with_tokens(
                 continue;
             }
             let source = declarations.theorem(theorem)?;
-            let edit =
-                find_ensure_proof_edit(tokens, source.body_open, source.body_close, ensure_index)?;
+            let edit = find_ensure_proof_edit(tokens, &source, ensure_index)?;
             return proof_source_offsets(
                 tokens,
                 match &edit {
@@ -5479,301 +5055,6 @@ fn structured_tactic_arm_blocks(
         (first_open, first_close),
         (second_open, second_close),
     ]))
-}
-
-/// Resolve positions inside written `have` and `open` bodies and structured
-/// tactic arms. The first position is the enclosing tactic, as reported by
-/// the usual claim mapper; the indices then descend as a proof step's source
-/// path does: below a `have` or `open`, one index selects a direct tactic in
-/// its body; below an `if`, `cases`, or `both`, two indices select an arm
-/// and then a direct tactic in it.
-pub fn nested_tactic_source_position(
-    source: &str,
-    outer: &SourcePosition,
-    nested_indices: &[usize],
-) -> Result<SourcePosition, ClickError> {
-    let tokens = proof_source_tokens(source)?;
-    let offset = offset_at_position(source, outer.line, outer.column)?;
-    let mut current = tokens
-        .iter()
-        .position(|token| token.span.start == offset)
-        .ok_or_else(|| ClickError::new("could not locate enclosing source tactic"))?;
-    let mut indices = nested_indices.iter().copied();
-    while let Some(index) = indices.next() {
-        let kind = tokens[current].text.as_str();
-        if let Some(arms) = structured_tactic_arm_blocks(&tokens, current)? {
-            let (open, close) = *arms
-                .get(index)
-                .ok_or_else(|| ClickError::new(format!("source `{kind}` has no arm {index}")))?;
-            let position = indices.next().ok_or_else(|| {
-                ClickError::new(format!(
-                    "source path names arm {index} of `{kind}` without a tactic in it"
-                ))
-            })?;
-            let ranges = direct_tactic_token_ranges(&tokens, open, close)?;
-            current = ranges
-                .get(position)
-                .ok_or_else(|| {
-                    ClickError::new(format!("source `{kind}` arm tactic {position} is missing"))
-                })?
-                .start;
-            continue;
-        }
-        if !matches!(kind, "have" | "open") {
-            return Err(ClickError::new(format!(
-                "source `{kind}` has no nested `have` or `open` tactic body"
-            )));
-        }
-        let mut depths = [0_usize; 3];
-        let mut body_open = None;
-        for cursor in current + 1..tokens.len() {
-            let token = tokens[cursor].text.as_str();
-            if depths == [0; 3] {
-                if kind == "have"
-                    && token == "by"
-                    && tokens.get(cursor + 1).map(|token| token.text.as_str()) == Some("{")
-                {
-                    body_open = Some(cursor + 1);
-                    break;
-                }
-                if kind == "open" && token == "{" {
-                    body_open = Some(cursor);
-                    break;
-                }
-                if token == ";" {
-                    break;
-                }
-            }
-            match token {
-                "(" => depths[0] += 1,
-                ")" => depths[0] = depths[0].saturating_sub(1),
-                "[" => depths[1] += 1,
-                "]" => depths[1] = depths[1].saturating_sub(1),
-                "{" => depths[2] += 1,
-                "}" => depths[2] = depths[2].saturating_sub(1),
-                _ => {}
-            }
-        }
-        let open = body_open.ok_or_else(|| {
-            ClickError::new(format!("could not locate source `{kind}` tactic body"))
-        })?;
-        let close = matching_delimiter(&tokens, open, "{", "}")?;
-        let ranges = direct_tactic_token_ranges(&tokens, open, close)?;
-        current = ranges
-            .get(index)
-            .ok_or_else(|| ClickError::new(format!("nested source tactic {index} is missing")))?
-            .start;
-    }
-    Ok(position_at_offset(source, tokens[current].span.start))
-}
-
-/// Return the exact written tactic beginning at a diagnostic source position.
-/// The position is resolved by the same source mapper used for proof steps.
-pub fn tactic_source_at_position(
-    source: &str,
-    position: &SourcePosition,
-) -> Result<String, ClickError> {
-    let tokens = proof_source_tokens(source)?;
-    let offset = offset_at_position(source, position.line, position.column)?;
-    let start = tokens
-        .iter()
-        .position(|token| token.span.start == offset)
-        .ok_or_else(|| ClickError::new("could not locate source tactic"))?;
-    let end = tactic_end_token(&tokens, start, tokens.len())?;
-    Ok(source[tokens[start].span.start..tokens[end].span.end].to_string())
-}
-
-/// Select the written arm containing a trace target inside a two-arm tactic.
-/// Returning `None` means the target lies outside both arms (for example, in
-/// the continuation after a completed branch).
-pub fn tactic_arm_containing_position(
-    source: &str,
-    tactic_position: &SourcePosition,
-    target_position: &SourcePosition,
-) -> Result<Option<usize>, ClickError> {
-    let tokens = proof_source_tokens(source)?;
-    let tactic_offset = offset_at_position(source, tactic_position.line, tactic_position.column)?;
-    let target_offset = offset_at_position(source, target_position.line, target_position.column)?;
-    let start = tokens
-        .iter()
-        .position(|token| token.span.start == tactic_offset)
-        .ok_or_else(|| ClickError::new("could not locate trace branch tactic"))?;
-    let end = tactic_end_token(&tokens, start, tokens.len())?;
-    let range = start..end + 1;
-    let pair = |(first_open, first_close, second_open, second_close)| {
-        vec![(first_open, first_close), (second_open, second_close)]
-    };
-    let blocks = match tokens[start].text.as_str() {
-        "branch" => pair(find_branch_blocks(&tokens, &range)?),
-        "if" => pair(find_binary_branch_blocks(&tokens, &range, "if")?),
-        "outcomes" => pair(find_outcomes_arm_blocks(&tokens, &range)?),
-        "cases" => find_cases_arm_blocks(&tokens, &range)?,
-        "match" => find_structural_induction_arm_blocks(&tokens, &range)?,
-        "both" => {
-            let left_open = start + 1;
-            if tokens.get(left_open).map(|token| token.text.as_str()) != Some("{") {
-                return Ok(None);
-            }
-            let left_close = matching_delimiter(&tokens, left_open, "{", "}")?;
-            let right_open = left_close + 2;
-            if tokens.get(left_close + 1).map(|token| token.text.as_str()) != Some("and")
-                || tokens.get(right_open).map(|token| token.text.as_str()) != Some("{")
-            {
-                return Ok(None);
-            }
-            pair((
-                left_open,
-                left_close,
-                right_open,
-                matching_delimiter(&tokens, right_open, "{", "}")?,
-            ))
-        }
-        _ => return Ok(None),
-    };
-    for (index, (open, close)) in blocks.into_iter().enumerate() {
-        if tokens[open].span.start < target_offset && target_offset < tokens[close].span.end {
-            return Ok(Some(index));
-        }
-    }
-    Ok(None)
-}
-
-/// Whether a selected tactic is inside the proof body of a written `have`.
-/// A completed `have` exports its proposition, not the body's intermediate
-/// facts; the trace only enters that body when it contains the target.
-pub fn tactic_have_body_contains_position(
-    source: &str,
-    tactic_position: &SourcePosition,
-    target_position: &SourcePosition,
-) -> Result<bool, ClickError> {
-    let tokens = proof_source_tokens(source)?;
-    let tactic_offset = offset_at_position(source, tactic_position.line, tactic_position.column)?;
-    let target_offset = offset_at_position(source, target_position.line, target_position.column)?;
-    let start = tokens
-        .iter()
-        .position(|token| token.span.start == tactic_offset)
-        .ok_or_else(|| ClickError::new("could not locate trace have tactic"))?;
-    if tokens[start].text != "have" {
-        return Ok(false);
-    }
-    let end = tactic_end_token(&tokens, start, tokens.len())?;
-    let Some(by) = (start..=end).find(|&index| tokens[index].text == "by") else {
-        return Ok(false);
-    };
-    let Some(open) = (by + 1..=end).find(|&index| tokens[index].text == "{") else {
-        return Ok(false);
-    };
-    let close = matching_delimiter(&tokens, open, "{", "}")?;
-    Ok(tokens[open].span.start < target_offset && target_offset < tokens[close].span.end)
-}
-
-/// Whether another written tactic starts on the same source line. Inspect
-/// tactic blocks through the source tokenizer, so semicolons inside a tactic
-/// or its nested expressions are not mistaken for sibling tactics.
-pub fn tactic_line_has_multiple_starts(
-    source: &str,
-    position: &SourcePosition,
-) -> Result<bool, ClickError> {
-    let selected = offset_at_position(source, position.line, position.column)?;
-    let mut starts = tactic_starts_on_line(source, position.line)?;
-    if !starts.iter().any(|start| start.column == position.column) {
-        starts.push(position_at_offset(source, selected));
-    }
-    if starts.len() <= 1 {
-        return Ok(false);
-    }
-    // A one-line `have ... by { simp(); }` has two lexical tactic starts,
-    // but the outer `have` is still the one unambiguous top-level tactic on
-    // that line. Keep a column for the nested tactic, or for sibling tactics.
-    if starts
-        .first()
-        .is_none_or(|start| start.column != position.column)
-    {
-        return Ok(true);
-    }
-    let tokens = proof_source_tokens(source)?;
-    let Some(start) = tokens.iter().position(|token| token.span.start == selected) else {
-        return Ok(true);
-    };
-    let end = tactic_end_token(&tokens, start, tokens.len())?;
-    Ok(starts.iter().skip(1).any(|start| {
-        offset_at_position(source, start.line, start.column)
-            .is_ok_and(|offset| offset >= tokens[end].span.end)
-    }))
-}
-
-/// Candidate written tactic starts on a Click source line, for selecting a
-/// trace target without requiring a column when the line is unambiguous.
-pub fn tactic_starts_on_line(source: &str, line: usize) -> Result<Vec<SourcePosition>, ClickError> {
-    let tokens = proof_source_tokens(source)?;
-    // The line's byte range, found once: asking each tactic start for its
-    // line would rescan the source from the top for every tactic in it.
-    let mut line_starts = std::iter::once(0).chain(
-        source
-            .bytes()
-            .enumerate()
-            .filter_map(|(offset, byte)| (byte == b'\n').then_some(offset + 1)),
-    );
-    let Some(line_start) = line.checked_sub(1).and_then(|index| line_starts.nth(index)) else {
-        return Ok(Vec::new());
-    };
-    let line_end = line_starts.next().unwrap_or(source.len() + 1);
-    // The `then` block of a proof `if` and the arm blocks of `cases` follow
-    // a condition, not a keyword; they are found from the tactic that owns
-    // them, which the scan reaches first.
-    let mut arm_blocks = std::collections::BTreeSet::new();
-    let mut starts = std::collections::BTreeSet::new();
-    for (open, token) in tokens.iter().enumerate() {
-        if token.text != "{" {
-            continue;
-        }
-        let preceding = open.checked_sub(1).and_then(|index| tokens.get(index));
-        // A match arm's block follows `=>`, which the scanner emits as the
-        // two punctuation tokens `=` and `>`.
-        let arm_block = open >= 1 && tokens[open - 1].text == "=>";
-        let direct_proof_block = arm_block
-            || preceding.is_some_and(|token| {
-                matches!(token.text.as_str(), "by" | "then" | "else" | "and" | "both")
-            });
-        let open_tactic_block = preceding.is_some_and(|token| token.text == ")")
-            && tokens[..open]
-                .iter()
-                .rev()
-                .take_while(|token| !matches!(token.text.as_str(), ";" | "{" | "}"))
-                .any(|token| token.text == "open");
-        if !direct_proof_block && !open_tactic_block && !arm_blocks.contains(&open) {
-            continue;
-        }
-        let Ok(close) = matching_delimiter(&tokens, open, "{", "}") else {
-            continue;
-        };
-        let Ok(ranges) = direct_tactic_token_ranges(&tokens, open, close) else {
-            continue;
-        };
-        for range in ranges {
-            match tokens[range.start].text.as_str() {
-                "if" => {
-                    if let Ok((then_open, ..)) = find_binary_branch_blocks(&tokens, &range, "if") {
-                        arm_blocks.insert(then_open);
-                    }
-                }
-                "cases" => {
-                    if let Ok(arms) = find_cases_arm_blocks(&tokens, &range) {
-                        arm_blocks.extend(arms.into_iter().map(|(open, _)| open));
-                    }
-                }
-                _ => {}
-            }
-            let start = tokens[range.start].span.start;
-            if (line_start..line_end).contains(&start) {
-                starts.insert(start);
-            }
-        }
-    }
-    Ok(starts
-        .into_iter()
-        .map(|start| position_at_offset(source, start))
-        .collect())
 }
 
 pub(super) fn position_at_offset(source: &str, offset: usize) -> SourcePosition {

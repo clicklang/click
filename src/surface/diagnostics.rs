@@ -521,23 +521,28 @@ fn describe_context_facts_labeled(
     execution_pure_facts: &(impl ExecutionFactSource + ?Sized),
     labels: &mut crate::surface::proof_diagnostics::render::SnapshotLabels,
 ) -> String {
-    let total = pure_facts.len() + execution_pure_facts.len();
-    if total == 0 {
-        return "[]".to_string();
-    }
     let item_limit = diagnostic_item_limit();
-    let mut entries = pure_facts
-        .iter()
-        .chain(
-            execution_pure_facts
-                .fact_iter()
-                .map(ExecutionPureFact::proposition),
-        )
-        .take(item_limit)
-        .map(|fact| {
-            crate::surface::proof_diagnostics::render::render_proposition_labeled(fact, labels)
-        })
-        .collect::<Vec<_>>();
+    let mut total = 0;
+    let mut entries = Vec::new();
+    for fact in pure_facts.iter().chain(
+        execution_pure_facts
+            .fact_iter()
+            .map(ExecutionPureFact::proposition),
+    ) {
+        // Internal bounds evidence has no authored proof syntax. Keep the
+        // context's existing source facts visible beside the actual refusal.
+        if matches!(fact, Proposition::Predicate { name, .. }
+            if name.starts_with(crate::kernel::SUBOBJECT_COVERS_PREDICATE_PREFIX))
+        {
+            continue;
+        }
+        total += 1;
+        if entries.len() < item_limit {
+            entries.push(
+                crate::surface::proof_diagnostics::render::render_proposition_labeled(fact, labels),
+            );
+        }
+    }
     compact_unspelled_facts(&mut entries);
     if total > item_limit {
         entries.push(format!("… {} more omitted", total - item_limit));
@@ -805,10 +810,26 @@ pub(super) fn describe_missing_pure_fact(
     } else {
         crate::surface::proof_diagnostics::render::render_proposition_labeled(required, &mut labels)
     };
-    let available = describe_context_facts_labeled(pure_facts, execution_pure_facts, &mut labels);
+    describe_missing_fact_context(
+        &requirement,
+        pure_facts,
+        resource_facts,
+        execution_pure_facts,
+        &mut labels,
+    )
+}
+
+fn describe_missing_fact_context(
+    requirement: &str,
+    pure_facts: &[Proposition],
+    resource_facts: &[CResourceFact],
+    execution_pure_facts: &(impl ExecutionFactSource + ?Sized),
+    labels: &mut crate::surface::proof_diagnostics::render::SnapshotLabels,
+) -> String {
+    let available = describe_context_facts_labeled(pure_facts, execution_pure_facts, labels);
     let resources = crate::surface::proof_diagnostics::render::render_resource_facts_labeled(
         resource_facts,
-        &mut labels,
+        labels,
     );
     format!(
         "missing pure fact: {requirement}\n  available pure facts: {available}\n  available resource facts: {resources}{}",
@@ -1523,13 +1544,17 @@ pub(super) fn describe_runtime_error(
                 format!("missing resource fact `{fact}`")
             }
         }
-        crate::kernel::CRuntimeError::UnestablishedAssemblyFact { assembled, fact } => {
+        crate::kernel::CRuntimeError::UnestablishedAssemblyFact { assembled, fact, source } => {
             use crate::surface::proof_diagnostics::render::{SnapshotLabels, render_proposition_labeled};
             let mut labels = SnapshotLabels::naming(parameter_binding);
+            let requirement = match source.as_deref() {
+                Some(source) => describe_assembly_body_fact_source(source, &mut labels),
+                None => render_proposition_labeled(fact, &mut labels),
+            };
             format!(
                 "assembling `{}` from owned pieces requires an exact body fact: missing pure fact: {}{}",
                 render_resource_fact_diagnostic(assembled, parameter_binding),
-                render_proposition_labeled(fact, &mut labels),
+                requirement,
                 labels.trace_legend()
             )
         }
@@ -2339,20 +2364,61 @@ pub(super) fn describe_unestablished_assembly_fact(
     parameter_binding: ParameterBinding<'_>,
     execution_pure_facts: &(impl ExecutionFactSource + ?Sized),
 ) -> Option<String> {
-    let crate::kernel::CRuntimeError::UnestablishedAssemblyFact { assembled, fact } = error else {
+    let crate::kernel::CRuntimeError::UnestablishedAssemblyFact {
+        assembled,
+        fact,
+        source,
+    } = error
+    else {
         return None;
     };
-    Some(format!(
-        "assembling `{}` from owned pieces requires an exact body fact: {}",
-        render_resource_fact_diagnostic(assembled, parameter_binding),
-        describe_missing_pure_fact(
+    let missing = match source.as_deref() {
+        Some(source) => {
+            let mut labels = crate::surface::proof_diagnostics::render::SnapshotLabels::naming(
+                parameter_binding,
+            );
+            let requirement = describe_assembly_body_fact_source(source, &mut labels);
+            describe_missing_fact_context(
+                &requirement,
+                pure_facts,
+                resource_facts,
+                execution_pure_facts,
+                &mut labels,
+            )
+        }
+        None => describe_missing_pure_fact(
             fact,
             pure_facts,
             resource_facts,
             parameter_binding,
-            execution_pure_facts
-        )
+            execution_pure_facts,
+        ),
+    };
+    Some(format!(
+        "assembling `{}` from owned pieces requires an exact body fact: {}",
+        render_resource_fact_diagnostic(assembled, parameter_binding),
+        missing,
     ))
+}
+
+fn describe_assembly_body_fact_source(
+    source: &crate::kernel::CResourceBodyFactSource,
+    labels: &mut crate::surface::proof_diagnostics::render::SnapshotLabels,
+) -> String {
+    let bindings = source
+        .bindings
+        .iter()
+        .filter_map(|(name, value)| {
+            let value =
+                crate::surface::proof_diagnostics::render::render_c_value_labeled(value, labels);
+            (value != *name).then(|| format!("{name} = {value}"))
+        })
+        .collect::<Vec<_>>();
+    if bindings.is_empty() {
+        format!("`{}`", source.spelling)
+    } else {
+        format!("`{}` (with {})", source.spelling, bindings.join(", "))
+    }
 }
 
 /// A note for a missing memory range that a held range over the same base
@@ -6794,5 +6860,50 @@ mod wide_range_reader_tests {
             describe_missing_range_end_note(&error, &[resource], ParameterBinding::default())
                 .is_empty()
         );
+    }
+}
+
+#[cfg(test)]
+mod assembly_fact_tests {
+    use super::*;
+
+    #[test]
+    fn a_folded_false_body_fact_keeps_its_clause_and_call_bindings() {
+        let parsed = syntax::parse_function("void caller(int32* actual) {}").unwrap();
+        let pointer = CValue::pointer(Pointer::symbolic(Variable(985_410)));
+        let arguments = vec![CExpression::Value(pointer.clone())];
+        let binding = ParameterBinding::new(parsed.parameters(), &arguments);
+        let mut error = crate::kernel::CRuntimeError::UnestablishedAssemblyFact {
+            assembled: Box::new(CResourceFact::view_composite(
+                "zero".into(),
+                vec![pointer.clone()],
+            )),
+            fact: Box::new(Proposition::ConditionIs(
+                ConditionTerm::Constant(false),
+                true,
+            )),
+            source: Some(Box::new(crate::kernel::CResourceBodyFactSource {
+                spelling: "*formal == 0".into(),
+                bindings: vec![("formal".into(), pointer)],
+            })),
+        };
+        let full = describe_unestablished_assembly_fact(&error, &[], &[], binding, &[]).unwrap();
+        let brief = describe_runtime_error(&error, binding);
+        for text in [full, brief] {
+            assert!(text.contains("views zero(actual)"), "{text}");
+            assert!(text.contains("missing pure fact: `*formal == 0`"), "{text}");
+            assert!(text.contains("formal = actual"), "{text}");
+            assert!(!text.contains("missing pure fact: false"), "{text}");
+        }
+        let crate::kernel::CRuntimeError::UnestablishedAssemblyFact { source, .. } = &mut error
+        else {
+            unreachable!()
+        };
+        *source = None;
+        // Hand-built kernel definitions need no source metadata to report
+        // the actual missing judgment through the ordinary fallback.
+        let fallback =
+            describe_unestablished_assembly_fact(&error, &[], &[], binding, &[]).unwrap();
+        assert!(fallback.contains("missing pure fact: false"), "{fallback}");
     }
 }

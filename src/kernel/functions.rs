@@ -7426,10 +7426,13 @@ fn unmatched_instance_body_ownership(
     // body as the evaluation's resources and its observable facts assumed.
     let mut body_facts = body_resources.observable_facts_assuming_valid(assumptions);
     for fact in body_resources.facts() {
+        if let Some(coverage) = fact.allocation_bounds_fact(assumptions) {
+            body_facts.push(coverage);
+        }
         let Some(range) = fact.memory_range() else {
             continue;
         };
-        body_facts.extend(crate::kernel::memory_range_extent_guard_spellings(range));
+        body_facts.extend(crate::kernel::admitted_memory_range_extent_facts(range));
         body_facts.push(range.loadable_fact(&state.memory));
     }
     body_facts.push(Proposition::CResourceComposition(body_resources.clone()));
@@ -7507,7 +7510,9 @@ fn open_unmatched_instance_body<'a>(
     let evaluation_assumptions = assumptions
         .clone()
         .allow_symbolic_contract_loads()
-        .prefer_symbolic_external_loads();
+        .prefer_symbolic_external_loads()
+        // This opens a held body's established footprint, as unfold does.
+        .assume_entry_clause_extents();
     let mut budget = ExecutionBudget::beside_live_state();
     let Ok(Ok(body_resources)) = evaluate_function_resource_context_with_normalization(
         &evaluation,
@@ -9360,6 +9365,9 @@ fn apply_verified_heap_allocation_delta(
     // of the caller's untouched resources exposes was the caller's before
     // the call, so this call has nothing to claim for it.
     for fact in output.facts() {
+        if let Some(coverage) = fact.allocation_bounds_fact(&allocation_assumptions) {
+            effects.push(ExecutionPureFact::new(coverage));
+        }
         let Some((base, bytes)) = fact.allocation() else {
             continue;
         };
@@ -9879,7 +9887,7 @@ fn candidate_composite_view_adapter(
     caller_state: &CState,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
-    unestablished: &mut Option<Proposition>,
+    unestablished: &mut Option<UnestablishedCompositeFact>,
 ) -> ExecutionResult<Option<CompositeViewAdapter>> {
     let CResource::Composite { name, arguments } = required.resource() else {
         return Ok(None);
@@ -10064,6 +10072,11 @@ fn remove_frontier(
     Some(resources)
 }
 
+struct UnestablishedCompositeFact {
+    proposition: Proposition,
+    source: Option<Box<CResourceBodyFactSource>>,
+}
+
 /// Whether a composite definition's body facts already hold at the call.
 ///
 /// This mirrors what the surface `fold` requires of the facts it re-asserts:
@@ -10071,17 +10084,15 @@ fn remove_frontier(
 /// in and must be available by the kernel's exact routes. There is no search
 /// here; a fact the caller has not established is a prompt refusal the proof
 /// can answer with an explicit step.
-/// Whether the body facts of `definition` hold for `arguments` in the
-/// caller's state. A body fact the caller has not established is recorded in
-/// `unestablished`, lowered at the caller's memory, so a refused assembly can
-/// name it as a refused `fold` does.
+/// The first missing fact keeps its lowered judgment and written clause,
+/// with the call's argument bindings, for the assembly refusal.
 fn composite_definition_facts_hold(
     definition: &CCompositeResourceDefinition,
     arguments: &[AlgebraicValue],
     caller_state: &CState,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
-    unestablished: &mut Option<Proposition>,
+    unestablished: &mut Option<UnestablishedCompositeFact>,
 ) -> ExecutionResult<bool> {
     if definition.facts().is_empty() {
         return Ok(true);
@@ -10113,7 +10124,7 @@ fn composite_definition_facts_hold(
     {
         return Ok(false);
     }
-    for fact in definition.facts() {
+    for (index, fact) in definition.facts().iter().enumerate() {
         let paths = lower_spec_proposition_at_state_with_loop_entry(
             &state,
             fact,
@@ -10136,7 +10147,29 @@ fn composite_definition_facts_hold(
             || established.settles_exactly(&path.proposition)
             || resource_body_fact_is_established(&established, &path.proposition))
         {
-            *unestablished = Some(path.proposition.clone());
+            let source = definition.fact_source_spelling(index).map(|spelling| {
+                Box::new(CResourceBodyFactSource {
+                    spelling: spelling.to_owned(),
+                    bindings: definition
+                        .parameters()
+                        .iter()
+                        .zip(arguments)
+                        .map(|(parameter, argument)| {
+                            (
+                                parameter.name().to_owned(),
+                                argument
+                                    .as_c_value()
+                                    .expect("the definition's C arguments were bound above")
+                                    .clone(),
+                            )
+                        })
+                        .collect(),
+                })
+            });
+            *unestablished = Some(UnestablishedCompositeFact {
+                proposition: path.proposition.clone(),
+                source,
+            });
             return Ok(false);
         }
     }
@@ -11100,7 +11133,8 @@ fn prepare_contract_resource_transfer_unexplained(
                 {
                     return Ok(Err(CRuntimeError::UnestablishedAssemblyFact {
                         assembled: Box::new(resource.clone()),
-                        fact: Box::new(fact),
+                        fact: Box::new(fact.proposition),
+                        source: fact.source,
                     }));
                 }
                 if let Some(diagnostic) = error.loan_diagnostic(LoanRefusalOperation::Plan) {
@@ -14133,10 +14167,13 @@ fn rewrite_resource_instance_selecting_children_unspelled(
     let mut facts = body.observable_facts_assuming_valid(assumptions);
     facts.extend(opening_facts.iter().cloned());
     for fact in body.facts() {
+        if let Some(coverage) = fact.allocation_bounds_fact(assumptions) {
+            facts.push(coverage);
+        }
         let Some(range) = fact.memory_range() else {
             continue;
         };
-        facts.extend(crate::kernel::memory_range_extent_guard_spellings(range));
+        facts.extend(crate::kernel::admitted_memory_range_extent_facts(range));
         facts.push(range.loadable_fact(&state.memory));
     }
     // What a fold consumes is what holding the folded instance lets C read.
@@ -16650,7 +16687,9 @@ fn resource_clause_memory_views(
     let evaluation_assumptions = assumptions
         .clone()
         .allow_symbolic_contract_loads()
-        .prefer_symbolic_external_loads();
+        .prefer_symbolic_external_loads()
+        // These are the established clauses of the held instance.
+        .assume_entry_clause_extents();
     let mut budget = ExecutionBudget::beside_live_state();
     let Ok(Ok(body_resources)) = evaluate_function_resource_context_with_normalization(
         evaluation,

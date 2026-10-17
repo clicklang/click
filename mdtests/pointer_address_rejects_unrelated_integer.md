@@ -32,5 +32,5 @@ int32 read_forged(unsigned long word) {
 ```
 
 ```expect
-fail: missing resource
+fail: access outside the subobject the pointer designates
 ```

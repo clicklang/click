@@ -2782,61 +2782,37 @@ pub(super) fn finish_ordered_proof<'a>(
                                     }
                                     _ => None,
                                 };
-                                let CFunctionOutcome::Return {
-                                    value: result,
-                                    state: post_state,
-                                } = &outcome
-                                else {
+                                if !matches!(outcome, CFunctionOutcome::Return { .. }) {
                                     return Err(ClickError::new(format!(
                                         "`{proof_label}` path {path_index}, tactic {tactic_index}: `transport` requires a return outcome"
                                     )));
-                                };
-
-                                outcome_proof = Some(
-                                    required_outcome(&outcome_proof)?
-                                        .with_outcome_store_consequences()?,
-                                );
-                                let transport_available = required_outcome(&outcome_proof)?.facts();
-                                let path_unfolds = direct_view.unfolded_predicates.to_vec();
-                                let candidates = if written.is_none() {
-                                    Some(fact_transport_candidates_at_outcome(
-                                        &transport_available.to_vec(),
-                                        ParameterBinding::new(
-                                            parsed_function.parameters(),
-                                            arguments,
-                                        ),
-                                        pre_state,
-                                        post_state,
-                                        result,
-                                        proof_execution.view(proof_context),
-                                        &path_unfolds,
-                                        spec_definitions,
-                                    )?)
-                                } else {
-                                    None
-                                };
+                                }
                                 let (checked_facts, certificate) = if let Some(evolving) =
                                     outcome_proof.take()
                                 {
-                                    // The migrated cases: an explicit
-                                    // transport applies its source step and
-                                    // a smart one searches its gathered
-                                    // candidates, both advancing this
-                                    // path's evolving outcome proof, which
-                                    // records the checked lowerings on the
-                                    // goal atomically.
+                                    // Both forms advance this path's
+                                    // evolving outcome proof, which records
+                                    // the checked lowerings on the goal
+                                    // atomically. A bare `transport` is
+                                    // planned exactly as at an execution
+                                    // frontier, against the outcome's state.
                                     let prepared = evolving.with_outcome_store_consequences()?;
                                     let before = prepared.checkpoint();
                                     let transported = if let Some(step) = written {
                                         prepared.apply_step(step)
                                     } else {
-                                        prepared.search_fixed_state_fact_transport(
-                                            source,
-                                            target,
-                                            candidates
-                                                .clone()
-                                                .expect("smart transport gathered candidates"),
-                                        )
+                                        match prepared.try_execution_fact_transport_or_refusal(
+                                            source, target,
+                                        )? {
+                                            Ok(transported) => Ok(transported),
+                                            Err(source_refusal) => prepared
+                                                .apply_planned_fact_transport(
+                                                    source,
+                                                    target,
+                                                    *tactic_index,
+                                                    source_refusal.as_ref(),
+                                                ),
+                                        }
                                     }
                                     .inspect_err(|_| {
                                         prepared.record_certification_failure_trace(

@@ -594,7 +594,7 @@ pub(in crate::kernel) fn evaluate_composite_resource_loadable_propositions(
         evaluate_composite_resource_memory_ranges(composite, definitions, memory, assumptions)?;
     let mut propositions = Vec::new();
     for range in ranges {
-        propositions.extend(crate::kernel::memory_range_extent_guard_spellings(&range));
+        propositions.extend(crate::kernel::admitted_memory_range_extent_facts(&range));
         propositions.push(range.loadable_fact(memory));
     }
     Some(propositions)

@@ -327,19 +327,25 @@ theorem shadowed_twice(x: int32) {
 
 #[test]
 fn tactic_line_disambiguation_uses_columns_only_for_shared_lines() {
+    let multiple = |source: &str, position: &SourcePosition| {
+        ProofSourceIndex::new(source)
+            .unwrap()
+            .line_has_multiple_starts(position)
+            .unwrap()
+    };
     let source = "by { step(); step(); }\nby {\n    step();\n}\n";
-    assert!(tactic_line_has_multiple_starts(source, &SourcePosition::new(1, 6)).unwrap());
-    assert!(tactic_line_has_multiple_starts(source, &SourcePosition::new(1, 14)).unwrap());
-    assert!(!tactic_line_has_multiple_starts(source, &SourcePosition::new(3, 5)).unwrap());
+    assert!(multiple(source, &SourcePosition::new(1, 6)));
+    assert!(multiple(source, &SourcePosition::new(1, 14)));
+    assert!(!multiple(source, &SourcePosition::new(3, 5)));
 
     let quantified = "by { have exists (x: int32) { x == x }; }\n";
-    assert!(!tactic_line_has_multiple_starts(quantified, &SourcePosition::new(1, 6)).unwrap());
+    assert!(!multiple(quantified, &SourcePosition::new(1, 6)));
 
     let nested = "by {\n    have n <= n by { simp(); }\n}\n";
     let have = position_at_offset(nested, nested.find("have").unwrap());
     let simp = position_at_offset(nested, nested.find("simp").unwrap());
-    assert!(!tactic_line_has_multiple_starts(nested, &have).unwrap());
-    assert!(tactic_line_has_multiple_starts(nested, &simp).unwrap());
+    assert!(!multiple(nested, &have));
+    assert!(multiple(nested, &simp));
 }
 
 #[test]
@@ -355,26 +361,20 @@ fn trace_target_selects_only_the_arm_containing_its_source_position() {
         source.find("else { step").unwrap() + "else { ".len(),
     );
     let continuation = position_at_offset(source, source.rfind("step();").unwrap());
-    assert_eq!(
-        tactic_arm_containing_position(source, &branch, &then_step).unwrap(),
-        Some(0)
-    );
-    assert_eq!(
-        tactic_arm_containing_position(source, &branch, &else_step).unwrap(),
-        Some(1)
-    );
-    assert_eq!(
-        tactic_arm_containing_position(source, &branch, &continuation).unwrap(),
-        None
-    );
+    let index = ProofSourceIndex::new(source).unwrap();
+    assert_eq!(index.arm_containing(&branch, &then_step).unwrap(), Some(0));
+    assert_eq!(index.arm_containing(&branch, &else_step).unwrap(), Some(1));
+    assert_eq!(index.arm_containing(&branch, &continuation).unwrap(), None);
 }
 
 #[test]
 fn nested_tactic_position_follows_have_and_open_bodies() {
-    let source = "have true by {\n    open(resource) {\n        have true by {\n            assumption();\n        }\n    }\n}\n";
-    let position = nested_tactic_source_position(source, &SourcePosition::new(1, 1), &[0, 0, 0])
+    let source = "by {\nhave true by {\n    open(resource) {\n        have true by {\n            assumption();\n        }\n    }\n}\n}\n";
+    let position = ProofSourceIndex::new(source)
+        .unwrap()
+        .nested_position(&SourcePosition::new(2, 1), &[0, 0, 0])
         .expect("nested step has a source position");
-    assert_eq!(position, SourcePosition::new(4, 13));
+    assert_eq!(position, SourcePosition::new(5, 13));
 }
 
 #[test]
@@ -2154,22 +2154,16 @@ fn a_generic_rust_head_is_located_by_its_path() {
     assert!(parsed_function_body(source, "Fn").is_err());
 }
 
-/// A sidecar writes an inherent method without the module its `impl` block
-/// is in, and the proof tools are asked for it by the importer's name,
-/// which has that module. The method is found by the spelling the source
-/// index reads.
+/// A sidecar writes an inherent method inside its `impl` block; the block
+/// the parser builds for it records the method's own body.
 #[test]
-fn an_inherent_method_in_another_module_is_located_by_its_type() {
+fn an_inherent_method_is_located_inside_its_impl_block() {
     let source = "verifying \"lib.rs\";\nimpl adler2::Adler32 {\n    fn compute(&mut self, seed: u32) {\n        ensures 0 == 0;\n    } by { execute(); simp(); }\n}\n";
-    let beside = "__rust_q_I6_adler2_T29___rust_q_I6_adler2_I7_Adler32_I7_compute";
-    let elsewhere = "__rust_q_I6_adler2_I4_algo_T29___rust_q_I6_adler2_I7_Adler32_I7_compute";
-    let body = parsed_function_body(source, beside).expect("the parser reads the method's body");
-    assert!(body.body_open < body.body_close);
-    assert_eq!(
-        rust_inherent_method_in_its_type_module(elsewhere).as_deref(),
-        Some(beside)
-    );
-    assert_eq!(rust_inherent_method_in_its_type_module("compute"), None);
+    let tokens = proof_source_tokens(source).unwrap();
+    let name = "__rust_q_I6_adler2_T29___rust_q_I6_adler2_I7_Adler32_I7_compute";
+    let body = parsed_function_body(source, name).expect("the parser reads the method's body");
+    assert_eq!(tokens[body.body_open - 1].text, ")");
+    assert_eq!(tokens[body.body_close + 1].text, "by");
 }
 
 #[test]
@@ -3203,51 +3197,42 @@ fn a_parsed_source_index_holds_only_proof_blocks() {
 fn trace_source_index_preserves_nested_locations_and_containment() {
     let source = "// αβ UTF-8\nby {\n  have true by { open(resource) { assumption(); } }\n  if true { normalize(); } else { simp(); }\n  cases { true => { step(); } false => { normalize(); } }\n  both { normalize(); } and { simp(); }\n  outcomes { threw => { step(); } returned => { simp(); } }\n  branch ensuring { true } then { step(); } else { simp(); }\n  normalize();\n}\n";
     let index = ProofSourceIndex::new(source).unwrap();
-    for line in 1..=10 {
-        for position in tactic_starts_on_line(source, line).unwrap() {
-            assert_eq!(
-                index.line_has_multiple_starts(&position).unwrap(),
-                tactic_line_has_multiple_starts(source, &position).unwrap(),
-                "{position:?}"
-            );
-            for target_line in 1..=10 {
-                for target in tactic_starts_on_line(source, target_line).unwrap() {
-                    assert_eq!(
-                        index.arm_containing(&position, &target).unwrap(),
-                        tactic_arm_containing_position(source, &position, &target).unwrap()
-                    );
-                    assert_eq!(
-                        index.have_body_contains(&position, &target).unwrap(),
-                        tactic_have_body_contains_position(source, &position, &target).unwrap()
-                    );
-                }
-            }
-        }
-    }
+    // A `branch` shares its line only with its own arms' tactics, which are
+    // inside it, so the line names it alone.
+    let branch = position_at_offset(source, source.find("branch").unwrap());
+    let branch_else = position_at_offset(source, source.rfind("simp").unwrap());
+    let last = position_at_offset(source, source.rfind("normalize").unwrap());
+    assert!(!index.line_has_multiple_starts(&branch).unwrap());
+    assert!(!index.line_has_multiple_starts(&last).unwrap());
+    assert_eq!(
+        index.arm_containing(&branch, &branch_else).unwrap(),
+        Some(1)
+    );
+    assert_eq!(index.arm_containing(&branch, &last).unwrap(), None);
     let have = position_at_offset(source, source.find("have").unwrap());
     assert_eq!(
         index.nested_position(&have, &[0, 0]).unwrap(),
         SourcePosition::new(3, 35)
     );
-    for (kind, path) in [
-        ("if", vec![1, 0]),
-        ("cases", vec![1, 0]),
-        ("both", vec![1, 0]),
+    // Each second arm's first tactic.
+    for (kind, inner) in [
+        ("if", "simp(); }\n  cases"),
+        ("cases", "normalize(); } }\n  both"),
+        ("both", "simp(); }\n  outcomes"),
     ] {
         let outer = position_at_offset(source, source.find(kind).unwrap());
         assert_eq!(
-            index.nested_position(&outer, &path).unwrap(),
-            nested_tactic_source_position(source, &outer, &path).unwrap()
+            index.nested_position(&outer, &[1, 0]).unwrap(),
+            position_at_offset(source, source.find(inner).unwrap())
         );
     }
 }
 
 #[test]
 fn trace_source_index_preserves_unicode_and_implicit_proof_columns() {
-    for source in [
-        "/* αβ */ by { have true by normalize(); simp(); }",
-        "/* αβ */ by { have true by { normalize(); } simp(); }",
-    ] {
+    // `by T();` is read as the block `by { T(); }`: both spellings answer
+    // every query alike.
+    let answers = |source: &str| {
         let index = ProofSourceIndex::new(source).unwrap();
         let have = position_at_offset(source, source.find("have").unwrap());
         let child = index.nested_position(&have, &[0]).unwrap();
@@ -3255,19 +3240,16 @@ fn trace_source_index_preserves_unicode_and_implicit_proof_columns() {
             child,
             position_at_offset(source, source.find("normalize").unwrap())
         );
-        assert_eq!(
+        (
             index.have_body_contains(&have, &child).unwrap(),
-            tactic_have_body_contains_position(source, &have, &child).unwrap()
-        );
-        assert_eq!(
             index.line_has_multiple_starts(&have).unwrap(),
-            tactic_line_has_multiple_starts(source, &have).unwrap()
-        );
-        assert_eq!(
             index.line_has_multiple_starts(&child).unwrap(),
-            tactic_line_has_multiple_starts(source, &child).unwrap()
-        );
-    }
+        )
+    };
+    assert_eq!(
+        answers("/* αβ */ by { have true by normalize(); simp(); }"),
+        answers("/* αβ */ by { have true by { normalize(); } simp(); }")
+    );
 }
 
 // A theorem that executes a function names it with a head of its own, which
@@ -3350,11 +3332,12 @@ fn premise_free_applications_are_simple_but_required_premises_stay_smart() {
 fn qualified_c_contract_source_locations_preserve_file_aliases() {
     let source = "verifying \"first.c\" as first;\nverifying \"second.c\" as second;\nint32 first::helper() { ensures result == 1; } by { execute(); simp(); }\nint32 second::helper() { ensures result == 2; } by { execute(); simp(); }\n";
     let tokens = proof_source_tokens(source).unwrap();
-    let declarations = declaration_source_index(&tokens).unwrap();
     for (name, line) in [("first::helper", 3), ("second::helper", 4)] {
         let found = parsed_function_body(source, name).unwrap();
-        assert_eq!(declarations[name].body_open, found.body_open);
-        assert_eq!(declarations[name].body_close, found.body_close);
+        assert_eq!(
+            position_at_offset(source, tokens[found.body_open].span.start).line,
+            line
+        );
         assert_eq!(
             click_declaration_source_position(source, name),
             Some(SourcePosition::new(line, 1))
@@ -3365,13 +3348,8 @@ fn qualified_c_contract_source_locations_preserve_file_aliases() {
 #[test]
 fn a_rust_verifying_alias_does_not_change_path_identity() {
     let source = "verifying \"first.rs\" as first; fn first::helper() -> i32 { ensures result == 1; } by { execute(); simp(); }";
-    let tokens = proof_source_tokens(source).unwrap();
-    let declarations = declaration_source_index(&tokens).unwrap();
-    assert!(
-        declarations.contains_key(&crate::languages::rust::names::path_name(&[
-            "first", "helper"
-        ]))
-    );
+    let name = crate::languages::rust::names::path_name(&["first", "helper"]);
+    assert!(parsed_function_body(source, &name).is_ok());
 }
 
 #[test]

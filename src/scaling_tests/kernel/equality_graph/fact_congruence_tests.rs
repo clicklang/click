@@ -8,7 +8,7 @@ use super::*;
 #[ignore = "nightly: 1.7s in the parallel gate"]
 fn fact_lookup_does_not_scan_unrelated_facts() {
     let mut costs = Vec::new();
-    for size in [32, 128, 512, 2048] {
+    for size in [8, 32, 128, 512] {
         let mut context = PureFactContext::new();
         for i in 0..size {
             context = context

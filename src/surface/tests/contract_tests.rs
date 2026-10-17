@@ -100,6 +100,7 @@ fn native_contract_byte_casts_preserve_pointer_identity_and_offsets() {
     let source = "uint32* probe(uint32* p) { return p + 1; }";
     let proof = r#"verifying "bytes.c";
         uint32* probe(uint32* p) {
+            views p[0..1];
             ensures (uint8*)result == old((uint8*)(p + 1));
             ensures (uint8*)result == (uint8*)p + 4;
         } by { execute(); simp(); }"#;

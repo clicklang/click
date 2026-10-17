@@ -23,5 +23,5 @@ void helper(struct holder *holder) {
 ```
 
 ```expect
-fail: Requires owns mutex_use(&holder->other)
+fail: pointer arithmetic left the pointed-to object
 ```

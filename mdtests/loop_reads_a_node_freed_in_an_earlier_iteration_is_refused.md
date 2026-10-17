@@ -116,5 +116,5 @@ void release(struct node* p) {
 ```
 
 ```expect
-fail: missing resource fact `views prev->next`
+fail: access outside the subobject the pointer designates
 ```

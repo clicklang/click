@@ -56,19 +56,8 @@ int32 push_one(struct owner* owner, int32 value) {
         execute();
         have 0 <= owner->len by {
             simp() using {
-                at(statement(6).entry, separate(memory(owner->len), memory(owner->cap)));
-                at(statement(6).entry, separate(memory(owner->len), memory(owner->data)));
-                at(statement(6).entry, separate(memory(owner->len), memory(owner->data[0..owner->cap])));
-                at(statement(6).entry, separate(memory(owner->cap), memory(owner->data)));
-                at(statement(6).entry, separate(memory(owner->cap), memory(owner->data[0..owner->cap])));
-                at(statement(6).entry, separate(memory(owner->data), memory(owner->data[0..owner->cap])));
                 at(statement(6).entry, 0) <= at(statement(6).entry, index);
                 at(statement(6).entry, index) < at(statement(6).entry, owner->cap);
-                at(statement(6).entry, separate(memory(*owner), memory(owner->data[0..owner->cap])));
-                contains(owned_buffer_with_room(owner), memory(owner->len));
-                contains(owned_buffer_with_room(owner), memory(owner->cap));
-                contains(owned_buffer_with_room(owner), memory(owner->data));
-                contains(owned_buffer_with_room(owner), memory(owner->data[0..owner->cap]));
             };
         }
         have owner->len <= owner->cap;
@@ -81,19 +70,8 @@ int32 push_one(struct owner* owner, int32 value) {
         execute();
         have 0 <= owner->len by {
             simp() using {
-                at(statement(6).entry, separate(memory(owner->len), memory(owner->cap)));
-                at(statement(6).entry, separate(memory(owner->len), memory(owner->data)));
-                at(statement(6).entry, separate(memory(owner->len), memory(owner->data[0..owner->cap])));
-                at(statement(6).entry, separate(memory(owner->cap), memory(owner->data)));
-                at(statement(6).entry, separate(memory(owner->cap), memory(owner->data[0..owner->cap])));
-                at(statement(6).entry, separate(memory(owner->data), memory(owner->data[0..owner->cap])));
                 at(statement(6).entry, 0) <= at(statement(6).entry, index);
                 at(statement(6).entry, index) < at(statement(6).entry, owner->cap);
-                at(statement(6).entry, separate(memory(*owner), memory(owner->data[0..owner->cap])));
-                contains(owned_buffer_with_room(owner), memory(owner->len));
-                contains(owned_buffer_with_room(owner), memory(owner->cap));
-                contains(owned_buffer_with_room(owner), memory(owner->data));
-                contains(owned_buffer_with_room(owner), memory(owner->data[0..owner->cap]));
             };
         }
         have owner->len <= owner->cap;

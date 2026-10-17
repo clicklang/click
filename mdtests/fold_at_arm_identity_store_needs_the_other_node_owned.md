@@ -51,5 +51,5 @@ void roundtrip(struct node* p, struct node* q) {
 ```
 
 ```expect
-fail: missing resource fact `owns q->tag`
+fail: pointer arithmetic left the pointed-to object
 ```

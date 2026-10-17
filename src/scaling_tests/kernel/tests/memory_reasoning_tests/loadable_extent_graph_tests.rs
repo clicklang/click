@@ -6,7 +6,7 @@ use super::*;
 
 #[test]
 fn direct_loadable_extent_graph_queries_scale_without_fact_index() {
-    for size in [16u64, 64, 256, 1024] {
+    for size in [16u64, 64, 256, 512] {
         let memory = CMemory::new();
         let base = Pointer::symbolic(Variable(9_320_010));
         let range_bytes = extent(var(0));

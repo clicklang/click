@@ -3862,6 +3862,69 @@ impl PureFactContext {
         }
     }
 
+    /// Coverage of a complete pointer's opaque domain. Numeric address
+    /// classes select candidates; only full extent identity admits evidence.
+    pub(in crate::kernel) fn opaque_pointer_covers(
+        &self,
+        value: &CPointerValue,
+        position: &Pointer,
+        bytes: u32,
+    ) -> bool {
+        let Some(origin) = value.opaque_extent() else {
+            return false;
+        };
+        self.equality_graph
+            .subobject_coverage_facts(origin)
+            .iter()
+            .any(|fact| {
+                let Proposition::Predicate { arguments, .. } = fact else {
+                    return false;
+                };
+                let Some(Term::CValue(CValue::Pointer(source))) = arguments.first() else {
+                    return false;
+                };
+                if !self.opaque_extents_equal(origin, source.pointer()) {
+                    return false;
+                }
+                let covered = if let Some(range) = SubobjectExtent::covered_wide_range(fact) {
+                    let contains = |pointer| {
+                        crate::kernel::primitives::pointer_formation_in_range(
+                            pointer,
+                            value.pointer(),
+                            &range,
+                            self,
+                        )
+                    };
+                    contains(position) && (bytes == 0 || contains(&position.offset_by_bytes(bytes)))
+                } else {
+                    SubobjectExtent::covered_range(fact).is_some_and(|(from, count, width)| {
+                        let contains = |position: &Pointer, bytes| {
+                            self.pointer_access_in_range(
+                                position,
+                                bytes,
+                                &from,
+                                &Bitvector32Term::Constant(0),
+                                &count,
+                                width,
+                            )
+                        };
+                        contains(position, bytes)
+                            && (bytes > 0
+                                || contains(value.pointer(), 0)
+                                || contains(position, 1)
+                                || self.decide(&ConditionTerm::signed_less_than(
+                                    Bitvector32Term::Constant(0),
+                                    count,
+                                )) == Some(true))
+                    })
+                };
+                if covered {
+                    record_reasoning_provenance(self, fact);
+                }
+                covered
+            })
+    }
+
     /// Whether a coverage fact places the `byte_width` bytes at `pointer`
     /// inside the opaque `extent` (`design/pointer-subobject-extents.md`,
     /// Phase C). Zero bytes asks for a position, the one-past end included.
@@ -3987,8 +4050,11 @@ impl PureFactContext {
         if element_width > 0
             && byte_width.is_multiple_of(element_width)
             && let Some(index) = pointer.element_index_from_base_with_width(base, element_width)
-            && let Some(logical_access_length) =
+            && let Some(logical_access_length) = if byte_width == 0 {
+                Some(0)
+            } else {
                 authorized_access_element_length(byte_width, element_width)
+            }
         {
             let access_length = Bitvector32Term::Constant(logical_access_length);
             let access_end = Bitvector32Term::add(index.clone(), access_length);

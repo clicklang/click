@@ -29,5 +29,5 @@ void store_signed_bound(int32* values, uint32 x, int32 n) {
 ```
 
 ```expect
-fail: missing resource fact `owns values[x]`
+fail: pointer arithmetic left the pointed-to object
 ```

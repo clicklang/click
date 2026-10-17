@@ -15184,6 +15184,20 @@ int32 contains3(int32 values[], int32 target) {
 "#;
 
 #[test]
+#[ignore = "nightly: 2.7s in the parallel gate"]
+fn grouped_leaf_implications_preserve_constant_false_premises() {
+    let (source, sources) = mdtest_sources("mdtests/leaf_flag_grouped_simp.md");
+    let sources = sources
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    verify_c0_sources(&source, &sources).unwrap();
+    let expanded =
+        expand_c0_claim_source(&source, &sources, "leaf_flag", CProofClaim::Grouped).unwrap();
+    without_implicit_auto(|| verify_c0_sources(&expanded, &sources)).unwrap();
+}
+
+#[test]
 fn grouped_closer_over_four_paths_places_each_leafs_own_expansion() {
     // Every path but the first reported no surface branch path, because the
     // retained branch decisions were consumed innermost-first while the
@@ -15201,11 +15215,9 @@ fn grouped_closer_over_four_paths_places_each_leafs_own_expansion() {
     let expanded =
         expand_c0_tactic_source_at(FOUR_RETURN_CLICK, &sources, position.line, position.column)
             .expect("the four-path closer should expand");
-    assert_eq!(
-        expanded.matches("transport(").count(),
-        2,
-        "only the falling-through leaf needs the transported closers: {expanded}"
-    );
+    // Cold verification checks every leaf's own certificate. Constant
+    // false premises can close the falling-through leaf directly, so a
+    // particular number of transport steps is not part of this guarantee.
     verify_c0_sources(&expanded, &sources)
         .expect("the expanded four-path closer should independently reverify");
 }
@@ -18404,6 +18416,64 @@ fn callback_reads_keep_the_initialized_target_contract_in_all_proof_modes() {
     session
         .verify_at(&expanded, position.line, position.column)
         .unwrap();
+}
+
+#[test]
+#[ignore = "nightly: unknown-pointer bounds across fresh, expanded, and retained proofs"]
+fn unknown_pointer_bounds_survive_expansion_and_retained_verification() {
+    for (fixture, claim, postcondition) in [
+        (
+            "mdtests/unknown_pointer_formation_keeps_zero_offsets_one_past_and_full_aliases.md",
+            "alias.contract",
+            "ensures result == q + 1;",
+        ),
+        (
+            "mdtests/an_allocation_supplies_formation_bounds_without_read_authority.md",
+            "field.contract",
+            "ensures result == &p->second;",
+        ),
+        (
+            "mdtests/loop_entry_memory_capture_cursor.md",
+            "cursor.contract",
+            "ensures result == 0;",
+        ),
+        (
+            "mdtests/member_pointers_stay_usable_inside_their_subobject.md",
+            "nested.contract",
+            "ensures result == o->inner.second;",
+        ),
+        (
+            "mdtests/native_bounds_survive_refolding_their_memory_resource.md",
+            "end.contract",
+            "ensures result == p + n;",
+        ),
+    ] {
+        let (source, sources) = mdtest_sources(fixture);
+        let sources = sources
+            .iter()
+            .map(|(name, text)| (name.as_str(), text.as_str()))
+            .collect::<Vec<_>>();
+        verify_c0_sources(&source, &sources).unwrap();
+        let expanded = expand_c0_claim_source_by_label(&source, &sources, claim).unwrap();
+        verify_c0_sources(&expanded, &sources).unwrap();
+        let position =
+            expansion::position_at_offset(&expanded, expanded.find(postcondition).unwrap());
+        let (session, _) = C0VerificationSession::new(&source, &sources).unwrap();
+        session
+            .verify_at(&expanded, position.line, position.column)
+            .unwrap();
+        if source.contains("requires p == q;") {
+            let hostile = source.replace("requires p == q;", "requires address(p) == address(q);");
+            assert!(verify_c0_sources(&hostile, &sources).is_err());
+            let position =
+                expansion::position_at_offset(&hostile, hostile.find(postcondition).unwrap());
+            assert!(
+                session
+                    .verify_at(&hostile, position.line, position.column)
+                    .is_err()
+            );
+        }
+    }
 }
 
 #[test]

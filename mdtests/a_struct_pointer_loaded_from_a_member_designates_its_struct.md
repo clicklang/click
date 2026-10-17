@@ -21,7 +21,7 @@ verifying "list.c";
 
 int32 loaded(struct node *n) {
     views n->next;
-    views n->next->v;
+    views *n->next;
     ensures true;
 } by {
     execute();

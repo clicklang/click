@@ -12,6 +12,7 @@ int32* probe(struct Pair* p) { return &p->first + 2; }
 ```click
 verifying "probe.c";
 int32* probe(struct Pair* p) {
+    views p->first;
     ensures 1 == 1;
 } by { execute(); simp(); }
 ```

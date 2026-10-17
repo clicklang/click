@@ -52,7 +52,6 @@ use crate::kernel::proof::{
     ExceptionalContinuation, ExecutionFrontier, ExecutionProofCore, ExecutionRegionKind,
     FrontierPosition, LoopControlExit, PersistentOrderedSet, PersistentSequence,
     ProofExecutionContinuation, ProofFacts, SharedVec, old_reference_state,
-    quantified_equivalence_index_key,
 };
 
 pub(in crate::surface) use crate::kernel::proof::{

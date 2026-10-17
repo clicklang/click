@@ -286,7 +286,9 @@ impl<'a> Proof<'a> {
                 "`transport` requires a current statement frontier after at least one execution step",
             ));
         }
-        if execution.core.frontier.is_at_function_exit() {
+        // A focused function outcome is planned against its returned state;
+        // a bare exit frontier has no state to transport into.
+        if execution.core.frontier.is_at_function_exit() && self.focused_outcome_data().is_none() {
             return Ok(Err(None));
         }
         match self.fact_transport_candidate_search(source, target, std::iter::once(source.clone()))
