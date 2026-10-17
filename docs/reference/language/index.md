@@ -898,13 +898,18 @@ Integers, so the word equality never decides the Integer one, and Integer
 orders establish no word fact. A term of more than 64 nodes establishes
 nothing.
 
-A population count `entry + quantity` or `entry - quantity` whose signed
-overflow is ruled out on its path, by the path's facts or by the count's own
-obligation, observes as `to_integer(entry) + to_integer(quantity)` (or the
-difference), so Integer reasoning combines it with other facts. `simp`
+A population count is an `int32` value like any other, observed as
+`to_integer(count(R(p)))` whatever expression reaches it; `auto` relates
+`to_integer(entry + quantity)` to `to_integer(entry) + to_integer(quantity)`
+by the in-range operation identity. A signed definedness fact
+`defined(a + b)` (or `-`, `*`) is exactly the two bounds
+`to_integer(a) + to_integer(b) <= MAX` and `>= MIN`, and `auto` may cite it as
+either bound
+(`mdtests/auto_reads_a_definedness_premise_as_integer_bounds.md`). `simp`
 selects Integer equalities over machine observations as rewrite candidates,
-as it selects native equalities
-(`mdtests/an_integer_entry_count_premise_rewrites_a_grown_count.md`).
+as it selects native equalities. An Integer count premise at entry serves a
+`fold` over the grown count as its machine form does
+(`mdtests/an_integer_entry_count_premise_folds_a_grown_count.md`).
 A population's count at function entry is spelled `old(count(R(p, _)))`
 in checked certificates, so a fact the kernel records about it, such as the
 bound `count >= 1` a consumed member places on it, is cited like a written

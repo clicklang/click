@@ -26,8 +26,8 @@ borrows both controls, consumes the source member and destination slot, then
 produces the destination member and source slot. All four effects have separate
 authority, identity, quantity, and custody checks.
 
-Growth produces a symbolic nonnegative slot quantity and requires the original
-C addition to be defined. Shrink consumes its supplied slot quantity, including
+Growth produces a symbolic nonnegative slot quantity and requires the new
+capacity, `pool->capacity + amount`, to fit in `int32`. Shrink consumes its supplied slot quantity, including
 zero, and preserves other slots and checked-out members. Their arithmetic proofs
 establish signed bounds and restore conservation without treating a global
 count as ownership. Cleanup consumes the complete available-slot batch, proves
@@ -43,8 +43,11 @@ destination member, and the source slot, preserving the object's value. Storage
 and control openings establish the memory separation needed across calls.
 
 Run `click verify examples/bounded-pool` from the repository root. The sidecar
-contains 16 checked claims: five arithmetic lemmas and all eleven original C
-functions. The arithmetic lemmas and the counter steps inside the functions
-are `by auto()`: the solver carries the `int32` facts to `Integer`, proves each
-addition or subtraction defined, and closes every bound and conservation
-equation by a checked certificate, which `click expand` prints.
+contains 11 checked claims, one per original C function, and uses Integer
+specification arithmetic (`arithmetic "integer";`): the ledger facts and
+contracts are exact Integer statements, so no arithmetic lemma or library
+bridge is needed. The counter steps inside the functions are `by auto()`, and
+the remaining postconditions close by the implicit `auto` after `execute()`:
+the solver reads the `int32` facts and definedness facts as Integer bounds,
+proves each addition or subtraction defined, and closes every bound and
+conservation equation by a checked certificate, which `click expand` prints.
