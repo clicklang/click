@@ -94,6 +94,56 @@ impl LongRank {
     }
 }
 
+/// The optimization level a project's C units are verified for: the one
+/// level a project names, `-O2` by default (`issues/project-config.md`,
+/// decision 1). Click's checks cover the assumptions GCC's optimizer makes
+/// at `-O2`, so a verified claim holds for the optimized build.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Hash)]
+pub enum COptimization {
+    O0,
+    #[default]
+    O2,
+}
+
+impl COptimization {
+    pub const ALL: &'static [Self] = &[Self::O0, Self::O2];
+
+    /// The compiler flag, which is also the project file's spelling.
+    pub const fn flag(self) -> &'static str {
+        match self {
+            Self::O0 => "-O0",
+            Self::O2 => "-O2",
+        }
+    }
+
+    /// Resolves a project file's `optimization`; omitted, it is `-O2`.
+    pub fn from_setting(setting: Option<&str>) -> Result<Self, String> {
+        let Some(setting) = setting else {
+            return Ok(Self::default());
+        };
+        Self::ALL
+            .iter()
+            .copied()
+            .find(|level| level.flag() == setting)
+            .ok_or_else(|| {
+                format!(
+                    "unknown optimization level `{setting}`; accepted levels are {}",
+                    Self::ALL
+                        .iter()
+                        .map(|level| format!("`{}`", level.flag()))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                )
+            })
+    }
+
+    /// Whether GCC optimizes at this level, and so acts on the attributes
+    /// it trusts as programmer promises.
+    pub const fn optimizes(self) -> bool {
+        !matches!(self, Self::O0)
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
 pub enum CTarget {
     X86_64LinuxKernel,
