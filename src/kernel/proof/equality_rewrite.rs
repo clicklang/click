@@ -239,15 +239,49 @@ pub(crate) fn rewrite_proposition_by_exact_equality(
 /// The address equality of a pointer value equality, and the conjuncts
 /// that equate the designations.
 fn designated_pointer_equality(equality: &Proposition) -> Option<(&Proposition, Vec<&Proposition>)> {
+    let (address, designation) = designation_conjuncts(equality)?;
+    matches!(
+        address,
+        Proposition::ConditionIs(ConditionTerm::PointerEqual(_, _), true)
+    )
+    .then_some((address, designation))
+}
+
+/// `goal` without the designation conjuncts of a pointer value equality
+/// that `facts` already decide, which no source spelling names: the
+/// address part a closing tactic then proves. Any other goal is unchanged.
+pub(crate) fn with_known_designations_discharged<'a>(
+    goal: &'a Proposition,
+    facts: &ProofFacts,
+) -> &'a Proposition {
+    let Some((address, designation)) = designation_conjuncts(goal) else {
+        return goal;
+    };
+    let known = |conjunct: &Proposition| match conjunct {
+        Proposition::ConditionIs(condition, value) => {
+            facts.available(conjunct) || facts.assumptions().decide(condition) == Some(*value)
+        }
+        other => facts.available(other),
+    };
+    if designation.into_iter().all(known) {
+        address
+    } else {
+        goal
+    }
+}
+
+/// The address equality of a pointer value equality, which a diagnostic
+/// names in place of the whole.
+pub(crate) fn pointer_value_equality_address(equality: &Proposition) -> Option<&Proposition> {
+    designated_pointer_equality(equality).map(|(address, _)| address)
+}
+
+/// The two parts of a pointer value equality: its first conjunct, and the
+/// conjuncts relating the designations.
+fn designation_conjuncts(equality: &Proposition) -> Option<(&Proposition, Vec<&Proposition>)> {
     let Proposition::And(address, designation) = equality else {
         return None;
     };
-    if !matches!(
-        address.as_ref(),
-        Proposition::ConditionIs(ConditionTerm::PointerEqual(_, _), true)
-    ) {
-        return None;
-    }
     let mut conjuncts = Vec::new();
     let mut pending = vec![designation.as_ref()];
     while let Some(conjunct) = pending.pop() {

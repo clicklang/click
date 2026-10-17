@@ -627,7 +627,8 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
         let (goal, facts) = self
             .focused_proposition()
             .ok_or(PropositionCloseError::NotProposition)?;
-        let proposition = goal.proposition();
+        let proposition =
+            super::equality_rewrite::with_known_designations_discharged(goal.proposition(), facts);
         let available = |proposition: &Proposition| {
             if let Some(outcome) = goal.outcome.as_deref() {
                 facts.pure_assumption_available(proposition)
@@ -696,7 +697,10 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
         // A conjunction or disjunction that is not itself a fact still
         // follows directly from facts: every conjunct, or one disjunct.
         // That is a lookup per side of the goal and no derivation search.
-        if !matches!(proposition, Proposition::And(..) | Proposition::Or(..)) {
+        if !matches!(proposition, Proposition::And(..) | Proposition::Or(..))
+            || super::equality_rewrite::pointer_value_equality_address(proposition)
+                .is_some_and(|address| !available(address) && !facts.contains(address))
+        {
             return Err(PropositionCloseError::Unavailable);
         }
         let side_available = |side: &Proposition| {
@@ -748,10 +752,14 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
     }
 
     pub(crate) fn apply_normalize(&self) -> Result<Self, PropositionCloseError> {
-        let (goal, _) = self
+        let (goal, facts) = self
             .focused_proposition()
             .ok_or(PropositionCloseError::NotProposition)?;
-        super::fact_reasoning::normalizes_context_free_leaf(goal.proposition())
+        let goal = super::equality_rewrite::with_known_designations_discharged(
+            goal.proposition(),
+            facts,
+        );
+        super::fact_reasoning::normalizes_context_free_leaf(goal)
             .then(|| self.closed_focused())
             .ok_or(PropositionCloseError::DoesNotNormalize)
     }
@@ -920,8 +928,12 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
         let (goal, facts) = self
             .focused_proposition()
             .ok_or(PropositionCloseError::NotProposition)?;
-        super::fact_reasoning::normalize_using_conditions(goal.proposition(), premises, facts)
-            .map_err(PropositionCloseError::ConditionalNormalization)?;
+        super::fact_reasoning::normalize_using_conditions(
+            super::equality_rewrite::with_known_designations_discharged(goal.proposition(), facts),
+            premises,
+            facts,
+        )
+        .map_err(PropositionCloseError::ConditionalNormalization)?;
         Ok(self.closed_focused())
     }
 
