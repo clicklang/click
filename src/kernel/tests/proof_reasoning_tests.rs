@@ -7831,7 +7831,8 @@ fn transport_order_walk_agrees_with_the_full_scan() {
 /// leaves such bounds on its own copy of the loop variable, so before the
 /// filing every node of every later loop condition's walk rescanned every
 /// earlier loop's facts
-/// (`bugs/sequential-loop-clause-grows-with-earlier-loops.md`).
+/// (see "Sequential loop clauses" in
+/// `docs/internals/verification-efficiency.md`).
 #[test]
 fn order_walk_examines_edges_independent_of_unrelated_bounds() {
     let variable = |id: u64| Bitvector32Term::Variable(Variable(89_800 + id));

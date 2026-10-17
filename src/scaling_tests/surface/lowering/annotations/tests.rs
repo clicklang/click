@@ -123,7 +123,8 @@ fn proposition_snapshot_selection_matches_full_context_without_unrelated_binding
 /// pair tree, and the walk this replaces found the loop by numbering the
 /// loops of every statement before it, so a function's loops cost work
 /// quadratic in its length
-/// (`bugs/sequential-loop-clause-grows-with-earlier-loops.md`). A C block
+/// (see "Sequential loop clauses" in
+/// `docs/internals/verification-efficiency.md`). A C block
 /// lowers to a balanced tree of pairs, so the path to the first, middle and
 /// last of 16 to 1,024 loops visits at most the tree's depth, two more
 /// statements per fourfold size, and the result is what the walk builds.
