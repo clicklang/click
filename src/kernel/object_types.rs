@@ -377,9 +377,6 @@ mod tests {
         assert_eq!(evidence.premises.len(), 2);
     }
     mod scaling_tests {
-        include!(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/src/scaling_tests/kernel/object_types/tests.rs"
-        ));
+        include!("../scaling_tests/kernel/object_types/tests.rs");
     }
 }

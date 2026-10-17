@@ -209,10 +209,7 @@ fn opaque_call_interning_cannot_supply_another_scopes_type_annotations() {
 }
 
 mod scaling_tests {
-    include!(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/src/scaling_tests/kernel/equality_graph/object_type_tests.rs"
-    ));
+    include!("../../scaling_tests/kernel/equality_graph/object_type_tests.rs");
 }
 
 #[test]

@@ -74,19 +74,25 @@ fn conditional_origins_form_a_shared_graph_instead_of_expanded_prefix_sets() {
     }
 }
 
-
 #[test]
 fn return_guarantee_analysis_visits_only_the_selected_declaration() {
     let mut samples = Vec::new();
     for count in [16, 64, 256, 1024] {
         let mut interface = returning(return_check());
-        interface.contract_ensures.extend((0..count).map(|_| SpecProposition::Defined(typed(variable("other")))));
-        let (class_found, work) = crate::instrumentation::measure_deterministic_work(|| declared_return_class(&interface));
+        interface
+            .contract_ensures
+            .extend((0..count).map(|_| SpecProposition::Defined(typed(variable("other")))));
+        let (class_found, work) = crate::instrumentation::measure_deterministic_work(|| {
+            declared_return_class(&interface)
+        });
         assert_eq!(class_found, Some(class()));
         assert!(work >= count);
         samples.push((count, work));
     }
     for pair in samples.windows(2) {
-        assert!(pair[1].1 <= pair[0].1 * (pair[1].0 / pair[0].0) * 2, "{samples:?}");
+        assert!(
+            pair[1].1 <= pair[0].1 * (pair[1].0 / pair[0].0) * 2,
+            "{samples:?}"
+        );
     }
 }

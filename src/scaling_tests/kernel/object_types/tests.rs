@@ -18,15 +18,23 @@ fn hashing_a_pointer_word_does_not_walk_its_type_origins() {
         let mut reversed = ObjectTypeEvidence::from(class());
         for index in 0..count {
             evidence = evidence.merge(&ObjectTypeEvidence::parameter(class(), index, 77, true));
-            reversed = reversed.merge(&ObjectTypeEvidence::parameter(class(), count - index - 1, 77, true));
+            reversed = reversed.merge(&ObjectTypeEvidence::parameter(
+                class(),
+                count - index - 1,
+                77,
+                true,
+            ));
         }
         assert_eq!(evidence, reversed);
         let word = crate::kernel::eval::cast_c_value_to_type(
             CValue::typed_pointer(Pointer::symbolic(Variable(930_444)), CType::Int32Pointer)
                 .with_pointer_object_type_evidence(Some(evidence)),
-            CType::UInt64, crate::kernel::eval::IntegerConversion::Modular,
-            &mut Vec::new(), &PureFactContext::new(),
-        ).unwrap();
+            CType::UInt64,
+            crate::kernel::eval::IntegerConversion::Modular,
+            &mut Vec::new(),
+            &PureFactContext::new(),
+        )
+        .unwrap();
         let mut counter = ByteCounter::default();
         std::hash::Hash::hash(&word, &mut counter);
         samples.push(counter.0);
@@ -37,4 +45,3 @@ fn hashing_a_pointer_word_does_not_walk_its_type_origins() {
         "{samples:?}"
     );
 }
-

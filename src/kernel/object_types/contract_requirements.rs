@@ -540,9 +540,6 @@ mod tests {
     }
     #[cfg(test)]
     mod scaling_tests {
-        include!(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/src/scaling_tests/kernel/object_types/contract_requirements_tests.rs"
-        ));
+        include!("../../scaling_tests/kernel/object_types/contract_requirements_tests.rs");
     }
 }

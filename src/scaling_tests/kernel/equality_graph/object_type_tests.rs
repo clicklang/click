@@ -20,7 +20,10 @@ fn object_type_queries_ignore_unrelated_supported_values() {
         assert!(work > 0);
         samples.push(work);
     }
-    assert!(samples.iter().all(|work| *work <= samples[0] * 2), "{samples:?}");
+    assert!(
+        samples.iter().all(|work| *work <= samples[0] * 2),
+        "{samples:?}"
+    );
 }
 
 #[test]
@@ -44,6 +47,9 @@ fn type_sources_share_the_weighted_pointer_class_merge_bound() {
         samples.push((count, work));
     }
     for pair in samples.windows(2) {
-        assert!(pair[1].1 <= pair[0].1 * (pair[1].0 / pair[0].0) as usize * 2, "{samples:?}");
+        assert!(
+            pair[1].1 <= pair[0].1 * (pair[1].0 / pair[0].0) as usize * 2,
+            "{samples:?}"
+        );
     }
 }
