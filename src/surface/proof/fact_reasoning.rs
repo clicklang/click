@@ -280,9 +280,8 @@ fn describe_access_bound_prerequisite(
     let mut pending = vec![statement];
     while let Some(next) = pending.pop() {
         match next {
-            CStatement::Seq(first, second) => {
-                pending.push(second);
-                pending.push(first);
+            CStatement::Seq(statements) => {
+                pending.extend(statements.iter().rev().map(|statement| statement.as_ref()))
             }
             CStatement::Store { .. } | CStatement::TypedStore { .. } if verb == "write" => {
                 operation = next;
@@ -346,9 +345,8 @@ pub(in crate::surface) fn asserted_condition<'s>(
     let mut pending = vec![statement];
     loop {
         match pending.pop()? {
-            CStatement::Seq(first, second) => {
-                pending.push(second);
-                pending.push(first);
+            CStatement::Seq(statements) => {
+                pending.extend(statements.iter().rev().map(|statement| statement.as_ref()))
             }
             CStatement::Assert { condition, .. } => return Some(condition),
             _ => {}

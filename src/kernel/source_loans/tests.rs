@@ -84,9 +84,8 @@ fn leaves(body: &CStatement) -> Vec<CStatement> {
     let mut pending = vec![body];
     while let Some(statement) = pending.pop() {
         match statement {
-            CStatement::Seq(first, second) => {
-                pending.push(second);
-                pending.push(first);
+            CStatement::Seq(statements) => {
+                pending.extend(statements.iter().rev().map(|statement| statement.as_ref()))
             }
             _ => leaves.push(statement.clone()),
         }

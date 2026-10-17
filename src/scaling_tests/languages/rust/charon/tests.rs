@@ -119,7 +119,13 @@ fn charon_owned_array_construction_and_moves_have_bounded_work_at_large_extents(
         );
         fn nodes(statement: &crate::kernel::CStatement) -> usize {
             match statement {
-                crate::kernel::CStatement::Seq(a, b) => 1 + nodes(a) + nodes(b),
+                crate::kernel::CStatement::Seq(sequence) => {
+                    sequence.len() - 1
+                        + sequence
+                            .iter()
+                            .map(|statement| nodes(statement))
+                            .sum::<usize>()
+                }
                 _ => 1,
             }
         }
@@ -190,7 +196,13 @@ fn charon_nonuniform_sparse_snapshots_have_bounded_work_at_large_extents() {
         let (functions, _) = super::super::super::lowering::lower(&export).unwrap();
         fn nodes(statement: &crate::kernel::CStatement) -> usize {
             match statement {
-                crate::kernel::CStatement::Seq(a, b) => 1 + nodes(a) + nodes(b),
+                crate::kernel::CStatement::Seq(sequence) => {
+                    sequence.len() - 1
+                        + sequence
+                            .iter()
+                            .map(|statement| nodes(statement))
+                            .sum::<usize>()
+                }
                 _ => 1,
             }
         }
@@ -307,10 +319,13 @@ fn charon_array_lowering_and_verification_work_do_not_expand_with_length() {
     use crate::kernel::CStatement as C;
     fn shape(s: &C) -> (usize, usize) {
         match s {
-            C::Seq(a, b) => {
-                let a = shape(a);
-                let b = shape(b);
-                (1 + a.0 + b.0, a.1 + b.1)
+            C::Seq(statements) => {
+                let mut total = (statements.len() - 1, 0);
+                for statement in statements.iter() {
+                    let part = shape(statement);
+                    total = (total.0 + part.0, total.1 + part.1);
+                }
+                total
             }
             C::DeclareAggregate { layout, .. } => (1, layout.fields().len()),
             _ => (1, 0),

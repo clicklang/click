@@ -2691,7 +2691,7 @@ pub fn c_labeled_assert(condition: CExpression, label: impl Into<String>) -> CSt
 }
 
 pub fn c_seq(first: CStatement, second: CStatement) -> CStatement {
-    CStatement::Seq(Arc::new(first), Arc::new(second))
+    CStatement::seq(Arc::new(first), Arc::new(second))
 }
 
 pub fn c_skip() -> CStatement {
@@ -2845,6 +2845,11 @@ pub fn c_while_with_invariant_and_effect_checks(
 }
 
 impl CStatement {
+    /// The pair `Seq(first, second)`: `first`, then `second`.
+    pub fn seq(first: Arc<CStatement>, second: Arc<CStatement>) -> Self {
+        Self::Seq(CStatementSequence::pair(first, second))
+    }
+
     /// Declares the resources a loop holds for itself.
     ///
     /// An empty declaration leaves the loop inheriting the enclosing resource
@@ -2963,9 +2968,8 @@ pub fn c_for_body_with_step(body: CStatement, step: CStatement) -> CStatement {
                 exited_locals: scopes.clone(),
                 continue_after: true,
             },
-            CStatement::Seq(first, second) => c_seq(
-                rewrite((*first).clone(), step, scopes),
-                rewrite((*second).clone(), step, scopes),
+            CStatement::Seq(statements) => CStatement::Seq(
+                statements.map(|statement| Arc::new(rewrite((**statement).clone(), step, scopes))),
             ),
             CStatement::If {
                 condition,
@@ -3001,9 +3005,10 @@ pub fn c_for_body_with_step(body: CStatement, step: CStatement) -> CStatement {
     }
     fn first_step(step: CStatement, names: Vec<String>) -> CStatement {
         match step {
-            CStatement::Seq(first, rest) => {
-                c_seq(first_step((*first).clone(), names), (*rest).clone())
-            }
+            CStatement::Seq(statements) => CStatement::Seq(statements.with_statement(
+                0,
+                Arc::new(first_step((**statements.first()).clone(), names)),
+            )),
             step => CStatement::ForStep {
                 step: Box::new(step),
                 exited_locals: names,
@@ -8261,7 +8266,7 @@ pub(crate) fn prove_executed_contract_refinement(
             arguments,
         }
     } else {
-        CStatement::Seq(
+        CStatement::seq(
             Arc::new(CStatement::CallAssign {
                 target: "result".into(),
                 function_name: callback.name().to_string(),
@@ -8457,7 +8462,7 @@ pub(crate) fn prove_executed_concrete_contract_refinement(
             arguments,
         }
     } else {
-        CStatement::Seq(
+        CStatement::seq(
             Arc::new(CStatement::CallAssign {
                 target: "result".into(),
                 function_name: callee_name.to_string(),

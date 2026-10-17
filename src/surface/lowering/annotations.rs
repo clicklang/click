@@ -1016,6 +1016,162 @@ pub(in crate::surface) struct LoopAnnotation {
     /// The annotated loop as `kernel_loop_by_index` finds it in `function`,
     /// when lowering it alone already holds it.
     current_loop: Option<CStatement>,
+    /// Where each loop of `function`'s body sits, once a later annotation
+    /// asked ([`KernelLoopPaths`]).
+    kernel_loop_paths: std::sync::OnceLock<std::sync::Arc<KernelLoopPaths>>,
+}
+
+/// One step of the path from a kernel body's root to a loop: the statement
+/// of a sequence at an index, or an arm of an `if`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum KernelLoopStep {
+    Statement(usize),
+    Then,
+    Else,
+}
+
+/// For each loop index `kernel_loop_by_index` numbers in a body, the path to
+/// that loop when [`kernel_loop_replaced`] can put a lowered loop in its place
+/// (it is reached through sequences and `if` arms alone), from one walk of
+/// the body. Putting a loop in place then follows the path: its length is
+/// the nesting depth, and each sequence on it replaces one statement in
+/// logarithmic time, so the statements before the loop are not walked or
+/// rebuilt.
+///
+/// The paths stay those of a body in which a loop at one of them was
+/// replaced by a statement with the same number of loops: every other
+/// statement keeps its place and every loop its number.
+struct KernelLoopPaths {
+    paths: Vec<Option<Vec<KernelLoopStep>>>,
+}
+
+impl KernelLoopPaths {
+    fn of(body: &CStatement) -> Self {
+        fn walk(
+            statement: &CStatement,
+            path: &mut Vec<KernelLoopStep>,
+            paths: &mut Vec<Option<Vec<KernelLoopStep>>>,
+        ) {
+            match statement {
+                CStatement::While { body, .. } => {
+                    paths.push(Some(path.clone()));
+                    // A loop inside another is not one a walk lowers alone.
+                    paths.extend(std::iter::repeat_n(None, count_kernel_loops(body)));
+                }
+                CStatement::Seq(statements) => {
+                    for (index, statement) in statements.iter().enumerate() {
+                        path.push(KernelLoopStep::Statement(index));
+                        walk(statement, path, paths);
+                        path.pop();
+                    }
+                }
+                CStatement::If {
+                    then_branch,
+                    else_branch,
+                    ..
+                } => {
+                    path.push(KernelLoopStep::Then);
+                    walk(then_branch, path, paths);
+                    path.pop();
+                    path.push(KernelLoopStep::Else);
+                    walk(else_branch, path, paths);
+                    path.pop();
+                }
+                // A loop under any other statement is not one a walk lowers
+                // alone.
+                statement => {
+                    paths.extend(std::iter::repeat_n(None, count_kernel_loops(statement)));
+                }
+            }
+        }
+        let mut paths = Vec::new();
+        walk(body, &mut Vec::new(), &mut paths);
+        Self { paths }
+    }
+
+    /// `body`, the body these paths were read from, with the loop numbered
+    /// `target` replaced by `replacement`: what [`kernel_loop_replaced`]
+    /// returns, without walking the statements before the loop.
+    fn replaced(
+        &self,
+        body: &CStatement,
+        target: usize,
+        replacement: &CStatement,
+    ) -> Option<CStatement> {
+        fn at(
+            statement: &CStatement,
+            path: &[KernelLoopStep],
+            replacement: &CStatement,
+        ) -> Option<CStatement> {
+            #[cfg(test)]
+            KERNEL_LOOP_REPLACEMENT_STEPS.with(|count| count.set(count.get() + 1));
+            let Some((step, path)) = path.split_first() else {
+                return matches!(statement, CStatement::While { .. }).then(|| replacement.clone());
+            };
+            match (step, statement) {
+                (KernelLoopStep::Statement(index), CStatement::Seq(statements)) => {
+                    let replaced = at(statements.get(*index)?, path, replacement)?;
+                    Some(CStatement::Seq(
+                        statements.with_statement(*index, std::sync::Arc::new(replaced)),
+                    ))
+                }
+                (
+                    KernelLoopStep::Then,
+                    CStatement::If {
+                        condition,
+                        then_branch,
+                        else_branch,
+                    },
+                ) => Some(CStatement::If {
+                    condition: condition.clone(),
+                    then_branch: Box::new(at(then_branch, path, replacement)?),
+                    else_branch: else_branch.clone(),
+                }),
+                (
+                    KernelLoopStep::Else,
+                    CStatement::If {
+                        condition,
+                        then_branch,
+                        else_branch,
+                    },
+                ) => Some(CStatement::If {
+                    condition: condition.clone(),
+                    then_branch: then_branch.clone(),
+                    else_branch: Box::new(at(else_branch, path, replacement)?),
+                }),
+                _ => None,
+            }
+        }
+        at(body, self.paths.get(target)?.as_ref()?, replacement)
+    }
+
+    /// The loop at `target`'s path in `body`, when there is one.
+    fn loop_at<'a>(&self, body: &'a CStatement, target: usize) -> Option<&'a CStatement> {
+        let mut statement = body;
+        for step in self.paths.get(target)?.as_ref()? {
+            statement = match (step, statement) {
+                (KernelLoopStep::Statement(index), CStatement::Seq(statements)) => {
+                    statements.get(*index)?
+                }
+                (KernelLoopStep::Then, CStatement::If { then_branch, .. }) => then_branch,
+                (KernelLoopStep::Else, CStatement::If { else_branch, .. }) => else_branch,
+                _ => return None,
+            };
+        }
+        matches!(statement, CStatement::While { .. }).then_some(statement)
+    }
+}
+
+#[cfg(test)]
+thread_local! {
+    static KERNEL_LOOP_REPLACEMENT_STEPS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+/// The statements putting lowered loops in place (`KernelLoopPaths::replaced`)
+/// visited on this thread so far.
+#[cfg(test)]
+pub(in crate::surface) fn kernel_loop_replacement_steps() -> usize {
+    KERNEL_LOOP_REPLACEMENT_STEPS.with(std::cell::Cell::get)
 }
 
 /// The parts of a whole-function annotation that do not depend on its loop
@@ -1094,6 +1250,7 @@ pub(in crate::surface) fn annotated_loop_function(
         bindings_empty_after: record.is_some_and(|record| record.bindings_empty_after),
         shape: std::sync::Arc::new(shape),
         current_loop: None,
+        kernel_loop_paths: std::sync::OnceLock::new(),
     })
 }
 
@@ -1271,15 +1428,32 @@ pub(in crate::surface) fn annotated_loop_function_extending(
     } else {
         lowered
     };
-    let mut next_loop_index = 0;
-    let Some(body) = kernel_loop_replaced(
-        previous.function.body(),
-        loop_index,
-        &mut next_loop_index,
-        &lowered,
-    ) else {
+    let paths = previous
+        .kernel_loop_paths
+        .get_or_init(|| std::sync::Arc::new(KernelLoopPaths::of(previous.function.body())));
+    let Some(body) = paths.replaced(previous.function.body(), loop_index, &lowered) else {
         return Ok(None);
     };
+    #[cfg(debug_assertions)]
+    if loop_annotation_check_enabled() {
+        crate::instrumentation::uncharged_debug_check(|| {
+            assert!(
+                kernel_loop_replaced(previous.function.body(), loop_index, &mut 0, &lowered)
+                    .as_ref()
+                    == Some(&body),
+                "loop({loop_index}) was put in place where the walk would not put it"
+            );
+        });
+    }
+    // The paths still hold for `body` when the lowered loop holds as many
+    // loops as the one it replaced.
+    let kernel_loop_paths = std::sync::OnceLock::new();
+    if paths
+        .loop_at(previous.function.body(), loop_index)
+        .is_some_and(|replaced| count_kernel_loops(replaced) == count_kernel_loops(&lowered))
+    {
+        let _ = kernel_loop_paths.set(paths.clone());
+    }
     // `body` numbers every loop before `lowered` as `previous.function`
     // does, so a walk of `body` reaches `lowered` with `loop_index` loops
     // counted and finds this loop inside it.
@@ -1292,6 +1466,7 @@ pub(in crate::surface) fn annotated_loop_function_extending(
         bindings_empty_after,
         shape: previous.shape.clone(),
         current_loop,
+        kernel_loop_paths,
     }))
 }
 
@@ -1362,8 +1537,9 @@ pub(in crate::surface) fn kernel_loop_by_index<'a>(
                 kernel_loop_by_index(body, target, next_loop_index)
             }
         }
-        CStatement::Seq(first, second) => kernel_loop_by_index(first, target, next_loop_index)
-            .or_else(|| kernel_loop_by_index(second, target, next_loop_index)),
+        CStatement::Seq(statements) => statements
+            .iter()
+            .find_map(|statement| kernel_loop_by_index(statement, target, next_loop_index)),
         CStatement::If {
             then_branch,
             else_branch,
@@ -1451,7 +1627,10 @@ fn c0_loops_by_index(statement: &syntax::C0Statement) -> Vec<Option<syntax::C0St
 
 /// `statement` with the loop `kernel_loop_by_index` finds at `target`
 /// replaced by `replacement`: the statements on the way to it are rebuilt,
-/// every other part is shared.
+/// every other part is shared. It walks every statement before the loop;
+/// [`KernelLoopPaths::replaced`] answers the same without, and this is its
+/// reference.
+#[cfg(any(test, debug_assertions))]
 fn kernel_loop_replaced(
     statement: &CStatement,
     target: usize,
@@ -1469,12 +1648,15 @@ fn kernel_loop_replaced(
             *next += count_kernel_loops(body);
             None
         }
-        CStatement::Seq(first, second) => {
-            if let Some(first) = kernel_loop_replaced(first, target, next, replacement) {
-                return Some(CStatement::Seq(std::sync::Arc::new(first), second.clone()));
+        CStatement::Seq(statements) => {
+            for (index, statement) in statements.iter().enumerate() {
+                if let Some(replaced) = kernel_loop_replaced(statement, target, next, replacement) {
+                    return Some(CStatement::Seq(
+                        statements.with_statement(index, std::sync::Arc::new(replaced)),
+                    ));
+                }
             }
-            let second = kernel_loop_replaced(second, target, next, replacement)?;
-            Some(CStatement::Seq(first.clone(), std::sync::Arc::new(second)))
+            None
         }
         CStatement::If {
             condition,
@@ -1508,7 +1690,10 @@ fn kernel_loop_replaced(
 fn count_kernel_loops(statement: &CStatement) -> usize {
     match statement {
         CStatement::While { body, .. } => 1 + count_kernel_loops(body),
-        CStatement::Seq(first, second) => count_kernel_loops(first) + count_kernel_loops(second),
+        CStatement::Seq(statements) => statements
+            .iter()
+            .map(|statement| count_kernel_loops(statement))
+            .sum(),
         CStatement::If {
             then_branch,
             else_branch,
@@ -2792,7 +2977,9 @@ fn collect_local_pointer_element_types(body: &CStatement, types: &mut BTreeMap<S
                     types.insert(name.clone(), element);
                 }
             }
-            CStatement::Seq(first, second) => pending.extend([first.as_ref(), second.as_ref()]),
+            CStatement::Seq(statements) => {
+                pending.extend(statements.iter().map(|statement| statement.as_ref()))
+            }
             CStatement::If {
                 then_branch,
                 else_branch,
@@ -3305,10 +3492,10 @@ impl AnnotationLowerer<'_> {
     /// Attach the same checked loop clauses to compiler-lowered statements.
     fn lower_kernel_statement(&mut self, statement: &CStatement) -> Result<CStatement, ClickError> {
         Ok(match statement {
-            CStatement::Seq(a, b) => c_seq(
-                self.lower_kernel_statement(a)?,
-                self.lower_kernel_statement(b)?,
-            ),
+            CStatement::Seq(statements) => CStatement::Seq(statements.try_map(|statement| {
+                self.lower_kernel_statement(statement)
+                    .map(std::sync::Arc::new)
+            })?),
             CStatement::If {
                 condition,
                 then_branch,

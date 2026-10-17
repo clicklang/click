@@ -206,7 +206,7 @@ fn many_ranked_loops_in_one_function_cost_linear_termination_work() {
             [only] => only.clone(),
             _ => {
                 let (left, right) = statements.split_at(statements.len() / 2);
-                CStatement::Seq(Arc::new(sequence(left)), Arc::new(sequence(right)))
+                CStatement::seq(Arc::new(sequence(left)), Arc::new(sequence(right)))
             }
         }
     }

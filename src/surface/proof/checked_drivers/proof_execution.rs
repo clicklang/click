@@ -2811,9 +2811,9 @@ fn describe_unfinished_preservation(
 fn frontier_head_statement(statement: &CStatement) -> Option<&CStatement> {
     match statement {
         CStatement::Skip => None,
-        CStatement::Seq(first, rest) => {
-            frontier_head_statement(first).or_else(|| frontier_head_statement(rest))
-        }
+        CStatement::Seq(statements) => statements
+            .iter()
+            .find_map(|statement| frontier_head_statement(statement)),
         other => Some(other),
     }
 }
@@ -2840,10 +2840,13 @@ fn remaining_body_exits(statement: &CStatement) -> (usize, usize) {
             continue_after: true,
             ..
         } => (0, 1),
-        CStatement::Seq(first, rest) => {
-            let (first_breaks, first_continues) = remaining_body_exits(first);
-            let (rest_breaks, rest_continues) = remaining_body_exits(rest);
-            (first_breaks + rest_breaks, first_continues + rest_continues)
+        CStatement::Seq(statements) => {
+            statements
+                .iter()
+                .fold((0, 0), |(breaks, continues), statement| {
+                    let (statement_breaks, statement_continues) = remaining_body_exits(statement);
+                    (breaks + statement_breaks, continues + statement_continues)
+                })
         }
         CStatement::If {
             then_branch,

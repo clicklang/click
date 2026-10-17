@@ -12,7 +12,7 @@ fn normal_evidence_completes_only_exhausted_void_function_source() {
     ] {
         let statement = CStatement::Skip;
         let body = if tail {
-            CStatement::Seq(
+            CStatement::seq(
                 Arc::new(statement.clone()),
                 Arc::new(CStatement::Return(CExpression::Value(CValue::Void))),
             )
