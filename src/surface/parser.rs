@@ -231,11 +231,15 @@ pub(in crate::surface) struct ProofBlockSpan {
     pub(in crate::surface) tactics: Vec<SourcePosition>,
 }
 
-/// Where the parser read a declaration's clauses: the position of the brace
-/// that opens them. It records where the declaration was read, not what it
-/// declares, so it never makes two declarations unequal.
+/// Where the parser read a declaration's clauses: the brace that opens them,
+/// and the first token of each written claim clause (`ensures`, `owns` or
+/// `produces`, in source order). It records where the declaration was read,
+/// not what it declares, so it never makes two declarations unequal.
 #[derive(Clone, Debug, Default)]
-pub struct DeclarationBody(pub(in crate::surface) Option<SourcePosition>);
+pub struct DeclarationBody {
+    pub(in crate::surface) open: Option<SourcePosition>,
+    pub(in crate::surface) clauses: Vec<Option<SourcePosition>>,
+}
 
 impl PartialEq for DeclarationBody {
     fn eq(&self, _: &Self) -> bool {
@@ -3304,7 +3308,9 @@ impl Parser {
         let mut requires = Vec::new();
         let mut ensures = Vec::new();
         let mut ensure_kinds = Vec::new();
+        let mut clause_positions = Vec::new();
         while self.peek() != Some(&Token::RBrace) {
+            let clause_start = self.here();
             match self.peek_ident() {
                 Some("let") => {
                     let binding = self.parse_contract_let_binding()?;
@@ -3375,6 +3381,7 @@ impl Parser {
                         .map_err(|message| self.error(message))?,
                     );
                     ensure_kinds.push(ClaimClauseKind::Owns);
+                    clause_positions.push(clause_start.clone());
                     ensures.push(
                         apply_contract_lets_to_ensure_clause(
                             EnsureClause {
@@ -3419,6 +3426,7 @@ impl Parser {
                     let resource = self.parse_owned_resource_binding()?;
                     let proof = self.parse_proof_clause_or_default()?;
                     ensure_kinds.push(ClaimClauseKind::Produces);
+                    clause_positions.push(clause_start.clone());
                     ensures.push(
                         apply_contract_lets_to_ensure_clause(
                             EnsureClause {
@@ -3462,6 +3470,7 @@ impl Parser {
                         self.parse_ensure_clause()?
                     };
                     ensure_kinds.push(ClaimClauseKind::Ensures);
+                    clause_positions.push(clause_start.clone());
                     ensures.push(
                         apply_contract_lets_to_ensure_clause(ensure, &contract_lets)
                             .map_err(|message| self.error(message))?,
@@ -3512,7 +3521,10 @@ impl Parser {
             .collect();
         let ensure_claim_ids = flattened_claim_ids(&ensure_kinds, &ensure_source_clauses);
         Ok(TheoremDefinition {
-            body: DeclarationBody(body_open),
+            body: DeclarationBody {
+                open: body_open,
+                clauses: clause_positions,
+            },
             name,
             type_parameters,
             parameters: parsed_parameters.parameters,
@@ -3607,6 +3619,7 @@ impl Parser {
         // The kind each written postcondition clause was written as, which
         // its claim label counts it among.
         let mut ensure_kinds = Vec::new();
+        let mut clause_positions = Vec::new();
         let mut exceptional_ensures = Vec::new();
         // A local of struct-pointer type is a memory base in this function's
         // proof just as a parameter is. The signature wins a shared spelling.
@@ -3686,6 +3699,7 @@ impl Parser {
             signature.returns_reference(),
         );
         while self.peek() != Some(&Token::RBrace) {
+            let clause_start = self.here();
             match self.peek_ident() {
                 Some("let") => {
                     let binding = self.parse_contract_let_binding()?;
@@ -3777,6 +3791,7 @@ impl Parser {
                                 "conditional function contracts currently accept only `produces`, got `{keyword}`"
                             )));
                         }
+                        let produces_start = self.here();
                         self.position += 1;
                         let resource = self.parse_owned_resource_binding()?;
                         if matches!(resource, ResourceClause::Named { .. }) {
@@ -3786,6 +3801,7 @@ impl Parser {
                         }
                         let proof = self.parse_proof_clause_or_default()?;
                         ensure_kinds.push(ClaimClauseKind::Produces);
+                        clause_positions.push(produces_start.clone());
                         ensures.push(
                             apply_contract_lets_to_ensure_clause(
                                 EnsureClause {
@@ -3885,6 +3901,7 @@ impl Parser {
                         .map_err(|message| self.error(message))?,
                     );
                     ensure_kinds.push(ClaimClauseKind::Owns);
+                    clause_positions.push(clause_start.clone());
                     ensures.push(
                         apply_contract_lets_to_ensure_clause(
                             EnsureClause {
@@ -3965,6 +3982,7 @@ impl Parser {
                         CalleeResourceBinderKind::Produced,
                     );
                     ensure_kinds.push(ClaimClauseKind::Produces);
+                    clause_positions.push(clause_start.clone());
                     ensures.push(
                         apply_contract_lets_to_ensure_clause(
                             EnsureClause {
@@ -4001,6 +4019,7 @@ impl Parser {
                         }
                     }
                     ensure_kinds.push(ClaimClauseKind::Ensures);
+                    clause_positions.push(clause_start.clone());
                     ensures.push(
                         apply_contract_lets_to_ensure_clause(ensure, &contract_lets)
                             .map_err(|message| self.error(message))?,
@@ -4261,7 +4280,10 @@ impl Parser {
             signature.parameters = parameters;
         }
         Ok(FunctionBlock {
-            body: DeclarationBody(body_open),
+            body: DeclarationBody {
+                open: body_open,
+                clauses: clause_positions,
+            },
             c_object_names,
             recursion_peers,
             signature,
