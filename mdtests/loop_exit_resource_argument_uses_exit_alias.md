@@ -1,6 +1,6 @@
 # Loop exit resource arguments
 
-One exit establishes p == q and hands back cursor(p, anchor) while cur is q. Rebinding uses that exit's checked equality, then keeps the resource argument tied to the joined cur.
+One exit hands back cursor(p, anchor) while cur is q. The C comparison `p == q` establishes only `address(p) == address(q)`: equal addresses do not make equal pointers (`q` may be one past another object), so `cursor(p, anchor)` is not `cursor(q, anchor)` and the exits have no common successor.
 
 ```c filename=loop_exit_resource_argument_uses_exit_alias.c
 void choose(int32 *p, int32 *q, int32 *anchor, int32 flag) {
@@ -53,5 +53,5 @@ void choose(int32* p, int32* q, int32* anchor, int32 flag) {
 ```
 
 ```expect
-pass
+fail: loop exits reach different states
 ```
