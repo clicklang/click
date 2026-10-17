@@ -5354,6 +5354,24 @@ impl parser::ProgramLayouts {
                     .virtual_overrides
                     .push((function.source_name().to_string(), interface.to_string()));
             }
+            if !function.receiver_calls().is_empty() {
+                tables.receiver_calls.insert(
+                    function.source_name().to_string(),
+                    function
+                        .receiver_calls()
+                        .iter()
+                        .map(|(callee, holder)| {
+                            (
+                                source_names
+                                    .get(callee.as_str())
+                                    .map_or(callee.as_str(), |name| name)
+                                    .to_string(),
+                                holder.clone(),
+                            )
+                        })
+                        .collect(),
+                );
+            }
             if let Some(method) = function.dispatched_method()
                 && let Some(method) = source_names.get(method)
             {
