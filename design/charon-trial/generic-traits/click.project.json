@@ -1,0 +1,23 @@
+{
+  "units": {
+    "generic_traits": {
+      "language": "rust",
+      "sources": {
+        "shapes.rs": {}
+      },
+      "crate": {
+        "name": "generic_traits",
+        "edition": "2021",
+        "features": [],
+        "roots": [
+          "generic_traits::through_bound",
+          "generic_traits::through_dyn",
+          "generic_traits::through_wide"
+        ],
+        "files": [
+          "shapes.rs"
+        ]
+      }
+    }
+  }
+}

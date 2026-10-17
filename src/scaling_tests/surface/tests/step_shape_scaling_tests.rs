@@ -974,10 +974,21 @@ void caller({params}) {{
 /// four times it when the entry is quadratic.
 #[test]
 fn entry_setup_is_linear_in_owned_parameters() {
-    let samples = owned_parameter_entry_work([32, 64, 128]);
-    let first = samples[1].1 - samples[0].1;
-    let second = samples[2].1 - samples[1].1;
-    assert!(second * 2 <= first * 5, "{samples:?}");
+    let samples = owned_parameter_entry_work([16, 32, 64]);
+    let linear = |samples: &[(usize, usize); 3]| {
+        let first = samples[1].1 - samples[0].1;
+        let second = samples[2].1 - samples[1].1;
+        second * 2 <= first * 5 && second <= first * 2 + 128
+    };
+    eprintln!("owned parameter entry work: {samples:?}");
+    assert!(linear(&samples), "{samples:?}");
+    // Smaller programs must still expose one extra visit per parameter pair,
+    // even when the rest of entry setup has a large linear cost.
+    let paired = samples.map(|(size, work)| (size, work + size * size));
+    assert!(
+        !linear(&paired),
+        "the entry fixture must detect quadratic work: {samples:?}"
+    );
 }
 
 /// A function of `n` parameters whose proof states one fact about one of

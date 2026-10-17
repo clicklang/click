@@ -4,8 +4,10 @@
 
 use super::*;
 
+// The held-term index answers from the locals that hold the variable, so
+// declaring more unrelated locals adds no work.
 #[test]
-fn local_variable_spelling_work_is_linear_in_declared_slots() {
+fn local_variable_spelling_work_does_not_grow_with_declared_slots() {
     for size in [4usize, 16, 64, 256, 1024] {
         let state = (0..size).fold(CState::new(), |state, index| {
             scalar(
@@ -19,8 +21,8 @@ fn local_variable_spelling_work_is_linear_in_declared_slots() {
         });
         assert_eq!(name, None);
         assert!(
-            work >= size && work <= 3 * size,
-            "size {size}: {work} work must scale with inspected slots"
+            work <= 2,
+            "size {size}: {work} work must not scale with unrelated slots"
         );
     }
 }
@@ -53,9 +55,9 @@ fn local_variable_spelling_does_not_traverse_unrelated_symbolic_values_or_heap_r
             name, None,
             "a variable inside an expression is not the held scalar atom"
         );
-        assert_eq!(
-            work, 2,
-            "depth {depth}: only the slot inspection and budget check participate"
+        assert!(
+            work <= 2,
+            "depth {depth}: {work} work; only the index lookup participates"
         );
     }
 }
