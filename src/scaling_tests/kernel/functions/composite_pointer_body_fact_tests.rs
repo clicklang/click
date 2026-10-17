@@ -260,10 +260,62 @@ fn binding_free_scalar_facts_do_not_prepare_unused_arm_memory() {
             }],
         };
         let (facts, work) = crate::instrumentation::measure_deterministic_work(|| {
-            arm_binding_free_facts(&state, &arm, &PureFactContext::new())
+            arm_binding_free_facts(&state, &arm, &PureFactContext::new()).collect::<Vec<_>>()
         });
         assert_eq!(facts.len(), 1);
         assert!(matches!(&facts[0], Proposition::ConditionIs(_, false)));
+        assert!(work <= 128, "{size} unused clauses: {work}");
+    }
+}
+
+#[test]
+fn arm_refutation_stops_before_unneeded_memory_facts() {
+    for size in [16u64, 64, 256, 1024] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let state = CState::new().with_local(
+            "p",
+            CValue::typed_pointer(Pointer::null(), CType::Int32Pointer),
+        );
+        let arm = CResourceMatchArm {
+            variant: "Held".into(),
+            bindings: vec![],
+            binding_types: vec![],
+            binding_variables: vec![],
+            children: vec![],
+            contains: (0..size)
+                .map(|index| {
+                    CResourceSpec::owned_memory(CMemorySegment::new(
+                        CExpression::Value(CValue::typed_pointer(
+                            Pointer::symbolic(Variable(719_000 + index)),
+                            CType::Int32Pointer,
+                        )),
+                        c_int32_literal(0),
+                        c_int32_literal(1),
+                    ))
+                })
+                .collect(),
+            facts: vec![
+                SpecProposition::Comparison {
+                    left: SpecExpression::CExpression(c_variable("p")),
+                    operator: CComparisonOperator::NotEqual,
+                    right: SpecExpression::CExpression(c_int32_literal(0)),
+                },
+                SpecProposition::Comparison {
+                    left: SpecExpression::CExpression(CExpression::Load(Box::new(c_variable("p")))),
+                    operator: CComparisonOperator::Equal,
+                    right: SpecExpression::CExpression(c_int32_literal(0)),
+                },
+            ],
+        };
+        let (refuted, work) = crate::instrumentation::measure_deterministic_work(|| {
+            arm_is_refuted_by_a_binding_free_fact(
+                &state,
+                &arm,
+                &PureFactContext::new(),
+                &PureFactContext::new(),
+            )
+        });
+        assert!(refuted);
         assert!(work <= 128, "{size} unused clauses: {work}");
     }
 }

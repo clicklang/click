@@ -1881,10 +1881,14 @@ impl PureFactContext {
                     .max(right_tag)
                     .checked_add(1)?
                     .checked_next_power_of_two()?;
-                let distinct = self.decide_citing(
-                    &ConditionTerm::pointer_equal(left.pointer.clone(), right.pointer.clone()),
-                    used,
-                ) == Some(false);
+                let tags_differ = self
+                    .decide_citing(&ConditionTerm::uint64_equal(left.tag, right.tag), used)
+                    == Some(false);
+                let distinct = tags_differ
+                    || self.decide_citing(
+                        &ConditionTerm::pointer_equal(left.pointer.clone(), right.pointer.clone()),
+                        used,
+                    ) == Some(false);
                 let both_aligned = self.decide_citing(
                     &ConditionTerm::pointer_aligned(left.pointer, alignment),
                     used,
@@ -1893,8 +1897,9 @@ impl PureFactContext {
                         &ConditionTerm::pointer_aligned(right.pointer, alignment),
                         used,
                     ) == Some(true);
-                // Distinct aligned bases differ by at least `alignment`, so
-                // tags below it cannot make the words coincide.
+                // Different low tags have different residues modulo alignment.
+                // Otherwise, distinct aligned bases differ by at least that
+                // alignment, so smaller tags cannot make the words coincide.
                 (distinct && both_aligned).then_some(false)
             }
             (Some(form), None) | (None, Some(form)) => {

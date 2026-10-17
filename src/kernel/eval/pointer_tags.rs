@@ -567,6 +567,52 @@ mod exact_word_address_tests {
     use super::*;
 
     #[test]
+    fn different_tags_on_aligned_addresses_need_no_pointer_inequality() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let p = Pointer::symbolic(Variable(980030));
+        let q = Pointer::symbolic(Variable(980031));
+        let bare = PureFactContext::new();
+        let aligned = bare
+            .clone()
+            .assume_condition(ConditionTerm::pointer_aligned(p.clone(), 8), true)
+            .assume_condition(ConditionTerm::pointer_aligned(q.clone(), 8), true);
+        let word = |pointer: Pointer, tag| {
+            Bitvector32Term::uint64_add(
+                Bitvector32Term::pointer_address(pointer),
+                Bitvector32Term::UInt64Constant(tag),
+            )
+        };
+        let mut used = UsedFacts::new();
+        assert_eq!(
+            aligned.decide_pointer_word_equality_citing(
+                &word(p.clone(), 1),
+                &word(q.clone(), 0),
+                &mut used,
+            ),
+            Some(false)
+        );
+        assert!(used.complete);
+        assert_eq!(used.premises.len(), 2);
+        // Neither missing alignment nor equal tags establish inequality.
+        assert_eq!(
+            bare.decide_pointer_word_equality_citing(
+                &word(p.clone(), 1),
+                &word(q.clone(), 0),
+                &mut UsedFacts::new(),
+            ),
+            None
+        );
+        assert_eq!(
+            aligned.decide_pointer_word_equality_citing(
+                &word(p, 1),
+                &word(q, 1),
+                &mut UsedFacts::new(),
+            ),
+            None
+        );
+    }
+
+    #[test]
     fn encoded_object_class_survives_tags_and_a_different_cast_type() {
         use crate::kernel::effective_type::{CAccessClass, CScalarClass};
         let _session = crate::kernel::VerificationSession::enter();
