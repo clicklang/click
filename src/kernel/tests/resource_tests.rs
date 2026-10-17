@@ -3973,6 +3973,107 @@ fn unrelated_order_fact_context(size: usize) -> PureFactContext {
     assumptions
 }
 
+fn dependent_pair_entry_fixture() -> (CState, CCompositeResourceDefinition, Vec<CResourceSpec>) {
+    let next = |pointer: CExpression| CExpression::TypedLoad {
+        pointer: Box::new(CExpression::Subobject {
+            pointer: Box::new(pointer),
+            width: 8,
+        }),
+        value_type: CType::Int32Pointer,
+        volatile: false,
+        pointee_constant: false,
+        access_class: None,
+        source: Default::default(),
+    };
+    let cell = |base| {
+        CResourceSpec::owned_memory(CMemorySegment::new(
+            base,
+            c_int32_literal(0),
+            c_int32_literal(2),
+        ))
+    };
+    let definition = CCompositeResourceDefinition::new(
+        "dependent_pair",
+        vec![c_parameter("p", CType::Int32Pointer)],
+        None,
+        false,
+        vec![cell(c_variable("p")), cell(next(c_variable("p")))],
+        vec![],
+    );
+    let pointer = Pointer {
+        block: PointerBlock::ExternalArgument,
+        offset: PointerOffsetTerm::scale_int32(Bitvector32Term::Variable(Variable(910_000)), 4),
+    };
+    let state = CState::new().with_local("node", CValue::pointer(pointer));
+    let clause = |argument| {
+        CResourceSpec::declared(
+            ResourceFamily::Composite,
+            CResourceAccessMode::Own,
+            "dependent_pair".into(),
+            vec![argument],
+            vec![CType::Int32Pointer],
+            CResourceTransferRole::Borrow,
+            CResourceSnapshot::Entry,
+        )
+        .unwrap()
+    };
+    let second = next(next(c_variable("node")));
+    let third = next(second.clone());
+    (
+        state,
+        definition,
+        vec![clause(c_variable("node")), clause(second), clause(third)],
+    )
+}
+
+#[test]
+fn folded_composite_body_cells_supply_dependent_entry_arguments_without_opening() {
+    let (state, definition, clauses) = dependent_pair_entry_fixture();
+    let resources = crate::kernel::functions::evaluate_function_resource_context(
+        &state,
+        &clauses,
+        &[definition],
+        &PureFactContext::new(),
+        &mut ExecutionBudget::default(),
+    )
+    .unwrap()
+    .expect("typed body views address the second and third folded clauses");
+    assert_eq!(resources.facts().iter().filter(|fact| matches!(fact.resource(), CResource::Composite { name, .. } if name == "dependent_pair")).count(), 3);
+    assert!(
+        resources
+            .facts()
+            .iter()
+            .all(|fact| !matches!(fact.resource(), CResource::Memory(_)) || fact.is_view())
+    );
+}
+
+#[test]
+fn zero_folded_composite_quantity_supplies_no_body_read_authority() {
+    let (state, definition, _) = dependent_pair_entry_fixture();
+    let parent = CResourceFact::own_quantity(
+        CResource::Composite {
+            name: "dependent_pair".into(),
+            arguments: vec![state.locals().get("node").unwrap().clone().into()].into(),
+        },
+        Bitvector32Term::Constant(0),
+    );
+    let supply = crate::kernel::functions::resource_clause_section_supply(
+        &state,
+        &[parent],
+        &[definition],
+        &PureFactContext::new(),
+    );
+    assert!(
+        supply.facts().iter().all(|fact| {
+            !matches!(fact.resource(), CResource::Memory(_))
+                || state
+                    .resources()
+                    .satisfies_fact(fact, &PureFactContext::new())
+        }),
+        "a zero head must not add read authority beyond the existing frame: {supply:?}"
+    );
+}
+
 /// A contract section whose clauses cannot be put in any evaluable order is
 /// refused by naming a pair, not the clause that happens to be written last.
 /// Clause order does not decide a section, so one position is not the answer.
