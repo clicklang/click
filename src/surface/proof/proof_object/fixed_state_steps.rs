@@ -3062,10 +3062,7 @@ impl<'a> Proof<'a> {
                             query.with_kernel_checked_fact(fact.clone())
                         });
                         lower_outcome_proposition_with_recorded_snapshots(
-                            ParameterBinding::new(
-                                context.parsed_function.parameters(),
-                                context.arguments,
-                            ),
+                            context.parameter_binding(),
                             &pre_state,
                             state,
                             value,
@@ -3076,10 +3073,7 @@ impl<'a> Proof<'a> {
                         )
                     } else {
                         lower_outcome_proposition_with_recorded_snapshots(
-                            ParameterBinding::new(
-                                context.parsed_function.parameters(),
-                                context.arguments,
-                            ),
+                            context.parameter_binding(),
                             &pre_state,
                             state,
                             value,

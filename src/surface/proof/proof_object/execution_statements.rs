@@ -1433,10 +1433,7 @@ impl<'a> Proof<'a> {
             .with_selected_call_binders(callee, parameters.len(), bindings);
         let before = &*execution.core.state;
         let pre_state = context.old_reference_state(&execution.core.frontier, before);
-        let values = parameter_values(ParameterBinding::new(
-            context.parsed_function.parameters(),
-            context.arguments,
-        ))?;
+        let values = parameter_values(context.parameter_binding())?;
         let array_refs = array_refs_for_parameters(
             context.parsed_function.parameters(),
             &values,
@@ -2686,18 +2683,26 @@ impl<'a> Proof<'a> {
     /// the source and target are lowered at the frontier, the premise
     /// planner names the premises, and this Proof applies the explicit
     /// `transport using` transition. The planner's failure is the answer,
-    /// with its diagnostic.
+    /// with its diagnostic. `source_refusal` is the refusal of the bare
+    /// form's source-only attempt, which that diagnostic reports when it
+    /// names a frame the source could not cross.
     pub(in crate::surface::proof) fn apply_planned_fact_transport(
         &self,
         surface_source: &ClickProposition,
         surface_target: &ClickProposition,
         tactic_index: usize,
+        source_refusal: Option<&ClickError>,
     ) -> Result<Self, ClickError> {
-        self.apply_planned_fact_transport_inner(surface_source, surface_target, tactic_index)
-            .map_err(|error| {
-                self.record_certification_failure_trace(self.claim_label(), 0);
-                self.attach_step_diagnostic(error)
-            })
+        self.apply_planned_fact_transport_inner(
+            surface_source,
+            surface_target,
+            tactic_index,
+            source_refusal,
+        )
+        .map_err(|error| {
+            self.record_certification_failure_trace(self.claim_label(), 0);
+            self.attach_step_diagnostic(error)
+        })
     }
 
     fn apply_planned_fact_transport_inner(
@@ -2705,6 +2710,7 @@ impl<'a> Proof<'a> {
         surface_source: &ClickProposition,
         surface_target: &ClickProposition,
         tactic_index: usize,
+        source_refusal: Option<&ClickError>,
     ) -> Result<Self, ClickError> {
         let resolved_source = self.substitute_fixed_state_locals_in_proposition(surface_source)?;
         let resolved_target = self.substitute_fixed_state_locals_in_proposition(surface_target)?;
@@ -2741,10 +2747,7 @@ impl<'a> Proof<'a> {
                         &source,
                         facts,
                         state.resources().facts(),
-                        ParameterBinding::new(
-                            context.parsed_function.parameters(),
-                            context.arguments
-                        ),
+                        context.parameter_binding(),
                         &view.execution.core.effect_facts,
                     )
                 )));
@@ -2782,6 +2785,7 @@ impl<'a> Proof<'a> {
                     surface_target,
                     view.unfolded_predicates,
                     &error,
+                    source_refusal,
                 );
                 if crate::instrumentation::deadline_exceeded() {
                     // Lowering already produced these checked identities.

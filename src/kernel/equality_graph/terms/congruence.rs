@@ -1199,10 +1199,7 @@ impl TermClasses {
                 );
             }
         }
-        let root = self.root(node);
-        let truth = self.condition_truth.get(&root).copied().unwrap_or(0);
-        self.condition_truth
-            .insert(root, truth | if value { 1 } else { 2 });
+        self.retain_condition_truth(node, if value { 1 } else { 2 });
         true
     }
 

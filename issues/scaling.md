@@ -160,13 +160,16 @@ instead of from what the step changed.
    (`ClauseParameters`) instead of each rebuilding the parameter values and
    array references (`entry_resource_clauses_do_not_rebuild_every_parameter`:
    560, 8,384 and 131,840 units at 16, 64 and 256 parameters before; 80,
-   320 and 1,280 after). Still open: other entry passes rebuild them per
-   requirement. From N = 32 to 128 in `objects_and_calls`,
-   `resource_clause_memory_ranges_at_state`,
-   `requirement_proposition_and_facts_with_assumptions`,
-   `materialize_access_segment_cells` and `evaluate_requirement_segment`
-   each grow x13 to x15. The deterministic work counter does not yet see
-   most of this, so an end-to-end entry test cannot gate it.
+   320 and 1,280 after). Also fixed: the other entry passes looked up
+   every parameter for each requirement: segment evaluation, memory clause
+   lowering, requirement elaboration, and the returned-place and `ensures`
+   checks. A function's entry and proof now carry one `ParameterIndex`, and
+   these passes read only the parameters a segment, memory clause or
+   requirement names (`entry_setup_is_linear_in_owned_parameters`).
+   `objects_and_calls` at N = 128: 9.06 to 8.59 billion instructions, its
+   entry context 1.33 to 0.90 billion. Still superlinear for wide
+   functions, outside entry: finishing a proof clones each verified
+   theorem, and each carries the whole contract.
 9. **Fixed: comparing equal resource contexts walked every fact.** A call
    that takes the caller's ownership and returns it rebuilds a context with
    the same facts in fresh storage. Contexts order by content hash first, so

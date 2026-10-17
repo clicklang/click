@@ -13829,6 +13829,14 @@ fn rewrite_resource_instance_selecting_children_unspelled(
         authorities.push(authority);
     }
     let body_specs = &body_specs[..];
+    // Unfolding assumes the body the fold established, its clauses through
+    // pointers of unseen formation included (`assume_entry_clause_extents`);
+    // folding checks them.
+    let body_assumptions = if unfold {
+        assumptions.clone().assume_entry_clause_extents()
+    } else {
+        assumptions.clone()
+    };
     let mut body = evaluate_function_resource_context_with_normalization(
         &evaluation,
         body_specs,
@@ -13836,7 +13844,7 @@ fn rewrite_resource_instance_selecting_children_unspelled(
         // expanding a contained composite here would hand the body read
         // authority it has not opened.
         &[],
-        assumptions,
+        &body_assumptions,
         &mut budget,
         false,
     )
@@ -14523,10 +14531,13 @@ pub(super) fn expand_composite_resource_fact_with_children(
     }
     bind_composite_witnesses(definition, arguments, &mut state, assumptions)?;
     let mut budget = ExecutionBudget::beside_live_state();
+    // Opening a held composite assumes the body its fold established
+    // (`assume_entry_clause_extents`).
     let evaluation_assumptions = assumptions
         .clone()
         .allow_symbolic_contract_loads()
-        .prefer_symbolic_external_loads();
+        .prefer_symbolic_external_loads()
+        .assume_entry_clause_extents();
     let mut child_facts = Vec::new();
     let Some(body_active) = evaluate_composite_resource_body_condition(
         definition,
@@ -19161,7 +19172,7 @@ pub(crate) fn unreturned_allocation_with_checked_returned_resources(
             &entry_state,
             function.resource_requires(),
             function.composite_resource_definitions(),
-            assumptions,
+            &assumptions.clone().assume_entry_clause_extents(),
             &mut budget,
         )
         .map_err(|limit| CRuntimeError::FunctionContract(limit.describe()))??;
@@ -19253,7 +19264,7 @@ pub(crate) fn unreturned_allocation_at_function_exit(
         &entry_state,
         function.resource_requires(),
         function.composite_resource_definitions(),
-        assumptions,
+        &assumptions.clone().assume_entry_clause_extents(),
         budget,
     )? {
         Ok((_, clauses)) => clauses,

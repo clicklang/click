@@ -1266,10 +1266,14 @@ pub(in crate::surface) fn annotated_function_with_assumptions(
                     })?,
             };
             let mut budget = crate::kernel::ExecutionBudget::for_new_execution();
+            // The frames are read off the function's own entry clauses.
             match crate::kernel::establish_resource_derived_loop_frames(
                 function,
                 &checked_entry,
-                frame_entry.assumptions,
+                &frame_entry
+                    .assumptions
+                    .clone()
+                    .assume_entry_clause_extents(),
                 &mut budget,
             ) {
                 Ok(Ok(function)) => function,
@@ -1771,11 +1775,28 @@ pub(in crate::surface) fn elaborate_fixed_state_expression_with_algebraic_and_in
 /// a `uint8 bytes[8]` defaulted to an `int32` load at byte 24, a different
 /// cell from the one the C program and every other clause read.
 pub(in crate::surface) fn elaborate_requirement_proposition(
-    parameters: &[syntax::C0Parameter],
+    parameter_binding: ParameterBinding<'_>,
     entry_state: &CState,
     proposition: &ClickProposition,
     spec_definitions: SpecDefinitions<'_>,
 ) -> Result<SpecProposition, String> {
+    // A requirement reads only the parameters it names: with the binding's
+    // index, the parameter tables hold those alone.
+    let parameters: Vec<&syntax::C0Parameter> = match parameter_binding.index {
+        Some(index) => {
+            let mut names = BTreeSet::new();
+            crate::surface::lowering::collect_click_proposition_referenced_names(
+                proposition,
+                &mut names,
+            );
+            names
+                .iter()
+                .filter_map(|name| index.position(name))
+                .map(|position| &parameter_binding.parameters[position])
+                .collect()
+        }
+        None => parameter_binding.parameters.iter().collect(),
+    };
     let mut lowerer = AnnotationLowerer {
         capture_referenced_names: None,
         structural_clauses: &[],
@@ -1806,7 +1827,9 @@ pub(in crate::surface) fn elaborate_requirement_proposition(
                 ))
             })
             .collect(),
-        parameter_pointer_element_widths: parameter_pointer_element_widths(parameters),
+        parameter_pointer_element_widths: parameter_pointer_element_widths(
+            parameters.iter().copied(),
+        ),
         quantified_values: BTreeMap::new(),
         algebraic_variables: BTreeMap::new(),
         algebraic_types: BTreeMap::new(),
@@ -2368,11 +2391,11 @@ struct AnnotationLowerer<'a> {
     snapshots: Option<&'a RecordedSnapshots>,
 }
 
-pub(in crate::surface) fn parameter_pointer_element_widths(
-    parameters: &[syntax::C0Parameter],
+pub(in crate::surface) fn parameter_pointer_element_widths<'a>(
+    parameters: impl IntoIterator<Item = &'a syntax::C0Parameter>,
 ) -> BTreeMap<String, u32> {
     parameters
-        .iter()
+        .into_iter()
         .filter_map(|parameter| {
             parameter
                 .array_element_width()
@@ -5386,7 +5409,8 @@ impl AnnotationLowerer<'_> {
             }
             // Arithmetic on a pointer offsets it by whole elements, as C does.
             ContractExpression::Add(left, right) => {
-                if let Some(element_type) = self.contract_pointer_element_type(left, environment) {
+                if let Some(element_width) = self.contract_pointer_element_width(left, environment)
+                {
                     return Ok(SpecExpression::PointerOffset {
                         pointer: Box::new(
                             self.lower_contract_expression_to_spec(left, environment)?,
@@ -5394,10 +5418,11 @@ impl AnnotationLowerer<'_> {
                         elements: Box::new(
                             self.lower_contract_expression_to_spec(right, environment)?,
                         ),
-                        byte_width: element_type.byte_width(),
+                        byte_width: element_width,
                     });
                 }
-                if let Some(element_type) = self.contract_pointer_element_type(right, environment) {
+                if let Some(element_width) = self.contract_pointer_element_width(right, environment)
+                {
                     return Ok(SpecExpression::PointerOffset {
                         pointer: Box::new(
                             self.lower_contract_expression_to_spec(right, environment)?,
@@ -5405,7 +5430,7 @@ impl AnnotationLowerer<'_> {
                         elements: Box::new(
                             self.lower_contract_expression_to_spec(left, environment)?,
                         ),
-                        byte_width: element_type.byte_width(),
+                        byte_width: element_width,
                     });
                 }
                 Ok(SpecExpression::Add(
@@ -5414,9 +5439,9 @@ impl AnnotationLowerer<'_> {
                 ))
             }
             ContractExpression::Subtract(left, right) => {
-                if let Some(element_type) = self.contract_pointer_element_type(left, environment)
+                if let Some(element_width) = self.contract_pointer_element_width(left, environment)
                     && self
-                        .contract_pointer_element_type(right, environment)
+                        .contract_pointer_element_width(right, environment)
                         .is_none()
                 {
                     return Ok(SpecExpression::PointerOffset {
@@ -5427,7 +5452,7 @@ impl AnnotationLowerer<'_> {
                             Box::new(SpecExpression::Value(int32(0))),
                             Box::new(self.lower_contract_expression_to_spec(right, environment)?),
                         )),
-                        byte_width: element_type.byte_width(),
+                        byte_width: element_width,
                     });
                 }
                 Ok(SpecExpression::Subtract(
@@ -7168,6 +7193,42 @@ impl AnnotationLowerer<'_> {
         }
     }
 
+    /// Physical element widths take precedence over scalar resource carriers.
+    fn contract_pointer_element_width(
+        &self,
+        expression: &ContractExpression,
+        environment: &SpecElaborationContext,
+    ) -> Option<u32> {
+        match expression {
+            ContractExpression::CBinding(name) => self
+                .parameter_pointer_element_widths
+                .get(name)
+                .copied()
+                .or_else(|| {
+                    self.contract_pointer_element_type(expression, environment)
+                        .map(CType::byte_width)
+                }),
+            ContractExpression::QualifiedC { lowered, .. }
+            | ContractExpression::CFragment(lowered)
+            | ContractExpression::Field { lowered, .. } => {
+                self.c_expression_array_element_width(lowered, environment)
+            }
+            ContractExpression::Old(inner)
+            | ContractExpression::At {
+                expression: inner, ..
+            } => self.contract_pointer_element_width(inner, environment),
+            ContractExpression::Add(left, right) => self
+                .contract_pointer_element_width(left, environment)
+                .or_else(|| self.contract_pointer_element_width(right, environment)),
+            ContractExpression::Subtract(left, _) => {
+                self.contract_pointer_element_width(left, environment)
+            }
+            _ => self
+                .contract_pointer_element_type(expression, environment)
+                .map(CType::byte_width),
+        }
+    }
+
     /// The element type a contract expression steps by when it is a pointer:
     /// an array reference or a pointer-valued binding in scope, a pointer
     /// fragment, or pointer arithmetic on one. `None` for a scalar.
@@ -7300,11 +7361,16 @@ impl AnnotationLowerer<'_> {
             CExpression::Cast { target_type, .. } => {
                 target_type.pointee_type().map(CType::byte_width)
             }
-            CExpression::Variable(name) => environment
-                .array_refs
+            CExpression::Variable(name) => self
+                .parameter_pointer_element_widths
                 .get(name)
-                .map(|array_ref| array_ref.element_type.byte_width())
-                .or_else(|| self.parameter_pointer_element_widths.get(name).copied())
+                .copied()
+                .or_else(|| {
+                    environment
+                        .array_refs
+                        .get(name)
+                        .map(|array_ref| array_ref.element_type.byte_width())
+                })
                 .or_else(|| {
                     self.declared_pointer_element_type(name)
                         .map(|ty| ty.byte_width())

@@ -2,7 +2,9 @@
 
 A written `transport(source, target)` that the source-local frame check cannot
 carry falls back to the checked premise planner. The main proof line always
-did that, so a false target is refused with the planner's reason. An
+did that, so a false target is refused with the planner's reason: when no
+premise it can select helps, that is the source-local check's refusal, which
+names the effects between the two states, here the store to `a[i]`. An
 execution arm used to try only the source-local form and then decline the
 whole proof shape, so the same false transport inside `branch` was reported
 as "not implemented in this execution context", which blamed the proof shape
@@ -42,5 +44,5 @@ void mark_one(int32 a[], int32 n, int32 i, int32 m, int32 c) {
 ```
 
 ```expect
-fail: could not make fact transport premises explicit
+fail: `transport` found no frame evidence carrying its source fact to the target's state
 ```

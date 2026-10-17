@@ -1741,10 +1741,18 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
         ),
         SpecProposition::Defined(expression) => {
             let mut checked = SpecEvaluation::checked(budget);
+            // Definedness is decided from no facts, except that a contract
+            // entry's own requirement keeps assuming what its caller checked
+            // about opaque pointer extents.
+            let context = if assumptions.should_assume_entry_clause_extents() {
+                PureFactContext::new().assume_entry_clause_extents()
+            } else {
+                PureFactContext::new()
+            };
             let paths = evaluate_spec_expression_paths_with_algebraic_bindings_in(
                 scope,
                 expression,
-                &PureFactContext::new(),
+                &context,
                 &mut checked,
             )?;
             let mut normal_paths = paths.into_iter().map(|path| {
@@ -7530,6 +7538,74 @@ fn bool_disequality_as_equality(
     None
 }
 
+/// What a specification `==` between two pointers owes beyond their
+/// addresses: they designate the same subobject. Specification equality is
+/// value equality (`design/pointer-subobject-extents.md`, D2), and a
+/// pointer's extent is part of its value, so `&pair.first + 1` and
+/// `&pair.second` are different pointers at one address. A call that
+/// requires `q == p` must not admit them: the callee would read through `q`
+/// with `p`'s permission.
+///
+/// `None` when the address comparison alone decides it: both extents are
+/// the same, or either value carries none. A value without an extent is
+/// bounded by its complete object, or its designation is not known (a
+/// modular result, an entry load); its equality stays an address equality,
+/// so assuming it never refutes a reachable path.
+fn pointer_designation_equality(
+    left: &CPointerValue,
+    right: &CPointerValue,
+) -> Option<Proposition> {
+    let (Some(left), Some(right)) = (left.extent(), right.extent()) else {
+        return None;
+    };
+    if left == right {
+        return None;
+    }
+    // An opaque extent is known only by what covers it: equal to a known
+    // extent, it covers that extent's bytes, and covers nothing else because
+    // an opaque extent covers only what a fact states.
+    match (left.is_opaque(), right.is_opaque()) {
+        (true, false) | (false, true) => {
+            let (opaque, known) = if left.is_opaque() {
+                (left, right)
+            } else {
+                (right, left)
+            };
+            let width = known.constant_width()?;
+            return Some(opaque.coverage_fact(&CMemoryRange::new_with_element_width(
+                known.start.clone(),
+                Bitvector32Term::Constant(0),
+                Bitvector32Term::Constant(width),
+                1,
+            )));
+        }
+        _ => {}
+    }
+    let starts = Proposition::ConditionIs(
+        pointer_equality_condition(left.start.clone(), right.start.clone()),
+        true,
+    );
+    if left.width == right.width {
+        return Some(starts);
+    }
+    if left.constant_width().is_some() && right.constant_width().is_some() {
+        return Some(Proposition::ConditionIs(
+            ConditionTerm::Constant(false),
+            true,
+        ));
+    }
+    Some(Proposition::And(
+        Box::new(starts),
+        Box::new(Proposition::ConditionIs(
+            ConditionTerm::Bitvector32Equal(
+                Box::new(left.width.clone()),
+                Box::new(right.width.clone()),
+            ),
+            true,
+        )),
+    ))
+}
+
 pub(super) fn c_value_comparison_proposition(
     left: &CValue,
     operator: CComparisonOperator,
@@ -7546,10 +7622,27 @@ pub(super) fn c_value_comparison_proposition(
             CComparisonOperator::Equal | CComparisonOperator::NotEqual
         )
     {
-        return Some(Proposition::ConditionIs(
+        let equality = Proposition::ConditionIs(
             ConditionTerm::pointer_value_equal(a.clone(), b.clone()),
-            operator == CComparisonOperator::Equal,
-        ));
+            true,
+        );
+        // Phase C's opaque extent claims supplement complete pointer equality;
+        // they never replace the full value relationship with address equality.
+        let equality = if a.extent().is_some_and(SubobjectExtent::is_opaque)
+            || b.extent().is_some_and(SubobjectExtent::is_opaque)
+        {
+            match pointer_designation_equality(a, b) {
+                Some(coverage) => Proposition::And(Box::new(equality), Box::new(coverage)),
+                None => equality,
+            }
+        } else {
+            equality
+        };
+        return Some(if operator == CComparisonOperator::Equal {
+            equality
+        } else {
+            Proposition::Not(Box::new(equality))
+        });
     }
     if matches!(left, CValue::Int128(_) | CValue::UInt128(_))
         || matches!(right, CValue::Int128(_) | CValue::UInt128(_))
@@ -7904,3 +7997,6 @@ mod pointer_integer_observation_tests {
         }
     }
 }
+
+#[cfg(test)]
+mod opaque_pointer_equality_tests;

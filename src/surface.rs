@@ -516,7 +516,8 @@ pub struct ClickFile {
     thread_runtime: crate::languages::c::thread_runtime::CThreadRuntime,
     /// Whether this file opts into Integer-default specification
     /// arithmetic with `arithmetic "integer";`, the migration switch for
-    /// design-review P2. Removed once every file uses the new default.
+    /// `issues/standard-library.md`. Removed once every file uses the new
+    /// default.
     integer_arithmetic: bool,
     algebraic_type_definitions: Vec<AlgebraicTypeDefinition>,
     predicate_definitions: Vec<PredicateDefinition>,
@@ -5381,6 +5382,10 @@ impl<'a> FixedStateFrame<'a> {
 pub(crate) struct ParameterBinding<'a> {
     pub(crate) parameters: &'a [syntax::C0Parameter],
     pub(crate) arguments: &'a [CExpression],
+    /// Each parameter's position by name, when the caller built one: a
+    /// lowering that reads a few parameters then looks up only those
+    /// instead of building a map over every parameter.
+    pub(crate) index: Option<&'a ParameterIndex>,
 }
 
 impl<'a> ParameterBinding<'a> {
@@ -5388,7 +5393,46 @@ impl<'a> ParameterBinding<'a> {
         Self {
             parameters,
             arguments,
+            index: None,
         }
+    }
+
+    /// This binding with `index`, which must index its parameters.
+    pub(crate) fn with_index(self, index: &'a ParameterIndex) -> Self {
+        debug_assert_eq!(index.len(), self.parameters.len());
+        Self {
+            index: Some(index),
+            ..self
+        }
+    }
+}
+
+/// A function's parameter positions by name, built once for its entry.
+pub(crate) struct ParameterIndex {
+    positions: BTreeMap<String, usize>,
+    len: usize,
+}
+
+impl ParameterIndex {
+    pub(crate) fn new(parameters: &[syntax::C0Parameter]) -> Self {
+        crate::instrumentation::record_deterministic_work(parameters.len());
+        Self {
+            positions: parameters
+                .iter()
+                .enumerate()
+                .map(|(position, parameter)| (parameter.name().to_string(), position))
+                .collect(),
+            len: parameters.len(),
+        }
+    }
+
+    pub(crate) fn position(&self, name: &str) -> Option<usize> {
+        crate::instrumentation::record_deterministic_work(1);
+        self.positions.get(name).copied()
+    }
+
+    fn len(&self) -> usize {
+        self.len
     }
 }
 

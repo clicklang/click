@@ -3419,7 +3419,13 @@ pub(crate) fn c_state_with_borrowed_contract_inputs(
         return Ok(rooted);
     }
     let mut rooted = if has_views {
-        install_borrowed_contract_inputs(state.clone(), function, arguments, assumptions)?
+        // The function's own entry clauses (`assume_entry_clause_extents`).
+        install_borrowed_contract_inputs(
+            state.clone(),
+            function,
+            arguments,
+            &assumptions.clone().assume_entry_clause_extents(),
+        )?
     } else {
         state.clone()
     };
@@ -3579,7 +3585,7 @@ fn install_borrowed_contract_inputs(
         &entry,
         function.resource_requires(),
         function.composite_resource_definitions(),
-        assumptions,
+        &assumptions.clone().assume_entry_clause_extents(),
         &mut budget,
     )
     .map_err(|_| LoanRefusal::InvalidEvidence.diagnostic(LoanRefusalOperation::Entry))?
@@ -6405,7 +6411,14 @@ pub fn prove_c_function_contract_execution_paths_with_checked_artifacts_and_pure
         function.name(),
         "contract certification",
         "contract resource guard cases",
-        || contract_resource_condition_cases(&state, &function, &arguments, &base_assumptions),
+        || {
+            contract_resource_condition_cases(
+                &state,
+                &function,
+                &arguments,
+                &base_assumptions.clone().assume_entry_clause_extents(),
+            )
+        },
     ) else {
         if crate::instrumentation::enabled() {
             crate::instrumentation::emit(crate::instrumentation::VerificationEvent::Diagnostic(

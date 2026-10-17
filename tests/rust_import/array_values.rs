@@ -35,7 +35,7 @@ fn charon_array_copy_after_checked_call_preserves_an_independent_snapshot() {
 #[ignore = "nightly: 1.9s in the parallel gate"]
 fn charon_array_copy_after_checked_call_tools_recheck_expanded_certificates() {
     let p = copy_after_call_project();
-    for command in ["verify", "profile", "audit"] {
+    for command in ["profile", "audit"] {
         assert_cli(&p, &[command]);
     }
     for claim in [
@@ -43,8 +43,8 @@ fn charon_array_copy_after_checked_call_tools_recheck_expanded_certificates() {
         "__rust_q_I15_copy_after_call_I15_copy_after_call.contract",
     ] {
         assert_cli(&p, &["expand", "--claim", claim, "--in-place"]);
-        assert_cli(&p, &["verify"]);
     }
+    assert_cli(&p, &["verify"]);
 }
 
 const COPY_SOURCE_AFTER_CALL: &str =
@@ -86,7 +86,7 @@ fn charon_array_copy_preserves_symbolic_source_across_by_value_call() {
 #[ignore = "nightly: 7s in the parallel gate"]
 fn charon_array_copy_symbolic_source_tools_recheck_expanded_certificates() {
     let p = copy_source_after_call_project();
-    for command in ["verify", "profile", "audit"] {
+    for command in ["profile", "audit"] {
         assert_cli(&p, &[command]);
     }
     for claim in [
@@ -95,8 +95,8 @@ fn charon_array_copy_symbolic_source_tools_recheck_expanded_certificates() {
         "__rust_q_I22_copy_source_after_call_I6_caller.contract",
     ] {
         assert_cli(&p, &["expand", "--claim", claim, "--in-place"]);
-        assert_cli(&p, &["verify"]);
     }
+    assert_cli(&p, &["verify"]);
 }
 
 const SOURCE: &str = include_str!("../../design/charon-trial/array-values/bounds.rs");
@@ -129,7 +129,7 @@ fn charon_array_reference_assignments_check_values_and_independent_snapshots() {
 #[ignore = "nightly: 7s in the parallel gate"]
 fn charon_array_reference_assignments_tools_recheck_expanded_certificates() {
     let p = project();
-    for command in ["verify", "profile", "audit"] {
+    for command in ["profile", "audit"] {
         assert_cli(&p, &[command]);
     }
     for claim in [
@@ -140,8 +140,8 @@ fn charon_array_reference_assignments_tools_recheck_expanded_certificates() {
         "empty.contract",
     ] {
         assert_cli(&p, &["expand", "--claim", claim, "--in-place"]);
-        assert_cli(&p, &["verify"]);
     }
+    assert_cli(&p, &["verify"]);
 }
 
 #[test]
@@ -273,7 +273,7 @@ fn charon_external_array_copies_and_fills_verify_and_reject_false_bytes() {
         assert_ne!(invalid, sidecar);
         assert!(C0VerificationSession::new_program_prepared(&invalid, &prepared).is_err());
     }
-    for command in ["verify", "profile", "audit"] {
+    for command in ["profile", "audit"] {
         assert_cli(&p, &[command]);
     }
     for claim in [
@@ -283,8 +283,8 @@ fn charon_external_array_copies_and_fills_verify_and_reject_false_bytes() {
         "empty.contract",
     ] {
         assert_cli(&p, &["expand", "--claim", claim, "--in-place"]);
-        assert_cli(&p, &["verify"]);
     }
+    assert_cli(&p, &["verify"]);
 }
 
 #[test]

@@ -92,6 +92,7 @@ pub(super) fn execute(
                     &facts,
                     &obligations,
                     assumptions,
+                    state.resources(),
                 )
             {
                 paths.push(path(
@@ -158,6 +159,7 @@ pub(super) fn execute(
                     &facts,
                     &obligations,
                     assumptions,
+                    state.resources(),
                 ) {
                     paths.push(path(
                         CStatementOutcome::UndefinedBehavior(refusal),

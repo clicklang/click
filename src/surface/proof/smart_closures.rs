@@ -3612,6 +3612,10 @@ impl<'a> Proof<'a> {
         };
         let applications =
             pure_theorems::click_function_applications(surface_goal, introduced_surfaces);
+        if applications.is_empty() {
+            return Ok(None);
+        }
+        let mut unfolded_any = false;
         let mut proof = self.clone();
         for application in applications {
             let attempted = proof.apply_step(ProofStep::UnfoldFunction(application));
@@ -3619,12 +3623,19 @@ impl<'a> Proof<'a> {
                 continue;
             };
             proof = unfolded;
+            unfolded_any = true;
             // The unfold can close the goal itself: the refreshed goal may
             // already be an available fact, which leaves no goal to search.
             if proof.is_complete() {
                 return Ok(Some(proof));
             }
             if let Some(closed) = proof.try_direct_logical_closure()? {
+                return Ok(Some(closed));
+            }
+            // A recursive definition over a known constructor exposes its
+            // recursive call on a smaller argument. Evaluate those calls to a
+            // fixed fuel before searching.
+            if let Some(closed) = proof.try_constructor_evaluation_closure(introduced_surfaces)? {
                 return Ok(Some(closed));
             }
             if let Some(closed) = proof
@@ -3634,6 +3645,103 @@ impl<'a> Proof<'a> {
                     false,
                 )?
             {
+                return Ok(Some(closed));
+            }
+        }
+        // No application unfolds as it stands, as when its argument is a
+        // variable a fact equates to a constructor: evaluate from a rewrite.
+        if !unfolded_any {
+            return self.try_constructor_evaluation_closure(introduced_surfaces);
+        }
+        Ok(None)
+    }
+
+    /// Evaluate a goal's recursive applications over known constructors, at
+    /// most `CONSTRUCTOR_EVALUATION_FUEL` checked steps. Each step is the
+    /// first that applies of: an `unfold` of an application in the goal
+    /// (which the kernel accepts only when its argument selects one
+    /// definition arm), or a `rewrite` by a supplied equation whose right
+    /// side is a constructor, exposing one for the next unfold. There is no
+    /// branching: one candidate per step, and the goal is checked for
+    /// closure after each. Nothing is kept unless the goal closes.
+    fn try_constructor_evaluation_closure(
+        &self,
+        introduced_surfaces: &[ClickProposition],
+    ) -> Result<Option<Self>, ClickError> {
+        let is_constructor_equation = |surface: &ClickProposition| {
+            matches!(
+                surface,
+                ClickProposition::Comparison {
+                    operator: ComparisonOperator::Equal,
+                    right: ContractExpression::AlgebraicConstructor { .. },
+                    ..
+                }
+            )
+        };
+        let mut constructor_equations: Vec<ClickProposition> = introduced_surfaces
+            .iter()
+            .filter(|surface| is_constructor_equation(surface))
+            .cloned()
+            .collect();
+        let mut fact_equations_gathered = false;
+        let mut proof = self.clone();
+        for _ in 0..CONSTRUCTOR_EVALUATION_FUEL {
+            check_verification_deadline()?;
+            let Some(surface_goal) = proof.surface_goal() else {
+                return Ok(None);
+            };
+            let mut next = None;
+            for application in pure_theorems::click_function_applications(surface_goal, &[]) {
+                if let Some(unfolded) = attempt::candidate_outcome(
+                    proof.apply_step(ProofStep::UnfoldFunction(application)),
+                )? {
+                    next = Some(unfolded);
+                    break;
+                }
+            }
+            if next.is_none() && !fact_equations_gathered {
+                // A constructor equation among the facts connected to the
+                // goal, such as a requirement `u == Tree::Node(..)`, read
+                // once and only when nothing supplied applies.
+                fact_equations_gathered = true;
+                if let Some(goal) = proof.goal()
+                    && let Some(equalities) =
+                        crate::surface::planning::proposition_search::solver_connected_equalities(
+                            proof.facts().assumptions(),
+                            goal,
+                        )
+                {
+                    for equality in equalities.iter().take(CONSTRUCTOR_EVALUATION_FACTS) {
+                        if let Some((_, surface)) = proof
+                            .resolve_simp_premises(std::slice::from_ref(equality), &[])
+                            .and_then(|mut spelled| spelled.pop())
+                            && is_constructor_equation(&surface)
+                            && !constructor_equations.contains(&surface)
+                        {
+                            constructor_equations.push(surface);
+                        }
+                    }
+                }
+            }
+            if next.is_none() {
+                for equation in &constructor_equations {
+                    if let Some(rewritten) = attempt::candidate_outcome(
+                        proof.apply_step(ProofStep::Rewrite(equation.clone())),
+                    )? && rewritten.surface_goal() != proof.surface_goal()
+                    {
+                        next = Some(rewritten);
+                        break;
+                    }
+                }
+            }
+            let Some(next) = next else {
+                return Ok(None);
+            };
+            proof = next;
+            if proof.is_complete() {
+                return Ok(Some(proof));
+            }
+            if let Some(closed) = proof.try_direct_logical_closure()? {
                 return Ok(Some(closed));
             }
         }
@@ -7856,19 +7964,28 @@ impl<'a> Proof<'a> {
             .iter()
             .map(|(kernel, _)| kernel.clone())
             .collect::<Vec<_>>();
-        // Increment-order rules have a checked named theorem certificate.
-        // Avoid building speculative graph-normalization contexts for this
-        // shape, while preserving the ordinary normalization choices elsewhere.
-        let increment_order = signed_nonstrict_parts(goal)
+        // Signed-order rules have checked named theorem certificates. Try
+        // those before allocating speculative normalization contexts, including
+        // for predecessor and negated-bound rules without an explicit `+ 1`.
+        let signed_order = signed_nonstrict_parts(goal)
             .or_else(|| signed_strict_parts(goal))
-            .is_some_and(|(left, right)| {
-                [left, right].iter().any(|term| {
-                    matches!(term, Bitvector32Term::Add(left, right) if left.as_ref() == &Bitvector32Term::Constant(1) || right.as_ref() == &Bitvector32Term::Constant(1))
-                })
-            });
-        if increment_order
-            && let Some(closed) = proof.try_typed_atomic_simp_from_selected_premises(&premise_pairs)
-        {
+            .is_some();
+        let theorem_application_closes_goal =
+            !matches!(self.context.as_ref(), ProofContext::Execution(_));
+        let try_typed_derivation = || {
+            let SimpEvidence::Derivation(derivation) =
+                plan_simp_certificate(goal, &assumptions_from_propositions(&restricted))?
+            else {
+                return None;
+            };
+            proof.check_typed_atomic_simp_candidate(
+                goal,
+                &derivation,
+                &premise_pairs,
+                theorem_application_closes_goal,
+            )
+        };
+        if signed_order && let Some(closed) = try_typed_derivation() {
             return Some(closed);
         }
         if crate::kernel::proof::fact_reasoning::is_single_normalization_condition(goal)
@@ -7942,20 +8059,14 @@ impl<'a> Proof<'a> {
         {
             return Some(closed);
         }
-        let theorem_application_closes_goal =
-            !matches!(self.context.as_ref(), ProofContext::Execution(_));
-        plan_simp_certificate(goal, &assumptions_from_propositions(&restricted))
-            .and_then(|plan| {
-                let SimpEvidence::Derivation(derivation) = &plan else {
-                    return None;
-                };
-                proof.check_typed_atomic_simp_candidate(
-                    goal,
-                    derivation,
-                    &premise_pairs,
-                    theorem_application_closes_goal,
-                )
-            })
+        // The selected context has not changed, so the ordinary derivation
+        // slot need not repeat the early attempt.
+        let typed = if signed_order {
+            None
+        } else {
+            try_typed_derivation()
+        };
+        typed
             .or_else(|| proof.try_restricted_equality_rewrite_chain(&premise_pairs))
             .or_else(|| proof.try_outcome_anchored_order_transitivity(&premise_pairs))
             .or_else(|| proof.try_outcome_anchored_increment_order(&premise_pairs))
@@ -9138,9 +9249,14 @@ impl<'a> Proof<'a> {
                             "bare `transport` selects its premises at a C execution frontier, and this proof has none; write `transport(P, Q) using { ... }` with the premises it needs",
                         ));
                     }
-                    proof = match proof.try_execution_fact_transport(source, target)? {
-                        Some(transported) => transported,
-                        None => proof.apply_planned_fact_transport(source, target, index)?,
+                    proof = match proof.try_execution_fact_transport_or_refusal(source, target)? {
+                        Ok(transported) => transported,
+                        Err(source_refusal) => proof.apply_planned_fact_transport(
+                            source,
+                            target,
+                            index,
+                            source_refusal.as_ref(),
+                        )?,
                     };
                 }
                 tactic => {
@@ -9324,7 +9440,7 @@ impl<'a> Proof<'a> {
         check_verification_deadline()?;
         Ok(synthesize_surface_proposition(
             &requirement.proposition,
-            ParameterBinding::new(context.parsed_function.parameters(), context.arguments),
+            context.parameter_binding(),
             &execution.core.state,
         )
         .and_then(|surface| {
@@ -9404,10 +9520,7 @@ impl<'a> Proof<'a> {
                     let synthesize_candidate = || {
                         synthesize_surface_proposition(
                             &requirement.proposition,
-                            ParameterBinding::new(
-                                context.parsed_function.parameters(),
-                                context.arguments,
-                            ),
+                            context.parameter_binding(),
                             &execution.core.state,
                         )
                     };
@@ -9866,6 +9979,13 @@ impl Drop for SimpFallbackScope {
         ACTIVE_SIMP_FALLBACKS.with(|active| active.set(active.get() & !(self.0 as u8)));
     }
 }
+
+/// The checked unfold and rewrite steps one constructor evaluation may take.
+const CONSTRUCTOR_EVALUATION_FUEL: usize = 8;
+
+/// The connected facts one constructor evaluation reads for constructor
+/// equations once it is stuck.
+const CONSTRUCTOR_EVALUATION_FACTS: usize = 16;
 
 /// How deeply one upper-bound split may nest inside another's arms.
 const MAX_UPPER_BOUND_SPLIT_DEPTH: usize = 2;

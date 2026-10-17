@@ -46,8 +46,8 @@ pub(crate) enum MemoryDagCell {
 /// Why a cell walk stopped where it did.
 ///
 /// The node a walk stops at answers "what does this load read"; this answers
-/// the separate question of what the walk *knows* about the step it did not
-/// cross, and the three reasons are not interchangeable. A walk that ran out
+/// the separate question of why the walk stopped, and the reasons are not
+/// interchangeable. A walk that ran out
 /// of history proved nothing either way. A walk that could not show a step
 /// separate proved nothing either way, and some other route may still
 /// separate that step. A walk stopped by a step that provably writes, creates
@@ -56,6 +56,8 @@ pub(crate) enum MemoryDagCell {
 /// either side of that step are not one value by any structural route.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(in crate::kernel) enum CellWalkStop {
+    /// The paired walks met at the same snapshot; its older history is irrelevant.
+    CommonSnapshot,
     /// The walk reached a snapshot with no recorded derivation: the oldest
     /// point the recorded history reaches.
     OldestRecorded,
@@ -1644,7 +1646,7 @@ fn memory_dag_cell_source_walk_inner(
 /// ids decrease on every edge, so walking the newer endpoint finds that
 /// common ancestor without inspecting its history. Every hop carries the
 /// same local typed certificate as an ordinary read-preservation query.
-pub(super) fn join_read_agreement(
+pub(in crate::kernel) fn join_read_agreement(
     base: &SharedCMemory,
     incoming: &SharedCMemory,
     pointer: &Pointer,

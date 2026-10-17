@@ -618,6 +618,7 @@ fn write_c_lvalue_paths_without_local_reference(
                     &facts,
                     &obligations,
                     assumptions,
+                    state.resources(),
                 )
             {
                 return Ok(vec![CStatementExecutionPath::new(
@@ -718,6 +719,7 @@ fn write_c_lvalue_paths_without_local_reference(
                 &facts,
                 &obligations,
                 assumptions,
+                state.resources(),
             )
             .or_else(|| {
                 effective_type_refusal_of(
@@ -1080,6 +1082,7 @@ fn execute_c_aggregate_copy_paths(
                 &facts,
                 &obligations,
                 assumptions,
+                state.resources(),
             )
             .or_else(|| {
                 subobject_access_refusal(
@@ -1089,6 +1092,7 @@ fn execute_c_aggregate_copy_paths(
                     &facts,
                     &obligations,
                     assumptions,
+                    state.resources(),
                 )
             }) {
                 paths.push(CStatementExecutionPath::new(

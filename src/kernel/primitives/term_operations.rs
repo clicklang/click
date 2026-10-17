@@ -2563,7 +2563,22 @@ impl ConditionTerm {
         }
         match (left.bitvector64_as_const(), right.bitvector64_as_const()) {
             (Some(left), Some(right)) => Self::Constant(left == right),
-            _ => Self::Bitvector64Equal(Box::new(left), Box::new(right)),
+            _ => {
+                let condition = Self::Bitvector64Equal(Box::new(left), Box::new(right));
+                // Alignment describes address bits, independently of the
+                // object's class. Give C masks and `aligned` one canonical
+                // proposition while leaving pointer-producing words intact.
+                if let Some((pointer, alignment)) = condition.as_pointer_alignment() {
+                    return Self::Bitvector64Equal(
+                        Box::new(Bitvector32Term::UInt64BitwiseAnd(
+                            Box::new(Bitvector32Term::PointerAddress(Box::new(pointer.clone()))),
+                            Box::new(Bitvector32Term::UInt64Constant(alignment - 1)),
+                        )),
+                        Box::new(Bitvector32Term::UInt64Constant(0)),
+                    );
+                }
+                condition
+            }
         }
     }
 

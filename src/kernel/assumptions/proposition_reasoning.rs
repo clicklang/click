@@ -4326,3 +4326,89 @@ mod guided_condition_instantiation_tests {
         );
     }
 }
+
+#[cfg(test)]
+mod annotated_alignment_conflict_tests {
+    use super::*;
+
+    #[test]
+    fn address_class_annotations_do_not_hide_opposite_alignment_facts() {
+        let pointer = Pointer::symbolic(Variable(970_001));
+        let class = crate::kernel::effective_type::CAccessClass::Struct(
+            crate::kernel::effective_type::CStructClass::opaque("node"),
+        );
+        let aligned =
+            Proposition::ConditionIs(ConditionTerm::pointer_aligned(pointer.clone(), 8), true);
+        let masked_address = Bitvector32Term::uint64_bitwise_and(
+            Bitvector32Term::object_pointer_address(pointer, Some(class)),
+            Bitvector32Term::UInt64Constant(7),
+        );
+        let zero = Bitvector32Term::UInt64Constant(0);
+        assert_eq!(
+            aligned,
+            Proposition::ConditionIs(
+                ConditionTerm::uint64_equal(masked_address.clone(), zero.clone()),
+                true
+            ),
+        );
+        // The context's same-key insertion replaces its prior value. Admit
+        // a distinct spelling here to exercise congruence conflict handling;
+        // the factory's canonical spelling was checked above.
+        let not_aligned = Proposition::ConditionIs(
+            ConditionTerm::Bitvector64Equal(Box::new(masked_address), Box::new(zero)),
+            false,
+        );
+        let base = PureFactContext::new().assume_proposition(aligned.clone());
+        let branch = base.clone().assume_proposition(not_aligned.clone());
+        assert!(branch.is_inconsistent());
+        assert!(!base.is_inconsistent());
+        assert!(!branch.without_exact_fact(&aligned).is_inconsistent());
+        assert!(!branch.without_exact_fact(&not_aligned).is_inconsistent());
+    }
+}
+
+#[cfg(test)]
+mod congruent_condition_conflict_tests {
+    use super::*;
+
+    #[test]
+    fn equal_address_alignment_conflicts_follow_merges_and_withdrawal() {
+        let p = Pointer::symbolic(Variable(971_001));
+        let q = Pointer::symbolic(Variable(971_002));
+        let equality =
+            Proposition::ConditionIs(ConditionTerm::pointer_equal(p.clone(), q.clone()), true);
+        let aligned = Proposition::ConditionIs(ConditionTerm::pointer_aligned(p, 8), true);
+        let not_aligned = Proposition::ConditionIs(ConditionTerm::pointer_aligned(q, 8), false);
+        for facts in [
+            [equality.clone(), aligned.clone(), not_aligned.clone()],
+            [aligned.clone(), not_aligned.clone(), equality.clone()],
+            [not_aligned.clone(), equality.clone(), aligned.clone()],
+        ] {
+            let mut context = PureFactContext::new();
+            for fact in facts {
+                context = context.assume_proposition(fact);
+            }
+            assert!(context.is_inconsistent());
+            for fact in [&equality, &aligned, &not_aligned] {
+                assert!(!context.without_exact_fact(fact).is_inconsistent());
+            }
+        }
+        let parent = PureFactContext::new()
+            .assume_proposition(aligned)
+            .assume_proposition(not_aligned);
+        assert!(!parent.is_inconsistent());
+        assert!(
+            parent
+                .clone()
+                .assume_proposition(equality)
+                .is_inconsistent()
+        );
+        assert!(!parent.is_inconsistent());
+    }
+    #[cfg(test)]
+    mod scaling_tests {
+        include!(
+            "../../scaling_tests/kernel/assumptions/proposition_reasoning/congruent_condition_conflict_tests.rs"
+        );
+    }
+}

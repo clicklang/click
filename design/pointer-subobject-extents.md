@@ -249,7 +249,8 @@ none of that.
 ## Phase C: pointers of unseen formation
 
 Status: approved 2026-10-16; decisions E1-E3 accepted as recommended. Step 1
-is delivered.
+and the evidence infrastructure of step 2 are delivered; no producer assigns
+an opaque extent yet (see *Evidence as built*).
 
 ### The hole
 
@@ -318,8 +319,45 @@ each check stays a local decision with no scan of unrelated pointers.
    coverage from entry clauses. Add the bug's two programs as rejected
    fixtures and run the full corpus; investigate each new failure as either
    reliance on an unstated designation (a finding) or a lost fact (a bug).
-3. Call results, havocked reloads and loop-carried values.
+   The evidence infrastructure is delivered without a producer. Activating
+   parameters alone regressed valid programs whose authority is named
+   through model payloads, loaded pointers or loop-reassigned locals, which
+   have no extent yet, so activation lands with step 3.
+3. Call results, havocked reloads, model payload pointers and loop-carried
+   values. A loop-carried local the body reassigns from a load gets a fresh
+   opaque extent at the head instead of keeping its entry extent.
 4. C++ references and pointers; documentation.
+
+### Evidence as built
+
+A pointer of unseen formation carries `SubobjectExtent::opaque(v)`: a
+symbolic start and width named by one variable from a reserved range. What it
+covers is known only from evidence:
+
+- **Tagged held ranges.** A memory range evaluated from a clause records the
+  opaque extents its pointer makes claims about (`CMemoryRange::designations`):
+  its own, and, for a member pointer, the one it selected the member of.
+  The tag is not part of the range's identity. Splits keep it, a join keeps
+  only a tag both pieces carry, and a range that loses it only loses
+  evidence. An access through an opaque extent, and a clause naming a range
+  through one, must lie inside a held range carrying that extent's tag, or
+  the tag of an extent a pointer equality identified with it.
+- **Equalities.** A contract `==` between an opaque and a constant extent
+  records that the opaque one covers the constant one's bytes
+  (`__click_subobject_covers_*`, indexed by the extent's pointer class); two
+  opaque extents are identified by their starts and widths.
+- **Assume sites.** A function's own entry requirements and clauses, opening
+  or unfolding a held composite and a held population control are evaluated
+  under `PureFactContext::assume_entry_clause_extents`: the clause was
+  checked where it was established, so it is not checked again and its
+  ranges become evidence. Every other evaluation checks.
+
+Diagnostics keep their order. An access with no authority at all, or a call
+clause no held range could supply, is left to the permission check or the
+transfer, which name the missing resource; only an access or clause the
+context could otherwise perform is refused for its designation. Pointer
+arithmetic through an opaque extent is not checked; accesses through the
+result are.
 
 ### Decisions
 

@@ -256,6 +256,23 @@ impl<'a> Proof<'a> {
         source: &ClickProposition,
         target: &ClickProposition,
     ) -> Result<Option<Self>, ClickError> {
+        Ok(self
+            .try_execution_fact_transport_or_refusal(source, target)?
+            .ok())
+    }
+
+    /// The bounded source-local form of mid-execution fact transport, as
+    /// [`Self::try_execution_fact_transport`], keeping the refusal of its
+    /// last candidate: the checked `transport using` with the source as its
+    /// only premise. A bare `transport` whose premise planner then fails
+    /// reports that refusal, which names what the frame could not carry
+    /// (`fact_transport_planning_failure`). Keeping it costs nothing: the
+    /// check already ran.
+    pub(in crate::surface::proof) fn try_execution_fact_transport_or_refusal(
+        &self,
+        source: &ClickProposition,
+        target: &ClickProposition,
+    ) -> Result<Result<Self, Option<ClickError>>, ClickError> {
         let ProofContext::Execution(_) = self.context.as_ref() else {
             return Err(
                 self.step_error("execution fact-transport search requires an execution proof")
@@ -270,22 +287,29 @@ impl<'a> Proof<'a> {
             ));
         }
         if execution.core.frontier.is_at_function_exit() {
-            return Ok(None);
+            return Ok(Err(None));
         }
-        match self.search_fact_transport_from_candidates(
-            source,
-            target,
-            std::iter::once(source.clone()),
-            "execution-frontier fact transport",
-        ) {
-            Ok(proof) => Ok(Some(proof)),
-            Err(error) if crate::instrumentation::deadline_exceeded() => {
+        match self.fact_transport_candidate_search(source, target, std::iter::once(source.clone()))
+        {
+            Ok(Ok(proof)) => Ok(Ok(proof)),
+            Ok(Err(refusal)) if !crate::instrumentation::deadline_exceeded() => Ok(Err(refusal)),
+            Ok(Err(refusal)) => {
                 // A budget stop is a failure of this written operation, not
                 // an abandoned candidate. Retain the checked predecessor.
                 self.record_certification_failure_trace(self.claim_label(), 0);
+                Err(self.attach_step_diagnostic(self.step_error(format!(
+                    "execution-frontier fact transport has no explicit surface-premise certificate: {}",
+                    refusal
+                        .as_ref()
+                        .map(|error| error.raw_summary())
+                        .unwrap_or("no candidate was checked")
+                ))))
+            }
+            Err(error) if crate::instrumentation::deadline_exceeded() => {
+                self.record_certification_failure_trace(self.claim_label(), 0);
                 Err(self.attach_step_diagnostic(error))
             }
-            Err(_) => Ok(None),
+            Err(_) => Ok(Err(None)),
         }
     }
 
@@ -296,6 +320,27 @@ impl<'a> Proof<'a> {
         candidates: impl IntoIterator<Item = ClickProposition>,
         description: &str,
     ) -> Result<Self, ClickError> {
+        match self.fact_transport_candidate_search(source, target, candidates)? {
+            Ok(proof) => Ok(proof),
+            Err(last_error) => Err(self.step_error(format!(
+                "{description} has no explicit surface-premise certificate: {}",
+                last_error
+                    .as_ref()
+                    .map(|error| error.raw_summary())
+                    .unwrap_or("no candidate was checked")
+            ))),
+        }
+    }
+
+    /// The candidate search behind [`Self::search_fact_transport_from_candidates`].
+    /// A refusal is the last candidate's refusal, if any candidate was checked;
+    /// the outer error is a stopped search.
+    fn fact_transport_candidate_search(
+        &self,
+        source: &ClickProposition,
+        target: &ClickProposition,
+        candidates: impl IntoIterator<Item = ClickProposition>,
+    ) -> Result<Result<Self, Option<ClickError>>, ClickError> {
         let apply = |premises: Vec<ClickProposition>| {
             self.apply_step(ProofStep::TransportUsing {
                 source: source.clone(),
@@ -333,13 +378,7 @@ impl<'a> Proof<'a> {
             }
         }
         let Some(mut selected_proof) = selected_proof else {
-            return Err(self.step_error(format!(
-                "{description} has no explicit surface-premise certificate: {}",
-                last_error
-                    .as_ref()
-                    .map(|error| error.raw_summary())
-                    .unwrap_or("no candidate was checked")
-            )));
+            return Ok(Err(last_error));
         };
         let mut index = 0;
         while index < selected.len() {
@@ -357,7 +396,7 @@ impl<'a> Proof<'a> {
                 }
             }
         }
-        Ok(selected_proof)
+        Ok(Ok(selected_proof))
     }
 
     /// Untrusted smart-tactic query for one explicit theorem-application

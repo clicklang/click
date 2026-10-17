@@ -23,7 +23,7 @@ pub(crate) fn contract_resource_condition_cases(
         &entry_state,
         function.resource_requires(),
         function.composite_resource_definitions(),
-        assumptions,
+        &assumptions.clone().assume_entry_clause_extents(),
         &mut budget,
     )
     .ok()?
@@ -1255,7 +1255,8 @@ fn c_function_contract_entry_facts(
         let lowering_assumptions = assumptions
             .clone()
             .allow_symbolic_contract_loads()
-            .prefer_symbolic_external_loads();
+            .prefer_symbolic_external_loads()
+            .assume_entry_clause_extents();
         let paths = match lower_spec_proposition_at_state_with_loop_entry(
             &entry_state,
             requirement,
@@ -1391,7 +1392,7 @@ fn c_function_contract_entry_facts(
             &entry_state,
             function.resource_requires(),
             function.composite_resource_definitions(),
-            &assumptions,
+            &assumptions.clone().assume_entry_clause_extents(),
             &mut budget,
         ) {
             Ok(Ok(evaluated)) => evaluated,

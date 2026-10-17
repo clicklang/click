@@ -5844,6 +5844,18 @@ impl PureFactContext {
             .contains(ReasoningPolicy::ALLOW_SYMBOLIC_CONTRACT_LOADS)
     }
 
+    /// Evaluate a contract entry's own resource clauses. Each states what the
+    /// opaque extent of its pointer covers, so it is assumed, not checked;
+    /// the entry builder then records the coverage it states.
+    pub(crate) fn assume_entry_clause_extents(self) -> Self {
+        self.with_reasoning_policy(ReasoningPolicy::ASSUME_ENTRY_CLAUSE_EXTENTS)
+    }
+
+    pub(crate) fn should_assume_entry_clause_extents(&self) -> bool {
+        self.reasoning_policy
+            .contains(ReasoningPolicy::ASSUME_ENTRY_CLAUSE_EXTENTS)
+    }
+
     pub(crate) fn require_owned_expression_loads(mut self) -> Self {
         if self.should_allow_symbolic_contract_loads() {
             self.toggle_reasoning_policy(ReasoningPolicy::ALLOW_SYMBOLIC_CONTRACT_LOADS);

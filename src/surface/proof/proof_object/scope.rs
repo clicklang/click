@@ -1173,7 +1173,7 @@ impl<'a> ProofScope<'a> {
                 context.claim_label,
                 context.tactic_index,
                 facts.clone(),
-                ParameterBinding::new(context.parsed_function.parameters(), context.arguments),
+                context.parameter_binding(),
                 &pre_state,
                 (*execution.core.state).clone(),
                 context.spec_definitions,
@@ -1182,7 +1182,7 @@ impl<'a> ProofScope<'a> {
             )?;
             let lowered = lower_resource_clause_at_state(
                 resource,
-                ParameterBinding::new(context.parsed_function.parameters(), context.arguments),
+                context.parameter_binding(),
                 &checked.state,
             )?;
             // The `open(...)` clause spells no access, so it lowers

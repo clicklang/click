@@ -67,6 +67,7 @@ const NIGHTLY: &[&str] = &[
     "authority_wildcard_contained_resource.md",                                // 0.8s
     "authority_wildcard_transfer_private_body.md",                             // 0.5s
     "auto_proves_a_conservation_equation.md",                                  // 2.5s
+    "bare_transport_names_its_uncarried_leaf.md",                              // 0.8s
     "borrowing_composite_survives_an_owning_call.md",                          // 2.3s
     "branch_interface_keeps_model_pointer_names.md",                           // 0.8s
     "branch_interface_rejects_changed_aliased_wide_word.md",                   // 1.0s

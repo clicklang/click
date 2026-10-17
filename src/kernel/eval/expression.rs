@@ -1516,9 +1516,14 @@ pub(in crate::kernel) fn evaluate_c_expression_paths(
             evaluate_c_expression_paths(state, pointer, assumptions, budget)?
                 .into_iter()
                 .flat_map(|path| match path.outcome {
-                    CExpressionOutcome::Value(CValue::Pointer(pointer)) => {
-                        subobject_paths(pointer, *width, path.facts, path.obligations, assumptions)
-                    }
+                    CExpressionOutcome::Value(CValue::Pointer(pointer)) => subobject_paths(
+                        pointer,
+                        *width,
+                        path.facts,
+                        path.obligations,
+                        assumptions,
+                        state.resources(),
+                    ),
                     CExpressionOutcome::Value(_) => vec![CExpressionPath {
                         outcome: CExpressionOutcome::RuntimeError(CRuntimeError::TypeMismatch),
                         facts: path.facts,
@@ -2515,6 +2520,7 @@ fn read_c_lvalue_paths_without_ranges(
                         &facts,
                         &obligations,
                         assumptions,
+                        state.resources(),
                     )
                 {
                     return Ok(vec![CExpressionPath {
@@ -2671,6 +2677,7 @@ fn read_c_lvalue_paths_without_ranges(
                     &facts,
                     &obligations,
                     assumptions,
+                    state.resources(),
                 )
                 .or_else(|| effective_type_refusal(&state.memory, pointer, &lvalue))
                 {

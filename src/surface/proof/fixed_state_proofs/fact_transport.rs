@@ -413,11 +413,16 @@ fn check_fixed_state_fact_transport_using_facts_inner(
         );
     // At a completed return outcome, the source is its own checked slot in
     // `transport(source, target)`: it may name an exact result-path fact
-    // without being duplicated in `using`. Mid-execution transport retains
-    // the stricter rule that `using` must establish its logical source. A
-    // selected outcome snapshot that materializes to true likewise checks the
-    // equivalent symbolic source used for frame transport.
-    if !(fixed_state.result.is_some() && (available.contains(&source) || concrete_source_is_true))
+    // without being duplicated in `using`. A quantified source names it up
+    // to its binder's name, as a listed premise does: a call's postcondition
+    // is held with the binder its lowering chose. Both are indexed lookups.
+    // Mid-execution transport retains the stricter rule that `using` must
+    // establish its logical source. A selected outcome snapshot that
+    // materializes to true likewise checks the equivalent symbolic source
+    // used for frame transport.
+    let source_is_available =
+        || available.contains(&source) || available.quantified_fact_available(&source);
+    if !(fixed_state.result.is_some() && (concrete_source_is_true || source_is_available()))
         && !holds_without_facts_under_binders(&source)
         && !exact_fact_is_available(&source, &explicit_premises)
         && !separation_bridged_fact_is_available(
@@ -430,6 +435,15 @@ fn check_fixed_state_fact_transport_using_facts_inner(
             .derive_atomic_proposition(&source)
             .is_none()
     {
+        // Mid-execution, an available source that `using` does not list is
+        // refused only for not being listed. Say so, naming it as written,
+        // rather than print it as missing beside the facts that hold it.
+        if source_is_available() {
+            return Err(ClickError::new(format!(
+                "`{claim_label}` tactic {tactic_index}: `transport using` requires a source derivable from its explicit facts: its source `{}` is an available fact, but this check reads only the facts listed in `using`; list the source there",
+                crate::surface::printing::source_click_proposition(surface_source),
+            )));
+        }
         let available = available.to_vec();
         return Err(ClickError::new(format!(
             "`{claim_label}` tactic {tactic_index}: `transport using` requires a source derivable from its explicit facts: {}",
@@ -707,11 +721,19 @@ fn check_fixed_state_fact_transport_using_facts_inner(
                 {
                     // One label set for both leaves, so a read they share is
                     // spelled once and two different reads never share a name.
-                    let mut labels = render::SnapshotLabels::ambient();
+                    // It knows the recorded states the report above names, and
+                    // its `where` list says what produced every other state.
+                    let mut labels =
+                        render::SnapshotLabels::with_state(parameter_binding, fixed_state.state);
+                    labels.source_state(fixed_state.pre_state, "function.entry".into());
+                    for (selector, snapshot) in fixed_state.recorded_snapshots.recent(16) {
+                        labels.source_state(snapshot, describe_snapshot_selector(selector));
+                    }
                     let had = render::render_proposition_labeled(from, &mut labels);
                     let wanted = render::render_proposition_labeled(to, &mut labels);
                     rendered.push_str(&format!(
-                        "\n  quantified frame: {read_refusal}\n  leaf it had: {had}\n  leaf it wanted: {wanted}"
+                        "\n  quantified frame: {read_refusal}\n  leaf it had: {had}\n  leaf it wanted: {wanted}{}",
+                        labels.trace_legend(),
                     ));
                 }
                 crate::kernel::QuantifiedFrameRefusal::BinderExhausted => {
@@ -724,6 +746,13 @@ fn check_fixed_state_fact_transport_using_facts_inner(
     }
     Ok(CheckedFixedStateFactTransport { source, target })
 }
+
+/// The refusal of a checked `transport using` whose source and premises
+/// lowered and held, but whose frame could not carry the source to the
+/// target. A bare `transport` reports it when its planner selects nothing
+/// better (`fact_transport_planning_failure`).
+const NO_FRAME_EVIDENCE: &str =
+    "found no frame evidence carrying its source fact to the target's state";
 
 /// Show the written and checked propositions with one shared snapshot legend.
 /// Include every frontier effect: a truncated list can hide the missing frame.
@@ -740,8 +769,7 @@ fn describe_unreachable_fact_transport(
     // Refusals must expose checked identities even outside --trace-proof.
     let _exact = render::TypedNotationScope::enter();
     let mut rendered = format!(
-        "`{claim_label}` tactic {tactic_index}: `transport using` found no frame evidence \
-         carrying its source fact to the target's state\
+        "`{claim_label}` tactic {tactic_index}: `transport using` {NO_FRAME_EVIDENCE}\
          \n  source (holds): {}\
          \n  target (wanted): {}",
         crate::surface::printing::source_click_proposition(surface_source),
@@ -838,11 +866,20 @@ fn surface_predicate_call_name(proposition: &ClickProposition) -> Option<&str> {
     }
 }
 
+/// The refusal a bare `transport` reports when its premise planner fails.
+///
+/// `source_refusal` is the refusal of the bare form's own first attempt,
+/// the checked `transport using` with its source as the only premise. When
+/// that check got as far as the frame, its refusal already names the leaf
+/// the frame could not carry, the cell walks that stopped it and the effects
+/// between the two states, so it is the answer: the planner's own failure
+/// says only that no premise selection helped.
 pub(in crate::surface::proof) fn fact_transport_planning_failure(
     source: &ClickProposition,
     target: &ClickProposition,
     unfolded_predicates: &[String],
     error: &ClickError,
+    source_refusal: Option<&ClickError>,
 ) -> String {
     let opaque_name = [source, target]
         .into_iter()
@@ -851,6 +888,16 @@ pub(in crate::surface::proof) fn fact_transport_planning_failure(
     if let Some(name) = opaque_name {
         return format!(
             "`transport` cannot frame opaque predicate `{name}` across C execution because its memory footprint is hidden; run `unfold({name});` before the execution steps and transport its unfolded definition"
+        );
+    }
+    if let Some(frame_refusal) = source_refusal.and_then(|refusal| {
+        let summary = refusal.raw_summary();
+        summary
+            .find(NO_FRAME_EVIDENCE)
+            .map(|start| &summary[start..])
+    }) {
+        return format!(
+            "`transport` {frame_refusal}\n  this is the refusal with the source as the only premise; no other available fact the premise planner could list carried it either"
         );
     }
     format!(

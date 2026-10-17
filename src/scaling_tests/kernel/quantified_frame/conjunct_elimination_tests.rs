@@ -95,3 +95,72 @@ fn conjunct_elimination_is_flat_against_unrelated_history_and_facts() {
         "conjunct elimination work: {costs:?}"
     );
 }
+
+/// Measure a cold query after constructing and interning its input snapshots.
+fn load_equality_work(earlier: u32, between: u32, written: bool) -> usize {
+    let _session = crate::kernel::VerificationSession::enter();
+    let base = Pointer {
+        block: "load-frame".into(),
+        offset: PointerOffsetTerm::Constant(0),
+    };
+    let unrelated = Pointer {
+        block: "load-frame-other".into(),
+        offset: PointerOffsetTerm::Constant(0),
+    };
+    let mut before = CMemory::new()
+        .with_block("load-frame", between + 8)
+        .with_block("load-frame-other", earlier);
+    if written {
+        before = before.store(base.clone(), CValue::UInt8(7u32.into()));
+    }
+    for index in 0..earlier {
+        before = before.store(
+            unrelated.offset_by_bytes(index),
+            CValue::UInt8(Bitvector32Term::Constant(index % 251)),
+        );
+    }
+    let mut after = before.clone();
+    for index in 0..between {
+        after = after.store(base.offset_by_bytes(8 + index), CValue::UInt8(0u32.into()));
+    }
+    let bi = crate::kernel::intern_c_memory_ref(&before);
+    let ai = crate::kernel::intern_c_memory_ref(&after);
+    let load = |m: &SharedCMemory| {
+        Bitvector32Term::MemoryLoad(m.clone(), Box::new(base.clone()), LoadKind::UInt8)
+    };
+    let (equal, work) = crate::instrumentation::measure_deterministic_work(|| {
+        crate::kernel::explicit_atomic_equality_from_memory_derivations(
+            &load(&bi),
+            &load(&ai),
+            &PureFactContext::new(),
+        )
+    });
+    assert!(equal);
+    work
+}
+
+/// A first load-equality query pays for the snapshot delta, never the stores
+/// before both endpoints, even if the queried cell was written before them.
+#[test]
+fn load_equality_ignores_history_before_both_snapshots() {
+    for written in [false, true] {
+        let costs = [16u32, 64, 256].map(|size| load_equality_work(size, 1, written));
+        eprintln!("load equality work, written={written}: {costs:?}");
+        assert!(
+            costs.windows(2).all(|p| p[0] == p[1]),
+            "load equality work: {costs:?}"
+        );
+    }
+}
+
+/// The bounded walk still visits the intervening steps; it cannot accept
+/// snapshots by ignoring their delta or by using a warm answer.
+#[test]
+fn load_equality_work_tracks_the_snapshot_delta() {
+    let costs = [1u32, 4, 16].map(|between| load_equality_work(256, between, true));
+    eprintln!("load equality work by snapshot delta: {costs:?}");
+    assert!(
+        costs.windows(2).all(|p| p[0] < p[1] && p[1] <= 4 * p[0]),
+        "load equality work: {costs:?}"
+    );
+}

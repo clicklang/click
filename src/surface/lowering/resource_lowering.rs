@@ -274,16 +274,14 @@ pub(in crate::surface) fn initial_call_state(
                     },
                     |_| 1,
                 );
-                arguments.push(c_typed_pointer_value(
-                    Pointer {
-                        block: PointerBlock::ExternalArgument,
-                        offset: scale_int32_offset(
-                            Bitvector32Term::Variable(input_pointer_variable(scope, index)?),
-                            i64::from(element_width),
-                        ),
-                    },
-                    kernel_c_type,
-                ));
+                let pointer = Pointer {
+                    block: PointerBlock::ExternalArgument,
+                    offset: scale_int32_offset(
+                        Bitvector32Term::Variable(input_pointer_variable(scope, index)?),
+                        i64::from(element_width),
+                    ),
+                };
+                arguments.push(c_typed_pointer_value(pointer, kernel_c_type));
             }
             C0Type::Int8 => {
                 arguments.push(CExpression::Value(CValue::Int8(Bitvector32Term::Variable(
@@ -457,18 +455,18 @@ pub(in crate::surface) fn initial_call_state(
             }
         }
     }
+    // Every pass below lowers one requirement at a time; the index lets each
+    // read only the parameters that requirement names.
+    let parameter_index = crate::surface::ParameterIndex::new(parameters);
+    let parameter_binding =
+        ParameterBinding::new(parameters, &arguments).with_index(&parameter_index);
     let mut loadable_ranges = BTreeMap::new();
     for requirement in requires {
-        if let Some((name, bytes)) =
-            concrete_loadable_block(requirement, ParameterBinding::new(parameters, &arguments))?
-        {
+        if let Some((name, bytes)) = concrete_loadable_block(requirement, parameter_binding)? {
             loadable_ranges.insert(name, bytes);
         }
         if let Requirement::Resource(resource) = requirement {
-            for (name, bytes) in concrete_access_resource_blocks(
-                resource,
-                ParameterBinding::new(parameters, &arguments),
-            )? {
+            for (name, bytes) in concrete_access_resource_blocks(resource, parameter_binding)? {
                 loadable_ranges.insert(name, bytes);
             }
         }
@@ -478,17 +476,9 @@ pub(in crate::surface) fn initial_call_state(
     // In particular, a resource such as `pointer[0..1]` must follow the
     // pointer value already present in the entry state, rather than deriving
     // a second pointer from the raw memory-load term for the pointer slot.
-    let memory = materialize_symbolic_access_resource_cells(
-        memory,
-        requires,
-        ParameterBinding::new(parameters, &arguments),
-    )?;
+    let memory = materialize_symbolic_access_resource_cells(memory, requires, parameter_binding)?;
     let state = state.with_memory(memory);
-    let resources = resource_context_from_requirements(
-        requires,
-        ParameterBinding::new(parameters, &arguments),
-        &state,
-    )?;
+    let resources = resource_context_from_requirements(requires, parameter_binding, &state)?;
     let mut state =
         crate::kernel::c_state_with_assumed_mutex_inputs(state.with_resource_context(resources));
     {
@@ -1222,7 +1212,10 @@ pub(in crate::surface) fn requirement_propositions_sharing_lowering_state(
         .map(|_| None)
         .collect::<Vec<Option<ClickError>>>();
     let mut pending = (0..requires.len()).collect::<Vec<_>>();
-    let mut assumptions = initial_assumptions.clone();
+    // These are the function's own entry requirements: a member selected
+    // through a pointer argument was checked by the caller, so it is
+    // assumed and recorded (`PureFactContext::assume_entry_clause_extents`).
+    let mut assumptions = initial_assumptions.clone().assume_entry_clause_extents();
 
     // Requirements may be written in either order, so use one retry pass
     // after the first pass has published the facts it could lower. A bounded
@@ -1461,7 +1454,8 @@ pub(in crate::surface) fn resource_context_from_requirements(
     let values =
         parameter_values(parameter_binding).map_err(|error| ClickError::new(error.message))?;
     let clause_parameters =
-        ClauseParameters::new(parameter_binding.parameters, &values, state.memory());
+        ClauseParameters::new(parameter_binding.parameters, &values, state.memory())
+            .with_index(parameter_binding.index);
     let base_assumptions = PureFactContext::new();
     for requirement in requires {
         if let Requirement::Resource(resource) = requirement {
@@ -1504,16 +1498,9 @@ pub(in crate::surface) fn lower_resource_clause(
         }
         return Ok(facts.pop().expect("resource clause fact count was checked"));
     }
-    let values =
-        parameter_values(parameter_binding).map_err(|error| ClickError::new(error.message))?;
+    let values = resource_clause_parameter_values(resource, parameter_binding)?;
     let state = CState::new().with_memory(memory.clone());
-    lower_resource_clause_with_values(
-        resource,
-        parameter_binding.parameters,
-        &values,
-        &state,
-        None,
-    )
+    lower_resource_clause_with_values(resource, parameter_binding, &values, &state, None)
 }
 
 pub(in crate::surface) fn lower_resource_clause_facts(
@@ -1521,16 +1508,9 @@ pub(in crate::surface) fn lower_resource_clause_facts(
     parameter_binding: ParameterBinding<'_>,
     memory: &CMemory,
 ) -> Result<Vec<CResourceFact>, ClickError> {
-    let values =
-        parameter_values(parameter_binding).map_err(|error| ClickError::new(error.message))?;
+    let values = resource_clause_parameter_values(resource, parameter_binding)?;
     let state = CState::new().with_memory(memory.clone());
-    lower_resource_clause_facts_with_values(
-        resource,
-        parameter_binding.parameters,
-        &values,
-        &state,
-        None,
-    )
+    lower_resource_clause_facts_with_values(resource, parameter_binding, &values, &state, None)
 }
 
 pub(in crate::surface) fn lower_resource_clause_at_state(
@@ -1548,9 +1528,8 @@ pub(in crate::surface) fn lower_resource_clause_at_state(
         }
         return Ok(facts.pop().expect("resource clause fact count was checked"));
     }
-    let values =
-        parameter_values(parameter_binding).map_err(|error| ClickError::new(error.message))?;
-    lower_resource_clause_with_values(resource, parameter_binding.parameters, &values, state, None)
+    let values = resource_clause_parameter_values(resource, parameter_binding)?;
+    lower_resource_clause_with_values(resource, parameter_binding, &values, state, None)
 }
 
 pub(in crate::surface) fn lower_resource_clause_facts_at_state(
@@ -1558,15 +1537,8 @@ pub(in crate::surface) fn lower_resource_clause_facts_at_state(
     parameter_binding: ParameterBinding<'_>,
     state: &CState,
 ) -> Result<Vec<CResourceFact>, ClickError> {
-    let values =
-        parameter_values(parameter_binding).map_err(|error| ClickError::new(error.message))?;
-    lower_resource_clause_facts_with_values(
-        resource,
-        parameter_binding.parameters,
-        &values,
-        state,
-        None,
-    )
+    let values = resource_clause_parameter_values(resource, parameter_binding)?;
+    lower_resource_clause_facts_with_values(resource, parameter_binding, &values, state, None)
 }
 
 pub(in crate::surface) fn lower_resource_clause_at_state_with_result(
@@ -1594,12 +1566,12 @@ pub(in crate::surface) fn lower_resource_clause_at_state_with_assumptions(
     result: Option<&CValue>,
     assumptions: &PureFactContext,
 ) -> Result<CResourceFact, ClickError> {
-    let values =
-        parameter_values(parameter_binding).map_err(|error| ClickError::new(error.message))?;
+    let values = resource_clause_parameter_values(resource, parameter_binding)?;
     if matches!(resource, ResourceClause::MemoryAggregate { .. }) {
         let mut facts = lower_resource_clause_facts_with_values_mode_at_entry(
             resource,
-            &ClauseParameters::new(parameter_binding.parameters, &values, state.memory()),
+            &ClauseParameters::new(parameter_binding.parameters, &values, state.memory())
+                .with_index(parameter_binding.index),
             state,
             state,
             result,
@@ -1616,7 +1588,8 @@ pub(in crate::surface) fn lower_resource_clause_at_state_with_assumptions(
     }
     lower_resource_clause_with_values_mode_at_entry(
         resource,
-        &ClauseParameters::new(parameter_binding.parameters, &values, state.memory()),
+        &ClauseParameters::new(parameter_binding.parameters, &values, state.memory())
+            .with_index(parameter_binding.index),
         state,
         state,
         result,
@@ -1643,18 +1616,11 @@ pub(in crate::surface) fn lower_resource_clause_at_current_locals(
     state: &CState,
     result: Option<&CValue>,
 ) -> Result<CResourceFact, ClickError> {
-    let values =
-        parameter_values(parameter_binding).map_err(|error| ClickError::new(error.message))?;
+    let values = resource_clause_parameter_values(resource, parameter_binding)?;
     let array_refs =
         array_refs_for_parameters(parameter_binding.parameters, &values, state.memory());
     let (values, _) = contract_environment_at_state(&values, &array_refs, state);
-    lower_resource_clause_with_values(
-        resource,
-        parameter_binding.parameters,
-        &values,
-        state,
-        result,
-    )
+    lower_resource_clause_with_values(resource, parameter_binding, &values, state, result)
 }
 
 /// [`lower_resource_clause_at_current_locals`] under the facts the proof
@@ -1707,15 +1673,15 @@ pub(in crate::surface) fn lower_resource_clause_at_current_locals_with_entry_and
     result: Option<&CValue>,
     assumptions: &PureFactContext,
 ) -> Result<CResourceFact, ClickError> {
-    let values =
-        parameter_values(parameter_binding).map_err(|error| ClickError::new(error.message))?;
+    let values = resource_clause_parameter_values(resource, parameter_binding)?;
     let array_refs =
         array_refs_for_parameters(parameter_binding.parameters, &values, state.memory());
     let (values, _) = contract_environment_at_state(&values, &array_refs, state);
     if matches!(resource, ResourceClause::MemoryAggregate { .. }) {
         let mut facts = lower_resource_clause_facts_with_values_mode_at_entry(
             resource,
-            &ClauseParameters::new(parameter_binding.parameters, &values, state.memory()),
+            &ClauseParameters::new(parameter_binding.parameters, &values, state.memory())
+                .with_index(parameter_binding.index),
             entry_state,
             state,
             result,
@@ -1732,7 +1698,8 @@ pub(in crate::surface) fn lower_resource_clause_at_current_locals_with_entry_and
     }
     lower_resource_clause_with_values_mode_at_entry(
         resource,
-        &ClauseParameters::new(parameter_binding.parameters, &values, state.memory()),
+        &ClauseParameters::new(parameter_binding.parameters, &values, state.memory())
+            .with_index(parameter_binding.index),
         entry_state,
         state,
         result,
@@ -1749,11 +1716,11 @@ pub(in crate::surface) fn lower_resource_clause_facts_at_state_with_result_and_e
     result: &CValue,
     base_assumptions: &PureFactContext,
 ) -> Result<Vec<CResourceFact>, ClickError> {
-    let values =
-        parameter_values(parameter_binding).map_err(|error| ClickError::new(error.message))?;
+    let values = resource_clause_parameter_values(resource, parameter_binding)?;
     lower_resource_clause_facts_with_values_mode_at_entry(
         resource,
-        &ClauseParameters::new(parameter_binding.parameters, &values, state.memory()),
+        &ClauseParameters::new(parameter_binding.parameters, &values, state.memory())
+            .with_index(parameter_binding.index),
         entry_state,
         state,
         Some(result),
@@ -1770,6 +1737,7 @@ struct ClauseParameters<'a> {
     parameters: &'a [syntax::C0Parameter],
     values: &'a BTreeMap<String, CValue>,
     memory: &'a CMemory,
+    index: Option<&'a crate::surface::ParameterIndex>,
     array_refs: std::cell::OnceCell<ClickArrayRefs>,
 }
 
@@ -1783,29 +1751,49 @@ impl<'a> ClauseParameters<'a> {
             parameters,
             values,
             memory,
+            index: None,
             array_refs: std::cell::OnceCell::new(),
         }
     }
 
+    /// These parameters with the binding's index, so the array references
+    /// cover only the parameters `values` binds.
+    fn with_index(self, index: Option<&'a crate::surface::ParameterIndex>) -> Self {
+        Self { index, ..self }
+    }
+
     fn array_refs(&self) -> &ClickArrayRefs {
-        self.array_refs
-            .get_or_init(|| array_refs_for_parameters(self.parameters, self.values, self.memory))
+        self.array_refs.get_or_init(|| {
+            let binding = ParameterBinding {
+                parameters: self.parameters,
+                arguments: &[],
+                index: self.index,
+            };
+            array_refs_for_values(binding, self.values, self.memory)
+        })
     }
 }
 
 fn lower_resource_clause_with_values(
     resource: &ResourceClause,
-    parameters: &[syntax::C0Parameter],
+    parameter_binding: ParameterBinding<'_>,
     values: &BTreeMap<String, CValue>,
     state: &CState,
     result: Option<&CValue>,
 ) -> Result<CResourceFact, ClickError> {
-    lower_resource_clause_with_values_mode(resource, parameters, values, state, result, false)
+    lower_resource_clause_with_values_mode(
+        resource,
+        parameter_binding,
+        values,
+        state,
+        result,
+        false,
+    )
 }
 
 fn lower_resource_clause_with_values_mode(
     resource: &ResourceClause,
-    parameters: &[syntax::C0Parameter],
+    parameter_binding: ParameterBinding<'_>,
     values: &BTreeMap<String, CValue>,
     state: &CState,
     result: Option<&CValue>,
@@ -1814,7 +1802,8 @@ fn lower_resource_clause_with_values_mode(
     let base_assumptions = PureFactContext::new();
     lower_resource_clause_with_values_mode_at_entry(
         resource,
-        &ClauseParameters::new(parameters, values, state.memory()),
+        &ClauseParameters::new(parameter_binding.parameters, values, state.memory())
+            .with_index(parameter_binding.index),
         state,
         state,
         result,
@@ -2372,17 +2361,24 @@ fn evaluate_resource_argument_with_snapshot(
 
 fn lower_resource_clause_facts_with_values(
     resource: &ResourceClause,
-    parameters: &[syntax::C0Parameter],
+    parameter_binding: ParameterBinding<'_>,
     values: &BTreeMap<String, CValue>,
     state: &CState,
     result: Option<&CValue>,
 ) -> Result<Vec<CResourceFact>, ClickError> {
-    lower_resource_clause_facts_with_values_mode(resource, parameters, values, state, result, false)
+    lower_resource_clause_facts_with_values_mode(
+        resource,
+        parameter_binding,
+        values,
+        state,
+        result,
+        false,
+    )
 }
 
 fn lower_resource_clause_facts_with_values_mode(
     resource: &ResourceClause,
-    parameters: &[syntax::C0Parameter],
+    parameter_binding: ParameterBinding<'_>,
     values: &BTreeMap<String, CValue>,
     state: &CState,
     result: Option<&CValue>,
@@ -2391,7 +2387,8 @@ fn lower_resource_clause_facts_with_values_mode(
     let base_assumptions = PureFactContext::new();
     lower_resource_clause_facts_with_values_mode_at_entry(
         resource,
-        &ClauseParameters::new(parameters, values, state.memory()),
+        &ClauseParameters::new(parameter_binding.parameters, values, state.memory())
+            .with_index(parameter_binding.index),
         state,
         state,
         result,
@@ -2743,12 +2740,19 @@ fn lower_resource_segment_with_values(
     // (`design/pointer-subobject-extents.md`, D1). Constant bounds are
     // refused here by name; the kernel decides the rest when it checks
     // the step.
+    // The range is named through `base_value`, as the kernel's clause
+    // evaluation records it (`CMemoryRange::with_designations`).
     let refuse_past_extent = |range: CMemoryRange| {
+        let range = range.with_designations(base_value.designations());
         let (start, end) = match range.wide_bounds() {
             Some(bounds) => bounds,
             None => (range.start(), range.end()),
         };
-        if start.as_const().is_none() || end.as_const().is_none() {
+        // An opaque extent is known only from facts this lowering lacks.
+        if start.as_const().is_none()
+            || end.as_const().is_none()
+            || base_value.extent().is_some_and(|extent| extent.is_opaque())
+        {
             return Ok(range);
         }
         match crate::kernel::memory_range_extent_refusal(
@@ -3563,7 +3567,7 @@ fn requirement_proposition_and_facts_with_assumptions(
     // lowered by the kernel at the entry state with the parameters bound
     // (`requirement_lowering_state`).
     let spec = crate::surface::lowering::elaborate_requirement_proposition(
-        parameter_binding.parameters,
+        parameter_binding,
         state,
         proposition,
         spec_definitions,
@@ -3625,6 +3629,94 @@ pub(in crate::surface) fn parameter_values(
             Ok((parameter.name().to_string(), value.clone()))
         })
         .collect()
+}
+
+/// The values of the parameters among `names`, or of every parameter when
+/// the binding has no index. A name that is not a parameter is skipped.
+pub(in crate::surface) fn parameter_values_named(
+    parameter_binding: ParameterBinding<'_>,
+    names: &BTreeSet<String>,
+) -> Result<BTreeMap<String, CValue>, ClickError> {
+    let Some(index) = parameter_binding.index else {
+        return parameter_values(parameter_binding);
+    };
+    names
+        .iter()
+        .filter_map(|name| {
+            let position = index.position(name)?;
+            Some((
+                &parameter_binding.parameters[position],
+                parameter_binding.arguments.get(position)?,
+            ))
+        })
+        .map(|(parameter, argument)| {
+            let CExpression::Value(value) = argument else {
+                return Err(ClickError::new(format!(
+                    "could not build contract environment for parameter `{}`",
+                    parameter.name()
+                )));
+            };
+            Ok((parameter.name().to_string(), value.clone()))
+        })
+        .collect()
+}
+
+/// The array references of the parameters `values` binds: with the binding's
+/// index, found from those values alone rather than from every parameter.
+pub(in crate::surface) fn array_refs_for_values(
+    parameter_binding: ParameterBinding<'_>,
+    values: &BTreeMap<String, CValue>,
+    memory: &CMemory,
+) -> ClickArrayRefs {
+    let Some(index) = parameter_binding.index else {
+        return array_refs_for_parameters(parameter_binding.parameters, values, memory);
+    };
+    values
+        .iter()
+        .filter_map(|(name, value)| {
+            let parameter = &parameter_binding.parameters[index.position(name)?];
+            let element_type = click_array_element_type(parameter.c_type())?;
+            let CValue::Pointer(pointer) = value else {
+                return None;
+            };
+            Some((
+                name.clone(),
+                ClickArrayRef {
+                    memory: memory.clone(),
+                    pointer: pointer.pointer().clone(),
+                    element_type,
+                },
+            ))
+        })
+        .collect()
+}
+
+/// The parameters a memory clause's segments name, or `None` for a clause
+/// whose lowering may read any parameter.
+fn memory_clause_referenced_names(resource: &ResourceClause) -> Option<BTreeSet<String>> {
+    match resource {
+        ResourceClause::ViewMemory(segment) | ResourceClause::OwnMemory(segment) => Some(
+            super::source_layout::contract_segment_referenced_names(segment),
+        ),
+        ResourceClause::MemoryAggregate { segments, .. } => Some(
+            segments
+                .iter()
+                .flat_map(super::source_layout::contract_segment_referenced_names)
+                .collect(),
+        ),
+        _ => None,
+    }
+}
+
+/// The parameter values lowering `resource` reads.
+fn resource_clause_parameter_values(
+    resource: &ResourceClause,
+    parameter_binding: ParameterBinding<'_>,
+) -> Result<BTreeMap<String, CValue>, ClickError> {
+    match memory_clause_referenced_names(resource) {
+        Some(names) => parameter_values_named(parameter_binding, &names),
+        None => parameter_values(parameter_binding),
+    }
 }
 
 pub(in crate::surface) fn array_refs_for_parameters(

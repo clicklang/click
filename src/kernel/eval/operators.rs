@@ -2483,7 +2483,14 @@ fn pointer_offset_by_elements_paths(
     }
 
     // A pointer into a subobject stays in it, one past its end included.
-    match subobject_formation_guards(&value, &result, &facts, &obligations, assumptions) {
+    match subobject_formation_guards(
+        &value,
+        &result,
+        &facts,
+        &obligations,
+        assumptions,
+        state.resources(),
+    ) {
         Ok(subobject) => guards.extend(subobject),
         Err(()) => {
             owed.push(CExpressionPath {
@@ -2573,7 +2580,14 @@ pub(in crate::kernel) fn pointer_offset_by_bytes_paths(
     let Some(mut guards) = pointer_block_bounds(state, &result, 1) else {
         return Vec::new();
     };
-    match subobject_formation_guards(&value, &result, &facts, &obligations, assumptions) {
+    match subobject_formation_guards(
+        &value,
+        &result,
+        &facts,
+        &obligations,
+        assumptions,
+        state.resources(),
+    ) {
         Ok(subobject) => guards.extend(subobject),
         Err(()) => {
             return vec![CExpressionPath {
@@ -5076,6 +5090,9 @@ fn subobject_extent_guards(
     extent: &SubobjectExtent,
     bytes: u32,
 ) -> Option<Vec<PointerFormationGuard>> {
+    if extent.is_opaque() {
+        return None;
+    }
     let offset = pointer_byte_offset_from_base(pointer, &extent.start)?;
     Some(vec![
         PointerFormationGuard {
@@ -5105,7 +5122,21 @@ fn subobject_extent_proven(
     facts: &ExecutionFacts,
     obligations: &[ProofObligation],
     assumptions: &PureFactContext,
+    resources: &ResourceContext,
 ) -> bool {
+    if extent.is_opaque() {
+        // A contract entry's own requirement or clause: its caller checked
+        // every access and formation in it against the argument it passed.
+        if assumptions.should_assume_entry_clause_extents() {
+            return true;
+        }
+        let context = assumptions_with_path_context(assumptions, facts, obligations);
+        let covered = context.opaque_extent_covers(extent, pointer, bytes)
+            || resources.designated_range_covers(extent, &context, |range| {
+                context.pointer_access_in_held_range(pointer, bytes, range)
+            });
+        return covered;
+    }
     if let Some(guards) = subobject_extent_guards(pointer, extent, bytes)
         && guards.iter().all(|guard| {
             decide_with_facts(assumptions, facts, &guard.condition) == Some(guard.value)
@@ -5132,10 +5163,32 @@ pub(in crate::kernel) fn subobject_access_refusal(
     facts: &ExecutionFacts,
     obligations: &[ProofObligation],
     assumptions: &PureFactContext,
+    resources: &ResourceContext,
 ) -> Option<CUndefinedBehavior> {
     let extent = extent?;
-    (!subobject_extent_proven(pointer, extent, bytes, facts, obligations, assumptions))
-        .then_some(CUndefinedBehavior::SubobjectAccess)
+    // Through an opaque extent, an access with no authority at all is left to
+    // the permission check, which names the missing resource; only an access
+    // the context could otherwise perform is refused for its designation.
+    if extent.is_opaque()
+        && !crate::kernel::prelude::resource_context_has_read(
+            resources,
+            pointer,
+            bytes,
+            &assumptions_with_path_context(assumptions, facts, obligations),
+        )
+    {
+        return None;
+    }
+    (!subobject_extent_proven(
+        pointer,
+        extent,
+        bytes,
+        facts,
+        obligations,
+        assumptions,
+        resources,
+    ))
+    .then_some(CUndefinedBehavior::SubobjectAccess)
 }
 
 /// The strict-aliasing check of an access through `lvalue` at `pointer`
@@ -5178,13 +5231,25 @@ fn subobject_formation_guards(
     facts: &ExecutionFacts,
     obligations: &[ProofObligation],
     assumptions: &PureFactContext,
+    resources: &ResourceContext,
 ) -> Result<Vec<PointerFormationGuard>, ()> {
     let Some(extent) = value.extent() else {
         return Ok(Vec::new());
     };
-    // Numeric address equality can establish a position inside this already
-    // selected extent. It does not change the extent or its origin.
-    if subobject_extent_proven(result, extent, 0, facts, obligations, assumptions) {
+    // Unknown extents are checked through coverage evidence at access.
+    if extent.is_opaque() {
+        return Ok(Vec::new());
+    }
+    // Address equality establishes position without changing the extent.
+    if subobject_extent_proven(
+        result,
+        extent,
+        0,
+        facts,
+        obligations,
+        assumptions,
+        resources,
+    ) {
         return Ok(Vec::new());
     }
     match subobject_extent_guards(result, extent, 0) {
@@ -5199,17 +5264,35 @@ fn subobject_formation_guards(
 pub(in crate::kernel) fn subobject_paths(
     pointer: CPointerValue,
     width: u32,
-    facts: ExecutionFacts,
+    mut facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
+    resources: &ResourceContext,
 ) -> Vec<CExpressionPath> {
-    if let Some(refusal) = subobject_access_refusal(
+    // A contract entry's own requirement or clause selects the member
+    // through a pointer of unseen formation: the caller checked the
+    // selection against the argument it passed, so the entry assumes the
+    // pointer designates the member and records that it does.
+    if let Some(extent) = pointer.extent()
+        && extent.is_opaque()
+        && assumptions.should_assume_entry_clause_extents()
+    {
+        facts.push(ExecutionPureFact::new(extent.coverage_fact(
+            &CMemoryRange::new_with_element_width(
+                pointer.pointer().clone(),
+                Bitvector32Term::Constant(0),
+                Bitvector32Term::Constant(width),
+                1,
+            ),
+        )));
+    } else if let Some(refusal) = subobject_access_refusal(
         pointer.pointer(),
         pointer.extent(),
         width,
         &facts,
         &obligations,
         assumptions,
+        resources,
     ) {
         return vec![CExpressionPath {
             outcome: CExpressionOutcome::UndefinedBehavior(refusal),
@@ -5218,7 +5301,7 @@ pub(in crate::kernel) fn subobject_paths(
         }];
     }
     let start = pointer.pointer().clone();
-    let narrowed = pointer.with_extent(Some(SubobjectExtent::constant(start, width)));
+    let narrowed = pointer.with_member_extent(SubobjectExtent::constant(start, width));
     vec![CExpressionPath {
         outcome: CExpressionOutcome::Value(CValue::Pointer(narrowed)),
         facts,
@@ -5311,5 +5394,90 @@ mod word_tag_tests {
 
     mod scaling_tests {
         include!("../../scaling_tests/kernel/eval/operators/word_tag_tests.rs");
+    }
+}
+
+#[cfg(test)]
+mod opaque_extent_tests {
+    use super::*;
+
+    fn parameter(plus: i64) -> Pointer {
+        let base = PointerOffsetTerm::Int32Scaled {
+            value: Box::new(Bitvector32Term::Variable(Variable(100_000))),
+            byte_width: 4,
+        };
+        Pointer {
+            block: PointerBlock::ExternalArgument,
+            offset: if plus == 0 {
+                base
+            } else {
+                PointerOffsetTerm::Add(Box::new(base), Box::new(PointerOffsetTerm::Constant(plus)))
+            },
+        }
+    }
+
+    fn opaque(index: u64) -> SubobjectExtent {
+        SubobjectExtent::opaque(Variable(SubobjectExtent::OPAQUE_VARIABLE_BASE + index))
+    }
+
+    fn covered(
+        extent: &SubobjectExtent,
+        plus: i64,
+        bytes: u32,
+        assumptions: &PureFactContext,
+    ) -> bool {
+        subobject_extent_proven(
+            &parameter(plus),
+            extent,
+            bytes,
+            &ExecutionFacts::new(),
+            &[],
+            assumptions,
+            &ResourceContext::new(),
+        )
+    }
+
+    /// An opaque extent covers exactly what its coverage facts name: the
+    /// elements of `p[0..2]` and its one-past position, nothing before or
+    /// after them, and nothing at all without a fact.
+    #[test]
+    fn an_opaque_extent_covers_only_its_stated_ranges() {
+        let extent = opaque(0);
+        assert!(extent.is_opaque());
+        let none = PureFactContext::new();
+        assert!(!covered(&extent, 0, 4, &none));
+        let range = CMemoryRange::new(
+            parameter(0),
+            Bitvector32Term::Constant(0),
+            Bitvector32Term::Constant(2),
+        );
+        let assumptions = PureFactContext::new().assume_proposition(extent.coverage_fact(&range));
+        assert!(covered(&extent, 0, 4, &assumptions));
+        assert!(covered(&extent, 4, 4, &assumptions));
+        assert!(!covered(&extent, 8, 4, &assumptions));
+        assert!(!covered(&extent, -4, 4, &assumptions));
+        assert!(covered(&extent, 8, 0, &assumptions));
+        assert!(!covered(&extent, 12, 0, &assumptions));
+        assert!(!covered(&opaque(1), 0, 4, &assumptions));
+    }
+
+    /// A pointer equality that identifies two opaque extents shares their
+    /// coverage facts through the extents' pointer class.
+    #[test]
+    fn identified_opaque_extents_share_coverage() {
+        let (left, right) = (opaque(0), opaque(1));
+        let range = CMemoryRange::new(
+            parameter(0),
+            Bitvector32Term::Constant(0),
+            Bitvector32Term::Constant(1),
+        );
+        let assumptions = PureFactContext::new()
+            .assume_proposition(left.coverage_fact(&range))
+            .assume_proposition(Proposition::ConditionIs(
+                ConditionTerm::pointer_equal(left.start.clone(), right.start.clone()),
+                true,
+            ));
+        assert!(covered(&right, 0, 4, &assumptions));
+        assert!(!covered(&right, 4, 4, &assumptions));
     }
 }

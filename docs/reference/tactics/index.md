@@ -802,6 +802,15 @@ citing the constant order and equality facts of that width indexed under each
 operand; the rule, not the selection, decides whether the operands' ranges
 exclude overflow.
 
+A recursive specification function applied to a known constructor is
+evaluated: `simp` unfolds it, then keeps unfolding the recursive calls the
+definition exposes while their arguments select one arm, rewriting an argument
+by a constructor equation (a supplied premise or a connected fact such as
+`u == Tree::Node(..)`) when that exposes one, for at most eight checked steps.
+An argument nothing fixes stays folded
+([`simp_evaluates_a_recursive_function_over_known_constructors.md`](https://github.com/clicklang/click/blob/master/mdtests/simp_evaluates_a_recursive_function_over_known_constructors.md),
+[`simp_does_not_evaluate_a_recursive_function_past_an_unknown_argument.md`](https://github.com/clicklang/click/blob/master/mdtests/simp_does_not_evaluate_a_recursive_function_past_an_unknown_argument.md)).
+
 A disequality between an algebraic value and a constructor closes from an exact
 equality fixing that value to a different constructor: the equality rewrites the
 goal and normalization decides the constructors differ
@@ -1911,9 +1920,12 @@ evidence.
 
 **Failure, checking, and tools:**
 
-Unrelated propositions, unsafe writes, or a bounded evidence miss fail. Click
-checks the chosen transport; expansion adds `using`, and profiling reports
-search and leaves.
+Unrelated propositions, unsafe writes, or a bounded evidence miss fail. When
+no premise the planner selects carries the source, the refusal is the one the
+same transport gets with its source listed in `using`: it names the effects
+between the two states and, for a quantified fact, the leaf the frame could
+not carry. Click checks the chosen transport; expansion adds `using`, and
+profiling reports search and leaves.
 
 **Checked examples:** [`simple_statement_step_explicit_transport.md`](https://github.com/clicklang/click/blob/master/mdtests/simple_statement_step_explicit_transport.md), [`transport_model_pointer_binding.md`](https://github.com/clicklang/click/blob/master/mdtests/transport_model_pointer_binding.md)
 
@@ -1958,6 +1970,9 @@ eight bytes, and the other operand. A source that is a reflexive equality, under
 binders and guards, needs no proof and no `using` entry. A listed quantified
 premise may name its own binder: a call's postcondition held under the binder
 its lowering chose is cited by a written form with another, as in `apply using`.
+At a completed return outcome the source may name a held fact without being
+listed, up to its binder's name in the same way. Mid-execution the source must
+be listed; a refused source that is an available fact is named as one to list.
 
 **Failure, checking, and tools:**
 

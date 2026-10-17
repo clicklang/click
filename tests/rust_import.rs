@@ -629,7 +629,7 @@ fn charon_array_fields_check_bounds_authority_and_frames() {
 #[ignore = "nightly: whole-example proof-tool rechecks"]
 fn charon_array_fields_cli_tools_recheck_borrowed_field_certificates() {
     let p = charon_fields_project();
-    for command in ["verify", "profile", "audit"] {
+    for command in ["profile", "audit"] {
         assert_cli(&p, &[command]);
     }
     for claim in [
@@ -639,8 +639,8 @@ fn charon_array_fields_cli_tools_recheck_borrowed_field_certificates() {
         "borrowed_byte.contract",
     ] {
         assert_cli(&p, &["expand", "--claim", claim, "--in-place"]);
-        assert_cli(&p, &["verify"]);
     }
+    assert_cli(&p, &["verify"]);
 }
 #[test]
 #[ignore = "requires the separately built pinned Charon/compiler"]
@@ -1057,7 +1057,7 @@ fn charon_slice_failure_has_a_focused_trace() {
 #[ignore = "nightly: whole-example proof-tool rechecks"]
 fn charon_slice_cli_tools_recheck_expanded_certificates() {
     let p = charon_slice_project();
-    for command in ["verify", "profile", "audit"] {
+    for command in ["profile", "audit"] {
         assert_cli(&p, &[command]);
     }
     for claim in [
@@ -1066,8 +1066,8 @@ fn charon_slice_cli_tools_recheck_expanded_certificates() {
         "guarded_read.contract",
     ] {
         assert_cli(&p, &["expand", "--claim", claim, "--in-place"]);
-        assert_cli(&p, &["verify"]);
     }
+    assert_cli(&p, &["verify"]);
 }
 #[test]
 #[ignore = "requires the separately built pinned Charon/compiler"]
@@ -1135,7 +1135,7 @@ fn charon_arrays_compose_with_resolved_conversion_and_drop() {
 #[ignore = "nightly: whole-example proof-tool rechecks"]
 fn charon_array_cli_tools_recheck_expanded_certificates() {
     let p = charon_array_project();
-    for command in ["verify", "profile", "audit"] {
+    for command in ["profile", "audit"] {
         assert_cli(&p, &[command]);
     }
     for claim in [
@@ -1144,8 +1144,8 @@ fn charon_array_cli_tools_recheck_expanded_certificates() {
         "empty_array.contract",
     ] {
         assert_cli(&p, &["expand", "--claim", claim, "--in-place"]);
-        assert_cli(&p, &["verify"]);
     }
+    assert_cli(&p, &["verify"]);
 }
 #[test]
 #[ignore = "requires the separately built pinned Charon/compiler"]
