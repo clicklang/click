@@ -14,7 +14,6 @@ pub(super) fn apply_branch_interface_with_proof_facts(
     execution: &mut ExecutionProofState,
     proof_context: &ExecutionProofContext<'_>,
     available_pure_facts: &mut ProofFacts,
-    stable_join_locals: &BTreeMap<String, CValue>,
     sibling_join_states: Option<&[&CState]>,
     // `join_next_kernel_variable` is the counter every sibling arm abstracts
     // from: the highest of the arms' own. The arms' abstractions are compared
@@ -28,8 +27,7 @@ pub(super) fn apply_branch_interface_with_proof_facts(
     assert_eq!(assertions.len(), written_assertions.len());
     let tactic_index = proof_context.tactic_index;
     let parameters = proof_context.parsed_function.parameters();
-    let arguments = proof_context.arguments;
-    let parameter_binding = ParameterBinding::new(parameters, arguments);
+    let parameter_binding = proof_context.parameter_binding();
     let predicate_environment = proof_context.spec_definitions.predicates;
     let click_function_environment = proof_context.spec_definitions.functions;
     let resource_environment = proof_context.resource_environment;
@@ -127,13 +125,10 @@ pub(super) fn apply_branch_interface_with_proof_facts(
         .old_reference_state(&execution.core.frontier, state)
         .clone();
     let abstraction = match sibling_join_states {
-        Some(states) => abstract_c_state_for_interface_join_across(
-            state,
-            states,
-            stable_join_locals,
-            join_next_kernel_variable,
-        ),
-        None => abstract_c_state_for_join(state, stable_join_locals, join_next_kernel_variable),
+        Some(states) => {
+            abstract_c_state_for_interface_join_across(state, states, join_next_kernel_variable)
+        }
+        None => abstract_c_state_for_join(state, &BTreeMap::new(), join_next_kernel_variable),
     };
     let abstraction = abstraction.map_err(|message| {
         ClickError::new(format!(
@@ -484,9 +479,8 @@ pub(super) fn execute_branch_step_from_frontier_position(
 ) -> Result<bool, ClickError> {
     let function_block = proof_context.function_block;
     let function = proof_context.function;
-    let parameters = proof_context.parsed_function.parameters();
     let arguments = proof_context.arguments;
-    let parameter_binding = ParameterBinding::new(parameters, arguments);
+    let parameter_binding = proof_context.parameter_binding();
     let claim_label = proof_context.claim_label;
     let tactic_index = proof_context.tactic_index;
 
@@ -757,9 +751,8 @@ fn execute_concrete_loop_head_step(
 ) -> Result<(), ClickError> {
     let function_block = proof_context.function_block;
     let function = proof_context.function;
-    let parameters = proof_context.parsed_function.parameters();
     let arguments = proof_context.arguments;
-    let parameter_binding = ParameterBinding::new(parameters, arguments);
+    let parameter_binding = proof_context.parameter_binding();
     let claim_label = proof_context.claim_label;
     let tactic_index = proof_context.tactic_index;
 
@@ -2097,9 +2090,8 @@ fn execute_step_from_frontier_position_selecting_path(
 ) -> Result<Vec<Proposition>, ClickError> {
     let function_block = proof_context.function_block;
     let function = proof_context.function;
-    let parameters = proof_context.parsed_function.parameters();
     let arguments = proof_context.arguments;
-    let parameter_binding = ParameterBinding::new(parameters, arguments);
+    let parameter_binding = proof_context.parameter_binding();
     let function_environment = proof_context.function_environment;
     let claim_label = proof_context.claim_label;
     let tactic_index = proof_context.tactic_index;
