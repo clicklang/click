@@ -10,9 +10,13 @@
 //! unconfirmed entry is ignored: the access falls back to what is known
 //! without it. So no other memory operation has to maintain the record.
 //!
-//! Entries are kept only for constant offsets of heap blocks, whose
-//! addresses mention no variable. Every operation touches the entries of the
-//! one block it names, positioned in O(log n).
+//! Entries are kept for the cells of heap blocks. A constant-offset entry
+//! covers the bytes it wrote. A store at a symbolic offset (`p[i]`) may
+//! overwrite any cell of its block, so it replaces the whole block's record
+//! with its one entry, which a later access confirms only at the same
+//! spelling of the address. So a block holds either constant-offset entries
+//! or a single symbolic one. Every operation touches the entries of the one
+//! block it names, positioned in O(log n).
 
 use super::{CValue, Pointer, PointerBlock, PointerOffsetTerm, SnapshotMap};
 use crate::kernel::effective_type::CAccessClass;
@@ -56,11 +60,12 @@ impl HeapEffectiveTypes {
     }
 
     /// Records that a C store of `value`, `width` bytes wide, wrote the cell
-    /// at `pointer` through an lvalue of `class`. Entries the store overlaps
-    /// are dropped; a store with no class, as a character store, records
-    /// none. A store at a symbolic offset may overwrite any cell of its
-    /// block, so it drops the whole block's entries. Returns whether the
-    /// record changed.
+    /// at `pointer` through an lvalue of `class`. Entries the store may
+    /// overlap are dropped; a store with no class, as a character store,
+    /// records none. A store at a symbolic offset may overwrite any cell of
+    /// its block, so it drops the whole block's entries, and a block's
+    /// symbolic entry may overlap any constant-offset store. Returns whether
+    /// the record changed.
     pub(crate) fn record(
         &mut self,
         pointer: &Pointer,
@@ -72,25 +77,27 @@ impl HeapEffectiveTypes {
             return false;
         }
         let block = &pointer.block;
-        let Some(offset) = pointer.offset.as_const() else {
-            return self.forget_block(block);
-        };
-        let end = offset + i64::from(width);
-        let overlapping = self
-            .entries
-            .range(
-                constant_start(block, offset.saturating_sub(MAX_CELL_WIDTH - 1))
-                    ..constant_start(block, end),
-            )
-            .filter_map(|(key, entry)| {
-                let start = key.offset.as_const()?;
-                (start + i64::from(entry.width) > offset).then(|| key.clone())
-            })
-            .collect::<Vec<_>>();
-        crate::instrumentation::record_deterministic_work(overlapping.len() + 1);
         let mut changed = false;
-        for key in overlapping {
-            changed |= self.entries.remove(&key).is_some();
+        if let Some(offset) = pointer.offset.as_const() {
+            let end = offset + i64::from(width);
+            let overlapping = self
+                .entries
+                .range(
+                    constant_start(block, offset.saturating_sub(MAX_CELL_WIDTH - 1))
+                        ..constant_start(block, end),
+                )
+                .filter_map(|(key, entry)| {
+                    let start = key.offset.as_const()?;
+                    (start + i64::from(entry.width) > offset).then(|| key.clone())
+                })
+                .chain(self.symbolic_keys(block))
+                .collect::<Vec<_>>();
+            crate::instrumentation::record_deterministic_work(overlapping.len() + 1);
+            for key in overlapping {
+                changed |= self.entries.remove(&key).is_some();
+            }
+        } else {
+            changed |= self.forget_block(block);
         }
         if let Some(class) = class {
             let entry = HeapEffectiveType {
@@ -103,19 +110,30 @@ impl HeapEffectiveTypes {
         changed
     }
 
-    /// The record with every stored value rewritten by `rewrite`, as a
+    /// The record with every cell address and stored value rewritten, as a
     /// substitution rewrites the cells, so each entry stays confirmable.
-    pub(crate) fn map_values(&self, mut rewrite: impl FnMut(&CValue) -> CValue) -> Self {
+    /// Rewriting keeps each address in its heap block, so a block's
+    /// symbolic entry stays its only one.
+    pub(crate) fn map_entries(
+        &self,
+        mut rewrite_pointer: impl FnMut(&Pointer) -> Pointer,
+        mut rewrite_value: impl FnMut(&CValue) -> CValue,
+    ) -> Self {
         crate::instrumentation::record_deterministic_work(self.entries.len() + 1);
         Self {
             entries: self
                 .entries
                 .iter()
                 .map(|(pointer, entry)| {
+                    let pointer = if pointer.offset.as_const().is_some() {
+                        pointer.clone()
+                    } else {
+                        rewrite_pointer(pointer)
+                    };
                     (
-                        pointer.clone(),
+                        pointer,
                         HeapEffectiveType {
-                            value: rewrite(&entry.value),
+                            value: rewrite_value(&entry.value),
                             ..entry.clone()
                         },
                     )
@@ -124,11 +142,24 @@ impl HeapEffectiveTypes {
         }
     }
 
+    /// The keys of `block`'s symbolic-offset entries, at most one. Symbolic
+    /// offsets order after every constant one within a block.
+    fn symbolic_keys<'a>(&'a self, block: &'a PointerBlock) -> impl Iterator<Item = Pointer> + 'a {
+        self.entries
+            .range((
+                std::ops::Bound::Excluded(constant_start(block, i64::MAX)),
+                std::ops::Bound::Unbounded,
+            ))
+            .take_while(move |(key, _)| &key.block == block)
+            .map(|(key, _)| key.clone())
+    }
+
     /// Drops every entry of `block`. Returns whether the record changed.
     pub(crate) fn forget_block(&mut self, block: &PointerBlock) -> bool {
         let keys = self
             .entries
-            .range(constant_start(block, i64::MIN)..=constant_start(block, i64::MAX))
+            .range(constant_start(block, i64::MIN)..)
+            .take_while(|(key, _)| &key.block == block)
             .map(|(key, _)| key.clone())
             .collect::<Vec<_>>();
         crate::instrumentation::record_deterministic_work(keys.len() + 1);
@@ -190,21 +221,38 @@ mod tests {
         assert_eq!(record.len(), 0);
     }
 
+    fn symbolic(variable: u64) -> Pointer {
+        Pointer {
+            block: PointerBlock::Heap(7),
+            offset: PointerOffsetTerm::scale_int32(
+                super::super::Bitvector32Term::Variable(super::super::Variable(variable)),
+                4,
+            ),
+        }
+    }
+
     #[test]
-    fn a_symbolic_store_drops_its_block_only() {
+    fn a_symbolic_store_replaces_its_block_only() {
         let mut record = HeapEffectiveTypes::default();
         record.record(&cell(0), 4, Some(INT), &int(1));
         let other = constant_start(&PointerBlock::Heap(8), 0);
         record.record(&other, 4, Some(INT), &int(1));
-        let symbolic = Pointer {
-            block: PointerBlock::Heap(7),
-            offset: PointerOffsetTerm::scale_int32(
-                super::super::Bitvector32Term::Variable(super::super::Variable(1)),
-                4,
-            ),
-        };
-        record.record(&symbolic, 4, Some(INT), &int(1));
-        assert_eq!(record.len(), 1);
+        record.record(&symbolic(1), 4, Some(LONG), &int(2));
+        assert_eq!(record.len(), 2);
         assert_eq!(record.class_at(&other, Some(&int(1))), Some(INT));
+        assert_eq!(record.class_at(&cell(0), Some(&int(1))), None);
+        assert_eq!(record.class_at(&symbolic(1), Some(&int(2))), Some(LONG));
+        // Another spelling of the address is not confirmed.
+        assert_eq!(record.class_at(&symbolic(2), Some(&int(2))), None);
+    }
+
+    #[test]
+    fn a_constant_store_drops_its_blocks_symbolic_entry() {
+        let mut record = HeapEffectiveTypes::default();
+        record.record(&symbolic(1), 4, Some(LONG), &int(2));
+        record.record(&cell(40), 4, Some(INT), &int(1));
+        assert_eq!(record.len(), 1);
+        assert_eq!(record.class_at(&symbolic(1), Some(&int(2))), None);
+        assert_eq!(record.class_at(&cell(40), Some(&int(1))), Some(INT));
     }
 }

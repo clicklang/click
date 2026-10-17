@@ -5554,7 +5554,10 @@ fn substitute_bitvector_variable_in_memory_contents(
             effective_types: memory
                 .heap
                 .effective_types
-                .map_values(|value| substitute_bitvector_variable_in_c_value(value, from, to)),
+                .map_entries(
+                    |pointer| substitute_bitvector_variable_in_pointer(pointer, from, to),
+                    |value| substitute_bitvector_variable_in_c_value(value, from, to),
+                ),
         }),
     };
     result.record_diagnostic_transform(
@@ -6125,7 +6128,10 @@ pub(crate) fn substitute_pointer_variable_in_memory(
             effective_types: memory
                 .heap
                 .effective_types
-                .map_values(|value| substitute_pointer_variable_in_c_value(value, from, to)),
+                .map_entries(
+                    |pointer| substitute_pointer_variable_in_pointer(pointer, from, to),
+                    |value| substitute_pointer_variable_in_c_value(value, from, to),
+                ),
         }),
     };
     result.record_diagnostic_transform(
