@@ -4762,9 +4762,13 @@ impl AnnotationLowerer<'_> {
                         .contract_segment_element_width(segment, &segment_environment),
                 })
             }
-            ClickProposition::Defined { expression } => Ok(SpecProposition::Defined(
-                self.lower_contract_expression_to_spec(expression, environment)?,
-            )),
+            ClickProposition::Defined { expression } => {
+                let mut checked_environment = environment.clone();
+                checked_environment.checking_definedness = true;
+                Ok(SpecProposition::Defined(
+                    self.lower_contract_expression_to_spec(expression, &checked_environment)?,
+                ))
+            }
             _ => unreachable!("non-atomic proposition dispatched to leaf lowering"),
         }
     }
@@ -5740,7 +5744,7 @@ impl AnnotationLowerer<'_> {
                         value_type: self.contract_array_element_type(operand, environment),
                     }),
                     CExpression::AddressOf(_) | CExpression::CheckedObjectAddress(_) => {
-                        Ok(SpecExpression::CExpression(lowered.clone()))
+                        self.lower_c_fragment_to_spec(lowered, environment)
                     }
                     _ => Err("invalid C unary operation".to_string()),
                 }
@@ -7206,6 +7210,7 @@ impl AnnotationLowerer<'_> {
             at_function_entry: false,
             snapshot_state: Some(state.clone()),
             contract_result_in_scope: environment.contract_result_in_scope,
+            checking_definedness: environment.checking_definedness,
         }))
     }
 
@@ -7402,6 +7407,37 @@ impl AnnotationLowerer<'_> {
         expression: &CExpression,
         environment: &SpecElaborationContext,
     ) -> Result<SpecExpression, String> {
+        if !environment.checking_definedness
+            && let CExpression::AddressOf(target) | CExpression::CheckedObjectAddress(target) =
+                expression
+            && let CExpression::Index(base, index) = target.as_ref()
+            && matches!(
+                base.as_ref(),
+                CExpression::TypedLoad {
+                    value_type: CType::Int32Array(_)
+                        | CType::UInt32Array(_)
+                        | CType::UInt8Array(_)
+                        | CType::Int128Array(_)
+                        | CType::Int64Array(_)
+                        | CType::UInt128Array(_)
+                        | CType::UInt64Array(_),
+                    ..
+                }
+            )
+            && let Some(element_type) = self.c_expression_array_element_type(base, environment)
+            && let Some(pointer_type) = element_type.pointer_to()
+        {
+            // An inline array decays to its logical address without reading
+            // its elements. Preserve that rule when taking an element's address.
+            return Ok(SpecExpression::PointerCoercion(
+                Box::new(SpecExpression::PointerOffset {
+                    pointer: Box::new(self.lower_c_fragment_to_spec(base, environment)?),
+                    elements: Box::new(self.lower_c_fragment_to_spec(index, environment)?),
+                    byte_width: element_type.byte_width(),
+                }),
+                pointer_type,
+            ));
+        }
         match expression {
             CExpression::Value(value) => Ok(SpecExpression::Value(value.clone())),
             CExpression::Variable(name) => self.lower_c_binding_to_spec(
