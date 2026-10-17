@@ -4,6 +4,13 @@ A bug is a reproduced defect in behavior Click already claims to support.
 Humans and agents file bugs here without asking; only an explicit user request
 authorizes new roadmap entries in `issues/`.
 
+File a bug only to hand a defect off: one you found that is unrelated to your
+current work, or that it does not make sense for you to fix now. Do not file a
+bug whose fix is part of your current work. Other contributors pick up the
+files here, so one you are about to fix only distracts them. Put its
+reproduction and acceptance criteria in the fix PR instead, and land its
+regression with the fix. If you stop before fixing it, file it then.
+
 Examples include accepting a false claim, rejecting a documented valid proof
 operation, crashes or hangs, violated work budgets, disagreement between proof
 tools, and inaccurate, misleading, or unbounded diagnostics. Use the

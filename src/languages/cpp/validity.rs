@@ -480,6 +480,16 @@ impl Metadata<'_> {
                     self.arguments(arguments)?;
                     span
                 }
+                CppStatement::BaseDestruct {
+                    object,
+                    callee,
+                    span,
+                    ..
+                } => {
+                    self.reference(object)?;
+                    self.callee(callee)?;
+                    span
+                }
                 CppStatement::MemberStore {
                     object,
                     field,

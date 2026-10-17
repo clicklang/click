@@ -36,6 +36,14 @@ only by the tests that read them.
   syntax for text people rarely read. Marks name program points, not derived
   facts, so they are not reused for this. Sibling certificates under one
   `both` may repeat the same premise and interval steps.
+- Diagnostics keep `<unnamed A>` for a callee's result that no local ever
+  held, as in `return value() + 1;` (closed 2026-10-17, launch review W6).
+  The C call `value()` is not a Click expression, and re-evaluating it would
+  be another call, so its only spelling is a translation temporary. The rest
+  of W6 is done: facts, goals, refusals and memory-history sentences print
+  in Click or C syntax, naming locals at recorded points, struct fields,
+  addresses inside allocations and quantifier binders; `--trace-proof`
+  keeps its typed notation by design.
 - `owns p` for a pointer is the pointer's own slot. `owns *p` is what it
   points at.
 - A separate tactic for conjunction and disjunction goals was dropped;

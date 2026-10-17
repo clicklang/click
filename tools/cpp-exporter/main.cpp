@@ -548,7 +548,13 @@ private:
       // A pure virtual method is only its interface: the sidecar's contract
       // for it is what a call through it assumes.
       body = nullptr;
-    } else if (body == nullptr || (body->body_empty() && constructor == nullptr)) {
+    } else if (body == nullptr ||
+               (body->body_empty() && constructor == nullptr &&
+                !(llvm::isa<clang::CXXDestructorDecl>(declaration) &&
+                  effectful_base_destructor(
+                      llvm::cast<clang::CXXDestructorDecl>(declaration)
+                          ->getParent()
+                          ->getDefinition()) != nullptr))) {
       fail(declaration->getLocation(),
            "the supported C++ function requires a nonempty compound body");
       return std::nullopt;
@@ -684,6 +690,39 @@ private:
         return std::nullopt;
       }
       statements.push_back(std::move(*lowered));
+    }
+    // A derived destructor then destroys its base: the base's written
+    // destructor on the base subobject.
+    if (const auto *destructor =
+            llvm::dyn_cast<clang::CXXDestructorDecl>(declaration)) {
+      const auto *record = destructor->getParent()->getDefinition();
+      if (const auto *base_destructor = effectful_base_destructor(record)) {
+        const auto *definition = llvm::dyn_cast_or_null<clang::CXXDestructorDecl>(
+            base_destructor->getDefinition());
+        const auto *base_record = base_destructor->getParent()->getDefinition();
+        if (definition == nullptr || !remember_function(definition))
+          return std::nullopt;
+        llvm::json::Object object;
+        object["declaration_id"] = object_self_id(destructor);
+        object["name"] = "self";
+        object["span"] = span(destructor->getNameInfo().getSourceRange());
+        llvm::json::Object base_reference;
+        base_reference["record_declaration_id"] = declaration_id(record);
+        base_reference["base_declaration_id"] = declaration_id(base_record);
+        base_reference["base_name"] = record_name(base_record);
+        base_reference["span"] = span(record->bases_begin()->getSourceRange());
+        llvm::json::Object reference;
+        reference["declaration_id"] = declaration_id(definition);
+        reference["name"] = destructor_name(definition);
+        reference["span"] = span(definition->getNameInfo().getSourceRange());
+        llvm::json::Object statement;
+        statement["kind"] = "base_destruct";
+        statement["object"] = std::move(object);
+        statement["base"] = std::move(base_reference);
+        statement["callee"] = std::move(reference);
+        statement["span"] = span(destructor->getSourceRange());
+        statements.push_back(std::move(statement));
+      }
     }
 
     llvm::json::Object result;
@@ -4294,6 +4333,33 @@ private:
     return destruction_after_body_is_no_op(record);
   }
 
+  // The written destructor of a polymorphic class's base, which a derived
+  // class's destructor runs after its own body on the base subobject: the
+  // base has no base of its own and fields with trivial destruction.
+  static const clang::CXXDestructorDecl *
+  effectful_base_destructor(const clang::CXXRecordDecl *record) {
+    if (record == nullptr || record->getNumBases() != 1) return nullptr;
+    const auto *base = record->bases_begin()->getType()->getAsCXXRecordDecl();
+    base = base == nullptr ? nullptr : base->getDefinition();
+    if (base == nullptr || !base->isPolymorphic() || base->getNumBases() != 0 ||
+        base->hasTrivialDestructor() || no_op_virtual_destructor(base))
+      return nullptr;
+    const clang::CXXDestructorDecl *destructor = base->getDestructor();
+    if (!needs_destructor_body(destructor) || !fields_have_trivial_destruction(base))
+      return nullptr;
+    return destructor;
+  }
+
+  static bool fields_have_trivial_destruction(const clang::CXXRecordDecl *record) {
+    for (const clang::FieldDecl *field : record->fields()) {
+      const auto *field_record = field->getType()->getAsCXXRecordDecl();
+      if (field_record != nullptr && field_record->getDefinition() != nullptr &&
+          !field_record->getDefinition()->hasTrivialDestructor())
+        return false;
+    }
+    return true;
+  }
+
   // What a class's destruction runs after its destructor's body: its
   // fields' destructors, then its base's. Neither may run code a proof
   // sees, since base destruction is not executed.
@@ -4407,16 +4473,21 @@ private:
     // checked as any is; what runs after its body, the fields' and the
     // base's destruction, does nothing. A local's destructor is called
     // directly, so whether it is virtual does not change the call.
+    // A base destructor that runs code runs after the class's own written
+    // destructor, which may then be empty; the class's fields still have
+    // trivial destruction.
     if (!record->hasTrivialDestructor() && !no_op_virtual_destructor(record)) {
+      const bool base_runs = effectful_base_destructor(record) != nullptr;
       if (!needs_destructor_body(destructor) ||
-          !destruction_after_body_is_no_op(record)) {
+          !(destruction_after_body_is_no_op(record) ||
+            (base_runs && fields_have_trivial_destruction(record)))) {
         fail(record->getLocation(),
-             "a polymorphic C++ class's destructor runs code only in its own "
-             "written body: its fields have trivial destruction and its base's "
-             "destructor is trivial, defaulted, or empty");
+             "a polymorphic C++ class's destructor is written in the class and "
+             "runs after it only its base's written destructor or nothing: its "
+             "fields have trivial destruction");
         return false;
       }
-      if (!validate_destructor(destructor, record))
+      if (!validate_destructor(destructor, record, base_runs))
         return false;
     }
     const auto &layout = context_.getASTRecordLayout(record);
@@ -4668,7 +4739,8 @@ private:
   }
 
   bool validate_destructor(const clang::CXXDestructorDecl *destructor,
-                           const clang::CXXRecordDecl *record) {
+                           const clang::CXXRecordDecl *record,
+                           bool empty_body_allowed = false) {
     const auto *prototype =
         destructor->getType()->getAs<clang::FunctionProtoType>();
     if (destructor->getParent()->getCanonicalDecl() !=
@@ -4692,7 +4764,7 @@ private:
     }
     const auto *body =
         llvm::dyn_cast_or_null<clang::CompoundStmt>(destructor->getBody());
-    if (body == nullptr || body->body_empty()) {
+    if (body == nullptr || (body->body_empty() && !empty_body_allowed)) {
       fail(destructor->getLocation(),
            "the terminal-cleanup slice requires a nonempty destructor body");
       return false;

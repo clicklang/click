@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use serde::Deserialize;
 
@@ -471,11 +471,33 @@ pub fn within_run_limits<R>(limits: RunLimits, operation: impl FnOnce() -> R) ->
     })
 }
 
+/// Installs a phase's work and crash-containment bounds with an independent
+/// cooperative stopping point for a paced, multi-phase command. Reaching
+/// `deadline` interrupts that command; it is not a verdict about a proof.
+/// The noncooperative watchdog retains the configured phase bound.
+pub fn within_run_limits_until<R>(
+    limits: RunLimits,
+    deadline: Instant,
+    operation: impl FnOnce() -> R,
+) -> R {
+    within_containment_bound_until(limits.time, Some(deadline), || {
+        crate::instrumentation::with_run_work_limit(limits.work, operation)
+    })
+}
+
 /// Installs only the wall-clock crash-containment bound, for a tool that
 /// spends one bound over several work budgets and inspects the outcome
 /// itself (`click profile`, which contains a whole project while each
 /// sidecar spends its own [`within_work_limit`]).
 pub fn within_containment_bound<R>(time: Duration, operation: impl FnOnce() -> R) -> R {
+    within_containment_bound_until(time, None, operation)
+}
+
+fn within_containment_bound_until<R>(
+    time: Duration,
+    deadline: Option<Instant>,
+    operation: impl FnOnce() -> R,
+) -> R {
     let _watchdog = PROCESS_CRASH_CONTAINMENT
         .load(Ordering::Relaxed)
         .then(|| ProcessWatchdog::start(time));
@@ -487,7 +509,10 @@ pub fn within_containment_bound<R>(time: Duration, operation: impl FnOnce() -> R
             thread::park();
         }
     }
-    crate::instrumentation::with_deadline(time, operation)
+    let cooperative_time = deadline.map_or(time, |deadline| {
+        time.min(deadline.saturating_duration_since(Instant::now()))
+    });
+    crate::instrumentation::with_deadline(cooperative_time, operation)
 }
 
 static PROCESS_CRASH_CONTAINMENT: AtomicBool = AtomicBool::new(false);

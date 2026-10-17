@@ -187,7 +187,6 @@ fn instantiate_theorem_application(
     spec_definitions: SpecDefinitions<'_>,
     unfolded_predicates: &[String],
 ) -> Result<Vec<Proposition>, ClickError> {
-    let assumptions = assumptions_from_propositions(available);
     let lowering_assumptions = assumptions_from_propositions(lowering_available);
     instantiate_theorem_application_with_assumptions(
         theorem_environment,
@@ -196,7 +195,6 @@ fn instantiate_theorem_application(
         path_index,
         tactic_index,
         available,
-        &assumptions,
         &lowering_assumptions,
         context,
         spec_definitions,
@@ -204,8 +202,9 @@ fn instantiate_theorem_application(
     )
 }
 
-/// Instantiates one theorem from an explicit evidence set while borrowing the
-/// already-indexed contexts used to unfold requirements and lower arguments.
+/// Instantiates one theorem from explicit evidence and an indexed lowering
+/// context. Index the evidence only when unfolding a requirement or applying
+/// an Integer fold law needs it; ordinary exact requirements read the list.
 ///
 /// `available` is the complete admissible evidence set: ambient facts in the
 /// assumption contexts can affect representation and evaluation, but cannot
@@ -218,12 +217,14 @@ pub(super) fn instantiate_theorem_application_with_assumptions(
     path_index: Option<usize>,
     tactic_index: usize,
     available: &[Proposition],
-    assumptions: &PureFactContext,
     lowering_assumptions: &PureFactContext,
     context: &TheoremApplicationContext<'_>,
     spec_definitions: SpecDefinitions<'_>,
     unfolded_predicates: &[String],
 ) -> Result<Vec<Proposition>, ClickError> {
+    let evidence_context = std::cell::OnceCell::new();
+    let evidence_assumptions =
+        || evidence_context.get_or_init(|| assumptions_from_propositions(available));
     if is_integer_range_fold_theorem_name(&application.name) {
         return instantiate_integer_range_fold_theorem_application(
             application,
@@ -231,7 +232,7 @@ pub(super) fn instantiate_theorem_application_with_assumptions(
             path_index,
             tactic_index,
             available,
-            assumptions,
+            evidence_assumptions(),
             context,
             spec_definitions,
         );
@@ -328,15 +329,17 @@ pub(super) fn instantiate_theorem_application_with_assumptions(
                 ),
             )
         })?;
-        lowered = unfold_predicates_in_proposition(
-            spec_definitions,
-            unfolded_predicates,
-            &lowered,
-            assumptions,
-        )
-        .map_err(|message| {
-            theorem_application_error(claim_label, path_index, tactic_index, message)
-        })?;
+        if !unfolded_predicates.is_empty() {
+            lowered = unfold_predicates_in_proposition(
+                spec_definitions,
+                unfolded_predicates,
+                &lowered,
+                evidence_assumptions(),
+            )
+            .map_err(|message| {
+                theorem_application_error(claim_label, path_index, tactic_index, message)
+            })?;
+        }
         lowered = lowered.clone();
         // A named `using` premise may be a checked conjunction, such as the
         // `defined(x + y)` fact emitted for a C addition.  The theorem may

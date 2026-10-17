@@ -119,7 +119,7 @@ fn compute_project(contract: &str) -> Project {
     p
 }
 
-fn reject_compute(contract: &str, before: &str, after: &str) {
+fn reject_compute(contract: &str, before: &str, after: &str) -> click::surface::ClickError {
     let p = adler2_helpers_project();
     let prepared = p.prepared().unwrap();
     let changed = contract.replacen(before, after, 1);
@@ -145,6 +145,7 @@ fn reject_compute(contract: &str, before: &str, after: &str) {
         "{}",
         error.message()
     );
+    error
 }
 
 fn reject_single_byte_compute(before: &str, after: &str) {
@@ -1514,10 +1515,15 @@ fn charon_adler2_small_batch_compute_rejects_wrong_scalar_byte() {
 #[test]
 #[ignore = "nightly: scalar B update must include the newly added byte"]
 fn charon_adler2_small_batch_compute_rejects_stale_scalar_a() {
-    reject_compute(
+    let error = reject_compute(
         SMALL_BATCH_COMPUTE,
-        "have to_integer(at(tail_add_b, __rust_mir_147)) == to_integer(at(tail_add_a, a)) + to_integer(at(tail_add_a, __rust_mir_144));",
-        "have to_integer(at(tail_add_b, __rust_mir_147)) == to_integer(at(tail_add_a, a));",
+        "have to_integer(at(tail_add_b, __rust_mir_147)) == to_integer(at(tail_add_a, a)) + to_integer(at(tail_add_a, __rust_mir_144)) by",
+        "have to_integer(at(tail_add_b, __rust_mir_147)) == to_integer(at(tail_add_a, a)) by",
+    );
+    assert!(
+        error.message().contains("`assumption`"),
+        "{}",
+        error.message()
     );
 }
 
