@@ -971,7 +971,13 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
             }
         }
         certificate
-            .check(goal.proposition(), premises)
+            .check(
+                super::equality_rewrite::with_known_designations_discharged(
+                    goal.proposition(),
+                    facts,
+                ),
+                premises,
+            )
             .map_err(PropositionCloseError::IntegerArithmetic)?;
         Ok(self.closed_focused())
     }
@@ -992,7 +998,13 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
             }
         }
         certificate
-            .check(goal.proposition(), premises)
+            .check(
+                super::equality_rewrite::with_known_designations_discharged(
+                    goal.proposition(),
+                    facts,
+                ),
+                premises,
+            )
             .map_err(PropositionCloseError::SignedArithmetic)?;
         Ok(self.closed_focused())
     }
@@ -1013,7 +1025,13 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
             }
         }
         certificate
-            .check(goal.proposition(), premises)
+            .check(
+                super::equality_rewrite::with_known_designations_discharged(
+                    goal.proposition(),
+                    facts,
+                ),
+                premises,
+            )
             .map_err(PropositionCloseError::SpecialArithmetic)?;
         Ok(self.closed_focused())
     }

@@ -1360,7 +1360,7 @@ impl<'a> Proof<'a> {
         // obligation's `n` is the retained iteration-entry value.  Preserve
         // that distinction in the certificate's source premises; the
         // snapshot annotation is checked by the normal direct lowering path.
-        let anchored_surface_premises = if self.goal().is_some_and(is_positive_predecessor_goal)
+        let anchored_surface_premises = if self.closing_goal().is_some_and(is_positive_predecessor_goal)
             && let ProofContext::Execution(context) = self.context.as_ref()
             && let Some(bundle) = context.constants.invariant_body_context.as_deref()
             && let Some(selector) = bundle.iteration_entry_selector.as_ref()
@@ -1387,7 +1387,16 @@ impl<'a> Proof<'a> {
                 )));
             }
         }
-        if let Some(goal) = self.goal()
+        // A listed pointer value equality contributes its address equality.
+        let premises = premises
+            .iter()
+            .map(|premise| {
+                crate::kernel::proof::equality_rewrite::pointer_value_equality_address(premise)
+                    .unwrap_or(premise)
+                    .clone()
+            })
+            .collect::<Vec<_>>();
+        if let Some(goal) = self.closing_goal()
             && let Some(plan) =
                 crate::surface::checking::plan_special_arithmetic_certificate(goal, &premises)
             && let Some(surface_goal) = self.surface_goal()
@@ -1410,7 +1419,7 @@ impl<'a> Proof<'a> {
                 return Ok((handle, Some(certificate)));
             }
         }
-        if let Some(goal) = self.goal()
+        if let Some(goal) = self.closing_goal()
             && let Some(surface_goal) = self.surface_goal()
             && let Some(plan) =
                 crate::surface::checking::plan_integer_affine_certificate(goal, &premises)
@@ -1431,7 +1440,7 @@ impl<'a> Proof<'a> {
                 return Ok((handle, Some(ArithmeticCertificate::integer(certificate))));
             }
         }
-        if let Some(goal) = self.goal()
+        if let Some(goal) = self.closing_goal()
             && let Some(plan) =
                 crate::surface::checking::plan_signed_arithmetic_certificate_with_weakening(
                     goal, &premises,
@@ -1496,7 +1505,7 @@ impl<'a> Proof<'a> {
         // for it names a fragment the goal is not in and sends the reader
         // hunting for an int32 mistake. Say which fragment was recognized and
         // how each listed premise was read inside it.
-        if let Some(goal) = self.goal()
+        if let Some(goal) = self.closing_goal()
             && crate::kernel::proof::integer_arithmetic::integer_affine_claim(goal).is_some()
         {
             if let Some(plan) =
@@ -1517,7 +1526,7 @@ impl<'a> Proof<'a> {
                 describe_integer_premise_reading(&premises, &anchored_surface_premises)
             )));
         }
-        if let Some(goal) = self.goal() {
+        if let Some(goal) = self.closing_goal() {
             if crate::kernel::proof::signed_arithmetic::signed_arithmetic_claim(goal).is_none() {
                 return Err(self.step_error(
                     "`arithmetic` requires a supported signed int32 comparison or equality goal",
@@ -1617,10 +1626,18 @@ impl<'a> Proof<'a> {
                     "`rules` arithmetic certificate premise",
                 )?
             };
-            premises.push(lowered);
+            premises.push(address_part(lowered));
+        }
+        // Arithmetic relates addresses: a stated pointer value equality is
+        // read as its address equality, as the goal and listed premises are.
+        fn address_part(proposition: Proposition) -> Proposition {
+            crate::kernel::proof::equality_rewrite::pointer_value_equality_address(&proposition)
+                .cloned()
+                .unwrap_or(proposition)
         }
         let lower_result = |result: &ClickProposition| {
             self.lower_surface_proposition_direct(result, "`rules` arithmetic certificate result")
+                .map(address_part)
         };
         let premise_ref = |index: usize| {
             if index < premises.len() {

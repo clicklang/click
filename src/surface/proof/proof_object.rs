@@ -2335,6 +2335,19 @@ impl<'a> Proof<'a> {
         }
     }
 
+    /// The focused goal a closing tactic proves: without the designation
+    /// conjuncts of a pointer value equality the facts already decide, which
+    /// no source spelling names. The kernel's closing rules discharge them
+    /// the same way (`with_known_designations_discharged`).
+    pub(super) fn closing_goal(&self) -> Option<&Proposition> {
+        self.goal().map(|goal| {
+            crate::kernel::proof::equality_rewrite::with_known_designations_discharged(
+                goal,
+                self.facts(),
+            )
+        })
+    }
+
     pub(in crate::surface::proof) fn surface_goal(&self) -> Option<&ClickProposition> {
         match self.focused_obligation() {
             Some(Obligation::Proposition(goal)) => goal.surface.as_deref(),
