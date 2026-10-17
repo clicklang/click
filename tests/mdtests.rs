@@ -109,6 +109,7 @@ const NIGHTLY: &[&str] = &[
     "contract_owns_through_composite_field.md",                                // 0.7s
     "copied_bytes_through_result_need_an_explicit_transport.md",               // 1.1s
     "copy_n_segment_invariant.md",                                             // 1.4s
+    "cpp_a_member_reference_parameter_retains_its_member_equality_full.md",    // 0.6s
     "cpp_guard_unwind_before_second.md",                                       // 1.4s
     "cpp_one_guard_unwind.md",                                                 // 1.0s
     "cpp_single_guard_throw_step.md",                                          // 1.1s
