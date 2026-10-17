@@ -814,6 +814,17 @@ fn erase_source_replacement_error(
     after: &str,
     occurrences: usize,
 ) -> String {
+    erase_source_replacement_error_for_function(sidecar, file, before, after, occurrences, None)
+}
+
+fn erase_source_replacement_error_for_function(
+    sidecar: &str,
+    file: &str,
+    before: &str,
+    after: &str,
+    occurrences: usize,
+    function: Option<&str>,
+) -> String {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let path = root.join("examples/rbtree-erase").join(sidecar);
     let source = fs::read_to_string(&path).expect("the erase sidecar exists");
@@ -830,10 +841,18 @@ fn erase_source_replacement_error(
     *c = c.replace(before, after);
     let project = read_click_project_at_root(&path, &source, &root.join("examples"))
         .expect("the erase proof resolves its shared resources and model");
+    let function = function.map(str::to_owned);
     limits::spawn(
         "erase mutation verifier",
         "click-erase-mutation".to_string(),
-        move || click::surface::verify_c0_project(&project, &source_refs(&c_sources)),
+        move || match function {
+            Some(function) => click::surface::verify_project_functions(
+                &project,
+                &ProgramInputs::Bundle(source_refs(&c_sources)),
+                [function],
+            ),
+            None => click::surface::verify_c0_project(&project, &source_refs(&c_sources)),
+        },
     )
     .unwrap_or_else(|error| panic!("{error}"))
     .expect_err("the erase proof must refuse a missing link or parent/color write")
@@ -1719,24 +1738,30 @@ fn rbtree_set_parent_requires_new_parent() {
 
 // Each mutation below was first pinned against a per-case increment; the
 // general proof subsumes those increments, so it must refuse every one.
+// rb_erase_color.c contains only ____rb_erase_color (the pinned-source gate
+// protects that fixture). Mutations leave the sidecar and every other C
+// input unchanged, so recheck this complete function rather than unrelated
+// pure lemmas and unchanged header helper proofs. Keep the exact diagnostic
+// assertions for every mutation.
 fn erase_color_general_refuses_mutation(
     before: &str,
     after: &str,
     occurrences: usize,
     expected: &str,
 ) {
-    let error = erase_source_replacement_error(
+    let error = erase_source_replacement_error_for_function(
         "rbtree_erase_color_flips_red_all.click",
         "rb_erase_color.c",
         before,
         after,
         occurrences,
+        Some("____rb_erase_color"),
     );
     assert!(error.contains(expected), "unexpected refusal: {error}");
 }
 
 #[test]
-#[ignore = "nightly: the general erase-color proof verifies a whole sidecar"]
+#[ignore = "nightly: complete general erase-color proof with a mutated C input"]
 fn rbtree_erase_color_general_red_left_requires_parent_blackening() {
     erase_color_general_refuses_mutation(
         "rb_set_black(parent);",
@@ -1747,7 +1772,7 @@ fn rbtree_erase_color_general_red_left_requires_parent_blackening() {
 }
 
 #[test]
-#[ignore = "nightly: the general erase-color proof verifies a whole sidecar"]
+#[ignore = "nightly: complete general erase-color proof with a mutated C input"]
 fn rbtree_erase_color_general_red_left_requires_sibling_recoloring() {
     erase_color_general_refuses_mutation(
         "rb_set_parent_color(sibling, parent,\n\t\t\t\t\t\t\t    RB_RED);",
@@ -1758,7 +1783,7 @@ fn rbtree_erase_color_general_red_left_requires_sibling_recoloring() {
 }
 
 #[test]
-#[ignore = "nightly: the general erase-color proof verifies a whole sidecar"]
+#[ignore = "nightly: complete general erase-color proof with a mutated C input"]
 fn rbtree_erase_color_general_red_left_requires_the_sibling_parent() {
     erase_color_general_refuses_mutation(
         "rb_set_parent_color(sibling, parent,\n\t\t\t\t\t\t\t    RB_RED);",
@@ -1769,7 +1794,7 @@ fn rbtree_erase_color_general_red_left_requires_the_sibling_parent() {
 }
 
 #[test]
-#[ignore = "nightly: the general erase-color proof verifies a whole sidecar"]
+#[ignore = "nightly: complete general erase-color proof with a mutated C input"]
 fn rbtree_erase_color_general_root_left_requires_the_null_parent_cursor() {
     erase_color_general_refuses_mutation(
         "parent = rb_parent(node);",
@@ -1780,7 +1805,7 @@ fn rbtree_erase_color_general_root_left_requires_the_null_parent_cursor() {
 }
 
 #[test]
-#[ignore = "nightly: the general erase-color proof verifies a whole sidecar"]
+#[ignore = "nightly: complete general erase-color proof with a mutated C input"]
 fn rbtree_erase_color_general_flips_requires_focus_ascent() {
     erase_color_general_refuses_mutation(
         "node = parent;",
@@ -1791,7 +1816,7 @@ fn rbtree_erase_color_general_flips_requires_focus_ascent() {
 }
 
 #[test]
-#[ignore = "nightly: the general erase-color proof verifies a whole sidecar"]
+#[ignore = "nightly: complete general erase-color proof with a mutated C input"]
 fn rbtree_erase_color_general_flips_outer_left_requires_parent_child_link() {
     erase_color_general_refuses_mutation(
         "WRITE_ONCE(parent->rb_right, tmp2);",
@@ -1802,7 +1827,7 @@ fn rbtree_erase_color_general_flips_outer_left_requires_parent_child_link() {
 }
 
 #[test]
-#[ignore = "nightly: the general erase-color proof verifies a whole sidecar"]
+#[ignore = "nightly: complete general erase-color proof with a mutated C input"]
 fn rbtree_erase_color_general_flips_outer_right_requires_parent_child_link() {
     erase_color_general_refuses_mutation(
         "WRITE_ONCE(parent->rb_left, tmp2);",
@@ -1813,7 +1838,7 @@ fn rbtree_erase_color_general_flips_outer_right_requires_parent_child_link() {
 }
 
 #[test]
-#[ignore = "nightly: the general erase-color proof verifies a whole sidecar"]
+#[ignore = "nightly: complete general erase-color proof with a mutated C input"]
 fn rbtree_erase_color_general_flips_outer_requires_far_child_blackening() {
     erase_color_general_refuses_mutation(
         "rb_set_parent_color(tmp1, sibling, RB_BLACK);",
@@ -1824,7 +1849,7 @@ fn rbtree_erase_color_general_flips_outer_requires_far_child_blackening() {
 }
 
 #[test]
-#[ignore = "nightly: the general erase-color proof verifies a whole sidecar"]
+#[ignore = "nightly: complete general erase-color proof with a mutated C input"]
 fn rbtree_erase_color_general_flips_outer_requires_near_parent() {
     erase_color_general_refuses_mutation(
         "rb_set_parent(tmp2, parent);",
@@ -1835,7 +1860,7 @@ fn rbtree_erase_color_general_flips_outer_requires_near_parent() {
 }
 
 #[test]
-#[ignore = "nightly: the general erase-color proof verifies a whole sidecar"]
+#[ignore = "nightly: complete general erase-color proof with a mutated C input"]
 fn rbtree_erase_color_general_flips_rotations_right_requires_sibling_child_link() {
     erase_color_general_refuses_mutation(
         "WRITE_ONCE(sibling->rb_right, tmp1);",
@@ -1846,7 +1871,7 @@ fn rbtree_erase_color_general_flips_rotations_right_requires_sibling_child_link(
 }
 
 #[test]
-#[ignore = "nightly: the general erase-color proof verifies a whole sidecar"]
+#[ignore = "nightly: complete general erase-color proof with a mutated C input"]
 fn rbtree_erase_color_general_flips_rotations_right_requires_inner_child_link() {
     erase_color_general_refuses_mutation(
         "WRITE_ONCE(tmp2->rb_left, sibling);",
@@ -1857,7 +1882,7 @@ fn rbtree_erase_color_general_flips_rotations_right_requires_inner_child_link() 
 }
 
 #[test]
-#[ignore = "nightly: the general erase-color proof verifies a whole sidecar"]
+#[ignore = "nightly: complete general erase-color proof with a mutated C input"]
 fn rbtree_erase_color_general_flips_rotations_requires_first_grandchild_parent() {
     erase_color_general_refuses_mutation(
         "rb_set_parent_color(tmp1, sibling,\n\t\t\t\t\t\t\t    RB_BLACK);",
@@ -1868,7 +1893,7 @@ fn rbtree_erase_color_general_flips_rotations_requires_first_grandchild_parent()
 }
 
 #[test]
-#[ignore = "nightly: the general erase-color proof verifies a whole sidecar"]
+#[ignore = "nightly: complete general erase-color proof with a mutated C input"]
 fn rbtree_erase_color_general_flips_rotations_requires_first_grandchild_blackening() {
     erase_color_general_refuses_mutation(
         "rb_set_parent_color(tmp1, sibling,\n\t\t\t\t\t\t\t    RB_BLACK);",
@@ -1879,7 +1904,7 @@ fn rbtree_erase_color_general_flips_rotations_requires_first_grandchild_blackeni
 }
 
 #[test]
-#[ignore = "nightly: the general erase-color proof verifies a whole sidecar"]
+#[ignore = "nightly: complete general erase-color proof with a mutated C input"]
 fn rbtree_erase_color_general_flips_rotations_requires_old_sibling_as_far_child() {
     erase_color_general_refuses_mutation(
         "tmp1 = sibling;",
@@ -1890,7 +1915,7 @@ fn rbtree_erase_color_general_flips_rotations_requires_old_sibling_as_far_child(
 }
 
 #[test]
-#[ignore = "nightly: the general erase-color proof verifies a whole sidecar"]
+#[ignore = "nightly: complete general erase-color proof with a mutated C input"]
 fn rbtree_erase_color_general_flips_rotations_requires_inner_node_as_sibling() {
     erase_color_general_refuses_mutation(
         "sibling = tmp2;",
@@ -1901,7 +1926,7 @@ fn rbtree_erase_color_general_flips_rotations_requires_inner_node_as_sibling() {
 }
 
 #[test]
-#[ignore = "nightly: the general erase-color proof verifies a whole sidecar"]
+#[ignore = "nightly: complete general erase-color proof with a mutated C input"]
 fn rbtree_erase_color_general_flips_red_exit_left_requires_parent_link() {
     erase_color_general_refuses_mutation(
         "WRITE_ONCE(parent->rb_right, tmp1);",
@@ -1912,7 +1937,7 @@ fn rbtree_erase_color_general_flips_red_exit_left_requires_parent_link() {
 }
 
 #[test]
-#[ignore = "nightly: the general erase-color proof verifies a whole sidecar"]
+#[ignore = "nightly: complete general erase-color proof with a mutated C input"]
 fn rbtree_erase_color_general_flips_red_exit_left_requires_sibling_link() {
     erase_color_general_refuses_mutation(
         "WRITE_ONCE(sibling->rb_left, parent);\n\t\t\t\trb_set_parent_color(tmp1, parent, RB_BLACK);",
@@ -1923,7 +1948,7 @@ fn rbtree_erase_color_general_flips_red_exit_left_requires_sibling_link() {
 }
 
 #[test]
-#[ignore = "nightly: the general erase-color proof verifies a whole sidecar"]
+#[ignore = "nightly: complete general erase-color proof with a mutated C input"]
 fn rbtree_erase_color_general_flips_red_exit_right_requires_parent_link() {
     erase_color_general_refuses_mutation(
         "WRITE_ONCE(parent->rb_left, tmp1);",
@@ -1934,7 +1959,7 @@ fn rbtree_erase_color_general_flips_red_exit_right_requires_parent_link() {
 }
 
 #[test]
-#[ignore = "nightly: the general erase-color proof verifies a whole sidecar"]
+#[ignore = "nightly: complete general erase-color proof with a mutated C input"]
 fn rbtree_erase_color_general_flips_red_exit_right_requires_sibling_link() {
     erase_color_general_refuses_mutation(
         "WRITE_ONCE(sibling->rb_right, parent);\n\t\t\t\trb_set_parent_color(tmp1, parent, RB_BLACK);",
@@ -1945,7 +1970,7 @@ fn rbtree_erase_color_general_flips_red_exit_right_requires_sibling_link() {
 }
 
 #[test]
-#[ignore = "nightly: the general erase-color proof verifies a whole sidecar"]
+#[ignore = "nightly: complete general erase-color proof with a mutated C input"]
 fn rbtree_erase_color_general_flips_red_exit_requires_near_parent() {
     erase_color_general_refuses_mutation(
         "rb_set_parent_color(tmp1, parent, RB_BLACK);",
@@ -1956,7 +1981,7 @@ fn rbtree_erase_color_general_flips_red_exit_requires_near_parent() {
 }
 
 #[test]
-#[ignore = "nightly: the general erase-color proof verifies a whole sidecar"]
+#[ignore = "nightly: complete general erase-color proof with a mutated C input"]
 fn rbtree_erase_color_general_flips_red_exit_requires_near_blackening() {
     erase_color_general_refuses_mutation(
         "rb_set_parent_color(tmp1, parent, RB_BLACK);",
@@ -1967,7 +1992,7 @@ fn rbtree_erase_color_general_flips_red_exit_requires_near_blackening() {
 }
 
 #[test]
-#[ignore = "nightly: the general erase-color proof verifies a whole sidecar"]
+#[ignore = "nightly: complete general erase-color proof with a mutated C input"]
 fn rbtree_erase_color_general_flips_red_exit_requires_red_parent() {
     erase_color_general_refuses_mutation(
         "__rb_rotate_set_parents(parent, sibling, root,\n\t\t\t\t\t\t\tRB_RED);",
@@ -1978,7 +2003,7 @@ fn rbtree_erase_color_general_flips_red_exit_requires_red_parent() {
 }
 
 #[test]
-#[ignore = "nightly: the general erase-color proof verifies a whole sidecar"]
+#[ignore = "nightly: complete general erase-color proof with a mutated C input"]
 fn rbtree_erase_color_general_flips_red_exit_requires_near_sibling_cursor() {
     erase_color_general_refuses_mutation(
         "sibling = tmp1;",
@@ -1989,7 +2014,7 @@ fn rbtree_erase_color_general_flips_red_exit_requires_near_sibling_cursor() {
 }
 
 #[test]
-#[ignore = "nightly: the general erase-color proof verifies a whole sidecar"]
+#[ignore = "nightly: complete general erase-color proof with a mutated C input"]
 fn rbtree_erase_color_general_outer_left_requires_sibling_child_link() {
     erase_color_general_refuses_mutation(
         "WRITE_ONCE(sibling->rb_left, parent);",
@@ -2000,7 +2025,7 @@ fn rbtree_erase_color_general_outer_left_requires_sibling_child_link() {
 }
 
 #[test]
-#[ignore = "nightly: the general erase-color proof verifies a whole sidecar"]
+#[ignore = "nightly: complete general erase-color proof with a mutated C input"]
 fn rbtree_erase_color_general_outer_left_requires_parent_blackening() {
     erase_color_general_refuses_mutation(
         "__rb_rotate_set_parents(parent, sibling, root,\n\t\t\t\t\t\tRB_BLACK);",
@@ -2011,7 +2036,7 @@ fn rbtree_erase_color_general_outer_left_requires_parent_blackening() {
 }
 
 #[test]
-#[ignore = "nightly: the general erase-color proof verifies a whole sidecar"]
+#[ignore = "nightly: complete general erase-color proof with a mutated C input"]
 fn rbtree_erase_color_general_outer_right_requires_sibling_child_link() {
     erase_color_general_refuses_mutation(
         "WRITE_ONCE(sibling->rb_right, parent);",
@@ -2022,7 +2047,7 @@ fn rbtree_erase_color_general_outer_right_requires_sibling_child_link() {
 }
 
 #[test]
-#[ignore = "nightly: the general erase-color proof verifies a whole sidecar"]
+#[ignore = "nightly: complete general erase-color proof with a mutated C input"]
 fn rbtree_erase_color_general_outer_nonempty_left_requires_near_link() {
     erase_color_general_refuses_mutation(
         "WRITE_ONCE(parent->rb_right, tmp2);",
@@ -2033,7 +2058,7 @@ fn rbtree_erase_color_general_outer_nonempty_left_requires_near_link() {
 }
 
 #[test]
-#[ignore = "nightly: the general erase-color proof verifies a whole sidecar"]
+#[ignore = "nightly: complete general erase-color proof with a mutated C input"]
 fn rbtree_erase_color_general_outer_nonempty_right_requires_near_link() {
     erase_color_general_refuses_mutation(
         "WRITE_ONCE(parent->rb_left, tmp2);",
@@ -2044,7 +2069,7 @@ fn rbtree_erase_color_general_outer_nonempty_right_requires_near_link() {
 }
 
 #[test]
-#[ignore = "nightly: the general erase-color proof verifies a whole sidecar"]
+#[ignore = "nightly: complete general erase-color proof with a mutated C input"]
 fn rbtree_erase_color_general_inner_left_requires_detached_inner_child() {
     erase_color_general_refuses_mutation(
         "WRITE_ONCE(sibling->rb_left, tmp1);",
@@ -2055,7 +2080,7 @@ fn rbtree_erase_color_general_inner_left_requires_detached_inner_child() {
 }
 
 #[test]
-#[ignore = "nightly: the general erase-color proof verifies a whole sidecar"]
+#[ignore = "nightly: complete general erase-color proof with a mutated C input"]
 fn rbtree_erase_color_general_inner_left_requires_attached_old_sibling() {
     erase_color_general_refuses_mutation(
         "WRITE_ONCE(tmp2->rb_right, sibling);",
@@ -2066,7 +2091,7 @@ fn rbtree_erase_color_general_inner_left_requires_attached_old_sibling() {
 }
 
 #[test]
-#[ignore = "nightly: the general erase-color proof verifies a whole sidecar"]
+#[ignore = "nightly: complete general erase-color proof with a mutated C input"]
 fn rbtree_erase_color_general_inner_left_requires_old_sibling_parent() {
     erase_color_general_refuses_mutation(
         "rb_set_parent_color(tmp1, sibling, RB_BLACK);",
@@ -2077,7 +2102,7 @@ fn rbtree_erase_color_general_inner_left_requires_old_sibling_parent() {
 }
 
 #[test]
-#[ignore = "nightly: the general erase-color proof verifies a whole sidecar"]
+#[ignore = "nightly: complete general erase-color proof with a mutated C input"]
 fn rbtree_erase_color_general_inner_right_requires_detached_inner_child() {
     erase_color_general_refuses_mutation(
         "WRITE_ONCE(sibling->rb_right, tmp1);",
@@ -2088,7 +2113,7 @@ fn rbtree_erase_color_general_inner_right_requires_detached_inner_child() {
 }
 
 #[test]
-#[ignore = "nightly: the general erase-color proof verifies a whole sidecar"]
+#[ignore = "nightly: complete general erase-color proof with a mutated C input"]
 fn rbtree_erase_color_general_inner_right_requires_attached_old_sibling() {
     erase_color_general_refuses_mutation(
         "WRITE_ONCE(tmp2->rb_left, sibling);",
@@ -2099,7 +2124,7 @@ fn rbtree_erase_color_general_inner_right_requires_attached_old_sibling() {
 }
 
 #[test]
-#[ignore = "nightly: the general erase-color proof verifies a whole sidecar"]
+#[ignore = "nightly: complete general erase-color proof with a mutated C input"]
 fn rbtree_erase_color_general_red_sibling_left_requires_sibling_link() {
     erase_color_general_refuses_mutation(
         "WRITE_ONCE(sibling->rb_left, parent);",
@@ -2110,7 +2135,7 @@ fn rbtree_erase_color_general_red_sibling_left_requires_sibling_link() {
 }
 
 #[test]
-#[ignore = "nightly: the general erase-color proof verifies a whole sidecar"]
+#[ignore = "nightly: complete general erase-color proof with a mutated C input"]
 fn rbtree_erase_color_general_red_sibling_right_requires_sibling_link() {
     erase_color_general_refuses_mutation(
         "WRITE_ONCE(sibling->rb_right, parent);",
@@ -2121,7 +2146,7 @@ fn rbtree_erase_color_general_red_sibling_right_requires_sibling_link() {
 }
 
 #[test]
-#[ignore = "nightly: the general erase-color proof verifies a whole sidecar"]
+#[ignore = "nightly: complete general erase-color proof with a mutated C input"]
 fn rbtree_erase_color_general_red_sibling_outer_left_requires_second_parent_link() {
     erase_color_general_refuses_mutation(
         "WRITE_ONCE(parent->rb_right, tmp2);",
@@ -2132,7 +2157,7 @@ fn rbtree_erase_color_general_red_sibling_outer_left_requires_second_parent_link
 }
 
 #[test]
-#[ignore = "nightly: the general erase-color proof verifies a whole sidecar"]
+#[ignore = "nightly: complete general erase-color proof with a mutated C input"]
 fn rbtree_erase_color_general_red_sibling_outer_right_requires_second_parent_link() {
     erase_color_general_refuses_mutation(
         "WRITE_ONCE(parent->rb_left, tmp2);",
