@@ -12,6 +12,10 @@ pub(super) fn compatible_resource_and_effect_interfaces(
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<bool> {
+    // Refinement matches the two interfaces' clauses range for range, and
+    // the contract's own clauses are its callers' to establish, so a range
+    // the function's clauses share with them designates what they do.
+    let assumptions = &assumptions.clone().assume_entry_clause_extents();
     if !resource_transition_is_compatible(
         contract,
         function,

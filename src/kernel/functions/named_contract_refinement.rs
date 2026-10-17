@@ -437,10 +437,12 @@ pub(in crate::kernel) fn prepare_contract_refinement_obligations(
     // A single conservative post memory covers every possible source write.
     // This does not enumerate guard combinations or assert that a guarded
     // write happened. Resource/effect containment is checked independently.
+    // The footprint only bounds what the havoc may change; its ranges are
+    // not claims about what the parameters designate.
     let ranges = evaluate_contract_mutable_ranges_for_interface(
         source,
         &source_entry,
-        &assumptions,
+        &assumptions.clone().assume_entry_clause_extents(),
         &mut budget,
         false,
     )

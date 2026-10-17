@@ -1173,6 +1173,32 @@ impl SubobjectExtent {
             .then(|| Self::opaque(Variable(Self::OPAQUE_VARIABLE_BASE + identity.0)))
     }
 
+    /// The opaque extent variable `pointer` is the start of, if any.
+    pub(crate) fn opaque_start(pointer: &Pointer) -> Option<Variable> {
+        match (&pointer.block, &pointer.offset) {
+            (PointerBlock::Symbolic(variable), PointerOffsetTerm::Constant(0))
+                if (Self::OPAQUE_VARIABLE_BASE..Self::OPAQUE_VARIABLE_CEILING)
+                    .contains(&variable.0) =>
+            {
+                Some(*variable)
+            }
+            _ => None,
+        }
+    }
+
+    /// The opaque extent variable `width` is the width of, if any.
+    pub(crate) fn opaque_width(width: &Bitvector32Term) -> Option<Variable> {
+        match width {
+            Bitvector32Term::Variable(variable)
+                if (Self::OPAQUE_VARIABLE_BASE..Self::OPAQUE_VARIABLE_CEILING)
+                    .contains(&variable.0) =>
+            {
+                Some(*variable)
+            }
+            _ => None,
+        }
+    }
+
     /// The variable naming this extent, when it is opaque.
     pub(crate) fn opaque_variable(&self) -> Option<Variable> {
         let PointerBlock::Symbolic(variable) = &self.start.block else {

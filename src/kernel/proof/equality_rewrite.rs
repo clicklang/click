@@ -194,6 +194,18 @@ pub(crate) fn rewrite_proposition_by_exact_equality(
                 bridging_assumptions.get_or_init(|| available.pure_context()),
             )
     };
+    // A pointer value equality is its addresses' equality and its
+    // designations' (`design/pointer-subobject-extents.md`, D2). Each part
+    // must be available; the address part rewrites, and the extent of the
+    // value it rewrites follows its address.
+    if let Some((address, designation)) = designated_pointer_equality(equality) {
+        if !designation.iter().all(|fact| is_available(fact)) {
+            return Err(
+                "`rewrite` requires its equality to be an exact available fact".to_string(),
+            );
+        }
+        return rewrite_proposition_by_exact_equality(goal, address, available);
+    }
     if !equality_is_vacuous(equality)
         && !is_available(equality)
         && !reverse_equality(equality)
@@ -203,6 +215,49 @@ pub(crate) fn rewrite_proposition_by_exact_equality(
         return Err("`rewrite` requires its equality to be an exact available fact".to_string());
     }
     rewrite_with_admitted_equality(goal, equality)
+}
+
+/// The address equality of a pointer value equality, and the conjuncts
+/// that equate the designations.
+fn designated_pointer_equality(equality: &Proposition) -> Option<(&Proposition, Vec<&Proposition>)> {
+    let Proposition::And(address, designation) = equality else {
+        return None;
+    };
+    if !matches!(
+        address.as_ref(),
+        Proposition::ConditionIs(ConditionTerm::PointerEqual(_, _), true)
+    ) {
+        return None;
+    }
+    let mut conjuncts = Vec::new();
+    let mut pending = vec![designation.as_ref()];
+    while let Some(conjunct) = pending.pop() {
+        match conjunct {
+            Proposition::And(left, right) => {
+                pending.push(right);
+                pending.push(left);
+            }
+            Proposition::ConditionIs(
+                ConditionTerm::PointerEqual(left, right),
+                true,
+            ) if SubobjectExtent::opaque_start(left).is_some()
+                || SubobjectExtent::opaque_start(right).is_some() =>
+            {
+                conjuncts.push(conjunct);
+            }
+            Proposition::ConditionIs(ConditionTerm::Bitvector32Equal(left, right), true)
+                if SubobjectExtent::opaque_width(left).is_some()
+                    || SubobjectExtent::opaque_width(right).is_some() =>
+            {
+                conjuncts.push(conjunct);
+            }
+            Proposition::Predicate { .. } if SubobjectExtent::covered_range(conjunct).is_some() => {
+                conjuncts.push(conjunct);
+            }
+            _ => return None,
+        }
+    }
+    Some((address, conjuncts))
 }
 
 /// Whether `equality` replaces some occurrence in `goal`. Smart planning
@@ -219,6 +274,11 @@ fn rewrite_with_admitted_equality(
 ) -> Result<Proposition, String> {
     if equality_is_vacuous(equality) {
         return Ok(goal.clone());
+    }
+    // An admitted pointer value equality rewrites by its addresses; the
+    // extent of a rewritten value follows its address.
+    if let Some((address, _)) = designated_pointer_equality(equality) {
+        return rewrite_with_admitted_equality(goal, address);
     }
     let byte_equality = signed_byte_equality_as_byte_equality(equality);
     let equality = byte_equality.as_ref().unwrap_or(equality);
