@@ -57,13 +57,14 @@ log as fact names. In an execution proof, a proof binder may not take a C
 parameter's or C object's name; `intro()` binders keep their `outer.`
 shadowing. A step or call result is stored in the proof's local values by
 name, so a later result of the same name replaces it there; only a C local or
-parameter of that name is refused. The parser's plain name sets (proof
-binders, contract bindings, Integer parameters and lets, theorem parameters)
-are one `NameTable` (`src/surface/parser/name_table.rs`), indexed by
-`NameKind`; every read and write goes through it, and a cross-kind question
-such as `name_bound_in_scope` is one query. Names that carry data (resource
-instances, arm binder types, C parameter types, C objects, facts) keep their
-own maps and are queried beside it.
+parameter of that name is refused. Every lexical name the parser tracks is in one `NameTable`
+(`src/surface/parser/name_table.rs`): plain names indexed by `NameKind`
+(proof binders, contract bindings, Integer parameters and lets, theorem,
+reference, struct-array, `void*` and type parameters) and the names that
+carry data (resource instances, C parameter types and objects, struct and
+aggregate parameters, arm binder types, facts). Cross-kind questions,
+`is_bound` and `is_c_variable`, and the hiding and restoring of bindings are
+methods of the table.
 
 This is the first consolidation boundary for
 [`one-name-resolver-and-printer.md`](https://github.com/clicklang/click/blob/master/issues/one-name-resolver-and-printer.md),
