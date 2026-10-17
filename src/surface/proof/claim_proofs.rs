@@ -2581,8 +2581,12 @@ pub(super) fn finish_ordered_proof<'a>(
                                     // application advances this path's
                                     // evolving outcome proof.
                                     let before = evolving.checkpoint();
-                                    let applied =
-                                        evolving.apply_theorem_application(application)?;
+                                    // The same written `apply` the execution
+                                    // frontier runs, with its refusal.
+                                    let applied = super::checked_drivers::apply_written_theorem(
+                                        &evolving,
+                                        application,
+                                    )?;
                                     let certificate = applied.certificate_since(&before)?;
                                     outcome_proof = Some(applied);
                                     certificate
