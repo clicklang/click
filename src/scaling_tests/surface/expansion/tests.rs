@@ -166,7 +166,7 @@ fn locating_every_declaration_scales_with_source() {
         let tokens = proof_source_tokens(&source).unwrap();
         let file = parser::parse_file_items(&source).unwrap();
         let (located, work) = crate::instrumentation::measure_deterministic_work(|| {
-            let declarations = DeclarationSources::new(&source, &tokens);
+            let declarations = DeclarationSources::new(&tokens);
             file.function_blocks()
                 .iter()
                 .map(|block| declarations.function(block).unwrap())

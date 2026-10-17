@@ -88,6 +88,7 @@ mod tests {
                 name: "identity".into(),
                 arguments: vec![SpecPureFunctionArgument::Value(argument)],
                 result_type: CType::Int32,
+                pointer_result: None,
                 result_object_class: None,
             });
             assert_eq!(observes_resource_state(&body), expected);

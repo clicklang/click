@@ -21,6 +21,8 @@ use tokenizer::tokenize;
 pub(in crate::surface) struct SourceToken {
     pub text: String,
     pub span: std::ops::Range<usize>,
+    /// Where the token starts, as the parser numbers source positions.
+    pub start: SourcePosition,
 }
 
 pub(in crate::surface) fn source_tokens(source: &str) -> Result<Vec<SourceToken>, ClickError> {
@@ -31,13 +33,15 @@ pub(in crate::surface) fn source_tokens_in_container(
     source: &str,
     container: Option<&crate::source::SourceContainer>,
 ) -> Result<Vec<SourceToken>, ClickError> {
-    let (_, _, spans) = tokenizer::tokenize_with_spans(source, container)
+    let (_, positions, spans) = tokenizer::tokenize_with_spans(source, container)
         .map_err(|error| error.with_kind(ClickErrorKind::Syntax))?;
     Ok(spans
         .into_iter()
-        .map(|span| SourceToken {
+        .zip(positions)
+        .map(|(span, start)| SourceToken {
             text: source[span.clone()].to_string(),
             span,
+            start,
         })
         .collect())
 }

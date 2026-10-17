@@ -514,22 +514,45 @@ fn charon_shared_iteration_checks_order_moves_empty_arrays_and_read_authority() 
     let p = charon_iteration_project();
     let prepared = p.prepared().unwrap();
     C0VerificationSession::new_program_prepared(CHARON_ITERATION_SIDECAR, &prepared).unwrap();
-    for (before, after) in [
-        ("ensures result == 4u32;", "ensures result == 3u32;"),
+    verify_rust_function(CHARON_ITERATION_SIDECAR, &prepared, "signed").unwrap();
+    for (owner, before, after) in [
         (
+            "borrowed",
+            "ensures result == 4u32;",
+            "ensures result == 3u32;",
+        ),
+        (
+            "ordered",
             "ensures result == ((a << 1u32) ^ b);",
             "ensures result == ((b << 1u32) ^ a);",
         ),
-        ("ensures result == (a ^ b);", "ensures result == a;"),
         (
+            "moved",
+            "ensures result == (a ^ b);",
+            "ensures result == a;",
+        ),
+        (
+            "signed",
             "ensures result == old(words[0]);",
             "ensures result == old(words[1]);",
         ),
-        ("views words[0..4];", "views words[1..4];"),
+        // Counting iterator entries needs no element load; check the
+        // function that actually dereferences the first element.
+        ("signed", "views words[0..4];", "views words[1..4];"),
     ] {
         let invalid = CHARON_ITERATION_SIDECAR.replace(before, after);
         assert_ne!(invalid, CHARON_ITERATION_SIDECAR);
-        assert!(C0VerificationSession::new_program_prepared(&invalid, &prepared).is_err());
+        let error = verify_rust_function(&invalid, &prepared, owner)
+            .expect_err(&format!("{owner}: the complete mutated function must fail"));
+        assert_eq!(
+            error.kind(),
+            click::surface::ClickErrorKind::Proof,
+            "{owner}: {error}"
+        );
+        assert!(
+            !error.message().contains("budget exhausted"),
+            "{owner}: {error}"
+        );
     }
 }
 #[test]
@@ -679,6 +702,7 @@ fn charon_checksum_arithmetic_checks_panic_bounds_and_full_width_values() {
     let p = charon_arithmetic_project();
     let prepared = p.prepared().unwrap();
     C0VerificationSession::new_program_prepared(CHARON_ARITHMETIC_SIDECAR, &prepared).unwrap();
+    verify_rust_function(CHARON_ARITHMETIC_SIDECAR, &prepared, "wide_left").unwrap();
     for claim in [
         "fn reduce(value: u32) -> u32 { requires value == 4294967295u32; ensures result == 224u32; }",
         "fn wide_quotient(value: usize, divisor: usize) -> usize { requires value == 18446744073709551615u64; requires divisor == 1u64; ensures result == 18446744073709551615u64; }",
@@ -691,21 +715,58 @@ fn charon_checksum_arithmetic_checks_panic_bounds_and_full_width_values() {
         let claim = format!("verifying \"arithmetic.rs\"; {claim} by {{ execute(); simp(); }}");
         C0VerificationSession::new_program_prepared(&claim, &prepared).unwrap();
     }
-    for invalid in [
-        CHARON_ARITHMETIC_SIDECAR.replace("requires sum <= 4294967040u32;", ""),
-        CHARON_ARITHMETIC_SIDECAR.replace("requires count < 8u32;", "requires count == 8u32;"),
-        CHARON_ARITHMETIC_SIDECAR.replace("requires count < 64u64;", "requires count == 64u64;"),
-        CHARON_ARITHMETIC_SIDECAR.replace(
-            "requires 0 <= count and count < 32;",
-            "requires count == -1;",
+    for (owner, invalid) in [
+        (
+            "add_byte",
+            CHARON_ARITHMETIC_SIDECAR.replace("requires sum <= 4294967040u32;", ""),
         ),
-        CHARON_ARITHMETIC_SIDECAR.replace("requires divisor != 0u32;", "requires divisor == 0u32;"),
-        CHARON_ARITHMETIC_SIDECAR.replace("requires divisor != 0u64;", "requires divisor == 0u64;"),
-        CHARON_ARITHMETIC_SIDECAR.replace("value % 65521u32", "value % 65519u32"),
-        CHARON_ARITHMETIC_SIDECAR.replace("((high << 16) | low)", "((high << 15) | low)"),
+        (
+            "shifted_byte",
+            CHARON_ARITHMETIC_SIDECAR.replace("requires count < 8u32;", "requires count == 8u32;"),
+        ),
+        (
+            "wide_left",
+            CHARON_ARITHMETIC_SIDECAR
+                .replace("requires count < 64u64;", "requires count == 64u64;"),
+        ),
+        (
+            "signed_count",
+            CHARON_ARITHMETIC_SIDECAR.replace(
+                "requires 0 <= count and count < 32;",
+                "requires count == -1;",
+            ),
+        ),
+        (
+            "quotient",
+            CHARON_ARITHMETIC_SIDECAR
+                .replace("requires divisor != 0u32;", "requires divisor == 0u32;"),
+        ),
+        (
+            "wide_quotient",
+            CHARON_ARITHMETIC_SIDECAR
+                .replace("requires divisor != 0u64;", "requires divisor == 0u64;"),
+        ),
+        (
+            "reduce",
+            CHARON_ARITHMETIC_SIDECAR.replace("value % 65521u32", "value % 65519u32"),
+        ),
+        (
+            "pack",
+            CHARON_ARITHMETIC_SIDECAR.replace("((high << 16) | low)", "((high << 15) | low)"),
+        ),
     ] {
         assert_ne!(invalid, CHARON_ARITHMETIC_SIDECAR);
-        assert!(C0VerificationSession::new_program_prepared(&invalid, &prepared).is_err());
+        let error = verify_rust_function(&invalid, &prepared, owner)
+            .expect_err(&format!("{owner}: the complete mutated function must fail"));
+        assert_eq!(
+            error.kind(),
+            click::surface::ClickErrorKind::Proof,
+            "{owner}: {error}"
+        );
+        assert!(
+            !error.message().contains("budget exhausted"),
+            "{owner}: {error}"
+        );
     }
     for count in [64u64, 4294967296, u64::MAX] {
         let claim = format!(
@@ -784,16 +845,45 @@ fn charon_nested_chunks_and_array_slices_check_bytes_bounds_and_claims() {
     let p = charon_nested_project();
     let prepared = p.prepared().unwrap();
     C0VerificationSession::new_program_prepared(CHARON_NESTED_SIDECAR, &prepared).unwrap();
-    for invalid in [
-        CHARON_NESTED_SIDECAR.replace("ensures result == 8u64;", "ensures result == 7u64;"),
-        CHARON_NESTED_SIDECAR.replace("ensures result == 9;", "ensures result == 7;"),
-        CHARON_NESTED_SIDECAR.replace("requires index < 8u64;", "requires index == 8u64;"),
-        CHARON_NESTED_SIDECAR.replace("ensures result == 7;", "ensures result == 9;"),
-        CHARON_NESTED_SIDECAR.replace("views bytes[0..8];", ""),
-        CHARON_NESTED_SIDECAR.replace("bytes[k] == old(bytes[k])", "bytes[k] == 7"),
+    verify_rust_function(CHARON_NESTED_SIDECAR, &prepared, "array_read").unwrap();
+    for (owner, invalid) in [
+        (
+            "array_len",
+            CHARON_NESTED_SIDECAR.replace("ensures result == 8u64;", "ensures result == 7u64;"),
+        ),
+        (
+            "array_mut",
+            CHARON_NESTED_SIDECAR.replace("ensures result == 9;", "ensures result == 7;"),
+        ),
+        (
+            "array_read",
+            CHARON_NESTED_SIDECAR.replace("requires index < 8u64;", "requires index == 8u64;"),
+        ),
+        (
+            "array_read",
+            CHARON_NESTED_SIDECAR.replace("ensures result == 7;", "ensures result == 9;"),
+        ),
+        (
+            "nested",
+            CHARON_NESTED_SIDECAR.replace("views bytes[0..8];", ""),
+        ),
+        (
+            "nested",
+            CHARON_NESTED_SIDECAR.replace("bytes[k] == old(bytes[k])", "bytes[k] == 7"),
+        ),
     ] {
         assert_ne!(invalid, CHARON_NESTED_SIDECAR);
-        assert!(C0VerificationSession::new_program_prepared(&invalid, &prepared).is_err());
+        let error = verify_rust_function(&invalid, &prepared, owner)
+            .expect_err(&format!("{owner}: the complete mutated function must fail"));
+        assert_eq!(
+            error.kind(),
+            click::surface::ClickErrorKind::Proof,
+            "{owner}: {error}"
+        );
+        assert!(
+            !error.message().contains("budget exhausted"),
+            "{owner}: {error}"
+        );
     }
 }
 #[test]
@@ -864,6 +954,7 @@ fn charon_chunks_check_boundaries_authority_and_false_claims() {
     let p = charon_chunk_project();
     let prepared = p.prepared().unwrap();
     C0VerificationSession::new_program_prepared(CHARON_CHUNK_SIDECAR, &prepared).unwrap();
+    verify_rust_function(CHARON_CHUNK_SIDECAR, &prepared, "tail_byte").unwrap();
     for (length, size) in [
         (0u64, 4u64),
         (4, 4),
@@ -893,23 +984,46 @@ fn charon_chunks_check_boundaries_authority_and_false_claims() {
         );
         C0VerificationSession::new_program_prepared(&claim, &prepared).unwrap();
     }
-    for invalid in [
-        CHARON_CHUNK_SIDECAR.replace("requires size != 0u64;", "requires size == 0u64;"),
-        CHARON_CHUNK_SIDECAR.replace(
-            "ensures result == bytes.len() % size;",
-            "ensures result == bytes.len();",
+    for (owner, invalid) in [
+        (
+            "tail",
+            CHARON_CHUNK_SIDECAR.replace("requires size != 0u64;", "requires size == 0u64;"),
         ),
-        CHARON_CHUNK_SIDECAR.replace("    views bytes[0..bytes.len()];\n", ""),
-        CHARON_CHUNK_SIDECAR.replace(
-            "requires bytes.len() == 7u64;",
-            "requires bytes.len() == 8u64;",
+        (
+            "tail",
+            CHARON_CHUNK_SIDECAR.replace(
+                "ensures result == bytes.len() % size;",
+                "ensures result == bytes.len();",
+            ),
         ),
-        CHARON_CHUNK_SIDECAR.replace("ensures result == old(bytes[4]);", "ensures result == 7;"),
+        (
+            "walk",
+            CHARON_CHUNK_SIDECAR.replace("    views bytes[0..bytes.len()];\n", ""),
+        ),
+        (
+            "tail_byte",
+            CHARON_CHUNK_SIDECAR.replace(
+                "requires bytes.len() == 7u64;",
+                "requires bytes.len() == 8u64;",
+            ),
+        ),
+        (
+            "tail_byte",
+            CHARON_CHUNK_SIDECAR
+                .replace("ensures result == old(bytes[4]);", "ensures result == 7;"),
+        ),
     ] {
         assert_ne!(invalid, CHARON_CHUNK_SIDECAR);
+        let error = verify_rust_function(&invalid, &prepared, owner)
+            .expect_err(&format!("{owner}: the complete mutated function must fail"));
+        assert_eq!(
+            error.kind(),
+            click::surface::ClickErrorKind::Proof,
+            "{owner}: {error}"
+        );
         assert!(
-            C0VerificationSession::new_program_prepared(&invalid, &prepared).is_err(),
-            "accepted {invalid}"
+            !error.message().contains("budget exhausted"),
+            "{owner}: {error}"
         );
     }
 }

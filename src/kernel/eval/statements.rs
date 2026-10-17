@@ -1286,6 +1286,7 @@ pub(super) fn execute_c_heap_allocate_paths(
     target: &str,
     bytes_expression: &CExpression,
     zeroed: bool,
+    object_type: Option<&(crate::kernel::effective_type::CAccessClass, u32, u32)>,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Vec<CStatementExecutionPath>> {
@@ -1391,19 +1392,29 @@ pub(super) fn execute_c_heap_allocate_paths(
                 break Pointer::symbolic(identity);
             }
         };
+        let object_class = object_type.and_then(|(class, size, alignment)| {
+            let enough_space =
+                ConditionTerm::unsigned_less_equal(Bitvector32Term::Constant(*size), bytes.clone());
+            (*alignment as u64 <= crate::kernel::primitives::HEAP_ALLOCATION_ALIGNMENT
+                && effective_assumptions.decide(&enough_space) == Some(true))
+            .then(|| class.clone())
+        });
         let mut success_state =
             state
                 .clone()
-                .with_memory(state.memory.clone().with_pending_heap_allocation(
+                .with_memory(state.memory.clone().with_pending_typed_heap_allocation(
                     pointer.clone(),
                     bytes,
                     zeroed,
+                    object_class.clone(),
                 ));
         success_state.record_pending_population_storage_creation(pointer.block.clone());
         let assigned = execute_c_lvalue_assignment_paths(
             &success_state,
             &c_variable(target.to_string()),
-            &CExpression::Value(CValue::typed_pointer(pointer, target_type)),
+            &CExpression::Value(
+                CValue::typed_pointer(pointer, target_type).with_pointer_object_class(object_class),
+            ),
             &effective_assumptions,
             budget,
         )?;
@@ -1712,6 +1723,7 @@ pub(crate) fn execute_c_realloc_assign_paths(
                 target,
                 size_expression,
                 false,
+                None,
                 &effective_assumptions,
                 budget,
             )? {
@@ -2643,7 +2655,10 @@ fn execute_c_return_expression_paths(
                         CStatementOutcome::RuntimeError(CRuntimeError::UnresolvedAllocationOutcome)
                     } else {
                         CStatementOutcome::Return {
-                            value: CValue::typed_pointer(resolved_pointer, pointer.c_type()),
+                            value: CValue::typed_pointer(resolved_pointer, pointer.c_type())
+                                .with_pointer_object_type_evidence(
+                                    pointer.object_type_evidence().cloned(),
+                                ),
                             state: Box::new(resolved_state),
                         }
                     };
@@ -3680,7 +3695,16 @@ fn execute_c_statement_leaf_paths(
             target,
             bytes,
             zeroed,
-        } => execute_c_heap_allocate_paths(state, target, bytes, *zeroed, assumptions, budget)?,
+            object_type,
+        } => execute_c_heap_allocate_paths(
+            state,
+            target,
+            bytes,
+            *zeroed,
+            object_type.as_ref(),
+            assumptions,
+            budget,
+        )?,
         CStatement::HeapFree { pointer } => {
             execute_c_heap_free_paths(state, pointer, assumptions, budget)?
         }

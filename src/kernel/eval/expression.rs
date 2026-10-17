@@ -1226,7 +1226,7 @@ fn cast_c_value_to_type_with_integer_origin(
                         ))?;
                         Ok(CValue::Pointer(CPointerValue::new(origin, target_type)
                             .with_address(pointer.pointer().clone())
-                            .with_object_class(pointer.object_class())))
+                            .with_declared_object_class(pointer.object_class())))
                     }
                     Ok(None) => Err(CRuntimeError::PointerConversion(
                         "integer-to-pointer cast requires an unchanged pointer representation, a recorded address, or zero".to_string(),
@@ -1927,7 +1927,12 @@ fn evaluate_c_cast_paths(
                     || implicit_pointer_conversion
                 {
                     match value {
-                        CValue::Pointer(pointer) if target_type.is_pointer() => {
+                        CValue::Pointer(pointer)
+                            if target_type.is_pointer()
+                                && (integer_mode != CIntegerCastMode::PointerCoercion
+                                    || target_type != CType::VoidPointer
+                                    || pointer.c_type().is_object_pointer()) =>
+                        {
                             Ok(CValue::Pointer(pointer.with_type(target_type)))
                         }
                         _ => Err(CRuntimeError::TypeMismatch),
@@ -2008,7 +2013,7 @@ fn evaluate_c_cast_paths(
                             let class = pointer.object_class().or_else(|| address.object_class());
                             pointer
                                 .with_address(address.pointer().clone())
-                                .with_object_class(class)
+                                .with_declared_object_class(class)
                         }
                         None => pointer,
                     }))
@@ -2036,6 +2041,12 @@ fn evaluate_c_cast_paths(
                                 && matches!(
                                     &value,
                                     CValue::Pointer(pointer) if pointer.pointee_constant()
+                                ));
+                        let pointee_volatile = pointee_volatile
+                            || (integer_mode == CIntegerCastMode::PointerCoercion
+                                && matches!(
+                                    &value,
+                                    CValue::Pointer(pointer) if pointer.pointee_volatile()
                                 ));
                         CExpressionOutcome::Value(
                             value
@@ -2810,7 +2821,7 @@ fn read_c_lvalue_paths_without_ranges(
                         {
                             *value = value
                                 .clone()
-                                .with_pointer_object_class(Some(pointee.clone()));
+                                .with_pointer_declared_object_class(Some(pointee.clone()));
                         }
                     }
                 }

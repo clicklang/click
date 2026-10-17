@@ -103,6 +103,7 @@ mod lowering;
 mod modules;
 mod names;
 mod parser;
+mod pointer_result_types;
 pub use crate::languages::{claim_label_matches, display_source_names, source_display_name};
 pub(crate) mod planning;
 pub(crate) mod proof_diagnostics;
@@ -5755,6 +5756,8 @@ struct ClickFunctionEnvironment {
     /// Functions whose value provably cannot depend on C memory contents.
     /// See [`memory_independent_click_functions`].
     memory_independent: BTreeSet<String>,
+    pointer_results: BTreeMap<String, Option<std::sync::Arc<crate::kernel::PurePointerResult>>>,
+    pointer_type_error: Option<(String, String)>,
 }
 
 impl ClickFunctionEnvironment {
@@ -5766,6 +5769,8 @@ impl ClickFunctionEnvironment {
         definitions: &[ClickFunctionDefinition],
         algebraic_type_definitions: &[AlgebraicTypeDefinition],
     ) -> Self {
+        let (pointer_results, pointer_type_error) =
+            pointer_result_types::pointer_result_types(definitions, algebraic_type_definitions);
         Self {
             definitions: definitions
                 .iter()
@@ -5776,6 +5781,8 @@ impl ClickFunctionEnvironment {
                 .map(|definition| (definition.name().to_string(), definition.clone()))
                 .collect(),
             memory_independent: memory_independent_click_functions(definitions),
+            pointer_results,
+            pointer_type_error,
         }
     }
 

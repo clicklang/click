@@ -21,6 +21,9 @@ cannot separate them. The captured equation no longer closes; the true one
 does, in
 [`spec_function_arm_binding_capture_renames.md`](spec_function_arm_binding_capture_renames.md).
 
+The logical pointer annotations below use `void*` for address identities;
+object access remains governed by the unchanged C types and resource ownership.
+
 ```c filename=capture.c
 struct rb_node {
     unsigned long __rb_parent_color;
@@ -40,10 +43,10 @@ spec enum Color { Red, Black }
 
 spec enum RbTree {
     Empty,
-    Node(struct rb_node*, struct rb_node*, Color, RbTree, RbTree),
+    Node(void*, void*, Color, RbTree, RbTree),
 }
 
-function reparent(tree: RbTree, fresh: struct rb_node*) -> RbTree {
+function reparent(tree: RbTree, fresh: void*) -> RbTree {
     match tree {
         RbTree::Empty => RbTree::Empty,
         RbTree::Node(identity, parent, color, left, right) =>

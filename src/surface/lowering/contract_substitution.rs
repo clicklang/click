@@ -2947,7 +2947,11 @@ pub(in crate::surface) fn contract_expression_has_explicit_c_result_reference(
 pub(in crate::surface) fn pure_function_parameter_scalar_type(
     parameter: &FunctionParameter,
 ) -> Option<CType> {
-    let c_type = parameter.click_type().c_type()?;
+    pure_function_scalar_type(parameter.click_type())
+}
+
+fn pure_function_scalar_type(click_type: &ClickType) -> Option<CType> {
+    let c_type = click_type.c_type()?;
     let target_type = c_type.to_kernel_type();
     if !matches!(
         target_type,
@@ -2970,13 +2974,56 @@ pub(in crate::surface) fn pure_function_parameter_scalar_type(
     Some(target_type)
 }
 
+pub(in crate::surface) fn pure_function_result_scalar_type(
+    definition: &ClickFunctionDefinition,
+) -> Option<CType> {
+    pure_function_scalar_type(definition.return_type()).filter(|ty| *ty != CType::Bool)
+}
+
+/// The defining equality uses the same numeric return conversion as the
+/// registered body. Pointer results retain their existing selected views.
+pub(in crate::surface) fn pure_function_result_value(
+    definition: &ClickFunctionDefinition,
+    value: ContractExpression,
+) -> ContractExpression {
+    let Some(target_type) = pure_function_result_scalar_type(definition) else {
+        return value;
+    };
+    let lowered = CExpression::Cast {
+        expression: Box::new(
+            contract_expression_as_c_fragment(&value).unwrap_or(CExpression::Value(int32(0))),
+        ),
+        target_type,
+        integer_mode: crate::kernel::CIntegerCastMode::CConversion,
+        pointee_struct: None,
+        pointee_volatile: false,
+        pointee_constant: false,
+        explicit_qualification: false,
+    };
+    ContractExpression::CUnary {
+        operand: Box::new(value),
+        lowered,
+    }
+}
+
 pub(in crate::surface) fn pure_function_parameter_argument(
     parameter: &FunctionParameter,
     argument: &ContractExpression,
 ) -> ContractExpression {
-    let Some(target_type) = pure_function_parameter_scalar_type(parameter) else {
+    let Some((target_type, integer_mode)) = pure_function_parameter_conversion(parameter) else {
         return argument.clone();
     };
+    if target_type == CType::VoidPointer
+        && parameter
+            .click_type()
+            .c_type()
+            .is_some_and(|c_type| argument_is_null_pointer_constant(argument, c_type))
+    {
+        return ContractExpression::CFragment(CExpression::Value(CValue::typed_pointer(
+            Pointer::null(),
+            target_type,
+        )));
+    }
     ContractExpression::CUnary {
         operand: Box::new(argument.clone()),
         // CUnary's operand is authoritative during lowering. Retain an exact
@@ -2986,12 +3033,29 @@ pub(in crate::surface) fn pure_function_parameter_argument(
                 contract_expression_as_c_fragment(argument).unwrap_or(CExpression::Value(int32(0))),
             ),
             target_type,
-            integer_mode: crate::kernel::CIntegerCastMode::CConversion,
+            integer_mode,
             pointee_struct: None,
             pointee_volatile: false,
             pointee_constant: false,
             explicit_qualification: false,
         },
+    }
+}
+
+/// Implicit argument conversions also apply when a helper's body is unfolded.
+/// Unlike an authored void-pointer cast, the object-pointer coercion retains
+/// the caller's designation and selected extent.
+pub(in crate::surface) fn pure_function_parameter_conversion(
+    parameter: &FunctionParameter,
+) -> Option<(CType, crate::kernel::CIntegerCastMode)> {
+    if parameter.click_type().c_type()?.to_kernel_type() == CType::VoidPointer {
+        Some((
+            CType::VoidPointer,
+            crate::kernel::CIntegerCastMode::PointerCoercion,
+        ))
+    } else {
+        pure_function_parameter_scalar_type(parameter)
+            .map(|target| (target, crate::kernel::CIntegerCastMode::CConversion))
     }
 }
 
