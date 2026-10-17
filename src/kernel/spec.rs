@@ -7447,8 +7447,17 @@ fn pointer_designation_equality(
     left: &CPointerValue,
     right: &CPointerValue,
 ) -> Option<Proposition> {
-    let (Some(left), Some(right)) = (left.extent(), right.extent()) else {
-        return None;
+    let (left, right) = match (left.extent(), right.extent()) {
+        (Some(left), Some(right)) => (left, right),
+        // Equal to a pointer bounded only by its complete object, an opaque
+        // extent designates that object.
+        (Some(opaque), None) if opaque.is_opaque() => {
+            return Some(opaque.complete_object_fact(right.pointer()));
+        }
+        (None, Some(opaque)) if opaque.is_opaque() => {
+            return Some(opaque.complete_object_fact(left.pointer()));
+        }
+        _ => return None,
     };
     if left == right {
         return None;

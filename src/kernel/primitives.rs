@@ -1240,6 +1240,33 @@ impl SubobjectExtent {
         }
     }
 
+    /// The fact that this opaque extent designates the complete object of
+    /// `pointer`, a pointer bounded only by its complete object: a coverage
+    /// fact of element width 0. An access through it is then bounded as an
+    /// access through `pointer` is.
+    pub(crate) fn complete_object_fact(&self, object: &Pointer) -> Proposition {
+        let pointer = |pointer: Pointer| {
+            Term::CValue(CValue::Pointer(CPointerValue::new(
+                pointer,
+                CType::VoidPointer,
+            )))
+        };
+        Proposition::Predicate {
+            name: format!("{SUBOBJECT_COVERS_PREDICATE_PREFIX}0"),
+            arguments: vec![
+                pointer(self.start.clone()),
+                pointer(object.clone()),
+                pointer(object.clone()),
+            ],
+        }
+    }
+
+    /// Whether `proposition` is a [`Self::complete_object_fact`].
+    pub(crate) fn is_complete_object_fact(proposition: &Proposition) -> bool {
+        matches!(proposition, Proposition::Predicate { name, .. }
+            if name.strip_prefix(SUBOBJECT_COVERS_PREDICATE_PREFIX) == Some("0"))
+    }
+
     /// The range a coverage fact names: its first element's address, its
     /// element count and its element width.
     pub(crate) fn covered_range(
@@ -1251,7 +1278,8 @@ impl SubobjectExtent {
         let width = name
             .strip_prefix(SUBOBJECT_COVERS_PREDICATE_PREFIX)?
             .parse::<u32>()
-            .ok()?;
+            .ok()
+            .filter(|width| *width != 0)?;
         let [
             _,
             Term::CValue(CValue::Pointer(from)),

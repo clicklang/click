@@ -3867,8 +3867,15 @@ impl PureFactContext {
         pointer: &Pointer,
         byte_width: u32,
     ) -> bool {
-        self.equality_graph
-            .subobject_coverage_facts(&extent.start)
+        let facts = self.equality_graph.subobject_coverage_facts(&extent.start);
+        // Designating a complete object, the extent bounds nothing further.
+        if facts
+            .iter()
+            .any(crate::kernel::SubobjectExtent::is_complete_object_fact)
+        {
+            return true;
+        }
+        facts
             .iter()
             .filter_map(crate::kernel::SubobjectExtent::covered_range)
             .any(|(from, count, element_width)| {
@@ -3891,8 +3898,15 @@ impl PureFactContext {
         from: &Pointer,
         to: &Pointer,
     ) -> bool {
-        self.equality_graph
-            .subobject_coverage_facts(&extent.start)
+        let facts = self.equality_graph.subobject_coverage_facts(&extent.start);
+        // Designating a complete object, the extent bounds nothing further.
+        if facts
+            .iter()
+            .any(crate::kernel::SubobjectExtent::is_complete_object_fact)
+        {
+            return true;
+        }
+        facts
             .iter()
             .filter_map(crate::kernel::SubobjectExtent::covered_range)
             .any(|(base, count, element_width)| {
