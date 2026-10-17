@@ -16,13 +16,15 @@ the next reproduction, rather than inspecting a newly generated certificate.
 
 A fresh run on `776dedeac` stopped earlier in the original proof: its full-batch
 cursor join could not compose two full pointer-value equalities through their
-displacements. Repairing that substitution restores the named full-stream test,
-including the original body, complete expanded certificate and all six mutation
-controls. The reduced C-argument regression is
+displacements. Repairing that substitution restores the original body proof.
+Selected runs also pass the complete expanded certificate and all six mutation
+controls, but a fresh run after integration with `a93a36d75` again fails at the
+historical expanded `normalize using` step below. The reduced C-argument
+regression is
 `mdtests/pointer_value_equalities_compose_through_displaced_arguments.md`, with
 symbolic snapshot-base and selected-bound controls in the kernel rewrite tests.
-The historical failed certificate selection below remains unidentified, so keep
-this report until that selection is understood.
+The failing certificate selection remains unidentified, so keep this report
+until that selection is understood.
 
 The incremental C zlib test also passes on this revision, including its
 expanded certificate, every helper body, and all five mutation controls:
