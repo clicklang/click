@@ -3291,6 +3291,27 @@ fn serialized_loop_premises_reject_a_changed_snapshot_or_polarity() {
 }
 
 #[test]
+#[ignore = "nightly: 5.3s in the parallel gate"]
+fn machine_population_count_rewrites_keep_their_type_in_integer_files() {
+    let (source, sources) =
+        mdtest_sources("mdtests/a_consumed_member_bound_on_an_entry_count_is_cited.md");
+    let source_refs = sources
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    verify_c0_sources(&source, &source_refs).unwrap();
+    let expanded = expand_claim_by_label(
+        None,
+        &source,
+        &ProgramInputs::Bundle(source_refs.clone()),
+        "pool_checkout.contract",
+        None,
+    )
+    .unwrap();
+    without_implicit_auto(|| verify_c0_sources(&expanded.source, &source_refs)).unwrap();
+}
+
+#[test]
 #[ignore = "nightly: 5s in the parallel gate"]
 fn return_population_proofs_expand_without_effect_clauses() {
     for (fixture_name, functions) in [
