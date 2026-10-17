@@ -5939,7 +5939,16 @@ pub enum CRuntimeError {
     UnestablishedAssemblyFact {
         assembled: Box<CResourceFact>,
         fact: Box<Proposition>,
+        source: Option<Box<CResourceBodyFactSource>>,
     },
+}
+
+/// The written clause of a refused composite assembly, with the parameter
+/// values at that call. Diagnostic provenance only; it supplies no evidence.
+#[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub struct CResourceBodyFactSource {
+    pub spelling: String,
+    pub bindings: Vec<(String, CValue)>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
