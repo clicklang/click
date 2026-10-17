@@ -53,7 +53,20 @@ tactic in it. `click-verify` builds its `ProofSourceIndex` from the blocks the
 entry module's verification parse recorded, instead of guessing from the
 token before each brace. The guess also took resource `match` arms, `if`
 expression branches in pure functions and the bodies of C functions named
-`open` for proofs. Expansion still finds proof blocks from tokens.
+`open` for proofs. Expansion reads each block's tactics from those records
+too. Only the end of a one-tactic proof, `by T();`, is still found from tokens
+(`tactic_end_token`), in expansion and in `ProofSourceIndex`.
+
+Selectively imported names resolve in the parser, where it reads a Click call
+or an `unfold` target, instead of in a pre-parse rewrite that guessed a
+reference from the next token. A library path is still joined before parsing,
+but keeps its written spelling for C and C++ declaration names. Before, a C
+function, a C++ namespace member or class member, a resource binder, an enum
+constructor or a tactic with a library spelling was renamed to the library
+declaration
+(`mdtests/a_selectively_imported_name_keeps_c_and_binder_meanings.md`,
+`mdtests/a_cpp_namespace_may_share_a_library_module_name.md`,
+`mdtests/a_selective_import_cannot_clash_with_a_tactic.md`).
 
 The complete scoped table for parameters, fields, binders, constructors,
 resources, program points and project modules remains open. Proof inventories

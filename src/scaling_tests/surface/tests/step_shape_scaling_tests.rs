@@ -825,11 +825,16 @@ fn sequential_loop_clauses_cost_the_same_at_every_position() {
 /// candidacy (`PureFactList`); the reserved-variable sets it collects for
 /// fresh identities (`LazyReservedVariables`); the variables its facts
 /// hand to their fact sets' reservations beyond already reserved
-/// snapshots; and the whole-function annotation walks it makes
-/// (`LoopAnnotation`). Each once grew with the loops before: the list was a
-/// flat copy indexed afresh at every loop, every rule and loop head
-/// collected the whole path context's variables, every fact re-collected
-/// its snapshots' variables, and every loop re-annotated the whole function.
+/// snapshots; the whole-function annotation walks it makes
+/// (`LoopAnnotation`); the structural clauses it reads out of the function
+/// block's clause list (`StructuralClauses`); and the statements its loop
+/// lookups visit to find the loop in the C and kernel bodies. Each once grew
+/// with the loops before: the list was a flat copy indexed afresh at every
+/// loop, every rule and loop head collected the whole path context's
+/// variables, every fact re-collected its snapshots' variables, every loop
+/// re-annotated the whole function, binding a clause rebuilt the block's
+/// clause vector and its label, scope and region checks walked it, and each
+/// lookup walked the body from its first statement.
 ///
 /// Across the twelve-loop run, the last clause also costs what the second
 /// does. A drift of a unit or two per earlier loop is below the band between
@@ -860,6 +865,14 @@ fn sequential_loops_build_the_same_context_entries_each() {
                 "annotation walks",
                 crate::surface::lowering::loop_annotation_walks(),
             ),
+            (
+                "structural clause visits",
+                crate::surface::structural_clauses::structural_clause_visits(),
+            ),
+            (
+                "loop lookup statements",
+                crate::surface::lowering::loop_lookup_nodes(),
+            ),
         ]
     };
     let runs = [3, 6, 12].map(|n| {
@@ -867,13 +880,13 @@ fn sequential_loops_build_the_same_context_entries_each() {
         let run = run(loops, n);
         let after = counts();
         (
-            std::array::from_fn::<_, 7, _>(|index| {
+            std::array::from_fn::<_, 9, _>(|index| {
                 (after[index].0, after[index].1 - before[index].1)
             }),
             run.loops,
         )
     });
-    for index in 0..7 {
+    for index in 0..9 {
         let name = runs[0].0[index].0;
         let entries = runs.each_ref().map(|(counts, _)| counts[index].1);
         let per_loop = [(entries[1] - entries[0]) / 3, (entries[2] - entries[1]) / 6];

@@ -2320,6 +2320,14 @@ impl Parser {
     }
 
     fn is_qualified_c_name(&self) -> bool {
+        if let Some(written) = self
+            .here()
+            .and_then(|position| self.symbols.written_path(&position))
+        {
+            return written
+                .split_once("::")
+                .is_some_and(|(alias, _)| self.source_aliases.contains_key(alias));
+        }
         self.peek_next() == Some(&Token::ColonColon)
             && self
                 .peek_ident()
@@ -2327,9 +2335,14 @@ impl Parser {
     }
 
     fn parse_qualified_c_name(&mut self) -> Result<(String, CExpression), ClickError> {
-        let alias = self.expect_ident("C source alias")?;
-        self.expect(Token::ColonColon)?;
-        let mut name = self.expect_ident("C declaration name")?;
+        let written = self.expect_c_declaration_ident("C source alias")?;
+        let (alias, mut name) = match written.split_once("::") {
+            Some((alias, name)) => (alias.to_string(), name.to_string()),
+            None => {
+                self.expect(Token::ColonColon)?;
+                (written, self.expect_ident("C declaration name")?)
+            }
+        };
         if self.peek() == Some(&Token::ColonColon) {
             self.expect(Token::ColonColon)?;
             let local = self.expect_ident("function-local static name")?;
@@ -4387,7 +4400,7 @@ impl Parser {
             requires,
             requirement_source_clauses,
             decreases,
-            structural_clauses: Vec::new(),
+            structural_clauses: StructuralClauses::default(),
             constructs,
             ensures,
             exceptional_ensures,
@@ -4541,9 +4554,15 @@ impl Parser {
             }
             (declarator.name, declarator.receiver)
         } else {
-            let alias = self.expect_ident("function name")?;
+            let alias = self.expect_c_declaration_ident("function name")?;
             let name =
-                if self.peek() == Some(&Token::ColonColon) {
+                if let Some((alias, name)) = alias.split_once("::") {
+                    c_source =
+                        Some(self.source_aliases.get(alias).cloned().ok_or_else(|| {
+                            self.error(format!("unknown C source alias `{alias}`"))
+                        })?);
+                    format!("{alias}::{name}")
+                } else if self.peek() == Some(&Token::ColonColon) {
                     self.position += 1;
                     let name = self.expect_ident("C function name")?;
                     c_source =
@@ -7512,7 +7531,7 @@ impl Parser {
         &mut self,
         expected_name: &str,
     ) -> Result<(String, Vec<ContractExpression>), ClickError> {
-        let name = self.expect_ident(expected_name)?;
+        let name = self.expect_reference_name(expected_name)?;
         self.expect(Token::LParen)?;
         let mut arguments = Vec::new();
         if self.peek() != Some(&Token::RParen) {
@@ -9095,7 +9114,7 @@ impl Parser {
                         "resource instance `{name}` is not available as an unfold target"
                     )));
                 } else {
-                    let predicate = self.expect_ident("predicate name")?;
+                    let predicate = self.expect_reference_name("predicate name")?;
                     ProofTactic::UnfoldPredicate(predicate)
                 };
                 self.expect(Token::RParen)?;
@@ -14194,6 +14213,33 @@ impl Parser {
         } else {
             Ok(())
         }
+    }
+
+    /// The Click declaration a written name refers to: a selectively
+    /// imported name reads as its library declaration here, and only here,
+    /// since only a reference reads the import. A C function, a binder or a
+    /// declaration of the same spelling keeps its own meaning.
+    fn expect_reference_name(&mut self, expected: &str) -> Result<String, ClickError> {
+        let at = self.error_context();
+        let name = self.expect_ident(expected)?;
+        let Some(position) = at.clone() else {
+            return Ok(name);
+        };
+        self.symbols
+            .reference(name, &position)
+            .map_err(|refusal| self.error_at(at, refusal))
+    }
+
+    /// A C or C++ declaration name as written. A library path such as
+    /// `list::append` is joined before parsing into the library declaration
+    /// it names; a C++ namespace member of that spelling reads it back.
+    fn expect_c_declaration_ident(&mut self, expected: &str) -> Result<String, ClickError> {
+        let written = self
+            .here()
+            .and_then(|position| self.symbols.written_path(&position))
+            .map(str::to_string);
+        let name = self.expect_ident(expected)?;
+        Ok(written.unwrap_or(name))
     }
 
     fn expect_ident(&mut self, expected: &str) -> Result<String, ClickError> {

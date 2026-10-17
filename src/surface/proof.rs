@@ -2813,11 +2813,7 @@ pub(super) fn prove_claim_by_auto(
         &tactics,
         ProofTacticSource::GeneratedBy { source_index: 0 },
     )?;
-    if function_block
-        .structural_clauses()
-        .iter()
-        .any(|clause| matches!(clause.region(), CodeRegion::Loop(_)))
-    {
+    if function_block.structural_clauses().any_loop() {
         for theorem in &mut theorems.theorems {
             theorem.proof_kind = ProofKind::LoopVerification;
         }
