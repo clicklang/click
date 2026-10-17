@@ -9,7 +9,7 @@ without a known false acceptance. Each item that becomes a reproduced false acce
 
 Items P1–P4, W4 and W5 waited on the SMT-backed `auto`
 ([design/smt-auto-stage1.md](../design/smt-auto-stage1.md)), which landed;
-P3 and P4 are done, W4 and W5 are closed in
+P3 and P4 are done, W4, W5 and W6 are closed in
 [design/proof-language-rulings.md](../design/proof-language-rulings.md), P2
 (Integer-default specification arithmetic) moved to
 [standard-library.md](standard-library.md), and P1 is below. Also depends on [simplify-step.md](simplify-step.md), which now holds the
@@ -132,45 +132,6 @@ constructors to a fixed fuel (see the status under R3 in
 [design/proof-reuse.md](../design/proof-reuse.md#r3-automatic-unfolding-of-recursive-specification-functions)).
 Rewriting the erase-color arms with it waits on the object-class regression
 that keeps `rbtree-erase` from verifying. R4 and R5 remain.
-
-## W. Proof workflow and tooling
-
-### W6. Some diagnostic lines still print kernel notation
-
-Facts, goals, rejected requirements, evaluated sides, search candidates and
-the proof context now print in Click or C syntax (`old(g[0]) < 100`,
-`(uint32)n <= 1073741823u32`, `viewable(p[1..2])`), with reads of other
-memories as `at(<state A>, ...)` defined after the report. `--trace-proof`
-keeps its typed notation by design.
-
-Today: a loop-carried value inside the body prints as the iteration's entry
-value, `at(statement(N).entry, i)`, and a refused C operation names an address
-a local holds through that local (`alias->mu`, `*shared`, `p[i].y`). An
-`ensures` refusal names the returned value `result`, a value or allocation a
-local held at a recorded statement boundary as that local there
-(`at(statement(1).exit, r)`, `at(statement(2).exit, buf)`), and a read of a
-recorded snapshot's memory through that snapshot's locals. A pure theorem's
-`Integer` binder prints as its name in a conversion-condition refusal, and a
-memory-history sentence, a goal and an evaluated side name a struct-typed
-global's or local's field (`g.b`, `s.b`) where exactly one scalar field
-occupies exactly the bytes accessed. An address inside an allocation a local
-held is spelled from that local (`*((char *)at(statement(2).exit, p) + 5)`),
-and the goal and premise lines of a refusal name what locals held at
-recorded points, as its proof context does. A quantified frame refusal's
-leaves name the binder and the parameter cell it indexes (`dst[k]`). What
-remains:
-
-- A callee's result that no local ever held, as in `return value() + 1;`,
-  prints as `<unnamed A>`. Its only spelling is a translation temporary: the
-  C call `value()` is not a Click expression, and re-evaluating it would be
-  another call.
-
-Union members sharing an offset and width keep the offset by design
-(`mdtests/global_union_members_sharing_bytes_keep_the_offset.md`).
-
-Proposed fix: none for the callee result; it has no Click spelling.
-
-Decision: in progress.
 
 ## L. Surface language
 
