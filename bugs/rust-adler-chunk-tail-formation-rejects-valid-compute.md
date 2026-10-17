@@ -4,8 +4,9 @@ Soundness: incomplete. The pinned, unchanged Rust computation is refused before
 its first outer loop. No false claim is known to be accepted. This blocks using
 the existing negative controls to assess the separate invariant-search budget bug.
 
-Reproduced on upstream `4b9e21c9f` after the unknown-origin pointer formation
-checks in #1373, using the original source, locked import and unchanged proof:
+Reproduced on upstream `4b9e21c9f` with the unknown-origin pointer formation
+checks in #1373, using the original source, locked import and unchanged proof.
+The same original positive check still fails on `acc70c98d` (about 23 seconds):
 
 ```sh
 cargo nextest run --test rust_import --profile nightly --run-ignored only \
