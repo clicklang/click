@@ -659,7 +659,9 @@ impl<'a> Proof<'a> {
                                 arm.composite_body()?.facts().get(*index).cloned()
                             }),
                         }?;
-                        Some(crate::surface::printing::source_click_proposition(&source))
+                        Some(crate::surface::printing::authored_click_proposition(
+                            &source,
+                        ))
                     }),
                 _ => None,
             };

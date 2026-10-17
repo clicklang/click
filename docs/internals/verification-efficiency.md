@@ -226,6 +226,18 @@ line can meet the line target while its token ratio stays far over it. On
 2026-10-16, six examples were over the line target. `rbtree-erase` was 36
 times its C by lines and 119 times by tokens.
 
+Three examples stay over the target by decision (maintainer, 2026-10-17):
+on 2026-10-17, `rbtree-augmented` is 40 times its C by lines (9,673 proof
+lines for 244 lines of C), `rbtree-erase` 38 times (7,271 for 194) and
+`rbtree-insert` 36 times (2,910 for 82). Each proves a Linux red-black tree
+operation against a full model of the tree: parent pointers packed with the
+color bit, the red-black and black-height invariants, the in-order contents
+and, for `rbtree-augmented`, a subtree size kept by callbacks. The rotations
+and recolorings come in mirrored left and right arms that the C writes out
+separately, and the proofs follow the C rather than refactoring it. A proof
+that complex being large is acceptable. The report keeps listing them, and
+an example that newly crosses the target still needs its own reason.
+
 ## Simple means locally checkable
 
 A simple tactic checks one selected proof operation deterministically, without

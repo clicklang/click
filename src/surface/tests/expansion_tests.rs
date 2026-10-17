@@ -1,22 +1,31 @@
 use super::*;
 
+fn check_member_pointer_address_expansion(fixture: &str, function: &str) {
+    let (source, sources) = mdtest_sources(&format!("mdtests/{fixture}.md"));
+    let sources = sources
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    // Expansion already verifies the input; independently check its output.
+    let expanded =
+        expand_c0_claim_source(&source, &sources, function, CProofClaim::Grouped).unwrap();
+    without_implicit_auto(|| verify_c0_sources(&expanded, &sources)).unwrap();
+}
+
 #[test]
 fn member_pointer_addresses_retain_subobject_extents_through_expansion() {
-    for (fixture, function) in [
-        ("egraph_resource_pointer_load_alias", "check"),
-        ("egraph_resource_pointer_load_same_address", "check"),
-        ("model_pointer_alias_nonzero_field_load", "probe"),
-    ] {
-        let (source, sources) = mdtest_sources(&format!("mdtests/{fixture}.md"));
-        let sources = sources
-            .iter()
-            .map(|(name, text)| (name.as_str(), text.as_str()))
-            .collect::<Vec<_>>();
-        verify_c0_sources(&source, &sources).unwrap();
-        let expanded =
-            expand_c0_claim_source(&source, &sources, function, CProofClaim::Grouped).unwrap();
-        without_implicit_auto(|| verify_c0_sources(&expanded, &sources)).unwrap();
-    }
+    check_member_pointer_address_expansion("egraph_resource_pointer_load_alias", "check");
+}
+
+#[test]
+fn member_pointer_addresses_with_equal_numeric_addresses_expand() {
+    check_member_pointer_address_expansion("egraph_resource_pointer_load_same_address", "check");
+}
+
+#[test]
+#[ignore = "nightly: 0.63s after reducing duplicate verification"]
+fn nonzero_member_pointer_addresses_retain_subobject_extents_through_expansion() {
+    check_member_pointer_address_expansion("model_pointer_alias_nonzero_field_load", "probe");
 }
 
 #[test]
@@ -3288,6 +3297,27 @@ fn serialized_loop_premises_reject_a_changed_snapshot_or_polarity() {
         verify_c0_sources(&corrupted, &sources)
             .expect_err("a changed serialized premise cannot reverify");
     }
+}
+
+#[test]
+#[ignore = "nightly: 5.3s in the parallel gate"]
+fn machine_population_count_rewrites_keep_their_type_in_integer_files() {
+    let (source, sources) =
+        mdtest_sources("mdtests/a_consumed_member_bound_on_an_entry_count_is_cited.md");
+    let source_refs = sources
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    verify_c0_sources(&source, &source_refs).unwrap();
+    let expanded = expand_claim_by_label(
+        None,
+        &source,
+        &ProgramInputs::Bundle(source_refs.clone()),
+        "pool_checkout.contract",
+        None,
+    )
+    .unwrap();
+    without_implicit_auto(|| verify_c0_sources(&expanded.source, &source_refs)).unwrap();
 }
 
 #[test]
@@ -15198,6 +15228,7 @@ fn grouped_leaf_implications_preserve_constant_false_premises() {
 }
 
 #[test]
+#[ignore = "nightly: 0.56s after reducing duplicate verification"]
 fn grouped_closer_over_four_paths_places_each_leafs_own_expansion() {
     // Every path but the first reported no surface branch path, because the
     // retained branch decisions were consumed innermost-first while the
@@ -15205,9 +15236,6 @@ fn grouped_closer_over_four_paths_places_each_leafs_own_expansion() {
     // then stitched onto every leaf, and the one path needing a different
     // closer conflicted with the leaves the others had already filled.
     let sources = [("contains3.c", FOUR_RETURN_C)];
-    verify_c0_sources(FOUR_RETURN_CLICK, &sources)
-        .expect("the four-return membership proof should verify");
-
     let closer = FOUR_RETURN_CLICK
         .rfind("simp();")
         .expect("proof should contain the grouped closer");
