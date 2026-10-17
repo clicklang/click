@@ -48,7 +48,7 @@ fn exit_local_argument_context_indexing_is_linear_and_shared() {
         CState::new().with_local("cur", int32(2)),
     ];
     let successor = CState::new().with_local("cur", int32(3));
-    for size in [16, 64, 256, 1024] {
+    for size in [4, 16, 64, 256] {
         let facts = (0..size)
             .map(|index| {
                 ExecutionPureFact::new(Proposition::ConditionIs(

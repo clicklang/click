@@ -265,16 +265,16 @@ fn concrete_constructor_payload_spelling_is_checked_and_indexed() {
 
 #[test]
 fn cached_body_loadability_work_is_linear_in_cache_delta_and_selected_facts() {
+    let before = (0..2048).fold(CMemory::new(), |memory, index| {
+        memory.store(
+            Pointer {
+                block: "ambient".into(),
+                offset: crate::kernel::PointerOffsetTerm::Constant(i64::from(index) * 4),
+            },
+            int32(index),
+        )
+    });
     for size in [16u32, 32, 64, 128] {
-        let before = (0..2048).fold(CMemory::new(), |memory, index| {
-            memory.store(
-                Pointer {
-                    block: "ambient".into(),
-                    offset: crate::kernel::PointerOffsetTerm::Constant(i64::from(index) * 4),
-                },
-                int32(index),
-            )
-        });
         let cached = (0..size).fold(before.clone(), |memory, index| {
             let source = crate::kernel::intern_c_memory_ref(&memory);
             memory.with_seeded_cells(
