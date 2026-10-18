@@ -65,7 +65,9 @@ fn expanded_loop_phase_proofs_are_certificates() {
             .map(|(name, source)| (name.as_str(), source.as_str()))
             .collect::<Vec<_>>();
         let click = fixture.click_source.as_deref().unwrap();
-        let expanded = expand_c0_claim_source(click, &sources, function, CProofClaim::Grouped)
+        let verified = verify_c0_sources(click, &sources)
+            .unwrap_or_else(|e| panic!("{filename}: {}", e.message()));
+        let expanded = expand_checked_grouped_claim(click, &verified, function)
             .unwrap_or_else(|e| panic!("{filename}: {}", e.message()));
         assert!(
             !expanded.contains("close_invariants();"),
@@ -521,9 +523,9 @@ fn remaining_loop_migration_fixtures_expand_and_recheck() {
             .map(|(name, source)| (name.as_str(), source.as_str()))
             .collect::<Vec<_>>();
         let click = fixture.click_source.as_deref().unwrap();
-        verify_c0_sources(click, &sources)
+        let verified_for_expansion = verify_c0_sources(click, &sources)
             .unwrap_or_else(|e| panic!("{filename}: {}", e.message()));
-        let expanded = expand_c0_claim_source(click, &sources, function, CProofClaim::Grouped)
+        let expanded = expand_checked_grouped_claim(click, &verified_for_expansion, function)
             .unwrap_or_else(|e| panic!("{filename}: {}", e.message()));
         assert!(!expanded.contains("close_invariants();"), "{filename}");
         assert!(expanded.contains("close_invariants() by {"), "{filename}");
@@ -544,8 +546,9 @@ fn loop_preservation_have_resolves_entry_label_and_expands() {
         .map(|(name, source)| (name.as_str(), source.as_str()))
         .collect::<Vec<_>>();
     let click = fixture.click_source.unwrap();
-    verify_c0_sources(&click, &sources).unwrap_or_else(|e| panic!("{}", e.message()));
-    let expanded = expand_c0_claim_source(&click, &sources, "drain_to_zero", CProofClaim::Grouped)
+    let verified_for_expansion =
+        verify_c0_sources(&click, &sources).unwrap_or_else(|e| panic!("{}", e.message()));
+    let expanded = expand_checked_grouped_claim(&click, &verified_for_expansion, "drain_to_zero")
         .unwrap_or_else(|e| panic!("{}", e.message()));
     verify_c0_sources(&expanded, &sources).unwrap_or_else(|e| panic!("{}", e.message()));
 }
@@ -563,8 +566,9 @@ fn pointer_loop_increment_emits_checked_equality_proof() {
         .map(|(name, source)| (name.as_str(), source.as_str()))
         .collect::<Vec<_>>();
     let click = fixture.click_source.unwrap();
-    verify_c0_sources(&click, &sources).unwrap_or_else(|e| panic!("{}", e.message()));
-    let expanded = expand_c0_claim_source(&click, &sources, "last_element", CProofClaim::Grouped)
+    let verified_for_expansion =
+        verify_c0_sources(&click, &sources).unwrap_or_else(|e| panic!("{}", e.message()));
+    let expanded = expand_checked_grouped_claim(&click, &verified_for_expansion, "last_element")
         .unwrap_or_else(|e| panic!("{}", e.message()));
     assert!(
         expanded.contains("arithmetic_certificate rules"),
@@ -614,9 +618,9 @@ fn symbolic_alignment_expands_to_special_certificate_and_rechecks_without_planni
         "    simp();\n}",
         "    have aligned(p + i, 8) by { simp(); }\n    simp();\n}",
     );
-    verify_c0_sources(&click, &sources).unwrap();
+    let verified_for_expansion = verify_c0_sources(&click, &sources).unwrap();
     let expanded =
-        expand_c0_claim_source(&click, &sources, "element_is_aligned", CProofClaim::Grouped)
+        expand_checked_grouped_claim(&click, &verified_for_expansion, "element_is_aligned")
             .unwrap();
     assert!(
         expanded.contains("arithmetic_certificate rules"),
@@ -653,9 +657,9 @@ fn completed_recursive_loop_bodies_skip_legacy_preplanning_and_recheck() {
             .click_source
             .unwrap()
             .replace("close_invariants();", "close_invariants() by { simp(); }");
-        verify_c0_sources(&explicit, &sources)
+        let verified_for_expansion = verify_c0_sources(&explicit, &sources)
             .unwrap_or_else(|e| panic!("{filename}: {}", e.message()));
-        let expanded = expand_c0_claim_source(&explicit, &sources, function, CProofClaim::Grouped)
+        let expanded = expand_checked_grouped_claim(&explicit, &verified_for_expansion, function)
             .unwrap_or_else(|e| panic!("{filename}: {}", e.message()));
         assert!(!expanded.contains("close_invariants();"));
         verify_c0_sources(&expanded, &sources)
@@ -750,8 +754,9 @@ fn explicit_swap_loop_fixture(include_transports: bool) -> (&'static str, String
 fn explicit_swap_loop_transports_both_entry_bounds_and_expands() {
     let (c, click) = explicit_swap_loop_fixture(true);
     let sources = [("swap.c", c)];
-    verify_c0_sources(&click, &sources).unwrap_or_else(|e| panic!("{}", e.message()));
-    let expanded = expand_c0_claim_source(&click, &sources, "swap", CProofClaim::Grouped)
+    let verified_for_expansion =
+        verify_c0_sources(&click, &sources).unwrap_or_else(|e| panic!("{}", e.message()));
+    let expanded = expand_checked_grouped_claim(&click, &verified_for_expansion, "swap")
         .unwrap_or_else(|e| panic!("{}", e.message()));
     verify_c0_sources(&expanded, &sources).unwrap_or_else(|e| panic!("{}", e.message()));
     assert!(!expanded.contains("close_invariants();"));
@@ -2570,8 +2575,8 @@ fn loop_return_closers_do_not_require_distinct_result_values() {
         .map(|(name, source)| (name, source.replace("return i;", "return 7;")))
         .collect::<Vec<_>>();
     let sources = borrowed_sources(&sources);
-    verify_c0_sources(&click, &sources).unwrap();
-    let expanded = expand_c0_claim_source(&click, &sources, "f", CProofClaim::Grouped).unwrap();
+    let verified_for_expansion = verify_c0_sources(&click, &sources).unwrap();
+    let expanded = expand_checked_grouped_claim(&click, &verified_for_expansion, "f").unwrap();
     assert!(!expanded.contains("if result =="), "{expanded}");
     verify_c0_sources(&expanded, &sources).unwrap();
 }
@@ -2594,8 +2599,8 @@ int32 f(int32 n) {
 }
 "#;
     let sources = [("branch.c", c)];
-    verify_c0_sources(click, &sources).unwrap();
-    let expanded = expand_c0_claim_source(click, &sources, "f", CProofClaim::Grouped).unwrap();
+    let verified_for_expansion = verify_c0_sources(click, &sources).unwrap();
+    let expanded = expand_checked_grouped_claim(click, &verified_for_expansion, "f").unwrap();
     verify_c0_sources(&expanded, &sources).unwrap();
     let false_contract = click.replace("result == n or result == 7", "result == n");
     verify_c0_sources(&false_contract, &sources)

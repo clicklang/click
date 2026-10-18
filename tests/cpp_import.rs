@@ -3525,19 +3525,6 @@ fn locked_cpp_branch_and_early_return_verify_through_the_shared_sidecar_path() {
         panic!("language=c++ must select the C++ prepared-input path")
     };
     let click_project = read_click_project(&sidecar, &click_source).unwrap();
-    let verified = verify_program_prepared_project(&click_project, &import)
-        .expect("verify both C++ return paths against one contract");
-    assert_eq!(
-        verified
-            .iter()
-            .map(|theorem| match theorem.claim {
-                VerifiedClaim::Ensure { index, .. } => index,
-                VerifiedClaim::ExceptionalEnsure { index, .. } => index,
-            })
-            .collect::<Vec<_>>(),
-        vec![0, 1, 2, 0, 1, 2],
-        "both return paths certify returned ownership and both postconditions"
-    );
 
     let sites = project_smart_tactic_source_sites(&click_project, &ProgramInputs::program(&import))
         .unwrap();
@@ -3565,8 +3552,22 @@ fn locked_cpp_branch_and_early_return_verify_through_the_shared_sidecar_path() {
     let rewritten = click_project.with_entry_source(expanded.clone());
     verify_program_prepared_project(&rewritten, &import)
         .expect("the expanded branch proof must reverify");
-    let (session, _) = C0VerificationSession::new_program_prepared_project(&click_project, &import)
-        .expect("retain the original branch verification environment");
+    // Construction checks the same complete original and returns its claim metadata.
+    let (session, verified) =
+        C0VerificationSession::new_program_prepared_project(&click_project, &import)
+            .expect("retain the original branch verification environment");
+    assert_eq!(
+        verified
+            .iter()
+            .map(|theorem| match theorem.claim {
+                VerifiedClaim::Ensure { index, .. } => index,
+                VerifiedClaim::ExceptionalEnsure { index, .. } => index,
+            })
+            .collect::<Vec<_>>(),
+        vec![0, 1, 2, 0, 1, 2],
+        "both return paths certify returned ownership and both postconditions"
+    );
+
     let next = project_tactic_source_position(
         &rewritten,
         &ProgramInputs::program(&import),
@@ -3628,19 +3629,6 @@ fn const_reference_preserves_qualification_and_may_alias_a_mutable_reference() {
         panic!("language=c++ must select the C++ prepared-input path")
     };
     let click_project = read_click_project(&sidecar, &click_source).unwrap();
-    let verified = verify_program_prepared_project(&click_project, &import)
-        .expect("one owned cell should authorize an aliased mutable write and const read");
-    assert_eq!(
-        verified
-            .iter()
-            .map(|theorem| match theorem.claim {
-                VerifiedClaim::Ensure { index, .. } => index,
-                VerifiedClaim::ExceptionalEnsure { index, .. } => index,
-            })
-            .collect::<Vec<_>>(),
-        vec![0, 1, 2],
-        "the proof returns ownership and checks both postconditions without an inferred view"
-    );
 
     let sites = project_smart_tactic_source_sites(&click_project, &ProgramInputs::program(&import))
         .unwrap();
@@ -3668,8 +3656,22 @@ fn const_reference_preserves_qualification_and_may_alias_a_mutable_reference() {
     let rewritten = click_project.with_entry_source(expanded.clone());
     verify_program_prepared_project(&rewritten, &import)
         .expect("the expanded const-reference proof must reverify");
-    let (session, _) = C0VerificationSession::new_program_prepared_project(&click_project, &import)
-        .expect("retain the const-reference verification environment");
+    // Construction checks the same complete original and returns its claim metadata.
+    let (session, verified) =
+        C0VerificationSession::new_program_prepared_project(&click_project, &import)
+            .expect("retain the const-reference verification environment");
+    assert_eq!(
+        verified
+            .iter()
+            .map(|theorem| match theorem.claim {
+                VerifiedClaim::Ensure { index, .. } => index,
+                VerifiedClaim::ExceptionalEnsure { index, .. } => index,
+            })
+            .collect::<Vec<_>>(),
+        vec![0, 1, 2],
+        "the proof returns ownership and checks both postconditions without an inferred view"
+    );
+
     let next = project_tactic_source_position(
         &rewritten,
         &ProgramInputs::program(&import),
@@ -3945,9 +3947,6 @@ fn direct_cpp_call_exports_reachable_definition_and_verifies_modularly_offline()
 
     let click_source = fs::read_to_string(&sidecar).unwrap();
     let click_project = read_click_project(&sidecar, &click_source).unwrap();
-    let verified = verify_program_prepared_project(&click_project, &import)
-        .expect("verify the helper and caller through shared modular call rules");
-    assert_eq!(verified.len(), 6);
 
     let sites = project_smart_tactic_source_sites(&click_project, &ProgramInputs::program(&import))
         .unwrap();
@@ -3975,8 +3974,12 @@ fn direct_cpp_call_exports_reachable_definition_and_verifies_modularly_offline()
     let rewritten = click_project.with_entry_source(expanded.clone());
     verify_program_prepared_project(&rewritten, &import)
         .expect("the expanded modular C++ proof must reverify");
-    let (session, _) = C0VerificationSession::new_program_prepared_project(&click_project, &import)
-        .expect("retain the modular C++ verification environment");
+    // Construction checks the same complete original and returns its claim metadata.
+    let (session, verified) =
+        C0VerificationSession::new_program_prepared_project(&click_project, &import)
+            .expect("retain the modular C++ verification environment");
+    assert_eq!(verified.len(), 6);
+
     let next = project_tactic_source_position(
         &rewritten,
         &ProgramInputs::program(&import),
@@ -4064,9 +4067,6 @@ fn scalar_local_captures_a_direct_call_result_and_verifies_offline() {
 
     let click_source = fs::read_to_string(&sidecar).unwrap();
     let click_project = read_click_project(&sidecar, &click_source).unwrap();
-    let verified = verify_program_prepared_project(&click_project, &import)
-        .expect("verify local initialization through the shared call-result rule");
-    assert_eq!(verified.len(), 5);
 
     let execute = project_tactic_source_position(
         &click_project,
@@ -4085,8 +4085,12 @@ fn scalar_local_captures_a_direct_call_result_and_verifies_offline() {
     let rewritten = click_project.with_entry_source(expanded.clone());
     verify_program_prepared_project(&rewritten, &import)
         .expect("the expanded scalar-local proof must reverify");
-    let (session, _) = C0VerificationSession::new_program_prepared_project(&click_project, &import)
-        .expect("retain the scalar-local verification environment");
+    // Construction checks the same complete original and returns its claim metadata.
+    let (session, verified) =
+        C0VerificationSession::new_program_prepared_project(&click_project, &import)
+            .expect("retain the scalar-local verification environment");
+    assert_eq!(verified.len(), 5);
+
     let next = project_tactic_source_position(
         &rewritten,
         &ProgramInputs::program(&import),

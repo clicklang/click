@@ -3985,14 +3985,15 @@ fn axiomatic_std_array_reference_element_resources_verify() {
             let source = source_for(clause);
             fs::write(&path, &source).unwrap();
             let parsed = read_click_project(&path, &source).unwrap();
-            verify_program_prepared_project(&parsed, &import)
+            let verified = verify_program_prepared_project(&parsed, &import)
                 .unwrap_or_else(|error| panic!("{name}: {}\n{source}", error.message()));
-            let expanded = expand_project_claim_source_by_label(
-                &parsed,
-                &ProgramInputs::program(&import),
+            let expanded = click::surface::expand_verified_function_claim_source_by_label(
+                &source,
+                &verified,
                 "probe.contract",
             )
-            .unwrap();
+            .unwrap()
+            .expect("the verified probe claim is declared in this source");
             verify_program_prepared_project(&parsed.with_entry_source(expanded.clone()), &import)
                 .unwrap_or_else(|error| panic!("{name}: {}\n{expanded}", error.message()));
         }

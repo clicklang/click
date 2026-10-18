@@ -20,9 +20,10 @@ fn inline_array_element_addresses_are_logical_without_granting_access() {
             ensures result == &p->bytes[0] + i;
         } by { execute(); simp(); }
     "#;
-    verify_c0_sources(proof, &inputs).unwrap();
-    for name in ["logical", "byte_at"] {
-        let expanded = expand_c0_claim_source(proof, &inputs, name, CProofClaim::Grouped).unwrap();
+    let verified_for_expansion = verify_c0_sources(proof, &inputs).unwrap();
+    for (_, expanded) in
+        expand_checked_grouped_claims(proof, &verified_for_expansion, ["logical", "byte_at"])
+    {
         verify_c0_sources(&expanded, &inputs).unwrap();
     }
     assert!(
@@ -2602,10 +2603,10 @@ fn grouped_outcome_fold_is_local_to_the_returning_branch() {
         }
     "#;
     let sources = &[("select.c", c_source)];
-    verify_c0_sources(click_source, sources)
+    let verified_for_expansion = verify_c0_sources(click_source, sources)
         .expect("each branch closes its own scalar and resource claims");
     let expanded =
-        expand_c0_claim_source(click_source, sources, "select", CProofClaim::Grouped).unwrap();
+        expand_checked_grouped_claim(click_source, &verified_for_expansion, "select").unwrap();
     verify_c0_sources(&expanded, sources)
         .expect("branch-local fold expansion independently verifies");
     let wrong_result = expanded.replace("result == 0 or result == 7", "result == 7");
