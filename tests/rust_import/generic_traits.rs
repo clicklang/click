@@ -44,3 +44,55 @@ fn charon_generic_trait_instances_refine_their_interfaces() {
         assert!(rendered.contains(expected), "{rendered}");
     }
 }
+
+const OBJECT_SIDECAR: &str =
+    include_str!("../../design/charon-trial/generic-trait-objects/shapes.click");
+
+// A generic crate trait's `function`s are each instance's object fields at
+// the instance's types, `last(self) -> T` an `i32` field of `Bag<i32>`'s
+// object and `items(self) -> List<T>` a `List<i32>` one. A struct packed as
+// an instance's object has its implementation's definitions as the fields.
+#[test]
+#[ignore = "nightly: 5s in the parallel gate"]
+fn charon_generic_trait_objects_carry_state_at_each_instance() {
+    let p = Project::from_fixture("design/charon-trial/generic-trait-objects");
+    fs::write(p.root.join("borrow.click"), OBJECT_SIDECAR).unwrap();
+    let prepared = p.prepared().unwrap();
+    C0VerificationSession::new_program_prepared(OBJECT_SIDECAR, &prepared)
+        .unwrap_or_else(|error| panic!("{error:?}"));
+    for (before, after, expected) in [
+        // The generic interface binds the implementation's memory.
+        (
+            "        ensures count(self) == old(count(self)) + 1;",
+            "        ensures count(self) == old(count(self)) + 2;",
+            "`<bags::Counter as bags::Bag<i32>>::insert.interface_ensures_0`",
+        ),
+        // A call through the instance knows the interface's fields only.
+        (
+            "    ensures result == old(count(bag)) + 1;\n    ensures last(bag) == x;\n} by { execute(); simp(); }\n\nfn bags::fill_dyn",
+            "    ensures result == old(count(bag)) + 1;\n    ensures last(bag) == x + 1;\n} by { execute(); simp(); }\n\nfn bags::fill_dyn",
+            "bags::fill.ensures_1",
+        ),
+        // The packed struct's fields follow its definitions.
+        (
+            "fn bags::through_dyn(x: i32) -> i32 {\n    ensures result == x;",
+            "fn bags::through_dyn(x: i32) -> i32 {\n    ensures result == x + 1;",
+            "bags::through_dyn.ensures_0",
+        ),
+        // An implementation defines a `List<T>` field at its instance.
+        (
+            "        List<i32>::Cons(self.value, List<i32>::Nil)",
+            "        List<i32>::Nil",
+            "`<bags::Slot as bags::Holder<i32>>::put.interface_ensures_0`",
+        ),
+    ] {
+        assert!(OBJECT_SIDECAR.contains(before), "{before}");
+        let invalid = OBJECT_SIDECAR.replacen(before, after, 1);
+        let error = C0VerificationSession::new_program_prepared(&invalid, &prepared)
+            .err()
+            .expect("a claim the object state does not justify must fail");
+        let rendered = format!("{error:?} {error}");
+        let rendered = click::languages::rust::names::display_rust_names(&rendered);
+        assert!(rendered.contains(expected), "{rendered}");
+    }
+}

@@ -226,11 +226,12 @@ that writes `int32` for such a source already writes the source's spelling.
    change the state, which its `ensures` read as new and `old(...)` as at
    entry. Done: an implementation, or a C++ override, that names the
    interface's parameters otherwise reads its clauses with its own names.
-   Done for generic traits without object state: `trait p::Scale<T>`
-   states every instance's interface and `trait p::Scale<i32>` adds an
-   instance's clauses; implementations at scalar instances refine them.
-   Remaining: object state for generic traits, with fields of generic spec
-   types such as `List<T>`. Done for default methods: the `trait`
+   Done for generic traits: `trait p::Scale<T>` states every instance's
+   interface and `trait p::Scale<i32>` adds an instance's clauses;
+   implementations at scalar instances refine them, and the generic
+   block's `function`s, `items(self) -> List<T>`, are each instance's
+   object fields at its types. Remaining: checking a generic block once
+   for every type rather than at each instance. Done for default methods: the `trait`
    block writes a default method's interface with the proof of its default
    body, verified once with calls of the trait's methods under their
    interfaces; an `impl` that overrides it refines it. Done for C++
