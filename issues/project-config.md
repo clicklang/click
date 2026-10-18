@@ -125,7 +125,10 @@ Proposed structure, to be confirmed while implementing:
   size, and the import identity, with language-specific fields in a language
   section. One shared implementation covers bounded reading, hashing, stable
   re-reads, atomic writes, and output-collision and path-containment checks.
-  Today C, C++ and Rust each have their own.
+  Done: every language's entry uses the envelope in
+  `src/languages/envelope.rs` with one import-identity formula, earlier
+  entries are refused with ``run `click import lock` ``, and the input
+  handling is shared in `src/languages/inputs.rs`.
 - **Portable locks:**
   - project files, including those in external source roots, are identified
     by paths relative to their unit's root;

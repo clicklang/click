@@ -441,6 +441,15 @@ impl Names {
                     self.argument(a);
                 }
             }
+            If {
+                condition,
+                then_branch,
+                else_branch,
+            } => {
+                self.proposition(condition);
+                self.algebraic(then_branch);
+                self.algebraic(else_branch);
+            }
             Match { scrutinee, arms } => {
                 self.algebraic(scrutinee);
                 for arm in arms {

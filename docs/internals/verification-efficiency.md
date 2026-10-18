@@ -42,6 +42,15 @@ unfolding a resource with ten members costs at least ten operations. The
 violation is touching the other thousand facts, functions, snapshots, or
 resources that the tactic did not name.
 
+Pointer-class fact sources use retained allocation identities only for exact
+lookup and withdrawal. Candidate buckets and reconstruction iterate by admission
+ordinal, with separate condition and proposition identities. Allocation addresses
+must never determine which witness a short-circuit search tries first: that
+changes charged work between identical runs. The ordinal registry shares its
+persistent maps across forks; a single withdrawal updates only its lookup and
+ordered-source paths. The allocation-order and multi-size source-query
+regressions cover reconstruction, duplicate admission, and branch-local removal.
+
 Trace source locations follow the same rule. Resolve a claim's written tactic
 locations together and reuse that result for every step, including missing
 indices. Computing their line and character columns uses one source walk;

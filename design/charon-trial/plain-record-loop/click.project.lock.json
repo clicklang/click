@@ -4,21 +4,36 @@
     "loop": {
       "language": "rust",
       "lock": {
-        "artifact": "218620289ebab5a55116b1afff99ec786d8b5612f57ecdbef265372581dfb564",
-        "config": "66e3de1b0af552e56929e0e0fb514772c8efc3ff147b757ae60ca761509b2380",
+        "envelope": 1,
         "frontend": {
-          "click_version": "0.1.0",
-          "compiler_commit": "923c95cdf5ba65cea505aa2ea829f578e1506ed8",
-          "extractor_revision": "5d6b812e5f77dbf3d7f66c21b9b57091f0e084cb",
-          "extractor_version": "0.1.279",
-          "profile": "38b817cc5760845d2e37b8f72a333f6d36a3ccdbfbf19e8c22da436e67a79ab1"
+          "identity": "7c2e994c506684f2bc8c86d9798bf9cb35c42693c51c3dd401139ef6618ae66c",
+          "name": "charon"
         },
-        "identity": "0a604705f0ecf22ea77b892f84693627b710c03986fe3443a81d461dced03489",
-        "schema": 9,
-        "source": "7703f5f6e7010564f2595e1414d54fb12670c00f454d4606039ebd1872fe060a",
-        "source_files": {
-          "loop.rs": "7703f5f6e7010564f2595e1414d54fb12670c00f454d4606039ebd1872fe060a"
-        }
+        "rust": {
+          "frontend": {
+            "click_version": "0.1.0",
+            "compiler_commit": "923c95cdf5ba65cea505aa2ea829f578e1506ed8",
+            "extractor_revision": "5d6b812e5f77dbf3d7f66c21b9b57091f0e084cb",
+            "extractor_version": "0.1.279",
+            "profile": "38b817cc5760845d2e37b8f72a333f6d36a3ccdbfbf19e8c22da436e67a79ab1"
+          },
+          "schema": 9,
+          "source": "7703f5f6e7010564f2595e1414d54fb12670c00f454d4606039ebd1872fe060a"
+        },
+        "sources": {
+          "loop.rs": {
+            "artifact": {
+              "bytes": 27743,
+              "path": ".click/loop/loop.rs.ullbc",
+              "sha256": "218620289ebab5a55116b1afff99ec786d8b5612f57ecdbef265372581dfb564"
+            },
+            "identity": "a1143e1203847f3ae7a3c7387824438711e1cd2ba9ef0aa04f41d0969f393643",
+            "inputs": {
+              "loop.rs": "7703f5f6e7010564f2595e1414d54fb12670c00f454d4606039ebd1872fe060a"
+            }
+          }
+        },
+        "unit": "66e3de1b0af552e56929e0e0fb514772c8efc3ff147b757ae60ca761509b2380"
       }
     }
   }

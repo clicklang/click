@@ -4,21 +4,36 @@
     "quad": {
       "language": "rust",
       "lock": {
-        "artifact": "517d51347377a83e578be02473149f78d662b684c400e40937f03ebcc5eccb88",
-        "config": "ca2a2807846ba7a0fef121595821cf20e2d8f16e3c4d610d600ebbbf33428bc1",
+        "envelope": 1,
         "frontend": {
-          "click_version": "0.1.0",
-          "compiler_commit": "923c95cdf5ba65cea505aa2ea829f578e1506ed8",
-          "extractor_revision": "5d6b812e5f77dbf3d7f66c21b9b57091f0e084cb",
-          "extractor_version": "0.1.279",
-          "profile": "38b817cc5760845d2e37b8f72a333f6d36a3ccdbfbf19e8c22da436e67a79ab1"
+          "identity": "7c2e994c506684f2bc8c86d9798bf9cb35c42693c51c3dd401139ef6618ae66c",
+          "name": "charon"
         },
-        "identity": "6bb315a4a8fbb2574d036f8b3524d2e490eb1292c1d0214b141e2eca71fa96ec",
-        "schema": 9,
-        "source": "60fe1738f223093bdf84c1510cbc7c76fa924f8f6869a2bd6589263c94288c8e",
-        "source_files": {
-          "quad.rs": "59689d5acee3153d2aad58d21246f3de25cc659db07f689f6efbe3d86e3436c1"
-        }
+        "rust": {
+          "frontend": {
+            "click_version": "0.1.0",
+            "compiler_commit": "923c95cdf5ba65cea505aa2ea829f578e1506ed8",
+            "extractor_revision": "5d6b812e5f77dbf3d7f66c21b9b57091f0e084cb",
+            "extractor_version": "0.1.279",
+            "profile": "38b817cc5760845d2e37b8f72a333f6d36a3ccdbfbf19e8c22da436e67a79ab1"
+          },
+          "schema": 9,
+          "source": "60fe1738f223093bdf84c1510cbc7c76fa924f8f6869a2bd6589263c94288c8e"
+        },
+        "sources": {
+          "quad.rs": {
+            "artifact": {
+              "bytes": 409793,
+              "path": ".click/quad/quad.rs.ullbc",
+              "sha256": "517d51347377a83e578be02473149f78d662b684c400e40937f03ebcc5eccb88"
+            },
+            "identity": "e1685d738c8cf8eb2c11d2cc79ad141179c5384bb437d98cc4c26e1724f2e63a",
+            "inputs": {
+              "quad.rs": "59689d5acee3153d2aad58d21246f3de25cc659db07f689f6efbe3d86e3436c1"
+            }
+          }
+        },
+        "unit": "ca2a2807846ba7a0fef121595821cf20e2d8f16e3c4d610d600ebbbf33428bc1"
       }
     }
   }

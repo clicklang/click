@@ -4,21 +4,36 @@
     "copy_source_after_call": {
       "language": "rust",
       "lock": {
-        "artifact": "e18d40a4e5fd0de9fc2eb7b1d62589c69f809ee0cd7a1a3bc573d87868ce1d24",
-        "config": "0003eddb822670e8c76f9e9ffa1b4199a9012606a02cc3b29e6bd98f036b2fff",
+        "envelope": 1,
         "frontend": {
-          "click_version": "0.1.0",
-          "compiler_commit": "923c95cdf5ba65cea505aa2ea829f578e1506ed8",
-          "extractor_revision": "5d6b812e5f77dbf3d7f66c21b9b57091f0e084cb",
-          "extractor_version": "0.1.279",
-          "profile": "38b817cc5760845d2e37b8f72a333f6d36a3ccdbfbf19e8c22da436e67a79ab1"
+          "identity": "7c2e994c506684f2bc8c86d9798bf9cb35c42693c51c3dd401139ef6618ae66c",
+          "name": "charon"
         },
-        "identity": "e2d8f367c692653de213d4336a7fc97d5bfc43f97756578d781fd4f3cade7b09",
-        "schema": 9,
-        "source": "c6df3529b18c38d774862789ff8e5858802538018bdbcddbe365c81ba9552c96",
-        "source_files": {
-          "copy.rs": "b0123440f51e4a427fe46868a895e9c1d9be26e8edcfeec2573c5cb6aad0cbb7"
-        }
+        "rust": {
+          "frontend": {
+            "click_version": "0.1.0",
+            "compiler_commit": "923c95cdf5ba65cea505aa2ea829f578e1506ed8",
+            "extractor_revision": "5d6b812e5f77dbf3d7f66c21b9b57091f0e084cb",
+            "extractor_version": "0.1.279",
+            "profile": "38b817cc5760845d2e37b8f72a333f6d36a3ccdbfbf19e8c22da436e67a79ab1"
+          },
+          "schema": 9,
+          "source": "c6df3529b18c38d774862789ff8e5858802538018bdbcddbe365c81ba9552c96"
+        },
+        "sources": {
+          "copy.rs": {
+            "artifact": {
+              "bytes": 64069,
+              "path": ".click/copy_source_after_call/copy.rs.ullbc",
+              "sha256": "e18d40a4e5fd0de9fc2eb7b1d62589c69f809ee0cd7a1a3bc573d87868ce1d24"
+            },
+            "identity": "c2943045b52040ded8a08682228644c75cc7b10fe6d12a66549f4fb83995cfd3",
+            "inputs": {
+              "copy.rs": "b0123440f51e4a427fe46868a895e9c1d9be26e8edcfeec2573c5cb6aad0cbb7"
+            }
+          }
+        },
+        "unit": "0003eddb822670e8c76f9e9ffa1b4199a9012606a02cc3b29e6bd98f036b2fff"
       }
     }
   }

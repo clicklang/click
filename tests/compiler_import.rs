@@ -59,13 +59,13 @@ fn describe_project(description: &Path) -> Result<PathBuf, String> {
     Ok(project_file)
 }
 
-/// The `main` unit's entry in a project lock.
+/// The C section of the `main` unit's entry in a project lock.
 fn unit_lock(lock: &serde_json::Value) -> &serde_json::Value {
-    &lock["units"]["main"]["lock"]
+    &lock["units"]["main"]["lock"]["c"]
 }
 
 fn unit_lock_mut(lock: &mut serde_json::Value) -> &mut serde_json::Value {
-    &mut lock["units"]["main"]["lock"]
+    &mut lock["units"]["main"]["lock"]["c"]
 }
 
 /// Prepares the described import as its project's unit.
@@ -1403,11 +1403,17 @@ fn compiler_import_supplies_clicks_modeled_headers_beside_project_flags() {
         opened.keys().map(String::as_str).collect::<Vec<_>>(),
         ["limits.h", "stdint.h", "string.h"]
     );
+    // The envelope's inputs are the source and the headers outside Click's.
+    let source = unit_lock(&lock)["sources"][0]["path"].as_str().unwrap();
+    let logical = unit_lock(&lock)["sources"][0]["logical_source"]
+        .as_str()
+        .unwrap();
     assert!(
-        unit_lock(&lock)["sources"][0]["dependencies"]
+        lock["units"]["main"]["lock"]["sources"][logical]["inputs"]
             .as_object()
             .unwrap()
             .keys()
+            .filter(|path| *path != source)
             .all(|path| path.ends_with("include/label.h")),
         "{lock}"
     );

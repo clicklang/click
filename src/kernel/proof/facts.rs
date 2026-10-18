@@ -2517,6 +2517,14 @@ fn collect_algebraic_term_roots(term: &AlgebraicTerm, terms: &mut BTreeSet<Algeb
                 }
             }
         }
+        AlgebraicTermNode::If {
+            then_term,
+            else_term,
+            ..
+        } => {
+            collect_algebraic_term_roots(then_term, terms);
+            collect_algebraic_term_roots(else_term, terms);
+        }
     }
 }
 

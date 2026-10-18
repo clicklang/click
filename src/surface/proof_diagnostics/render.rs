@@ -1516,6 +1516,19 @@ impl Renderer<'_> {
                     self.push(")");
                 }
             }
+            AlgebraicTermNode::If {
+                condition,
+                then_term,
+                else_term,
+            } => {
+                self.push("if(");
+                self.condition(condition);
+                self.push(", ");
+                self.algebraic(then_term);
+                self.push(", ");
+                self.algebraic(else_term);
+                self.push(")");
+            }
             AlgebraicTermNode::Match { scrutinee, arms } => {
                 self.push("match ");
                 self.algebraic(scrutinee);
