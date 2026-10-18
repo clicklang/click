@@ -645,7 +645,7 @@ step is still checked.
 | `unfold(function(args))` | simple | Core | Open one layer of a pure function. | [Reference](#unfolding-pure-functions) |
 | `peel(function(args)) using { P; ... }` | simple | Specialized | Open a function using written branch evidence. | [Reference](#peeling-a-pure-function) |
 | `match value [ensuring { ... }] { Type::Variant(fields) => { ... } ... }` | control | Core | Prove each constructor case of an algebraic value. | [Reference](#constructor-matches) |
-| `induct(n) as ih` | simple | Core | Introduce strong induction on a nonnegative `int32`. | [Reference](#scalar-induction) |
+| `induct(n) as ih` | simple | Core | Introduce strong induction on a nonnegative `int32` or a `uint64`. | [Reference](#scalar-induction) |
 | `induct(xs) as ih { Type::Variant(fields) => { ... } ... }` | control | Core | Prove constructor cases with recursive hypotheses. | [Reference](#algebraic-induction) |
 | `apply(ih(m))` | smart | Core | Apply an induction hypothesis and prove its premises. | [Reference](#induction-hypothesis-application) |
 | `apply(ih(m)) using { P; ... }` | simple | Expansion output | Apply an induction hypothesis using written premises. | [Reference](#induction-hypotheses-with-selected-premises) |
@@ -1621,16 +1621,18 @@ after local proof prefixes and all-impossible matches remain unsupported.
 
 **Form:** `induct(n) as ih`
 
-**Core.** As the first step of a pure theorem over nonnegative `int32` parameter
-`n`, introduce a strong induction hypothesis named `ih`.
+**Core.** As the first step of a pure theorem over an `int32` or `uint64` parameter
+`n`, introduce a strong induction hypothesis named `ih`. The signed measure
+requires a nonnegative domain; the unsigned measure has that domain intrinsically.
 
 **Failure, checking, and tools:**
 
-A later position, nonparameter, or unproved nonnegative domain fails. Click
+A later position, unsupported parameter type, or unproved signed nonnegative domain fails. Click
 opens the induction rule; expansion is unchanged, and profiling charges the
 structural setup.
 
 **Checked examples:** [`pure_induction_countdown.md`](https://github.com/clicklang/click/blob/master/mdtests/pure_induction_countdown.md)
+and [`uint64_measure_induction_counts_a_range_fold.md`](https://github.com/clicklang/click/blob/master/mdtests/uint64_measure_induction_counts_a_range_fold.md).
 
 ### Algebraic induction
 
@@ -1655,8 +1657,8 @@ the arm certificates.
 
 **Form:** `apply(ih(m))`
 
-**Core.** Select explicit proofs of `0 <= m`, `m < n`, and the theorem
-requirements at `m`, then instantiate the local induction hypothesis. Under a
+**Core.** Select explicit proofs of `m < n` and the theorem requirements at `m`,
+and `0 <= m` for a signed measure, then instantiate the local induction hypothesis. Under a
 structural `induct` the obligations are instead the theorem's requirements at
 the spelled parameter list, and the descent is the inducted argument naming a
 field of the current arm.
@@ -1675,8 +1677,8 @@ steps and a `using` block.
 
 **Expansion output.** `click expand` writes it; by hand, prefer the bare form,
 which proves the decrease and requirements. Instantiate the local induction
-hypothesis from exactly the listed nonnegative, strict-decrease, and
-substituted-requirement obligations.
+hypothesis from exactly the listed strict-decrease and substituted-requirement
+obligations, including nonnegativity for a signed measure.
 
 **Failure, checking, and tools:**
 
