@@ -5520,7 +5520,7 @@ impl<'a> Proof<'a> {
                 })
             )
         );
-        let matches_kernel = |candidate: &ClickProposition| {
+        let matches_kernel = |candidate: &ClickProposition, allow_recorded_pair: bool| {
             if crate::instrumentation::deadline_exceeded() {
                 return None;
             }
@@ -5544,7 +5544,8 @@ impl<'a> Proof<'a> {
                 self.lower_surface_proposition_direct(candidate, "typed simp premise form")
                     .ok()
             };
-            if self.focused_outcome_data().is_some()
+            if allow_recorded_pair
+                && self.focused_outcome_data().is_some()
                 && surface_facts
                     .available_kernel_matching(candidate, |fact| self.facts().contains(fact))
                     .is_some_and(|lowered| {
@@ -5607,7 +5608,7 @@ impl<'a> Proof<'a> {
         if let Some(surface) = surface_facts.surfaces(kernel).find(|surface| {
             (proposition_contains_at_expression(surface)
                 || proposition_contains_old_expression(surface))
-                && matches_kernel(surface).is_some()
+                && matches_kernel(surface, true).is_some()
         }) {
             return Some(surface.clone());
         }
@@ -5621,7 +5622,7 @@ impl<'a> Proof<'a> {
         if pointer_goal
             && let Some(surface) = surface_facts
                 .surfaces(kernel)
-                .find(|surface| matches_kernel(surface).is_some())
+                .find(|surface| matches_kernel(surface, true).is_some())
         {
             return Some(surface.clone());
         }
@@ -5632,7 +5633,7 @@ impl<'a> Proof<'a> {
                 view.parameter_binding,
                 view.fixed_state.state,
             )
-            && matches_kernel(&surface).is_some()
+            && matches_kernel(&surface, true).is_some()
         {
             return Some(surface);
         }
@@ -5666,11 +5667,11 @@ impl<'a> Proof<'a> {
                 selector: SnapshotSelector::ProgramPoint(function_entry.clone()),
                 proposition: Box::new(surface.clone()),
             };
-            if matches_kernel(&anchored).is_some() {
+            if matches_kernel(&anchored, true).is_some() {
                 return Some(anchored);
             }
             if let Ok(anchored) = surface_at_snapshot(&surface, &function_entry)
-                && matches_kernel(&anchored).is_some()
+                && matches_kernel(&anchored, true).is_some()
             {
                 return Some(anchored);
             }
@@ -5678,7 +5679,7 @@ impl<'a> Proof<'a> {
         if self.premise_fixed_state_view().is_some() {
             if let Some(anchored) = surface_facts.surfaces(kernel).find_map(|surface| {
                 let anchored = surface_at_snapshot(surface, &function_entry).ok()?;
-                matches_kernel(&anchored).map(|()| anchored)
+                matches_kernel(&anchored, true).map(|()| anchored)
             }) {
                 return Some(anchored);
             }
@@ -5689,7 +5690,7 @@ impl<'a> Proof<'a> {
                     view.fixed_state.pre_state,
                 )
                 && let Ok(anchored) = surface_at_snapshot(&surface, &function_entry)
-                && matches_kernel(&anchored).is_some()
+                && matches_kernel(&anchored, true).is_some()
             {
                 return Some(anchored);
             }
@@ -5697,10 +5698,27 @@ impl<'a> Proof<'a> {
         if let Some(anchor) = premise_anchor
             && let Some(anchored) = surface_facts.surfaces(kernel).find_map(|surface| {
                 let anchored = surface_at_snapshot(surface, anchor).ok()?;
-                matches_kernel(&anchored).map(|()| anchored)
+                matches_kernel(&anchored, true).map(|()| anchored)
             })
         {
             return Some(anchored);
+        }
+        // A selected scalar fact may combine a current value with an entry
+        // read, which no single earlier snapshot can spell. Try these named
+        // states before walking history. New scalar candidates lower directly: a
+        // recorded unanchored form may name an earlier value of the same local.
+        if !pointer_goal
+            && let Some(view) = self.premise_fixed_state_view()
+            && let Some(surface) =
+                super::surface_synthesis::synthesize_surface_proposition_at_entry_and_post(
+                    kernel,
+                    view.parameter_binding,
+                    view.fixed_state.pre_state,
+                    view.fixed_state.state,
+                )
+            && matches_kernel(&surface, false).is_some()
+        {
+            return Some(surface);
         }
         // Before accepting an unanchored recorded form, which may have been
         // stated at an earlier value of a variable that later changed,
@@ -5732,7 +5750,7 @@ impl<'a> Proof<'a> {
                         recorded_snapshots,
                         anchor,
                     )
-                    .find(|surface| matches_kernel(surface).is_some())
+                    .find(|surface| matches_kernel(surface, true).is_some())
                 },
             )
         {
@@ -5757,7 +5775,7 @@ impl<'a> Proof<'a> {
                         view.fixed_state.recorded_snapshots,
                         anchor,
                     )
-                    .find(|surface| matches_kernel(surface).is_some())
+                    .find(|surface| matches_kernel(surface, true).is_some())
                 },
             )
         {
@@ -5795,14 +5813,14 @@ impl<'a> Proof<'a> {
                     state,
                 )
                 && let Ok(anchored) = surface_at_snapshot(&surface, anchor)
-                && matches_kernel(&anchored).is_some()
+                && matches_kernel(&anchored, true).is_some()
             {
                 return Some(anchored);
             }
         }
         if let Some(surface) = surface_facts
             .surfaces(kernel)
-            .find(|surface| matches_kernel(surface).is_some())
+            .find(|surface| matches_kernel(surface, true).is_some())
             .cloned()
         {
             return Some(surface);
@@ -5896,7 +5914,7 @@ impl<'a> Proof<'a> {
                                 .is_some()
                         });
                         if unfolds_to_selected {
-                            if matches_kernel(&body_surface).is_some() {
+                            if matches_kernel(&body_surface, true).is_some() {
                                 return Some(body_surface);
                             }
                             if let Some(view) = self.premise_fixed_state_view()
@@ -5908,7 +5926,7 @@ impl<'a> Proof<'a> {
                                     .filter_map(|selector| {
                                         surface_at_snapshot(&body_surface, selector).ok()
                                     })
-                                    .find(|surface| matches_kernel(surface).is_some())
+                                    .find(|surface| matches_kernel(surface, true).is_some())
                             {
                                 return Some(anchored);
                             }
@@ -5954,7 +5972,7 @@ impl<'a> Proof<'a> {
                 ParameterBinding::default(),
                 &state,
                 &bindings,
-            ) && matches_kernel(&surface).is_some()
+            ) && matches_kernel(&surface, true).is_some()
             {
                 return Some(surface);
             }
@@ -5999,7 +6017,7 @@ impl<'a> Proof<'a> {
             ParameterBinding::new(parameters, arguments),
             state,
             &bound_variable_names,
-        ) && matches_kernel(&surface).is_some()
+        ) && matches_kernel(&surface, true).is_some()
         {
             return Some(surface);
         }
@@ -6021,7 +6039,7 @@ impl<'a> Proof<'a> {
                     recorded_snapshots,
                     premise_anchor,
                 )
-                .find(|surface| matches_kernel(surface).is_some())
+                .find(|surface| matches_kernel(surface, true).is_some())
             },
         )
     }
