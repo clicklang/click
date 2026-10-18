@@ -5933,7 +5933,30 @@ impl AnnotationLowerer<'_> {
                         value_type: self.contract_array_element_type(operand, environment),
                     }),
                     CExpression::AddressOf(_) | CExpression::CheckedObjectAddress(_) => {
-                        self.lower_c_fragment_to_spec(lowered, environment)
+                        // Rebuild from the authoritative surface operand,
+                        // including values already bound into a postcondition.
+                        // Keep the address operation and selected member extent.
+                        let values = if environment.contract_result_in_scope {
+                            BTreeMap::from([(
+                                "result".to_string(),
+                                ContractExpression::CFragment(CExpression::Variable(
+                                    crate::kernel::C_CONTRACT_RESULT_NAME.to_string(),
+                                )),
+                            )])
+                        } else {
+                            BTreeMap::new()
+                        };
+                        let rebound = substitute_contract_expression_in(
+                            expression,
+                            &ContractSubstitutions::for_contract_result(&values),
+                        )?;
+                        let lowered = contract_expression_as_c_fragment(&rebound)
+                            .ok_or("address operand is not a C expression")?;
+                        // Substitution has resolved the built-in result while
+                        // retaining explicit C bindings such as `c(result)`.
+                        let mut rebound_environment = environment.clone();
+                        rebound_environment.contract_result_in_scope = false;
+                        self.lower_c_fragment_to_spec(&lowered, &rebound_environment)
                     }
                     _ => Err("invalid C unary operation".to_string()),
                 }
