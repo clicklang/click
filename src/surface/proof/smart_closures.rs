@@ -3501,8 +3501,9 @@ impl<'a> Proof<'a> {
         &self,
         goal: &Proposition,
         with_equalities: bool,
-    ) -> Vec<Proposition> {
+    ) -> (Vec<Proposition>, bool) {
         let mut available = BTreeSet::new();
+        let mut has_equalities = false;
         let mut visited = BTreeSet::new();
         // Count lowering can leave a read expression where the bounds index
         // names its registered load variable. Seed from that canonical value,
@@ -3567,11 +3568,16 @@ impl<'a> Proof<'a> {
                     *value && matches!(condition, ConditionTerm::Bitvector32Equal(..))
                 })
                 .map(|(condition, _)| Proposition::ConditionIs(condition.clone(), true))
+                // A load's defining equation only names that same value.
+                // It adds no arithmetic relation, and following its memory
+                // term would pull unrelated address variables into the search.
+                .filter(|fact| !crate::kernel::is_load_variable_defining_fact(fact))
                 .collect::<Vec<_>>();
             for fact in equalities {
                 if !self.facts().contains(&fact) {
                     continue;
                 }
+                has_equalities = true;
                 pending.extend(
                     crate::kernel::proposition_variables(&crate::kernel::canonical_condition_fact(
                         &fact,
@@ -3582,7 +3588,7 @@ impl<'a> Proof<'a> {
                 available.insert(fact);
             }
         }
-        available.into_iter().collect()
+        (available.into_iter().collect(), has_equalities)
     }
 
     /// Selects the bounds reachable from the goal's variables: each goal
@@ -3605,11 +3611,20 @@ impl<'a> Proof<'a> {
         let is_pure = matches!(self.context.as_ref(), ProofContext::Pure(_));
         // The bounds alone first, as every certificate this route found
         // before equalities joined it; equalities only where they miss.
-        let mut available = self.indexed_arithmetic_premises(goal, false);
-        if plan_signed_arithmetic_certificate(goal, &available).is_none() {
-            available = self.indexed_arithmetic_premises(goal, true);
-        }
-        plan_signed_arithmetic_certificate(goal, &available)?;
+        let (mut available, _) = self.indexed_arithmetic_premises(goal, false);
+        let plan = if let Some(plan) = plan_signed_arithmetic_certificate(goal, &available) {
+            plan
+        } else {
+            let (expanded, has_equalities) = self.indexed_arithmetic_premises(goal, true);
+            // Without a selected equality, the second traversal follows the
+            // same bounds graph and cannot change the first planning miss.
+            if !has_equalities {
+                return None;
+            }
+            available = expanded;
+            plan_signed_arithmetic_certificate(goal, &available)?
+        };
+        let planned_premises = available.len();
         let mut pairs = Vec::new();
         for fact in available {
             let source = self
@@ -3638,7 +3653,11 @@ impl<'a> Proof<'a> {
         {
             return Some(closed);
         }
-        let plan = plan_signed_arithmetic_certificate(goal, &kernels)?;
+        let plan = if kernels.len() == planned_premises {
+            plan
+        } else {
+            plan_signed_arithmetic_certificate(goal, &kernels)?
+        };
         let certificate = self.signed_plan_to_surface_certificate(&plan, &pairs, surface_goal)?;
         self.apply_step(ProofStep::ArithmeticCertificate(ArithmeticCertificate {
             family: ArithmeticCertificateFamily::SignedInt32(certificate),
