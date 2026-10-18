@@ -237,11 +237,11 @@ that writes `int32` for such a source already writes the source's spelling.
    verified once for every type, and a call at scalar types uses the
    generic contract at those types. Done: a type parameter's values in
    memory, as a generic struct's fields, `struct Cell<T>`, for generic
-   free functions over the struct, verified once with each instance's
-   contract read at its own layout. Remaining: a generic block whose object
-   carries state is read at each instance only; a reference to a value of
-   `T`; a generic call from generic code; and a generic struct's own
-   methods, `impl<T> Cell<T>`. Done for default methods: the `trait`
+   free functions over the struct and its own methods, `impl<T> Cell<T>`,
+   verified once with each instance's contract read at its own layout.
+   Remaining: a generic block whose object carries state is read at each
+   instance only; a reference to a value of `T`; and a generic call from
+   generic code. Done for default methods: the `trait`
    block writes a default method's interface with the proof of its default
    body, verified once with calls of the trait's methods under their
    interfaces; an `impl` that overrides it refines it. Done for C++

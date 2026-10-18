@@ -11,7 +11,8 @@
         "features": [],
         "roots": [
           "generic_structs::round_trip",
-          "generic_structs::swapped"
+          "generic_structs::swapped",
+          "generic_structs::via_methods"
         ],
         "files": [
           "cells.rs"

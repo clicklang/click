@@ -693,8 +693,14 @@ cell.value; ensures result == cell.value; }`, is verified once: a store of a
 signature and clauses at its types, read again at the instance's own layout:
 `read<i32>` reads `Cell<i32>`'s `value` at its offset. A sidecar does not
 write an instance's block; `fn generic_structs::read<i32>(...)` is refused.
-A generic struct's field is of one of its type parameters or a scalar type,
-and the struct has no `Drop` or methods of its own yet
+The struct's own methods are written once in a generic `impl` block,
+`impl<T: Copy> generic_structs::Cell<T> { fn get(&self) -> T { ... } by
+{ ... } }`, named `generic_structs::Cell<T>::get`; a call at `u32` calls
+`generic_structs::Cell<u32>::get`, whose contract is the block's at `u32`,
+and an `impl` block at an instance, `impl generic_structs::Cell<u32>`, is
+refused. A generic struct's field is of one of its type parameters or a
+scalar type, its `impl` blocks are inherent and name its parameters in
+order, and it has no `Drop`
 ([`design/charon-trial/generic-structs`](https://github.com/clicklang/click/blob/master/design/charon-trial/generic-structs/cells.click)).
 
 A generic trait's object may carry state, as any trait's does (below): the

@@ -37,3 +37,19 @@ pub fn swapped(x: u8, y: u8) -> u8 {
     swap(&mut pair);
     pair.first
 }
+
+impl<T: Copy> Cell<T> {
+    pub fn get(&self) -> T {
+        self.value
+    }
+
+    pub fn set(&mut self, value: T) {
+        self.value = value;
+    }
+}
+
+pub fn via_methods(x: u32) -> u32 {
+    let mut cell = make(0);
+    cell.set(x);
+    cell.get()
+}

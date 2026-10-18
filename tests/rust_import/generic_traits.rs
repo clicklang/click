@@ -168,9 +168,9 @@ fn charon_generic_implementations_are_verified_once_for_every_type() {
 const STRUCT_SIDECAR: &str = include_str!("../../design/charon-trial/generic-structs/cells.click");
 
 // A generic struct's fields of `T` are values of `T` in memory: generic
-// functions over `&Cell<T>` and `&mut Pair<T>` are verified once with `T`
-// abstract, and calls at `i32` and `u8` use their contracts at the
-// instances' own layouts.
+// functions over `&Cell<T>` and `&mut Pair<T>`, and the struct's own
+// methods, are verified once with `T` abstract, and calls at `i32`, `u8` and
+// `u32` use their contracts at the instances' own layouts.
 #[test]
 fn charon_generic_struct_fields_are_verified_once_for_every_type() {
     let p = Project::from_fixture("design/charon-trial/generic-structs");
@@ -201,6 +201,18 @@ fn charon_generic_struct_fields_are_verified_once_for_every_type() {
             "    ensures result == y;",
             "    ensures result == x;",
             "generic_structs::swapped.ensures_0",
+        ),
+        // A generic struct's method is verified once, and its caller at
+        // `u32` knows its instance's contract and no more.
+        (
+            "        ensures result == self.value;",
+            "        ensures result != self.value;",
+            "generic_structs::Cell<T>::get.ensures_0",
+        ),
+        (
+            "fn generic_structs::via_methods(x: u32) -> u32 {\n    ensures result == x;",
+            "fn generic_structs::via_methods(x: u32) -> u32 {\n    ensures result == 0;",
+            "generic_structs::via_methods.ensures_0",
         ),
     ] {
         assert!(STRUCT_SIDECAR.contains(before), "{before}");

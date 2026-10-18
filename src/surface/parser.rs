@@ -1194,6 +1194,7 @@ impl Parser {
         parser.rust_generic_instances = layouts.rust_generic_instances;
         // A generic function's instances are written out at their types.
         let mut function_instances = BTreeMap::<String, BTreeSet<Vec<String>>>::new();
+        let mut impl_instances = BTreeMap::<String, BTreeSet<Vec<String>>>::new();
         for (instance, generic, _, _) in &parser.rust_generic_instances {
             if let Some(arguments) =
                 crate::languages::rust::names::instance_type_arguments(instance, generic)
@@ -1202,6 +1203,10 @@ impl Parser {
                     .entry(generic.clone())
                     .or_default()
                     .insert(arguments);
+            } else if let Some((record, arguments)) =
+                crate::languages::rust::names::impl_instance_arguments(instance, generic)
+            {
+                impl_instances.entry(record).or_default().insert(arguments);
             }
         }
         // An instance is only ever written out: one the sidecar writes is
@@ -1211,6 +1216,7 @@ impl Parser {
                 std::mem::take(&mut parser.tokens),
                 std::mem::take(&mut parser.positions),
                 &function_instances,
+                &impl_instances,
             )?;
             parser.matching_parentheses = validate_parenthesis_nesting(&tokens, &positions)?;
             parser.tokens = tokens;
