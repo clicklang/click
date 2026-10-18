@@ -644,6 +644,18 @@ pub(in crate::kernel) fn finite_integer_range_exhausted(
     equal_facts: &[(Bitvector32Term, Bitvector32Term)],
     disequal_facts: &[(Bitvector32Term, Bitvector32Term)],
 ) -> bool {
+    integer_range_facts(order_facts, equal_facts, disequal_facts)
+        .values()
+        .any(integer_range_exhausted)
+}
+
+/// Each variable's constant bounds and excluded values, as the order,
+/// equality and disequality facts state them.
+pub(in crate::kernel) fn integer_range_facts(
+    order_facts: &[(Bitvector32Term, Bitvector32Term, bool)],
+    equal_facts: &[(Bitvector32Term, Bitvector32Term)],
+    disequal_facts: &[(Bitvector32Term, Bitvector32Term)],
+) -> BTreeMap<Variable, IntegerRangeFacts> {
     let mut ranges: BTreeMap<Variable, IntegerRangeFacts> = BTreeMap::new();
 
     for (left, right, strict) in order_facts {
@@ -676,16 +688,19 @@ pub(in crate::kernel) fn finite_integer_range_exhausted(
             ranges.entry(variable).or_default().excluded.insert(value);
         }
     }
+    ranges
+}
 
-    ranges.into_values().any(|range| {
-        let (Some(lower), Some(upper)) = (range.lower, range.upper) else {
-            return false;
-        };
-        if lower > upper {
-            return true;
-        }
-        upper - lower <= 256 && (lower..=upper).all(|value| range.excluded.contains(&value))
-    })
+/// Whether one variable's bounds admit no value: they cross, or a short
+/// interval has every value excluded.
+pub(in crate::kernel) fn integer_range_exhausted(range: &IntegerRangeFacts) -> bool {
+    let (Some(lower), Some(upper)) = (range.lower, range.upper) else {
+        return false;
+    };
+    if lower > upper {
+        return true;
+    }
+    upper - lower <= 256 && (lower..=upper).all(|value| range.excluded.contains(&value))
 }
 
 pub(in crate::kernel) fn bitvector_variable(term: &Bitvector32Term) -> Option<Variable> {

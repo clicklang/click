@@ -450,7 +450,7 @@ int32 vector_push(struct vector* owner, int32 value) {
         normalize();
     }
     have owner->data == old(owner->data) by {
-        normalize();
+        assumption();
     }
     have forall (k: int32) { 0 <= k and k < old(owner->len) implies owner->data[k] == old(owner->data[k]) } by {
         intro();

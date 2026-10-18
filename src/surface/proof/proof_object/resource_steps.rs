@@ -2519,7 +2519,7 @@ impl<'a> Proof<'a> {
                     goal.path_index,
                     self.facts(),
                     &checked.selected,
-                    &goal.data.core.state,
+                    &goal.data.core,
                     &checked.state,
                     &checked.facts,
                 )
@@ -2722,7 +2722,7 @@ impl<'a> Proof<'a> {
                     goal.path_index,
                     self.facts(),
                     selected,
-                    &goal.data.core.state,
+                    &goal.data.core,
                     &state,
                     &checked.facts,
                 )
@@ -2737,7 +2737,7 @@ impl<'a> Proof<'a> {
                     goal.path_index,
                     self.facts(),
                     &checked.selected,
-                    &goal.data.core.state,
+                    &goal.data.core,
                     &state,
                     &checked.facts,
                 )

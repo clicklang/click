@@ -64,12 +64,51 @@ fn modeled_tree_rotate_left_checks_model_and_ownership() {
     verify_c0_sources(source, &sources).unwrap();
     let expanded =
         expand_c0_claim_source(source, &sources, "tree_rotate_left", CProofClaim::Grouped).unwrap();
-    verify_c0_sources(&expanded, &sources).unwrap();
+    super::super::expansion_tests::assert_only_function_proof_changed(
+        source,
+        &expanded,
+        "tree_rotate_left",
+    );
+    let checked = crate::surface::verify_c0_sources_functions(
+        &expanded,
+        &sources,
+        ["tree_rotate_left".to_string()],
+    )
+    .unwrap();
+    assert!(!checked.is_empty());
+    assert!(
+        checked
+            .iter()
+            .all(|proof| proof.function_block.signature().name() == "tree_rotate_left")
+    );
+    // This mutation changes a pure theorem, so retain its full-project check.
+    let bad_theorem = source.replace(
+        "ensures heap_inorder(heap_rotate_left(tree)) == heap_inorder(tree) by",
+        "ensures heap_inorder(heap_rotate_left(tree)) == List<struct tree_node*>::Nil by",
+    );
+    assert_ne!(bad_theorem, source);
+    assert!(verify_c0_sources(&bad_theorem, &sources).is_err());
+    // Other mutants change only rotation contracts/bodies. Check both complete
+    // rotations because their identical postcondition is mutated together.
+    let outside_rotations = |text: &str| {
+        let mut ranges = ["tree_rotate_left", "tree_rotate_right"].map(|function| {
+            let signature = format!(" {function}(");
+            assert_eq!(text.matches(&signature).count(), 1);
+            let start = text.find(&signature).unwrap();
+            let body = start + text[start..].find("} by {").unwrap() + "} by {".len();
+            let end = body + text[body..].find("\n}").unwrap() + "\n}".len();
+            (start, end)
+        });
+        ranges.sort_unstable();
+        format!(
+            "{}{}{}",
+            &text[..ranges[0].0],
+            &text[ranges[0].1..ranges[1].0],
+            &text[ranges[1].1..]
+        )
+    };
+    let outside = outside_rotations(source);
     for bad in [
-        source.replace(
-            "ensures heap_inorder(heap_rotate_left(tree)) == heap_inorder(tree) by",
-            "ensures heap_inorder(heap_rotate_left(tree)) == List<struct tree_node*>::Nil by",
-        ),
         source.replace(
             "ensures heap_inorder(rotated.model) == heap_inorder(old(t.model));",
             "ensures heap_inorder(rotated.model) == list::append(heap_inorder(old(t.model)), List<struct tree_node*>::Cons(root, List<struct tree_node*>::Nil));",
@@ -89,7 +128,10 @@ fn modeled_tree_rotate_left_checks_model_and_ownership() {
         ),
     ] {
         assert_ne!(bad, source);
-        assert!(verify_c0_sources(&bad, &sources).is_err());
+        assert_eq!(outside_rotations(&bad), outside);
+        assert!(crate::surface::verify_c0_sources_functions(
+            &bad, &sources, ["tree_rotate_left".to_string(), "tree_rotate_right".to_string()],
+        ).is_err());
     }
     // The real source stays the positive boundary; broken-store mutants must fail.
     for bad_c in [

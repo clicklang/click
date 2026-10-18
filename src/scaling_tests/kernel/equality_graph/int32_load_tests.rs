@@ -176,3 +176,40 @@ fn nested_named_pointer_reads_ignore_unrelated_definitions() {
         "{costs:?}"
     );
 }
+
+#[test]
+fn zero_index_read_condition_ignores_unrelated_read_predicates() {
+    let mut samples = Vec::new();
+    for size in [8u64, 32, 128] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let memory = memory();
+        let mut context = PureFactContext::new();
+        for index in 0..size {
+            let left = load(&memory, &address(950_000 + 2 * index), 4);
+            let right = load(&memory, &address(950_001 + 2 * index), 4);
+            context = context.assume_condition(ConditionTerm::signed_less_than(left, right), true);
+        }
+        let base = address(960_000);
+        let index = var(960_001);
+        let direct = load(&memory, &base, 4);
+        let indexed = load(&memory, &base.offset_by_elements(index.clone(), 4), 4);
+        let next = load(
+            &memory,
+            &base.offset_by_elements(Bitvector32Term::add(index.clone(), 1u32.into()), 4),
+            4,
+        );
+        context =
+            context.assume_condition(ConditionTerm::signed_less_than(next.clone(), indexed), true);
+        let target = ConditionTerm::signed_less_than(next, direct);
+        let (answer, work) = crate::instrumentation::measure_deterministic_work(|| {
+            let context = context.assume_condition(ConditionTerm::equal(index, 0u32.into()), true);
+            crate::kernel::reasoning::decide_with_facts(&context, &ExecutionFacts::new(), &target)
+        });
+        assert_eq!(answer, Some(true));
+        samples.push(work);
+    }
+    assert!(
+        samples.iter().all(|work| *work <= samples[0] + 32),
+        "{samples:?}"
+    );
+}

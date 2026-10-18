@@ -1,5 +1,5 @@
 //! Literal values and selected conditional/load witnesses on shared term roots.
-use super::{MachineAtom, TermClasses};
+use super::{MachineAtom, PendingUnions, TermClasses};
 use crate::kernel::assumptions::{SignedConstantResolution, memory_blind_pointer_fingerprint};
 use crate::kernel::prelude::*;
 
@@ -75,13 +75,13 @@ impl TermClasses {
                 .inverse_bytes
                 .insert(root, bytes.with_value(byte));
         }
-        let mut pending = Vec::new();
+        let mut pending = PendingUnions::default();
         self.inverse_byte_values(
             root,
             Some(&crate::persistent::PersistentSet::default().with_value(byte)),
             &mut pending,
         );
-        self.close(pending);
+        self.close_pending(pending);
     }
 
     /// The constant of the byte `u` given the constant of `int8(u)`. A known
@@ -93,7 +93,7 @@ impl TermClasses {
         &mut self,
         root: u64,
         selected: Option<&crate::persistent::PersistentSet<u64>>,
-        pending: &mut Vec<(u64, u64)>,
+        pending: &mut PendingUnions,
     ) {
         let Some(value @ -128..=127) = self.int32_constants.get(&root).copied() else {
             return;
@@ -121,7 +121,7 @@ impl TermClasses {
         moved: u64,
         kept: u64,
         kept_was_settled: bool,
-        pending: &mut Vec<(u64, u64)>,
+        pending: &mut PendingUnions,
     ) {
         if self.scalar_conflicts.contains(&moved) {
             self.scalar_conflicts = self.scalar_conflicts.without_value(&moved);
