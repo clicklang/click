@@ -574,7 +574,8 @@ impl Drop for WordRepresentationScope {
 /// concludes it and no reader of the step owes a derivation of it. Being
 /// public, it reaches every check that reads path facts -- a prerequisite
 /// left to the proof, the owned-footprint check of a store. A range the
-/// context already holds or decides is not refiled.
+/// context already holds exactly is not refiled. Constructing this consequence
+/// never asks the general condition solver to establish it again.
 pub(in crate::kernel) fn add_narrow_integer_range_execution_pure_facts(
     facts: &mut ExecutionFacts,
     assumptions: &PureFactContext,
@@ -589,15 +590,6 @@ pub(in crate::kernel) fn add_narrow_integer_range_execution_pure_facts(
     for proposition in range_facts {
         if assumptions.proves_exact(&proposition)
             || facts.iter().any(|fact| fact.proposition() == &proposition)
-        {
-            continue;
-        }
-        // As for every path fact: one the context already decides adds
-        // nothing, and would only ride along as a guard of whatever the
-        // value is read for (a specification read of a loop counter).
-        if let Proposition::ConditionIs(condition, true) = &proposition
-            && !assumptions.should_defer_non_exact_condition_reasoning()
-            && assumptions.decide(condition) == Some(true)
         {
             continue;
         }
@@ -2471,7 +2463,7 @@ pub(in crate::kernel) fn read_c_lvalue_expression_paths(
 /// through this read or as a substituted `CExpression::Value`, so the range
 /// is filed at those two points, once where the value is produced, and no
 /// operator that later widens the value restates it. A range the context
-/// already decides is not refiled.
+/// already holds exactly is not refiled.
 pub(in crate::kernel) fn read_c_lvalue_paths(
     state: &CState,
     outcome: CLValueOutcome,

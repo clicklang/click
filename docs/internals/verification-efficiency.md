@@ -52,6 +52,12 @@ line ambiguity, and target containment. Matching delimiters skip nested bodies,
 and direct tactic ranges are cached by body rather than rebuilt per child.
 Regressions cover siblings, long lines, deep nesting, and unrelated source text.
 
+Narrow integer reads construct their certified type-range facts directly.
+Exact context membership can omit duplicates; general order reasoning must
+not re-prove a range the value's producer already established. A regression
+reads one byte beside 4, 16, 64, and 256 unrelated order facts and checks
+bounded deterministic work.
+
 Loop-frame reconstruction checks each retained fact as it is composed, then
 normalizes the completed resource context once. Re-normalizing the growing
 frame after each insertion revisits all earlier scalar and view endpoints.

@@ -238,3 +238,50 @@ fn stored_pointer_bounds_ignore_unrelated_numeric_classes() {
         assert!(work <= 512, "{size} unrelated classes: {work} work");
     }
 }
+
+#[test]
+fn narrow_value_range_construction_ignores_unrelated_order_facts() {
+    let value = CValue::UInt8(Bitvector32Term::Variable(Variable(986_000)));
+    let expected = c_narrow_integer_range_facts(&value).unwrap();
+    let state = CState::new().with_local("byte", value);
+    let expression = c_variable("byte");
+    for size in [4u64, 16, 64, 256] {
+        let mut assumptions = PureFactContext::new();
+        for id in 0..size {
+            let term = Bitvector32Term::add(
+                Bitvector32Term::Variable(Variable(987_000 + id)),
+                Bitvector32Term::Variable(Variable(989_000 + id)),
+            );
+            assumptions = assumptions.assume_condition(
+                ConditionTerm::signed_less_equal(Bitvector32Term::Constant(0), term),
+                true,
+            );
+        }
+        let (paths, work) = crate::instrumentation::measure_deterministic_work(|| {
+            evaluate_c_expression_paths(
+                &state,
+                &expression,
+                &assumptions,
+                &mut ExecutionBudget::for_c_expression(&expression),
+            )
+            .unwrap()
+        });
+        assert_eq!(paths.len(), 1);
+        assert_eq!(
+            paths[0].outcome,
+            CExpressionOutcome::Value(state.locals().get("byte").unwrap().clone())
+        );
+        for fact in &expected {
+            assert!(
+                paths[0]
+                    .facts
+                    .iter()
+                    .any(|given| given.proposition() == fact)
+            );
+        }
+        assert!(
+            work <= 256,
+            "{size} unrelated order facts took {work} units"
+        );
+    }
+}
