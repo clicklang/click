@@ -1444,7 +1444,9 @@ pub(super) fn copy_aggregate_fields(
             | CType::UInt64
                 | CType::UInt128
             | CType::Float32
-            | CType::Float64 => (field.c_type(), 1),
+            | CType::Float64
+            // A generic struct's field of an abstract type parameter.
+            | CType::Parameter(_) => (field.c_type(), 1),
             CType::Int32Array(length) => (CType::Int32, length),
             CType::UInt32Array(length) => (CType::UInt32, length),
             CType::Int64Array(length) => (CType::Int64, length),
@@ -1574,6 +1576,11 @@ pub(super) fn copy_aggregate_fields(
                         source_field,
                         LoadKind::of_type(element_type)?,
                     ))),
+                    CType::Parameter(_) => crate::kernel::eval::symbolic_load_value_unrecorded(
+                        &memory,
+                        &source_field,
+                        element_type,
+                    ),
                     _ => None,
                 }
             });

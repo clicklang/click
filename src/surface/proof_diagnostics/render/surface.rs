@@ -2173,6 +2173,11 @@ impl Printer<'_> {
             AlgebraicTermNode::PureFunctionApplication { name, arguments } => {
                 self.call(name, arguments, depth + 1)
             }
+            AlgebraicTermNode::MemoryLoad { memory, pointer } => self.bitvector(
+                &AlgebraicTermNode::memory_load_carrier(memory, pointer),
+                None,
+                depth + 1,
+            ),
             AlgebraicTermNode::Constructor { variant, fields } => {
                 if value.algebraic_type.name.len() + variant.len() > 256 {
                     return None;

@@ -320,7 +320,7 @@ impl TermClasses {
                         // by a signature that would forget their binding scope.
                         // A conditional is an atom by its whole identity, as a
                         // scalar conditional is.
-                        N::Match { .. } | N::If { .. } => {
+                        N::Match { .. } | N::If { .. } | N::MemoryLoad { .. } => {
                             values.push(self.opaque_argument(&A::Algebraic(term.clone())));
                             continue;
                         }

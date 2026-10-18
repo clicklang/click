@@ -2299,6 +2299,15 @@ fn collect_algebraic_memory_loads(
             let _ = (arguments, current_memory, loads, seen_integers);
             Err("opaque algebraic function may hide a current memory load".into())
         }
+        AlgebraicTermNode::MemoryLoad { memory, pointer } => {
+            collect_bitvector_memory_loads_with_width(
+                &AlgebraicTermNode::memory_load_carrier(memory, pointer),
+                current_memory,
+                loads,
+                Some(crate::kernel::ABSTRACT_VALUE_WIDTH),
+                seen_integers,
+            )
+        }
         AlgebraicTermNode::If {
             condition,
             then_term,

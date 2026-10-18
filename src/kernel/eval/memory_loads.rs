@@ -741,7 +741,12 @@ fn evaluate_c_memory_load_case(
     // snapshot has already materialized the cell's concrete value. Checking
     // `known_value` first would collapse `at(mark, field == 11)` to `true` and
     // erase the address needed for later frame transport.
-    if allow_symbolic_external_load && assumptions.should_force_symbolic_external_loads() {
+    // An abstract value has no frame history to transport: a stored one is
+    // the value, found by the lookups below.
+    if allow_symbolic_external_load
+        && assumptions.should_force_symbolic_external_loads()
+        && !matches!(value_type, CType::Parameter(_))
+    {
         let Some(value) = canonicalized_symbolic_load_value_with_identity(
             memory,
             &pointer,
@@ -1819,6 +1824,12 @@ fn canonicalized_symbolic_load_value_with_identity(
             stored.clone(),
             Pointer::loaded_value(&crate::kernel::intern_c_memory_ref(memory), &address),
         ));
+        return Some(value);
+    }
+    // A stored abstract value is the value the memory holds there.
+    if let Some(value @ CValue::Parameter(_)) = memory.known_value(&address)
+        && value_type.accepts(&value)
+    {
         return Some(value);
     }
     let value = symbolic_load_value(memory, &address, value_type)?;
@@ -4011,8 +4022,12 @@ pub(in crate::kernel) fn symbolic_load_value_unrecorded(
         CType::Int128 | CType::UInt128 => {
             memory.symbolic_wide_integer_load(pointer, MachineIntegerType::from_c_type(value_type)?)
         }
-        // An abstract value has no cells of its own (yet).
-        CType::Parameter(_) => None,
+        // An abstract value is the load of its type at the address.
+        CType::Parameter(parameter) => Some(AlgebraicTermNode::parameter_load(
+            crate::kernel::intern_c_memory(memory.clone()),
+            pointer.clone(),
+            parameter,
+        )),
         CType::Void | CType::VoidPointer => None,
         CType::Bool => {
             let load = Bitvector32Term::MemoryLoad(

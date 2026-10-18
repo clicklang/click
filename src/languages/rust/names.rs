@@ -43,6 +43,23 @@ pub(crate) fn push_type_argument(encoded: &mut String, argument: &str) {
     encoded.push_str(&format!("_A{}_{argument}", argument.len()));
 }
 
+/// The type arguments of `instance`, the name of generic function
+/// `generic`'s instance, `pick<i32>`: each argument `push_type_argument`
+/// appended. `None` for a name that is not one.
+pub(crate) fn instance_type_arguments(instance: &str, generic: &str) -> Option<Vec<String>> {
+    let mut rest = instance.strip_prefix(generic)?;
+    let mut arguments = Vec::new();
+    while !rest.is_empty() {
+        let tail = rest.strip_prefix("_A")?;
+        let digits = tail.bytes().take_while(u8::is_ascii_digit).count();
+        let length = tail[..digits].parse::<usize>().ok()?;
+        let argument = tail[digits..].strip_prefix('_')?.get(..length)?;
+        arguments.push(argument.to_string());
+        rest = &tail[digits + 1 + length..];
+    }
+    (!arguments.is_empty()).then_some(arguments)
+}
+
 /// The generic crate trait instance whose method's interface function
 /// `name` is, `traits::Scale<i32>::scale`: the trait's importer name and its
 /// type arguments. `None` for any other name.

@@ -2562,6 +2562,7 @@ fn integer_carrier_in_algebraic(value: &AlgebraicTerm, _variable: Variable) -> b
         AlgebraicTermNode::Constructor { .. }
         | AlgebraicTermNode::Match { .. }
         | AlgebraicTermNode::If { .. }
+        | AlgebraicTermNode::MemoryLoad { .. }
         | AlgebraicTermNode::PureFunctionApplication { .. } => true,
     }
 }
@@ -3945,6 +3946,7 @@ fn algebraic_case_paths_in(
         AlgebraicTermNode::Variable(_)
         | AlgebraicTermNode::Match { .. }
         | AlgebraicTermNode::If { .. }
+        | AlgebraicTermNode::MemoryLoad { .. }
         | AlgebraicTermNode::PureFunctionApplication { .. } => {
             let mut paths = Vec::with_capacity(term.algebraic_type.variants.len());
             for variant in term.algebraic_type.variants.iter() {

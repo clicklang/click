@@ -1,0 +1,22 @@
+{
+  "units": {
+    "generic_structs": {
+      "language": "rust",
+      "sources": {
+        "cells.rs": {}
+      },
+      "crate": {
+        "name": "generic_structs",
+        "edition": "2021",
+        "features": [],
+        "roots": [
+          "generic_structs::round_trip",
+          "generic_structs::swapped"
+        ],
+        "files": [
+          "cells.rs"
+        ]
+      }
+    }
+  }
+}

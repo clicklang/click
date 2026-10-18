@@ -502,6 +502,13 @@ fn collect_algebraic_carriers_seen(
         AlgebraicTermNode::Variable(variable) => {
             variables.algebraic.insert(*variable);
         }
+        AlgebraicTermNode::MemoryLoad { memory, pointer } => {
+            collect_algebraic_value_carriers(
+                &AlgebraicTermNode::memory_load_carrier_value(memory, pointer),
+                variables,
+                seen,
+            );
+        }
         AlgebraicTermNode::Constructor { fields, .. } => {
             for field in fields {
                 collect_algebraic_value_carriers(field, variables, seen);
@@ -2618,6 +2625,14 @@ impl<'a> TermRewrite<'a> {
         }
         let node = match &term.node {
             AlgebraicTermNode::Variable(v) => AlgebraicTermNode::Variable(*v),
+            AlgebraicTermNode::MemoryLoad { memory, pointer } => {
+                let carrier = AlgebraicTermNode::memory_load_carrier_value(memory, pointer);
+                match self.field(&carrier) {
+                    AlgebraicValue::C(value) => AlgebraicTermNode::memory_load_from_carrier(&value)
+                        .unwrap_or_else(|| term.node.clone()),
+                    _ => term.node.clone(),
+                }
+            }
             AlgebraicTermNode::Constructor { variant, fields } => {
                 let mut rewritten = Vec::with_capacity(fields.len());
                 for field in fields {

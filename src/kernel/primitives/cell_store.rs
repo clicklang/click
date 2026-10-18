@@ -501,6 +501,20 @@ impl CellRun {
     /// typed as the element and spelled as the run's mode says.
     fn named_value(&self, index: u32) -> CValue {
         let pointer = self.slot_pointer(index);
+        // A slot of an abstract type parameter holds the load of its type.
+        if let CType::Parameter(parameter) = self.element_type {
+            let (source, pointer) = match &self.mode {
+                RunValueMode::Copy { source_base } => (
+                    self.source.clone(),
+                    source_base.offset_by_bytes(index * self.element_width),
+                ),
+                RunValueMode::Constant(value) => return value.clone(),
+                RunValueMode::Load | RunValueMode::SymbolicStorage => {
+                    (self.source.clone(), pointer)
+                }
+            };
+            return super::AlgebraicTermNode::parameter_load(source, pointer, parameter);
+        }
         match &self.mode {
             RunValueMode::Load => {
                 let load = crate::kernel::canonical_form_of_load(

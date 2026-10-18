@@ -104,6 +104,9 @@ pub(crate) use term_shape::{BitvectorBinaryOp, BitvectorComparisonOp, BitvectorU
 pub(crate) use term_width::*;
 
 pub(super) const C_POINTER_BYTE_WIDTH: u32 = 8;
+/// The bytes a value of an abstract type parameter takes in memory, as a
+/// generic struct's field: a model width, since no program reads its bytes.
+pub(crate) const ABSTRACT_VALUE_WIDTH: u32 = 8;
 
 /// The allocator alignment guaranteed by the LP64 heap model.  Keep this
 /// beside the pointer primitives so all proof routes use the same profile
@@ -3294,6 +3297,64 @@ pub enum AlgebraicTermNode {
         then_term: Box<AlgebraicTerm>,
         else_term: Box<AlgebraicTerm>,
     },
+    /// The value of an abstract type parameter that memory `memory` holds at
+    /// `pointer`, a generic struct's field: the algebraic counterpart of a
+    /// [`Bitvector32Term::MemoryLoad`].
+    MemoryLoad {
+        memory: SharedCMemory,
+        pointer: Box<Pointer>,
+    },
+}
+
+impl AlgebraicTermNode {
+    /// The scalar load term at the same memory and address as a
+    /// [`AlgebraicTermNode::MemoryLoad`]: a walker reaches its memory and
+    /// address as it reaches a scalar load's.
+    pub(crate) fn memory_load_carrier(
+        memory: &SharedCMemory,
+        pointer: &Pointer,
+    ) -> Bitvector32Term {
+        Bitvector32Term::MemoryLoad(memory.clone(), Box::new(pointer.clone()), LoadKind::Bits64)
+    }
+
+    /// The [`AlgebraicTermNode::MemoryLoad`] whose carrier a rewrite of
+    /// [`Self::memory_load_carrier`] left: a scalar load at a memory and an
+    /// address. `None` when the rewrite replaced the load.
+    pub(crate) fn memory_load_from_carrier(carrier: &CValue) -> Option<Self> {
+        match carrier {
+            CValue::UInt64(Bitvector32Term::MemoryLoad(memory, pointer, LoadKind::Bits64)) => {
+                Some(Self::MemoryLoad {
+                    memory: memory.clone(),
+                    pointer: pointer.clone(),
+                })
+            }
+            _ => None,
+        }
+    }
+
+    /// The value of abstract type `parameter` that `memory` holds at
+    /// `pointer`.
+    pub(crate) fn parameter_load(
+        memory: SharedCMemory,
+        pointer: Pointer,
+        parameter: TypeParameterName,
+    ) -> CValue {
+        CValue::Parameter(Box::new(AlgebraicTerm {
+            algebraic_type: parameter.algebraic_type(),
+            node: Self::MemoryLoad {
+                memory,
+                pointer: Box::new(pointer),
+            },
+        }))
+    }
+
+    /// [`Self::memory_load_carrier`] as an algebraic field value.
+    pub(crate) fn memory_load_carrier_value(
+        memory: &SharedCMemory,
+        pointer: &Pointer,
+    ) -> AlgebraicValue {
+        AlgebraicValue::C(CValue::UInt64(Self::memory_load_carrier(memory, pointer)))
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
@@ -3407,6 +3468,9 @@ impl AlgebraicTerm {
                             });
                         }
                     }
+                    AlgebraicTermNode::MemoryLoad { memory, pointer } => {
+                        visit(&AlgebraicTermNode::memory_load_carrier(memory, pointer));
+                    }
                     AlgebraicTermNode::If {
                         condition,
                         then_term,
@@ -3506,6 +3570,8 @@ impl AlgebraicTerm {
         }
         match &self.node {
             AlgebraicTermNode::Variable(_) => true,
+            // Only a value of an abstract type parameter is loaded.
+            AlgebraicTermNode::MemoryLoad { .. } => self.algebraic_type.rigid,
             AlgebraicTermNode::Constructor { .. } => self.checked_constructor_fields().is_some(),
             AlgebraicTermNode::PureFunctionApplication { arguments, .. } => {
                 arguments.iter().all(PureFunctionArgument::is_well_formed)

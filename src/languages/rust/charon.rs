@@ -19,8 +19,8 @@ mod traits;
 use super::profile;
 use super::schema::{self as out, Expression as E, MirStatement as S, MirTerminator as T, Type};
 use crate::languages::compiler_process::{CompilerLimits, run_compiler};
-use charon_lib::ast::AstVisitable;
 use charon_lib::ast::from_rustc::LangItem;
+use charon_lib::ast::{AstVisitable, TyVisitable};
 use charon_lib::{ast as a, ullbc_ast as u};
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
@@ -439,6 +439,35 @@ fn local_impl_method_path(name: &a::Name, krate: &str, id: a::TraitImplId, metho
         && matches!(&name.name[n-1], a::PathElem::Ident(found,d) if found == method && d.is_zero())
 }
 
+/// How a generic struct's instance name spells type argument `ty`: a type
+/// parameter by its name, a scalar by its Rust name.
+fn record_argument_spelling(ty: &Type) -> Option<String> {
+    Some(match ty {
+        Type::Parameter { name } => name.clone(),
+        Type::I32 => "i32".into(),
+        Type::U8 => "u8".into(),
+        Type::U16 => "u16".into(),
+        Type::U32 => "u32".into(),
+        Type::Usize => "usize".into(),
+        Type::Bool => "bool".into(),
+        _ => return None,
+    })
+}
+
+/// The size and alignment of a generic struct field of type `ty`. Rust
+/// fixes no layout for a generic struct, and no safe code reads one, so
+/// Click lays each instance out itself: a scalar at its own size, and a value
+/// of an abstract type parameter at a word.
+fn model_field_size(ty: &Type) -> Option<u32> {
+    Some(match ty {
+        Type::U8 | Type::Bool => 1,
+        Type::U16 => 2,
+        Type::I32 | Type::U32 => 4,
+        Type::Usize | Type::Parameter { .. } => 8,
+        _ => return None,
+    })
+}
+
 fn concrete_size(size: &a::Size) -> Result<u32, String> {
     let Some(expr) = &size.chosen else {
         return Err(unsupported("symbolic layout"));
@@ -487,6 +516,11 @@ struct Adapter<'a> {
     /// Each crate trait instance's type arguments after `Self`, as they were
     /// when it was named.
     instance_types: std::cell::RefCell<BTreeMap<String, Vec<Type>>>,
+    /// The crate's generic structs, `struct Cell<T>`, by their names.
+    generic_records: BTreeMap<a::TypeDeclId, String>,
+    /// Each instance of a generic struct a type names, `Cell<T>` or
+    /// `Cell<i32>`, by its name: the struct and its type arguments.
+    record_instances: std::cell::RefCell<BTreeMap<String, (a::TypeDeclId, Vec<Type>)>>,
 }
 impl Adapter<'_> {
     fn ty(&self, t: &a::Ty) -> Result<Type, String> {
@@ -638,6 +672,37 @@ impl Adapter<'_> {
                     result: Box::new(result),
                 }
             }
+            // An instance of a generic struct is a record of its own, named
+            // with its type arguments: `Cell<T>` in generic code, `Cell<i32>`
+            // in a caller.
+            a::TyKind::Adt(r)
+                if r.generics.const_generics.is_empty()
+                    && let Some(base) = self.generic_records.get(&r.id) =>
+            {
+                let id = r.id;
+                let arguments = r
+                    .generics
+                    .types
+                    .iter()
+                    .map(|argument| self.ty(argument))
+                    .collect::<Result<Vec<_>, _>>()?;
+                let mut name = base.clone();
+                for argument in &arguments {
+                    super::names::push_type_argument(
+                        &mut name,
+                        &record_argument_spelling(argument).ok_or_else(|| {
+                            unsupported(
+                                "generic struct at a type other than a type parameter, \
+                                 i32, u8, u16, u32, usize or bool",
+                            )
+                        })?,
+                    );
+                }
+                self.record_instances
+                    .borrow_mut()
+                    .insert(name.clone(), (id, arguments));
+                Type::Record { name }
+            }
             a::TyKind::Adt(r)
                 if r.generics.types.is_empty() && r.generics.const_generics.is_empty() =>
             {
@@ -675,6 +740,17 @@ impl Adapter<'_> {
     fn record_id(&self, ty: &a::Ty) -> Result<a::TypeDeclId, String> {
         match ty.kind() {
             a::TyKind::Adt(r) if self.records.contains_key(&r.id) => Ok(r.id),
+            _ => Err(unsupported("nonlocal record")),
+        }
+    }
+    /// The struct of `ty`, an instance of a generic struct included.
+    fn struct_id(&self, ty: &a::Ty) -> Result<a::TypeDeclId, String> {
+        match ty.kind() {
+            a::TyKind::Adt(r)
+                if self.records.contains_key(&r.id) || self.generic_records.contains_key(&r.id) =>
+            {
+                Ok(r.id)
+            }
             _ => Err(unsupported("nonlocal record")),
         }
     }
@@ -959,18 +1035,27 @@ impl BodyAdapter<'_, '_> {
                 }
             }
             a::PlaceKind::Projection(base, a::ProjectionElem::Field(None, field)) => {
-                let id = self.adapter.record_id(&base.ty)?;
+                let id = self.adapter.struct_id(&base.ty)?;
                 let declaration = self
                     .adapter
                     .fields(id)?
                     .get(*field)
                     .ok_or_else(|| unsupported("invalid field"))?;
-                if self.adapter.ty(&p.ty)? != self.adapter.ty(&declaration.ty)? {
+                // A generic struct's field type names the struct's own
+                // parameters; the instance's arguments replace them.
+                let a::TyKind::Adt(instance) = base.ty.kind() else {
+                    return Err(unsupported("nonlocal record"));
+                };
+                let declared = declaration.ty.clone().substitute(&instance.generics);
+                if self.adapter.ty(&p.ty)? != self.adapter.ty(&declared)? {
                     return Err(unsupported("field projection type mismatch"));
                 }
+                let Type::Record { name: record } = self.adapter.ty(&base.ty)? else {
+                    return Err(unsupported("nonlocal record"));
+                };
                 E::Field {
                     base: Box::new(self.place(base)?),
-                    record: self.adapter.records[&id].clone(),
+                    record,
                     field: declaration.name.clone(),
                 }
             }
@@ -1358,7 +1443,7 @@ impl BodyAdapter<'_, '_> {
                     };
                     match v {
                         a::Rvalue::Aggregate(a::AggregateKind::Adt(r, None, None), fields)
-                            if r.id == self.adapter.record_id(&p.ty)? =>
+                            if r.id == self.adapter.struct_id(&p.ty)? =>
                         {
                             Some(S::Initialize {
                                 target: self.local(target)?,
@@ -1406,7 +1491,7 @@ impl BodyAdapter<'_, '_> {
                 local: self.local(*id)?,
             }),
             u::StatementKind::StorageLive(id)
-                if (matches!(self.body.locals.locals[*id].ty.kind(), a::TyKind::Adt(r) if self.adapter.records.contains_key(&r.id))
+                if (matches!(self.body.locals.locals[*id].ty.kind(), a::TyKind::Adt(r) if self.adapter.records.contains_key(&r.id) || self.adapter.generic_records.contains_key(&r.id))
                     || matches!(self.body.locals.locals[*id].ty.kind(), a::TyKind::Array(..))) =>
             {
                 Some(S::BeginStorage {
@@ -1865,6 +1950,8 @@ pub(super) fn decode_crate(
         trait_instances: std::cell::RefCell::default(),
         generic_instances: std::cell::RefCell::default(),
         instance_types: std::cell::RefCell::default(),
+        generic_records: BTreeMap::new(),
+        record_instances: std::cell::RefCell::default(),
     };
     if crate_config.is_some() {
         adapter.record_closure_captures()?;
@@ -1882,6 +1969,33 @@ pub(super) fn decode_crate(
             // A crate trait's vtable is not a record either: a call through
             // it is a call of the trait's interface function.
             if let a::TypeSource::VTable { .. } = &record.src {
+                continue;
+            }
+            if !record.generics.types.is_empty()
+                && record.generics.const_generics.is_empty()
+                && record.generics.trait_clauses.iter().all(|clause| {
+                    krate
+                        .trait_decls
+                        .get(clause.trait_.skip_binder.id)
+                        .and_then(|decl| decl.item_meta.lang_item.clone())
+                        .is_some_and(|item| {
+                            matches!(
+                                item,
+                                LangItem::Sized
+                                    | LangItem::MetaSized
+                                    | LangItem::Destruct
+                                    | LangItem::Copy
+                                    | LangItem::Clone
+                            )
+                        })
+                })
+                && matches!(record.src, a::TypeSource::Normal)
+                && crate_config.is_some()
+            {
+                adapter.generic_records.insert(
+                    id,
+                    qualified_record_name(&record.item_meta.name, &krate.crate_name)?,
+                );
                 continue;
             }
             if !record.generics.types.is_empty()
@@ -2404,6 +2518,41 @@ pub(super) fn decode_crate(
                 "crate trait implementation method not imported",
             ));
         }
+    }
+    // Each instance of a generic struct the functions named, laid out in
+    // declaration order.
+    for (name, (id, arguments)) in adapter.record_instances.borrow().iter() {
+        let mut fields = Vec::new();
+        let (mut size, mut alignment) = (0u32, 1u32);
+        for field in adapter.fields(*id)?.iter() {
+            // A field is of one of the struct's parameters, at the instance's
+            // argument, or of a scalar type.
+            let ty = match field.ty.kind() {
+                a::TyKind::TypeVar(a::DeBruijnVar::Bound(depth, var)) if depth.index == 0 => {
+                    arguments.get(var.index()).cloned()
+                }
+                a::TyKind::Scalar(_) => adapter.ty(&field.ty).ok(),
+                _ => None,
+            }
+            .ok_or_else(|| unsupported("generic struct field other than a parameter or scalar"))?;
+            let field_size =
+                model_field_size(&ty).ok_or_else(|| unsupported("generic struct field type"))?;
+            let offset = size.next_multiple_of(field_size);
+            size = offset + field_size;
+            alignment = alignment.max(field_size);
+            fields.push(out::Field {
+                name: field.name.clone(),
+                value_type: ty,
+                offset,
+            });
+        }
+        records.push(out::Record {
+            name: name.clone(),
+            size: size.next_multiple_of(alignment),
+            alignment,
+            fields,
+            destructor: None,
+        });
     }
     Ok(out::RustExport {
         schema: out::SCHEMA,

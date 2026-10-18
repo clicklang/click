@@ -1500,6 +1500,9 @@ impl Renderer<'_> {
                 let name = self.variable_name(*variable, "value");
                 self.fmt(format_args!("{name}:{}", term.algebraic_type.name))
             }
+            AlgebraicTermNode::MemoryLoad { memory, pointer } => {
+                self.bitvector(&AlgebraicTermNode::memory_load_carrier(memory, pointer))
+            }
             AlgebraicTermNode::Constructor { variant, fields } => {
                 self.fmt(format_args!("{}::{variant}", term.algebraic_type.name));
                 if !fields.is_empty() {
