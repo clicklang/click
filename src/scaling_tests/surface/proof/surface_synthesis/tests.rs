@@ -104,3 +104,26 @@ fn pointer_spelling_skips_cyclic_offsets_and_tries_the_next_local() {
         .join()
         .unwrap();
 }
+
+#[test]
+fn pointer_local_synthesis_skips_unrelated_pointer_blocks() {
+    let mut samples = Vec::new();
+    for size in [4usize, 16, 64, 256, 1024] {
+        let mut state = CState::new();
+        for i in 0..size {
+            state = state.with_local(format!("a_{i:04}"), CValue::pointer(Pointer::symbolic(Variable(982_000 + i as u64))));
+        }
+        let base = Pointer::symbolic(Variable(984_000));
+        state = state.with_local("z_base", CValue::pointer(base.clone()));
+        let selected = base.offset_by_bytes(8);
+        let (expression, work) = crate::instrumentation::measure_deterministic_work(|| {
+            synthesize_surface_pointer(&selected, ParameterBinding::default(), &state, &BTreeMap::new())
+        });
+        assert_eq!(expression, Some(CExpression::Add(
+            Box::new(CExpression::Variable("z_base".into())),
+            Box::new(CExpression::Value(int32(2))),
+        )));
+        samples.push(work);
+    }
+    assert!(samples.iter().all(|work| *work <= samples[0] + 32), "{samples:?}");
+}

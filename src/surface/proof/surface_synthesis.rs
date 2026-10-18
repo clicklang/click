@@ -4036,24 +4036,25 @@ fn synthesize_surface_pointer(
     {
         return Some(expression);
     }
-    if let Some(expression) = state.locals().object_values().find_map(|(name, value)| {
-        crate::instrumentation::record_deterministic_work(1);
-        let CValue::Pointer(base) = value else {
-            return None;
-        };
-        let element_width = base.c_type().pointee_type()?.byte_width();
-        let index = synthesis_element_index(pointer, base, element_width)?;
-        let base = CExpression::Variable(surface_local_name(name).to_string());
-        if index == Bitvector32Term::Constant(0) {
-            return Some(base);
-        }
-        let index =
-            synthesize_surface_bitvector(&index, parameter_binding, state, bound_variables)?;
-        let ContractExpression::CFragment(index) = index else {
-            return None;
-        };
-        Some(CExpression::Add(Box::new(base), Box::new(index)))
-    }) {
+    if let Some(expression) = state
+        .locals()
+        .pointer_objects_in_block(&pointer.block)
+        .find_map(|(name, base)| {
+            crate::instrumentation::record_deterministic_work(1);
+            let element_width = base.c_type().pointee_type()?.byte_width();
+            let index = synthesis_element_index(pointer, base, element_width)?;
+            let base = CExpression::Variable(surface_local_name(name).to_string());
+            if index == Bitvector32Term::Constant(0) {
+                return Some(base);
+            }
+            let index =
+                synthesize_surface_bitvector(&index, parameter_binding, state, bound_variables)?;
+            let ContractExpression::CFragment(index) = index else {
+                return None;
+            };
+            Some(CExpression::Add(Box::new(base), Box::new(index)))
+        })
+    {
         return Some(expression);
     }
     if let Some(field) = synthesize_owned_pointer_field(pointer, state) {
