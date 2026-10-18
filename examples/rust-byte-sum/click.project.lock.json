@@ -4,21 +4,36 @@
     "sum": {
       "language": "rust",
       "lock": {
-        "artifact": "80879652d4e3863ef2a512b5cdd1fcba524b22d5352ca1c0d6bca1c593b00a13",
-        "config": "48e234e7894568171841a102c47ca49eacaee0cbeaa9f53dcd8cd7d0ca8271e0",
+        "envelope": 1,
         "frontend": {
-          "click_version": "0.1.0",
-          "compiler_commit": "923c95cdf5ba65cea505aa2ea829f578e1506ed8",
-          "extractor_revision": "5d6b812e5f77dbf3d7f66c21b9b57091f0e084cb",
-          "extractor_version": "0.1.279",
-          "profile": "38b817cc5760845d2e37b8f72a333f6d36a3ccdbfbf19e8c22da436e67a79ab1"
+          "identity": "7c2e994c506684f2bc8c86d9798bf9cb35c42693c51c3dd401139ef6618ae66c",
+          "name": "charon"
         },
-        "identity": "da86e169e1f466e108d19dc5088acb74960b657851576d3edcce1d3dfdcd8d57",
-        "schema": 9,
-        "source": "fae89e2b272df23617da336a4859f07a7a3bbddb69020d1d454a86d95237310b",
-        "source_files": {
-          "sum.rs": "fae89e2b272df23617da336a4859f07a7a3bbddb69020d1d454a86d95237310b"
-        }
+        "rust": {
+          "frontend": {
+            "click_version": "0.1.0",
+            "compiler_commit": "923c95cdf5ba65cea505aa2ea829f578e1506ed8",
+            "extractor_revision": "5d6b812e5f77dbf3d7f66c21b9b57091f0e084cb",
+            "extractor_version": "0.1.279",
+            "profile": "38b817cc5760845d2e37b8f72a333f6d36a3ccdbfbf19e8c22da436e67a79ab1"
+          },
+          "schema": 9,
+          "source": "fae89e2b272df23617da336a4859f07a7a3bbddb69020d1d454a86d95237310b"
+        },
+        "sources": {
+          "sum.rs": {
+            "artifact": {
+              "bytes": 31708,
+              "path": ".click/sum/sum.rs.ullbc",
+              "sha256": "80879652d4e3863ef2a512b5cdd1fcba524b22d5352ca1c0d6bca1c593b00a13"
+            },
+            "identity": "e3c5e9a24a53b0451cc6749cebca2048de0ac428facd75916179d802d2b04771",
+            "inputs": {
+              "sum.rs": "fae89e2b272df23617da336a4859f07a7a3bbddb69020d1d454a86d95237310b"
+            }
+          }
+        },
+        "unit": "48e234e7894568171841a102c47ca49eacaee0cbeaa9f53dcd8cd7d0ca8271e0"
       }
     }
   }

@@ -1,5 +1,6 @@
 //! Refresh runs the pinned exporter; ordinary loading only checks locked inputs.
 use super::schema::RustExport;
+use crate::languages::envelope::{self, Entry, SourceParts};
 use crate::languages::inputs::{Leaf, hex_digest};
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -116,7 +117,6 @@ struct Lock {
     #[serde(default, skip_serializing_if = "String::is_empty")]
     exporter: String,
     artifact: String,
-    identity: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     frontend: Option<super::profile::FrontendIdentity>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -126,89 +126,130 @@ struct Lock {
     #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
     source_files: std::collections::BTreeMap<String, String>,
 }
-#[cfg(test)]
-fn import_identity(
-    config: &str,
-    source: &str,
-    exporter: &str,
-    artifact: &str,
-    driver: &str,
-) -> String {
-    import_identity_for(
-        &super::profile::get().identity,
-        config,
-        source,
-        exporter,
-        artifact,
-        driver,
-    )
+/// A Rust unit's section of its project lock entry: what the envelope's
+/// common fields do not record (`crate::languages::envelope`).
+#[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct Section {
+    schema: u32,
+    /// The digest of the crate's source closure, which loading recomputes.
+    source: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    frontend: Option<super::profile::FrontendIdentity>,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    exporter: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    charon_driver: Option<String>,
+    /// For a lock in the earlier schema, the semantic profile it was
+    /// extracted under, which loading compares with the current one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    semantic_profile: Option<String>,
 }
 
-fn import_identity_for(
-    profile_identity: &str,
-    config: &str,
-    source: &str,
-    exporter: &str,
-    artifact: &str,
-    driver: &str,
-) -> String {
-    let profile = super::profile::get();
-    hex_digest(
+const LANGUAGE: &str = "rust";
+
+/// The envelope entry recording `lock` for `unit`, whose artifact has
+/// `bytes` bytes. The crate root's inputs are the crate files.
+fn lock_entry(
+    unit: &UnitConfig,
+    lock: &Lock,
+    bytes: usize,
+    semantic_profile: Option<String>,
+) -> Result<Entry, String> {
+    let project = unit
+        .project_file
+        .parent()
+        .ok_or("project file has no parent directory")?;
+    let artifact = unit
+        .artifact
+        .strip_prefix(project)
+        .map_err(|_| "a Rust artifact lies in its project".to_string())?
+        .to_string_lossy()
+        .into_owned();
+    let frontend = match &lock.frontend {
+        Some(frontend) => hex_digest(serde_json::to_string(frontend).unwrap().as_bytes()),
+        None => hex_digest(
+            format!(
+                "{}\n{}",
+                lock.exporter,
+                lock.charon_driver.as_deref().unwrap_or_default()
+            )
+            .as_bytes(),
+        ),
+    };
+    let section = Section {
+        schema: lock.schema,
+        source: lock.source.clone(),
+        frontend: lock.frontend.clone(),
+        exporter: lock.exporter.clone(),
+        charon_driver: lock.charon_driver.clone(),
+        semantic_profile,
+    };
+    Ok(Entry::new(
+        LANGUAGE,
+        lock.config.clone(),
+        envelope::Frontend {
+            name: "charon".into(),
+            identity: frontend,
+        },
+        std::collections::BTreeMap::from([(
+            unit.source.clone(),
+            SourceParts {
+                inputs: lock.source_files.clone(),
+                artifact: envelope::Artifact {
+                    path: artifact,
+                    sha256: lock.artifact.clone(),
+                    bytes,
+                },
+            },
+        )]),
+        serde_json::to_value(section).expect("a Rust lock section serializes"),
+    ))
+}
+
+/// The lock `entry` records for `unit`, and the semantic profile an earlier
+/// lock was extracted under.
+fn entry_lock(unit: &UnitConfig, entry: &Entry) -> Result<(Lock, Option<String>), String> {
+    let section = Section::deserialize(entry.section(LANGUAGE).expect("parsed for Rust"))
+        .map_err(|error| format!("parse the Rust lock section: {error}"))?;
+    let recorded = entry.sources.get(&unit.source).ok_or_else(|| {
         format!(
-            "{}\n{config}\n{source}\n{exporter}\n{artifact}\n{driver}\n{}",
-            profile_identity,
-            profile.semantic_identity()
+            "the project lock has no source `{}`; run `click import lock`",
+            unit.source
         )
-        .as_bytes(),
-    )
+    })?;
+    let lock = Lock {
+        schema: section.schema,
+        config: entry.unit.clone(),
+        source: section.source,
+        exporter: section.exporter,
+        artifact: recorded.artifact.sha256.clone(),
+        frontend: section.frontend,
+        charon_driver: section.charon_driver,
+        source_files: recorded.inputs.clone(),
+    };
+    Ok((lock, section.semantic_profile))
 }
 
-// The artifact schema is independent of the Rust lock's identity format.
+// The artifact schema is independent of the Rust lock's schema.
 const LEGACY_LOCK_SCHEMA: u32 = 8;
 const RELEASE_LOCK_SCHEMA: u32 = 9;
-fn release_identity(
-    config: &str,
-    source: &str,
-    artifact: &str,
-    frontend: &super::profile::FrontendIdentity,
-) -> String {
-    hex_digest(
-        format!(
-            "click-rust-lock-v9\n{config}\n{source}\n{artifact}\n{}",
-            serde_json::to_string(frontend).unwrap()
-        )
-        .as_bytes(),
-    )
-}
-
 impl Lock {
-    fn identity_matches(&self) -> bool {
+    /// Whether the front end that extracted the lock is the current one: the
+    /// current release for a release lock, and for a lock in the earlier
+    /// schema, the current semantic profile, which its entry records.
+    fn frontend_matches(&self, semantic_profile: Option<&str>) -> bool {
         match (self.schema, &self.frontend) {
             (RELEASE_LOCK_SCHEMA, Some(frontend)) => {
                 self.exporter.is_empty()
                     && self.charon_driver.is_none()
+                    && semantic_profile.is_none()
                     && frontend == &super::profile::FrontendIdentity::current()
-                    && self.identity
-                        == release_identity(&self.config, &self.source, &self.artifact, frontend)
             }
-            (LEGACY_LOCK_SCHEMA, None) => self.charon_driver.as_deref().is_some_and(|driver| {
-                [
-                    super::profile::get().identity.as_str(),
-                    super::profile::LEGACY_IDENTITY,
-                ]
-                .iter()
-                .any(|prefix| {
-                    self.identity
-                        == import_identity_for(
-                            prefix,
-                            &self.config,
-                            &self.source,
-                            &self.exporter,
-                            &self.artifact,
-                            driver,
-                        )
-                })
-            }),
+            (LEGACY_LOCK_SCHEMA, None) => {
+                self.charon_driver.is_some()
+                    && semantic_profile == Some(super::profile::get().semantic_identity().as_str())
+            }
             _ => false,
         }
     }
@@ -356,7 +397,6 @@ fn extract(
     let frontend = super::profile::FrontendIdentity::current();
     let lock = Lock {
         schema: RELEASE_LOCK_SCHEMA,
-        identity: release_identity(&config_hash, &source_hash, &artifact_hash, &frontend),
         frontend: Some(frontend),
         charon_driver: None,
         config: config_hash,
@@ -374,6 +414,7 @@ fn load_locked(
     root: &Path,
     artifact_path: &Path,
     lock: Lock,
+    semantic_profile: Option<&str>,
 ) -> Result<PreparedRustImport, String> {
     let artifact = read(artifact_path, 4 << 20)?;
     let source_files = sources(c, root)?;
@@ -392,7 +433,7 @@ fn load_locked(
             root.join(name).display()
         ));
     }
-    if !lock.identity_matches()
+    if !lock.frontend_matches(semantic_profile)
         || lock.config != config_digest
         || lock.source != source_digest(c, &source_files)
         || lock.artifact != hex_digest(&artifact)
@@ -404,7 +445,7 @@ fn load_locked(
         inner: Arc::new(Inner {
             function_index: index_functions(&export),
             export,
-            identity: lock.identity,
+            identity: String::new(),
             execution: Default::default(),
         }),
     })
@@ -492,7 +533,8 @@ pub(crate) fn prepare_unit(
         .iter()
         .map(|(name, bytes)| (name.clone(), hex_digest(bytes)))
         .collect();
-    let value = serde_json::to_value(&lock).map_err(|e| e.to_string())?;
+    let entry = lock_entry(unit, &lock, artifact.len(), None)?;
+    let value = serde_json::to_value(entry).map_err(|e| e.to_string())?;
     Ok((value, vec![(unit.artifact.clone(), artifact)]))
 }
 
@@ -502,14 +544,28 @@ pub(crate) fn load_unit(
     lock: &serde_json::Value,
 ) -> Result<PreparedRustImport, String> {
     let (config, root, _) = unit.config()?;
-    let lock = Lock::deserialize(lock).map_err(|e| format!("parse Rust import lock: {e}"))?;
+    let entry = Entry::parse(LANGUAGE, &unit.unit_name, lock)?;
+    let (lock, semantic_profile) = entry_lock(unit, &entry)?;
     if lock.config != unit.unit_digest {
         return Err(format!(
             "the project lock for unit `{}` does not match its description in `click.project.json`; run `click import lock` to prepare it again",
             unit.unit_name
         ));
     }
-    load_locked(&config, &unit.unit_digest, &root, &unit.artifact, lock)
+    let mut import = load_locked(
+        &config,
+        &unit.unit_digest,
+        &root,
+        &unit.artifact,
+        lock,
+        semantic_profile.as_deref(),
+    )?;
+    // The identity is checked after the inputs and artifact, so a changed
+    // input is named before a mismatched identity.
+    Arc::get_mut(&mut import.inner)
+        .expect("a freshly loaded import is not shared")
+        .identity = entry.checked_identity(LANGUAGE, &unit.source)?;
+    Ok(import)
 }
 
 #[cfg(test)]
@@ -518,7 +574,7 @@ mod unit_tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     #[test]
-    fn rust_profile_product_name_preserves_legacy_locks_without_weakening_identity() {
+    fn rust_entries_load_only_under_their_own_front_end() {
         assert_eq!(super::super::profile::get().identity, "click-rust-v1");
         let root = tempfile::tempdir().unwrap();
         let example =
@@ -529,54 +585,41 @@ mod unit_tests {
         let artifact = ".click/borrow/borrow.rs.ullbc";
         fs::create_dir_all(root.path().join(".click/borrow")).unwrap();
         fs::copy(example.join(artifact), root.path().join(artifact)).unwrap();
+        let bytes = fs::metadata(root.path().join(artifact)).unwrap().len() as usize;
         let project =
             crate::project::Project::load(&root.path().join("click.project.json")).unwrap();
         let unit = project.rust_unit("borrow").unwrap();
         let saved: serde_json::Value =
             serde_json::from_slice(&fs::read(example.join("click.project.lock.json")).unwrap())
                 .unwrap();
-        let mut lock: Lock =
-            serde_json::from_value(saved["units"]["borrow"]["lock"].clone()).unwrap();
-        let old = lock.identity.clone();
+        let saved = saved["units"]["borrow"]["lock"].clone();
+        // The committed entry is in the earlier schema and records the
+        // semantic profile it was extracted under.
+        let entry = Entry::parse(LANGUAGE, "borrow", &saved).unwrap();
+        let (mut lock, semantic_profile) = entry_lock(&unit, &entry).unwrap();
+        assert_eq!(lock.schema, LEGACY_LOCK_SCHEMA);
         assert_eq!(
-            load_unit(&unit, &serde_json::to_value(&lock).unwrap())
-                .unwrap()
-                .identity(),
-            old
+            load_unit(&unit, &saved).unwrap().identity(),
+            entry.sources["borrow.rs"].identity
         );
-        lock.identity = import_identity(
-            &lock.config,
-            &lock.source,
-            &lock.exporter,
-            &lock.artifact,
-            lock.charon_driver.as_deref().unwrap(),
-        );
-        assert_ne!(lock.identity, old);
-        assert_eq!(
-            load_unit(&unit, &serde_json::to_value(&lock).unwrap())
-                .unwrap()
-                .identity(),
-            lock.identity
-        );
-        // The alias changes only the profile name: the input binding remains exact.
-        lock.identity = old;
-        lock.exporter = hex_digest(b"different exporter");
-        assert!(
-            load_unit(&unit, &serde_json::to_value(&lock).unwrap())
-                .unwrap_err()
-                .contains("lock differs")
-        );
-        // Explicitly refreshing a legacy lock switches only its identity format.
+        let reload = |lock: &Lock, semantic_profile: Option<String>| {
+            let entry = lock_entry(&unit, lock, bytes, semantic_profile).unwrap();
+            load_unit(&unit, &serde_json::to_value(entry).unwrap())
+        };
+        reload(&lock, semantic_profile.clone()).unwrap();
+        // Another semantic profile, or none, is refused, even in a
+        // self-consistent entry.
+        for other in [Some("other".to_string()), None] {
+            assert!(reload(&lock, other).unwrap_err().contains("lock differs"));
+        }
+        // A release entry loads only with the current release pins.
         lock.exporter.clear();
         lock.charon_driver = None;
         lock.schema = RELEASE_LOCK_SCHEMA;
         let frontend = super::super::profile::FrontendIdentity::current();
-        lock.identity = release_identity(&lock.config, &lock.source, &lock.artifact, &frontend);
         lock.frontend = Some(frontend.clone());
-        assert!(load_unit(&unit, &serde_json::to_value(&lock).unwrap()).is_ok());
-        let saved = serde_json::to_value(&lock).unwrap();
-        assert!(saved.get("exporter").is_none() && saved.get("charon_driver").is_none());
-        // Even a self-consistent digest cannot select different release pins.
+        reload(&lock, None).unwrap();
+        assert!(reload(&lock, semantic_profile).is_err());
         for field in [
             "click_version",
             "extractor_revision",
@@ -586,22 +629,19 @@ mod unit_tests {
         ] {
             let mut changed = serde_json::to_value(&frontend).unwrap();
             changed[field] = "different".into();
-            let changed = serde_json::from_value(changed).unwrap();
-            lock.identity = release_identity(&lock.config, &lock.source, &lock.artifact, &changed);
-            lock.frontend = Some(changed);
-            assert!(
-                load_unit(&unit, &serde_json::to_value(&lock).unwrap()).is_err(),
-                "{field}"
-            );
+            lock.frontend = Some(serde_json::from_value(changed).unwrap());
+            assert!(reload(&lock, None).is_err(), "{field}");
         }
+        lock.frontend = Some(frontend);
+        let release = serde_json::to_value(lock_entry(&unit, &lock, bytes, None).unwrap()).unwrap();
         for (field, value) in [
             ("frontend", serde_json::Value::Null),
             ("exporter", "binary hash".into()),
             ("charon_driver", "binary hash".into()),
             ("schema", 8.into()),
         ] {
-            let mut mixed = saved.clone();
-            mixed[field] = value;
+            let mut mixed = release.clone();
+            mixed["rust"][field] = value;
             assert!(load_unit(&unit, &mixed).is_err(), "{field}");
         }
     }
@@ -664,13 +704,6 @@ mod unit_tests {
         let lock = Lock {
             schema: LEGACY_LOCK_SCHEMA,
             frontend: None,
-            identity: import_identity(
-                &unit.unit_digest,
-                &source,
-                &exporter,
-                &artifact_hash,
-                &driver,
-            ),
             config: unit.unit_digest.clone(),
             source,
             exporter,
@@ -683,8 +716,17 @@ mod unit_tests {
         };
         fs::write(
             proofs.join(crate::project::LOCK_NAME),
-            serde_json::json!({"schema": 1, "units": {"adler2": {"language": "rust", "lock": lock}}})
-                .to_string(),
+            serde_json::json!({"schema": 1, "units": {"adler2": {
+                "language": "rust",
+                "lock": lock_entry(
+                    &unit,
+                    &lock,
+                    artifact.len(),
+                    Some(super::super::profile::get().semantic_identity()),
+                )
+                .unwrap()
+            }}})
+            .to_string(),
         )
         .unwrap();
 

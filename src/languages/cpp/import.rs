@@ -14,11 +14,12 @@ use serde::{Deserialize, Serialize};
 
 use super::schema::{
     CppExceptionBehavior, CppExport, CppLibraryAssertion, CppPreprocessorFile, CppProfile,
-    CppStatement, EXPORT_SCHEMA, LANGUAGE, MAX_PREPROCESSOR_FILES, STANDARD, TARGET,
+    CppStatement, LANGUAGE, MAX_PREPROCESSOR_FILES, STANDARD, TARGET,
 };
 use crate::cli::write_file_atomically;
 use crate::languages::c::target::COptimization;
 use crate::languages::compiler_process::{CompilerLimits, run_compiler};
+use crate::languages::envelope::{self, Entry, SourceParts};
 use crate::languages::inputs::{Leaf, hex_digest};
 use crate::languages::portable_paths::PathLabels;
 
@@ -126,7 +127,6 @@ struct Lock {
     artifact_sha256: String,
     artifact_bytes: usize,
     profile: CppProfile,
-    identity: String,
     /// A project unit's roots at preparation, absolute: the unit root, then
     /// the project root. Preprocessor inputs under them are rechecked
     /// relative to the roots' current locations; inputs outside them are
@@ -140,6 +140,147 @@ struct Lock {
 struct LockedPreprocessorFile {
     canonical_path: String,
     sha256: String,
+}
+
+/// A C++ unit's section of its project lock entry: for each logical source,
+/// what the envelope's common fields do not record
+/// (`crate::languages::envelope`).
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct Section {
+    sources: BTreeMap<String, SectionSource>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct SectionSource {
+    schema: u32,
+    source_sha256: String,
+    logical_source_sha256: String,
+    compilation_database_sha256: String,
+    dependencies: BTreeMap<String, String>,
+    /// The canonical path of each preprocessor input whose accessed path
+    /// differs from it.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    canonical_paths: BTreeMap<String, String>,
+    profile: CppProfile,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    prepared_roots: Vec<String>,
+}
+
+const LANGUAGE_NAME: &str = "c++";
+
+/// The envelope entry recording `locks`, keyed by logical source, whose
+/// artifacts are at `artifacts`, relative to the project. A source's inputs
+/// are the preprocessor inputs the exporter read.
+fn lock_entry(
+    locks: &BTreeMap<String, Lock>,
+    artifacts: &BTreeMap<String, String>,
+) -> Result<Entry, String> {
+    let first = locks.values().next().ok_or("a C++ unit lists a source")?;
+    if locks.values().any(|lock| {
+        lock.config_sha256 != first.config_sha256 || lock.exporter_sha256 != first.exporter_sha256
+    }) {
+        return Err(
+            "the sources of a C++ unit were prepared from different descriptions or exporters"
+                .into(),
+        );
+    }
+    let mut sources = BTreeMap::new();
+    let mut section = Section {
+        sources: BTreeMap::new(),
+    };
+    for (logical, lock) in locks {
+        let inputs = lock
+            .preprocessor_files
+            .iter()
+            .map(|(accessed, file)| (accessed.clone(), file.sha256.clone()))
+            .collect();
+        let artifact = artifacts
+            .get(logical)
+            .ok_or_else(|| format!("C++ source `{logical}` has no artifact"))?;
+        sources.insert(
+            logical.clone(),
+            SourceParts {
+                inputs,
+                artifact: envelope::Artifact {
+                    path: artifact.clone(),
+                    sha256: lock.artifact_sha256.clone(),
+                    bytes: lock.artifact_bytes,
+                },
+            },
+        );
+        section.sources.insert(
+            logical.clone(),
+            SectionSource {
+                schema: lock.schema,
+                source_sha256: lock.source_sha256.clone(),
+                logical_source_sha256: lock.logical_source_sha256.clone(),
+                compilation_database_sha256: lock.compilation_database_sha256.clone(),
+                dependencies: lock.dependencies.clone(),
+                canonical_paths: lock
+                    .preprocessor_files
+                    .iter()
+                    .filter(|(accessed, file)| **accessed != file.canonical_path)
+                    .map(|(accessed, file)| (accessed.clone(), file.canonical_path.clone()))
+                    .collect(),
+                profile: lock.profile.clone(),
+                prepared_roots: lock.prepared_roots.clone(),
+            },
+        );
+    }
+    Ok(Entry::new(
+        LANGUAGE_NAME,
+        first.config_sha256.clone(),
+        envelope::Frontend {
+            name: "clang".into(),
+            identity: first.exporter_sha256.clone(),
+        },
+        sources,
+        serde_json::to_value(section).expect("a C++ lock section serializes"),
+    ))
+}
+
+/// The lock of `logical` that `entry` records.
+fn entry_lock(entry: &Entry, logical: &str) -> Result<Lock, String> {
+    let mut section = Section::deserialize(entry.section(LANGUAGE_NAME).expect("parsed for C++"))
+        .map_err(|error| format!("parse the C++ lock section: {error}"))?;
+    let part = section.sources.remove(logical).ok_or_else(|| {
+        format!("the project lock has no source `{logical}`; run `click import lock`")
+    })?;
+    let recorded = entry.sources.get(logical).ok_or_else(|| {
+        format!("the project lock has no source `{logical}`; run `click import lock`")
+    })?;
+    Ok(Lock {
+        schema: part.schema,
+        config_sha256: entry.unit.clone(),
+        exporter_sha256: entry.frontend.identity.clone(),
+        compilation_database_sha256: part.compilation_database_sha256,
+        source_sha256: part.source_sha256,
+        logical_source_sha256: part.logical_source_sha256,
+        dependencies: part.dependencies,
+        preprocessor_files: recorded
+            .inputs
+            .iter()
+            .map(|(accessed, sha256)| {
+                (
+                    accessed.clone(),
+                    LockedPreprocessorFile {
+                        canonical_path: part
+                            .canonical_paths
+                            .get(accessed)
+                            .unwrap_or(accessed)
+                            .clone(),
+                        sha256: sha256.clone(),
+                    },
+                )
+            })
+            .collect(),
+        artifact_sha256: recorded.artifact.sha256.clone(),
+        artifact_bytes: recorded.artifact.bytes,
+        profile: part.profile,
+        prepared_roots: part.prepared_roots,
+    })
 }
 
 /// The resolved inputs and outputs of one export.
@@ -277,17 +418,6 @@ fn export(
         .map(|(path, bytes)| (path.clone(), hex_digest(bytes)))
         .collect::<BTreeMap<_, _>>();
     let artifact_sha256 = hex_digest(&artifact);
-    let identity = semantic_identity(
-        &config_sha256,
-        &compilation_database_sha256,
-        &source_sha256,
-        &logical_source_sha256,
-        &dependency_digests,
-        &preprocessor_files_after,
-        &exporter_sha256,
-        &artifact_sha256,
-        &export.profile,
-    );
     let lock = Lock {
         schema: CONFIG_SCHEMA,
         config_sha256,
@@ -300,7 +430,6 @@ fn export(
         artifact_sha256,
         artifact_bytes: artifact.len(),
         profile: export.profile,
-        identity,
         prepared_roots: Vec::new(),
     };
     Ok((lock, artifact))
@@ -336,14 +465,14 @@ fn run_cpp_exporter(
 /// Checks a lock against `config`'s current inputs and loads `artifact`.
 /// `current_roots` are the current locations of a project unit's
 /// `prepared_roots`; without them, every preprocessor input is re-read at its
-/// recorded path. The import reports `identity`, the lock's portable one.
+/// recorded path. The import's identity is the lock entry's, which the
+/// caller sets.
 fn load_locked(
     config: &Config,
     lock: Lock,
     working_directory: &Path,
     artifact: Vec<u8>,
     current_roots: &[PathBuf],
-    identity: String,
 ) -> Result<PreparedCppImport, String> {
     if lock.schema != CONFIG_SCHEMA {
         return Err(format!(
@@ -410,14 +539,11 @@ fn load_locked(
         )?
     };
     validate_library_headers(config, &dependencies, &preprocessor_files)?;
-    if lock.identity != lock_identity(&lock) {
-        return Err("C++ import identity does not match its locked inputs".into());
-    }
 
     Ok(PreparedCppImport {
         inner: Arc::new(PreparedInner {
             logical_source: config.logical_source.clone(),
-            identity,
+            identity: String::new(),
             export,
             execution: Default::default(),
         }),
@@ -748,26 +874,11 @@ fn validate_library_headers(
     Ok(())
 }
 
-/// The identity of `lock`'s recorded inputs and artifact.
-fn lock_identity(lock: &Lock) -> String {
-    semantic_identity(
-        &lock.config_sha256,
-        &lock.compilation_database_sha256,
-        &lock.source_sha256,
-        &lock.logical_source_sha256,
-        &lock.dependencies,
-        &lock.preprocessor_files,
-        &lock.exporter_sha256,
-        &lock.artifact_sha256,
-        &lock.profile,
-    )
-}
-
 /// Replaces each label in `lock` and `artifact`, which `labels` names, by
 /// its root, or each root by its label when `portable`. The artifact's
 /// preprocessor inventory is sorted again under the new spelling, so a
 /// portable artifact is the same from every checkout. The artifact digest
-/// and the identity follow the replaced text.
+/// follows the replaced text.
 fn relabel(
     labels: &PathLabels,
     lock: &Lock,
@@ -802,7 +913,6 @@ fn relabel(
         .map_err(|error| format!("parse C++ import lock: {error}"))?;
     lock.artifact_sha256 = hex_digest(&artifact);
     lock.artifact_bytes = artifact.len();
-    lock.identity = lock_identity(&lock);
     Ok((lock, artifact))
 }
 
@@ -832,35 +942,6 @@ fn exporter_resource_directory(
     let text = String::from_utf8(output.stdout)
         .map_err(|_| "the C++ exporter's resource directory is not UTF-8".to_string())?;
     Ok(PathBuf::from(text.trim()))
-}
-
-fn semantic_identity(
-    config_sha256: &str,
-    compilation_database_sha256: &str,
-    source_sha256: &str,
-    logical_source_sha256: &str,
-    dependencies: &BTreeMap<String, String>,
-    preprocessor_files: &BTreeMap<String, LockedPreprocessorFile>,
-    exporter_sha256: &str,
-    artifact_sha256: &str,
-    profile: &CppProfile,
-) -> String {
-    let encoded = serde_json::to_vec(&(
-        CONFIG_SCHEMA,
-        EXPORT_SCHEMA,
-        "click-cpp-semantic-import-v6",
-        config_sha256,
-        compilation_database_sha256,
-        source_sha256,
-        logical_source_sha256,
-        dependencies,
-        preprocessor_files,
-        exporter_sha256,
-        artifact_sha256,
-        profile,
-    ))
-    .expect("C++ semantic identity serializes");
-    hex_digest(&encoded)
 }
 
 fn validate_config(config: &Config) -> Result<(), String> {
@@ -1425,7 +1506,8 @@ pub(crate) fn prepare_unit(
     fs::create_dir_all(&scratch)
         .map_err(|error| format!("create `{}`: {error}", scratch.display()))?;
     let result = (|| {
-        let mut entries = serde_json::Map::new();
+        let mut locks = BTreeMap::new();
+        let mut artifact_paths = BTreeMap::new();
         let mut artifacts = Vec::new();
         for (index, source) in sources.iter().enumerate() {
             let config = unit.config(source)?;
@@ -1453,14 +1535,15 @@ pub(crate) fn prepare_unit(
                     .to_portable(&String::from_utf8_lossy(&database_bytes))
                     .as_bytes(),
             );
-            lock.identity = lock_identity(&lock);
-            entries.insert(
-                source.logical_source.clone(),
-                serde_json::to_value(&lock).map_err(|error| error.to_string())?,
-            );
+            locks.insert(source.logical_source.clone(), lock);
+            artifact_paths.insert(source.logical_source.clone(), source.artifact.clone());
             artifacts.push((outputs[0].clone(), artifact));
         }
-        Ok((serde_json::Value::Object(entries), artifacts))
+        let entry = lock_entry(&locks, &artifact_paths)?;
+        Ok((
+            serde_json::to_value(entry).map_err(|error| error.to_string())?,
+            artifacts,
+        ))
     })();
     let _ = fs::remove_dir_all(&scratch);
     result
@@ -1473,17 +1556,8 @@ pub(crate) fn load_unit(
     lock: &serde_json::Value,
 ) -> Result<PreparedCppImport, String> {
     let config = unit.config(source)?;
-    let lock = lock
-        .get(&source.logical_source)
-        .ok_or_else(|| {
-            format!(
-                "the project lock for unit `{}` has no source `{}`; run `click import lock`",
-                unit.unit_name, source.logical_source
-            )
-        })
-        .and_then(|value| {
-            Lock::deserialize(value).map_err(|error| format!("parse C++ import lock: {error}"))
-        })?;
+    let entry = Entry::parse(LANGUAGE_NAME, &unit.unit_name, lock)?;
+    let lock = entry_lock(&entry, &source.logical_source)?;
     if lock.config_sha256 != unit.unit_digest {
         return Err(format!(
             "the project lock for unit `{}` does not match its description in `click.project.json`; run `click import lock` to prepare it again",
@@ -1506,22 +1580,20 @@ pub(crate) fn load_unit(
         ("$project", roots[1].as_path()),
         ("$clang-resource", Path::new(PINNED_RESOURCE_ROOT)),
     ])?;
-    let identity = lock.identity.clone();
     let (current, artifact) = relabel(&labels, &lock, &artifact, false)?;
-    let import = load_locked(
+    // The identity is checked after the inputs and artifact, so a changed
+    // input is named before a mismatched identity.
+    let mut import = load_locked(
         &config,
         current,
         &unit.working_directory()?,
         artifact,
         &roots,
-        identity,
     )
     .map_err(bounded_error)?;
-    // As recorded, after the inputs and artifact are checked, so a changed
-    // input is named before a mismatched identity.
-    if lock.identity != lock_identity(&lock) {
-        return Err("C++ import identity does not match its locked inputs".into());
-    }
+    Arc::get_mut(&mut import.inner)
+        .expect("a freshly loaded import is not shared")
+        .identity = entry.checked_identity(LANGUAGE_NAME, &source.logical_source)?;
     Ok(import)
 }
 

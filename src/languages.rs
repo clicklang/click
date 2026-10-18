@@ -3,6 +3,7 @@
 pub mod c;
 pub(crate) mod compiler_process;
 pub mod cpp;
+pub(crate) mod envelope;
 pub(crate) mod inputs;
 pub(crate) mod portable_paths;
 pub mod rust;

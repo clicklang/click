@@ -4,21 +4,36 @@
     "probe": {
       "language": "rust",
       "lock": {
-        "artifact": "33d24bcfe00f7e9fc297b1f1c79b0040bc36408e44e2fee553ae7d69521b6203",
-        "config": "2049ebdc053c2c1ad83e7ed64bff2c7107abf7dc73c69b5f1002facad7f50ebc",
+        "envelope": 1,
         "frontend": {
-          "click_version": "0.1.0",
-          "compiler_commit": "923c95cdf5ba65cea505aa2ea829f578e1506ed8",
-          "extractor_revision": "5d6b812e5f77dbf3d7f66c21b9b57091f0e084cb",
-          "extractor_version": "0.1.279",
-          "profile": "38b817cc5760845d2e37b8f72a333f6d36a3ccdbfbf19e8c22da436e67a79ab1"
+          "identity": "7c2e994c506684f2bc8c86d9798bf9cb35c42693c51c3dd401139ef6618ae66c",
+          "name": "charon"
         },
-        "identity": "402e59f984eb112407987e23b18897e1702a124f6795557a777962428aefe12f",
-        "schema": 9,
-        "source": "c6f59cbe7d0f81ac8bb7fc162af34d87ba5061556f3c80c392f5a31b2cee0b39",
-        "source_files": {
-          "probe.rs": "c6f59cbe7d0f81ac8bb7fc162af34d87ba5061556f3c80c392f5a31b2cee0b39"
-        }
+        "rust": {
+          "frontend": {
+            "click_version": "0.1.0",
+            "compiler_commit": "923c95cdf5ba65cea505aa2ea829f578e1506ed8",
+            "extractor_revision": "5d6b812e5f77dbf3d7f66c21b9b57091f0e084cb",
+            "extractor_version": "0.1.279",
+            "profile": "38b817cc5760845d2e37b8f72a333f6d36a3ccdbfbf19e8c22da436e67a79ab1"
+          },
+          "schema": 9,
+          "source": "c6f59cbe7d0f81ac8bb7fc162af34d87ba5061556f3c80c392f5a31b2cee0b39"
+        },
+        "sources": {
+          "probe.rs": {
+            "artifact": {
+              "bytes": 18604,
+              "path": ".click/probe/probe.rs.ullbc",
+              "sha256": "33d24bcfe00f7e9fc297b1f1c79b0040bc36408e44e2fee553ae7d69521b6203"
+            },
+            "identity": "e6f42d7cffe32eae35b22875ec9387e0c6f6eb998176ad66c9ca44a525360ce8",
+            "inputs": {
+              "probe.rs": "c6f59cbe7d0f81ac8bb7fc162af34d87ba5061556f3c80c392f5a31b2cee0b39"
+            }
+          }
+        },
+        "unit": "2049ebdc053c2c1ad83e7ed64bff2c7107abf7dc73c69b5f1002facad7f50ebc"
       }
     }
   }

@@ -4,161 +4,173 @@
     "basic": {
       "language": "c++",
       "lock": {
-        "increment.cpp": {
-          "artifact_bytes": 5851,
-          "artifact_sha256": "94c3ff432ee583669073fe4ef6a9c9b7a4789a9d25230ec5411669d9b26c4235",
-          "compilation_database_sha256": "31aeb743da85e7b44d01109f40e2f60bf8ab5bd4c60397a8b21b8bd6f3d05d1a",
-          "config_sha256": "243958aefb3fd4234f49a77ffce67ec0c768de525023e69be1e6ae96b7037396",
-          "dependencies": {},
-          "exporter_sha256": "8b40892d69c2b04045c67d955b67c228d1215e84ae9bc972411ac05ceb5ed302",
-          "identity": "4dda5d4bdf2fc38025a64106384b25fea719567a5971ba33bcda7036d5d0014e",
-          "logical_source_sha256": "98f954b0fe5b5f723d353f51314736438160db69728a6ad6fa9b1019530e7332",
-          "prepared_roots": [
-            "$unit",
-            "$project"
-          ],
-          "preprocessor_files": {
-            "$unit/increment.cpp": {
-              "canonical_path": "$unit/increment.cpp",
-              "sha256": "98f954b0fe5b5f723d353f51314736438160db69728a6ad6fa9b1019530e7332"
+        "c++": {
+          "sources": {
+            "increment.cpp": {
+              "compilation_database_sha256": "31aeb743da85e7b44d01109f40e2f60bf8ab5bd4c60397a8b21b8bd6f3d05d1a",
+              "dependencies": {},
+              "logical_source_sha256": "98f954b0fe5b5f723d353f51314736438160db69728a6ad6fa9b1019530e7332",
+              "prepared_roots": [
+                "$unit",
+                "$project"
+              ],
+              "profile": {
+                "compilation_command": [
+                  "clang++",
+                  "-x",
+                  "c++",
+                  "-std=c++20",
+                  "--target=x86_64-unknown-linux-gnu",
+                  "-fno-exceptions",
+                  "-fno-rtti",
+                  "-O2",
+                  "-fno-strict-aliasing",
+                  "-funsigned-char",
+                  "-ffreestanding",
+                  "-nostdinc",
+                  "-nostdinc++",
+                  "-c",
+                  "increment.cpp",
+                  "-o",
+                  "increment.cpp.o"
+                ],
+                "compilation_directory": "$unit",
+                "compilation_file": "increment.cpp",
+                "exceptions": false,
+                "frontend": "clang",
+                "frontend_version": "clang version 19.1.7 (/home/runner/work/llvm-project/llvm-project/clang cd708029e0b2869e80abe31ddb175f7c35361f90)",
+                "rtti": false,
+                "standard": "c++20",
+                "target": "x86_64-unknown-linux-gnu"
+              },
+              "schema": 6,
+              "source_sha256": "98f954b0fe5b5f723d353f51314736438160db69728a6ad6fa9b1019530e7332"
+            },
+            "with_restore.cpp": {
+              "compilation_database_sha256": "b0942fea9f52f750739c047c5c85ec9533ea69b69a8db168067c94ddb4f78e6d",
+              "dependencies": {},
+              "logical_source_sha256": "bf81009da5251597c4b7983a4383fc65aa4ea30fd27f873149578290dcc2cfc2",
+              "prepared_roots": [
+                "$unit",
+                "$project"
+              ],
+              "profile": {
+                "compilation_command": [
+                  "clang++",
+                  "-x",
+                  "c++",
+                  "-std=c++20",
+                  "--target=x86_64-unknown-linux-gnu",
+                  "-fno-exceptions",
+                  "-fno-rtti",
+                  "-O2",
+                  "-fno-strict-aliasing",
+                  "-funsigned-char",
+                  "-ffreestanding",
+                  "-nostdinc",
+                  "-nostdinc++",
+                  "-Wno-reorder-ctor",
+                  "-c",
+                  "with_restore.cpp",
+                  "-o",
+                  "with_restore.cpp.o"
+                ],
+                "compilation_directory": "$unit",
+                "compilation_file": "with_restore.cpp",
+                "exceptions": false,
+                "frontend": "clang",
+                "frontend_version": "clang version 19.1.7 (/home/runner/work/llvm-project/llvm-project/clang cd708029e0b2869e80abe31ddb175f7c35361f90)",
+                "rtti": false,
+                "standard": "c++20",
+                "target": "x86_64-unknown-linux-gnu"
+              },
+              "schema": 6,
+              "source_sha256": "bf81009da5251597c4b7983a4383fc65aa4ea30fd27f873149578290dcc2cfc2"
+            },
+            "with_restore_caller.cpp": {
+              "compilation_database_sha256": "62be18462b5a40fca142a6ea46b26b5a0168cc072bfbea2679630b53bb542f49",
+              "dependencies": {},
+              "logical_source_sha256": "0c332fb5f11166337ff19553521f2726060274a63acdfd217f4818d3f1d48c3f",
+              "prepared_roots": [
+                "$unit",
+                "$project"
+              ],
+              "profile": {
+                "compilation_command": [
+                  "clang++",
+                  "-x",
+                  "c++",
+                  "-std=c++20",
+                  "--target=x86_64-unknown-linux-gnu",
+                  "-fno-exceptions",
+                  "-fno-rtti",
+                  "-O2",
+                  "-fno-strict-aliasing",
+                  "-funsigned-char",
+                  "-ffreestanding",
+                  "-nostdinc",
+                  "-nostdinc++",
+                  "-Wno-reorder-ctor",
+                  "-c",
+                  "with_restore_caller.cpp",
+                  "-o",
+                  "with_restore_caller.cpp.o"
+                ],
+                "compilation_directory": "$unit",
+                "compilation_file": "with_restore_caller.cpp",
+                "exceptions": false,
+                "frontend": "clang",
+                "frontend_version": "clang version 19.1.7 (/home/runner/work/llvm-project/llvm-project/clang cd708029e0b2869e80abe31ddb175f7c35361f90)",
+                "rtti": false,
+                "standard": "c++20",
+                "target": "x86_64-unknown-linux-gnu"
+              },
+              "schema": 6,
+              "source_sha256": "0c332fb5f11166337ff19553521f2726060274a63acdfd217f4818d3f1d48c3f"
             }
-          },
-          "profile": {
-            "compilation_command": [
-              "clang++",
-              "-x",
-              "c++",
-              "-std=c++20",
-              "--target=x86_64-unknown-linux-gnu",
-              "-fno-exceptions",
-              "-fno-rtti",
-              "-O2",
-              "-fno-strict-aliasing",
-              "-funsigned-char",
-              "-ffreestanding",
-              "-nostdinc",
-              "-nostdinc++",
-              "-c",
-              "increment.cpp",
-              "-o",
-              "increment.cpp.o"
-            ],
-            "compilation_directory": "$unit",
-            "compilation_file": "increment.cpp",
-            "exceptions": false,
-            "frontend": "clang",
-            "frontend_version": "clang version 19.1.7 (/home/runner/work/llvm-project/llvm-project/clang cd708029e0b2869e80abe31ddb175f7c35361f90)",
-            "rtti": false,
-            "standard": "c++20",
-            "target": "x86_64-unknown-linux-gnu"
-          },
-          "schema": 6,
-          "source_sha256": "98f954b0fe5b5f723d353f51314736438160db69728a6ad6fa9b1019530e7332"
+          }
         },
-        "with_restore.cpp": {
-          "artifact_bytes": 26102,
-          "artifact_sha256": "4140f3984cd2d96be55342b0e38224d57a9c8cfe1dbf791f6db3c1eb361ffaaa",
-          "compilation_database_sha256": "b0942fea9f52f750739c047c5c85ec9533ea69b69a8db168067c94ddb4f78e6d",
-          "config_sha256": "243958aefb3fd4234f49a77ffce67ec0c768de525023e69be1e6ae96b7037396",
-          "dependencies": {},
-          "exporter_sha256": "8b40892d69c2b04045c67d955b67c228d1215e84ae9bc972411ac05ceb5ed302",
-          "identity": "1e90ae93c8aca6a036b747d9e2c41d9ee1bff17b911add7577e7a601983ed784",
-          "logical_source_sha256": "bf81009da5251597c4b7983a4383fc65aa4ea30fd27f873149578290dcc2cfc2",
-          "prepared_roots": [
-            "$unit",
-            "$project"
-          ],
-          "preprocessor_files": {
-            "$unit/with_restore.cpp": {
-              "canonical_path": "$unit/with_restore.cpp",
-              "sha256": "bf81009da5251597c4b7983a4383fc65aa4ea30fd27f873149578290dcc2cfc2"
-            }
-          },
-          "profile": {
-            "compilation_command": [
-              "clang++",
-              "-x",
-              "c++",
-              "-std=c++20",
-              "--target=x86_64-unknown-linux-gnu",
-              "-fno-exceptions",
-              "-fno-rtti",
-              "-O2",
-              "-fno-strict-aliasing",
-              "-funsigned-char",
-              "-ffreestanding",
-              "-nostdinc",
-              "-nostdinc++",
-              "-Wno-reorder-ctor",
-              "-c",
-              "with_restore.cpp",
-              "-o",
-              "with_restore.cpp.o"
-            ],
-            "compilation_directory": "$unit",
-            "compilation_file": "with_restore.cpp",
-            "exceptions": false,
-            "frontend": "clang",
-            "frontend_version": "clang version 19.1.7 (/home/runner/work/llvm-project/llvm-project/clang cd708029e0b2869e80abe31ddb175f7c35361f90)",
-            "rtti": false,
-            "standard": "c++20",
-            "target": "x86_64-unknown-linux-gnu"
-          },
-          "schema": 6,
-          "source_sha256": "bf81009da5251597c4b7983a4383fc65aa4ea30fd27f873149578290dcc2cfc2"
+        "envelope": 1,
+        "frontend": {
+          "identity": "8b40892d69c2b04045c67d955b67c228d1215e84ae9bc972411ac05ceb5ed302",
+          "name": "clang"
         },
-        "with_restore_caller.cpp": {
-          "artifact_bytes": 32526,
-          "artifact_sha256": "60808b3f02aa909d03de9d76658939bd7ad05aaaf2474b639b7a0d982fd63961",
-          "compilation_database_sha256": "62be18462b5a40fca142a6ea46b26b5a0168cc072bfbea2679630b53bb542f49",
-          "config_sha256": "243958aefb3fd4234f49a77ffce67ec0c768de525023e69be1e6ae96b7037396",
-          "dependencies": {},
-          "exporter_sha256": "8b40892d69c2b04045c67d955b67c228d1215e84ae9bc972411ac05ceb5ed302",
-          "identity": "1427b8332cc5f6a459ceb47c7daf2583a37406f6f31f7f893da9720ab3b3402b",
-          "logical_source_sha256": "0c332fb5f11166337ff19553521f2726060274a63acdfd217f4818d3f1d48c3f",
-          "prepared_roots": [
-            "$unit",
-            "$project"
-          ],
-          "preprocessor_files": {
-            "$unit/with_restore_caller.cpp": {
-              "canonical_path": "$unit/with_restore_caller.cpp",
-              "sha256": "0c332fb5f11166337ff19553521f2726060274a63acdfd217f4818d3f1d48c3f"
+        "sources": {
+          "increment.cpp": {
+            "artifact": {
+              "bytes": 5851,
+              "path": ".click/basic/increment.cpp.click-cpp.json",
+              "sha256": "94c3ff432ee583669073fe4ef6a9c9b7a4789a9d25230ec5411669d9b26c4235"
+            },
+            "identity": "2130ee97bfebb43ff13f5e91cd9dfdf56784a4039ad0d69997a80a312ad80913",
+            "inputs": {
+              "$unit/increment.cpp": "98f954b0fe5b5f723d353f51314736438160db69728a6ad6fa9b1019530e7332"
             }
           },
-          "profile": {
-            "compilation_command": [
-              "clang++",
-              "-x",
-              "c++",
-              "-std=c++20",
-              "--target=x86_64-unknown-linux-gnu",
-              "-fno-exceptions",
-              "-fno-rtti",
-              "-O2",
-              "-fno-strict-aliasing",
-              "-funsigned-char",
-              "-ffreestanding",
-              "-nostdinc",
-              "-nostdinc++",
-              "-Wno-reorder-ctor",
-              "-c",
-              "with_restore_caller.cpp",
-              "-o",
-              "with_restore_caller.cpp.o"
-            ],
-            "compilation_directory": "$unit",
-            "compilation_file": "with_restore_caller.cpp",
-            "exceptions": false,
-            "frontend": "clang",
-            "frontend_version": "clang version 19.1.7 (/home/runner/work/llvm-project/llvm-project/clang cd708029e0b2869e80abe31ddb175f7c35361f90)",
-            "rtti": false,
-            "standard": "c++20",
-            "target": "x86_64-unknown-linux-gnu"
+          "with_restore.cpp": {
+            "artifact": {
+              "bytes": 26102,
+              "path": ".click/basic/with_restore.cpp.click-cpp.json",
+              "sha256": "4140f3984cd2d96be55342b0e38224d57a9c8cfe1dbf791f6db3c1eb361ffaaa"
+            },
+            "identity": "8850b9c93e33894554cdd156524b8b734402ef3f8d730fcb0de812b787cb523a",
+            "inputs": {
+              "$unit/with_restore.cpp": "bf81009da5251597c4b7983a4383fc65aa4ea30fd27f873149578290dcc2cfc2"
+            }
           },
-          "schema": 6,
-          "source_sha256": "0c332fb5f11166337ff19553521f2726060274a63acdfd217f4818d3f1d48c3f"
-        }
+          "with_restore_caller.cpp": {
+            "artifact": {
+              "bytes": 32526,
+              "path": ".click/basic/with_restore_caller.cpp.click-cpp.json",
+              "sha256": "60808b3f02aa909d03de9d76658939bd7ad05aaaf2474b639b7a0d982fd63961"
+            },
+            "identity": "e070b05499da82433853b7530d493e1157d67827147839dea7a3594dde2e7c2e",
+            "inputs": {
+              "$unit/with_restore_caller.cpp": "0c332fb5f11166337ff19553521f2726060274a63acdfd217f4818d3f1d48c3f"
+            }
+          }
+        },
+        "unit": "243958aefb3fd4234f49a77ffce67ec0c768de525023e69be1e6ae96b7037396"
       }
     }
   }

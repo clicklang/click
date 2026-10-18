@@ -842,10 +842,10 @@ mod tests {
         );
     }
 
-    /// Every committed project lock names its project's files by a root's
-    /// label, not by the checkout that prepared it. The cross-host fixture
-    /// keeps a lock in the earlier absolute form on purpose: it shows such a
-    /// lock still loads after relocation.
+    /// Every committed project lock is in the shared envelope and names its
+    /// project's files by a root's label, not by the checkout that prepared
+    /// it. The cross-host fixture keeps a lock in the earlier absolute form
+    /// on purpose: it shows such a lock still loads after relocation.
     #[test]
     fn committed_project_locks_name_no_checkout_path() {
         fn visit(directory: &Path, found: &mut Vec<PathBuf>) {
@@ -866,10 +866,19 @@ mod tests {
         }
         assert!(locks.len() > 50, "found only {} project locks", locks.len());
         for lock in locks {
+            let text = fs::read_to_string(&lock).unwrap();
+            let parsed: serde_json::Value = serde_json::from_str(&text).unwrap();
+            for (name, unit) in parsed["units"].as_object().unwrap() {
+                assert_eq!(
+                    unit["lock"]["envelope"],
+                    1,
+                    "unit `{name}` of `{}` is in an earlier format; run `click import lock` there",
+                    lock.display()
+                );
+            }
             if lock.ends_with("tests/fixtures/cross-host-c-import/click.project.lock.json") {
                 continue;
             }
-            let text = fs::read_to_string(&lock).unwrap();
             assert!(
                 !text.contains("\"/home/")
                     && !text.contains("\"/tmp/")

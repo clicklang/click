@@ -4,21 +4,36 @@
     "loops": {
       "language": "rust",
       "lock": {
-        "artifact": "9165838a73ab7023818278e889e0c1b206fc3d868e578bb5f1fd98a55a13d14e",
-        "config": "70d7d6d014df0bcebc361995e6f25a64fee7adea5e7f406debd8c3fb9a459121",
+        "envelope": 1,
         "frontend": {
-          "click_version": "0.1.0",
-          "compiler_commit": "923c95cdf5ba65cea505aa2ea829f578e1506ed8",
-          "extractor_revision": "5d6b812e5f77dbf3d7f66c21b9b57091f0e084cb",
-          "extractor_version": "0.1.279",
-          "profile": "38b817cc5760845d2e37b8f72a333f6d36a3ccdbfbf19e8c22da436e67a79ab1"
+          "identity": "7c2e994c506684f2bc8c86d9798bf9cb35c42693c51c3dd401139ef6618ae66c",
+          "name": "charon"
         },
-        "identity": "ddee64b8c8cdcc27683e59fd28ab2faf80bfa84078ae4ff80d57f0dae345c681",
-        "schema": 9,
-        "source": "1b7f514516c8a2b381b5ca4138ee1e51adbda6e2b0875ff613eeaf7aa94541f8",
-        "source_files": {
-          "loops.rs": "1b7f514516c8a2b381b5ca4138ee1e51adbda6e2b0875ff613eeaf7aa94541f8"
-        }
+        "rust": {
+          "frontend": {
+            "click_version": "0.1.0",
+            "compiler_commit": "923c95cdf5ba65cea505aa2ea829f578e1506ed8",
+            "extractor_revision": "5d6b812e5f77dbf3d7f66c21b9b57091f0e084cb",
+            "extractor_version": "0.1.279",
+            "profile": "38b817cc5760845d2e37b8f72a333f6d36a3ccdbfbf19e8c22da436e67a79ab1"
+          },
+          "schema": 9,
+          "source": "1b7f514516c8a2b381b5ca4138ee1e51adbda6e2b0875ff613eeaf7aa94541f8"
+        },
+        "sources": {
+          "loops.rs": {
+            "artifact": {
+              "bytes": 44592,
+              "path": ".click/loops/loops.rs.ullbc",
+              "sha256": "9165838a73ab7023818278e889e0c1b206fc3d868e578bb5f1fd98a55a13d14e"
+            },
+            "identity": "4f3de380488f6abd069b1cb3dc6cc0ce49bda21646918abfeb427e20270949c0",
+            "inputs": {
+              "loops.rs": "1b7f514516c8a2b381b5ca4138ee1e51adbda6e2b0875ff613eeaf7aa94541f8"
+            }
+          }
+        },
+        "unit": "70d7d6d014df0bcebc361995e6f25a64fee7adea5e7f406debd8c3fb9a459121"
       }
     }
   }

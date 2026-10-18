@@ -4,16 +4,32 @@
     "borrow": {
       "language": "rust",
       "lock": {
-        "artifact": "0bc7df2d35da435be3aae02439de472fac3e447d7fa7ee3d5c6efbbdee020e92",
-        "charon_driver": "645ab4b0456083642cafa05da8b1d58aca0c6d3349c2b7921b0820cbb465fb72",
-        "config": "56fd139064208f667f132c2c5c5f20e639e56eee16e3b993e9bf76a8a60c449a",
-        "exporter": "c6cc5acf5bb7e4d4bb6bef5265639d1b05b0138e3072767825cc2aa62a5040e4",
-        "identity": "3dd1e4bfa32c811a27e1b5535d5b10b2867f50ce0c27a89b51564e62ca03d24e",
-        "schema": 8,
-        "source": "16164b8bb27a4d0c35d6fb1efc18a0cb3139fe2d8b1c116b48b44e46f146c411",
-        "source_files": {
-          "borrow.rs": "16164b8bb27a4d0c35d6fb1efc18a0cb3139fe2d8b1c116b48b44e46f146c411"
-        }
+        "envelope": 1,
+        "frontend": {
+          "identity": "bb443f729df522d444c489e66f19ce3b88943ec780cc3a992e2ce7a40957556c",
+          "name": "charon"
+        },
+        "rust": {
+          "charon_driver": "645ab4b0456083642cafa05da8b1d58aca0c6d3349c2b7921b0820cbb465fb72",
+          "exporter": "c6cc5acf5bb7e4d4bb6bef5265639d1b05b0138e3072767825cc2aa62a5040e4",
+          "schema": 8,
+          "semantic_profile": "5d6b812e5f77dbf3d7f66c21b9b57091f0e084cb\n923c95cdf5ba65cea505aa2ea829f578e1506ed8\nflat-record-drop-v1\nunsigned-from-v2\ncompact-uniform-scalar-array-v1\nbyte-slice-metadata-v1\nshared-byte-chunks-exact-v1\nnested-natural-while-v1\nbyte-array-unsize-v1\nunsigned-checksum-operators-v1\nborrowed-scalar-array-fields-v1\ncompact-uniform-array-regions-v1,compact-scalar-array-snapshots-v1\nshared-scalar-array-iteration-v1\nresolved-source-assignment-operators-v1\nshared-scalar-slice-length-v1\nlocal-scalar-array-reference-assignment-v1\nexternal-scalar-array-snapshot-v1\nsplit-shared-slice-while-header-v1\nshared-scalar-slice-into-iteration-v1\nshared-byte-split-at-pair-v1\nborrowed-iterator-forwarding-v1\nstable-extraction-output-metadata-v1\nchecked-closed-arm-scalar-reference-scopes-v6",
+          "source": "16164b8bb27a4d0c35d6fb1efc18a0cb3139fe2d8b1c116b48b44e46f146c411"
+        },
+        "sources": {
+          "borrow.rs": {
+            "artifact": {
+              "bytes": 72267,
+              "path": ".click/borrow/borrow.rs.ullbc",
+              "sha256": "0bc7df2d35da435be3aae02439de472fac3e447d7fa7ee3d5c6efbbdee020e92"
+            },
+            "identity": "573cf0585e8b3c59e6f356b9eebd5ec9070bf5c518f9a0e2cf97c06bdce45e62",
+            "inputs": {
+              "borrow.rs": "16164b8bb27a4d0c35d6fb1efc18a0cb3139fe2d8b1c116b48b44e46f146c411"
+            }
+          }
+        },
+        "unit": "56fd139064208f667f132c2c5c5f20e639e56eee16e3b993e9bf76a8a60c449a"
       }
     }
   }
