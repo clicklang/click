@@ -65,8 +65,44 @@ impl PointerFactSource for crate::kernel::ExecutionPureFact {
     }
 }
 
+/// Retain exact source identity for removal, and admission order for iteration.
+/// Allocation addresses are lookup keys only; proof search never orders by them.
+#[derive(Clone, Default)]
+pub(super) struct PointerFactSources {
+    identities: PersistentMap<usize, usize>,
+    sources: PersistentMap<usize, Arc<dyn PointerFactSource>>,
+    next: usize,
+}
+
+impl PointerFactSources {
+    pub(super) fn insert(&mut self, identity: usize, source: Arc<dyn PointerFactSource>) -> usize {
+        if let Some(order) = self.identities.get(&identity) {
+            return *order;
+        }
+        let order = self.next;
+        self.next = self
+            .next
+            .checked_add(1)
+            .expect("pointer fact source identity exhausted");
+        self.identities.insert(identity, order);
+        self.sources.insert(order, source);
+        order
+    }
+
+    pub(super) fn remove(&mut self, identity: &usize) -> Option<usize> {
+        let order = self.identities.get(identity).copied()?;
+        self.identities.remove(identity);
+        self.sources.remove(&order);
+        Some(order)
+    }
+
+    pub(super) fn iter(&self) -> impl Iterator<Item = (&usize, &Arc<dyn PointerFactSource>)> {
+        self.sources.iter()
+    }
+}
+
 pub(super) type PointerFactBucket =
-    PersistentMap<String, PersistentMap<usize, Arc<dyn PointerFactSource>>>;
+    PersistentMap<String, PersistentMap<(bool, usize), Arc<dyn PointerFactSource>>>;
 
 /// These tags keep signed division and wider integer operations distinct.
 /// Congruence does not establish C/Rust arithmetic definedness.
@@ -516,6 +552,7 @@ impl TermClasses {
         &mut self,
         address: u64,
         key: PointerFactKey,
+        identity: (bool, usize),
         source: &Arc<dyn PointerFactSource>,
         insert: bool,
     ) {
@@ -535,9 +572,8 @@ impl TermClasses {
             _ => String::new(),
         };
         let bucket = groups.get(&group).cloned().unwrap_or_default();
-        // The retained Arc prevents allocation-identity reuse. Payload keys
-        // stay shallow even when a proposition contains a large C state.
-        let identity = Arc::as_ptr(source) as *const () as usize;
+        // Admission ordinals stay shallow even for facts with large C states.
+        // They preserve deterministic search order across allocation layouts.
         if insert && !bucket.contains_key(&identity) {
             // Payloads participate in union weighting, so a large class of
             // witnesses cannot be moved repeatedly by fresh singleton terms.

@@ -749,3 +749,46 @@ fn shifted_raw_read_dependency_lookup_ignores_unrelated_definitions() {
         "{samples:?}"
     );
 }
+
+#[test]
+fn pointer_fact_source_order_queries_ignore_unrelated_admissions() {
+    let mut observed = Vec::new();
+    for size in [16, 64, 256, 1024] {
+        let graph = EqualityGraph::default();
+        let mut target = None;
+        for id in 0..size {
+            let extent = crate::kernel::SubobjectExtent::opaque(Variable((1 << 44) + id));
+            let fact = std::sync::Arc::new(crate::kernel::ExecutionPureFact::certified(
+                extent.coverage_fact(&crate::kernel::CMemoryRange::new(
+                    at(symbolic(987_100 + id), 0),
+                    Bitvector32Term::Constant(0),
+                    Bitvector32Term::Constant(1),
+                )),
+            ));
+            graph.adjust_pointer_fact(&fact, true);
+            if id == 0 {
+                target = Some((extent, fact));
+            }
+        }
+        let (extent, fact) = target.unwrap();
+        let ((), work) = crate::instrumentation::measure_deterministic_work(|| {
+            let fork = graph.clone();
+            assert_eq!(
+                fork.subobject_coverage_facts(&extent.start),
+                vec![fact.proposition().clone()]
+            );
+            fork.adjust_pointer_fact(&fact, false);
+            assert!(fork.subobject_coverage_facts(&extent.start).is_empty());
+            assert_eq!(
+                graph.subobject_coverage_facts(&extent.start),
+                vec![fact.proposition().clone()]
+            );
+        });
+        observed.push(work);
+    }
+    assert!(observed[0] > 0);
+    assert!(
+        observed.iter().all(|work| *work == observed[0]),
+        "{observed:?}"
+    );
+}
