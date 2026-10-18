@@ -6386,6 +6386,13 @@ impl Parser {
         {
             return Err(self.error(format!("duplicate binder `{name}`")));
         }
+        // `name.parameter` would read the binder in a proposition while a
+        // C place such as `owns name.field` reads the program's variable.
+        if self.names.is_c_variable(&name) {
+            return Err(self.error(format!(
+                "value binder `{name}` takes the name of a C variable; `{name}.field` would name the binder in one clause and the variable in another; choose another name"
+            )));
+        }
         let resource = self.expect_ident("resource name")?;
         if matches!(
             resource.as_str(),

@@ -526,6 +526,25 @@ impl FileSymbols {
             import_spans.insert(index, end);
         }
 
+        // A file enum named like an in-scope library module would make
+        // `m::x` name both its constructor and the module's declaration.
+        if !file.is_some_and(|file| file.starts_with("library/")) {
+            for (index, pair) in tokens.windows(2).enumerate() {
+                if let [Token::Ident(keyword), Token::Ident(name)] = pair
+                    && keyword == "enum"
+                    && let Some(identity) = in_scope.get(name)
+                {
+                    return Err(path_error(
+                        positions,
+                        index + 1,
+                        format!(
+                            "enum `{name}` takes the name of Click library module `{}`, so `{name}::...` would name both; rename the enum",
+                            crate::surface::library_module_path(identity)
+                        ),
+                    ));
+                }
+            }
+        }
         let mut explicit_paths = BTreeSet::new();
         for start in 0..tokens.len() {
             if tokens[start] != Token::Ident("click".to_string()) {
