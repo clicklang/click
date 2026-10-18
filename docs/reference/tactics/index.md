@@ -362,9 +362,12 @@ When execution reaches function exit, each path's open goals are the
 contract's claims in the order the contract writes them: every `ensures`, and
 every `owns` and `produces` clause, whose goal is that the path still holds the
 instance. `views` and `consumes` clauses make no claim. A closer (`assumption`,
-`normalize`, `arithmetic`, `both`) acts on the first open goal, and a refusal
-names that goal; it does not look further down the list for a claim it could
-close (`mdtests/a_closer_after_execution_acts_on_the_first_open_claim.md`).
+`normalize`, `arithmetic`, `both`, `simp`, `simp() using`) acts on the first
+open goal, and a refusal names that goal; it does not look further down the
+list for a claim it could close
+(`mdtests/a_closer_after_execution_acts_on_the_first_open_claim.md`,
+`mdtests/simp_after_execution_acts_on_the_first_open_claim.md`). `auto` is the
+catch-all: it closes every goal still open.
 `assumption()` closes a resource goal whose instance the path holds
 (`mdtests/closers_after_execution_close_a_resource_goal_first.md`). A closer
 written when every goal on the path is closed is refused

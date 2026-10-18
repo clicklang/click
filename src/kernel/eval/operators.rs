@@ -2315,7 +2315,7 @@ struct PointerFormationGuard {
     value: bool,
 }
 
-fn pointer_index_term(
+pub(in crate::kernel) fn pointer_index_term(
     value: CValue,
     facts: &(impl ExecutionFactSource + ?Sized),
     assumptions: &PureFactContext,
@@ -2392,8 +2392,15 @@ fn pointer_offset_by_elements_paths(
         },
         true,
     );
+    // A C machine index needs scalar equality evidence, not alpha matching
+    // against logical requirements. The latter forces the deferred identity
+    // index for every ambient fact even when this zero test misses.
+    let zero = crate::kernel::canonical_condition_fact(&zero);
     let zero_is_known = |context: &PureFactContext| {
-        crate::kernel::reasoning::path_facts::call_input_fact_is_already_known(context, &zero)
+        context.proves_exact(&zero)
+            || context.contains_known(&zero)
+            || matches!(&zero, Proposition::ConditionIs(condition, value)
+                if PureFactContext::decide_intrinsically(condition) == Some(*value))
             || (wide && context.wide_constant_from_equalities(&offset) == Some(0))
     };
     let displaces = !(zero_is_known(assumptions)

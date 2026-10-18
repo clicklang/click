@@ -14,12 +14,12 @@ void clear(int32* p) {
     owns p[0..1];
     requires p[0] > 0 or p[0] == 1;
     ensures p[0] == 0;
-} by { execute(); simp(); }
+} by { execute(); assumption(); simp(); }
 void caller(int32* p) {
     owns p[0..1];
     requires p[0] == 1;
     ensures p[0] > 0 or p[0] == 1;
-} by { execute(); simp(); }
+} by { execute(); assumption(); simp(); }
 ```
 ```expect
 fail: simp
