@@ -22,9 +22,9 @@ fn back_edge_checks_body_end_and_continue_and_expands() {
     for body in ["i=i+1;", "i=i+1; continue;"] {
         let c = source(body);
         let sources = [("count.c", c.as_str())];
-        verify_c0_sources(PROOF, &sources).unwrap();
+        let verified_for_expansion = verify_c0_sources(PROOF, &sources).unwrap();
         let expanded =
-            expand_c0_claim_source(PROOF, &sources, "count", CProofClaim::Grouped).unwrap();
+            expand_checked_grouped_claim(PROOF, &verified_for_expansion, "count").unwrap();
         verify_c0_sources(&expanded, &sources).unwrap();
     }
 }
