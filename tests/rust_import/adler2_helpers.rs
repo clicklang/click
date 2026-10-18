@@ -656,6 +656,41 @@ fn charon_adler2_recombination_bounds_verify_with_original_helpers() {
     .unwrap();
 }
 
+// The caller verifies the original library in full. A global replacement may
+// change several theorems; check their complete proofs in declaration order.
+// If only an unchanged caller exposes the changed interface, retain the original
+// whole-library rejection check as a fallback.
+fn reject_changed_theorems(original: &str, changed: &str, needle: &str) -> bool {
+    let project = click::surface::ClickProject::new(
+        "mutated.click",
+        [click::surface::ClickModuleSource::new(
+            "mutated.click",
+            changed,
+            [],
+        )],
+    );
+    let inputs = click::surface::ProgramInputs::Bundle(vec![]);
+    let mut found = false;
+    for declaration in original.split("\ntheorem ").skip(1) {
+        if !declaration.contains(needle) {
+            continue;
+        }
+        found = true;
+        let (owner, _) = declaration.split_once('(').unwrap();
+        if let Err(error) = click::surface::verify_project_theorem(&project, &inputs, owner) {
+            assert_eq!(
+                error.kind(),
+                click::surface::ClickErrorKind::Proof,
+                "{error}"
+            );
+            assert!(!error.message().contains("budget exhausted"), "{error}");
+            return true;
+        }
+    }
+    assert!(found, "the mutation must belong to a theorem: {needle}");
+    click::surface::verify_click_theorems(changed).is_err()
+}
+
 #[test]
 #[ignore = "nightly: 0.7s in the parallel gate"]
 fn charon_adler2_recombination_bounds_reject_underflow_overflow_and_false_weights() {
@@ -680,7 +715,7 @@ fn charon_adler2_recombination_bounds_reject_underflow_overflow_and_false_weight
         let invalid = RECOMBINATION.replace(before, after);
         assert_ne!(invalid, RECOMBINATION, "missing mutation: {before}");
         assert!(
-            verify_click_theorems(&invalid).is_err(),
+            reject_changed_theorems(RECOMBINATION, &invalid, before),
             "accepted {before} -> {after}"
         );
     }
@@ -767,7 +802,7 @@ fn charon_adler2_lane_bounds_prove_batch_limits_and_step_safety() {
         let invalid = BOUNDS.replace(before, after);
         assert_ne!(invalid, BOUNDS, "missing mutation: {before}");
         assert!(
-            verify_click_theorems(&invalid).is_err(),
+            reject_changed_theorems(BOUNDS, &invalid, before),
             "accepted {before} -> {after}"
         );
     }
@@ -910,7 +945,7 @@ fn charon_adler2_iterator_bounds_prove_derived_index_and_native_preservation() {
         let invalid = source.replace(before, after);
         assert_ne!(source, invalid, "missing mutation: {before}");
         assert!(
-            verify_click_theorems(&invalid).is_err(),
+            reject_changed_theorems(&source, &invalid, before),
             "accepted {before} -> {after}"
         );
     }
@@ -933,7 +968,7 @@ fn charon_adler2_iterator_bounds_prove_derived_index_and_native_preservation() {
         assert_ne!(contracts, changed, "missing mutation: {before}");
         let invalid = format!("{dependencies}theorem adler_lane_iterator_add_contracts{changed}");
         assert!(
-            verify_click_theorems(&invalid).is_err(),
+            reject_changed_theorems(&source, &invalid, before),
             "accepted {before} -> {after}"
         );
     }
@@ -1761,7 +1796,7 @@ fn charon_adler2_small_partition_verifies_and_expands() {
     ] {
         let expanded =
             click::surface::expand_c0_claim_source_by_label(SMALL_PARTITION, &[], claim).unwrap();
-        click::surface::verify_c0_sources(&expanded, &[]).unwrap();
+        recheck_expanded_theorem(SMALL_PARTITION, &expanded, claim);
     }
 }
 
@@ -1776,7 +1811,7 @@ fn charon_adler2_scalar_tail_bounds_verify_expand_and_reject_false_updates() {
     ] {
         let expanded =
             click::surface::expand_c0_claim_source_by_label(TAIL_BOUNDS, &[], claim).unwrap();
-        click::surface::verify_c0_sources(&expanded, &[]).unwrap();
+        recheck_expanded_theorem(TAIL_BOUNDS, &expanded, claim);
     }
     for (before, after) in [
         ("ensures a + byte <= 328365", "ensures a + byte <= 328364"),
@@ -1791,7 +1826,7 @@ fn charon_adler2_scalar_tail_bounds_verify_expand_and_reject_false_updates() {
     ] {
         let invalid = TAIL_BOUNDS.replacen(before, after, 1);
         assert_ne!(invalid, TAIL_BOUNDS);
-        assert!(click::surface::verify_c0_sources(&invalid, &[]).is_err());
+        assert!(reject_changed_theorems(TAIL_BOUNDS, &invalid, before));
     }
 }
 
@@ -2571,6 +2606,8 @@ fn charon_adler2_checksum_packs_original_shared_fields() {
 fn charon_adler2_checksum_rejects_false_packing_and_missing_shared_authority() {
     let p = adler2_helpers_project();
     let prepared = p.prepared().unwrap();
+    let original = format!("verifying \"src/lib.rs\";\n{COMMON_ADLER_SPEC}\n{PACKING}\n{CHECKSUM}");
+    C0VerificationSession::new_program_prepared(&original, &prepared).unwrap();
     for (before, after) in [
         (
             "65536 * old(to_integer(self.b))",
@@ -2587,9 +2624,8 @@ fn charon_adler2_checksum_rejects_false_packing_and_missing_shared_authority() {
         assert_ne!(contract, CHECKSUM, "{before}");
         let source =
             format!("verifying \"src/lib.rs\";\n{COMMON_ADLER_SPEC}\n{PACKING}\n{contract}");
-        let error = C0VerificationSession::new_program_prepared(&source, &prepared)
-            .err()
-            .expect("false packing or missing shared authority must be refused");
+        let error = verify_public_checksum_unit(&source, &prepared, "adler2::Adler32::checksum")
+            .expect_err("false packing or missing shared authority must be refused");
         assert!(
             !error.message().contains("budget exhausted"),
             "{}",
