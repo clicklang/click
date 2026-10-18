@@ -1529,8 +1529,12 @@ context would keep otherwise dead adjacency versions alive. Fact-set equality,
 hashing, and the memo-table limits remain unchanged. For smart
 equality failures, the shared ambient oracle can reject a goal before another
 history walk in a restricted context. Its positive answer never issues or
-retains evidence: the selected restricted query must still succeed. The
-former all-condition candidate trials and full-context retained leaves are
+retains evidence: the selected restricted query must still succeed.
+Integer equality query runs before constructing even the condition-only
+selection, so failed speculative rewrites do not repeatedly rebuild the
+operand's connected order facts. A deterministic regression checks refusal
+beside 4, 16, 64, and 256 connected comparisons.
+The former all-condition candidate trials and full-context retained leaves are
 gone. Traversal is charged to `atomic dependency selection`; interruption returns no partial proof.
 
 Before spelling a supported typed equality, simp retains only the sources
@@ -1604,6 +1608,17 @@ retain the existing behavior. Connected pointer-alias regressions at 8, 16,
 32, 64 and 128 facts check work growth and refuse either missing required link.
 The native-prefix fixture also checks that redundant bounds cannot crowd out
 the source view and its necessary coverage bound.
+
+### Pure arithmetic after goal refinements
+
+Pure arithmetic can reconstruct a source goal after `peel` or `rewrite`
+has discarded its syntactic template. Each pure proof root builds an indexed
+state of its native parameters and a map of mathematical binder names;
+successors share these values. Reconstruction visits the current goal and
+queries those indexes, rather than rebuilding the parameter environment for
+each arithmetic step. The ordinary explicit certificate operation checks the
+result against the current kernel goal. Scaling coverage varies unrelated
+parameters at 0, 4, 16, and 64 beside the same refined arithmetic step.
 
 ### Native read alignment and theorem premise spelling
 

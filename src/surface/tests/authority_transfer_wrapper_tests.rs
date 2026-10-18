@@ -216,18 +216,13 @@ const MEMORY_FRAME_C: &str = "struct Frame { int64 wide; int32 narrow; }; int32 
 #[ignore = "nightly: 1.4s in the parallel gate"]
 fn authority_transfer_wrapper_memory_frame_expands_and_rechecks_retained_proof() {
     let sources = [("wrapper.c", MEMORY_FRAME_C)];
-    for label in ["package.produces_0", "unpack.produces_0"] {
-        let expanded = expand_project_claim_source_by_label(
-            &project(MEMORY_FRAME_SOURCE),
-            &ProgramInputs::Bundle(sources.to_vec()),
-            label,
-        )
-        .expect("the checked wrapper exchange expands");
-        verify_c0_project(&project(&expanded), &sources)
-            .expect("the expanded exchange preserves both borrowed fields");
-    }
-    let (session, _) = C0VerificationSession::new_project(&project(MEMORY_FRAME_SOURCE), &sources)
+    let original = project(MEMORY_FRAME_SOURCE);
+    let (session, verified) = C0VerificationSession::new_project(&original, &sources)
         .expect("retain the unchanged wrapper proof");
+    let expanded = ["package.produces_0", "unpack.produces_0"].map(|label| {
+        expand_checked_function_claim(MEMORY_FRAME_SOURCE, &verified, label)
+            .expect("the checked wrapper exchange expands")
+    });
     let position = crate::surface::expansion::position_at_offset(
         MEMORY_FRAME_SOURCE,
         MEMORY_FRAME_SOURCE.rfind("unfold(held(object));").unwrap(),
@@ -235,6 +230,11 @@ fn authority_transfer_wrapper_memory_frame_expands_and_rechecks_retained_proof()
     session
         .verify_at_project(MEMORY_FRAME_SOURCE, position.line, position.column)
         .expect("the retained exchange still checks");
+    drop(session);
+    for expanded in expanded {
+        verify_c0_project(&project(&expanded), &sources)
+            .expect("the expanded exchange preserves both borrowed fields");
+    }
 }
 
 #[test]
