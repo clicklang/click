@@ -77,27 +77,43 @@ fn symbolic_offset_zero_query_does_not_build_unrelated_stated_keys() {
         let _session = crate::kernel::VerificationSession::enter();
         let mut facts = PureFactContext::new();
         for index in 0..size {
-            facts = facts.assume_condition(ConditionTerm::signed_less_than(
-                Bitvector32Term::Variable(Variable(934_000)),
-                Bitvector32Term::Constant(10_000 + index as u32),
-            ), true);
+            facts = facts.assume_condition(
+                ConditionTerm::signed_less_than(
+                    Bitvector32Term::Variable(Variable(934_000)),
+                    Bitvector32Term::Constant(10_000 + index as u32),
+                ),
+                true,
+            );
         }
         let before = crate::persistent::persistent_node_allocations();
         let result = pointer_offset_by_elements_paths(
             &CState::new(),
             CPointerValue::new(Pointer::null(), CType::Int32Pointer),
             Bitvector32Term::Variable(Variable(934_001)),
-            4, false, false, ExecutionFacts::new(), Vec::new(), &facts,
+            4,
+            false,
+            false,
+            ExecutionFacts::new(),
+            Vec::new(),
+            &facts,
         );
         let allocated = crate::persistent::persistent_node_allocations() - before;
-        assert!(matches!(result.as_slice(), [CExpressionPath {
-            outcome: CExpressionOutcome::UndefinedBehavior(CUndefinedBehavior::PointerArithmetic), ..
-        }]));
+        assert!(matches!(
+            result.as_slice(),
+            [CExpressionPath {
+                outcome: CExpressionOutcome::UndefinedBehavior(
+                    CUndefinedBehavior::PointerArithmetic
+                ),
+                ..
+            }]
+        ));
         samples.push((size.ilog2() as usize + 1, allocated));
     }
     let (base_height, base_allocated) = samples[0];
     for (height, allocated) in samples {
-        assert!(allocated <= base_allocated * height / base_height,
-            "zero-offset query allocated {allocated} nodes (baseline {base_allocated})");
+        assert!(
+            allocated <= base_allocated * height / base_height,
+            "zero-offset query allocated {allocated} nodes (baseline {base_allocated})"
+        );
     }
 }
