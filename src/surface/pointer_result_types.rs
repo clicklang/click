@@ -23,7 +23,50 @@ fn nominal_return_class(definition: &ClickFunctionDefinition) -> Option<&CAccess
     })
 }
 
+impl ClickType {
+    pub(super) fn from_object_pointer_class(c_type: C0Type, class: &CAccessClass) -> Self {
+        let tag = match class {
+            CAccessClass::Struct(class) if c_type == C0Type::Int32Pointer => class.tag(),
+            CAccessClass::Pointer {
+                base: CPointeeBase::Struct(class),
+                depth: 1,
+            } if c_type == C0Type::Int32PointerPointer => class.tag(),
+            _ => return Self::C(c_type),
+        };
+        Self::CObjectPointer {
+            c_type,
+            struct_name: tag.to_string(),
+        }
+    }
+
+    pub(super) fn pointer_object_class(&self) -> Option<CAccessClass> {
+        match self {
+            Self::CObjectPointer {
+                c_type,
+                struct_name,
+            } => struct_pointer_class(*c_type, struct_name),
+            _ => None,
+        }
+    }
+}
+
+impl ClickFunctionDefinition {
+    pub(super) fn return_type_with_object_class(&self) -> ClickType {
+        match (self.return_type().c_type(), self.return_object_class()) {
+            (Some(c_type), Some(class)) => ClickType::from_object_pointer_class(c_type, class),
+            _ => self.return_type().clone(),
+        }
+    }
+}
+
 impl FunctionParameter {
+    pub(super) fn click_type_with_object_class(&self) -> ClickType {
+        match self.pointer_object_class() {
+            Some(class) => ClickType::from_object_pointer_class(self.c_type(), &class),
+            None => self.click_type().clone(),
+        }
+    }
+
     pub(super) fn pointer_object_class(&self) -> Option<CAccessClass> {
         struct_pointer_class(self.click_type().c_type()?, self.struct_name()?)
     }
@@ -118,7 +161,7 @@ impl Analysis<'_> {
             self.results.insert(name.to_string(), result.clone());
             return result;
         }
-        if !(matches!(definition.return_type(), ClickType::C(ty) if ty.is_object_pointer())
+        if !(matches!(definition.return_type(), ClickType::C(ty) | ClickType::CObjectPointer { c_type: ty, .. } if ty.is_object_pointer())
             || matches!(definition.return_type(), ClickType::Parameter(_)))
             || !self.active.insert(name.to_string())
         {
@@ -130,7 +173,7 @@ impl Analysis<'_> {
             .enumerate()
             .map(|(index, parameter)| {
                 let origin =
-                    (matches!(parameter.click_type(), ClickType::C(ty) if ty.is_object_pointer())
+                    (matches!(parameter.click_type(), ClickType::C(ty) | ClickType::CObjectPointer { c_type: ty, .. } if ty.is_object_pointer())
                         || matches!(parameter.click_type(), ClickType::Parameter(_)))
                     .then(|| {
                         Arc::new(PurePointerResult {
@@ -277,7 +320,7 @@ impl Analysis<'_> {
             .enumerate()
             .map(|(index, parameter)| {
                 let origin =
-                    (matches!(parameter.click_type(), ClickType::C(ty) if ty.is_object_pointer())
+                    (matches!(parameter.click_type(), ClickType::C(ty) | ClickType::CObjectPointer { c_type: ty, .. } if ty.is_object_pointer())
                         || matches!(parameter.click_type(), ClickType::Parameter(_)))
                     .then(|| {
                         Arc::new(PurePointerResult {

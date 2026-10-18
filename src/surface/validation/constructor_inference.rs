@@ -33,7 +33,7 @@ impl Signature {
             type_parameters: type_parameters.to_vec(),
             parameters: parameters
                 .iter()
-                .map(|parameter| parameter.click_type().clone())
+                .map(FunctionParameter::click_type_with_object_class)
                 .collect(),
             result: None,
         }
@@ -86,7 +86,7 @@ impl ConstructorTypes {
                 .map(|definition| {
                     let mut signature =
                         Signature::new(definition.type_parameters(), definition.parameters());
-                    signature.result = Some(definition.return_type().clone());
+                    signature.result = Some(definition.return_type_with_object_class());
                     (definition.name().to_string(), signature)
                 })
                 .collect(),

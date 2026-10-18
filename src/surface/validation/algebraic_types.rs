@@ -1,6 +1,121 @@
 use super::*;
 use crate::surface::parser::algebraic_field_c_type_supported;
 
+/// Scalar validation reads C carriers; generic inference additionally needs
+/// the declared struct identity of bindings. Keep that metadata in the same
+/// lexical scope so a scalar lookup cannot erase a generic argument's type.
+#[derive(Clone, Default)]
+struct AlgebraicVariables {
+    c_types: BTreeMap<String, C0Type>,
+    nominal_types: BTreeMap<String, ClickType>,
+}
+
+impl std::ops::Deref for AlgebraicVariables {
+    type Target = BTreeMap<String, C0Type>;
+    fn deref(&self) -> &Self::Target {
+        &self.c_types
+    }
+}
+
+impl AlgebraicVariables {
+    fn function(signature: &FunctionSignature, include_result: bool) -> Self {
+        let mut variables = Self::parameters(signature.parameters());
+        if include_result && signature.return_type() != C0Type::Void {
+            variables.insert("result".to_string(), signature.return_type());
+        }
+        variables
+    }
+
+    fn parameters(parameters: &[FunctionParameter]) -> Self {
+        let mut variables = Self::default();
+        for parameter in parameters {
+            variables.bind(
+                parameter.name().to_string(),
+                parameter.click_type_with_object_class(),
+            );
+        }
+        variables
+    }
+
+    fn bind(&mut self, name: String, click_type: ClickType) {
+        self.remove(&name);
+        if let Some(c_type) = click_type.c_type() {
+            self.c_types.insert(name.clone(), c_type);
+            if matches!(click_type, ClickType::CObjectPointer { .. }) {
+                self.nominal_types.insert(name, click_type);
+            }
+        }
+    }
+
+    fn insert(&mut self, name: String, c_type: C0Type) {
+        self.bind(name, ClickType::C(c_type));
+    }
+
+    fn remove(&mut self, name: &str) {
+        self.c_types.remove(name);
+        self.nominal_types.remove(name);
+    }
+
+    fn argument_type(
+        &self,
+        expression: &ContractExpression,
+        functions: &BTreeMap<String, ClickFunctionType>,
+        context: &str,
+    ) -> Result<Option<ClickType>, ClickError> {
+        if let Some(cast_type) = generics::explicit_cast_click_type(expression) {
+            return Ok(Some(cast_type));
+        }
+        match expression {
+            ContractExpression::AlgebraicVariable { algebraic_type, .. }
+            | ContractExpression::AlgebraicConstructor { algebraic_type, .. } => {
+                return Ok(Some(ClickType::Algebraic(algebraic_type.clone())));
+            }
+            ContractExpression::Call { name, arguments } => {
+                if let Some(function) = functions.get(name) {
+                    let result = if function.type_parameters.is_empty() {
+                        function.return_type.clone()
+                    } else {
+                        let actual_types = arguments
+                            .iter()
+                            .map(|argument| self.argument_type(argument, functions, context))
+                            .collect::<Result<Vec<_>, _>>()?;
+                        let substitution = generics::infer_type_substitution(
+                            "function",
+                            name,
+                            &function.type_parameters,
+                            function
+                                .parameters
+                                .iter()
+                                .map(FunctionParameter::click_type_with_object_class),
+                            actual_types,
+                        )
+                        .map_err(ClickError::new)?;
+                        generics::instantiate_click_type(&function.return_type, &substitution)
+                            .map_err(ClickError::new)?
+                    };
+                    return Ok(Some(result));
+                }
+            }
+            ContractExpression::Binding(name)
+            | ContractExpression::CBinding(name)
+            | ContractExpression::CFragment(CExpression::Variable(name)) => {
+                if let Some(nominal) = self.nominal_types.get(name) {
+                    return Ok(Some(nominal.clone()));
+                }
+            }
+            ContractExpression::Old(inner)
+            | ContractExpression::At {
+                expression: inner, ..
+            } => {
+                return self.argument_type(inner, functions, context);
+            }
+            _ => {}
+        }
+        infer_contract_expression_type(expression, self, functions, context)
+            .map(|inferred| inferred.map(ClickType::C))
+    }
+}
+
 fn is_deep_literal_add(expression: &ContractExpression) -> bool {
     let mut operands = 0;
     let mut current = expression;
@@ -79,15 +194,17 @@ pub(in crate::surface) fn resource_match_arm_scopes<'a, 'b>(
             }
             let ty = instantiate_field_type(datatype, application, field)?;
             match &ty {
-                ClickType::C(_) => parameters.push(FunctionParameter {
-                    name: name.clone(),
-                    click_type: ty.clone(),
-                    struct_name: None,
-                    function_pointer_signature: None,
-                    constant: false,
-                    pointee_constant: false,
-                    reference: false,
-                }),
+                ClickType::C(_) | ClickType::CObjectPointer { .. } => {
+                    parameters.push(FunctionParameter {
+                        name: name.clone(),
+                        click_type: ty.clone(),
+                        struct_name: None,
+                        function_pointer_signature: None,
+                        constant: false,
+                        pointee_constant: false,
+                        reference: false,
+                    })
+                }
                 ClickType::Algebraic(application) => {
                     substitution.insert(
                         name.clone(),
@@ -936,16 +1053,7 @@ pub(super) fn validate_algebraic_type_uses(
     validate_resource_field_declarations(file, &definitions)?;
 
     for definition in &predicates {
-        let variables = definition
-            .parameters()
-            .iter()
-            .filter_map(|parameter| {
-                parameter
-                    .click_type()
-                    .c_type()
-                    .map(|c_type| (parameter.name().to_string(), c_type))
-            })
-            .collect();
+        let variables = AlgebraicVariables::parameters(definition.parameters());
         validate_algebraic_proposition(
             definition.body(),
             &variables,
@@ -958,7 +1066,12 @@ pub(super) fn validate_algebraic_type_uses(
             let click_variables = definition
                 .parameters()
                 .iter()
-                .map(|parameter| (parameter.name().to_string(), parameter.click_type().clone()))
+                .map(|parameter| {
+                    (
+                        parameter.name().to_string(),
+                        parameter.click_type_with_object_class(),
+                    )
+                })
                 .collect();
             validate_generic_proposition_types(
                 definition.body(),
@@ -971,16 +1084,7 @@ pub(super) fn validate_algebraic_type_uses(
         }
     }
     for definition in &functions {
-        let variables = definition
-            .parameters()
-            .iter()
-            .filter_map(|parameter| {
-                parameter
-                    .click_type()
-                    .c_type()
-                    .map(|c_type| (parameter.name().to_string(), c_type))
-            })
-            .collect();
+        let variables = AlgebraicVariables::parameters(definition.parameters());
         let body_type = validate_algebraic_expression(
             definition.body(),
             &variables,
@@ -991,12 +1095,17 @@ pub(super) fn validate_algebraic_type_uses(
         )?;
         if matches!(
             definition.return_type(),
-            ClickType::C(_) | ClickType::Integer
+            ClickType::C(_) | ClickType::CObjectPointer { .. } | ClickType::Integer
         ) {
             let click_variables = definition
                 .parameters()
                 .iter()
-                .map(|parameter| (parameter.name().to_string(), parameter.click_type().clone()))
+                .map(|parameter| {
+                    (
+                        parameter.name().to_string(),
+                        parameter.click_type_with_object_class(),
+                    )
+                })
                 .collect::<BTreeMap<_, _>>();
             // An ambient C name has no type in the pure parameter scope.
             // Diagnose that forbidden dependency before reporting an unknown
@@ -1042,14 +1151,14 @@ pub(super) fn validate_algebraic_type_uses(
                     describe_click_type(&ClickType::Algebraic(expected.clone()))
                 )));
             }
-            (ClickType::C(_), Some(actual)) => {
+            (ClickType::C(_) | ClickType::CObjectPointer { .. }, Some(actual)) => {
                 return Err(ClickError::new(format!(
                     "function `{}` returns a C value, but its body has algebraic type {}",
                     definition.name(),
                     describe_click_type(&ClickType::Algebraic(actual))
                 )));
             }
-            (ClickType::C(_), None) => {}
+            (ClickType::C(_) | ClickType::CObjectPointer { .. }, None) => {}
             (ClickType::Integer, None) => {}
             (ClickType::Integer, Some(actual)) => {
                 return Err(ClickError::new(format!(
@@ -1063,7 +1172,12 @@ pub(super) fn validate_algebraic_type_uses(
             let click_variables = definition
                 .parameters()
                 .iter()
-                .map(|parameter| (parameter.name().to_string(), parameter.click_type().clone()))
+                .map(|parameter| {
+                    (
+                        parameter.name().to_string(),
+                        parameter.click_type_with_object_class(),
+                    )
+                })
                 .collect();
             let actual = infer_generic_expression_type(
                 definition.body(),
@@ -1085,11 +1199,16 @@ pub(super) fn validate_algebraic_type_uses(
         }
     }
     for theorem in &theorems {
-        let variables = theorem_type_environment(theorem);
+        let variables = AlgebraicVariables::parameters(theorem.parameters());
         let click_variables = theorem
             .parameters()
             .iter()
-            .map(|parameter| (parameter.name().to_string(), parameter.click_type().clone()))
+            .map(|parameter| {
+                (
+                    parameter.name().to_string(),
+                    parameter.click_type_with_object_class(),
+                )
+            })
             .collect::<BTreeMap<_, _>>();
         for requirement in theorem
             .requires()
@@ -1156,16 +1275,7 @@ pub(super) fn validate_algebraic_type_uses(
             .chain(arm_scopes.iter().map(|(_, _, definition)| definition))
         {
             let body = definition.composite_body().unwrap_or(body);
-            let variables = definition
-                .parameters()
-                .iter()
-                .filter_map(|parameter| {
-                    parameter
-                        .click_type()
-                        .c_type()
-                        .map(|c_type| (parameter.name().to_string(), c_type))
-                })
-                .collect();
+            let variables = AlgebraicVariables::parameters(definition.parameters());
             if let Some(condition) = body.condition() {
                 validate_algebraic_proposition(
                     condition,
@@ -1193,8 +1303,8 @@ pub(super) fn validate_algebraic_type_uses(
             .iter()
             .map(|tactic| tactic.function_block()),
     ) {
-        let requires_variables = function_signature_type_environment(function.signature(), false);
-        let ensures_variables = function_signature_type_environment(function.signature(), true);
+        let requires_variables = AlgebraicVariables::function(function.signature(), false);
+        let ensures_variables = AlgebraicVariables::function(function.signature(), true);
         for requirement in function
             .requires()
             .iter()
@@ -1227,7 +1337,7 @@ pub(super) fn validate_algebraic_type_uses(
 
 fn validate_algebraic_proposition(
     proposition: &ClickProposition,
-    variables: &BTreeMap<String, C0Type>,
+    variables: &AlgebraicVariables,
     click_functions: &BTreeMap<String, ClickFunctionType>,
     predicates: &BTreeMap<&str, &PredicateDefinition>,
     definitions: &BTreeMap<&str, &AlgebraicTypeDefinition>,
@@ -1258,7 +1368,7 @@ fn validate_algebraic_proposition(
 #[inline(never)]
 fn validate_algebraic_proposition_one(
     proposition: &ClickProposition,
-    variables: &BTreeMap<String, C0Type>,
+    variables: &AlgebraicVariables,
     click_functions: &BTreeMap<String, ClickFunctionType>,
     predicates: &BTreeMap<&str, &PredicateDefinition>,
     definitions: &BTreeMap<&str, &AlgebraicTypeDefinition>,
@@ -1337,8 +1447,8 @@ fn validate_algebraic_proposition_one(
             }
             let mut variables = variables.clone();
             match c_type {
-                ClickType::C(c_type) => {
-                    variables.insert(name.clone(), *c_type);
+                ClickType::C(_) | ClickType::CObjectPointer { .. } => {
+                    variables.bind(name.clone(), c_type.clone());
                 }
                 ClickType::Integer => {
                     variables.remove(name);
@@ -1415,13 +1525,7 @@ fn validate_algebraic_proposition_one(
                     )?;
                     Ok(match algebraic {
                         Some(application) => Some(ClickType::Algebraic(application)),
-                        None => infer_contract_expression_type(
-                            argument,
-                            variables,
-                            click_functions,
-                            context,
-                        )?
-                        .map(ClickType::C),
+                        None => variables.argument_type(argument, click_functions, context)?,
                     })
                 })
                 .collect::<Result<Vec<_>, ClickError>>()?;
@@ -1467,7 +1571,13 @@ fn validate_algebraic_proposition_one(
                             describe_click_type(&ClickType::Algebraic(expected.clone()))
                         )));
                     }
-                    (ClickType::C(expected), Some(ClickType::Algebraic(actual))) => {
+                    (
+                        ClickType::C(expected)
+                        | ClickType::CObjectPointer {
+                            c_type: expected, ..
+                        },
+                        Some(ClickType::Algebraic(actual)),
+                    ) => {
                         return Err(ClickError::new(format!(
                             "predicate `{name}` argument {index} expects {}, got {} in {context}",
                             describe_c0_type(*expected),
@@ -1480,16 +1590,20 @@ fn validate_algebraic_proposition_one(
                             "predicate `{name}` argument {index} expects Integer in {context}"
                         )));
                     }
-                    (ClickType::C(expected), Some(ClickType::C(actual)))
-                        if !click_argument_types_compatible(actual, *expected) =>
-                    {
+                    (
+                        ClickType::C(expected)
+                        | ClickType::CObjectPointer {
+                            c_type: expected, ..
+                        },
+                        Some(ClickType::C(actual)),
+                    ) if !click_argument_types_compatible(actual, *expected) => {
                         return Err(ClickError::new(format!(
                             "predicate `{name}` argument {index} expects {}, got {} in {context}",
                             describe_c0_type(*expected),
                             describe_c0_type(actual)
                         )));
                     }
-                    (ClickType::C(_), _) => {}
+                    (ClickType::C(_) | ClickType::CObjectPointer { .. }, _) => {}
                 }
             }
             Ok(())
@@ -1505,7 +1619,7 @@ fn validate_algebraic_quantifier_body(
     name: &str,
     application: &AlgebraicTypeApplication,
     body: &ClickProposition,
-    variables: &BTreeMap<String, C0Type>,
+    variables: &AlgebraicVariables,
     click_functions: &BTreeMap<String, ClickFunctionType>,
     predicates: &BTreeMap<&str, &PredicateDefinition>,
     definitions: &BTreeMap<&str, &AlgebraicTypeDefinition>,
@@ -1573,7 +1687,7 @@ fn expression_is_untyped_integer_literal(expression: &ContractExpression) -> boo
 /// nested match), while literal arms remain contextual and neutral.
 fn expression_is_integer_match_result(
     expression: &ContractExpression,
-    variables: &BTreeMap<String, C0Type>,
+    variables: &AlgebraicVariables,
     click_functions: &BTreeMap<String, ClickFunctionType>,
     predicates: &BTreeMap<&str, &PredicateDefinition>,
     definitions: &BTreeMap<&str, &AlgebraicTypeDefinition>,
@@ -1643,7 +1757,7 @@ fn expression_is_integer_match_result(
                     arm.bindings.iter().zip(variant.fields()).enumerate()
                 {
                     match instantiate_field_type(definition, &algebraic_type, field)? {
-                        ClickType::C(_) => {}
+                        ClickType::C(_) | ClickType::CObjectPointer { .. } => {}
                         ClickType::Algebraic(algebraic_type) => {
                             algebraic_bindings.insert(
                                 binding.clone(),
@@ -1685,7 +1799,7 @@ fn expression_is_integer_match_result(
 
 fn validate_algebraic_expression(
     mut expression: &ContractExpression,
-    variables: &BTreeMap<String, C0Type>,
+    variables: &AlgebraicVariables,
     click_functions: &BTreeMap<String, ClickFunctionType>,
     predicates: &BTreeMap<&str, &PredicateDefinition>,
     definitions: &BTreeMap<&str, &AlgebraicTypeDefinition>,
@@ -1735,7 +1849,7 @@ fn validate_algebraic_expression(
 
 fn validate_algebraic_expression_node(
     expression: &ContractExpression,
-    variables: &BTreeMap<String, C0Type>,
+    variables: &AlgebraicVariables,
     click_functions: &BTreeMap<String, ClickFunctionType>,
     predicates: &BTreeMap<&str, &PredicateDefinition>,
     definitions: &BTreeMap<&str, &AlgebraicTypeDefinition>,
@@ -1848,11 +1962,22 @@ fn validate_algebraic_expression_node(
                             describe_click_type(&ClickType::Algebraic(actual))
                         )));
                     }
-                    (ClickType::C(expected), None)
-                        if crate::surface::lowering::argument_is_null_pointer_constant(
-                            argument, *expected,
-                        ) => {}
-                    (ClickType::C(expected), Some(actual)) => {
+                    (
+                        ClickType::C(expected)
+                        | ClickType::CObjectPointer {
+                            c_type: expected, ..
+                        },
+                        None,
+                    ) if crate::surface::lowering::argument_is_null_pointer_constant(
+                        argument, *expected,
+                    ) => {}
+                    (
+                        ClickType::C(expected)
+                        | ClickType::CObjectPointer {
+                            c_type: expected, ..
+                        },
+                        Some(actual),
+                    ) => {
                         return Err(ClickError::new(format!(
                             "constructor `{}::{variant}` argument {index} expects {}, got {} in {context}",
                             definition.name(),
@@ -1860,7 +1985,13 @@ fn validate_algebraic_expression_node(
                             describe_click_type(&ClickType::Algebraic(actual))
                         )));
                     }
-                    (ClickType::C(expected), None) => {
+                    (
+                        ClickType::C(expected)
+                        | ClickType::CObjectPointer {
+                            c_type: expected, ..
+                        },
+                        None,
+                    ) => {
                         if let Some(actual) = infer_contract_expression_type(
                             argument,
                             variables,
@@ -1948,8 +2079,8 @@ fn validate_algebraic_expression_node(
                     }
                     match instantiate_field_type(definition, &algebraic_type, field)? {
                         ClickType::Parameter(_) => {}
-                        ClickType::C(c_type) => {
-                            arm_variables.insert(binding.clone(), c_type);
+                        field_type @ (ClickType::C(_) | ClickType::CObjectPointer { .. }) => {
+                            arm_variables.bind(binding.clone(), field_type);
                         }
                         ClickType::Algebraic(algebraic_type) => {
                             algebraic_bindings.insert(
@@ -2009,9 +2140,13 @@ fn validate_algebraic_expression_node(
                 };
                 if let (Some(expected), Some(actual)) = (&result_type, &arm_type) {
                     let compatible = match (expected, actual) {
-                        (ClickType::C(expected), ClickType::C(actual)) => {
-                            click_types_compatible(*actual, *expected)
-                        }
+                        (
+                            ClickType::C(expected)
+                            | ClickType::CObjectPointer {
+                                c_type: expected, ..
+                            },
+                            ClickType::C(actual),
+                        ) => click_types_compatible(*actual, *expected),
                         _ => expected == actual,
                     };
                     if !compatible {
@@ -2344,13 +2479,7 @@ fn validate_algebraic_expression_node(
                     )?;
                     Ok(match algebraic {
                         Some(application) => Some(ClickType::Algebraic(application)),
-                        None => infer_contract_expression_type(
-                            argument,
-                            variables,
-                            click_functions,
-                            context,
-                        )?
-                        .map(ClickType::C),
+                        None => variables.argument_type(argument, click_functions, context)?,
                     })
                 })
                 .collect::<Result<Vec<_>, ClickError>>()?;
@@ -2388,12 +2517,17 @@ fn validate_algebraic_expression_node(
                     // The C null pointer constant types as any pointer
                     // parameter, in a pure function exactly as in a resource
                     // argument.
-                    (ClickType::C(expected), _)
-                        if arguments.get(index).is_some_and(|argument| {
-                            crate::surface::lowering::argument_is_null_pointer_constant(
-                                argument, *expected,
-                            )
-                        }) => {}
+                    (
+                        ClickType::C(expected)
+                        | ClickType::CObjectPointer {
+                            c_type: expected, ..
+                        },
+                        _,
+                    ) if arguments.get(index).is_some_and(|argument| {
+                        crate::surface::lowering::argument_is_null_pointer_constant(
+                            argument, *expected,
+                        )
+                    }) => {}
                     (ClickType::Integer, Some(ClickType::Integer)) => {}
                     (ClickType::Integer, _) => {
                         return Err(ClickError::new(format!(
@@ -2415,23 +2549,33 @@ fn validate_algebraic_expression_node(
                             describe_click_type(&ClickType::Algebraic(expected.clone()))
                         )));
                     }
-                    (ClickType::C(expected), Some(ClickType::Algebraic(actual))) => {
+                    (
+                        ClickType::C(expected)
+                        | ClickType::CObjectPointer {
+                            c_type: expected, ..
+                        },
+                        Some(ClickType::Algebraic(actual)),
+                    ) => {
                         return Err(ClickError::new(format!(
                             "function `{name}` argument {index} expects {}, got {} in {context}",
                             describe_c0_type(*expected),
                             describe_click_type(&ClickType::Algebraic(actual))
                         )));
                     }
-                    (ClickType::C(expected), Some(ClickType::C(actual)))
-                        if !click_types_compatible(actual, *expected) =>
-                    {
+                    (
+                        ClickType::C(expected)
+                        | ClickType::CObjectPointer {
+                            c_type: expected, ..
+                        },
+                        Some(ClickType::C(actual)),
+                    ) if !click_types_compatible(actual, *expected) => {
                         return Err(ClickError::new(format!(
                             "function `{name}` argument {index} expects {}, got {} in {context}",
                             describe_c0_type(*expected),
                             describe_c0_type(actual)
                         )));
                     }
-                    (ClickType::C(_), _) => {}
+                    (ClickType::C(_) | ClickType::CObjectPointer { .. }, _) => {}
                 }
             }
             let return_type = function
@@ -2451,7 +2595,7 @@ fn validate_algebraic_expression_node(
             Ok(return_type.and_then(|return_type| match return_type {
                 ClickType::Parameter(_) => None,
                 ClickType::Algebraic(application) => Some(application),
-                ClickType::C(_) => None,
+                ClickType::C(_) | ClickType::CObjectPointer { .. } => None,
                 ClickType::Integer => None,
             }))
         }
@@ -2469,9 +2613,13 @@ fn validate_algebraic_expression_node(
 
 fn generic_click_types_compatible(actual: &ClickType, expected: &ClickType) -> bool {
     match (actual, expected) {
-        (ClickType::C(actual), ClickType::C(expected)) => {
-            click_types_compatible(*actual, *expected)
-        }
+        (
+            ClickType::C(actual) | ClickType::CObjectPointer { c_type: actual, .. },
+            ClickType::C(expected)
+            | ClickType::CObjectPointer {
+                c_type: expected, ..
+            },
+        ) => click_types_compatible(*actual, *expected),
         _ => actual == expected,
     }
 }
@@ -2842,6 +2990,9 @@ fn infer_generic_expression_type(
     definitions: &BTreeMap<&str, &AlgebraicTypeDefinition>,
     context: &str,
 ) -> Result<Option<ClickType>, ClickError> {
+    if let Some(cast_type) = generics::explicit_cast_click_type(expression) {
+        return Ok(Some(cast_type));
+    }
     match expression {
         ContractExpression::IntegerLiteral(_) => {
             Ok(generics::default_numeral_click_type(expression))
@@ -2866,9 +3017,9 @@ fn infer_generic_expression_type(
                 .expect("constructors were validated before generic inference");
             for (index, (argument, field)) in arguments.iter().zip(variant.fields()).enumerate() {
                 let expected = instantiate_field_type(definition, algebraic_type, field)?;
-                if let ClickType::C(expected) = &expected
+                if let Some(expected) = expected.c_type()
                     && crate::surface::lowering::argument_is_null_pointer_constant(
-                        argument, *expected,
+                        argument, expected,
                     )
                 {
                     continue;
@@ -3316,6 +3467,14 @@ pub(super) fn instantiate_field_type(
 ) -> Result<ClickType, ClickError> {
     match field {
         AlgebraicFieldType::Integer => Ok(ClickType::Integer),
+        AlgebraicFieldType::C {
+            c_type,
+            struct_name: Some(struct_name),
+            ..
+        } => Ok(ClickType::CObjectPointer {
+            c_type: *c_type,
+            struct_name: struct_name.clone(),
+        }),
         AlgebraicFieldType::C { c_type, .. } => Ok(ClickType::C(*c_type)),
         AlgebraicFieldType::Parameter(name) => definition
             .type_parameters()
@@ -3360,9 +3519,10 @@ fn validate_type_application(
     for argument in &application.arguments {
         match argument {
             ClickType::Parameter(_) => {}
-            ClickType::C(c_type) if algebraic_field_c_type_supported(*c_type) => {}
+            ClickType::C(c_type) | ClickType::CObjectPointer { c_type, .. }
+                if algebraic_field_c_type_supported(*c_type) => {}
             ClickType::Integer => {}
-            ClickType::C(c_type) => {
+            ClickType::C(c_type) | ClickType::CObjectPointer { c_type, .. } => {
                 return Err(ClickError::new(format!(
                     "{} is not a valid algebraic datatype argument in {context}",
                     describe_c0_type(*c_type)

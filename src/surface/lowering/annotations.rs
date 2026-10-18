@@ -177,7 +177,9 @@ pub(in crate::surface) fn resolve_resource_field_schema(
         .iter()
         .map(|field| {
             let ty = match field.click_type() {
-                ClickType::C(ty) => crate::kernel::ResourceFieldType::C(ty.to_kernel_type()),
+                ClickType::C(ty) | ClickType::CObjectPointer { c_type: ty, .. } => {
+                    crate::kernel::ResourceFieldType::C(ty.to_kernel_type())
+                }
                 ClickType::Algebraic(application) => crate::kernel::ResourceFieldType::Algebraic(
                     algebraic_kernel_type(environment, application).map_err(ClickError::new)?,
                 ),
@@ -573,7 +575,7 @@ pub(in crate::surface) fn register_kernel_fold_read_definitions(
             .parameters()
             .iter()
             .map(|parameter| match parameter.click_type() {
-                ClickType::C(c_type) => {
+                ClickType::C(c_type) | ClickType::CObjectPointer { c_type, .. } => {
                     Some((parameter.name().to_string(), c_type.to_kernel_type()))
                 }
                 _ => None,
@@ -680,7 +682,7 @@ fn lower_kernel_pure_function_definition(
     let mut context = SpecElaborationContext::default();
     for parameter in definition.parameters() {
         match parameter.click_type() {
-            ClickType::C(c_type) => {
+            ClickType::C(c_type) | ClickType::CObjectPointer { c_type, .. } => {
                 parameters.push(crate::kernel::CPureFunctionParameter::c(
                     parameter.name(),
                     c_type.to_kernel_type(),
@@ -4721,13 +4723,15 @@ impl AnnotationLowerer<'_> {
                                     self.lower_contract_algebraic_to_spec(argument, environment)?,
                                 );
                             }
-                            ClickType::C(_) if parameter_is_click_array_ref(parameter) => {
+                            ClickType::C(_) | ClickType::CObjectPointer { .. }
+                                if parameter_is_click_array_ref(parameter) =>
+                            {
                                 predicate_environment.array_refs.insert(
                                     parameter.name().to_string(),
                                     self.lower_array_ref_to_spec(argument, environment)?,
                                 );
                             }
-                            ClickType::C(_) => {
+                            ClickType::C(_) | ClickType::CObjectPointer { .. } => {
                                 predicate_environment.values.insert(
                                     parameter.name().to_string(),
                                     self.lower_contract_expression_to_spec(argument, environment)?,
@@ -7021,7 +7025,7 @@ impl AnnotationLowerer<'_> {
                     // parameter and lowers to that pointer type's null value, not
                     // to an `int32` zero, so `rb_parent_is(sub, 0)` compares the
                     // model's parent payload with a pointer.
-                    ClickType::C(c_type)
+                    ClickType::C(c_type) | ClickType::CObjectPointer { c_type, .. }
                         if crate::surface::lowering::argument_is_null_pointer_constant(
                             argument, *c_type,
                         ) =>
@@ -7047,7 +7051,9 @@ impl AnnotationLowerer<'_> {
                             None => crate::kernel::SpecPureFunctionArgument::Value(pointer),
                         })
                     }
-                    ClickType::C(_) if parameter_is_click_array_ref(parameter) => {
+                    ClickType::C(_) | ClickType::CObjectPointer { .. }
+                        if parameter_is_click_array_ref(parameter) =>
+                    {
                         let array_ref = self.lower_array_ref_to_spec(argument, environment)?;
                         Ok(crate::kernel::SpecPureFunctionArgument::ArrayRef {
                             // A function that reads no memory is a function of
@@ -7068,7 +7074,7 @@ impl AnnotationLowerer<'_> {
                             element_type: array_ref.element_type,
                         })
                     }
-                    ClickType::C(_) => {
+                    ClickType::C(_) | ClickType::CObjectPointer { .. } => {
                         // Lower the borrowed argument once; wrapping its surface
                         // tree first would clone every nested call's subtree.
                         let value =
@@ -7167,7 +7173,7 @@ impl AnnotationLowerer<'_> {
                     &value.algebraic_type.value_type(),
                 )))
             }
-            ClickType::C(c_type) => Ok(Some(ClickType::C(*c_type))),
+            ClickType::C(_) | ClickType::CObjectPointer { .. } => Ok(Some(expected.clone())),
             ClickType::Integer => Ok(Some(ClickType::Integer)),
             ClickType::Parameter(_) => {
                 self.infer_unconstrained_call_argument_type(argument, environment)
@@ -7180,6 +7186,9 @@ impl AnnotationLowerer<'_> {
         argument: &ContractExpression,
         environment: &SpecElaborationContext,
     ) -> Result<Option<ClickType>, String> {
+        if let Some(cast_type) = generics::explicit_cast_click_type(argument) {
+            return Ok(Some(cast_type));
+        }
         match argument {
             ContractExpression::IntegerLiteral(_) | ContractExpression::Negate(_) => {
                 Ok(generics::default_numeral_click_type(argument))
@@ -7204,9 +7213,9 @@ impl AnnotationLowerer<'_> {
                     .get(name)
                     .and_then(spec_expression_click_type))
             }
-            ContractExpression::CFragment(CExpression::Value(value)) => Ok(Some(ClickType::C(
-                generics::c0_type_from_kernel(value.c_type()),
-            ))),
+            ContractExpression::CFragment(CExpression::Value(value)) => {
+                Ok(Some(generics::click_type_from_c_value(value)))
+            }
             ContractExpression::CFragment(CExpression::Variable(name)) => {
                 if let Some(value) = environment.algebraic_values.get(name) {
                     return Ok(Some(generics::click_type_from_algebraic_value_type(
@@ -7912,7 +7921,7 @@ impl AnnotationLowerer<'_> {
             ));
         }
 
-        let ClickType::C(result_type) = definition.return_type() else {
+        let Some(result_type) = definition.return_type().c_type() else {
             return Err(format!("function `{name}` does not return a C value"));
         };
         Ok(SpecExpression::PureFunctionApplication {
@@ -8461,7 +8470,17 @@ fn aggregate_projection_root(expression: &CExpression) -> Option<&str> {
 fn spec_expression_click_type(expression: &SpecExpression) -> Option<ClickType> {
     let c_type = match expression {
         SpecExpression::ResourceField { c_type, .. } => *c_type,
-        SpecExpression::Value(value) => value.c_type(),
+        SpecExpression::Value(value) => return Some(generics::click_type_from_c_value(value)),
+        SpecExpression::PureFunctionApplication {
+            result_type,
+            result_object_class: Some(class),
+            ..
+        } => {
+            return Some(ClickType::from_object_pointer_class(
+                generics::c0_type_from_kernel(*result_type),
+                class,
+            ));
+        }
         SpecExpression::PureFunctionApplication { result_type, .. }
         | SpecExpression::AggregateFieldValue {
             value_type: result_type,
@@ -8502,6 +8521,12 @@ fn click_type_to_algebraic_value_type(
     match click_type {
         ClickType::Parameter(name) => Err(format!("unresolved type parameter `{name}`")),
         ClickType::C(c_type) => Ok(AlgebraicValueType::C(c_type.to_kernel_type())),
+        ClickType::CObjectPointer { c_type, .. } => Ok(AlgebraicValueType::ObjectPointer(
+            c_type.to_kernel_type(),
+            click_type
+                .pointer_object_class()
+                .expect("nominal pointer type"),
+        )),
         ClickType::Integer => Ok(AlgebraicValueType::Integer),
         ClickType::Algebraic(application) if application.rigid => {
             Ok(AlgebraicValueType::Parameter(application.name.clone()))

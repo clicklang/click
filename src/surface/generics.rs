@@ -77,6 +77,12 @@ pub(super) fn unify_click_type(
             Ok(())
         }
         ClickType::Parameter(name) => Err(format!("unknown type parameter `{name}`")),
+        ClickType::CObjectPointer { .. } if pattern == actual => Ok(()),
+        ClickType::CObjectPointer { .. } => Err(format!(
+            "expected {}, got {}",
+            validation::describe_click_type(pattern),
+            validation::describe_click_type(actual)
+        )),
         ClickType::C(expected) => match actual {
             ClickType::C(actual) if validation::click_types_compatible(*actual, *expected) => {
                 Ok(())
@@ -142,7 +148,7 @@ pub(super) fn instantiate_click_type(
             .get(name)
             .cloned()
             .ok_or_else(|| format!("unresolved type parameter `{name}`")),
-        ClickType::C(c_type) => Ok(ClickType::C(*c_type)),
+        ClickType::C(_) | ClickType::CObjectPointer { .. } => Ok(click_type.clone()),
         ClickType::Integer => Ok(ClickType::Integer),
         ClickType::Algebraic(application) => Ok(ClickType::Algebraic(instantiate_algebraic_type(
             application,
@@ -173,8 +179,9 @@ pub(super) fn click_type_from_algebraic_value_type(value_type: &AlgebraicValueTy
             name: name.clone(),
             arguments: Vec::new(),
         }),
-        AlgebraicValueType::C(c_type) | AlgebraicValueType::ObjectPointer(c_type, _) => {
-            ClickType::C(c0_type_from_kernel(*c_type))
+        AlgebraicValueType::C(c_type) => ClickType::C(c0_type_from_kernel(*c_type)),
+        AlgebraicValueType::ObjectPointer(c_type, class) => {
+            ClickType::from_object_pointer_class(c0_type_from_kernel(*c_type), class)
         }
         AlgebraicValueType::Integer => ClickType::Integer,
         AlgebraicValueType::Algebraic { name, arguments } => {
@@ -294,6 +301,10 @@ pub(super) fn instantiate_function(
     definition: &ClickFunctionDefinition,
     substitution: &TypeSubstitution,
 ) -> Result<ClickFunctionDefinition, String> {
+    let return_type = instantiate_click_type(definition.return_type(), substitution)?;
+    let return_object_class = return_type
+        .pointer_object_class()
+        .or_else(|| definition.return_object_class().cloned());
     Ok(ClickFunctionDefinition {
         name: instance_name(
             definition.name(),
@@ -306,8 +317,8 @@ pub(super) fn instantiate_function(
             .iter()
             .map(|parameter| instantiate_parameter(parameter, substitution))
             .collect::<Result<Vec<_>, _>>()?,
-        return_type: instantiate_click_type(definition.return_type(), substitution)?,
-        return_object_class: definition.return_object_class().cloned(),
+        return_type,
+        return_object_class,
         decreases: definition
             .decreases()
             .map(|expression| instantiate_expression(expression, substitution))
@@ -329,7 +340,9 @@ pub(super) fn instantiate_function_for_surface_call_with_variables(
         .iter()
         .zip(arguments)
         .map(|(parameter, argument)| match parameter.click_type() {
-            ClickType::C(c_type) => Some(ClickType::C(*c_type)),
+            ClickType::C(_) | ClickType::CObjectPointer { .. } => {
+                Some(parameter.click_type().clone())
+            }
             ClickType::Algebraic(_) | ClickType::Parameter(_) | ClickType::Integer => {
                 syntactic_expression_type(argument, variables)
             }
@@ -348,17 +361,57 @@ pub(super) fn instantiate_function_for_surface_call_with_variables(
     instantiate_function(definition, &substitution)
 }
 
+/// An explicit cast fixes the argument's logical C type. Its destination
+/// spelling is not evidence that the original object has that class; the
+/// existing kernel argument/constructor check still consumes the value.
+pub(super) fn explicit_cast_click_type(expression: &ContractExpression) -> Option<ClickType> {
+    let (ContractExpression::CFragment(lowered) | ContractExpression::CUnary { lowered, .. }) =
+        expression
+    else {
+        return None;
+    };
+    let CExpression::Cast {
+        target_type,
+        pointee_struct,
+        ..
+    } = lowered
+    else {
+        return None;
+    };
+    let c_type = c0_type_from_kernel(*target_type);
+    Some(match pointee_struct {
+        Some(struct_name) if c_type.is_pointer() => ClickType::CObjectPointer {
+            c_type,
+            struct_name: struct_name.clone(),
+        },
+        _ => ClickType::C(c_type),
+    })
+}
+
+pub(super) fn click_type_from_c_value(value: &CValue) -> ClickType {
+    let c_type = c0_type_from_kernel(value.c_type());
+    if let CValue::Pointer(pointer) = value
+        && let Some(class) = pointer.object_class()
+    {
+        return ClickType::from_object_pointer_class(c_type, &class);
+    }
+    ClickType::C(c_type)
+}
+
 pub(super) fn default_numeral_click_type(expression: &ContractExpression) -> Option<ClickType> {
     let CExpression::Value(value) = contract_expression_as_c_fragment(expression)? else {
         return None;
     };
-    Some(ClickType::C(c0_type_from_kernel(value.c_type())))
+    Some(click_type_from_c_value(&value))
 }
 
 fn syntactic_expression_type(
     expression: &ContractExpression,
     variables: &BTreeMap<String, ClickType>,
 ) -> Option<ClickType> {
+    if let Some(cast_type) = explicit_cast_click_type(expression) {
+        return Some(cast_type);
+    }
     match expression {
         ContractExpression::IntegerLiteral(_) | ContractExpression::Negate(_) => {
             default_numeral_click_type(expression)
@@ -368,7 +421,7 @@ fn syntactic_expression_type(
             Some(ClickType::Algebraic(algebraic_type.clone()))
         }
         ContractExpression::CFragment(CExpression::Value(value)) => {
-            Some(ClickType::C(c0_type_from_kernel(value.c_type())))
+            Some(click_type_from_c_value(value))
         }
         ContractExpression::Binding(name)
         | ContractExpression::CFragment(CExpression::Variable(name)) => {
@@ -389,12 +442,7 @@ pub(super) fn concrete_variable_types(
 ) -> BTreeMap<String, ClickType> {
     values
         .iter()
-        .map(|(name, value)| {
-            (
-                name.clone(),
-                ClickType::C(c0_type_from_kernel(value.c_type())),
-            )
-        })
+        .map(|(name, value)| (name.clone(), click_type_from_c_value(value)))
         .chain(algebraic_values.iter().map(|(name, value)| {
             (
                 name.clone(),
@@ -437,7 +485,9 @@ pub(super) fn instantiate_predicate_for_surface_call(
         .iter()
         .zip(arguments)
         .map(|(parameter, argument)| match parameter.click_type() {
-            ClickType::C(c_type) => Some(ClickType::C(*c_type)),
+            ClickType::C(_) | ClickType::CObjectPointer { .. } => {
+                Some(parameter.click_type().clone())
+            }
             ClickType::Algebraic(_) | ClickType::Parameter(_) | ClickType::Integer => {
                 syntactic_expression_type(argument, variables)
             }

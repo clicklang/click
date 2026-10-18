@@ -1152,9 +1152,12 @@ fn expand_declared_resource_clauses_with_rules(
 fn declaration_parameter_types(
     parameters: &[FunctionParameter],
 ) -> impl Iterator<Item = (String, ClickType)> + '_ {
-    parameters
-        .iter()
-        .map(|parameter| (parameter.name().to_string(), parameter.click_type().clone()))
+    parameters.iter().map(|parameter| {
+        (
+            parameter.name().to_string(),
+            parameter.click_type_with_object_class(),
+        )
+    })
 }
 
 fn expand_declared_resources_in_function_block(
@@ -1163,9 +1166,14 @@ fn expand_declared_resources_in_function_block(
 ) -> Result<(), ClickError> {
     resolve_value_binders(function, resource_definitions)?;
     resource_definitions.constructors.enter_declaration(
-        function_signature_type_environment(function.signature(), true)
-            .into_iter()
-            .map(|(name, c_type)| (name, ClickType::C(c_type))),
+        declaration_parameter_types(function.signature().parameters()).chain(
+            (function.signature().return_type() != C0Type::Void).then(|| {
+                (
+                    "result".to_string(),
+                    ClickType::C(function.signature().return_type()),
+                )
+            }),
+        ),
     );
     crate::surface::enter_ambient_declaration(function.signature().name());
     *resource_definitions.character_parameters.borrow_mut() = function
@@ -2962,7 +2970,9 @@ fn declared_resource_type_schema(
         .iter()
         .map(|(name, (index, ty))| {
             let ty = match ty {
-                ClickType::C(ty) => crate::kernel::ResourceFieldType::C(ty.to_kernel_type()),
+                ClickType::C(ty) | ClickType::CObjectPointer { c_type: ty, .. } => {
+                    crate::kernel::ResourceFieldType::C(ty.to_kernel_type())
+                }
                 ClickType::Integer => crate::kernel::ResourceFieldType::Integer,
                 _ => {
                     return Err(ClickError::new(

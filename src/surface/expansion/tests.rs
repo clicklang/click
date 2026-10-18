@@ -1,6 +1,140 @@
 use super::*;
 
 #[test]
+fn nested_match_retains_nominal_list_result() {
+    let c = "struct node { int32 value; }; struct other { int32 value; };
+        int32 member(struct node* node) { return 1; }";
+    let source = r#"
+verifying "node.c";
+spec enum Nodes { Empty, Link(struct node*, Nodes) }
+function keep_node(node: struct node*) -> struct node* { node }
+function singleton(node: struct node*) -> List<struct node*> {
+    List::Cons(node, List::Nil)
+}
+function singleton_return(node: struct node*) -> List<struct node*> {
+    List::Cons(keep_node(node), List::Nil)
+}
+function singleton_contains(node: struct node*) -> bool {
+    list::contains(singleton(node), node)
+}
+function singleton_contains_return(node: struct node*) -> bool {
+    list::contains(singleton(node), keep_node(node))
+}
+predicate typed_contains(nodes: List<struct node*>, node: struct node*) {
+    list::contains(nodes, node)
+}
+int32 member(struct node* node) {
+    requires list::contains(singleton(node), node);
+    requires list::contains(List::Cons(node, List::Nil), node);
+    ensures result == 1;
+} by { execute(); }
+function first(nodes: Nodes) -> List<struct node*> decreases nodes {
+    match nodes {
+        Nodes::Empty => List::Nil,
+        Nodes::Link(node, tail) => match tail {
+            Nodes::Empty => List::Cons(node, List::Nil),
+            Nodes::Link(next, rest) => first(tail),
+        },
+    }
+}
+theorem first_null() {
+    ensures first(Nodes::Link(0, Nodes::Empty))
+        == List<struct node*>::Cons(0, List<struct node*>::Nil) by {
+            unfold(first(Nodes::Link(0, Nodes::Empty)));
+            normalize();
+        }
+}
+theorem singleton_null() {
+    ensures singleton(0) == List<struct node*>::Cons(0, List<struct node*>::Nil)
+        by { unfold(singleton(0)); normalize(); }
+}
+theorem singleton_return_null() {
+    ensures singleton_return(0) == List<struct node*>::Cons(0, List<struct node*>::Nil)
+        by { unfold(singleton_return(0)); unfold(keep_node(0)); normalize(); }
+}
+theorem typed_membership(xs: List<struct node*>, target: struct node*) {
+    ensures list::contains(xs, target) == list::contains(xs, target)
+        by { normalize(); }
+}
+"#;
+    verify_c0_sources(source, &[("node.c", c)])
+        .unwrap_or_else(|error| panic!("{}", error.message()));
+    for field_type in ["int32*", "struct other*"] {
+        let wrong = source.replace(
+            "Link(struct node*, Nodes)",
+            &format!("Link({field_type}, Nodes)"),
+        );
+        let error = verify_c0_sources(&wrong, &[("node.c", c)])
+            .expect_err("a matched payload must retain its own declared class");
+        assert!(
+            error.message().contains("function `first`"),
+            "{}",
+            error.message()
+        );
+        let wrong = source.replace("target: struct node*", &format!("target: {field_type}"));
+        let error = verify_c0_sources(&wrong, &[("node.c", c)])
+            .expect_err("a bool result does not remove its arguments' nominal requirements");
+        assert!(
+            error.message().contains("cannot infer type arguments")
+                || error.message().contains("requires original object class"),
+            "{}",
+            error.message()
+        );
+    }
+}
+
+#[test]
+fn generic_list_induction_retains_nominal_pointer_fields() {
+    let c = "struct node { int32 value; }; struct other { int32 value; };";
+    let source = r#"
+verifying "node.c";
+function retain<T>(value: T) -> T { value }
+theorem null_has_nominal_list_type() {
+    ensures List<struct node*>::Cons(0, List<struct node*>::Nil)
+        == List<struct node*>::Cons(0, List<struct node*>::Nil) by { normalize(); }
+}
+theorem typed_head(head: struct node*) {
+    ensures head == head by { normalize(); }
+}
+theorem typed_tail(items: List<struct node*>) {
+    ensures 0 == 0 by { normalize(); }
+}
+theorem list_has_typed_heads(xs: List<struct node*>) {
+    ensures 0 == 0 by {
+        induct(xs) as ih {
+            List::Nil => { normalize(); }
+            List::Cons(head, tail) => {
+                apply(typed_head(head));
+                apply(typed_head(retain(head)));
+                apply(typed_tail(tail));
+                apply(list::append_cons(head, tail, tail));
+                apply(list::append_cons((void*)head, List<void*>::Nil, List<void*>::Nil));
+                apply(list::append_cons((int32*)head, List<int32*>::Nil, List<int32*>::Nil));
+                apply(list::append_cons(retain((void*)head), List<void*>::Nil, List<void*>::Nil));
+                apply(list::append_cons(retain((int32*)head), List<int32*>::Nil, List<int32*>::Nil));
+                normalize();
+            }
+        }
+    }
+}
+"#;
+    verify_c0_sources(source, &[("node.c", c)])
+        .unwrap_or_else(|error| panic!("{}", error.message()));
+    for element in ["int32*", "struct other*"] {
+        let wrong = source.replace("List<struct node*>", &format!("List<{element}>"));
+        let error = verify_c0_sources(&wrong, &[("node.c", c)])
+            .expect_err("an untyped or differently typed payload cannot acquire node's class");
+        assert!(
+            error
+                .message()
+                .contains("requires original object class `struct node`"),
+            "{}",
+            error.message()
+        );
+    }
+}
+
+#[test]
 fn callback_refinement_preserves_generated_address_obligations() {
     let path = std::path::Path::new("rb_augment_callbacks_const_suite.md");
     let fixture = crate::cli::parse_mdtest(

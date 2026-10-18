@@ -78,7 +78,7 @@ pub(in crate::surface) fn validate_click_definitions(file: &ClickFile) -> Result
             ClickFunctionType {
                 type_parameters: definition.type_parameters().to_vec(),
                 parameters: definition.parameters().to_vec(),
-                return_type: definition.return_type().clone(),
+                return_type: definition.return_type_with_object_class(),
             },
         );
     }
@@ -866,7 +866,7 @@ fn validate_contract_applications_in_proposition_one(
         } => {
             let mut variables = variables.clone();
             match c_type {
-                ClickType::C(c_type) => {
+                ClickType::C(c_type) | ClickType::CObjectPointer { c_type, .. } => {
                     variables.insert(name.clone(), *c_type);
                 }
                 ClickType::Integer => {
