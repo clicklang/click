@@ -351,5 +351,14 @@ fn a_late_zero_index_alias_transfers_an_admitted_read_order_and_withdraws() {
     let zero = Proposition::ConditionIs(ConditionTerm::equal(index, 0u32.into()), true);
     let equal = root.assume_proposition(zero.clone());
     assert_eq!(equal.decide(&target), Some(true));
-    assert_eq!(equal.without_exact_fact(&zero).decide(&target), None);
+    assert_eq!(
+        crate::kernel::reasoning::decide_with_facts(&equal, &ExecutionFacts::new(), &target),
+        Some(true),
+    );
+    let withdrawn = equal.without_exact_fact(&zero);
+    assert_eq!(withdrawn.decide(&target), None);
+    assert_eq!(
+        crate::kernel::reasoning::decide_with_facts(&withdrawn, &ExecutionFacts::new(), &target),
+        None,
+    );
 }
