@@ -5278,6 +5278,63 @@ mod tests {
     }
 
     #[test]
+    fn typed_read_validity_accepts_its_certified_pointer_equation() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let field = Pointer {
+            block: "global:defined-complete-pointer".into(),
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        let stored =
+            CValue::typed_pointer(Pointer::symbolic(Variable(210_290)), CType::Int32Pointer);
+        // Forget the materialized cell without changing its stored value.
+        // The typed read must recover the complete pointer from its history.
+        let memory = CMemory::new()
+            .store(field.clone(), stored.clone())
+            .without_possible_aliasing_cells(
+                &Pointer::symbolic(Variable(210_291)),
+                8,
+                &PureFactContext::new(),
+            );
+        assert!(memory.known_value(&field).is_none());
+        let view = |bytes| {
+            PureFactContext::new().assume_proposition(Proposition::CMemoryLoadable {
+                memory: memory.clone(),
+                base: field.clone(),
+                bytes: Bitvector32Term::Constant(bytes),
+                wide: false,
+            })
+        };
+        let context = view(8);
+        let paths = evaluate_spec_memory_load_paths(
+            &memory,
+            field.clone(),
+            CType::Int32Pointer,
+            ExecutionFacts::new(),
+            Vec::new(),
+            &context,
+        );
+        let [path] = paths.as_slice() else {
+            panic!("one typed read expected");
+        };
+        assert_eq!(path.outcome, CExpressionOutcome::Value(stored));
+        assert!(path.obligations.is_empty());
+        assert_eq!(path.facts.len(), 1);
+        assert!(path.facts[0].is_logical_read_equation());
+        assert!(!context.proves_exact(path.facts[0].proposition()));
+        assert!(!is_load_variable_defining_fact(path.facts[0].proposition()));
+        let before = context.fact_counts();
+        assert!(context.proves_memory_read_defined(&memory, &field, CType::Int32Pointer));
+        assert_eq!(context.fact_counts(), before);
+        // Recovering a value and its equation grants no missing read extent.
+        assert!(!PureFactContext::new().proves_memory_read_defined(
+            &memory,
+            &field,
+            CType::Int32Pointer,
+        ));
+        assert!(!view(4).proves_memory_read_defined(&memory, &field, CType::Int32Pointer));
+    }
+
+    #[test]
     fn a_symbolic_pointer_read_recovers_the_complete_stored_value() {
         let _session = crate::kernel::VerificationSession::enter();
         let field = Pointer {
