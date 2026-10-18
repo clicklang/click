@@ -64,11 +64,13 @@ fn named_int32_values(terms: &[Bitvector32Term]) -> BTreeMap<String, CValue> {
 #[test]
 fn fixed_state_failure_names_kernel_values_held_in_live_locals() {
     // Loop-closure subproofs have a fixed-state context, not an execution
-    // branch. Their failed goals must still name importer-made live locals.
+    // branch. Their failed goals use the source local holding a copied value,
+    // even when a generated temporary with the same value sorts before it.
     let len = Bitvector32Term::Variable(Variable(70));
     let size = Bitvector32Term::Variable(Variable(94));
     let state = CState::new()
         .with_local("len", CValue::UInt64(len.clone()))
+        .with_local("chunk_size", CValue::UInt64(size.clone()))
         .with_local("__rust_checked_94", CValue::UInt64(size.clone()));
     let remainder = Bitvector32Term::uint64_remainder(len, size.clone());
     let goal = Proposition::ConditionIs(
@@ -118,11 +120,9 @@ fn fixed_state_failure_names_kernel_values_held_in_live_locals() {
         .err()
         .expect("the available chunk size does not prove a zero remainder");
     let text = error.message();
-    assert!(
-        text.contains("goal: len % __rust_checked_94 == 0u64"),
-        "{text}"
-    );
-    assert!(text.contains("__rust_checked_94 == 22208u64"), "{text}");
+    assert!(text.contains("goal: len % chunk_size == 0u64"), "{text}");
+    assert!(text.contains("chunk_size == 22208u64"), "{text}");
+    assert!(!text.contains("__rust_"), "{text}");
     assert!(!text.contains("no exact Click spelling"), "{text}");
 }
 

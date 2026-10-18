@@ -63,6 +63,10 @@ recorded reads at that point: inside a loop body, after `i = i + 1`, the
 value `i` had when the iteration began is `at(statement(N).entry, i)`, where
 `N` is the loop's statement index, the same spelling a proof cites.
 
+Rust reports use source-visible locals, slice parameters, and slice lengths
+such as `bytes.len()`. Compiler-generated `__rust_` temporaries do not supply
+names; a recorded snapshot can name a copied value through its original local.
+
 Where no source name exists, the report uses a placeholder instead of a kernel
 identity: `<unnamed A>` for a value no local, parameter, read, model field or
 recorded point names (a callee's result, say), and `<pointer A>` for an

@@ -324,11 +324,23 @@ impl Printer<'_> {
         self.qualify(memory, place?)
     }
 
+    /// A name for a bound variable, `k`, `k1`, ..., that no other bound
+    /// variable or free source name uses: a free `k` stays `k`, and the
+    /// binder is renamed rather than capturing it.
     fn binder(&mut self, variable: Variable) -> String {
-        let name = if self.bound.is_empty() {
-            "k".to_string()
-        } else {
-            format!("k{}", self.bound.len())
+        let mut index = self.bound.len();
+        let name = loop {
+            let name = if index == 0 {
+                "k".to_string()
+            } else {
+                format!("k{index}")
+            };
+            if !self.bound.iter().any(|(_, bound)| *bound == name)
+                && !self.labels.names_a_variable(&name)
+            {
+                break name;
+            }
+            index += 1;
         };
         self.bound.push((variable, name.clone()));
         name

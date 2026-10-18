@@ -524,6 +524,12 @@ impl SnapshotLabels {
         }
     }
 
+    /// Whether some variable is spelled `name` in source, so a printed
+    /// binder must not take it.
+    fn names_a_variable(&self, name: &str) -> bool {
+        self.source_names.values().any(|source| source == name)
+    }
+
     fn source_name_for(&self, variable: Variable) -> Option<&str> {
         self.source_names
             .get(&variable)
@@ -2453,6 +2459,26 @@ mod tests {
         let rendered = render_proposition(&proposition);
         assert!(rendered.contains("∀bound A:Integer"), "{rendered}");
         assert!(rendered.contains("2"));
+    }
+
+    #[test]
+    fn snapshot_store_descriptions_keep_generated_rust_locals_private() {
+        for (local, expected) in [
+            ("__rust_mir_14", "the memory after a store"),
+            ("total", "the memory after the store to `total`"),
+        ] {
+            let pointer = Pointer {
+                block: format!("local:{local}").into(),
+                offset: PointerOffsetTerm::Constant(0),
+            };
+            let memory = CMemory::new()
+                .with_block(format!("local:{local}"), 4)
+                .store(
+                    pointer,
+                    crate::kernel::CValue::Int32(Bitvector32Term::Constant(7)),
+                );
+            assert_eq!(SnapshotLabels::default().describe_state(&memory), expected);
+        }
     }
 
     #[test]

@@ -2443,7 +2443,7 @@ int32 read(int32& value) {{ owns value; ensures result == old(value); ensures va
 int32 many({parameters}, int32& value) {{ owns value; requires value == 7; ensures result == 7; ensures value == 7; }} by {{ execute(); simp(); }}
 "#
         );
-        check_return_call_sidecar(&project, &import, &source);
+        check_selected_claim_certificate(&project, &import, &source);
         // Refuse the false result with a simple closer, rather than spending
         // the smart search budget trying to synthesize an impossible proof.
         let hostile = source
@@ -5303,7 +5303,7 @@ fn third_sibling_scope_preserves_independent_cleanup_and_frames() {
     have value == old(value) by { simp(); }
     execute(); simp();"#;
     let source = format!("{contracts}}} by {{\n{proof}\n}}\n");
-    check_return_call_sidecar(&growing, &growing_import, &source);
+    check_selected_claim_certificate(&growing, &growing_import, &source);
 }
 
 #[test]
@@ -5743,7 +5743,7 @@ int32 read(int32* data, {click_type} index) {{
 }} by {{ execute(); simp(); }}
 "#
         );
-        check_arithmetic_sidecar(&project, &import, &sidecar);
+        check_selected_claim_certificate(&project, &import, &sidecar);
         let hostile = sidecar.replace(" owns data[0..3];", "");
         let path = project.directory.join("bad.click");
         fs::write(&path, &hostile).unwrap();
@@ -7077,6 +7077,51 @@ fn check_arithmetic_sidecar_with_tools(
     check_sidecar_tactic_with_tools(project, import, source, None, tools);
 }
 
+// These semantic regressions already verify the complete original program.
+// Spell the selected function's checked certificate directly, then keep the
+// independent cold output check and the retained-session check.
+fn check_selected_claim_certificate(
+    project: &Project,
+    import: &click::languages::cpp::PreparedCppImport,
+    source: &str,
+) {
+    let source = source.replace(
+        "-9223372036854775808i64",
+        "(-9223372036854775807i64 - 1i64)",
+    );
+    let sidecar = project.directory.join("arithmetic.click");
+    fs::write(&sidecar, &source).unwrap();
+    let parsed = read_click_project(&sidecar, &source).unwrap();
+    let inputs = ProgramInputs::program(import);
+    let prefix = format!(
+        "{}.",
+        click::languages::cpp::names::path_name(&import.export().functions[0].path)
+    );
+    let sites = project_smart_tactic_source_sites(&parsed, &inputs).unwrap();
+    let claim = &sites
+        .iter()
+        .find(|site| site.claim_label.starts_with(&prefix))
+        .expect("the selected C++ function has an automated claim")
+        .claim_label;
+    let (session, verified) = C0VerificationSession::new_program_prepared_project(&parsed, import)
+        .unwrap_or_else(|error| panic!("{}\n{source}", error.message()));
+    assert!(!verified.is_empty());
+    let expanded =
+        click::surface::expand_verified_function_claim_source_by_label(&source, &verified, claim)
+            .expect("the checked selected claim has source spelling")
+            .expect("the selected claim is declared in this sidecar");
+    let rewritten = parsed.with_entry_source(expanded.clone());
+    let position = project_tactic_source_position(&rewritten, &inputs, claim, 0).unwrap();
+    session
+        .verify_at_project(&expanded, position.line, position.column)
+        .expect("the written selected claim must verify retained");
+    // A cold verification resets the thread-local kernel tables. Finish and
+    // drop the retained session first, then check the output independently.
+    drop(session);
+    verify_program_prepared_project(&rewritten, import)
+        .expect("the written selected claim must verify independently");
+}
+
 fn check_return_call_sidecar(
     project: &Project,
     import: &click::languages::cpp::PreparedCppImport,
@@ -7226,7 +7271,7 @@ fn signed_division_correction_covers_rounding_directions_and_boundary_cases() {
             "verifying \"arithmetic.cpp\";\nint64 rounded_divide(int64 n, int32 d, bool round_down) {{\nrequires n == {n}i64;\nrequires d == {d};\nrequires round_down == {};\nensures result == {result}i64;\n}} by {{ execute(); simp(); }}\n",
             i32::from(down)
         );
-        check_arithmetic_sidecar(&project, &import, &source);
+        check_selected_claim_certificate(&project, &import, &source);
     }
 }
 
@@ -7702,7 +7747,7 @@ fn unsigned_fee_fast_path_expressions_cover_large_products_and_rounding() {
             let proof = format!(
                 "verifying \"fast_path.cpp\"; uint64 {name}(int64 fee, int32 at_size, int32 size) {{ requires fee == {fee}i64; requires at_size == {at_size}; requires size == {size}; ensures result == {expected}u64; }} by {{ execute(); simp(); }}"
             );
-            check_arithmetic_sidecar(&project, &import, &proof);
+            check_selected_claim_certificate(&project, &import, &proof);
         }
     }
 }
@@ -8103,7 +8148,7 @@ fn instantiated_fee_fast_paths_preserve_both_rounding_expressions() {
             let source = format!(
                 "verifying \"instances.cpp\"; uint64 {instance}(int64 fee, int32 at_size, int32 size) {{ {contract} }} by {{ execute(); simp(); }} uint64 {selected}(int64 fee, int32 at_size, int32 size) {{ {contract} }} by {{ execute(); simp(); }}"
             );
-            check_arithmetic_sidecar(&project, &import, &source);
+            check_selected_claim_certificate(&project, &import, &source);
             let hostile = source.replace(
                 &format!("result == {expected}u64"),
                 &format!("result == {}u64", expected + 1),
@@ -8176,7 +8221,11 @@ fn class_template_instances_preserve_nominal_identity_and_verify_offline() {
             "verifying \"instances.cpp\"; int32 {spelling}::Read() const {{ views this->value; ensures result == this->value; }} by {{ execute(); simp(); }} int32 {selected}(const {spelling}& box) {{ views box.value; ensures result == box.value; }} by {{ execute(); simp(); }}"
         );
         fs::remove_file(&project.exporter).unwrap();
-        check_return_call_sidecar(&project, &load_import(&project.config()).unwrap(), &sidecar);
+        check_selected_claim_certificate(
+            &project,
+            &load_import(&project.config()).unwrap(),
+            &sidecar,
+        );
     }
     let plain = Project::with_fixture("instances.cpp", "plain", CLASS_INSTANCE_SOURCE);
     refresh_import(&plain.config()).unwrap();
@@ -8591,7 +8640,7 @@ fn inherited_field_paths_preserve_base_authority_and_verify_offline() {
         let sidecar =
             format!("verifying \"inherited.cpp\"; {contract} by {{ execute(); simp(); }}");
         fs::remove_file(&project.exporter).unwrap();
-        check_return_call_sidecar(&project, &import, &sidecar);
+        check_selected_claim_certificate(&project, &import, &sidecar);
     }
 }
 
@@ -8632,7 +8681,7 @@ fn inherited_method_and_reference_calls_verify_offline_with_sibling_frames() {
         refresh_import(&project.config()).unwrap();
         let import = load_import(&project.config()).unwrap();
         fs::remove_file(&project.exporter).unwrap();
-        check_return_call_sidecar(
+        check_selected_claim_certificate(
             &project,
             &import,
             &format!("verifying \"inherited.cpp\"; {sidecar}"),
@@ -8754,7 +8803,7 @@ fn cpp20_unsigned_to_signed64_preserves_all_bits_at_boundaries() {
             let source = format!(
                 "verifying \"conversion.cpp\"; int64 {selected}(uint64 value) {{ requires value == {value}u64; ensures result == {expected}i64; }} by {{ execute(); simp(); }}"
             );
-            check_arithmetic_sidecar(&project, &import, &source);
+            check_selected_claim_certificate(&project, &import, &source);
             let hostile = source.replace(
                 &format!("result == {expected}i64"),
                 &format!("result == {}i64", expected.wrapping_add(1)),
@@ -8853,7 +8902,7 @@ fn cpp20_fee_fast_paths_preserve_the_signed_return_conversion() {
             let source = format!(
                 "verifying \"conversion.cpp\"; int64 {instance}(int64 fee, int32 at_size, int32 size) {{ {contract} }} by {{ execute(); simp(); }} int64 {selected}(int64 fee_value, int32 at_size, int32 size) {{ {caller_contract} }} by {{ execute(); simp(); }}"
             );
-            check_arithmetic_sidecar(&project, &import, &source);
+            check_selected_claim_certificate(&project, &import, &source);
         }
     }
 }
@@ -8922,7 +8971,7 @@ fn direct_return_calls_preserve_each_scalar_type_and_branch_result() {
         let source = format!(
             "verifying \"relay.cpp\"; {value_type} {helper}({value_type} value) {{ ensures result == value; }} by {{ execute(); simp(); }} {value_type} {selected}({value_type} value) {{ ensures result == value; }} by {{ execute(); simp(); }}"
         );
-        check_return_call_sidecar(&project, &import, &source);
+        check_selected_claim_certificate(&project, &import, &source);
     }
     let project = Project::with_fixture("relay.cpp", "choose", RETURN_CALL_SOURCE);
     refresh_import(&project.config()).unwrap();
@@ -8934,7 +8983,7 @@ int32 choose(bool first, int32 value) {
  ensures first == 0 implies result == 7;
 } by { execute(); simp(); }
 "#;
-    check_return_call_sidecar(&project, &import, source);
+    check_selected_claim_certificate(&project, &import, source);
 }
 
 #[test]
@@ -8981,7 +9030,7 @@ fn direct_return_calls_preserve_fee_method_template_wrappers() {
         let source = format!(
             "verifying \"relay.cpp\"; int64 {instance}(int32 at_size) const {{ {contract} }} by {{ execute(); simp(); }} int64 {selected}(int32 at_size) const {{ {contract} }} by {{ execute(); simp(); }}"
         );
-        check_return_call_sidecar(&project, &import, &source);
+        check_selected_claim_certificate(&project, &import, &source);
         let hostile = source.replace(
             &format!("result == {expected}i64"),
             &format!("result == {}i64", expected + 1),
@@ -9222,7 +9271,7 @@ fn nested_return_calls_verify_scalar_types_and_fresh_captures() {
         let source = format!(
             "verifying \"nested.cpp\"; {value_type} {helper}({value_type} value) {{ ensures result == value; }} by {{ execute(); simp(); }} {value_type} {selected}({value_type} value) {{ ensures result == value; }} by {{ execute(); simp(); }}"
         );
-        check_return_call_sidecar(&project, &import, &source);
+        check_selected_claim_certificate(&project, &import, &source);
         let mut hostile = source.clone();
         let result_claim = hostile.rfind("result == value").unwrap();
         hostile.replace_range(
@@ -9236,7 +9285,7 @@ fn nested_return_calls_verify_scalar_types_and_fresh_captures() {
     let project = Project::with_fixture("nested.cpp", "collision", cpp);
     refresh_import(&project.config()).unwrap();
     let import = load_import(&project.config()).unwrap();
-    check_return_call_sidecar(
+    check_selected_claim_certificate(
         &project,
         &import,
         r#"verifying "nested.cpp";
@@ -9372,7 +9421,7 @@ fn nested_calls_with_stable_siblings_preserve_each_argument_position_and_casts()
         let source = format!(
             "verifying \"arguments.cpp\"; int32 echo(int32 value) {{ ensures result == value; }} by {{ execute(); simp(); }} int32 {outer}(int32 a, int32 b, int32 c) {{ ensures result == {slot}; }} by {{ execute(); simp(); }} int32 {selected}(int32 value) {{ ensures result == value; }} by {{ execute(); simp(); }}"
         );
-        check_return_call_sidecar(&project, &import, &source);
+        check_selected_claim_certificate(&project, &import, &source);
         let [CppStatement::ReturnCall { arguments, .. }] =
             import.export().functions[0].body.as_slice()
         else {
@@ -9402,7 +9451,7 @@ fn nested_calls_with_stable_siblings_preserve_each_argument_position_and_casts()
         let source = format!(
             "verifying \"arguments.cpp\"; {value_type} {inner}({value_type} value) {{ ensures result == value; }} by {{ execute(); simp(); }} {value_type} {outer}({value_type} left, {value_type} right) {{ ensures result == right; }} by {{ execute(); simp(); }} {value_type} {selected}({value_type} value, int32 other) {{ ensures result == value; }} by {{ execute(); simp(); }}"
         );
-        check_return_call_sidecar(&project, &import, &source);
+        check_selected_claim_certificate(&project, &import, &source);
     }
 }
 
@@ -9626,7 +9675,7 @@ int64 {instance}(int64 fee, int32 at_size, int32 divisor) {{ requires fee == {fe
 int64 {selected}(int64 fee, int32 at_size, int32 divisor) {{ requires fee == {fee}i64; requires at_size == 3; requires divisor == 5; ensures result == {expected}i64; }} by {{ execute(); simp(); }}
 "#
         );
-        check_return_call_sidecar(&project, &import, &source);
+        check_selected_claim_certificate(&project, &import, &source);
     }
 }
 
@@ -10055,7 +10104,7 @@ fn lifetime_returns_destroy_only_the_objects_constructed_on_that_path() {
     assert_eq!(early_cleanups.len(), 1);
     assert_eq!(final_cleanups.len(), 2);
     let source = REVERSE_DESTRUCTOR_SIDECAR.replace("restore_twice(", "construction_prefix(");
-    check_return_call_sidecar(&project, &import, &source);
+    check_selected_claim_certificate(&project, &import, &source);
     let false_claim = source.replace(
         "early != 0 implies result == 7",
         "early != 0 implies result == 9",
@@ -10775,7 +10824,7 @@ fn isolated_nested_calls_snapshot_field_siblings_in_every_scalar_context() {
         let proof = format!(
             "verifying \"fields.cpp\"; int32 echo(int32 value) {{ ensures result == value; }} by {{ execute(); simp(); }} int32 {outer}(int32 a, int32 b, int32 c) {{ ensures result == {slot}; }} by {{ execute(); simp(); }} int32 {selected}(const struct Box& box) {{ owns box.value; owns box.other; {requires} ensures result == {claim}; }} by {{ execute(); simp(); }}"
         );
-        check_return_call_sidecar(&project, &import, &proof);
+        check_selected_claim_certificate(&project, &import, &proof);
         for hostile in [
             proof.replace("owns box.other;", ""),
             proof.replace(
@@ -11388,7 +11437,7 @@ fn wide_division_symbolic_contracts_verify_expand_and_audit_offline() {
         let source = format!(
             "verifying \"wide.cpp\"; {ty} {name}({ty} a, {ty} b) {{ {domain} ensures to_integer(result) == {helper}(to_integer(a), to_integer(b)); }} by {{ execute(); simp(); }}"
         );
-        check_arithmetic_sidecar(&project, &import, &source);
+        check_selected_claim_certificate(&project, &import, &source);
         let hostile = source.replace("requires to_integer(b) != 0;", "");
         let path = project.directory.join("hostile.click");
         fs::write(&path, &hostile).unwrap();
@@ -11400,7 +11449,7 @@ fn wide_division_symbolic_contracts_verify_expand_and_audit_offline() {
                 "requires to_integer(b) == -1;",
             ] {
                 let specialized = source.replace(domain, &format!("{domain} {endpoint}"));
-                check_arithmetic_sidecar(&project, &import, &specialized);
+                check_selected_claim_certificate(&project, &import, &specialized);
             }
             let unsafe_source = source.replace("requires to_integer(a) != -170141183460469231731687303715884105728 or to_integer(b) != -1;", "");
             let path = project.directory.join("overflow.click");
@@ -11577,7 +11626,7 @@ fn wide_comparisons_symbolic_results_verify_expand_and_audit_offline() {
             let proof = format!(
                 "verifying \"wide.cpp\"; bool {name}({ty} a, {ty} b) {{ ensures result == 1 implies ({relation}); ensures result == 0 implies not ({relation}); }} by {{ execute(); simp(); }}"
             );
-            check_arithmetic_sidecar(&project, &import, &proof);
+            check_selected_claim_certificate(&project, &import, &proof);
             let false_proof = proof.replace(
                 "ensures result == 0 implies not",
                 "ensures result == 0 implies",
@@ -11755,7 +11804,7 @@ fn wide_narrowing_preserves_symbolic_values_only_with_checked_destination_bounds
         let proof = format!(
             "verifying \"narrow.cpp\"; {result} {name}({source} a) {{ requires {lo} <= to_integer(a); requires to_integer(a) <= {hi}; ensures to_integer(result) == to_integer(a); }} by {{ execute(); have to_integer(result) == to_integer(a) by {{ {cert} }} simp(); }}"
         );
-        check_arithmetic_sidecar(&project, &import, &proof);
+        check_selected_claim_certificate(&project, &import, &proof);
         for missing in [
             format!("requires {lo} <= to_integer(a);"),
             format!("requires to_integer(a) <= {hi};"),
@@ -14210,7 +14259,11 @@ fn projected_record_calls_and_reference_arguments_verify_offline() {
         );
         assert_eq!(import.export().reachable_functions.len(), 1);
         fs::remove_file(&project.exporter).unwrap();
-        check_return_call_sidecar(&project, &load_import(&project.config()).unwrap(), sidecar);
+        check_selected_claim_certificate(
+            &project,
+            &load_import(&project.config()).unwrap(),
+            sidecar,
+        );
     }
 }
 
@@ -14770,7 +14823,7 @@ fn locked_header_graph_conditions_verify_offline_with_inherited_frames() {
         int32 choose(const struct Box& state) {{ views state.left.base.value; views state.sibling; requires state.left.base.value == {value}; ensures result == {result}; ensures state.sibling == old(state.sibling); }} by {{ execute(); simp(); }}
         "#
         );
-        check_return_call_sidecar(&project, &import, &sidecar);
+        check_selected_claim_certificate(&project, &import, &sidecar);
         let hostile = sidecar.replace(
             &format!("result == {result}; ensures state.sibling"),
             "result == 9; ensures state.sibling",
@@ -15553,7 +15606,7 @@ int32 relay(int32& value) {
  owns value; ensures result == 7; ensures value == old(value);
 } by { execute(); simp(); }
 "#;
-    check_return_call_sidecar(&project, &import, source);
+    check_selected_claim_certificate(&project, &import, source);
     for hostile in [
         source.replace("ensures result == 7;", "ensures result == 0;"),
         source.replace("ensures value == old(value);", "ensures value == 7;"),
