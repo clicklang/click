@@ -9468,6 +9468,12 @@ impl Parser {
                 ProofTactic::ConstructResource(resource)
             }
             "induct" => return self.parse_induct_proof_tactic(),
+            // `auto();` closes every goal still open in its block, as the
+            // closer an omitted one stands for does.
+            "auto" => {
+                self.expect_empty_tactic_args(&name)?;
+                ProofTactic::AutoClose
+            }
             _ if is_tactic_name(&name) => {
                 return Err(self.error(format!(
                     "`{name}` is only available as a standalone smart tactic; use `by {name}();`"
