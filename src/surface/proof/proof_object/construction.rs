@@ -289,8 +289,10 @@ impl<'a> Proof<'a> {
         structural_induction_setup: Option<PureStructuralInductionBranchSetup>,
     ) -> Self {
         let mut ambient_variables = std::collections::BTreeSet::new();
-        for value in theorem_context.values.values() {
+        let mut source_state = CState::new().with_memory(theorem_context.memory.clone());
+        for (name, value) in &theorem_context.values {
             crate::kernel::collect_c_value_bitvector_variables(value, &mut ambient_variables);
+            source_state = source_state.with_local(name.clone(), value.clone());
         }
         for (_, value) in theorem_context.integer_values.iter() {
             crate::kernel::collect_spec_integer_variables(value, &mut ambient_variables);
@@ -310,6 +312,8 @@ impl<'a> Proof<'a> {
             context: Arc::new(ProofContext::Pure(PureProofContext {
                 claim_label,
                 theorem_context,
+                source_state,
+                source_names: theorem_context.diagnostic_names.iter().cloned().collect(),
                 spec_definitions,
                 theorem_environment,
                 induction_setup,

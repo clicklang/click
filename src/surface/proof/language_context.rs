@@ -19,6 +19,10 @@ pub(in crate::surface::proof) enum ProofContext<'a> {
 pub(in crate::surface::proof) struct PureProofContext<'a> {
     pub(in crate::surface::proof) claim_label: &'a str,
     pub(in crate::surface::proof) theorem_context: &'a PureTheoremContext,
+    /// Indexed parameter values for reconstructing a refined source goal.
+    /// Built once at the root and shared by every proof successor.
+    pub(in crate::surface::proof) source_state: CState,
+    pub(in crate::surface::proof) source_names: BTreeMap<Variable, String>,
     pub(in crate::surface::proof) spec_definitions: SpecDefinitions<'a>,
     pub(in crate::surface::proof) theorem_environment: &'a TheoremEnvironment,
     pub(in crate::surface::proof) induction_setup: Option<PureInductionSetup>,
