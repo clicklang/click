@@ -457,12 +457,13 @@ impl BodyAdapter<'_, '_> {
 }
 
 impl Adapter<'_> {
-    /// The crate trait a type parameter is bound by, when it is one.
+    /// The crate trait instance a type parameter is bound by, when it is
+    /// one.
     fn type_parameter_interface(
         &self,
         generics: &a::GenericParams,
         parameter: a::TypeVarId,
-    ) -> Option<a::TraitDeclId> {
+    ) -> Option<(a::TraitDeclId, String)> {
         generics.trait_clauses.iter().find_map(|clause| {
             let trait_ref = &clause.trait_.skip_binder;
             let Some(a::TyKind::TypeVar(a::DeBruijnVar::Bound(_, id))) =
@@ -470,18 +471,45 @@ impl Adapter<'_> {
             else {
                 return None;
             };
-            (*id == parameter && matches!(self.interface_trait(trait_ref.id), Ok(true)))
-                .then_some(trait_ref.id)
+            if *id != parameter || !matches!(self.interface_trait(trait_ref.id), Ok(true)) {
+                return None;
+            }
+            self.trait_instance_at(trait_ref.id, &trait_ref.generics)
+                .ok()
+                .map(|instance| (trait_ref.id, instance))
         })
     }
 
-    /// The crate trait whose object a callee's parameter `ty` is, `&T` for
-    /// `T: Trait` or `&dyn Trait`.
+    /// The importer name of crate trait `id`'s instance at the type arguments
+    /// `generics` names after `Self`.
+    fn trait_instance_at(
+        &self,
+        id: a::TraitDeclId,
+        generics: &a::GenericArgs,
+    ) -> Result<String, String> {
+        self.trait_instance_name(id, &self.instance_arguments(generics)?)
+    }
+
+    /// The crate trait instance of a `dyn` predicate, when it is a crate
+    /// trait's.
+    pub(super) fn dyn_interface_instance(
+        &self,
+        predicate: &a::DynPredicate,
+    ) -> Option<(a::TraitDeclId, String)> {
+        let id = self.dyn_interface_trait(predicate).ok().flatten()?;
+        let clause = predicate.binder.params.trait_clauses.iter().next()?;
+        self.trait_instance_at(id, &clause.trait_.skip_binder.generics)
+            .ok()
+            .map(|instance| (id, instance))
+    }
+
+    /// The crate trait instance whose object a callee's parameter `ty` is,
+    /// `&T` for `T: Trait` or `&dyn Trait`.
     pub(super) fn object_parameter_trait(
         &self,
         callee: &a::FunDecl,
         ty: &a::Ty,
-    ) -> Option<a::TraitDeclId> {
+    ) -> Option<(a::TraitDeclId, String)> {
         let a::TyKind::Ref(_, pointee, _) = ty.kind() else {
             return None;
         };
@@ -489,7 +517,7 @@ impl Adapter<'_> {
             a::TyKind::TypeVar(a::DeBruijnVar::Bound(_, id)) => {
                 self.type_parameter_interface(&callee.generics, *id)
             }
-            a::TyKind::DynTrait(predicate) => self.dyn_interface_trait(predicate).ok().flatten(),
+            a::TyKind::DynTrait(predicate) => self.dyn_interface_instance(predicate),
             _ => None,
         }
     }
@@ -502,11 +530,9 @@ impl Adapter<'_> {
     pub(super) fn object_coercion_names(
         &self,
         record: a::TypeDeclId,
-        trait_id: a::TraitDeclId,
+        trait_name: &str,
         shared: bool,
     ) -> Result<(String, String), String> {
-        let trait_name =
-            self.qualified_function_name(&self.krate.trait_decls[trait_id].item_meta.name)?;
         let record_name = &self.records[&record];
         let (pack, unpack) = if shared {
             (
@@ -517,19 +543,21 @@ impl Adapter<'_> {
             ("__pack", "__unpack")
         };
         Ok((
-            super::super::names::trait_method_name(record_name, &trait_name, pack),
-            super::super::names::trait_method_name(record_name, &trait_name, unpack),
+            super::super::names::trait_method_name(record_name, trait_name, pack),
+            super::super::names::trait_method_name(record_name, trait_name, unpack),
         ))
     }
 
-    /// The pack and unpack functions of `record` as `trait_id`'s object.
+    /// The pack and unpack functions of `record` as the object of
+    /// `trait_id`'s instance `instance`.
     pub(super) fn object_coercion_functions(
         &self,
         record: a::TypeDeclId,
         trait_id: a::TraitDeclId,
+        instance: &str,
     ) -> Result<Vec<out::Function>, String> {
-        let (pack, unpack) = self.object_coercion_names(record, trait_id, false)?;
-        let (shared_pack, shared_unpack) = self.object_coercion_names(record, trait_id, true)?;
+        let (pack, unpack) = self.object_coercion_names(record, instance, false)?;
+        let (shared_pack, shared_unpack) = self.object_coercion_names(record, instance, true)?;
         let span = span(self.krate.trait_decls[trait_id].item_meta.span);
         Ok([pack, unpack, shared_pack, shared_unpack]
             .into_iter()
@@ -558,11 +586,12 @@ impl Adapter<'_> {
 }
 
 /// The locals of `body` a crate struct reference is unsized into a `&dyn`
-/// crate trait for, with the struct, the trait, and whether it is shared.
+/// crate trait for, with the struct, the trait and its instance, and whether
+/// it is shared.
 pub(super) fn unsized_objects(
     adapter: &Adapter<'_>,
     body: &u::ExprBody,
-) -> BTreeMap<a::LocalId, (a::TypeDeclId, a::TraitDeclId, bool)> {
+) -> BTreeMap<a::LocalId, (a::TypeDeclId, (a::TraitDeclId, String), bool)> {
     let mut objects = BTreeMap::new();
     for block in body.body.iter() {
         for statement in &block.statements {
@@ -580,7 +609,7 @@ pub(super) fn unsized_objects(
                 && let Ok(record) = adapter.record_id(record)
                 && let a::TyKind::Ref(_, object, kind) = destination.kind()
                 && let a::TyKind::DynTrait(predicate) = object.kind()
-                && let Ok(Some(trait_id)) = adapter.dyn_interface_trait(predicate)
+                && let Some(trait_id) = adapter.dyn_interface_instance(predicate)
             {
                 objects.insert(
                     local,

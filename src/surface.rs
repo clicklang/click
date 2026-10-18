@@ -6758,6 +6758,41 @@ impl CompositeResourceBody {
     /// give one slot name different resources. A child may name another
     /// declared resource, so a slot's resource is a property of the
     /// definition, which the parser and declaration expansion both read.
+    /// For a body that matches on a field, that field and, for each arm's
+    /// variant, the child slots the arm holds with the resource each owns,
+    /// the unmatched part's included. A proof `match` on the field selects
+    /// one arm, so a slot whose resource differs between arms has one there.
+    pub(in crate::surface) fn arm_child_slot_resources(
+        &self,
+    ) -> Option<(String, BTreeMap<String, BTreeMap<String, String>>)> {
+        let matched = self.matched.as_ref()?;
+        let named = |body: &CompositeResourceBody| {
+            body.contains
+                .iter()
+                .filter_map(|clause| match clause {
+                    ResourceClause::Named { binding, resource } => match resource.as_ref() {
+                        ResourceClause::Declared { name, .. } => {
+                            Some((binding.name.clone(), name.clone()))
+                        }
+                        _ => None,
+                    },
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+        };
+        let unmatched = named(self);
+        let arms = matched
+            .arms
+            .iter()
+            .map(|arm| {
+                let mut slots = unmatched.iter().cloned().collect::<BTreeMap<_, _>>();
+                slots.extend(named(&arm.body));
+                (arm.variant.clone(), slots)
+            })
+            .collect();
+        Some((matched.field.clone(), arms))
+    }
+
     pub(in crate::surface) fn child_slot_resources(&self) -> BTreeMap<String, Option<String>> {
         let mut slots: BTreeMap<String, Option<String>> = BTreeMap::new();
         let bodies = std::iter::once(self).chain(
