@@ -2129,8 +2129,10 @@ impl<'a> Proof<'a> {
         // simp reaches the same failing frame question through several of
         // its strategies and candidates; one closure attempt answers each
         // exact failed question once (`with_closure_failure_memo`).
-        crate::kernel::with_closure_failure_memo(|| self.try_simp_closure_strategies())
-            .map_err(|error| self.attach_step_diagnostic(error))
+        crate::surface::planning::proposition_search::with_simp_atomic_reduction_cache(|| {
+            crate::kernel::with_closure_failure_memo(|| self.try_simp_closure_strategies())
+        })
+        .map_err(|error| self.attach_step_diagnostic(error))
     }
 
     /// Close a mathematical `Integer` bound goal with the solver behind
