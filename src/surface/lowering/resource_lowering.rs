@@ -2855,19 +2855,12 @@ fn lower_resource_segment_with_values(
     // (`design/pointer-subobject-extents.md`, D1). Constant bounds are
     // refused here by name; the kernel decides the rest when it checks
     // the step.
-    // The range is named through `base_value`, as the kernel's clause
-    // evaluation records it (`CMemoryRange::with_designations`).
     let refuse_past_extent = |range: CMemoryRange| {
-        let range = range.with_designations(base_value.designations());
         let (start, end) = match range.wide_bounds() {
             Some(bounds) => bounds,
             None => (range.start(), range.end()),
         };
-        // An opaque extent is known only from facts this lowering lacks.
-        if start.as_const().is_none()
-            || end.as_const().is_none()
-            || base_value.extent().is_some_and(|extent| extent.is_opaque())
-        {
+        if start.as_const().is_none() || end.as_const().is_none() {
             return Ok(range);
         }
         match crate::kernel::memory_range_extent_refusal(
