@@ -355,8 +355,10 @@ cached sizes. The parent’s other child and the uncle remain empty. The unchang
 insertion C and both augmented wrappers return the repaired whole-root tree,
 retain the ancestor context, and identify the rotated subtree’s exact shape.
 A separate theorem preserves the complete in-order identity sequence of that
-subtree. General sibling and uncle subtrees, other generalized rotation shapes,
-and flip chains ending in a rotation remain unfinished.
+subtree. `rbtree_size_insert_mirrored_context_focus_rotation.click` proves the
+right-right case with the same ownership, cache, and in-order guarantees.
+General sibling and uncle subtrees, generalized double rotations, and flip
+chains ending in a rotation remain unfinished.
 
 
 `rbtree_size_recolor.click` supplies shared model operations for root recoloring
