@@ -8981,6 +8981,36 @@ fn execution_bare_apply_selects_and_retains_its_step_through_proof() {
 }
 
 #[test]
+fn post_return_resource_exchange_accepts_a_preceding_pure_have() {
+    let c_source = "int32 identity(int32 x) { return x; }";
+    // A macro refold may change only the logical presentation. The second
+    // unfold must use that current goal rather than an older C-body event.
+    let click_source = r#"
+        resource marker(x: int32) { fact x == x; }
+        verifying "identity.c";
+        int32 identity(int32 x) {
+            owns marker(x);
+            ensures result == x;
+        } by {
+            execute();
+            have 1000 == 1000 by { normalize(); }
+            unfold(marker(x));
+            fold(marker(x));
+            unfold(marker(x));
+            fold(marker(x));
+            simp();
+        }
+    "#;
+    let sources = [("identity.c", c_source)];
+    verify_c0_sources(click_source, &sources)
+        .expect("a pure have must preserve the return resource presentation");
+    let expanded = expand_c0_claim_source(click_source, &sources, "identity", CProofClaim::Grouped)
+        .expect("the return resource exchange should expand");
+    verify_c0_sources(&expanded, &sources)
+        .expect("the expanded return resource exchange should check independently");
+}
+
+#[test]
 fn execution_resource_unfold_is_recorded_once_and_checks() {
     let c_source = r#"
         int32 discard(int32 x) {
