@@ -2310,14 +2310,11 @@ impl<'a> Proof<'a> {
                         missing,
                     ),
                 ) if bare => {
-                    let (names, values) = self.diagnostic_naming_tables();
-                    self.step_error(format!(
-                        "`instantiate` without `using` needs each instantiated guard as an exact fact, and `{}` is not one; prove it first with `have`, or list the facts it follows from with `using {{ ... }}`",
-                        crate::surface::diagnostics::describe_pure_fact_spelled(
-                            &missing,
-                            ParameterBinding::new(&names, &values),
-                        ),
-                    ))
+                    self.step_error_with_requirement(
+                        "`instantiate` without `using` needs each instantiated guard as an exact fact; prove the missing guard first with `have`, or list the facts it follows from with `using { ... }`",
+                        None,
+                        Some(("missing exact guard", Box::new(missing), None)),
+                    )
                 }
                 PropositionCloseError::InstantiateInvalid(message) => self.step_error(format!(
                     "`instantiate` failed: {}",
