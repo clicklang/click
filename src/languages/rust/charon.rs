@@ -281,8 +281,122 @@ impl Adapter<'_> {
             external: true,
             captures: 0,
             implements: None,
+            instance_of: None,
             span: span(f.item_meta.span),
         })
+    }
+
+    /// The types a call gives its callee's abstract type parameters: each
+    /// such parameter at the scalar type the call names, the others as the
+    /// callee's bounds give them. `None` when the callee has none.
+    fn call_instantiation(
+        &self,
+        callee_parameters: &[Option<Type>],
+        pointer: &a::FnPtr,
+    ) -> Result<Option<Vec<Option<Type>>>, String> {
+        if !callee_parameters
+            .iter()
+            .any(|parameter| matches!(parameter, Some(Type::Parameter { .. })))
+        {
+            return Ok(None);
+        }
+        if pointer.generics.types.len() != callee_parameters.len() {
+            return Err(unsupported("generic call of a different arity"));
+        }
+        callee_parameters
+            .iter()
+            .zip(pointer.generics.types.iter())
+            .map(|(parameter, argument)| match parameter {
+                Some(Type::Parameter { .. }) => match self.ty(argument)? {
+                    scalar @ (Type::I32
+                    | Type::U8
+                    | Type::U16
+                    | Type::U32
+                    | Type::Usize
+                    | Type::Bool) => Ok(Some(scalar)),
+                    _ => Err(unsupported(
+                        "type parameter instantiated at a type other than a scalar",
+                    )),
+                },
+                other => Ok(other.clone()),
+            })
+            .collect::<Result<Vec<_>, _>>()
+            .map(Some)
+    }
+
+    /// A generic callee's parameter and result types with its type
+    /// parameters at `types`.
+    fn signature_types_at(
+        &self,
+        callee: &a::FunDecl,
+        types: &[Option<Type>],
+    ) -> Result<(Vec<Type>, Type), String> {
+        let current =
+            std::mem::replace(&mut *self.callable_parameters.borrow_mut(), types.to_vec());
+        let result = callee
+            .signature
+            .inputs
+            .iter()
+            .map(|ty| self.ty(ty))
+            .collect::<Result<Vec<_>, _>>()
+            .and_then(|inputs| Ok((inputs, self.ty(&callee.signature.output)?)));
+        *self.callable_parameters.borrow_mut() = current;
+        result
+    }
+
+    /// The name of generic function `id`'s instance at `types`, recorded so
+    /// the import declares it: a trait implementation's method is named for
+    /// the instance of its trait, `<Echo as Keep<i32>>::keep`; another
+    /// function, by its path then each type argument.
+    fn generic_instance(
+        &self,
+        id: a::FunDeclId,
+        callee: &a::FunDecl,
+        types: &[Option<Type>],
+    ) -> Result<String, String> {
+        let name = match &callee.src {
+            a::FunSource::TraitImpl {
+                trait_ref,
+                impl_ref,
+                item_id,
+                ..
+            } if self.interface_trait(trait_ref.id)? => {
+                let imp = self
+                    .krate
+                    .trait_impls
+                    .get(impl_ref.id)
+                    .ok_or_else(|| unsupported("missing trait implementation"))?;
+                let current =
+                    std::mem::replace(&mut *self.callable_parameters.borrow_mut(), types.to_vec());
+                let names = self.trait_impl_method_names(callee, imp, trait_ref.id, *item_id);
+                *self.callable_parameters.borrow_mut() = current;
+                names?.0
+            }
+            _ => {
+                let mut name = self
+                    .functions
+                    .get(&id)
+                    .ok_or_else(|| unsupported("unmodeled external call"))?
+                    .clone();
+                for ty in types.iter().flatten() {
+                    let spelling = match ty {
+                        Type::I32 => "i32",
+                        Type::U8 => "u8",
+                        Type::U16 => "u16",
+                        Type::U32 => "u32",
+                        Type::Usize => "usize",
+                        Type::Bool => "bool",
+                        _ => continue,
+                    };
+                    super::names::push_type_argument(&mut name, spelling);
+                }
+                name
+            }
+        };
+        self.generic_instances
+            .borrow_mut()
+            .insert(name.clone(), (id, types.to_vec()));
+        Ok(name)
     }
 
     fn qualified_function_name(&self, name: &a::Name) -> Result<String, String> {
@@ -367,6 +481,12 @@ struct Adapter<'a> {
     /// Each generic crate trait's instances an implementation or a call
     /// names, by importer name, with their type arguments after `Self`.
     trait_instances: std::cell::RefCell<BTreeMap<a::TraitDeclId, BTreeMap<String, Vec<a::Ty>>>>,
+    /// Each instance of a generic function a call names, by its name: the
+    /// generic function and the type each of its type parameters takes.
+    generic_instances: std::cell::RefCell<BTreeMap<String, (a::FunDeclId, Vec<Option<Type>>)>>,
+    /// Each crate trait instance's type arguments after `Self`, as they were
+    /// when it was named.
+    instance_types: std::cell::RefCell<BTreeMap<String, Vec<Type>>>,
 }
 impl Adapter<'_> {
     fn ty(&self, t: &a::Ty) -> Result<Type, String> {
@@ -422,7 +542,12 @@ impl Adapter<'_> {
             a::TyKind::Ref(_, pointee, a::RefKind::Shared)
                 if matches!(pointee.kind(), a::TyKind::TypeVar(_)) =>
             {
-                self.ty(pointee)?
+                match self.ty(pointee)? {
+                    Type::Parameter { .. } => {
+                        return Err(unsupported("reference to a value of a type parameter"));
+                    }
+                    callable => callable,
+                }
             }
             // So is a `&dyn Trait` of a crate trait.
             a::TyKind::Ref(_, pointee, kind)
@@ -1454,13 +1579,25 @@ impl BodyAdapter<'_, '_> {
                     // The callee's `impl Fn` parameters take their callable
                     // types from its own bounds; a closure argument's type is
                     // compared with them.
-                    let callee_inputs = self.adapter.callee_signature_types(callee)?;
                     let callee_parameters =
                         self.adapter.callable_type_parameters(&callee.generics)?;
+                    // A call of a generic function at scalar types calls its
+                    // instance there, whose types are the call's.
+                    let instantiation = self.adapter.call_instantiation(&callee_parameters, ptr)?;
+                    let callee_inputs = match &instantiation {
+                        Some(types) => self.adapter.signature_types_at(callee, types)?.0,
+                        None => self.adapter.callee_signature_types(callee)?,
+                    };
+                    let callee_output = match &instantiation {
+                        Some(types) => self.adapter.signature_types_at(callee, types)?.1,
+                        None if self.adapter.crate_mode => {
+                            self.adapter.ty(&callee.signature.output)?
+                        }
+                        None => Type::Unit,
+                    };
                     if self.adapter.crate_mode
                         && (call.args.len() != callee_inputs.len()
-                            || self.adapter.ty(&call.dest.ty)?
-                                != self.adapter.ty(&callee.signature.output)?)
+                            || self.adapter.ty(&call.dest.ty)? != callee_output)
                     {
                         return Err(unsupported("source call signature/destination type"));
                     }
@@ -1492,7 +1629,12 @@ impl BodyAdapter<'_, '_> {
                                 a::TyKind::FnDef(_) => true,
                                 // A crate trait's type parameter is reached
                                 // only through the trait.
-                                _ => *parameter == Some(Type::TraitObject),
+                                _ if *parameter == Some(Type::TraitObject) => true,
+                                // An abstract type parameter is instantiated.
+                                _ => {
+                                    matches!(parameter, Some(Type::Parameter { .. }))
+                                        && instantiation.is_some()
+                                }
                             },
                         )
                     {
@@ -1574,13 +1716,17 @@ impl BodyAdapter<'_, '_> {
                             ));
                         }
                     }
-                    T::Call {
-                        function: self
+                    let function = match &instantiation {
+                        Some(types) => self.adapter.generic_instance(id, callee, types)?,
+                        None => self
                             .adapter
                             .functions
                             .get(&id)
                             .ok_or_else(|| unsupported("unmodeled external call"))?
                             .clone(),
+                    };
+                    T::Call {
+                        function,
                         arguments,
                         owned_arguments,
                         destination: self.local(dest)?,
@@ -1717,6 +1863,8 @@ pub(super) fn decode_crate(
         trait_impl_methods: BTreeMap::new(),
         object_coercions: std::cell::RefCell::new(BTreeSet::new()),
         trait_instances: std::cell::RefCell::default(),
+        generic_instances: std::cell::RefCell::default(),
+        instance_types: std::cell::RefCell::default(),
     };
     if crate_config.is_some() {
         adapter.record_closure_captures()?;
@@ -2173,6 +2321,7 @@ pub(super) fn decode_crate(
             external: false,
             captures: captures.as_ref().map_or(0, Vec::len),
             implements: adapter.trait_impl_methods.get(id).cloned(),
+            instance_of: None,
             span: span(f.item_meta.span),
         });
     }
@@ -2193,6 +2342,47 @@ pub(super) fn decode_crate(
     }
     for (record, trait_id, instance) in adapter.object_coercions.borrow().iter() {
         functions.extend(adapter.object_coercion_functions(*record, *trait_id, instance)?);
+    }
+    // Each instance of a generic function a call names is declared at its
+    // types, with the generic function's parameter names; its contract is
+    // the generic function's, which is verified once for every type.
+    for (name, (id, types)) in adapter.generic_instances.borrow().iter() {
+        if used_names.contains(name) {
+            return Err(unsupported("colliding proof function names"));
+        }
+        let generic_name = adapter
+            .functions
+            .get(id)
+            .ok_or_else(|| unsupported("unmodeled generic function"))?;
+        let generic = functions
+            .iter()
+            .find(|function| &function.name == generic_name)
+            .ok_or_else(|| unsupported("generic function not imported"))?;
+        let callee = &krate.fun_decls[*id];
+        let (inputs, output) = adapter.signature_types_at(callee, types)?;
+        let parameters = generic
+            .parameters
+            .iter()
+            .zip(inputs)
+            .map(|(parameter, value_type)| out::Place {
+                name: parameter.name.clone(),
+                value_type,
+                span: parameter.span.clone(),
+            })
+            .collect();
+        let instance = out::Function {
+            name: name.clone(),
+            return_type: output,
+            parameters,
+            body: vec![],
+            mir: None,
+            external: true,
+            captures: 0,
+            implements: None,
+            instance_of: Some(generic_name.clone()),
+            span: generic.span.clone(),
+        };
+        functions.push(instance);
     }
     for imp in krate.trait_impls.iter() {
         let id = imp.impl_trait.id;

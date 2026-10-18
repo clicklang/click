@@ -232,11 +232,13 @@ that writes `int32` for such a source already writes the source's spelling.
    block's `function`s, `items(self) -> List<T>`, are each instance's
    object fields at its types. Done: a generic block is checked once
    for every type, its type parameters abstract types whose values have
-   `==` and `!=` only. Remaining: a generic block whose object carries
-   state is read at each instance only; generic implementations and generic
-   functions over a type parameter's values are to be verified once for
-   every type (the importer refuses them today); and a type parameter's
-   values in memory, as a generic struct's fields. Done for default methods: the `trait`
+   `==` and `!=` only. Done: generic implementations, `impl<T> Keep<T>
+   for Echo`, and generic functions over a type parameter's values are
+   verified once for every type, and a call at scalar types uses the
+   generic contract at those types. Remaining: a generic block whose object
+   carries state is read at each instance only; a reference to a value of
+   `T`; a generic call from generic code; and a type parameter's values in
+   memory, as a generic struct's fields. Done for default methods: the `trait`
    block writes a default method's interface with the proof of its default
    body, verified once with calls of the trait's methods under their
    interfaces; an `impl` that overrides it refines it. Done for C++

@@ -67,6 +67,12 @@ pub enum Type {
     /// function does not know, which it reaches only through the trait's
     /// methods. It is never a value by itself.
     TraitObject,
+    /// A value of a type parameter bound by nothing a proof reads, `x: T` of
+    /// `impl<T> Keep<T> for Echo`: a value of an abstract type, compared
+    /// with `==` only, verified once for every type.
+    Parameter {
+        name: String,
+    },
     /// A safe Rust-ABI function pointer of scalar parameters and result,
     /// `fn(i32) -> i32`.
     FnPointer {
@@ -119,6 +125,12 @@ pub struct Function {
     /// this function must refine.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub implements: Option<String>,
+    /// A generic function's instance at the scalar types a call gives its
+    /// type parameters, declared with no body: the generic function, named
+    /// here, is verified once for every type, and the instance's contract
+    /// is its contract at these types.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub instance_of: Option<String>,
     pub span: Span,
 }
 

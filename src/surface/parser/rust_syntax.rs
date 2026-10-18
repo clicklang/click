@@ -24,6 +24,17 @@ impl Parser {
     pub(super) fn parse_rust_function_signature(
         &mut self,
     ) -> Result<ParsedFunctionSignature, ClickError> {
+        // A generic function's own abstract type parameters are in scope for
+        // its signature only.
+        let previous_abstract = self.rust_abstract_type_parameters.clone();
+        let signature = self.parse_rust_function_signature_in_scope();
+        self.rust_abstract_type_parameters = previous_abstract;
+        signature
+    }
+
+    fn parse_rust_function_signature_in_scope(
+        &mut self,
+    ) -> Result<ParsedFunctionSignature, ClickError> {
         if !self.verifies_rust() {
             return Err(self.error(
                 "a `fn` signature is the Rust spelling; a C or C++ source's contract is written `type name(type parameter, ...)`",
@@ -244,6 +255,23 @@ impl Parser {
         function_blocks: &mut Vec<FunctionBlock>,
     ) -> Result<(), ClickError> {
         self.expect_ident_spelling("impl")?;
+        // A generic implementation, `impl<T> traits::Keep<T> for Echo`, is
+        // verified once for every type: its type parameters are abstract
+        // types in the block.
+        let generic = self.parse_rust_type_arguments()?;
+        let previous_abstract = std::mem::replace(
+            &mut self.rust_abstract_type_parameters,
+            generic.iter().cloned().collect(),
+        );
+        let result = self.parse_rust_impl_block_after_generics(function_blocks);
+        self.rust_abstract_type_parameters = previous_abstract;
+        result
+    }
+
+    fn parse_rust_impl_block_after_generics(
+        &mut self,
+        function_blocks: &mut Vec<FunctionBlock>,
+    ) -> Result<(), ClickError> {
         let mut impl_path = self.expect_rust_path("type name")?;
         // A crate trait's instance, `traits::Scale<i32>`, is named with its
         // type arguments; the standard library's operator traits take one.
@@ -567,6 +595,52 @@ impl Parser {
         }
         self.position += 1;
         loop {
+            // A type parameter bound by nothing a proof reads, `T` or `T:
+            // Copy`, is an abstract type: the function is verified once for
+            // every type.
+            if let Some(word) = self.peek_ident()
+                && word != "Fn"
+                && (matches!(self.peek_next(), Some(Token::Comma | Token::GreaterThan))
+                    || self.peek_next() == Some(&Token::Colon)
+                        && matches!(
+                            self.tokens.get(self.position + 2),
+                            Some(Token::Ident(bound)) if bound == "Copy" || bound == "Clone"
+                        ))
+            {
+                let name = word.to_string();
+                self.position += 1;
+                if self.peek() == Some(&Token::Colon) {
+                    self.position += 1;
+                    loop {
+                        match self.peek_ident() {
+                            Some("Copy" | "Clone") => self.position += 1,
+                            _ => {
+                                return Err(self.error(
+                                    "an abstract type parameter's bounds are `Copy` and `Clone`",
+                                ));
+                            }
+                        }
+                        if self.peek() != Some(&Token::Plus) {
+                            break;
+                        }
+                        self.position += 1;
+                    }
+                }
+                if callable.contains_key(&name)
+                    || self.rust_trait_type_parameters.contains(&name)
+                    || !self.rust_abstract_type_parameters.insert(name)
+                {
+                    return Err(self.error("a type parameter is declared twice"));
+                }
+                if self.peek() == Some(&Token::Comma) {
+                    self.position += 1;
+                }
+                if self.peek() == Some(&Token::GreaterThan) {
+                    self.position += 1;
+                    return Ok(callable);
+                }
+                continue;
+            }
             if let Some(word) = self.peek_ident()
                 && self.peek_next() == Some(&Token::Colon)
             {

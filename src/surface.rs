@@ -7097,6 +7097,36 @@ impl FunctionBlock {
         alias
     }
 
+    /// This generic function's contract as its instance `name`, at the
+    /// instance's parameter and result types: the clauses unchanged, since
+    /// a clause of a generic contract reads its abstract values only by
+    /// `==` and `!=`, which mean the same at every type. The instance is
+    /// an external declaration: the generic function is verified once.
+    pub(in crate::surface) fn generic_instance_alias(
+        &self,
+        name: &str,
+        parameter_types: &[C0Type],
+        return_type: C0Type,
+    ) -> Result<FunctionBlock, String> {
+        if parameter_types.len() != self.signature.parameters.len() {
+            return Err(format!(
+                "the instance `{name}` has {} parameters and its generic function {}",
+                parameter_types.len(),
+                self.signature.parameters.len()
+            ));
+        }
+        let mut alias = self.dispatch_alias(name);
+        for (parameter, c_type) in alias.signature.parameters.iter_mut().zip(parameter_types) {
+            if matches!(parameter.click_type, ClickType::C(C0Type::Parameter(_))) {
+                parameter.click_type = ClickType::C(*c_type);
+            }
+        }
+        if matches!(alias.signature.return_type, C0Type::Parameter(_)) {
+            alias.signature.return_type = return_type;
+        }
+        Ok(alias)
+    }
+
     /// This contract's clauses with each parameter in `renames` read as the
     /// expression it maps to.
     fn renamed(&self, renames: &BTreeMap<String, ContractExpression>) -> Result<Self, String> {
