@@ -771,6 +771,17 @@ fn rewrite_atomic_proposition_by_exact_equality(
                         .collect(),
                 }
             }
+            AlgebraicTermNode::If {
+                condition,
+                then_term,
+                else_term,
+            } => {
+                return AlgebraicTerm::if_then_else(
+                    crate::kernel::rewrite_condition_through_bits(condition, rewrite_term),
+                    rewrite_algebraic(then_term, rewrite_term, rewrite_pointer),
+                    rewrite_algebraic(else_term, rewrite_term, rewrite_pointer),
+                );
+            }
         };
         AlgebraicTerm {
             algebraic_type: term.algebraic_type.clone(),

@@ -318,7 +318,9 @@ impl TermClasses {
                         }
                         // Match binds payload variables. Do not equate bodies
                         // by a signature that would forget their binding scope.
-                        N::Match { .. } => {
+                        // A conditional is an atom by its whole identity, as a
+                        // scalar conditional is.
+                        N::Match { .. } | N::If { .. } => {
                             values.push(self.opaque_argument(&A::Algebraic(term.clone())));
                             continue;
                         }

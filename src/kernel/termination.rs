@@ -1509,6 +1509,9 @@ fn collect_spec_c_variables(
                     | SpecAlgebraicExpressionNode::Constructor { .. }
                     | SpecAlgebraicExpressionNode::Match { .. }
                     | SpecAlgebraicExpressionNode::PureFunctionApplication { .. } => {}
+                    SpecAlgebraicExpressionNode::If { .. } => {
+                        return Visit::Stop("a conditional `if` expression");
+                    }
                 }
             }
             SpecNode::Argument(SpecPureFunctionArgument::ArrayRef { .. }) => reads.memory = true,

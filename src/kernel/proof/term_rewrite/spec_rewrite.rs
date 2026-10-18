@@ -491,6 +491,21 @@ fn collect_spec_algebraic_carriers(
                 collect_spec_argument_carriers(argument, variables, integer_seen);
             }
         }
+        SpecAlgebraicExpressionNode::If {
+            condition,
+            then_branch,
+            else_branch,
+        } => {
+            collect_spec_proposition_carriers(condition, variables, integer_seen);
+            if variables.exhausted() {
+                return;
+            }
+            collect_spec_algebraic_carriers(then_branch, variables, integer_seen);
+            if variables.exhausted() {
+                return;
+            }
+            collect_spec_algebraic_carriers(else_branch, variables, integer_seen);
+        }
     }
 }
 
@@ -1466,6 +1481,15 @@ impl<'a> TermRewrite<'a> {
                         .collect::<Result<Vec<_>, _>>()?,
                 }
             }
+            SpecAlgebraicExpressionNode::If {
+                condition,
+                then_branch,
+                else_branch,
+            } => SpecAlgebraicExpressionNode::If {
+                condition: Box::new(self.rewrite_spec_proposition(condition)?),
+                then_branch: Box::new(self.rewrite_spec_algebraic(then_branch)?),
+                else_branch: Box::new(self.rewrite_spec_algebraic(else_branch)?),
+            },
         };
         self.spec_status()?;
         Ok(SpecAlgebraicExpression {
