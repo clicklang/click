@@ -394,11 +394,16 @@ pub(crate) fn apply_iterated_step(
             }
             let next = iterated.with_hole(index.clone());
             let resources = replace_iterated(state.resources().clone(), current, next)?;
+            // The context was valid and the iterated fact only gained a hole,
+            // so only pairs with the element need checking, and only its
+            // block needs normalizing: unrelated holdings cost nothing.
+            let taken = CResourceFact::own_memory(element.clone());
             let resources = resources
-                .try_compose_with_facts([CResourceFact::own_memory(element.clone())], assumptions)
+                .try_compose_into_valid_context_delaying_normalization([taken.clone()], assumptions)
                 .map_err(|error| {
                     format!("the element overlaps memory this context already owns: {error}")
-                })?;
+                })?
+                .normalized_around_facts(&[taken], assumptions);
             Ok(state.clone().with_resource_context(resources))
         }
         IteratedStep::Give { element } => {
@@ -468,7 +473,7 @@ pub(crate) fn apply_iterated_step(
                     let resources = state
                         .resources()
                         .clone()
-                        .without_fact(&CResourceFact::own_memory(covering), assumptions)
+                        .without_fact_incrementally(&CResourceFact::own_memory(covering), assumptions)
                         .ok_or_else(|| {
                             "gathering needs ownership of every element's cells".to_string()
                         })?;
@@ -492,7 +497,7 @@ pub(crate) fn apply_iterated_step(
             let resources = state
                 .resources()
                 .clone()
-                .without_fact(&required, assumptions)
+                .without_fact_incrementally(&required, assumptions)
                 .ok_or_else(|| {
                     "scattering needs the iterated ownership fact with no element taken out"
                         .to_string()
@@ -503,11 +508,19 @@ pub(crate) fn apply_iterated_step(
                         "the elements do not tile one range, so they cannot be scattered into one"
                             .to_string()
                     })?;
+                    // As for `Take`: the fact consumed above overlapped
+                    // nothing, so only pairs with the covering range and its
+                    // block's normalization remain.
+                    let covering = CResourceFact::own_memory(covering);
                     let resources = resources
-                        .try_compose_with_facts([CResourceFact::own_memory(covering)], assumptions)
+                        .try_compose_into_valid_context_delaying_normalization(
+                            [covering.clone()],
+                            assumptions,
+                        )
                         .map_err(|error| {
                             format!("the elements overlap memory this context already owns: {error}")
-                        })?;
+                        })?
+                        .normalized_around_facts(&[covering], assumptions);
                     Ok(state.clone().with_resource_context(resources))
                 }
                 Some(false) => Ok(state.clone().with_resource_context(resources)),

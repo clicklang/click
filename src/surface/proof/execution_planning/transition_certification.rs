@@ -337,16 +337,12 @@ pub(in crate::surface::proof) fn certified_condition_transitions(
     let pure_context = || pure_facts.context();
     let mut assumptions = match prerequisite_policy {
         StatementPrerequisitePolicy::Exact
-        | StatementPrerequisitePolicy::Explicit
-        | StatementPrerequisitePolicy::Contextual
         | StatementPrerequisitePolicy::Retained
         | StatementPrerequisitePolicy::Fast => context.cloned().unwrap_or_else(pure_context),
     };
     if matches!(prerequisite_policy, StatementPrerequisitePolicy::Exact) {
         assumptions = assumptions.defer_non_exact_loadability_obligations();
         assumptions = assumptions.defer_non_exact_condition_reasoning();
-    } else if matches!(prerequisite_policy, StatementPrerequisitePolicy::Explicit) {
-        assumptions = assumptions.defer_non_exact_loadability_obligations();
     }
     let evaluation = prove_symbolic_c_condition_evaluation(
         state.clone(),
@@ -408,10 +404,7 @@ pub(in crate::surface::proof) fn certified_condition_transitions(
                             return Err(missing_condition_prerequisite_error(context_label, obligation, state));
                         }
                     }
-                    StatementPrerequisitePolicy::Explicit
-                    | StatementPrerequisitePolicy::Contextual
-                    | StatementPrerequisitePolicy::Retained
-                    | StatementPrerequisitePolicy::Fast => {
+                    StatementPrerequisitePolicy::Retained | StatementPrerequisitePolicy::Fast => {
                         if matches!(
                             prerequisite_policy,
                             StatementPrerequisitePolicy::Retained
@@ -424,16 +417,6 @@ pub(in crate::surface::proof) fn certified_condition_transitions(
                         if exact_fact_is_available(obligation.proposition(), pure_facts)
                             || prerequisite_assumptions.states_required_goal(obligation.proposition())
                         {
-                        } else if matches!(
-                            prerequisite_policy,
-                            StatementPrerequisitePolicy::Explicit
-                                | StatementPrerequisitePolicy::Contextual
-                        ) && prerequisite_assumptions.proves(obligation.proposition())
-                        {
-                            crate::instrumentation::record_hidden_prerequisite(
-                                hidden_prerequisite_route(prerequisite_policy, true),
-                                "proves",
-                            );
                         } else {
                             refuse_or_probe(
                                 prerequisite_policy,
@@ -489,19 +472,6 @@ pub(in crate::surface::proof) fn certified_condition_transitions(
         .collect()
 }
 
-/// The census route of a prerequisite derived by search under `policy`.
-fn hidden_prerequisite_route(
-    policy: StatementPrerequisitePolicy,
-    condition: bool,
-) -> crate::instrumentation::HiddenPrerequisiteRoute {
-    use crate::instrumentation::HiddenPrerequisiteRoute as Route;
-    match (policy, condition) {
-        (StatementPrerequisitePolicy::Explicit, true) => Route::ExplicitCondition,
-        (_, false) => Route::ContextualObligation,
-        (_, true) => Route::ContextualCondition,
-    }
-}
-
 pub(in crate::surface) fn certified_statement_transitions(
     state: &CState,
     pure_facts: &PureFactList,
@@ -522,10 +492,7 @@ pub(in crate::surface) fn certified_statement_transitions(
     // Without one, the list's own context is extended by the facts it
     // gained since it was last consulted.
     let mut assumptions = context.cloned().unwrap_or_else(|| pure_facts.context());
-    if matches!(
-        prerequisite_policy,
-        StatementPrerequisitePolicy::Exact | StatementPrerequisitePolicy::Explicit
-    ) {
+    if matches!(prerequisite_policy, StatementPrerequisitePolicy::Exact) {
         assumptions = assumptions.defer_non_exact_loadability_obligations();
         assumptions = assumptions.prefer_symbolic_external_loads();
     }
@@ -613,7 +580,7 @@ pub(in crate::surface::proof) fn certified_loop_exit_transitions_with_proven_pha
         function_environment,
         predicate_environment,
         context_label,
-        StatementPrerequisitePolicy::Contextual,
+        StatementPrerequisitePolicy::Fast,
         StatementFactTransportPolicy::Automatic,
         statement_contains_call(statement),
         None,
@@ -663,38 +630,6 @@ pub(in crate::surface::proof) fn statement_contains_call(statement: &CStatement)
     }
 }
 
-pub(in crate::surface::proof) fn is_internal_snapshot_frame_witness(fact: &Proposition) -> bool {
-    let same_load_address = |left: &Bitvector32Term, right: &Bitvector32Term| {
-        matches!(
-            (left, right),
-            (
-                Bitvector32Term::MemoryLoad(_, left_pointer, left_kind),
-                Bitvector32Term::MemoryLoad(_, right_pointer, right_kind),
-            ) if left_pointer == right_pointer && left_kind == right_kind
-        )
-    };
-    let Proposition::ConditionIs(condition, true) = fact else {
-        return false;
-    };
-    match condition {
-        ConditionTerm::Bitvector32Equal(left, right) => same_load_address(left, right),
-        ConditionTerm::PointerOffsetEqual(left, right) => matches!(
-            (left.as_ref(), right.as_ref()),
-            (
-                PointerOffsetTerm::Int32Scaled {
-                    value: left,
-                    byte_width: left_width,
-                },
-                PointerOffsetTerm::Int32Scaled {
-                    value: right,
-                    byte_width: right_width,
-                },
-            ) if left_width == right_width && same_load_address(left, right)
-        ),
-        _ => false,
-    }
-}
-
 #[allow(clippy::too_many_arguments)]
 fn certified_transitions_from_execution(
     execution: SymbolicCExecution,
@@ -711,9 +646,6 @@ fn certified_transitions_from_execution(
     context: Option<&PureFactContext>,
     executed_under: &PureFactContext,
 ) -> Result<(Vec<CertifiedStatementTransition>, Option<CVerifiedLoopRule>), ClickError> {
-    // The list keeps its context, so every path below consulting it builds
-    // it at most once.
-    let pure_context = || pure_facts.context();
     // Automatic transport asks for the facts' direct-transport context on
     // most steps; building it before the successor lists are cloned from
     // `pure_facts` lets each of them carry it to the next step.
@@ -825,7 +757,7 @@ fn certified_transitions_from_execution(
             for obligation in path.obligations() {
                 let proposition = obligation.proposition();
                 let derivation = match prerequisite_policy {
-                    StatementPrerequisitePolicy::Exact | StatementPrerequisitePolicy::Explicit => {
+                    StatementPrerequisitePolicy::Exact => {
                         // An exact conjunct is also the availability the
                         // polarity-aware check below accepts.
                         if pure_facts.has_exact_conjunct(proposition)
@@ -835,63 +767,6 @@ fn certified_transitions_from_execution(
                             || matches!(normalize_proposition(proposition), SimpProposition::True)
                         {
                             None
-                        } else if matches!(
-                            prerequisite_policy,
-                            StatementPrerequisitePolicy::Explicit
-                        ) {
-                            // An explicit premise set is deliberately small.
-                            // set. Permit one proof-producing atomic check over
-                            // exactly that set, after execution has deferred
-                            // every non-exact obligation. This keeps certificate
-                            // check independent of the ambient proof context
-                            // without requiring callers to write out internal
-                            // evaluator predicates such as no-overflow facts.
-                            let exact_derivation = if matches!(
-                                proposition,
-                                Proposition::ConditionIs(_, _)
-                            ) {
-                                search_condition_derivation(proposition, pure_facts)?
-                            } else if matches!(proposition, Proposition::And(_, _)) {
-                                // A contract predicate unfolds to one
-                                // conjunction. Composing that conjunction
-                                // from facts already present in the explicit
-                                // check context is propositional certificate
-                                // construction, not open-ended premise
-                                // search.
-                                minimal_proposition_derivation(proposition, pure_facts)?
-                            } else if matches!(
-                                proposition,
-                                Proposition::CResourceContains { .. }
-                                    | Proposition::CResourceSeparate { .. }
-                                    | Proposition::CMemoryLoadable { .. }
-                            ) {
-                                // Resource containment, separation, and
-                                // loadability coverage are internal evaluator
-                                // predicates like the no-overflow conditions
-                                // above; derive them atomically over the same
-                                // explicit set.
-                                pure_context().derive_atomic_proposition(proposition)
-                            } else {
-                                None
-                            };
-                            exact_derivation.ok_or_else(|| {
-                                    ClickError::new(format!(
-                                        "{context_label} is missing exact prerequisite{}: {}",
-                                        crate::surface::diagnostics::describe_proof_obligation_context(obligation)
-                                            .map(|context| format!(" ({context})"))
-                                            .unwrap_or_default(),
-                                        describe_statement_prerequisite_failure(
-                                proposition,
-                                pure_facts,
-                                &statement_facts,
-                                state,
-                                statement,
-                                environment,
-                                predicate_environment,
-                            ),
-                                    ))
-                                })
-                                .map(Some)?
                         } else {
                             return Err(missing_prerequisite_error(
                                 format!(
@@ -913,9 +788,7 @@ fn certified_transitions_from_execution(
                             ));
                         }
                     }
-                    StatementPrerequisitePolicy::Contextual
-                    | StatementPrerequisitePolicy::Retained
-                    | StatementPrerequisitePolicy::Fast => {
+                    StatementPrerequisitePolicy::Retained | StatementPrerequisitePolicy::Fast => {
                         // A refusal lists the facts this check consulted.
                         // Over a proof context `pure_facts` is only the
                         // statement-local delta, and the context itself
@@ -1025,19 +898,6 @@ fn certified_transitions_from_execution(
                                 })
                         {
                             None
-                        } else if let Some(derivation) = matches!(
-                            prerequisite_policy,
-                            StatementPrerequisitePolicy::Contextual
-                        )
-                        .then(|| prerequisite_assumptions.derive_proposition(proposition))
-                        .flatten()
-                        .filter(|derivation| derivation.check(&prerequisite_assumptions))
-                        {
-                            crate::instrumentation::record_hidden_prerequisite(
-                                hidden_prerequisite_route(prerequisite_policy, false),
-                                derivation.rule_name(),
-                            );
-                            Some(derivation)
                         } else {
                             refuse_or_probe(
                                 prerequisite_policy,
@@ -1102,21 +962,9 @@ fn certified_transitions_from_execution(
                 let mut transported_facts = Vec::new();
                 let mut certified_transport_sources = Vec::new();
                 if normalize_statement_facts_to_exit {
-                    let omit_internal_frame_witnesses =
-                        matches!(prerequisite_policy, StatementPrerequisitePolicy::Explicit);
-                    let mut normalization_sources = statement_facts
-                        .into_iter()
-                        .filter(|fact| {
-                            !omit_internal_frame_witnesses
-                                || !is_internal_snapshot_frame_witness(fact)
-                        })
-                        .collect::<Vec<_>>();
+                    let mut normalization_sources = statement_facts.into_iter().collect::<Vec<_>>();
                     for execution_fact in &execution_facts {
                         if execution_fact.is_certified()
-                            && (!omit_internal_frame_witnesses
-                                || !is_internal_snapshot_frame_witness(
-                                    execution_fact.proposition(),
-                                ))
                             && !pure_facts.has_exact_conjunct(execution_fact.proposition())
                             && !normalization_sources.contains(execution_fact.proposition())
                         {
@@ -1492,7 +1340,7 @@ mod condition_transition_tests {
             &PureFactList::default(),
             &condition,
             "condition obligation regression",
-            StatementPrerequisitePolicy::Contextual,
+            StatementPrerequisitePolicy::Fast,
             None,
         ) {
             Ok(_) => panic!("a step accepted an unproved viewability obligation"),
@@ -1592,7 +1440,7 @@ mod condition_transition_tests {
             "real load transition test",
             &mut next_opaque_call,
             &mut next_kernel_variable,
-            StatementPrerequisitePolicy::Explicit,
+            StatementPrerequisitePolicy::Fast,
             StatementFactTransportPolicy::None,
             None,
         )
@@ -1708,7 +1556,7 @@ mod condition_transition_tests {
             "compound field update source-event test",
             &mut next_opaque_call,
             &mut next_kernel_variable,
-            StatementPrerequisitePolicy::Explicit,
+            StatementPrerequisitePolicy::Fast,
             StatementFactTransportPolicy::None,
             None,
         )
@@ -1766,7 +1614,7 @@ mod condition_transition_tests {
             "failed load source-event test",
             &mut next_opaque_call,
             &mut next_kernel_variable,
-            StatementPrerequisitePolicy::Explicit,
+            StatementPrerequisitePolicy::Fast,
             StatementFactTransportPolicy::None,
             None,
         )

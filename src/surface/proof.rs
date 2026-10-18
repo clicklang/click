@@ -89,9 +89,7 @@ pub(super) use execution_state::{
 #[cfg(test)]
 pub(super) use fact_reasoning::describe_condition_search_miss;
 use fact_reasoning::*;
-pub(super) use fact_reasoning::{
-    condition_polarity_equivalent, exactly_available_fact, search_condition_derivation,
-};
+pub(super) use fact_reasoning::{condition_polarity_equivalent, exactly_available_fact};
 use fixed_state_proofs::*;
 use language_context::*;
 use proof_object::*;

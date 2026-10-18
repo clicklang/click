@@ -4217,9 +4217,9 @@ fn fold_composite_resources_on_outcome_with_facts(
                 || decided_by_kernel_condition_decision(&body_assumptions, &required);
             // A body fact the exact checks miss is a requirement of this
             // `fold`, spelled as the definition's fact over the arguments as
-            // written; the fold never searches the proof context for it
-            // (`issues/simplify-step.md`, step 5). A probe records it for the
-            // implicit `auto`, which proves it and folds again.
+            // written; the fold never searches the proof context for it. A
+            // probe records it for the implicit `auto`, which proves it and
+            // folds again.
             let open = !exactly_available
                 && !matches!(normalize_proposition(&required), SimpProposition::True);
             // A witness the proof cannot name has no source expression, so

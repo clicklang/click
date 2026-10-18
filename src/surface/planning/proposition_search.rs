@@ -246,7 +246,7 @@ pub(crate) trait PropositionSearch {
 
 /// A simple tactic's check of a premise: the exact lookup, then the
 /// kernel's condition decision, the one a step's fast path makes. It never
-/// searches the proof context (`issues/simplify-step.md`, step 5); a premise
+/// searches the proof context; a premise
 /// it misses is stated first, by a `have`.
 pub(crate) fn decided_without_search(context: &PureFactContext, proposition: &Proposition) -> bool {
     if context.proves_exact(proposition) {

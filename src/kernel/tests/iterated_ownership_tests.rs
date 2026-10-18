@@ -206,7 +206,7 @@ fn assert_constant_plus_log(what: &str, samples: &[(u32, usize)], slope: f64) {
         let allowed = base as f64 + slope * (log2(*size) - log2(smallest));
         assert!(
             (*work as f64) <= allowed,
-            "{what}: a range of {size} cells charged {work} units, above {allowed:.1} \
+            "{what}: size {size} charged {work} units, above {allowed:.1} \
              (constant plus {slope}·log2 growth): {samples:?}"
         );
     }
