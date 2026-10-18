@@ -632,6 +632,8 @@ pub(super) fn transfer_population_call_facts<'a>(
     Ok(state)
 }
 
+pub(in crate::kernel) mod call_read_aliases;
+
 /// Re-spell symbolic pointer values that a field-derived borrowed owner was
 /// checked against with the exact caller pointer selected by the reservation
 /// planner. This is used only to instantiate verified postconditions: the
@@ -4128,14 +4130,22 @@ fn execute_verified_function_applications_with_suspension(
                 Arc::make_mut(&mut post_state.population_effects).creation = Some(next);
             }
         }
-        let canonical_entry_contract_state = with_canonical_borrowed_pointer_memory(
+        let canonical_entry_contract_state = call_read_aliases::CallReadState::new(
             &entry_contract_state,
             &transfer.canonical_borrowed_owners,
         );
-        let provisional_post_contract_state = with_canonical_borrowed_pointer_memory(
-            &with_contract_interface_argument_views(&post_state, interface, &argument_values),
+        let provisional_caller_contract_state =
+            with_contract_interface_argument_views(&post_state, interface, &argument_values);
+        let provisional_post_contract_state = call_read_aliases::CallReadState::new(
+            &provisional_caller_contract_state,
             &transfer.canonical_borrowed_owners,
         );
+        // The reservation plan has already checked these pointer aliases.
+        // Reads lowered for this call keep their caller-snapshot equations.
+        let provisional_read_aliases = call_read_aliases::CallReadAliasScope::enter([
+            &canonical_entry_contract_state,
+            &provisional_post_contract_state,
+        ]);
         let provisional_post_contract_state = match checked_contract_control_read_state(
             &provisional_post_contract_state,
             &output_resources,
@@ -4169,6 +4179,7 @@ fn execute_verified_function_applications_with_suspension(
             budget,
         )?;
         drop(provisional_ensure_timing);
+        drop(provisional_read_aliases);
 
         let allocation_delta_timing = crate::instrumentation::OperationTiming::new(
             name,
@@ -4215,10 +4226,16 @@ fn execute_verified_function_applications_with_suspension(
             ));
             continue;
         }
-        let post_contract_state = with_canonical_borrowed_pointer_memory(
-            &with_contract_interface_argument_views(&post_state, interface, &argument_values),
+        let caller_contract_state =
+            with_contract_interface_argument_views(&post_state, interface, &argument_values);
+        let post_contract_state = call_read_aliases::CallReadState::new(
+            &caller_contract_state,
             &transfer.canonical_borrowed_owners,
         );
+        let _read_aliases = call_read_aliases::CallReadAliasScope::enter([
+            &canonical_entry_contract_state,
+            &post_contract_state,
+        ]);
         let returned_body_state = post_contract_state.clone();
         let post_contract_state = match checked_contract_control_read_state(
             &post_contract_state,

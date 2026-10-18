@@ -1783,3 +1783,8 @@ lemma preserves counts, cached values, and the shape's reparenting relationship.
 Explicit color bounds before the store preserve the pointer representation;
 checked tagged-word certificates establish the numeric equations. This is a
 helper proof, not yet the generalized nonempty-sibling insertion rotation.
+The left-left case with a moved black leaf now composes that setter and the
+writable rotation callback under an arbitrary owned ancestor context. Both
+augmented wrappers return the whole repaired tree; the imported model theorem
+preserves its in-order identity sequence. General moved subtrees and the
+mirrored nonempty-middle case remain.

@@ -72,6 +72,7 @@ pub(in crate::kernel) fn evaluate_c_memory_load_paths(
             obligations,
         }];
     }
+    let pointer_for_call_alias = pointer.clone();
     let mut alias_cache = MemoryLoadAliasCache::default();
     // Function reads have an exact load-variable identity, including when
     // reading a borrowed callback table in an ordinary statement proof.
@@ -155,6 +156,15 @@ pub(in crate::kernel) fn evaluate_c_memory_load_paths(
             }
         }
     }
+    if !volatile && SpecificationReadScope::is_active() {
+        retain_call_read_aliases(
+            memory,
+            &pointer_for_call_alias,
+            value_type,
+            assumptions,
+            &mut paths,
+        );
+    }
     paths
 }
 
@@ -204,6 +214,26 @@ pub(in crate::kernel) fn evaluate_spec_memory_load_paths(
 /// Construct the value of a logical read using the shared typed load model.
 /// No C access occurs and no validity evidence is introduced.
 pub(in crate::kernel) fn evaluate_logical_memory_load_paths(
+    memory: &CMemory,
+    pointer: Pointer,
+    value_type: CType,
+    facts: ExecutionFacts,
+    obligations: Vec<ProofObligation>,
+    assumptions: &PureFactContext,
+) -> Vec<CExpressionPath> {
+    let mut paths = evaluate_logical_memory_load_paths_unbridged(
+        memory,
+        pointer.clone(),
+        value_type,
+        facts,
+        obligations,
+        assumptions,
+    );
+    retain_call_read_aliases(memory, &pointer, value_type, assumptions, &mut paths);
+    paths
+}
+
+fn evaluate_logical_memory_load_paths_unbridged(
     memory: &CMemory,
     pointer: Pointer,
     value_type: CType,
@@ -343,6 +373,85 @@ pub(in crate::kernel) fn evaluate_logical_memory_load_paths(
             }
         })
         .collect()
+}
+
+/// Name the selected caller read with the existing scalar normalizer.
+/// No C access, pointer-carrier recovery, or whole-snapshot equality occurs.
+fn canonical_integer_read(
+    memory: &CMemory,
+    pointer: &Pointer,
+    ty: CType,
+) -> Option<Bitvector32Term> {
+    let kind = match ty {
+        CType::Bool | CType::Int8 | CType::UInt8 => LoadKind::UInt8,
+        CType::Int16 => LoadKind::Int16,
+        CType::UInt16 => LoadKind::UInt16,
+        CType::Int32 | CType::UInt32 => LoadKind::Bits32,
+        CType::Int64 | CType::UInt64 => LoadKind::Bits64,
+        _ => return None,
+    };
+    let value = canonical_form_of_load(
+        crate::kernel::intern_c_memory_ref(memory),
+        pointer.clone(),
+        kind,
+    );
+    Some(match ty {
+        CType::Int8 => Bitvector32Term::signed_byte(value),
+        CType::Bool => Bitvector32Term::if_then_else(
+            ConditionTerm::equal(value, Bitvector32Term::Constant(0)),
+            Bitvector32Term::Constant(0),
+            Bitvector32Term::Constant(1),
+        ),
+        _ => value,
+    })
+}
+
+fn retain_call_read_aliases(
+    memory: &CMemory,
+    pointer: &Pointer,
+    value_type: CType,
+    _assumptions: &PureFactContext,
+    paths: &mut [CExpressionPath],
+) {
+    // A producer with alternative paths cannot install either arm into the
+    // shared input context. Likewise, unproved expression-local conditions
+    // must remain with their path instead of becoming checked definitions.
+    if paths.len() != 1 || paths[0].facts.iter().any(|fact| !fact.is_certified()) {
+        return;
+    }
+    let Some(source_memory) = super::super::functions::call_read_aliases::source_for(memory) else {
+        return;
+    };
+    let Some(source) = source_memory
+        .known_value(pointer)
+        .and_then(|stored| value_type.read_cell(&stored))
+        .and_then(|value| crate::kernel::spec::c_value_bitvector_term(&value))
+        .or_else(|| canonical_integer_read(&source_memory, pointer, value_type))
+    else {
+        return;
+    };
+    for path in paths {
+        let CExpressionOutcome::Value(value) = &path.outcome else {
+            continue;
+        };
+        let Some(value) = crate::kernel::spec::c_value_bitvector_term(value) else {
+            continue;
+        };
+        if source == value {
+            continue;
+        }
+        // Carry only the selected numeric equation. Ordinary fact admission
+        // installs it in the shared graph after scratch call contexts expire.
+        let equal = match value_type {
+            CType::Int64 => ConditionTerm::int64_equal(source.clone(), value),
+            CType::UInt64 => ConditionTerm::uint64_equal(source.clone(), value),
+            _ => ConditionTerm::equal(source.clone(), value),
+        };
+        path.facts.push(ExecutionPureFact {
+            logical_read_equation: true,
+            ..ExecutionPureFact::certified(Proposition::ConditionIs(equal, true))
+        });
+    }
 }
 
 /// Use a published footprint only to select coordinates for this logical

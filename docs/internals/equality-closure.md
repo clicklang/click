@@ -261,6 +261,23 @@ abstract successor to establish them. Pure capture may discard them, and symboli
 bodies keep their equations local. Changed cells, missing aliases, restricted
 contexts, and narrower scalar reads cannot reuse the old relation. No read
 permission is introduced.
+When a call reservation selects a field-derived owner for a symbolic pointer,
+postcondition instantiation re-spells that pointer in its scratch snapshots.
+The checked call producer retains the original and rewritten storage roots in
+an exact, call-local index. A selected native integer or boolean read in that
+scope emits its numeric equation to the corresponding caller-snapshot read
+through the certified logical-read fact stream and ordinary egraph admission.
+The source reuses a retained numeric cell when present, otherwise the existing
+memoized scalar normalizer names it. It never reconstructs pointer carriers.
+Its first observation pays the existing selected read's cold normalization
+work; repeated call lowering reuses that normalization. Returned equations
+survive scratch lowering contexts and connect copied-word ensures to named
+pre-call reads without asserting whole-snapshot equality.
+Only the selected cell is observed; unrelated cells and facts are not scanned.
+The scope retains its roots, restores nested entries on exit, and supplies no
+bridge for a changed snapshot, a volatile C access, or a pointer designation.
+Diagnostic snapshot histories remain explanatory metadata, never proof evidence.
+
 Compound pointer and offset queries retain the generation at which their read
 dependencies were registered. Repeated queries reuse that result; a newly registered logical
 read definition changes the generation and invalidates earlier misses. This

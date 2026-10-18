@@ -6760,6 +6760,12 @@ impl CMemory {
     /// its contents. This is intentionally only an identity label; equal
     /// labels imply shared storage roots, not semantic inequality otherwise.
     pub(crate) fn diagnostic_identity(&self) -> (usize, usize, usize, usize, usize) {
+        self.storage_root_identity()
+    }
+
+    /// Exact O(1) lookup key for shared storage, never semantic inequality.
+    /// Users of this key retain the memory roots for the lookup lifetime.
+    pub(in crate::kernel) fn storage_root_identity(&self) -> (usize, usize, usize, usize, usize) {
         (
             std::sync::Arc::as_ptr(&self.blocks) as usize,
             std::sync::Arc::as_ptr(&self.cells) as usize,
