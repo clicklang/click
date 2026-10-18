@@ -954,6 +954,27 @@ canonical forms, and graph-equal addends inside the add rule. Same-residue
 contexts are still compared pairwise; that width is bounded by rule-relevant
 facts, not by the ambient context.
 
+A check still labels every fact, so a proof whose context changes by a few
+facts per step would pay for the whole context at every step; `simp` asks
+once per goal its direct rules miss. A full scan that finds no conflict
+therefore leaves a snapshot of its indexes
+(`src/kernel/assumptions/consistency_extension.rs`), and a later context that
+differs from it by removed facts and added *plain* order facts is decided by
+checking only the added facts against that snapshot. A plain fact is a signed
+order between non-load variables and constants under `+`, `-`, `*` that is not
+theory-sensitive, and the snapshot qualifies only when it held no
+theory-sensitive or load endpoint and no alias guard, so the deep and alias
+rules have nothing to compare and every remaining rule is a keyed lookup.
+Contradiction is monotone, so removed facts can stay in the snapshot: a stale
+entry can make the check decline, never hide a conflict. The extension
+answers only "consistent"; any other case, including a conflict it finds or a
+fact that would merge two existing classes, goes to the full scan. A
+differential test checks it against the full scan on growing, forking and
+shrinking contexts, and `extending_by_one_order_fact_does_not_rescan_the_context`
+holds one added fact flat beside 16 or 1,024 facts. On the branch-count
+scaling shape (one parameter, 128 to 256 branches) the check went from 425M
+to 1,853M instructions to 12M to 25M.
+
 A condition-fact query reads the facts filed under the keys it spells
 (`PureFactContext::has_condition_fact`). The fact itself is an exact lookup.
 A differently spelled fact that `condition_matches` accepts is filed under

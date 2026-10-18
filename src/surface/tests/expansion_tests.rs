@@ -8644,20 +8644,37 @@ fn restricted_simp_rewrites_pointer_aliases_inside_memory_loads() {
         .map(|relative| expanded_have_start + relative)
         .unwrap();
     let expanded_have = &expanded[expanded_have_start..expanded_have_end];
-    assert!(
-        expanded_have.contains("rewrite(alias == original);"),
-        "{expanded_have}"
-    );
-    assert!(
-        expanded_have.contains("rewrite(index == 0);"),
-        "{expanded_have}"
-    );
-    // The checked read bridge can use the cited equality directly. Require
-    // an explicit certificate, not a particular orientation or final closer.
+    // Indexed read congruence constructs a normalization certificate from
+    // the selected premises without spelling intermediate rewrites.
+    for selected in [
+        "normalize() using {",
+        "original[0] == value;",
+        "alias == original;",
+        "index == 0;",
+    ] {
+        assert!(expanded_have.contains(selected), "{expanded_have}");
+    }
     assert!(!expanded_have.contains("simp() using"), "{expanded_have}");
     assert!(!expanded_have.contains("derive using"), "{expanded_have}");
     verify_c0_sources(&expanded, &sources)
         .expect("expanded pointer-alias certificate should check");
+    // Normalization may query the maintained graph, so withdraw each
+    // relation from the context as well as its explicit citation.
+    for (clause, premise) in [
+        ("fact data[0] == value;", "original[0] == value;"),
+        ("requires alias == original;", "alias == original;"),
+        ("requires index == 0;", "index == 0;"),
+    ] {
+        assert!(expanded.contains(clause));
+        let missing_premise = expanded_have.replacen(premise, "", 1);
+        let incomplete = expanded
+            .replacen(expanded_have, &missing_premise, 1)
+            .replacen(clause, "", 1);
+        assert!(
+            verify_c0_sources(&incomplete, &sources).is_err(),
+            "the read-alias certificate must reject a context without `{clause}`"
+        );
+    }
 }
 
 #[test]

@@ -24,6 +24,7 @@ pub(in crate::kernel) fn count_condition_fact_visit() {
 use std::cell::{Cell, RefCell};
 
 mod condition_reasoning;
+mod consistency_extension;
 pub(in crate::kernel) mod variable_chains;
 use super::equality_graph::EqualityGraph;
 pub(in crate::kernel) use condition_reasoning::cancel_common_offset_addends;
