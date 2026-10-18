@@ -101,7 +101,11 @@ when the default misses or when a proof must not search.
   proposition; `cases` uses a disjunction that is already a fact; `match`
   splits on constructors; `branch` follows a C `if`. Tactics written after a
   proof `if` or `match` are checked once, never once per arm: the arms rejoin,
-  keeping the facts every arm proved, or the split is refused.
+  keeping the facts every arm proved, or the split is refused. An arm that
+  reaches function exit is a finished path, like each `return` of the C: the
+  closer that ends the proof, the implicit `auto` or a written `auto();`,
+  closes its remaining goals on that path, so a split that ends a proof
+  finishes each arm on its own.
 
 ## Automation and search
 
@@ -116,8 +120,14 @@ final closer. On a stated fact, `have P by auto();`, there is no C to execute,
 and `auto` is the solver, then `simp`, then the rewrite search. Before the
 solver, `auto` tries a goal that restates an available fact through one
 connected equality, such as `f(Node(..)) == 1` beside `f(t) == 1` and
-`t == Node(..)`: one `rewrite` and `assumption`, at most 16 rewrites. `auto()` is a whole-proof call, written `by auto();` or `by { auto(); }`,
-and cannot be a step in a mixed script. A written `simp()` invokes `simp` alone. Successful smart tactics and `auto` retain the checked
+`t == Node(..)`: one `rewrite` and `assumption`, at most 16 rewrites. Written
+as a step of a script, `auto();` does what the closer an omitted one stands for
+does at that point: it executes whatever C remains and closes every goal still
+open in its block, so a closer after it has no goal and is refused
+(`mdtests/auto_in_a_script_closes_every_open_goal.md`). In each arm of a proof
+`if` that ends a proof, it closes that arm's goals
+(`mdtests/auto_closes_each_arm_of_a_split_that_ends_a_proof.md`). A written
+`simp()` invokes `simp` alone. Successful smart tactics and `auto` retain the checked
 surface provenance that `click expand` can render as an explicit proof.
 Source-premise selection skips synthesized candidates whose rendered
 propositions do not tokenize as Click, rather than counting a route through an
