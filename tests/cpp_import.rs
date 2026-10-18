@@ -2162,8 +2162,7 @@ fn scalar_int32_profile_propagates_a_modular_throw_past_a_normal_call_continuati
     )
     .expect("expand the caller's exceptional proof");
     let rewritten = click_project.with_entry_source(expanded.clone());
-    verify_program_prepared_project(&rewritten, &prepared)
-        .expect("the expanded exceptional proof must reverify");
+    // Session construction cold-verifies this complete program once.
     let (session, _) = C0VerificationSession::new_program_prepared_project(&rewritten, &prepared)
         .expect("retain the expanded scalar exception environment");
     let site = project_tactic_source_position(
@@ -2274,8 +2273,7 @@ fn scalar_int32_profile_catches_a_modular_throw_with_a_typed_payload() {
         "distinct exact path closers should retain returned/threw certificates: {expanded}"
     );
     let rewritten = click_project.with_entry_source(expanded.clone());
-    verify_program_prepared_project(&rewritten, &prepared)
-        .expect("the expanded handler proof must reverify");
+    // Session construction cold-verifies this complete program once.
     let (session, _) = C0VerificationSession::new_program_prepared_project(&rewritten, &prepared)
         .expect("retain the expanded handler environment");
     let site = project_tactic_source_position(
@@ -2386,8 +2384,6 @@ fn scalar_int32_profile_joins_a_caught_throw_inside_conditional_cleanup() {
     fs::write(&sidecar, sidecar_source).unwrap();
     fs::remove_file(&project.exporter).expect("verification must use the locked artifact");
     let click_project = read_click_project(&sidecar, sidecar_source).unwrap();
-    verify_program_prepared_project(&click_project, &prepared)
-        .expect("the mixed conditional cleanup join should verify");
     let expanded = expand_project_claim_source_by_label(
         &click_project,
         &ProgramInputs::program(&prepared),
@@ -2397,6 +2393,7 @@ fn scalar_int32_profile_joins_a_caught_throw_inside_conditional_cleanup() {
     let rewritten = click_project.with_entry_source(expanded.clone());
     verify_program_prepared_project(&rewritten, &prepared)
         .expect("the expanded mixed outcome proof must reverify");
+    // Session construction cold-verifies this complete program once.
     let (session, _) =
         C0VerificationSession::new_program_prepared_project(&click_project, &prepared)
             .expect("retain the mixed outcome verification environment");
@@ -2487,7 +2484,6 @@ int32 caller(bool fail) { ensures result == 7; }
     let sidecar = project.directory.join("demo.click");
     fs::write(&sidecar, source).unwrap();
     let parsed = read_click_project(&sidecar, source).unwrap();
-    verify_program_prepared_project(&parsed, &import).unwrap();
     let expanded = expand_project_claim_source_by_label(
         &parsed,
         &ProgramInputs::program(&import),
@@ -2496,6 +2492,7 @@ int32 caller(bool fail) { ensures result == 7; }
     .unwrap();
     let rewritten = parsed.with_entry_source(expanded.clone());
     verify_program_prepared_project(&rewritten, &import).unwrap();
+    // Session construction cold-verifies this complete program once.
     let (session, _) =
         C0VerificationSession::new_program_prepared_project(&parsed, &import).unwrap();
     let position = project_tactic_source_position(
@@ -4897,8 +4894,6 @@ fn modular_caller_observes_captured_result_and_restored_entry_value() {
     );
 
     let click_project = read_click_project(&sidecar, RESTORE_CALLER_SIDECAR).unwrap();
-    verify_program_prepared_project(&click_project, &import)
-        .expect("the caller must receive 7 or 9 and still own an unchanged 41");
     let execute = project_tactic_source_position(
         &click_project,
         &ProgramInputs::program(&import),
@@ -4916,6 +4911,7 @@ fn modular_caller_observes_captured_result_and_restored_entry_value() {
     let rewritten = click_project.with_entry_source(expanded.clone());
     verify_program_prepared_project(&rewritten, &import)
         .expect("the expanded RAII caller proof must reverify");
+    // Session construction cold-verifies this complete program once.
     let (session, _) = C0VerificationSession::new_program_prepared_project(&click_project, &import)
         .expect("retain the caller's original verification environment");
     let next = project_tactic_source_position(
@@ -5516,9 +5512,6 @@ fn conditional_construction_cleans_up_only_the_constructed_arm() {
 
     let click_source = fs::read_to_string(&sidecar).unwrap();
     let click_project = read_click_project(&sidecar, &click_source).unwrap();
-    verify_program_prepared_project(&click_project, &import).expect(
-        "verify cleanup on constructed paths without calling the destructor on the skipped path",
-    );
 
     let expanded = expand_project_claim_source_by_label(
         &click_project,
@@ -5529,6 +5522,7 @@ fn conditional_construction_cleans_up_only_the_constructed_arm() {
     let rewritten = click_project.with_entry_source(expanded.clone());
     verify_program_prepared_project(&rewritten, &import)
         .expect("the fully expanded conditional-construction proof must reverify");
+    // Session construction cold-verifies this complete program once.
     let (session, _) = C0VerificationSession::new_program_prepared_project(&click_project, &import)
         .expect("retain the original conditional-construction verification environment");
     let next = project_tactic_source_position(
@@ -6976,8 +6970,6 @@ fn ordinary_value_methods_import_with_const_receiver_and_mixed_width_fields() {
         let sidecar = project.directory.join("demo.click");
         fs::write(&sidecar, &sidecar_source).unwrap();
         let parsed = read_click_project(&sidecar, &sidecar_source).unwrap();
-        verify_program_prepared_project(&parsed, &import)
-            .unwrap_or_else(|error| panic!("{selected}: {}", error.message()));
         let sites =
             project_smart_tactic_source_sites(&parsed, &ProgramInputs::program(&import)).unwrap();
         let site = sites.first().unwrap();
@@ -6998,6 +6990,7 @@ fn ordinary_value_methods_import_with_const_receiver_and_mixed_width_fields() {
         let rewritten = parsed.with_entry_source(expanded.clone());
         verify_program_prepared_project(&rewritten, &import)
             .expect("expanded method proof reverifies");
+        // Session construction cold-verifies this complete program once.
         let (session, _) =
             C0VerificationSession::new_program_prepared_project(&parsed, &import).unwrap();
         let next_sites =
@@ -9181,7 +9174,7 @@ Restore::~Restore() {{
 }} by {{ execute(); simp(); }}
 "#
         );
-        check_return_call_sidecar(&project, &import, &source);
+        check_selected_claim_certificate(&project, &import, &source);
         let hostile = source.replace(
             &format!("ensures result == {expected}; ensures value =="),
             "ensures result == 0; ensures value ==",
@@ -10581,7 +10574,7 @@ Guard::Guard(int32 initial) { owns this->value; ensures this->value == initial; 
 Guard::~Guard() { owns this->value; ensures this->value == 0; } by { execute(); simp(); }
 int32 many(bool early, int32 value) { ensures result == value; } by { execute(); simp(); }
 "#;
-            check_return_call_sidecar(&project, &import, source);
+            check_selected_claim_certificate(&project, &import, source);
             let hostile = source.replace(
                 "ensures result == value; } by { execute(); simp(); }",
                 "requires value == 5; ensures result == 6; } by { execute(); assumption(); }",
@@ -10908,7 +10901,7 @@ int64 {instance}(int32 at_size) const {{ owns this->fee; owns this->size; requir
 int64 Fee::{selected}(int32 at_size) const {{ owns this->fee; owns this->size; requires this->fee == {fee}i64; requires this->size == {divisor}; requires at_size == 3; ensures result == {expected}i64; }} by {{ execute(); simp(); }}
 "#
         );
-        check_return_call_sidecar(&project, &import, &proof);
+        check_selected_claim_certificate(&project, &import, &proof);
         let hostile = proof.replace(
             &format!("ensures result == {expected}i64;"),
             &format!("ensures result == {}i64;", expected + 1),
@@ -13289,10 +13282,10 @@ ensures round_down == 0 implies (to_integer(result) + -1) * to_integer(d) < to_i
 "#,
         );
         if !rejections {
-            check_return_call_sidecar(&project, &import, &proof);
+            check_selected_claim_certificate(&project, &import, &proof);
         }
     } else if !rejections {
-        check_arithmetic_sidecar(&project, &import, &proof);
+        check_first_claim_certificate(&project, &import, &proof);
     }
     let path = project.directory.join("complete.click");
     fs::write(&path, &proof).unwrap();
@@ -15889,7 +15882,6 @@ theorem read_application() executes read(const struct State& state) {
     let path = project.directory.join("read.click");
     fs::write(&path, source).unwrap();
     let parsed = read_click_project(&path, source).unwrap();
-    verify_program_prepared_project(&parsed, &import).unwrap();
     let sites =
         project_smart_tactic_source_sites(&parsed, &ProgramInputs::program(&import)).unwrap();
     let first = sites
@@ -15912,6 +15904,7 @@ theorem read_application() executes read(const struct State& state) {
     .unwrap();
     let rewritten = parsed.with_entry_source(expanded.clone());
     verify_program_prepared_project(&rewritten, &import).unwrap();
+    // Session construction cold-verifies this complete program once.
     let (session, _) =
         C0VerificationSession::new_program_prepared_project(&parsed, &import).unwrap();
     let position = project_tactic_source_position(
@@ -16045,7 +16038,7 @@ fn check_converted_wide_call_results(initializer: bool) {
 }}
 "#
         );
-        check_return_call_sidecar(&project, &import, &proof);
+        check_selected_claim_certificate(&project, &import, &proof);
         if source == "int128" && result == "int64" {
             for hostile in [
                 proof.replacen("ensures result == value;", "", 1),
@@ -16827,7 +16820,7 @@ int32 write(int32* data, int32 input) {
         source.to_owned()
     };
     let source = source.as_str();
-    check_return_call_sidecar(&project, &import, source);
+    check_selected_claim_certificate(&project, &import, source);
     let hostile = if writes {
         vec![
             source.replace(" owns data[0..1];", " views data[0..1];"),
@@ -17378,7 +17371,7 @@ uint64 probe(int32* p, uint64 n) {
  ensures p[0] == old(p[0]);
 } by { execute(); simp(); }
 "#;
-    check_arithmetic_sidecar(&project, &import, proof);
+    check_arithmetic_sidecar_with_tools(&project, &import, proof, expand_and_retain);
     if !expand_and_retain {
         return;
     }
@@ -17534,7 +17527,7 @@ uint64 probe(struct View& view, uint64 n) {
  ensures view.data[0] == 19;
 } by { execute(); simp(); }
 "#;
-    check_arithmetic_sidecar(&project, &import, proof);
+    check_arithmetic_sidecar_with_tools(&project, &import, proof, expand_and_retain);
     if !expand_and_retain {
         let missing = proof.replace(" owns view.data[0..1];", " views view.data[0..1];");
         let path = project.directory.join("bad.click");
