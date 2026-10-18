@@ -22,22 +22,36 @@ fn charon_trait_object_functions_are_defined_per_implementation() {
     let prepared = p.prepared().unwrap();
     C0VerificationSession::new_program_prepared(SIDECAR, &prepared)
         .unwrap_or_else(|error| panic!("{error:?}"));
-    for (before, after, expected) in [
+    let square = SIDECAR
+        .find("impl trait_objects::Shape for trait_objects::Square {")
+        .unwrap();
+    let set = "\n    fn set(";
+    let end = square + SIDECAR[square..].find(set).unwrap() + set.len();
+    let square_set = &SIDECAR[square..end];
+    // Retain the full positive and declaration-completeness checks.
+    for (head, before, after, expected) in [
         // An implementation's definition must make its body meet the
         // interface's guarantee.
         (
+            Some(
+                "impl trait_objects::Shape for trait_objects::Circle {\n    function size(self) -> i32 { self.radius }\n    fn area(",
+            ),
             "function size(self) -> i32 { self.radius + self.radius }",
             "function size(self) -> i32 { self.radius }",
             "`<trait_objects::Circle as trait_objects::Shape>::area.interface_ensures_0`",
         ),
         // An implementation that refuses a call the interface allows.
         (
+            Some(
+                "impl trait_objects::Shape for trait_objects::Square {\n    function size(self) -> i32 { self.side }\n    fn area(",
+            ),
             "    function size(self) -> i32 { self.side }\n    fn area(&self, scale: i32) -> i32 {\n    } by { execute(); simp(); }",
             "    function size(self) -> i32 { self.side }\n    fn area(&self, scale: i32) -> i32 {\n        requires 0 <= scale and scale <= 50;\n        requires 0 <= self.side and self.side <= 100;\n    } by { execute(); simp(); }",
             "`<trait_objects::Square as trait_objects::Shape>::area` does not refine",
         ),
         // A caller knows the definition of the struct it passes.
         (
+            Some("fn trait_objects::through_dyn("),
             "    ensures result == 4 + scale;",
             "    ensures result == 3 + scale;",
             "trait_objects::through_dyn.ensures_0",
@@ -45,6 +59,7 @@ fn charon_trait_object_functions_are_defined_per_implementation() {
         // A mutable call may change the object: a caller lending the struct
         // gets fields the new size determines, not the fields it lent.
         (
+            Some("fn trait_objects::reset_square("),
             "fn trait_objects::reset_square(half: i32) -> i32 {\n    requires 0 <= half and half <= 50;\n    ensures result == half + half;",
             "fn trait_objects::reset_square(half: i32) -> i32 {\n    requires 0 <= half and half <= 50;\n    ensures result == 1;",
             "trait_objects::reset_square.ensures_0",
@@ -52,6 +67,7 @@ fn charon_trait_object_functions_are_defined_per_implementation() {
         // A `&mut self` implementation must establish the interface's new
         // state from its own.
         (
+            Some(square_set),
             "        ensures size(self) == half + half;",
             "        ensures size(self) == half;",
             "::set.interface_ensures_0",
@@ -59,6 +75,7 @@ fn charon_trait_object_functions_are_defined_per_implementation() {
         // A default method's body is verified with its object: it knows
         // `area`'s result only through `area`'s interface.
         (
+            Some("fn area_twice(&self, scale: i32)"),
             "        ensures result == size(self) + scale + scale;",
             "        ensures result == size(self) + scale;",
             "trait_objects::Shape::area_twice.ensures_0",
@@ -66,12 +83,14 @@ fn charon_trait_object_functions_are_defined_per_implementation() {
         // A shared call lends the struct: the caller keeps the fields the
         // trait's functions do not read, and only their values.
         (
+            Some("fn trait_objects::tag_after_dyn("),
             "fn trait_objects::tag_after_dyn(scale: i32) -> i32 {\n    requires 0 <= scale and scale <= 100;\n    ensures result == 7;",
             "fn trait_objects::tag_after_dyn(scale: i32) -> i32 {\n    requires 0 <= scale and scale <= 100;\n    ensures result == 8;",
             "trait_objects::tag_after_dyn.ensures_0",
         ),
         // Every implementation defines each of the trait's functions.
         (
+            None,
             "    function size(self) -> i32 { self.side }\n",
             "",
             "defines it for its type",
@@ -79,9 +98,14 @@ fn charon_trait_object_functions_are_defined_per_implementation() {
     ] {
         assert!(SIDECAR.contains(before), "{before}");
         let invalid = SIDECAR.replacen(before, after, 1);
-        let error = C0VerificationSession::new_program_prepared(&invalid, &prepared)
-            .err()
-            .expect("a definition or call the interface does not justify must fail");
+        let error = if let Some(head) = head {
+            verify_rust_proof_after(&invalid, &prepared, head)
+                .expect_err("a definition or call the interface does not justify must fail")
+        } else {
+            C0VerificationSession::new_program_prepared(&invalid, &prepared)
+                .err()
+                .expect("a definition or call the interface does not justify must fail")
+        };
         let rendered = format!("{error:?} {error}");
         let rendered = click::languages::rust::names::display_rust_names(&rendered);
         assert!(rendered.contains(expected), "{rendered}");

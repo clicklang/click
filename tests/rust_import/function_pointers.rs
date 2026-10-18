@@ -46,23 +46,30 @@ fn charon_calls_through_a_function_pointer_meet_its_named_contract() {
     let doubling = "contract fn Doubling(x: i32) -> i32 {\n    requires 0 <= x and x <= 1000;\n    ensures result == x + x;";
     // `relay` forwards `f` to `apply`, which requires the contract of it.
     let relay = "fn function_pointers::relay(f: fn(i32) -> i32, x: i32) -> i32 {\n    requires Doubling(f);\n";
-    for (before, after, expected) in [
+    // Keep the original full positive check. Select complete function
+    // proofs for local failures; declaration/interface boundary cases
+    // retain their original whole-module checks.
+    for (head, before, after, expected) in [
         (
+            Some("fn function_pointers::apply("),
             "    requires Doubling(f);\n",
             "",
             "call through function pointer",
         ),
         (
+            Some("fn function_pointers::relay("),
             relay,
             &relay.replace("    requires Doubling(f);\n", ""),
             "is missing prerequisite (precondition clause 1 of",
         ),
         (
+            Some("fn function_pointers::caller("),
             twice,
             &twice.replace("ensures result == x + x;", "ensures result >= 0;"),
             "does not satisfy named contract `Doubling`",
         ),
         (
+            Some("fn function_pointers::apply("),
             doubling,
             &doubling.replace("x + x;", "x + x + 1;"),
             "unclosed goal",
@@ -70,9 +77,14 @@ fn charon_calls_through_a_function_pointer_meet_its_named_contract() {
     ] {
         let invalid = SIDECAR.replace(before, after);
         assert_ne!(invalid, SIDECAR);
-        let error = C0VerificationSession::new_program_prepared(&invalid, &prepared)
-            .err()
-            .expect("a missing or unmet callback contract must fail");
+        let error = if let Some(head) = head {
+            verify_rust_proof_after(&invalid, &prepared, head)
+                .expect_err("a missing or unmet callback contract must fail")
+        } else {
+            C0VerificationSession::new_program_prepared(&invalid, &prepared)
+                .err()
+                .expect("a missing or unmet callback contract must fail")
+        };
         assert!(format!("{error:?}").contains(expected), "{error:?}");
     }
 }
