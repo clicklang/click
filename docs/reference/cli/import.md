@@ -1223,7 +1223,8 @@ named empty trivial tag types declared in the locked import root:
 writes a record by its C++ path, `Box<int, false>&`, `ns::Rec*` or
 `std::span<int>&`, or by the layout name the importer records,
 `struct Box__int__bool_false`, from ordered builtin/Boolean argument tokens
-and `__tag_Name` for a tag type. Diagnostics still print the layout name.
+and `__tag_Name` for a tag type. Diagnostics print the C++ path,
+`Box<int, false>`, for a layout name.
 Qualified tag names include their namespace components. Clang's canonical USR
 keeps each record, field and method nominally distinct even when layouts match;
 aliases share the canonical instance. Method, constructor and destructor names

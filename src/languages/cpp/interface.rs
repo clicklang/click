@@ -64,6 +64,10 @@ pub(super) fn prepare(
             ));
         }
     }
+    // A diagnostic prints each record by its C++ path.
+    for record in &import.export().records {
+        super::names::register_record_display(&record.name, &record.path.join("::"));
+    }
     let record_spellings = import
         .export()
         .records
