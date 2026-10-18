@@ -1074,9 +1074,11 @@ input-name and per-tactic work equality. The nightly
 `a_functions_tactic_work_does_not_grow_with_earlier_unrelated_functions` checks
 that equality beside 1, 2, 4, and 8 unrelated earlier functions, including
 reversed declaration order. Both use the original eight-tactic reproduction.
-Signed-order automation tries an indexed, checked arithmetic certificate before
-broad atomic premise spelling, keeping the changed identities from exposing
-budget failures through irrelevant recorded-snapshot candidates.
+Before return, signed-order automation selects indexed bounds before broad
+atomic premise spelling. Existing named rules get first choice over that
+compact context, followed by the checked arithmetic certificate. Terminal
+outcomes retain their result-aware equality rewrites and source-anchoring
+routes before that arithmetic fallback.
 
 A directory verifies every sidecar in it: the directory
 itself when it holds sidecars, otherwise each immediate subdirectory that does.

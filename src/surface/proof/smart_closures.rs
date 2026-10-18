@@ -3008,8 +3008,10 @@ impl<'a> Proof<'a> {
         // Population bounds are arithmetic on the authority's count, even
         // when that count shares a carrier with a C field. Try its indexed
         // bounds before searching memory equalities and recorded snapshots.
-        // Signed orders likewise have a selected bound path: try that checked
-        // certificate before spelling an entire connected atomic component.
+        // Before return, signed orders likewise select indexed bounds before
+        // spelling historical aliases. Named rules keep first choice over
+        // those bounds. Terminal outcomes retain their result-aware rewrite
+        // and source-anchoring routes before the arithmetic fallback.
         let population_count_comparison = matches!(
             self.surface_goal(),
             Some(
@@ -3023,14 +3025,15 @@ impl<'a> Proof<'a> {
             )
         );
         let indexed_arithmetic_tried = population_count_comparison
-            || matches!(
-                self.goal(),
-                Some(Proposition::ConditionIs(
-                    ConditionTerm::Bitvector32SignedLessThan(..)
-                        | ConditionTerm::Bitvector32SignedLessEqual(..),
-                    _
-                ))
-            );
+            || (self.focused_outcome_data().is_none()
+                && matches!(
+                    self.goal(),
+                    Some(Proposition::ConditionIs(
+                        ConditionTerm::Bitvector32SignedLessThan(..)
+                            | ConditionTerm::Bitvector32SignedLessEqual(..),
+                        _
+                    ))
+                ));
         if indexed_arithmetic_tried
             && let Some(proof) = crate::instrumentation::measure_operation(
                 "surface",
@@ -3450,8 +3453,9 @@ impl<'a> Proof<'a> {
     /// exit, at a statement frontier, or inside a loop phase, so simp reads a
     /// variable's bounds the same way wherever it runs. A bound can also be
     /// the negation of a branch condition. A goal that is itself an available
-    /// fact is left to `assumption`. Signed orders and population bounds run
-    /// before broad premise spelling; other goals retain the final fallback.
+    /// fact is left to `assumption`. Pre-return signed orders and population
+    /// bounds run before broad premise spelling, preferring named rules on
+    /// the selected premises; other goals retain the final fallback.
     fn try_execution_signed_arithmetic(&self) -> Option<Self> {
         if NamedPremiseClosureScope::active() {
             return None;
@@ -3610,6 +3614,21 @@ impl<'a> Proof<'a> {
             .iter()
             .map(|(fact, _)| fact.clone())
             .collect::<Vec<_>>();
+        // Preserve the existing named-rule expansion when these selected
+        // bounds support it. Searching this compact context avoids spelling
+        // the entire ambient atomic component merely to recover that rule.
+        if !is_pure
+            && let Some(SimpEvidence::Derivation(derivation)) =
+                plan_simp_certificate(goal, &assumptions_from_propositions(&kernels))
+            && let Some(closed) = self.check_typed_atomic_simp_candidate(
+                goal,
+                &derivation,
+                &pairs,
+                matches!(self.context.as_ref(), ProofContext::FixedState(_)),
+            )
+        {
+            return Some(closed);
+        }
         let plan = plan_signed_arithmetic_certificate(goal, &kernels)?;
         let certificate = self.signed_plan_to_surface_certificate(&plan, &pairs, surface_goal)?;
         self.apply_step(ProofStep::ArithmeticCertificate(ArithmeticCertificate {
