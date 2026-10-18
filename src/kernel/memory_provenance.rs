@@ -2588,6 +2588,21 @@ pub(in crate::kernel) fn owned_composition_store_separated_evidence(
     )
 }
 
+#[cfg(test)]
+thread_local! {
+    static COMPOSITION_STORE_ALIAS_QUERIES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+pub(crate) fn count_composition_store_alias_queries<R>(
+    operation: impl FnOnce() -> R,
+) -> (R, usize) {
+    let before = COMPOSITION_STORE_ALIAS_QUERIES.with(std::cell::Cell::get);
+    let result = operation();
+    let after = COMPOSITION_STORE_ALIAS_QUERIES.with(std::cell::Cell::get);
+    (result, after - before)
+}
+
 fn owned_composition_store_separated_evidence_impl(
     write: &Pointer,
     write_bytes: u32,
@@ -2596,15 +2611,19 @@ fn owned_composition_store_separated_evidence_impl(
     assumptions: &PureFactContext,
     indexed_only: bool,
 ) -> Option<MemoryDagHopJustification> {
-    if assumptions.resource_compositions.is_empty()
-        || crate::kernel::reasoning::pointers_proven_equal_for_memory_resolution(
+    let same_pointer = || {
+        #[cfg(test)]
+        COMPOSITION_STORE_ALIAS_QUERIES.with(|count| count.set(count.get() + 1));
+        crate::kernel::reasoning::pointers_proven_equal_for_memory_resolution(
             write,
             pointer,
             assumptions,
         )
-    {
+    };
+    if assumptions.resource_compositions.is_empty() {
         return None;
     }
+    let alias_equal = std::cell::OnceCell::new();
     crate::instrumentation::measure_operation(
         "kernel",
         "general pointer distinctness",
@@ -2631,6 +2650,9 @@ fn owned_composition_store_separated_evidence_impl(
                 };
             compositions.into_iter().find_map(|resources| {
                 crate::instrumentation::record_deterministic_work(1);
+                if !resources.has_multiple_owned_memory_members() {
+                    return None;
+                }
                 let member = |pointer: &Pointer, bases: &[Pointer]| {
                     bases
                         .iter()
@@ -2658,6 +2680,11 @@ fn owned_composition_store_separated_evidence_impl(
                     AccessInRangeEvidence::for_access(write, write_bytes, &left, assumptions)?;
                 let load_membership =
                     AccessInRangeEvidence::for_access(pointer, load_bytes, &right, assumptions)?;
+                // Only a viable pair needs the alias veto. Reuse that one
+                // answer if another composition supplies the same question.
+                if *alias_equal.get_or_init(&same_pointer) {
+                    return None;
+                }
                 if assumptions.memory_ranges_overlap_after_base_equality(&left, &right) {
                     return None;
                 }
