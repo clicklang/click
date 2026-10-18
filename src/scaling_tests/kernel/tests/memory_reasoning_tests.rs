@@ -856,3 +856,68 @@ fn rechecked_kept_frame_checks_selected_equality_without_rebuilding_foreign_inpu
         );
     }
 }
+
+#[test]
+fn one_owned_member_does_not_trigger_store_alias_reasoning() {
+    use crate::kernel::memory_provenance::{
+        count_composition_store_alias_queries, owned_composition_store_separated_evidence,
+    };
+
+    let base = Pointer {
+        block: PointerBlock::ExternalArgument,
+        offset: PointerOffsetTerm::scale_int32(Bitvector32Term::Variable(Variable(99_700)), 4),
+    };
+    let index = Bitvector32Term::Variable(Variable(99_701));
+    let write = base.offset_by_bytes(12);
+    let read = base.offset_by_int32_elements(index.clone());
+    let mut samples = Vec::new();
+    for size in [4, 16, 64] {
+        let resources =
+            ResourceContext::new().unchecked_with_fact(own_memory_fact(base.clone(), 0, 64));
+        let mut context = PureFactContext::new()
+            .assume_proposition(Proposition::CResourceComposition(resources))
+            .assume_condition(
+                ConditionTerm::Bitvector32SignedLessEqual(
+                    Box::new(0.into()),
+                    Box::new(index.clone()),
+                ),
+                true,
+            )
+            .assume_condition(
+                ConditionTerm::Bitvector32SignedLessThan(
+                    Box::new(index.clone()),
+                    Box::new(64.into()),
+                ),
+                true,
+            );
+        for unrelated in 0..size {
+            context = context.assume_condition(
+                ConditionTerm::Bitvector32SignedLessThan(
+                    Box::new(Bitvector32Term::Variable(Variable(100_000 + unrelated))),
+                    Box::new(1000.into()),
+                ),
+                true,
+            );
+        }
+        let ((result, alias_queries), work) =
+            crate::instrumentation::measure_deterministic_work(|| {
+                count_composition_store_alias_queries(|| {
+                    owned_composition_store_separated_evidence(&write, 4, &read, 4, &context)
+                })
+            });
+        assert!(
+            result.is_none(),
+            "one owned member cannot separate its own cells"
+        );
+        assert_eq!(
+            alias_queries, 0,
+            "no distinct owned members can justify separation"
+        );
+        samples.push(work);
+    }
+    assert!(
+        samples.iter().all(|work| *work <= samples[0] + 64),
+        "{samples:?}"
+    );
+    eprintln!("single-member store separation work: {samples:?}");
+}

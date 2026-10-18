@@ -3981,6 +3981,20 @@ impl ResourceContext {
         })
     }
 
+    /// Reads at most two entries from the maintained owned-memory index.
+    pub(in crate::kernel) fn has_multiple_owned_memory_members(&self) -> bool {
+        crate::instrumentation::record_deterministic_work(1);
+        self.storage
+            .index
+            .owned_memory_by_block
+            .values()
+            .flat_map(ResourceEntryIds::iter)
+            .take(2)
+            .inspect(|_| crate::instrumentation::record_deterministic_work(1))
+            .count()
+            == 2
+    }
+
     /// The owned memory members of this composition based in `block`, by the
     /// block index. Charges one work unit per visited member.
     pub(in crate::kernel) fn owned_memory_members_in_block<'a>(
