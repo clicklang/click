@@ -1,6 +1,78 @@
 use super::*;
 
 #[test]
+fn addressed_result_members_bind_the_builtin_and_preserve_explicit_c_names() {
+    let state = CState::new();
+    let snapshots = RecordedSnapshots::new();
+    let predicates = PredicateEnvironment::new(&[]);
+    let functions = ClickFunctionEnvironment::new(&[]);
+    let (mut lowerer, mut context) = fixed_state_elaboration(
+        BTreeMap::new(),
+        BTreeMap::new(),
+        &state,
+        BTreeMap::new(),
+        BTreeMap::new(),
+        None,
+        &snapshots,
+        SpecDefinitions::new(&predicates, &functions),
+        BTreeSet::new(),
+        BTreeMap::new(),
+    );
+    context.contract_result_in_scope = true;
+    let member = |name: &str| {
+        crate::kernel::c_typed_load(
+            CExpression::Subobject {
+                pointer: Box::new(CExpression::PointerOffsetBytes {
+                    pointer: Box::new(CExpression::Variable(name.into())),
+                    bytes: 8,
+                }),
+                width: 4,
+            },
+            CType::Int32,
+        )
+    };
+    for (base, expected, in_scope, operand_name) in [
+        (
+            ContractExpression::CFragment(CExpression::Variable("result".into())),
+            crate::kernel::C_CONTRACT_RESULT_NAME,
+            true,
+            "result",
+        ),
+        (
+            ContractExpression::CBinding("result".into()),
+            "result",
+            true,
+            "result",
+        ),
+        (
+            ContractExpression::CFragment(CExpression::Variable("bound".into())),
+            "bound",
+            false,
+            "bound",
+        ),
+    ] {
+        context.contract_result_in_scope = in_scope;
+        let place = member(operand_name);
+        let expression = ContractExpression::CUnary {
+            operand: Box::new(ContractExpression::Field {
+                base: Box::new(base),
+                field: "value".into(),
+                lowered: place.clone(),
+                offset_bytes: 8,
+            }),
+            lowered: CExpression::AddressOf(Box::new(member("result"))),
+        };
+        let lowered = lowerer
+            .lower_contract_expression_to_spec(&expression, &context)
+            .expect("the selected member address lowers in the result scope");
+        assert_eq!(
+            lowered,
+            SpecExpression::CExpression(CExpression::AddressOf(Box::new(member(expected)))),
+        );
+    }
+}
+
+#[test]
 fn struct_pointer_arithmetic_through_uint64_cast_uses_layout_width() {
     let function = crate::languages::c::syntax::parse_function(
         r#"
