@@ -1,6 +1,41 @@
 use super::*;
 
 #[test]
+fn aggregate_leaf_resources_retain_enclosing_subobject_bounds() {
+    let path = std::path::Path::new("struct_aggregate_resources.md");
+    let fixture = crate::cli::parse_mdtest(
+        path,
+        include_str!("../../../mdtests/struct_aggregate_resources.md"),
+    )
+    .unwrap();
+    let source = fixture.click_source.as_deref().unwrap();
+    let sources = fixture
+        .c_sources
+        .iter()
+        .map(|(name, source)| (name.as_str(), source.as_str()))
+        .collect::<Vec<_>>();
+    verify_c0_sources_functions(source, &sources, ["read_inner".to_string()])
+        .unwrap_or_else(|error| panic!("{}", error.message()));
+    let changed =
+        fixture.c_sources[0]
+            .1
+            .replacen("return packet->inner.count;", "return packet->tail;", 1);
+    let error = verify_c0_sources_functions(
+        source,
+        &[(fixture.c_sources[0].0.as_str(), changed.as_str())],
+        ["read_inner".to_string()],
+    )
+    .expect_err("the enclosing member's bounds do not authorize the following field");
+    assert!(
+        error
+            .message()
+            .contains("access outside the subobject the pointer designates"),
+        "{}",
+        error.message()
+    );
+}
+
+#[test]
 fn retained_caller_expansion_preserves_declared_object_return_evidence() {
     let path = std::path::Path::new("model_pointer_c_returns_keep_declared_object_evidence.md");
     let fixture = crate::cli::parse_mdtest(
