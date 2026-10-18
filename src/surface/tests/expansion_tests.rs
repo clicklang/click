@@ -1,6 +1,22 @@
 use super::*;
 
 #[test]
+fn uint64_measure_induction_expands_and_rechecks_without_narrowing() {
+    let (source, _) = mdtest_sources("mdtests/uint64_measure_induction_counts_a_range_fold.md");
+    let expanded =
+        expand_c0_claim_source_by_label(&source, &[], "full_width_count_is_its_length.ensures_0")
+            .unwrap();
+    verify_click_theorems(&expanded).unwrap();
+    let false_result = expanded.replacen(
+        "ensures full_width_count(n) == to_integer(n)",
+        "ensures full_width_count(n) == to_integer(n) + 1",
+        1,
+    );
+    assert_ne!(false_result, expanded);
+    assert!(verify_click_theorems(&false_result).is_err());
+}
+
+#[test]
 fn scalar_induction_keeps_integer_parameters_and_their_guards() {
     let (source, _) = mdtest_sources("mdtests/scalar_induction_keeps_fixed_integer_parameters.md");
     let expanded = expand_c0_claim_source_by_label(

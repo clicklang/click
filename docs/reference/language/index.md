@@ -1015,7 +1015,7 @@ call as its execution frontier, together with the resources, `old(...)`, and
 `result` that one call needs. See
 [Callback execution theorems](#callback-execution-theorems).
 
-Pure theorems can use explicit strong induction on an `int32` parameter:
+Pure theorems can use explicit strong induction on an `int32` or `uint64` parameter:
 
 <!-- verified-example: mdtests/pure_induction_countdown.md -->
 ```click
@@ -3306,9 +3306,11 @@ depth. This total value semantics is intentionally stricter than C recursion,
 which a `diverges` marker may opt out of; a pure function has no such marker.
 
 General properties of symbolic recursive calls use theorem-level
-`induct(parameter) as hypothesis`. For `int32`, induction is explicit and
-strong: applying the local hypothesis checks a nonnegative strictly smaller
-argument and the theorem's substituted requirements. For a recursive
+`induct(parameter) as hypothesis`. Scalar induction is explicit and strong:
+applying the local hypothesis checks a strictly smaller argument of the
+measure's type and the theorem's substituted requirements. An `int32` measure
+also requires nonnegativity; a `uint64` measure uses unsigned order over its
+complete native range. For a recursive
 algebraic parameter, `induct` takes an exhaustive constructor-arm block and
 makes the same theorem available at each immediate recursive field:
 

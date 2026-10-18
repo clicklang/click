@@ -55,6 +55,44 @@ of every array sum to zero. Under the documented conversion it is true,
 because the length wraps to 0. It shows that the specification cannot be
 widened by changing callers alone: its parameter types must change.
 
+## Migration prerequisites
+
+The selected API is `uint64` lengths and `Integer` checksum sums. Weighted-sum
+coefficients also need mathematical `Integer` arithmetic so that subtracting
+weights does not wrap. Scalar induction now supports a full-width `uint64`
+measure; its range-fold regression is
+`mdtests/uint64_measure_induction_counts_a_range_fold.md`.
+
+Widening the shared specification reaches a further proof-support gap in
+`adler_byte_offset_association`. The signed version normalizes, but even an
+explicit exact mathematical sum does not currently establish the corresponding
+unsigned pointer equality:
+
+```click
+import click::integer;
+
+theorem unsigned_offset_sum(bytes: uint8[], prefix: uint64,
+                            suffix: uint64, total: uint64) {
+ requires to_integer(total) == to_integer(prefix) + to_integer(suffix);
+ ensures (bytes + prefix) + suffix == bytes + total by {
+  normalize() using {
+   to_integer(total) == to_integer(prefix) + to_integer(suffix);
+  };
+ }
+}
+```
+
+This promptly reports that the goal did not normalize to true. The exact
+Integer sum is significant: native wrapping equality alone would not justify
+the address equality. Selected pointer-offset comparison reaches
+`pointer_offsets_proven_equal_for_memory_resolution` in
+`src/kernel/reasoning/memory_resolution.rs`; its unsigned rules do not cover
+this general symbolic sum. This is missing proof support for the migration,
+not a separate claim that `normalize()` violates its documented scope.
+Coordinate that support with the thread owning pointer arithmetic/formation.
+The original Rust chunk-tail proof passed after its separate cursor-restoration
+fix; this prerequisite concerns the widened specification.
+
 ## Intended regression
 
 - Remove the `<= 2147483647u64` preconditions from the adler2 public

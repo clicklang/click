@@ -250,11 +250,14 @@ Bare `apply(ih(m))` is smart because it plans explicit proofs of those fixed
 obligations. Expansion ends in `apply(ih(m)) using { ... }`, the simple form
 that checks exactly the listed obligations without searching.
 
-The measure form's induction variable must be an `int32` theorem parameter. It
+The measure form's induction variable must be an `int32` or `uint64` theorem parameter. It
 quantifies that one variable, so other theorem parameters remain fixed and
 `ih` takes only the replacement measure. This is strong induction, so calls
 such as `ih(n - 2)` are supported when the branch facts prove the argument is
-nonnegative and smaller. The local hypothesis is not a global theorem and is
+nonnegative and smaller. A `uint64` measure is intrinsically nonnegative;
+its hypothesis instead owes the strict unsigned decrease and the substituted
+requirements. The argument keeps the measure's type, including values above
+`INT32_MAX`. The local hypothesis is not a global theorem and is
 not available in C execution proofs.
 
 Fixed mathematical `Integer` parameters and requirements on them retain the
