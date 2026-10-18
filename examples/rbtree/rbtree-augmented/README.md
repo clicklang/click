@@ -374,8 +374,16 @@ leaf. It retains arbitrary focused-node children and an owned ancestor context,
 checks the writable size callback, and restores ownership of the whole root
 tree. Both augmented insertion wrappers verify. The imported
 `rbtree_size_insert_middle_model.click` theorem preserves the exact in-order
-identity sequence. General moved subtrees, nonempty uncles, and the mirrored
-nonempty-middle case remain unfinished.
+identity sequence.
+
+`rbtree_size_insert_context_middle_subtree_rotation.click` generalizes the
+moved black leaf to a nonempty black subtree with arbitrary owned children and
+a symbolic valid cached size. It certifies both the focused and moved subtrees,
+derives the callback's integer bounds from the original root size, and returns
+the repaired whole tree through both augmented wrappers. The independent
+`rbtree_size_insert_middle_subtree_model.click` theorem preserves the full
+in-order identity sequence. The uncle remains empty; nonempty uncles and the
+mirrored nonempty-middle case remain unfinished.
 
 `rbtree_size_recolor.click` supplies shared model operations for root recoloring
 and insertion color flips. Its explicit lemmas preserve cached values and
