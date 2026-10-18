@@ -1,6 +1,30 @@
 use super::*;
 
 #[test]
+fn borrowed_resource_receipts_survive_post_return_folds() {
+    let (source, sources) =
+        mdtest_sources("mdtests/unfold_region_then_write_a_descriptor_of_its_type.md");
+    let sources = sources
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    verify_c0_sources(&source, &sources)
+        .expect("all borrowed resources must survive the checked post-return folds");
+
+    let missing_owner = source.replacen("owns *other;", "", 1);
+    assert_ne!(missing_owner, source);
+    assert!(verify_c0_sources(&missing_owner, &sources).is_err());
+
+    let false_result = source.replacen(
+        "owns *other;",
+        "owns *other;\n    ensures result != result;",
+        1,
+    );
+    assert_ne!(false_result, source);
+    assert!(verify_c0_sources(&false_result, &sources).is_err());
+}
+
+#[test]
 fn uint64_measure_induction_expands_and_rechecks_without_narrowing() {
     let (source, _) = mdtest_sources("mdtests/uint64_measure_induction_counts_a_range_fold.md");
     let expanded =

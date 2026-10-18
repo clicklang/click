@@ -4587,14 +4587,10 @@ pub(super) fn finish_ordered_proof<'a>(
                                         ClosedClaim::defers_checked_resource_transition,
                                     )
                             });
-                        let has_returned_resource_claims =
-                            claims.iter().enumerate().any(|(claim_index, claim)| {
-                                matches!(claim.clause().ensure(), Ensure::Resource(_))
-                                    && closures[claim_index].closed().is_some_and(
-                                        ClosedClaim::contributes_checked_resource_claim_resources,
-                                    )
-                            });
-                        let all_resource_claims_checked = has_returned_resource_claims
+                        let has_resource_claims = claims
+                            .iter()
+                            .any(|claim| matches!(claim.clause().ensure(), Ensure::Resource(_)));
+                        let all_resource_claims_checked = has_resource_claims
                             && claims.iter().enumerate().all(|(claim_index, claim)| {
                                 !matches!(claim.clause().ensure(), Ensure::Resource(_))
                                     || closures[claim_index]
@@ -4808,13 +4804,11 @@ pub(super) fn finish_ordered_proof<'a>(
                             checked_resource_claims_by_path[path_index].push(key.clone());
                         }
                     }
-                    let has_returned_resource_claims =
-                        claims.iter().enumerate().any(|(claim_index, claim)| {
-                            matches!(claim.clause().ensure(), Ensure::Resource(_))
-                                && closures[claim_index].closed().is_some_and(
-                                    ClosedClaim::contributes_checked_resource_claim_resources,
-                                )
-                        });
+                    // Borrowed outputs also have checked receipts, even when no
+                    // `produces` clause contributes a new returned owner.
+                    let has_resource_claims = claims
+                        .iter()
+                        .any(|claim| matches!(claim.clause().ensure(), Ensure::Resource(_)));
                     let deferred_resource_transition =
                         claims.iter().enumerate().any(|(claim_index, claim)| {
                             matches!(claim.clause().ensure(), Ensure::Resource(_))
@@ -4822,7 +4816,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                     .closed()
                                     .is_some_and(ClosedClaim::defers_checked_resource_transition)
                         });
-                    let all_resource_claims_checked = has_returned_resource_claims
+                    let all_resource_claims_checked = has_resource_claims
                         && claims
                             .iter()
                             .enumerate()
