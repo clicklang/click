@@ -11,7 +11,6 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
 
 use super::schema::{
     CppExceptionBehavior, CppExport, CppLibraryAssertion, CppPreprocessorFile, CppProfile,
@@ -20,6 +19,7 @@ use super::schema::{
 use crate::cli::write_file_atomically;
 use crate::languages::c::target::COptimization;
 use crate::languages::compiler_process::{CompilerLimits, run_compiler};
+use crate::languages::inputs::{Leaf, hex_digest};
 use crate::languages::portable_paths::PathLabels;
 
 const CONFIG_SCHEMA: u32 = 6;
@@ -144,7 +144,6 @@ struct LockedPreprocessorFile {
 
 /// The resolved inputs and outputs of one export.
 struct ExportInputs<'a> {
-    config_path: Option<&'a Path>,
     exporter: &'a Path,
     compilation_database: &'a Path,
     working_directory: &'a Path,
@@ -258,6 +257,17 @@ fn export(
     if preprocessor_files_before != preprocessor_files_after {
         return Err("C++ preprocessor input changed during semantic export".into());
     }
+    // The compiler may open a file no configured input names, such as a
+    // header the source includes; none may be an output.
+    crate::languages::inputs::reject_output_collisions(
+        &[
+            ("C++ artifact", &inputs.outputs[0]),
+            ("C++ lock", &inputs.outputs[1]),
+        ],
+        preprocessor_files_after
+            .values()
+            .map(|file| ("preprocessor", Path::new(&file.canonical_path))),
+    )?;
     let exporter_sha256 = hex_digest(&exporter_bytes);
     let compilation_database_sha256 = hex_digest(&compilation_database_before);
     let source_sha256 = hex_digest(&source_before);
@@ -1102,64 +1112,26 @@ fn reject_output_collisions(
     dependencies: &[(String, PathBuf)],
 ) -> Result<(), String> {
     let [artifact, lock] = inputs.outputs;
-    for (output_label, output) in [("artifact", artifact), ("lock", lock)] {
-        for (input_label, input) in [
-            ("config", inputs.config_path),
-            ("source", Some(source)),
-            ("logical source", Some(logical_source)),
-            ("exporter", Some(inputs.exporter)),
-            ("compilation database", Some(inputs.compilation_database)),
-        ] {
-            if input == Some(output.as_path()) {
-                return Err(format!(
-                    "C++ {output_label} output collides with the {input_label} input"
-                ));
-            }
-        }
-        for (_, dependency) in dependencies {
-            if output == dependency {
-                return Err(format!(
-                    "C++ {output_label} output collides with a dependency input"
-                ));
-            }
-        }
-    }
-    if artifact == lock {
-        return Err("C++ artifact and lock outputs collide".into());
-    }
-    Ok(())
+    crate::languages::inputs::reject_output_collisions(
+        &[("C++ artifact", artifact), ("C++ lock", lock)],
+        [
+            ("source", source),
+            ("logical source", logical_source),
+            ("exporter", inputs.exporter),
+            ("compilation database", inputs.compilation_database),
+        ]
+        .into_iter()
+        .chain(
+            dependencies
+                .iter()
+                .map(|(_, path)| ("dependency", path.as_path())),
+        ),
+    )
 }
 
+/// Reads a C++ input or artifact, which must itself be a regular file.
 fn read_stable(path: &Path, max: usize, label: &str) -> Result<Vec<u8>, String> {
-    let before = fs::symlink_metadata(path)
-        .map_err(|error| format!("read {label} `{}`: {error}", path.display()))?;
-    if !before.file_type().is_file() {
-        return Err(format!(
-            "{label} `{}` is not a regular file",
-            path.display()
-        ));
-    }
-    if before.len() > max as u64 {
-        return Err(format!("{label} exceeds its {max}-byte limit"));
-    }
-    let bytes =
-        fs::read(path).map_err(|error| format!("read {label} `{}`: {error}", path.display()))?;
-    if bytes.len() > max {
-        return Err(format!("{label} exceeds its {max}-byte limit"));
-    }
-    let after = fs::symlink_metadata(path)
-        .map_err(|error| format!("re-read {label} `{}`: {error}", path.display()))?;
-    if before.len() != after.len() || before.modified().ok() != after.modified().ok() {
-        return Err(format!(
-            "{label} `{}` changed while being read",
-            path.display()
-        ));
-    }
-    Ok(bytes)
-}
-
-fn hex_digest(bytes: &[u8]) -> String {
-    format!("{:x}", Sha256::digest(bytes))
+    crate::languages::inputs::read_stable(path, max, label, Leaf::Refuse)
 }
 
 fn bounded_error(error: String) -> String {
@@ -1465,7 +1437,6 @@ pub(crate) fn prepare_unit(
                 &config,
                 unit.unit_digest.clone(),
                 &ExportInputs {
-                    config_path: None,
                     exporter: &exporter,
                     compilation_database: &database,
                     working_directory: &working_directory,

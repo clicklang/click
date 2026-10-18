@@ -26,8 +26,8 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use crate::languages::inputs::{Leaf, hex_digest};
 use serde::Deserialize;
-use sha2::{Digest, Sha256};
 
 use crate::languages::PreparedProgram;
 use crate::languages::c::compiler_import::{self, PreparedCImport, UnitConfig, UnitSource};
@@ -170,7 +170,7 @@ impl Project {
     pub fn load(file: &Path) -> Result<Self, String> {
         let file = fs::canonicalize(file)
             .map_err(|error| format!("failed to resolve `{}`: {error}", file.display()))?;
-        let bytes = read_bounded(&file, MAX_PROJECT_FILE_BYTES)?;
+        let bytes = read_bounded(&file, MAX_PROJECT_FILE_BYTES, "project file")?;
         let value: serde_json::Value = serde_json::from_slice(&bytes).map_err(|error| {
             format!("invalid Click project config `{}`: {error}", file.display())
         })?;
@@ -536,7 +536,7 @@ impl Project {
                 self.root.display()
             ));
         }
-        let bytes = read_bounded(&path, MAX_LOCK_BYTES)?;
+        let bytes = read_bounded(&path, MAX_LOCK_BYTES, "project lock")?;
         let lock: serde_json::Value = serde_json::from_slice(&bytes)
             .map_err(|error| format!("parse project lock `{}`: {error}", path.display()))?;
         if lock.get("schema").and_then(serde_json::Value::as_u64) != Some(u64::from(LOCK_SCHEMA)) {
@@ -717,23 +717,8 @@ fn create_parent(path: &Path) -> Result<(), String> {
         .map_err(|error| format!("create directory `{}`: {error}", parent.display()))
 }
 
-fn read_bounded(path: &Path, max: u64) -> Result<Vec<u8>, String> {
-    let metadata = fs::metadata(path)
-        .map_err(|error| format!("failed to read `{}`: {error}", path.display()))?;
-    if !metadata.is_file() || metadata.len() > max {
-        return Err(format!(
-            "`{}` must be a regular file of at most {max} bytes",
-            path.display()
-        ));
-    }
-    fs::read(path).map_err(|error| format!("failed to read `{}`: {error}", path.display()))
-}
-
-fn hex_digest(bytes: &[u8]) -> String {
-    Sha256::digest(bytes)
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect()
+fn read_bounded(path: &Path, max: u64, label: &str) -> Result<Vec<u8>, String> {
+    crate::languages::inputs::read_regular(path, max as usize, label, Leaf::Follow)
 }
 
 #[cfg(test)]
