@@ -3330,3 +3330,34 @@ fn loop_join_reports_the_local_and_both_object_classes() {
     let back = CState::new().with_local("parent", pointer(Some(node)));
     assert!(c_loop_state_components_match_at_back_edge(&head, &back, &assumptions, &[]).is_ok());
 }
+
+#[test]
+fn loop_join_accepts_null_without_restoring_an_object_class() {
+    use crate::kernel::effective_type::{CAccessClass, CStructClass};
+    let node = CAccessClass::Struct(CStructClass::opaque("node"));
+    let head_pointer =
+        CPointerValue::new(Pointer::symbolic(Variable(987_010)), CType::Int32Pointer)
+            .with_object_class(Some(node));
+    let head = CState::new().with_local("parent", CValue::Pointer(head_pointer));
+    let unknown = CPointerValue::new(Pointer::symbolic(Variable(987_011)), CType::Int32Pointer);
+    let null = CPointerValue::new(Pointer::null(), CType::Int32Pointer);
+    let empty = PureFactContext::new();
+    let known_null = empty.clone().assume_condition(
+        ConditionTerm::pointer_equal(unknown.pointer().clone(), Pointer::null()),
+        true,
+    );
+    for (pointer, facts) in [(null, &empty), (unknown.clone(), &known_null)] {
+        let back = CState::new().with_local("parent", CValue::Pointer(pointer));
+        assert!(c_loop_state_components_match_at_back_edge(&head, &back, facts, &[]).is_ok());
+        assert!(
+            matches!(back.locals().get("parent"), Some(CValue::Pointer(p)) if p.object_class().is_none())
+        );
+    }
+    let back = CState::new().with_local("parent", CValue::Pointer(unknown.clone()));
+    assert!(c_loop_state_components_match_at_back_edge(&head, &back, &empty, &[]).is_err());
+    let nonnull = empty.assume_condition(
+        ConditionTerm::pointer_equal(unknown.pointer().clone(), Pointer::null()),
+        false,
+    );
+    assert!(c_loop_state_components_match_at_back_edge(&head, &back, &nonnull, &[]).is_err());
+}

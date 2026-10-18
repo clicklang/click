@@ -164,7 +164,9 @@ allowed cases:
     one.
   - Declared locals and local arrays record their class on their block.
   - Loops keep a pointer local's class across the abstract iteration, and
-    refuse a back edge that changes it.
+    refuse a back edge that changes it unless the returned pointer is proved
+    null. Null designates no object and gains no object class from this join;
+    an unclassified pointer without a null proof is still refused.
   - `int *` and `int **` carried no class, because the frontend spells
     struct pointers with them; step 2b separates them.
   - Globals are not covered yet. Local `int8` and `uint8` arrays, which the
