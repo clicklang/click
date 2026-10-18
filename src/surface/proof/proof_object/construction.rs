@@ -53,7 +53,19 @@ impl<'a> Proof<'a> {
             claim_label,
             0,
             FixedStateFacts::Slice(&[]),
-            |state| OpenBranch::surface_proposition_in(state, goal, surface_goal),
+            |state| {
+                OpenBranch::new(
+                    Obligation::Proposition(PropositionObligation::new(
+                        goal,
+                        PropositionPresentation {
+                            surface: Some(Arc::new(surface_goal)),
+                            generated_surface: true,
+                            ..PropositionPresentation::default()
+                        },
+                    )),
+                    state,
+                )
+            },
             parameter_binding,
             FixedStateFrame::new(
                 entry,
