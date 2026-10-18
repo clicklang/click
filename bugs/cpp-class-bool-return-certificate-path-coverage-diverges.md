@@ -66,6 +66,17 @@ The reproduction formats the certificate immediately after verification on the
 same thread. It does not run another cold verification between producing and
 formatting the certificate, and does not alter the native C++ method or proof.
 
+## Locked-header variant
+
+The same refusal also reproduces in
+`locked_header_records_preserve_declaration_sources_and_verify_offline` when
+its `FeeRateState::IsEmpty` case formats the already verified whole claim.
+The unchanged selected-tactic test passes. Keep the existing
+`header-record/header_record.cpp` and `header-record/state.h` fixtures and
+`is_empty.click` sidecar with its filename adjusted by the test; the class and
+field locations must remain attributed to the locked header. This is the same
+one-surface-path/two-frame-path mismatch, not a separate compiler-import error.
+
 ## Acceptance criteria
 
 Write the complete verified `IsEmpty` claim, then independently cold-check and
