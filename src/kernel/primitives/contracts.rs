@@ -2276,7 +2276,6 @@ impl CMemoryRange {
             end_bound: end,
             element_width,
             kind: RangeIndexKind::Int32,
-            extent_claims: Default::default(),
             formation_coverage: Default::default(),
         }
     }
@@ -2326,7 +2325,6 @@ impl CMemoryRange {
         self.opaque_extent = value.opaque_extent.clone();
         self.carrier_extent_known = value.extent_is_known();
         self.typed_carrier = true;
-        self.extent_claims.0 = value.designations();
         self
     }
 
@@ -2355,7 +2353,6 @@ impl CMemoryRange {
 
     pub(in crate::kernel) fn with_carrier_of(mut self, source: &Self) -> Self {
         self.designation = source.designation.clone();
-        self.extent_claims = source.extent_claims;
         self.formation_coverage = source.formation_coverage.clone();
         self.typed_carrier = source.typed_carrier;
         self.opaque_extent = source.opaque_extent.clone();
@@ -2372,18 +2369,6 @@ impl CMemoryRange {
                 self.opaque_extent.as_deref()
             },
         )
-    }
-
-    /// The opaque extents whose pointers named this range.
-    pub(crate) fn designations(&self) -> [Option<Variable>; 2] {
-        self.extent_claims.0
-    }
-
-    /// The same range, recorded as named through a pointer with these
-    /// designations ([`super::CPointerValue::designations`]).
-    pub(crate) fn with_designations(mut self, designations: [Option<Variable>; 2]) -> Self {
-        self.extent_claims.0 = designations;
-        self
     }
 
     pub fn kind(&self) -> RangeIndexKind {
@@ -2546,7 +2531,6 @@ impl CMemoryRange {
     ) -> Self {
         Self {
             kind: self.kind,
-            extent_claims: self.extent_claims,
             formation_coverage: self.formation_coverage.clone(),
             designation: self.designation.clone(),
             typed_carrier: self.typed_carrier,
