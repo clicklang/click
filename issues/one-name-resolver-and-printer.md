@@ -120,6 +120,19 @@ name a free source variable has, so a goal over a free `k` no longer prints
 as `forall (k: int32) { k == k }`
 (`mdtests/a_printed_binder_does_not_capture_a_free_name.md`).
 
+A declaration cannot take a name the language already reads another way: a
+predicate or function named like a built-in form such as `defined(...)` or
+`old(...)`, whose calls read the form, and a theorem named like a law the
+kernel supplies, whose citations apply the law. Before, both were accepted
+and the built-in won, so claims about the declarations verified falsely
+(`mdtests/a_predicate_cannot_take_a_built_in_form_name.md`,
+`mdtests/a_theorem_cannot_take_a_kernel_law_name.md`). An imported user
+module's declarations bind their bare names as the file's own do: an
+imported theorem shadows a bare library theorem, and a selective library
+import of an imported name is refused
+(`mdtests/an_imported_theorem_shadows_a_bare_library_theorem.md`,
+`mdtests/a_selective_import_cannot_clash_with_an_imported_declaration.md`).
+
 The complete scoped table for parameters, fields, binders, constructors,
 resources, program points and project modules remains open. Proof inventories
 still interpret shared parser tokens; parser-produced AST spans and integration

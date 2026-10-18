@@ -2378,6 +2378,24 @@ impl ConditionTerm {
         }
     }
 
+    /// `(n - k) <= upper` follows from `k <= n <= upper`. The first
+    /// guard is essential: unsigned subtraction otherwise wraps.
+    pub(crate) fn uint64_subtraction_upper_bound_guards(&self) -> Option<Vec<Self>> {
+        let Self::Bitvector64UnsignedLessEqual(difference, upper) = self else {
+            return None;
+        };
+        let Bitvector32Term::UInt64Subtract(length, removed) = difference.as_ref() else {
+            return None;
+        };
+        if length == upper {
+            return None; // The single-guard subtraction rule handles this case.
+        }
+        Some(vec![
+            Self::uint64_less_equal(removed.as_ref().clone(), length.as_ref().clone()),
+            Self::uint64_less_equal(length.as_ref().clone(), upper.as_ref().clone()),
+        ])
+    }
+
     pub(crate) fn uint64_less_than(left: Bitvector32Term, right: Bitvector32Term) -> Self {
         // A value masked by a constant is bounded by that mask, so a tag
         // read `word & m` is below any bound above `m`.

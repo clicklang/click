@@ -2791,6 +2791,55 @@ mod uint64_loop_tests {
         }
     }
 
+    #[test]
+    fn uint64_subtraction_upper_bound_requires_no_wrap_and_the_upper_bound() {
+        let length = Bitvector32Term::Variable(Variable(981_011));
+        let removed = Bitvector32Term::Variable(Variable(981_012));
+        let upper = Bitvector32Term::Variable(Variable(981_013));
+        let difference =
+            Bitvector32Term::UInt64Subtract(Box::new(length.clone()), Box::new(removed.clone()));
+        let condition = ConditionTerm::uint64_less_equal(difference, upper.clone());
+        let goal = Proposition::ConditionIs(condition.clone(), true);
+        let premises = [
+            Proposition::ConditionIs(
+                ConditionTerm::uint64_less_equal(removed, length.clone()),
+                true,
+            ),
+            Proposition::ConditionIs(ConditionTerm::uint64_less_equal(length, upper), true),
+        ];
+        let facts = crate::kernel::proof::ProofFacts::from_ordered(&premises);
+        normalize_using_conditions(&goal, &premises, &facts).unwrap();
+        for selection in [&premises[..1], &premises[1..], &premises[..0]] {
+            assert!(normalize_using_conditions(&goal, selection, &facts).is_err());
+            let context = selection
+                .iter()
+                .cloned()
+                .fold(crate::kernel::PureFactContext::new(), |context, fact| {
+                    context.assume_proposition(fact)
+                });
+            assert_ne!(context.decide(&condition), Some(true));
+        }
+        let context = premises
+            .iter()
+            .cloned()
+            .fold(crate::kernel::PureFactContext::new(), |context, fact| {
+                context.assume_proposition(fact)
+            });
+        assert_eq!(context.decide(&condition), Some(true));
+        // A full-width subtrahend must not be truncated into an apparent zero.
+        let wrapped = Bitvector32Term::uint64_subtract(
+            Bitvector32Term::UInt64Constant(1),
+            Bitvector32Term::UInt64Constant(1u64 << 32),
+        );
+        assert_eq!(
+            context.decide(&ConditionTerm::uint64_less_equal(
+                wrapped,
+                Bitvector32Term::UInt64Constant(1),
+            )),
+            Some(false)
+        );
+    }
+
     #[cfg(test)]
     mod scaling_tests {
         include!("../../scaling_tests/kernel/proof/fact_reasoning/uint64_loop_tests.rs");

@@ -247,8 +247,8 @@ none of that.
 Status: implemented. Decisions E1-E3 were approved 2026-10-16. Phase B supplied
 opaque complete-pointer identities uniformly for parameters, entry loads,
 modular results, model payloads and havocked values. Phase C uses those identities
-for formation and selection checks; it does not activate the earlier
-`SubobjectExtent::opaque` prototype or reserve another set of producer variables.
+for formation and selection checks and reserves no separate producer variables;
+the earlier unused `SubobjectExtent::opaque` prototype has been removed.
 
 ### What is checked
 

@@ -53,6 +53,7 @@ pub(in crate::surface) fn validate_click_definitions(file: &ClickFile) -> Result
             definition.name(),
             definition.type_parameters(),
         )?;
+        refuse_builtin_call_name("predicate", definition.name())?;
         if predicates
             .insert(definition.name().to_string(), definition.parameters().len())
             .is_some()
@@ -147,6 +148,7 @@ pub(in crate::surface) fn validate_click_definitions(file: &ClickFile) -> Result
                 definition.name()
             )));
         }
+        refuse_builtin_call_name("function", definition.name())?;
         if click_functions
             .insert(definition.name().to_string(), definition.parameters().len())
             .is_some()
@@ -249,6 +251,15 @@ pub(in crate::surface) fn validate_click_definitions(file: &ClickFile) -> Result
         if resources.contains_key(definition.name()) {
             return Err(ClickError::new(format!(
                 "`{}` is defined as both a resource and a theorem",
+                definition.name()
+            )));
+        }
+        if matches!(
+            definition.name(),
+            "integer_range_fold_empty" | "integer_range_fold_append"
+        ) {
+            return Err(ClickError::new(format!(
+                "`{}` names a law the kernel supplies, and a citation of it applies that law; rename the theorem",
                 definition.name()
             )));
         }
@@ -3519,4 +3530,31 @@ mod resource_function_composition_tests {
             assert!(effects.active.is_empty());
         }
     }
+}
+
+/// The names the parser reads as a built-in form when applied, `defined(x)`
+/// or `old(e)`. A predicate or function of one could never be called: the
+/// form would be read in its place.
+const BUILTIN_CALL_FORMS: &[&str] = &[
+    "address",
+    "aligned",
+    "at",
+    "byte_offset",
+    "contains",
+    "defined",
+    "memory",
+    "object",
+    "old",
+    "separate",
+    "sizeof",
+    "viewable",
+];
+
+fn refuse_builtin_call_name(kind: &str, name: &str) -> Result<(), ClickError> {
+    if BUILTIN_CALL_FORMS.contains(&name) {
+        return Err(ClickError::new(format!(
+            "`{name}(...)` is a built-in form, so a {kind} named `{name}` could never be called; rename it"
+        )));
+    }
+    Ok(())
 }

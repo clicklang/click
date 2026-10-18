@@ -3928,59 +3928,6 @@ impl PureFactContext {
             })
     }
 
-    /// Whether a coverage fact places the `byte_width` bytes at `pointer`
-    /// inside the opaque `extent` (`design/pointer-subobject-extents.md`,
-    /// Phase C). Zero bytes asks for a position, the one-past end included.
-    /// Only the extent's own coverage facts are consulted, through its
-    /// pointer class.
-    pub(in crate::kernel) fn opaque_extent_covers(
-        &self,
-        extent: &crate::kernel::SubobjectExtent,
-        pointer: &Pointer,
-        byte_width: u32,
-    ) -> bool {
-        self.equality_graph
-            .subobject_coverage_facts(&extent.start)
-            .iter()
-            .filter_map(crate::kernel::SubobjectExtent::covered_range)
-            .any(|(from, count, element_width)| {
-                self.pointer_access_in_range(
-                    pointer,
-                    byte_width,
-                    &from,
-                    &Bitvector32Term::Constant(0),
-                    &count,
-                    element_width,
-                )
-            })
-    }
-
-    /// Whether one coverage fact of the opaque `extent` holds both the
-    /// positions `from` and `to`, and so every byte between them.
-    pub(in crate::kernel) fn opaque_extent_covers_span(
-        &self,
-        extent: &crate::kernel::SubobjectExtent,
-        from: &Pointer,
-        to: &Pointer,
-    ) -> bool {
-        self.equality_graph
-            .subobject_coverage_facts(&extent.start)
-            .iter()
-            .filter_map(crate::kernel::SubobjectExtent::covered_range)
-            .any(|(base, count, element_width)| {
-                [from, to].into_iter().all(|position| {
-                    self.pointer_access_in_range(
-                        position,
-                        0,
-                        &base,
-                        &Bitvector32Term::Constant(0),
-                        &count,
-                        element_width,
-                    )
-                })
-            })
-    }
-
     pub(in crate::kernel) fn pointer_access_in_range(
         &self,
         pointer: &Pointer,
