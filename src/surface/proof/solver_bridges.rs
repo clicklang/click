@@ -40,6 +40,9 @@ const CONSTRUCTOR_EQUATIONS: usize = 16;
 /// many leaves of one definition's conditional tree it splits down to.
 const DEFINITION_FACTS: usize = 16;
 const DEFINITION_LEAVES: usize = 16;
+/// How many applications at a definition's ends `auto` follows into their
+/// own definitions on the way to one end.
+const DEFINITION_UNFOLDS: usize = 4;
 
 /// The machine type an order fact compares, with the names its bridges use.
 #[derive(Clone, Copy, Eq, PartialEq)]
@@ -945,11 +948,7 @@ impl<'a> Proof<'a> {
         else {
             return Ok(None);
         };
-        let functions = match self.context.as_ref() {
-            ProofContext::Pure(context) => context.spec_definitions.functions,
-            ProofContext::FixedState(context) => context.spec_definitions.functions,
-            ProofContext::Execution(context) => context.spec_definitions.functions,
-        };
+        let functions = self.spec_functions();
         // Each fact as written, and the constructor each connected equation
         // names a value as, with that equation oriented `C(...) == value`.
         let mut spelled = Vec::new();
@@ -1003,7 +1002,11 @@ impl<'a> Proof<'a> {
             }
             spelled.push(fact);
         }
-        let goal_text = crate::surface::printing::source_click_proposition(surface_goal);
+        let goal_forms = DefinitionGoal {
+            text: crate::surface::printing::source_click_proposition(surface_goal),
+            surface: surface_goal,
+            kernel: goal,
+        };
         let mut tried = 0;
         for fact in &spelled {
             check_verification_deadline()?;
@@ -1021,16 +1024,15 @@ impl<'a> Proof<'a> {
                 _ => continue,
             };
             let (ContractExpression::Call { name, arguments }, Some(value)) =
-                (call, integer_literal_value(value_side))
+                (call, definition_end_value(value_side))
             else {
                 continue;
             };
+            let truth = crate::surface::bool_literal_value(value_side).is_some();
             let Some(definition) = functions.get(name) else {
                 continue;
             };
-            if !definition.type_parameters().is_empty()
-                || definition.parameters().len() != arguments.len()
-            {
+            if definition.parameters().len() != arguments.len() {
                 continue;
             }
             if tried == DEFINITION_FACTS {
@@ -1090,10 +1092,11 @@ impl<'a> Proof<'a> {
                 let Some(plan) = self.definition_condition_plan(
                     definition.body(),
                     &environment,
-                    &goal_text,
+                    &goal_forms,
                     value,
                     &mut leaves,
                     &mut meets_goal,
+                    &[],
                 ) else {
                     continue;
                 };
@@ -1114,12 +1117,22 @@ impl<'a> Proof<'a> {
                     &arguments,
                     fact,
                     call_left,
+                    truth,
                 )? {
                     return Ok(Some(closed));
                 }
             }
         }
         Ok(None)
+    }
+
+    /// The specification functions in scope for this proof.
+    fn spec_functions(&self) -> &'a ClickFunctionEnvironment {
+        match self.context.as_ref() {
+            ProofContext::Pure(context) => context.spec_definitions.functions,
+            ProofContext::FixedState(context) => context.spec_definitions.functions,
+            ProofContext::Execution(context) => context.spec_definitions.functions,
+        }
     }
 
     /// Closes the goal from one fact `f(arguments) == value` along `plan`,
@@ -1132,6 +1145,7 @@ impl<'a> Proof<'a> {
         arguments: &[ContractExpression],
         fact: ClickProposition,
         call_left: bool,
+        truth: bool,
     ) -> Result<Option<Self>, ClickError> {
         let ClickProposition::Comparison { left, right, .. } = &fact else {
             return Ok(None);
@@ -1142,18 +1156,24 @@ impl<'a> Proof<'a> {
                 name: name.to_string(),
                 arguments: arguments.to_vec(),
             },
-            differs: ClickProposition::Comparison {
-                left: if call_left {
-                    call.clone()
-                } else {
-                    left.clone()
-                },
-                operator: ComparisonOperator::NotEqual,
-                right: if call_left {
-                    right.clone()
-                } else {
-                    call.clone()
-                },
+            // A `bool` fact is refuted by its negation, which lowers to the
+            // exact opposite polarity `contradiction` reads.
+            differs: if truth {
+                ClickProposition::Not(Box::new(fact.clone()))
+            } else {
+                ClickProposition::Comparison {
+                    left: if call_left {
+                        call.clone()
+                    } else {
+                        left.clone()
+                    },
+                    operator: ComparisonOperator::NotEqual,
+                    right: if call_left {
+                        right.clone()
+                    } else {
+                        call.clone()
+                    },
+                }
             },
             fact: fact.clone(),
             negated_goal: ClickProposition::Not(Box::new(surface_goal.clone())),
@@ -1183,17 +1203,22 @@ impl<'a> Proof<'a> {
 
     /// The conditional tree of a definition body under `environment`, cut
     /// at the goal's own condition, whose `else` arm alone is followed. A
-    /// `match` must meet a constructor; every end must be an integer
-    /// constant other than `value`. `None` when any of that fails or the
-    /// tree has more than `DEFINITION_LEAVES` ends.
+    /// `match` must meet a constructor; an end that applies a defined
+    /// function is followed into that definition, at most
+    /// `DEFINITION_UNFOLDS` deep, and each end that remains must be an
+    /// integer or `bool` constant other than `value`. `unfolds` are the
+    /// applications already followed to reach `body`. `None` when any of
+    /// that fails or the tree has more than `DEFINITION_LEAVES` ends.
+    #[allow(clippy::too_many_arguments)]
     fn definition_condition_plan(
         &self,
         body: &ContractExpression,
         environment: &BTreeMap<String, ContractExpression>,
-        goal: &str,
+        goal: &DefinitionGoal<'_>,
         value: i128,
         leaves: &mut usize,
         meets_goal: &mut bool,
+        unfolds: &[ClickFunctionApplication],
     ) -> Option<DefinitionPlan> {
         match body {
             ContractExpression::If {
@@ -1202,9 +1227,16 @@ impl<'a> Proof<'a> {
                 else_branch,
             } => {
                 let condition = substitute_click_proposition(condition, environment).ok()?;
-                // Compared as written, so planning lowers nothing; the
-                // checked steps decide whether the condition is the goal.
-                if crate::surface::printing::source_click_proposition(&condition) == goal {
+                // Compared as written first; a condition spelled otherwise,
+                // as `v == x` against a postcondition's `result == x`, is
+                // lowered only when its shape is the goal's. The checked
+                // steps decide whether the condition is the goal.
+                if crate::surface::printing::source_click_proposition(&condition) == goal.text
+                    || (same_shape(&condition, goal.surface)
+                        && self
+                            .lower_surface_proposition(&condition, "`auto` definition condition")
+                            .is_ok_and(|lowered| lowered == *goal.kernel))
+                {
                     *meets_goal = true;
                     return self.definition_condition_plan(
                         else_branch,
@@ -1213,6 +1245,7 @@ impl<'a> Proof<'a> {
                         value,
                         leaves,
                         meets_goal,
+                        unfolds,
                     );
                 }
                 let then_plan = self.definition_condition_plan(
@@ -1222,6 +1255,7 @@ impl<'a> Proof<'a> {
                     value,
                     leaves,
                     meets_goal,
+                    unfolds,
                 )?;
                 let else_plan = self.definition_condition_plan(
                     else_branch,
@@ -1230,6 +1264,7 @@ impl<'a> Proof<'a> {
                     value,
                     leaves,
                     meets_goal,
+                    unfolds,
                 )?;
                 Some(DefinitionPlan::Split {
                     condition,
@@ -1257,13 +1292,46 @@ impl<'a> Proof<'a> {
                     value,
                     leaves,
                     meets_goal,
+                    unfolds,
+                )
+            }
+            ContractExpression::Call { name, arguments } if unfolds.len() < DEFINITION_UNFOLDS => {
+                let definition = self.spec_functions().get(name)?;
+                if definition.parameters().len() != arguments.len() {
+                    return None;
+                }
+                let arguments = arguments
+                    .iter()
+                    .map(|argument| substitute_contract_expression(argument, environment).ok())
+                    .collect::<Option<Vec<_>>>()?;
+                let inner = definition
+                    .parameters()
+                    .iter()
+                    .zip(&arguments)
+                    .map(|(parameter, argument)| (parameter.name().to_string(), argument.clone()))
+                    .collect::<BTreeMap<_, _>>();
+                let mut unfolds = unfolds.to_vec();
+                unfolds.push(ClickFunctionApplication {
+                    name: name.clone(),
+                    arguments,
+                });
+                self.definition_condition_plan(
+                    definition.body(),
+                    &inner,
+                    goal,
+                    value,
+                    leaves,
+                    meets_goal,
+                    &unfolds,
                 )
             }
             end => {
                 *leaves += 1;
                 (*leaves <= DEFINITION_LEAVES
-                    && integer_literal_value(end).is_some_and(|end| end != value))
-                .then_some(DefinitionPlan::End)
+                    && definition_end_value(end).is_some_and(|end| end != value))
+                .then(|| DefinitionPlan::End {
+                    unfolds: unfolds.to_vec(),
+                })
             }
         }
     }
@@ -1278,17 +1346,14 @@ impl<'a> Proof<'a> {
     ) -> Result<Option<Self>, ClickError> {
         check_verification_deadline()?;
         match plan {
-            DefinitionPlan::End => {
+            DefinitionPlan::End { unfolds } => {
                 let mut using = taken.to_vec();
                 using.push(refutation.negated_goal.clone());
+                let mut steps = vec![ProofStep::UnfoldFunction(refutation.application.clone())];
+                steps.extend(unfolds.iter().cloned().map(ProofStep::UnfoldFunction));
+                steps.push(ProofStep::NormalizeUsing(using));
                 let refuted = self
-                    .apply_step(have(
-                        refutation.differs.clone(),
-                        vec![
-                            ProofStep::UnfoldFunction(refutation.application.clone()),
-                            ProofStep::NormalizeUsing(using),
-                        ],
-                    ))
+                    .apply_step(have(refutation.differs.clone(), steps))
                     .and_then(|next| {
                         next.apply_step(ProofStep::Contradiction(refutation.fact.clone()))
                     });
@@ -1767,16 +1832,49 @@ enum DefinitionPlan {
         then_plan: Box<DefinitionPlan>,
         else_plan: Box<DefinitionPlan>,
     },
-    End,
+    /// An end, reached through `unfolds`: the applications of the ends
+    /// followed into their definitions, each unfolded after the fact's own.
+    End {
+        unfolds: Vec<ClickFunctionApplication>,
+    },
 }
 
 /// What each end of a [`DefinitionPlan`] refutes: the fact `f(args) == k`,
 /// by `f(args) != k` read from the definition with the goal false.
+/// The goal a definition's conditions are compared with: as written, and
+/// as lowered here.
+struct DefinitionGoal<'g> {
+    text: String,
+    surface: &'g ClickProposition,
+    kernel: &'g Proposition,
+}
+
+/// Whether two propositions are comparisons with the same operator, or
+/// otherwise of the same kind: a lowered comparison is tried only then.
+fn same_shape(left: &ClickProposition, right: &ClickProposition) -> bool {
+    match (left, right) {
+        (
+            ClickProposition::Comparison { operator: left, .. },
+            ClickProposition::Comparison {
+                operator: right, ..
+            },
+        ) => left == right,
+        _ => std::mem::discriminant(left) == std::mem::discriminant(right),
+    }
+}
+
 struct DefinitionRefutation {
     application: ClickFunctionApplication,
     differs: ClickProposition,
     fact: ClickProposition,
     negated_goal: ClickProposition,
+}
+
+/// An integer constant, or a `bool` one as `1` or `0`: a definition's end
+/// and the value a fact gives its application.
+fn definition_end_value(expression: &ContractExpression) -> Option<i128> {
+    integer_literal_value(expression)
+        .or_else(|| crate::surface::bool_literal_value(expression).map(i128::from))
 }
 
 fn integer_literal_value(expression: &ContractExpression) -> Option<i128> {
