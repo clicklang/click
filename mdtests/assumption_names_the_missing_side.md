@@ -14,5 +14,5 @@ theorem assumption_missing_side(x: int32) {
 ```
 
 ```expect
-fail: `assumption` closes a conjunction when every side is an available fact and a disjunction when one side is; `x <= 10` is not available
+fail: missing exact fact: x <= 10
 ```

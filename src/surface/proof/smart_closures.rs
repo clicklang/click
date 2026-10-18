@@ -3008,6 +3008,8 @@ impl<'a> Proof<'a> {
         // Population bounds are arithmetic on the authority's count, even
         // when that count shares a carrier with a C field. Try its indexed
         // bounds before searching memory equalities and recorded snapshots.
+        // Signed orders likewise have a selected bound path: try that checked
+        // certificate before spelling an entire connected atomic component.
         let population_count_comparison = matches!(
             self.surface_goal(),
             Some(
@@ -3020,7 +3022,16 @@ impl<'a> Proof<'a> {
                 }
             )
         );
-        if population_count_comparison
+        let indexed_arithmetic_tried = population_count_comparison
+            || matches!(
+                self.goal(),
+                Some(Proposition::ConditionIs(
+                    ConditionTerm::Bitvector32SignedLessThan(..)
+                        | ConditionTerm::Bitvector32SignedLessEqual(..),
+                    _
+                ))
+            );
+        if indexed_arithmetic_tried
             && let Some(proof) = crate::instrumentation::measure_operation(
                 "surface",
                 "simp closure",
@@ -3409,7 +3420,7 @@ impl<'a> Proof<'a> {
         {
             return Ok(Some(proof));
         }
-        if !population_count_comparison
+        if !indexed_arithmetic_tried
             && let Some(arithmetic) = crate::instrumentation::measure_operation(
                 "surface",
                 "simp closure",
@@ -3439,8 +3450,8 @@ impl<'a> Proof<'a> {
     /// exit, at a statement frontier, or inside a loop phase, so simp reads a
     /// variable's bounds the same way wherever it runs. A bound can also be
     /// the negation of a branch condition. A goal that is itself an available
-    /// fact is left to `assumption`. Runs last, after every route whose
-    /// selected steps it would otherwise hide in expansion.
+    /// fact is left to `assumption`. Signed orders and population bounds run
+    /// before broad premise spelling; other goals retain the final fallback.
     fn try_execution_signed_arithmetic(&self) -> Option<Self> {
         if NamedPremiseClosureScope::active() {
             return None;
