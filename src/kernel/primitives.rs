@@ -6557,6 +6557,12 @@ pub struct CLocalEnvironment {
     /// holds, kept with `bindings`: naming a value looks up the objects that
     /// may hold it instead of comparing it with every binding.
     pub(super) held_terms: crate::persistent::PersistentMap<(u64, String), ()>,
+    /// Pointer-valued objects by their held pointer's block, then name.
+    /// Source synthesis visits only possible bases of the selected pointer.
+    pub(super) pointer_objects_by_block: crate::persistent::PersistentMap<
+        PointerBlock,
+        crate::persistent::PersistentMap<String, ()>,
+    >,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
