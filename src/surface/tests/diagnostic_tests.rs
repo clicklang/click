@@ -2284,9 +2284,9 @@ fn wide_loop_invariant_bundle_expands_without_dropping_members() {
     let members = (crate::surface::parser::STRUCTURAL_NESTING_LIMIT + 1).max(25);
     let (source, proof) = wide_loop_invariant_fixture(members);
     let sources = [("bundle.c", source.as_str())];
-    verify_c0_sources(&proof, &sources).unwrap();
+    let verified_for_label = verify_c0_sources(&proof, &sources).unwrap();
     let expanded =
-        crate::surface::expand_c0_claim_source_by_label(&proof, &sources, "run.contract").unwrap();
+        expand_checked_function_claim(&proof, &verified_for_label, "run.contract").unwrap();
     verify_c0_sources(&expanded, &sources).unwrap();
     let last = format!("invariant total <= {};", 1000 + members - 1);
     let invalid = expanded.replacen(&last, "invariant total <= -1;", 1);

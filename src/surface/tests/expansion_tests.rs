@@ -128,9 +128,9 @@ fn shifted_pointer_equality_rewrites_expand_and_recheck() {
             execute(); simp();
         }
     "#;
-    verify_c0_sources(source, &sources).unwrap();
+    let verified_for_expansion = verify_c0_sources(source, &sources).unwrap();
     let expanded =
-        expand_c0_claim_source(source, &sources, "same_block", CProofClaim::Grouped).unwrap();
+        expand_checked_grouped_claim(source, &verified_for_expansion, "same_block").unwrap();
     verify_c0_sources(&expanded, &sources).unwrap();
     let at = expansion::position_at_offset(source, source.find("have cursor == base;").unwrap());
     let selected = expand_c0_tactic_source_at(source, &sources, at.line, at.column).unwrap();
@@ -156,17 +156,18 @@ fn static_return_refold_before_named_resource_rechecks_in_all_proof_modes() {
         .iter()
         .map(|(name, text)| (name.as_str(), text.as_str()))
         .collect::<Vec<_>>();
-    verify_c0_sources(&source, &sources).unwrap();
+    let (session, verified_for_expansion) = C0VerificationSession::new(&source, &sources).unwrap();
     let expanded =
-        expand_c0_claim_source(&source, &sources, "inspect", CProofClaim::Grouped).unwrap();
-    verify_c0_sources(&expanded, &sources).unwrap();
+        expand_checked_grouped_claim(&source, &verified_for_expansion, "inspect").unwrap();
     let position =
         expansion::position_at_offset(&expanded, expanded.find("ensures tag.value").unwrap());
-    let (session, _) = C0VerificationSession::new(&source, &sources).unwrap();
+
     session
         .verify_at(&expanded, position.line, position.column)
         .unwrap();
     drop(session);
+    verify_c0_sources(&expanded, &sources).unwrap();
+
     let false_value = source.replace("ensures tag.value == 1;", "ensures tag.value == 2;");
     assert!(verify_c0_sources(&false_value, &sources).is_err());
     let unowned = source.replace("owns cell(p);", "views cell(p);");
@@ -185,17 +186,19 @@ fn call_produced_instances_unfold_after_return_in_all_proof_modes() {
             .iter()
             .map(|(name, text)| (name.as_str(), text.as_str()))
             .collect::<Vec<_>>();
-        verify_c0_sources(&source, &sources).unwrap();
+        let (session, verified_for_expansion) =
+            C0VerificationSession::new(&source, &sources).unwrap();
         let expanded =
-            expand_c0_claim_source(&source, &sources, "pick", CProofClaim::Grouped).unwrap();
-        verify_expanded_function_source(&source, &expanded, &sources, "pick").unwrap();
+            expand_checked_grouped_claim(&source, &verified_for_expansion, "pick").unwrap();
         let position =
             expansion::position_at_offset(&expanded, expanded.find("ensures o.model").unwrap());
-        let (session, _) = C0VerificationSession::new(&source, &sources).unwrap();
+
         session
             .verify_at(&expanded, position.line, position.column)
             .unwrap();
         drop(session);
+        verify_expanded_function_source(&source, &expanded, &sources, "pick").unwrap();
+
         let false_frame = source.replace(
             "ensures o.model == 0;",
             "ensures o.model == 0; ensures r->top == old(r->top);",
@@ -888,15 +891,11 @@ fn assert_quantified_range_call_requirement_expands_and_deletion_rejects(fixture
         .iter()
         .map(|(name, source)| (name.as_str(), source.as_str()))
         .collect::<Vec<_>>();
-    verify_c0_sources(click_source, &c_sources)
+    let verified_for_expansion = verify_c0_sources(click_source, &c_sources)
         .expect("quantified-range call requirement should verify");
-    let expanded = expand_c0_claim_source(
-        click_source,
-        &c_sources,
-        "range_probe",
-        CProofClaim::Grouped,
-    )
-    .expect("quantified-range call requirement should expand");
+    let expanded =
+        expand_checked_grouped_claim(click_source, &verified_for_expansion, "range_probe")
+            .expect("quantified-range call requirement should expand");
     assert!(
         expanded.contains("step() by {") || expanded.contains("step() {"),
         "expanded proof should prove the quantified-range requirement on its step: {expanded}"
@@ -952,8 +951,9 @@ fn nested_null_check_chain_expands_and_reverifies() {
         .iter()
         .map(|(name, source)| (name.as_str(), source.as_str()))
         .collect::<Vec<_>>();
-    verify_c0_sources(click_source, &c_sources).expect("the smart proof verifies");
-    let expanded = expand_c0_claim_source(click_source, &c_sources, "f", CProofClaim::Grouped)
+    let verified_for_expansion =
+        verify_c0_sources(click_source, &c_sources).expect("the smart proof verifies");
+    let expanded = expand_checked_grouped_claim(click_source, &verified_for_expansion, "f")
         .unwrap_or_else(|error| panic!("the null-check chain should expand: {}", error.message()));
     assert_eq!(expanded.matches("\n    if ").count(), 1, "{expanded}");
     assert_eq!(expanded.matches(" if at(").count(), 6, "{expanded}");
@@ -975,16 +975,16 @@ fn descriptor_backing_range_loop_survives_all_proof_modes() {
         .iter()
         .map(|(name, text)| (name.as_str(), text.as_str()))
         .collect::<Vec<_>>();
-    verify_c0_sources(&source, &sources).unwrap();
-    let expanded =
-        expand_c0_claim_source(&source, &sources, "probe", CProofClaim::Grouped).unwrap();
-    verify_c0_sources(&expanded, &sources).unwrap();
+    let (session, verified_for_expansion) = C0VerificationSession::new(&source, &sources).unwrap();
+    let expanded = expand_checked_grouped_claim(&source, &verified_for_expansion, "probe").unwrap();
     let position =
         expansion::position_at_offset(&expanded, expanded.find("owns cells(h->data, n);").unwrap());
-    let (session, _) = C0VerificationSession::new(&source, &sources).unwrap();
+
     session
         .verify_at(&expanded, position.line, position.column)
         .unwrap();
+    drop(session);
+    verify_c0_sources(&expanded, &sources).unwrap();
 }
 
 fn mdtest_sources(relative: &str) -> (String, Vec<(String, String)>) {
@@ -1011,10 +1011,10 @@ fn proof_cases_after_c_branch_expand_and_reverify() {
         .iter()
         .map(|(name, source)| (name.as_str(), source.as_str()))
         .collect::<Vec<_>>();
-    verify_c0_sources(&click_source, &c_sources).expect("the smart proof verifies");
-    let expanded =
-        expand_c0_claim_source(&click_source, &c_sources, "use_pick", CProofClaim::Grouped)
-            .unwrap_or_else(|error| panic!("the caller proof should expand: {}", error.message()));
+    let verified_for_expansion =
+        verify_c0_sources(&click_source, &c_sources).expect("the smart proof verifies");
+    let expanded = expand_checked_grouped_claim(&click_source, &verified_for_expansion, "use_pick")
+        .unwrap_or_else(|error| panic!("the caller proof should expand: {}", error.message()));
     assert!(
         expanded.contains(" if at(statement(2).entry, copied)"),
         "{expanded}"
@@ -1062,10 +1062,10 @@ fn guarded_quantified_postcondition_expands_and_reverifies() {
             .iter()
             .map(|(name, source)| (name.as_str(), source.as_str()))
             .collect::<Vec<_>>();
-        verify_c0_sources(&click_source, &c_sources)
+        let verified_for_expansion = verify_c0_sources(&click_source, &c_sources)
             .unwrap_or_else(|error| panic!("`{relative}` should verify: {}", error.message()));
         let expanded =
-            expand_c0_claim_source(&click_source, &c_sources, function, CProofClaim::Grouped)
+            expand_checked_grouped_claim(&click_source, &verified_for_expansion, function)
                 .unwrap_or_else(|error| panic!("`{relative}` should expand: {}", error.message()));
         let claim = &expanded[expanded
             .find(&format!("int {function}("))
@@ -1271,9 +1271,9 @@ fn branch_continuation_match_expands_and_reverifies() {
             .iter()
             .map(|(name, source)| (name.as_str(), source.as_str()))
             .collect::<Vec<_>>();
-        verify_c0_sources(&click_source, &c_sources)
+        let verified_for_expansion = verify_c0_sources(&click_source, &c_sources)
             .unwrap_or_else(|error| panic!("`{relative}` should verify: {}", error.message()));
-        let expanded = expand_c0_claim_source(&click_source, &c_sources, "f", CProofClaim::Grouped)
+        let expanded = expand_checked_grouped_claim(&click_source, &verified_for_expansion, "f")
             .unwrap_or_else(|error| panic!("`{relative}` should expand: {}", error.message()));
         let claim = &expanded[expanded.find("int32 f(").expect("claim proof")..];
         assert!(!claim.contains("execute()"), "{expanded}");
@@ -1652,11 +1652,14 @@ fn expansion_reverifies_terminal_cases_past_the_old_nesting_bound() {
         .iter()
         .map(|(name, source)| (name.as_str(), source.as_str()))
         .collect::<Vec<_>>();
-    verify_c0_sources(&click_source, &c_sources).expect("both smart proofs verify");
-    for (name, count) in [("eleven", 11), ("twelve", 12)] {
-        let expanded =
-            expand_c0_claim_source(&click_source, &c_sources, name, CProofClaim::Grouped)
-                .unwrap_or_else(|error| panic!("{name} should expand: {}", error.message()));
+    let verified_for_expansion =
+        verify_c0_sources(&click_source, &c_sources).expect("both smart proofs verify");
+    let expansions = [("eleven", 11), ("twelve", 12)].map(|(name, count)| {
+        let expanded = expand_checked_grouped_claim(&click_source, &verified_for_expansion, name)
+            .unwrap_or_else(|error| panic!("{name} should expand: {}", error.message()));
+        (name, count, expanded)
+    });
+    for (name, count, expanded) in expansions {
         assert_eq!(expanded.matches(" if at(").count(), count, "{expanded}");
         verify_c0_sources(&expanded, &c_sources)
             .unwrap_or_else(|error| panic!("{name} rewrite should verify: {}", error.message()));
@@ -1680,9 +1683,9 @@ fn symbolic_branch_direct_call_requirement_expands_and_checks_its_known_arm() {
         .iter()
         .map(|(name, source)| (name.as_str(), source.as_str()))
         .collect::<Vec<_>>();
-    verify_c0_sources(click_source, &c_sources)
+    let verified_for_expansion = verify_c0_sources(click_source, &c_sources)
         .expect("symbolic-branch source requirement should verify");
-    let expanded = expand_c0_claim_source(click_source, &c_sources, "apply", CProofClaim::Grouped)
+    let expanded = expand_checked_grouped_claim(click_source, &verified_for_expansion, "apply")
         .expect("symbolic-branch source requirement should expand");
     assert!(
         !expanded.contains("have value >= 0 or value == -1 by"),
@@ -1722,13 +1725,14 @@ fn integer_sum_range_fold_expands_and_reverifies() {
         .iter()
         .map(|(name, source)| (name.as_str(), source.as_str()))
         .collect::<Vec<_>>();
-    verify_c0_sources(click_source, &c_sources).unwrap_or_else(|error| {
-        panic!(
-            "summation ordinary verification failed: {}",
-            error.message()
-        )
-    });
-    let expanded = expand_c0_claim_source(click_source, &c_sources, "sum", CProofClaim::Grouped)
+    let verified_for_expansion =
+        verify_c0_sources(click_source, &c_sources).unwrap_or_else(|error| {
+            panic!(
+                "summation ordinary verification failed: {}",
+                error.message()
+            )
+        });
+    let expanded = expand_checked_grouped_claim(click_source, &verified_for_expansion, "sum")
         .expect("the summation grouped proof should expand");
     verify_c0_sources(&expanded, &c_sources)
         .expect("the expanded summation proof should reverify independently");
@@ -1903,11 +1907,11 @@ int32 array_fold_append_at_zero(int32 a[]) {
 }"#;
 
     let sources = [("integer_range_fold_array_body.c", c_source)];
-    verify_c0_sources(click_source, &sources)
+    let verified_for_label = verify_c0_sources(click_source, &sources)
         .expect("the array range-fold append contract should verify");
-    let expanded = expand_c0_claim_source_by_label(
+    let expanded = expand_checked_function_claim(
         click_source,
-        &sources,
+        &verified_for_label,
         "array_fold_append_at_zero.ensures_0",
     )
     .expect("the array range-fold append contract should expand");
@@ -2063,8 +2067,9 @@ theorem check_wrapped(lo: uint64, hi: uint64) {
         .replace("0u64", "0")
         .replace("2u64", "2");
     let sources = [("g.c", c_source)];
-    verify_c0_sources(&supported, &sources).expect("int32 count fold should verify");
-    let expanded = expand_c0_claim_source_by_label(&supported, &sources, "g.ensures_0")
+    let verified_for_label =
+        verify_c0_sources(&supported, &sources).expect("int32 count fold should verify");
+    let expanded = expand_checked_function_claim(&supported, &verified_for_label, "g.ensures_0")
         .expect("int32 count proof should expand");
     verify_c0_sources(&expanded, &sources).expect("expanded int32 count proof should recheck");
 }
@@ -2983,8 +2988,9 @@ int32 early(int32 x) {
 }
 "#;
     let sources = [("early.c", c_source)];
-    verify_c0_sources(click, &sources).expect("the proof with an unreachable arm verifies");
-    let expanded = expand_c0_claim_source_by_label(click, &sources, "early.contract")
+    let verified_for_label =
+        verify_c0_sources(click, &sources).expect("the proof with an unreachable arm verifies");
+    let expanded = expand_checked_function_claim(click, &verified_for_label, "early.contract")
         .unwrap_or_else(|error| panic!("{}", error.message()));
     assert!(
         expanded.contains("if at(statement(3).entry, x) == at(statement(3).entry, 1) {"),
@@ -3002,8 +3008,9 @@ fn whole_claim_expansion_retains_logical_steps_after_terminal_c_steps() {
         .iter()
         .map(|(name, source)| (name.as_str(), source.as_str()))
         .collect::<Vec<_>>();
-    verify_c0_sources(&click, &sources).expect("the original sorting proof verifies");
-    let expanded = expand_c0_claim_source_by_label(&click, &sources, "sort3.sorted")
+    let verified_for_label =
+        verify_c0_sources(&click, &sources).expect("the original sorting proof verifies");
+    let expanded = expand_checked_function_claim(&click, &verified_for_label, "sort3.sorted")
         .unwrap_or_else(|error| panic!("{}", error.message()));
     assert!(expanded.contains("unfold(sorted_range);"), "{expanded}");
     let (result, planning) = crate::surface::proof::count_planning_statement_transitions(|| {
@@ -3277,9 +3284,8 @@ fn callback_branch_ground_premises_verify_expand_and_recheck() {
         .iter()
         .map(|(name, source)| (name.as_str(), source.as_str()))
         .collect::<Vec<_>>();
-    verify_c0_sources(source, &sources).unwrap();
-    let expanded =
-        expand_c0_claim_source(source, &sources, "invoke", CProofClaim::Grouped).unwrap();
+    let verified_for_expansion = verify_c0_sources(source, &sources).unwrap();
+    let expanded = expand_checked_grouped_claim(source, &verified_for_expansion, "invoke").unwrap();
     verify_c0_sources(&expanded, &sources).unwrap();
 }
 
@@ -9021,9 +9027,9 @@ fn post_return_resource_exchange_accepts_a_preceding_pure_have() {
         }
     "#;
     let sources = [("identity.c", c_source)];
-    verify_c0_sources(click_source, &sources)
+    let verified_for_expansion = verify_c0_sources(click_source, &sources)
         .expect("a pure have must preserve the return resource presentation");
-    let expanded = expand_c0_claim_source(click_source, &sources, "identity", CProofClaim::Grouped)
+    let expanded = expand_checked_grouped_claim(click_source, &verified_for_expansion, "identity")
         .expect("the return resource exchange should expand");
     verify_c0_sources(&expanded, &sources)
         .expect("the expanded return resource exchange should check independently");
@@ -12477,10 +12483,10 @@ fn matched_resource_quantified_fact_expands_and_reverifies() {
         .map(|(name, source)| (name.as_str(), source.as_str()))
         .collect::<Vec<_>>();
 
-    verify_c0_sources(click_source, &c_sources)
+    let verified_for_expansion = verify_c0_sources(click_source, &c_sources)
         .expect("the matched quantified resource fact should verify");
     let expanded =
-        expand_c0_claim_source(click_source, &c_sources, "write_zero", CProofClaim::Grouped)
+        expand_checked_grouped_claim(click_source, &verified_for_expansion, "write_zero")
             .expect("the matched quantified resource proof should expand");
     assert!(expanded.contains("match prefix.tag"), "{expanded}");
     assert!(expanded.contains("instantiate(forall"), "{expanded}");
@@ -12518,11 +12524,10 @@ fn matched_resource_dependent_clauses_expand_and_reverify() {
         .map(|(name, source)| (name.as_str(), source.as_str()))
         .collect::<Vec<_>>();
 
-    verify_c0_sources(click_source, &c_sources)
+    let verified_for_expansion = verify_c0_sources(click_source, &c_sources)
         .expect("the matched dependent resource clauses should verify");
-    let expanded =
-        expand_c0_claim_source(click_source, &c_sources, "unchanged", CProofClaim::Grouped)
-            .expect("the matched dependent resource proof should expand");
+    let expanded = expand_checked_grouped_claim(click_source, &verified_for_expansion, "unchanged")
+        .expect("the matched dependent resource proof should expand");
     assert!(expanded.contains("instantiate(forall"), "{expanded}");
     verify_c0_sources(&expanded, &c_sources)
         .expect("the expanded dependent resource proof should reverify");
@@ -12558,15 +12563,11 @@ fn early_return_postcondition_path_selection_expands_and_reverifies() {
         .map(|(name, source)| (name.as_str(), source.as_str()))
         .collect::<Vec<_>>();
 
-    verify_c0_sources(click_source, &c_sources)
+    let verified_for_expansion = verify_c0_sources(click_source, &c_sources)
         .expect("the selected early-return postcondition path should verify");
-    let expanded = expand_c0_claim_source(
-        click_source,
-        &c_sources,
-        "write_selected",
-        CProofClaim::Grouped,
-    )
-    .expect("the selected early-return postcondition path should expand");
+    let expanded =
+        expand_checked_grouped_claim(click_source, &verified_for_expansion, "write_selected")
+            .expect("the selected early-return postcondition path should expand");
     assert!(expanded.contains("match before.shape"), "{expanded}");
     assert!(
         expanded.contains("selected_index(WriteShape::At(position))"),
@@ -13219,14 +13220,13 @@ fn outcome_simp_retains_checked_unchanged_old_equality_on_the_proof() {
     "#;
     let sources = [("shifted.c", c_source)];
 
-    verify_c0_sources(click_source, &sources)
+    let verified_for_expansion = verify_c0_sources(click_source, &sources)
         .expect("the unchanged old equality should advance Proof");
 
-    let expanded = expand_c0_claim_source(
+    let expanded = expand_checked_grouped_claim(
         click_source,
-        &sources,
+        &verified_for_expansion,
         "shifted_loop_effect_preserves_prefix",
-        CProofClaim::Grouped,
     )
     .expect("the retained old equality should expand");
     assert!(
@@ -14069,10 +14069,12 @@ fn qualified_static_ownership_verifies_and_expands() {
         .iter()
         .map(|(name, source)| (name.as_str(), source.as_str()))
         .collect::<Vec<_>>();
-    verify_c0_sources(source, &sources).unwrap();
-    for name in ["reset", "read_cache", "main"] {
-        let expanded =
-            expand_c0_claim_source(source, &sources, name, CProofClaim::Grouped).unwrap();
+    let verified_for_expansion = verify_c0_sources(source, &sources).unwrap();
+    for (_, expanded) in expand_checked_grouped_claims(
+        source,
+        &verified_for_expansion,
+        ["reset", "read_cache", "main"],
+    ) {
         verify_c0_sources(&expanded, &sources)
             .unwrap_or_else(|error| panic!("{error:?}\n{expanded}"));
     }
@@ -14100,10 +14102,12 @@ fn qualified_function_statics_verify_and_expand() {
             .iter()
             .map(|(name, source)| (name.as_str(), source.as_str()))
             .collect::<Vec<_>>();
-        verify_c0_sources(source, &sources).unwrap();
-        for function in functions {
-            let expanded =
-                expand_c0_claim_source(source, &sources, function, CProofClaim::Grouped).unwrap();
+        let verified_for_expansion = verify_c0_sources(source, &sources).unwrap();
+        for (_, expanded) in expand_checked_grouped_claims(
+            source,
+            &verified_for_expansion,
+            functions.iter().copied(),
+        ) {
             verify_c0_sources(&expanded, &sources)
                 .unwrap_or_else(|error| panic!("{fixture_name}: {}\n{expanded}", error.message()));
         }
@@ -14275,10 +14279,12 @@ fn qualified_static_struct_startup_and_expansion() {
             .load(&CMemory::global_pointer("state#file-static:counter.c")),
         CExpressionOutcome::Value(CValue::UInt64(Bitvector32Term::UInt64Constant(7)))
     );
-    verify_c0_sources(source, &sources).unwrap();
-    for name in ["read_value", "current", "main"] {
-        let expanded =
-            expand_c0_claim_source(source, &sources, name, CProofClaim::Grouped).unwrap();
+    let verified_for_expansion = verify_c0_sources(source, &sources).unwrap();
+    for (_, expanded) in expand_checked_grouped_claims(
+        source,
+        &verified_for_expansion,
+        ["read_value", "current", "main"],
+    ) {
         verify_c0_sources(&expanded, &sources)
             .unwrap_or_else(|error| panic!("{error:?}\n{expanded}"));
     }
@@ -14851,9 +14857,10 @@ fn loop_preservation_case_after_step_expands_in_place() {
         }
     "#;
     let sources = [("count_once.c", c_source)];
-    verify_c0_sources(click_source, &sources).expect("the preservation case after a step verifies");
+    let verified_for_expansion = verify_c0_sources(click_source, &sources)
+        .expect("the preservation case after a step verifies");
     let expanded =
-        expand_c0_claim_source(click_source, &sources, "count_once", CProofClaim::Grouped)
+        expand_checked_grouped_claim(click_source, &verified_for_expansion, "count_once")
             .expect("the loop proof expands");
     let preserve = expanded
         .find("preserve by")
@@ -14909,10 +14916,10 @@ fn loop_preservation_case_before_step_expands_in_place() {
         }
     "#;
     let sources = [("count_once.c", c_source)];
-    verify_c0_sources(click_source, &sources)
+    let verified_for_expansion = verify_c0_sources(click_source, &sources)
         .expect("the preservation case before a step verifies");
     let expanded =
-        expand_c0_claim_source(click_source, &sources, "count_once", CProofClaim::Grouped)
+        expand_checked_grouped_claim(click_source, &verified_for_expansion, "count_once")
             .expect("the loop proof expands");
     let preserve = expanded
         .find("preserve by")
@@ -14950,11 +14957,10 @@ fn loop_preservation_if_retains_its_enclosing_match_binding() {
         .map(|(name, source)| (name.as_str(), source.as_str()))
         .collect::<Vec<_>>();
 
-    verify_c0_sources(click_source, &c_sources)
+    let verified_for_expansion = verify_c0_sources(click_source, &c_sources)
         .expect("the preservation `if` should read its enclosing match binding");
-    let expanded =
-        expand_c0_claim_source(click_source, &c_sources, "count_to", CProofClaim::Grouped)
-            .expect("the loop proof should expand");
+    let expanded = expand_checked_grouped_claim(click_source, &verified_for_expansion, "count_to")
+        .expect("the loop proof should expand");
     let preserve = expanded
         .find("preserve by")
         .expect("the expansion should retain the preservation phase");
@@ -15002,14 +15008,11 @@ fn loop_entry_logical_read_expands_without_hidden_introductions() {
         }
     "#;
     let sources = [("fill3_entry_guard.c", c_source)];
-    verify_c0_sources(click_source, &sources).expect("the entry-guard loop proof should verify");
-    let expanded = expand_c0_claim_source(
-        click_source,
-        &sources,
-        "fill3_entry_guard",
-        CProofClaim::Grouped,
-    )
-    .expect("the entry-guard loop proof should expand");
+    let verified_for_expansion = verify_c0_sources(click_source, &sources)
+        .expect("the entry-guard loop proof should verify");
+    let expanded =
+        expand_checked_grouped_claim(click_source, &verified_for_expansion, "fill3_entry_guard")
+            .expect("the entry-guard loop proof should expand");
     let initialize = expanded
         .find("initialize by")
         .expect("the expansion keeps the initialization proof");
@@ -15395,9 +15398,9 @@ fn grouped_leaf_implications_preserve_constant_false_premises() {
         .iter()
         .map(|(name, text)| (name.as_str(), text.as_str()))
         .collect::<Vec<_>>();
-    verify_c0_sources(&source, &sources).unwrap();
+    let verified_for_expansion = verify_c0_sources(&source, &sources).unwrap();
     let expanded =
-        expand_c0_claim_source(&source, &sources, "leaf_flag", CProofClaim::Grouped).unwrap();
+        expand_checked_grouped_claim(&source, &verified_for_expansion, "leaf_flag").unwrap();
     without_implicit_auto(|| verify_c0_sources(&expanded, &sources)).unwrap();
 }
 
@@ -17146,10 +17149,11 @@ uint32 identity(uint32 a, uint32 b) {
 }
 "#;
     let inputs = [("identity.c", c_source)];
-    verify_c0_sources(click_source, &inputs)
+    let verified_for_label = verify_c0_sources(click_source, &inputs)
         .expect("execution and outcome identity rewrites should verify");
     let expanded =
-        expand_c0_claim_source_by_label(click_source, &inputs, "identity.ensures_0").unwrap();
+        expand_checked_function_claim(click_source, &verified_for_label, "identity.ensures_0")
+            .unwrap();
     verify_c0_sources(&expanded, &inputs)
         .expect("expanded outcome identity rewrite should recheck");
 }
@@ -17196,8 +17200,10 @@ int64 identity(int64 x, int64 y) {
 }
 "#;
     let inputs = [("identity.c", c_source)];
-    verify_c0_sources(source, &inputs).expect("fixed-state observed Integer rewrite should verify");
-    let expanded = expand_c0_claim_source_by_label(source, &inputs, "identity.ensures_0").unwrap();
+    let verified_for_label = verify_c0_sources(source, &inputs)
+        .expect("fixed-state observed Integer rewrite should verify");
+    let expanded =
+        expand_checked_function_claim(source, &verified_for_label, "identity.ensures_0").unwrap();
     verify_c0_sources(&expanded, &inputs)
         .expect("fixed-state observed Integer rewrite should recheck");
 }
@@ -17420,9 +17426,9 @@ fn whole_claim_expansion_routes_return_closers_only_to_checked_branches() {
                 .replace(original_branch, tail),
         ),
     ] {
-        verify_c0_sources(&source, &c)
+        let verified_for_label = verify_c0_sources(&source, &c)
             .unwrap_or_else(|error| panic!("{case}: {}", error.message()));
-        let expanded = expand_c0_claim_source_by_label(&source, &c, "f.contract")
+        let expanded = expand_checked_function_claim(&source, &verified_for_label, "f.contract")
             .unwrap_or_else(|error| panic!("{case}: {}", error.message()));
         assert!(
             c0_smart_tactic_source_sites(&expanded, &c)
@@ -17502,8 +17508,8 @@ int32 f(int32 n) {{
 "#
         );
         let sources = [("tail.c", c.as_str())];
-        verify_c0_sources(&source, &sources).unwrap();
-        let expanded = expand_c0_claim_source_by_label(&source, &sources, "f.contract")
+        let verified_for_label = verify_c0_sources(&source, &sources).unwrap();
+        let expanded = expand_checked_function_claim(&source, &verified_for_label, "f.contract")
             .unwrap_or_else(|error| panic!("{count} branches: {}", error.message()));
         assert!(
             c0_smart_tactic_source_sites(&expanded, &sources)
@@ -17813,8 +17819,8 @@ fn signed_bounded_subtraction_preserves_generated_child_sum() {
         .iter()
         .map(|(name, source)| (name.as_str(), source.as_str()))
         .collect::<Vec<_>>();
-    verify_c0_sources(&source, &borrowed).unwrap();
-    let expanded = expand_c0_claim_source(&source, &borrowed, "f", CProofClaim::Grouped).unwrap();
+    let verified_for_expansion = verify_c0_sources(&source, &borrowed).unwrap();
+    let expanded = expand_checked_grouped_claim(&source, &verified_for_expansion, "f").unwrap();
     let (result, planning) = crate::surface::proof::count_planning_statement_transitions(|| {
         verify_c0_sources(&expanded, &borrowed)
     });
@@ -18425,10 +18431,12 @@ fn qualified_pointer_slots_keep_selected_memory_in_all_proof_modes() {
             .iter()
             .map(|(name, text)| (name.as_str(), text.as_str()))
             .collect::<Vec<_>>();
-        verify_c0_sources(&source, &sources).unwrap();
-        for function in functions {
-            let expanded =
-                expand_c0_claim_source(&source, &sources, function, CProofClaim::Grouped).unwrap();
+        let verified_for_expansion = verify_c0_sources(&source, &sources).unwrap();
+        for (function, expanded) in expand_checked_grouped_claims(
+            &source,
+            &verified_for_expansion,
+            functions.iter().copied(),
+        ) {
             verify_c0_sources(&expanded, &sources).unwrap();
             let offset = expanded.find(&format!("{function}(")).unwrap();
             let claim = offset + expanded[offset..].find("ensures ").unwrap();
@@ -18459,17 +18467,18 @@ fn whole_object_call_effects_combine_global_fields_in_all_proof_modes() {
         .iter()
         .map(|(name, text)| (name.as_str(), text.as_str()))
         .collect::<Vec<_>>();
-    verify_c0_sources(&source, &sources).unwrap();
+    let (session, verified_for_expansion) = C0VerificationSession::new(&source, &sources).unwrap();
     let expanded =
-        expand_c0_claim_source(&source, &sources, "caller", CProofClaim::Grouped).unwrap();
-    verify_c0_sources(&expanded, &sources).unwrap();
+        expand_checked_grouped_claim(&source, &verified_for_expansion, "caller").unwrap();
     let position =
         expansion::position_at_offset(&expanded, expanded.find("owns unit::state.left;").unwrap());
-    let (session, _) = C0VerificationSession::new(&source, &sources).unwrap();
+
     session
         .verify_at(&expanded, position.line, position.column)
         .unwrap();
     drop(session);
+    verify_c0_sources(&expanded, &sources).unwrap();
+
     for missing in ["", "views unit::state.right;"] {
         assert!(
             verify_c0_sources(
@@ -18573,17 +18582,18 @@ fn whole_struct_byte_fields_reassemble_in_all_proof_modes() {
             .iter()
             .map(|(name, text)| (name.as_str(), text.as_str()))
             .collect::<Vec<_>>();
-        verify_c0_sources(&source, &sources).unwrap();
+        let (session, verified_for_expansion) =
+            C0VerificationSession::new(&source, &sources).unwrap();
         let expanded =
-            expand_c0_claim_source(&source, &sources, "mixed_fields", CProofClaim::Grouped)
-                .unwrap();
-        verify_c0_sources(&expanded, &sources).unwrap();
+            expand_checked_grouped_claim(&source, &verified_for_expansion, "mixed_fields").unwrap();
         let position =
             expansion::position_at_offset(&expanded, expanded.find("owns p->a;").unwrap());
-        let (session, _) = C0VerificationSession::new(&source, &sources).unwrap();
+
         session
             .verify_at(&expanded, position.line, position.column)
             .unwrap();
+        drop(session);
+        verify_c0_sources(&expanded, &sources).unwrap();
         let field_clause = if source.contains("owns p->f;") {
             "owns p->f;"
         } else {
@@ -18606,16 +18616,17 @@ fn callback_reads_keep_the_initialized_target_contract_in_all_proof_modes() {
         .iter()
         .map(|(name, text)| (name.as_str(), text.as_str()))
         .collect::<Vec<_>>();
-    verify_c0_sources(&source, &sources).unwrap();
+    let (session, verified_for_expansion) = C0VerificationSession::new(&source, &sources).unwrap();
     let expanded =
-        expand_c0_claim_source(&source, &sources, "symbolic", CProofClaim::Grouped).unwrap();
-    verify_c0_sources(&expanded, &sources).unwrap();
+        expand_checked_grouped_claim(&source, &verified_for_expansion, "symbolic").unwrap();
     let position =
         expansion::position_at_offset(&expanded, expanded.rfind("ensures true;").unwrap());
-    let (session, _) = C0VerificationSession::new(&source, &sources).unwrap();
+
     session
         .verify_at(&expanded, position.line, position.column)
         .unwrap();
+    drop(session);
+    verify_c0_sources(&expanded, &sources).unwrap();
 }
 
 #[test]
@@ -18653,25 +18664,32 @@ fn unknown_pointer_bounds_survive_expansion_and_retained_verification() {
             .iter()
             .map(|(name, text)| (name.as_str(), text.as_str()))
             .collect::<Vec<_>>();
-        verify_c0_sources(&source, &sources).unwrap();
-        let expanded = expand_c0_claim_source_by_label(&source, &sources, claim).unwrap();
-        verify_c0_sources(&expanded, &sources).unwrap();
+        let (session, verified) = C0VerificationSession::new(&source, &sources).unwrap();
+        let expanded = expand_verified_function_claim_source_by_label(&source, &verified, claim)
+            .unwrap()
+            .expect("the verified function claim is declared in this fixture");
         let position =
             expansion::position_at_offset(&expanded, expanded.find(postcondition).unwrap());
-        let (session, _) = C0VerificationSession::new(&source, &sources).unwrap();
         session
             .verify_at(&expanded, position.line, position.column)
             .unwrap();
-        if source.contains("requires p == q;") {
-            let hostile = source.replace("requires p == q;", "requires address(p) == address(q);");
-            assert!(verify_c0_sources(&hostile, &sources).is_err());
+        let hostile = source
+            .contains("requires p == q;")
+            .then(|| source.replace("requires p == q;", "requires address(p) == address(q);"));
+        if let Some(hostile) = &hostile {
             let position =
-                expansion::position_at_offset(&hostile, hostile.find(postcondition).unwrap());
+                expansion::position_at_offset(hostile, hostile.find(postcondition).unwrap());
             assert!(
                 session
-                    .verify_at(&hostile, position.line, position.column)
+                    .verify_at(hostile, position.line, position.column)
                     .is_err()
             );
+        }
+        // Finish retained checks before cold verification resets kernel tables.
+        drop(session);
+        verify_c0_sources(&expanded, &sources).unwrap();
+        if let Some(hostile) = hostile {
+            assert!(verify_c0_sources(&hostile, &sources).is_err());
         }
     }
 }
@@ -18721,15 +18739,17 @@ fn packed_pointer_cast_contracts_survive_expansion_and_retained_verification() {
             .iter()
             .map(|(name, text)| (name.as_str(), text.as_str()))
             .collect::<Vec<_>>();
-        verify_c0_sources(&source, &sources).unwrap();
-        let expanded = expand_c0_claim_source_by_label(&source, &sources, claim).unwrap();
-        verify_c0_sources(&expanded, &sources).unwrap();
+        let (session, verified) = C0VerificationSession::new(&source, &sources).unwrap();
+        let expanded = expand_verified_function_claim_source_by_label(&source, &verified, claim)
+            .unwrap()
+            .expect("the verified function claim is declared in this fixture");
         let position =
             expansion::position_at_offset(&expanded, expanded.find(postcondition).unwrap());
-        let (session, _) = C0VerificationSession::new(&source, &sources).unwrap();
         session
             .verify_at(&expanded, position.line, position.column)
             .unwrap();
+        drop(session);
+        verify_c0_sources(&expanded, &sources).unwrap();
     }
 }
 
@@ -18741,15 +18761,15 @@ fn call_step_keeps_snapshot_bound_through_expansion_and_retained_check() {
         .iter()
         .map(|(name, text)| (name.as_str(), text.as_str()))
         .collect::<Vec<_>>();
-    let expanded =
-        expand_c0_claim_source(&source, &sources, "probe", CProofClaim::Grouped).unwrap();
-    verify_c0_sources(&expanded, &sources).unwrap();
+    let (session, verified) = C0VerificationSession::new(&source, &sources).unwrap();
+    let expanded = expand_checked_grouped_claim(&source, &verified, "probe").unwrap();
     let position =
         expansion::position_at_offset(&expanded, expanded.find("ensures result >= 0;").unwrap());
-    let (session, _) = C0VerificationSession::new(&source, &sources).unwrap();
     session
         .verify_at(&expanded, position.line, position.column)
         .unwrap();
+    drop(session);
+    verify_c0_sources(&expanded, &sources).unwrap();
 }
 
 #[test]
@@ -18847,21 +18867,16 @@ fn expanded_string_witness_preserves_its_qualified_resource_module() {
         .iter()
         .map(|(name, text)| (name.as_str(), text.as_str()))
         .collect::<Vec<_>>();
-    let expanded = expand_c0_claim_source(
-        &source,
-        &sources,
-        "fixed_string_length",
-        CProofClaim::Grouped,
-    )
-    .unwrap();
+    let (session, verified) = C0VerificationSession::new(&source, &sources).unwrap();
+    let expanded = expand_checked_grouped_claim(&source, &verified, "fixed_string_length").unwrap();
     assert!(expanded.contains("import click::cstr;"), "{expanded}");
-    parse(&expanded).expect("the written resource must resolve without implicit C call imports");
-    verify_c0_sources(&expanded, &sources).unwrap();
     let at = expansion::position_at_offset(&expanded, expanded.find("ensures result").unwrap());
-    let (session, _) = C0VerificationSession::new(&source, &sources).unwrap();
     session.verify_at(&expanded, at.line, at.column).unwrap();
     let changed = expanded.replace("ensures result == 2u64", "ensures result == 1u64");
     assert!(session.verify_at(&changed, at.line, at.column).is_err());
+    drop(session);
+    parse(&expanded).expect("the written resource must resolve without implicit C call imports");
+    verify_c0_sources(&expanded, &sources).unwrap();
 }
 
 #[test]
@@ -18879,18 +18894,20 @@ fn known_unsigned_byte_decides_signed_comparison_in_all_proof_modes() {
             .iter()
             .map(|(name, text)| (name.as_str(), text.as_str()))
             .collect::<Vec<_>>();
-        verify_c0_sources(&source, &sources).unwrap();
+        let (session, verified_for_expansion) =
+            C0VerificationSession::new(&source, &sources).unwrap();
         let expanded =
-            expand_c0_claim_source(&source, &sources, function, CProofClaim::Grouped).unwrap();
-        verify_c0_sources(&expanded, &sources).unwrap();
+            expand_checked_grouped_claim(&source, &verified_for_expansion, function).unwrap();
         let position = expansion::position_at_offset(
             &expanded,
             expanded.find("ensures result == 1;").unwrap(),
         );
-        let (session, _) = C0VerificationSession::new(&source, &sources).unwrap();
+
         session
             .verify_at(&expanded, position.line, position.column)
             .unwrap();
+        drop(session);
+        verify_c0_sources(&expanded, &sources).unwrap();
     }
 }
 

@@ -2,6 +2,54 @@ use super::diagnostics::describe_contract_expression;
 use super::*;
 use crate::kernel::{AlgebraicValueType, int32};
 
+// Semantic fixtures cold-check both the original and written output. Reuse the
+// original certificate here instead of searching for that same proof again.
+fn expand_checked_grouped_claim(
+    source: &str,
+    verified: &[VerifiedCTheorem],
+    function: &str,
+) -> Result<String, ClickError> {
+    expand_verified_function_claim_source_by_label(
+        source,
+        verified,
+        &format!("{function}.contract"),
+    )?
+    .ok_or_else(|| {
+        ClickError::new(format!(
+            "checked claim for `{function}` is not declared in this source"
+        ))
+    })
+}
+
+// Format every claim while its original verification tables are still live.
+// The callers can then cold-check each independent output in turn.
+fn expand_checked_grouped_claims<'a>(
+    source: &str,
+    verified: &[VerifiedCTheorem],
+    functions: impl IntoIterator<Item = &'a str>,
+) -> Vec<(&'a str, String)> {
+    functions
+        .into_iter()
+        .map(|function| {
+            let expanded = expand_checked_grouped_claim(source, verified, function)
+                .unwrap_or_else(|error| panic!("{function}: {}", error.message()));
+            (function, expanded)
+        })
+        .collect()
+}
+
+fn expand_checked_function_claim(
+    source: &str,
+    verified: &[VerifiedCTheorem],
+    claim: &str,
+) -> Result<String, ClickError> {
+    expand_verified_function_claim_source_by_label(source, verified, claim)?.ok_or_else(|| {
+        ClickError::new(format!(
+            "checked function claim `{claim}` is not declared in this source"
+        ))
+    })
+}
+
 #[test]
 fn pure_function_returns_check_all_scalar_result_leaves() {
     for source in [
@@ -301,8 +349,9 @@ fn integer_resource_match_binding_verifies_and_expands() {
         .unwrap();
     let sources = [("integer_resource_match_binding.c", c)];
 
-    verify_c0_sources(source, &sources).expect("matched Integer resource should verify");
-    let expanded = expand_c0_claim_source(source, &sources, "keep", CProofClaim::Grouped)
+    let verified_for_expansion =
+        verify_c0_sources(source, &sources).expect("matched Integer resource should verify");
+    let expanded = expand_checked_grouped_claim(source, &verified_for_expansion, "keep")
         .expect("matched Integer resource should expand");
     verify_c0_sources(&expanded, &sources)
         .expect("expanded matched Integer resource should re-verify");
@@ -312,9 +361,12 @@ fn integer_resource_match_binding_verifies_and_expands() {
 #[ignore = "nightly: 2s in the parallel gate"]
 fn tree_node_init_and_stored_child_links_expand() {
     let (source, c) = tree_node_init_fixture();
-    verify_c0_sources(source, &c).unwrap();
-    for function in ["tree_node_init", "read_value", "empty"] {
-        let expanded = expand_c0_claim_source(source, &c, function, CProofClaim::Grouped).unwrap();
+    let verified_for_expansion = verify_c0_sources(source, &c).unwrap();
+    for (_, expanded) in expand_checked_grouped_claims(
+        source,
+        &verified_for_expansion,
+        ["tree_node_init", "read_value", "empty"],
+    ) {
         verify_c0_sources(&expanded, &c).unwrap();
     }
 }
@@ -387,11 +439,10 @@ const INDEPENDENT_CHILDREN_C: &[(&str, &str)] = &[(
 #[ignore = "nightly: 0.8s in the parallel gate"]
 fn independent_children_construct_and_expand() {
     let source = independent_children_source();
-    verify_c0_sources(source, INDEPENDENT_CHILDREN_C).unwrap();
-    for name in ["read_left", "init"] {
-        let expanded =
-            expand_c0_claim_source(source, INDEPENDENT_CHILDREN_C, name, CProofClaim::Grouped)
-                .unwrap();
+    let verified_for_expansion = verify_c0_sources(source, INDEPENDENT_CHILDREN_C).unwrap();
+    for (_, expanded) in
+        expand_checked_grouped_claims(source, &verified_for_expansion, ["read_left", "init"])
+    {
         verify_c0_sources(&expanded, INDEPENDENT_CHILDREN_C).unwrap();
         assert!(expanded.contains("let { left: l, right: r } = unfold(root)"));
     }
@@ -411,14 +462,9 @@ fn independent_children_may_change_roles_in_a_new_model() {
             "{ model: old(root.model) }, { left: l, right: r }",
             "{ model: Tree::Branch(1, right, r.model, left, l.model) }, { left: r, right: l }",
         );
-    verify_c0_sources(&source, INDEPENDENT_CHILDREN_C).unwrap();
-    let expanded = expand_c0_claim_source(
-        &source,
-        INDEPENDENT_CHILDREN_C,
-        "read_left",
-        CProofClaim::Grouped,
-    )
-    .unwrap();
+    let verified_for_expansion = verify_c0_sources(&source, INDEPENDENT_CHILDREN_C).unwrap();
+    let expanded =
+        expand_checked_grouped_claim(&source, &verified_for_expansion, "read_left").unwrap();
     verify_c0_sources(&expanded, INDEPENDENT_CHILDREN_C).unwrap();
 }
 
@@ -502,8 +548,8 @@ fn conditional_explicit_folds_update_models_and_expand() {
         }
     "#;
     let sources = [("cell.c", "void set(int32* p, int32 value) { *p = value; }")];
-    verify_c0_sources(source, &sources).unwrap();
-    let expanded = expand_c0_claim_source(source, &sources, "set", CProofClaim::Grouped).unwrap();
+    let verified_for_expansion = verify_c0_sources(source, &sources).unwrap();
+    let expanded = expand_checked_grouped_claim(source, &verified_for_expansion, "set").unwrap();
     verify_c0_sources(&expanded, &sources).unwrap();
     for (from, to) in [
         ("model: Model::Value(value)", "model: Model::Zero"),
@@ -551,8 +597,8 @@ fn conditional_empty_fold_requires_arm_facts_and_no_live_result() {
         }
     "#;
     let sources = [("empty.c", "void empty(int32* p) { }")];
-    verify_c0_sources(source, &sources).unwrap();
-    let expanded = expand_c0_claim_source(source, &sources, "empty", CProofClaim::Grouped).unwrap();
+    let verified_for_expansion = verify_c0_sources(source, &sources).unwrap();
+    let expanded = expand_checked_grouped_claim(source, &verified_for_expansion, "empty").unwrap();
     verify_c0_sources(&expanded, &sources).unwrap();
     for (from, to) in [
         ("requires p == 0;", ""),
@@ -593,8 +639,8 @@ fn guarded_explicit_folds_check_each_return_path() {
         "cell.c",
         "void set(int32* p, int32 value) { if (p != 0) *p = value; }",
     )];
-    verify_c0_sources(source, &sources).unwrap();
-    let expanded = expand_c0_claim_source(source, &sources, "set", CProofClaim::Grouped).unwrap();
+    let verified_for_expansion = verify_c0_sources(source, &sources).unwrap();
+    let expanded = expand_checked_grouped_claim(source, &verified_for_expansion, "set").unwrap();
     verify_c0_sources(&expanded, &sources).unwrap();
     assert!(verify_c0_sources(&source.replace("value: value", "value: 0"), &sources).is_err());
     assert!(
@@ -867,9 +913,9 @@ fn single_cell_adt_initializers_verify_and_expand() {
         let source = source
             .replace("MODEL", model)
             .replace("INITIALIZER", initializer);
-        verify_c0_sources(&source, &sources).unwrap();
+        let verified_for_expansion = verify_c0_sources(&source, &sources).unwrap();
         let expanded =
-            expand_c0_claim_source(&source, &sources, "init", CProofClaim::Grouped).unwrap();
+            expand_checked_grouped_claim(&source, &verified_for_expansion, "init").unwrap();
         verify_c0_sources(&expanded, &sources).unwrap();
     }
 }
@@ -1025,9 +1071,9 @@ fn single_cell_explicit_fold_constructs_updates_and_expands() {
             )
             .replace("execute();", "unfold(c); execute();"),
     ] {
-        verify_c0_sources(&source, &sources).unwrap();
+        let verified_for_expansion = verify_c0_sources(&source, &sources).unwrap();
         let expanded =
-            expand_c0_claim_source(&source, &sources, "init", CProofClaim::Grouped).unwrap();
+            expand_checked_grouped_claim(&source, &verified_for_expansion, "init").unwrap();
         assert!(expanded.contains("let c = fold("), "{expanded}");
         verify_c0_sources(&expanded, &sources).unwrap();
     }
@@ -1098,8 +1144,8 @@ fn single_cell_explicit_fold_preserves_entry_fields_and_consumes_names() {
         }
     "#;
     let sources = [("cell.c", "void set(int32* p, int32 value) { *p = value; }")];
-    verify_c0_sources(source, &sources).unwrap();
-    let expanded = expand_c0_claim_source(source, &sources, "set", CProofClaim::Grouped).unwrap();
+    let verified_for_expansion = verify_c0_sources(source, &sources).unwrap();
+    let expanded = expand_checked_grouped_claim(source, &verified_for_expansion, "set").unwrap();
     verify_c0_sources(&expanded, &sources).unwrap();
     for stale in [
         source.replace("ensures c.revision == 2;", "ensures c.revision == 1;"),
@@ -2212,9 +2258,9 @@ int32 keep(int32 x, int32 y) {
         "integer_affine_fixed_execution.c",
         "int32 keep(int32 x, int32 y) { return x; }",
     )];
-    verify_c0_sources(source, &c_sources)
+    let verified_for_label = verify_c0_sources(source, &c_sources)
         .expect("execution-context Integer weakening should verify");
-    let expanded = expand_c0_claim_source_by_label(source, &c_sources, "keep.weakened")
+    let expanded = expand_checked_function_claim(source, &verified_for_label, "keep.weakened")
         .expect("Integer weakening should expand to a checked certificate");
     assert!(
         expanded.contains("arithmetic_certificate"),
@@ -2278,10 +2324,11 @@ int32 fixed_c_params(int32 i, int32 total, int32 value) {
         "integer_affine_fixed_scaled.c",
         "int32 fixed_c_params(int32 i, int32 total, int32 value) { return total; }",
     )];
-    verify_c0_sources(source, &c_sources)
+    let verified_for_label = verify_c0_sources(source, &c_sources)
         .expect("fixed execution scaled lower bound should verify");
-    let expanded = expand_c0_claim_source_by_label(source, &c_sources, "fixed_c_params.bounded")
-        .expect("fixed execution scaled lower bound should expand");
+    let expanded =
+        expand_checked_function_claim(source, &verified_for_label, "fixed_c_params.bounded")
+            .expect("fixed execution scaled lower bound should expand");
     assert!(
         expanded.contains("arithmetic_certificate"),
         "scaled lower bound expansion should contain its checked certificate: {expanded}"
@@ -2584,8 +2631,8 @@ fn automatic_scope_exit_preserves_expanded_execution() {
     let c = "int32 f(int32 n) { if (n == 0) { int32 a[2]; a[0] = 5; return a[0]; } else { int32 b[2]; b[0] = 5; return b[0]; } }";
     let source = r#"verifying "scope.c"; int32 f(int32 n) { ensures result == 5; } by { execute(); simp(); }"#;
     let inputs = [("scope.c", c)];
-    verify_c0_sources(source, &inputs).unwrap();
-    let expanded = expand_c0_claim_source(source, &inputs, "f", CProofClaim::Grouped).unwrap();
+    let verified_for_expansion = verify_c0_sources(source, &inputs).unwrap();
+    let expanded = expand_checked_grouped_claim(source, &verified_for_expansion, "f").unwrap();
     verify_c0_sources(&expanded, &inputs).unwrap();
 }
 
@@ -2625,9 +2672,10 @@ fn aggregate_parameter_values_expand_and_check() {
         .iter()
         .map(|(name, body)| (name.as_str(), body.as_str()))
         .collect::<Vec<_>>();
-    verify_c0_sources(source, &inputs).unwrap();
-    for name in ["nested", "copy"] {
-        let expanded = expand_c0_claim_source(source, &inputs, name, CProofClaim::Grouped).unwrap();
+    let verified_for_expansion = verify_c0_sources(source, &inputs).unwrap();
+    for (_, expanded) in
+        expand_checked_grouped_claims(source, &verified_for_expansion, ["nested", "copy"])
+    {
         verify_c0_sources(&expanded, &inputs).unwrap();
     }
 }
@@ -2643,9 +2691,9 @@ fn aggregate_parameter_symbolic_index_expands_and_checks() {
         .iter()
         .map(|(name, body)| (name.as_str(), body.as_str()))
         .collect::<Vec<_>>();
-    verify_c0_sources(source, &inputs).unwrap();
+    let verified_for_expansion = verify_c0_sources(source, &inputs).unwrap();
     let expanded =
-        expand_c0_claim_source(source, &inputs, "indexed", CProofClaim::Grouped).unwrap();
+        expand_checked_grouped_claim(source, &verified_for_expansion, "indexed").unwrap();
     verify_c0_sources(&expanded, &inputs).unwrap();
 }
 
@@ -2674,9 +2722,9 @@ fn resource_contract_regressions_expand_and_check() {
             .iter()
             .map(|(name, body)| (name.as_str(), body.as_str()))
             .collect::<Vec<_>>();
-        verify_c0_sources(source, &inputs).unwrap();
+        let verified_for_expansion = verify_c0_sources(source, &inputs).unwrap();
         let expanded =
-            expand_c0_claim_source(source, &inputs, function_name, CProofClaim::Grouped).unwrap();
+            expand_checked_grouped_claim(source, &verified_for_expansion, function_name).unwrap();
         verify_c0_sources(&expanded, &inputs)
             .unwrap_or_else(|error| panic!("{error:?}\n{expanded}"));
     }

@@ -39,9 +39,9 @@ fn both_and_outcome_expands_and_rechecks() {
         }
     "#;
     let sources = [("identity.c", c)];
-    verify_c0_sources(source, &sources).expect("both at an outcome");
+    let verified_for_expansion = verify_c0_sources(source, &sources).expect("both at an outcome");
     let expanded =
-        expand_c0_claim_source(source, &sources, "identity", CProofClaim::Grouped).unwrap();
+        expand_checked_grouped_claim(source, &verified_for_expansion, "identity").unwrap();
     assert!(expanded.contains("both {"), "{expanded}");
     verify_c0_sources(&expanded, &sources).expect("expanded child proofs");
     let position = expansion::position_at_offset(source, source.find("both {").unwrap());
