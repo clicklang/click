@@ -64,6 +64,7 @@ fn preserves_source_and_checks_obligations(fixture: &str) {
             "{error}"
         );
         assert!(!report.contains("<unnamed"), "{error}");
+        assert!(!report.contains("__rust_"), "{error}");
     }
 }
 /// `proof` without the statement whose first line starts with `prefix`: that
