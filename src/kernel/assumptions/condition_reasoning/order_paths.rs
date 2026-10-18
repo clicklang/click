@@ -3101,7 +3101,9 @@ impl PureFactContext {
         {
             return Some(true);
         }
-        if let Some(guards) = condition.uint64_subtraction_upper_bound_guards()
+        if let Some(guards) = condition
+            .uint64_subtraction_upper_bound_guards()
+            .or_else(|| condition.uint64_partial_restoration_upper_bound_guards())
             && guards.iter().all(|guard| self.decide(guard) == Some(true))
         {
             return Some(true);
