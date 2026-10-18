@@ -2462,6 +2462,26 @@ mod tests {
     }
 
     #[test]
+    fn snapshot_store_descriptions_keep_generated_rust_locals_private() {
+        for (local, expected) in [
+            ("__rust_mir_14", "the memory after a store"),
+            ("total", "the memory after the store to `total`"),
+        ] {
+            let pointer = Pointer {
+                block: format!("local:{local}").into(),
+                offset: PointerOffsetTerm::Constant(0),
+            };
+            let memory = CMemory::new()
+                .with_block(format!("local:{local}"), 4)
+                .store(
+                    pointer,
+                    crate::kernel::CValue::Int32(Bitvector32Term::Constant(7)),
+                );
+            assert_eq!(SnapshotLabels::default().describe_state(&memory), expected);
+        }
+    }
+
+    #[test]
     fn source_names_and_report_local_names_replace_variable_ids() {
         let mut labels = SnapshotLabels::default();
         labels.source_name(Variable(7), "cur".into());
