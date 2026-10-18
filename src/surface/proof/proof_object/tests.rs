@@ -127,6 +127,72 @@ fn fixed_state_failure_names_kernel_values_held_in_live_locals() {
 }
 
 #[test]
+fn missing_assumption_side_uses_recorded_names_in_fixed_state_errors() {
+    let before = Bitvector32Term::Variable(Variable(70));
+    let after = Bitvector32Term::Variable(Variable(71));
+    let entry = CState::new().with_local("remaining", CValue::UInt64(before.clone()));
+    let state = CState::new().with_local("remaining", CValue::UInt64(after.clone()));
+    let side = Proposition::ConditionIs(
+        ConditionTerm::Bitvector64UnsignedLessThan(
+            Box::new(before.clone()),
+            Box::new(after.clone()),
+        ),
+        true,
+    );
+    let goal = Proposition::And(Box::new(side.clone()), Box::new(side));
+    let written = ClickProposition::Comparison {
+        left: ContractExpression::CFragment(CExpression::Value(CValue::UInt64(before))),
+        operator: ComparisonOperator::LessThan,
+        right: ContractExpression::CFragment(CExpression::Value(CValue::UInt64(after))),
+    };
+    let surface = ClickProposition::And(Box::new(written.clone()), Box::new(written));
+    let mut snapshots = RecordedSnapshots::new();
+    snapshots.insert(SnapshotSelector::Mark("iteration".into()), entry.clone());
+    let surfaces = SurfacePropositionMap::default();
+    let predicates = PredicateEnvironment::new(&[]);
+    let functions = ClickFunctionEnvironment::new(&[]);
+    let theorems = TheoremEnvironment::new(&[]);
+    let root = Proof::for_fixed_state_surface_goal(
+        "snapshot_error",
+        0,
+        &[],
+        goal,
+        surface,
+        ParameterBinding::default(),
+        &entry,
+        &state,
+        &snapshots,
+        &surfaces,
+        SpecDefinitions::new(&predicates, &functions),
+        &theorems,
+        &[],
+        &[],
+    );
+    for traced in [false, true] {
+        let render = || {
+            root.try_authoritative_linear_script(&[ProofTactic::Assumption])
+                .err()
+                .expect("neither conjunct is available")
+                .to_string()
+        };
+        let error = if traced {
+            crate::surface::with_proof_trace("snapshot_error", render)
+        } else {
+            render()
+        };
+        assert!(
+            error.contains("missing exact fact: at(iteration, remaining) < remaining"),
+            "{error}"
+        );
+        assert!(
+            error.contains("goal: at(iteration, remaining) < remaining"),
+            "{error}"
+        );
+        assert!(!error.contains("<unnamed"), "{error}");
+    }
+}
+
+#[test]
 fn return_publication_shares_effect_prefixes_and_suppresses_duplicates() {
     for size in [4, 64, 1024] {
         let memory = CState::new().memory().clone();

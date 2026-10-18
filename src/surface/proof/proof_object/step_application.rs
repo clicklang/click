@@ -1281,14 +1281,11 @@ impl<'a> Proof<'a> {
                     ))
                 }
                 PropositionCloseError::UnavailableSide(side) => {
-                    let (names, values) = self.diagnostic_naming_tables();
-                    self.step_error(format!(
-                        "`assumption` closes a conjunction when every side is an available fact and a disjunction when one side is; `{}` is not available",
-                        crate::surface::diagnostics::describe_pure_fact_spelled(
-                            &side,
-                            ParameterBinding::new(&names, &values),
-                        )
-                    ))
+                    self.step_error_with_requirement(
+                        "`assumption` closes a conjunction when every side is an available fact and a disjunction when one side is; a required side is not available",
+                        None,
+                        Some(("missing exact fact", Box::new(side), None)),
+                    )
                 }
                 _ => unreachable!("kernel returned an unrelated assumption error"),
             })

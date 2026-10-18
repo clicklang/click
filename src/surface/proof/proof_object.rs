@@ -1848,7 +1848,10 @@ impl Proof<'_> {
             self.diagnostic_naming(),
             match self.context.as_ref() {
                 ProofContext::Pure(_) => None,
-                _ => self
+                ProofContext::FixedState(context) => {
+                    Some(context.fixed_state.recorded_snapshots.clone())
+                }
+                ProofContext::Execution(_) => self
                     .outcome_fixed_state_view()
                     .map(|view| view.fixed_state.recorded_snapshots.clone()),
             },

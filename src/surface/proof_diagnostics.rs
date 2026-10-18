@@ -435,6 +435,17 @@ fn render_diagnostic_labeled(
             rendered.push_str(&failure.kind);
             rendered.push_str("]: ");
             rendered.push_str(&failure.reason);
+            if let Some(state) = failure
+                .diagnostic
+                .as_ref()
+                .and_then(|diagnostic| diagnostic.state.as_ref())
+            {
+                let requirement = render_failed_requirement(state.as_ref(), labels);
+                if !requirement.is_empty() {
+                    rendered.push_str("; ");
+                    rendered.push_str(&requirement);
+                }
+            }
             if failure.kind == "UnclosedGoal"
                 && let Some(goal) = failure
                     .diagnostic
@@ -475,6 +486,7 @@ fn render_diagnostic_labeled(
 }
 
 pub(crate) fn render_search_failures(summary: &str, failures: &[ProofSearchFailure]) -> String {
+    let mut labels = render::SnapshotLabels::default();
     let mut rendered = summary.to_owned();
     rendered.push_str("\n  search candidates:");
     for failure in failures.iter().take(8) {
@@ -484,13 +496,25 @@ pub(crate) fn render_search_failures(summary: &str, failures: &[ProofSearchFailu
         rendered.push_str(&failure.kind);
         rendered.push_str("]: ");
         rendered.push_str(&failure.reason);
+        if let Some(state) = failure
+            .diagnostic
+            .as_ref()
+            .and_then(|diagnostic| diagnostic.state.as_ref())
+        {
+            let requirement = render_failed_requirement(state.as_ref(), &mut labels);
+            if !requirement.is_empty() {
+                rendered.push_str("; ");
+                rendered.push_str(&requirement);
+            }
+        }
+
         if let Some(goal) = failure
             .diagnostic
             .as_ref()
             .and_then(|diagnostic| diagnostic.kernel_goal())
         {
             rendered.push_str("; goal: ");
-            rendered.push_str(&render::render_proposition(goal));
+            rendered.push_str(&render::render_proposition_labeled(goal, &mut labels));
         }
     }
     if failures.len() > 8 {
