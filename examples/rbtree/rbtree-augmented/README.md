@@ -385,6 +385,12 @@ the repaired whole tree through both augmented wrappers. The independent
 in-order identity sequence. The uncle remains empty; nonempty uncles and the
 mirrored nonempty-middle case remain unfinished.
 
+`rbtree_size_insert_uncle_model.click` and
+`rbtree_size_insert_mirrored_uncle_model.click` define both outer rotations
+with nonempty black middle and uncle subtrees. Their in-order theorems retain
+all six descendant subtrees symbolically and preserve every node's position.
+These are model results; the corresponding C compositions remain unfinished.
+
 `rbtree_size_recolor.click` supplies shared model operations for root recoloring
 and insertion color flips. Its explicit lemmas preserve cached values and
 recursive count validity for arbitrary subtrees and identify their shapes with

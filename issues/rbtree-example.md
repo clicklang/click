@@ -1795,3 +1795,8 @@ node's children and the outer ancestor context remain arbitrary. The proof
 derives callback bounds from the original cached total and certifies the exact
 in-order sequence independently; both augmented wrappers verify. The uncle is
 still empty. This increment changes proof files only.
+
+Separate forward and mirrored model theorems now cover nonempty black middle
+and uncle subtrees with arbitrary focused, middle, and uncle descendants.
+Both preserve the exact in-order identity sequence. These model results do not
+yet complete the corresponding C compositions.
