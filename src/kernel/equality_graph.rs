@@ -2679,15 +2679,24 @@ mod tests {
 
     #[test]
     fn pointer_fact_search_uses_admission_order_across_allocations_and_rebuilds() {
-        let extent = crate::kernel::SubobjectExtent::opaque(Variable(1 << 44));
+        let domain = crate::kernel::CPointerValue::new(
+            Pointer::symbolic(Variable(985_000)),
+            crate::kernel::CType::Int32Pointer,
+        );
+        let origin = domain
+            .opaque_extent()
+            .expect("an unseen pointer has an opaque domain")
+            .clone();
         let mut sources = (1..=4)
             .map(|end| {
                 std::sync::Arc::new(crate::kernel::ExecutionPureFact::certified(
-                    extent.coverage_fact(&crate::kernel::CMemoryRange::new(
-                        at(symbolic(985_100), 0),
-                        Bitvector32Term::Constant(0),
-                        Bitvector32Term::Constant(end),
-                    )),
+                    domain
+                        .opaque_coverage_fact(&crate::kernel::CMemoryRange::new(
+                            at(symbolic(985_100), 0),
+                            Bitvector32Term::Constant(0),
+                            Bitvector32Term::Constant(end),
+                        ))
+                        .expect("coverage names the opaque domain"),
                 ))
             })
             .collect::<Vec<_>>();
@@ -2703,23 +2712,23 @@ mod tests {
             graph.adjust_pointer_fact(source, true);
             graph.adjust_pointer_fact(source, true); // Exact re-admission is idempotent.
         }
-        assert_eq!(graph.subobject_coverage_facts(&extent.start), expected);
+        assert_eq!(graph.subobject_coverage_facts(&origin), expected);
         graph.rebuild_from_inputs();
-        assert_eq!(graph.subobject_coverage_facts(&extent.start), expected);
+        assert_eq!(graph.subobject_coverage_facts(&origin), expected);
         let fork = graph.clone();
         fork.adjust_pointer_fact(&sources[1], false);
         assert_eq!(
-            fork.subobject_coverage_facts(&extent.start),
+            fork.subobject_coverage_facts(&origin),
             vec![
                 expected[0].clone(),
                 expected[2].clone(),
                 expected[3].clone()
             ]
         );
-        assert_eq!(graph.subobject_coverage_facts(&extent.start), expected);
+        assert_eq!(graph.subobject_coverage_facts(&origin), expected);
         fork.clear_proposition_pointer_facts();
-        assert!(fork.subobject_coverage_facts(&extent.start).is_empty());
-        assert_eq!(graph.subobject_coverage_facts(&extent.start), expected);
+        assert!(fork.subobject_coverage_facts(&origin).is_empty());
+        assert_eq!(graph.subobject_coverage_facts(&origin), expected);
     }
 
     fn symbolic(id: u64) -> PointerBlock {
