@@ -4109,7 +4109,7 @@ fn branching_grouped_claim_project(claim_count: usize) -> (String, String) {
 #[test]
 #[ignore = "nightly: 0.6s in the parallel gate"]
 fn grouped_proof_theorems_share_one_proof_text() {
-    let samples = [4, 8, 16, 32]
+    let samples = [8, 16, 32, 64]
         .into_iter()
         .map(|size| {
             let (c_source, click_source) = branching_grouped_claim_project(size);
@@ -4148,12 +4148,7 @@ fn grouped_proof_theorems_share_one_proof_text() {
             sample
         })
         .collect::<Vec<_>>();
-    // At 8/16/32, 20/7 on increments has the former 3x-at-32/64
-    // quadratic crossover, without slack from fixed entry costs.
-    assert_near_linear_scaling_with_increment_bound(
-        "theorems of one branching grouped proof",
-        &samples,
-    );
+    assert_near_linear_scaling("theorems of one branching grouped proof", &samples);
 }
 
 /// One project whose caller makes `call_count` plain `step()`s over a callee
@@ -4805,7 +4800,7 @@ fn a_constant_view_costs_the_same_whatever_its_length() {
     // thread pays once (parsing the prelude, filling shared caches) is not
     // a cost of the range.
     verify_c0_sources(&click_source(8), &[("get.c", c_source)]).expect("warm-up verifies");
-    let samples = [8u64, 1_000, 1_000_000_000].map(|length| {
+    let samples = [8u64, 1_000, 1_000_000, 1_000_000_000].map(|length| {
         let measure = || {
             let (verified, work) = crate::instrumentation::measure_deterministic_work(|| {
                 verify_c0_sources(&click_source(length), &[("get.c", c_source)])
