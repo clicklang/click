@@ -528,8 +528,7 @@ fn check_fixed_state_fact_transport_using_facts_inner(
         // The origins-unchanged frame evidence reads the listed premises, the
         // certified effect facts, and the implicit frame facts (loadability,
         // store permission, separation) the selected assumptions carry; it
-        // never searches the rest of the proof context
-        // (`issues/simplify-step.md`, step 5). It only decides whether two
+        // never searches the rest of the proof context. It only decides whether two
         // load variables denote one unchanged cell.
         let chain_assumptions = chain_facts
             .iter()

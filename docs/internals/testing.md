@@ -921,11 +921,10 @@ skips the comparison.
 
 ## Hidden prerequisite ratchet
 
-A simple tactic must close each requirement by an exact or indexed check
-([`issues/simplify-step.md`](https://github.com/clicklang/click/blob/master/issues/simplify-step.md)).
-Where statement checking under the contextual or explicit policies still
-derives a prerequisite by a search whose result the proof does not retain, it
-counts the derivation by route and top rule
+A simple tactic must close each requirement by an exact or indexed check;
+`step()` and the `loop {}` walk both check statements under a search-free
+policy. Where checking still derives a prerequisite by a search whose result
+the proof does not retain, it counts the derivation by route and top rule
 (`instrumentation::HiddenPrerequisiteRoute`). The fixture harnesses take
 that census after an unfiltered run and compare it with
 `HIDDEN_PREREQUISITE_BASELINE` in `tests/mdtests.rs` and `tests/examples.rs`,
