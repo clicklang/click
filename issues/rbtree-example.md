@@ -1768,5 +1768,10 @@ of the complete in-order sequence. The proof uses pre-write color facts and
 explicit transport across recoloring stores. The loaded-uncle comparison now
 uses shared numeric address classes for its scoped separation evidence;
 regressions cover checked aliases, scope, withdrawal, and scalable lookup.
-General rotation subtrees, chains ending in a rotation, and writable erase
-integration remain unfinished.
+The left-left context rotation now also handles arbitrary focused child
+subtrees and symbolic valid caches, through both augmented wrappers. Its
+whole-root ownership result retains the original ancestor context, and a
+separate theorem preserves the complete in-order identity sequence of the
+rotated subtree. The parent’s other child and uncle are still empty in this
+case. General sibling/uncle subtrees, the other generalized rotation shapes,
+chains ending in a rotation, and writable erase integration remain unfinished.
