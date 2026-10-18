@@ -207,6 +207,59 @@ fn connected_condition_selection_scales_linearly_in_chain_and_context() {
 }
 
 #[test]
+fn covering_loadability_avoids_unrelated_adjacency_search() {
+    let mut samples = Vec::new();
+    for size in [8, 32, 128] {
+        let memory = CMemory::new();
+        // The theorem frontend represents these pointers in one block, so
+        // unrelated ranges remain candidates for the adjacency search.
+        let pointer = |index| Pointer {
+            block: PointerBlock::ExternalArgument,
+            offset: PointerOffsetTerm::scale_int32(term(index), 4),
+        };
+        let source = Proposition::CMemoryLoadable {
+            memory: memory.clone(),
+            base: pointer(1),
+            bytes: 16.into(),
+            wide: false,
+        };
+        let mut context = PureFactContext::new();
+        for index in 0..size {
+            context = context.assume_proposition(Proposition::CMemoryLoadable {
+                memory: memory.clone(),
+                base: pointer(100 + index),
+                bytes: 16.into(),
+                wide: false,
+            });
+            context = context.assume_condition(
+                ConditionTerm::Bitvector32SignedLessThan(
+                    Box::new(term(10_000 + index)),
+                    Box::new(1000.into()),
+                ),
+                true,
+            );
+        }
+        context = context.assume_proposition(source.clone());
+        let goal = Proposition::CMemoryLoadable {
+            memory,
+            base: pointer(1).offset_by_bytes(4),
+            bytes: 4.into(),
+            wide: false,
+        };
+        let (proof, work) = crate::instrumentation::measure_deterministic_work(|| {
+            context.derive_simp_atomic_proposition(&goal).unwrap()
+        });
+        assert_eq!(proof.context_premises(), vec![source]);
+        samples.push(work);
+    }
+    assert!(
+        samples[2] - samples[1] <= 5 * (samples[1] - samples[0]) + 64,
+        "covering loadability must scale linearly: {samples:?}"
+    );
+    eprintln!("covering loadability work: {samples:?}");
+}
+
+#[test]
 fn solver_candidates_omit_registered_read_definitions() {
     let mut samples = Vec::new();
     for size in [4, 16, 64] {

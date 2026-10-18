@@ -28,9 +28,40 @@
 
 use crate::kernel::planning_api::*;
 use crate::kernel::*;
-#[cfg(test)]
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
+
+type ReducedAtomicPremises = (PureFactContext, u64, AtomicPropositionDerivationEvidence);
+type VariableEqualityReductionKey = (u64, Variable, Variable);
+
+thread_local! {
+    static SIMP_ATOMIC_REDUCTIONS: std::cell::RefCell<Option<BTreeMap<VariableEqualityReductionKey, ReducedAtomicPremises>>> = const { std::cell::RefCell::new(None) };
+}
+
+/// Share completed bare-variable reductions across one simplification's
+/// strategies. Keys use the selected context's existing identity, including
+/// its logical-read generation; no ambient context or term tree is hashed.
+pub(crate) fn with_simp_atomic_reduction_cache<T>(body: impl FnOnce() -> T) -> T {
+    let root = SIMP_ATOMIC_REDUCTIONS.with(|cache| {
+        let mut cache = cache.borrow_mut();
+        if cache.is_some() {
+            false
+        } else {
+            *cache = Some(BTreeMap::new());
+            true
+        }
+    });
+    struct Scope(bool);
+    impl Drop for Scope {
+        fn drop(&mut self) {
+            if self.0 {
+                SIMP_ATOMIC_REDUCTIONS.with(|cache| *cache.borrow_mut() = None);
+            }
+        }
+    }
+    let _scope = Scope(root);
+    body()
+}
 
 /// Nested disjunction case splits allowed inside one derivation.
 const MAX_DISJUNCTION_SPLIT_DEPTH: usize = 2;
@@ -215,7 +246,7 @@ pub(crate) trait PropositionSearch {
 
 /// A simple tactic's check of a premise: the exact lookup, then the
 /// kernel's condition decision, the one a step's fast path makes. It never
-/// searches the proof context (`issues/simplify-step.md`, step 5); a premise
+/// searches the proof context; a premise
 /// it misses is stated first, by a `have`.
 pub(crate) fn decided_without_search(context: &PureFactContext, proposition: &Proposition) -> bool {
     if context.proves_exact(proposition) {
@@ -652,18 +683,6 @@ impl PropositionSearch for PureFactContext {
                 candidate.proves_atomic_for_derivation_with_id(proposition, for_simp);
             evidence.map(|evidence| (candidate, premises_id, evidence))
         };
-        if let Proposition::CMemoryLoadable {
-            memory,
-            base,
-            bytes,
-            wide: false,
-        } = proposition
-            && let Some(premises) = self.adjacent_loadable_region_facts(memory, base, bytes)
-            && (!exclude_exact_goal || !premises.contains(&proposition.clone()))
-            && let Some(found) = trial(&premises)
-        {
-            return Some(found);
-        }
         let try_each = |candidates: &[Proposition]| {
             for selected in candidates {
                 if simp_reasoning_interrupted() {
@@ -679,6 +698,21 @@ impl PropositionSearch for PureFactContext {
             Err(()) => return None,
             Ok(Some(found)) => return Some(found),
             Ok(None) => {}
+        }
+        // Try a covering source before searching the ambient block for a
+        // concatenation: unknown offsets in unrelated ranges can otherwise
+        // trigger order reasoning over unrelated conditions for every range.
+        if let Proposition::CMemoryLoadable {
+            memory,
+            base,
+            bytes,
+            wide: false,
+        } = proposition
+            && let Some(premises) = self.adjacent_loadable_region_facts(memory, base, bytes)
+            && (!exclude_exact_goal || !premises.contains(&proposition.clone()))
+            && let Some(found) = trial(&premises)
+        {
+            return Some(found);
         }
         // Two loadable ranges justify a goal only by concatenation, and the
         // kernel names the pair that concatenates. The first lookup above
@@ -2000,6 +2034,28 @@ fn reduce_simp_atomic_premises(
     if !for_simp || !matches!(evidence, AtomicPropositionDerivationEvidence::Legacy) {
         return Some((context, context_id, evidence));
     }
+    let cache_key = match proposition {
+        Proposition::ConditionIs(ConditionTerm::Bitvector32Equal(left, right), true) => {
+            match (left.as_ref(), right.as_ref()) {
+                (Bitvector32Term::Variable(left), Bitvector32Term::Variable(right)) => {
+                    Some((context_id, *left, *right))
+                }
+                _ => None,
+            }
+        }
+        _ => None,
+    };
+    if let Some(key) = cache_key
+        && let Some(reduced) = SIMP_ATOMIC_REDUCTIONS.with(|cache| {
+            crate::instrumentation::record_deterministic_work(1);
+            cache
+                .borrow()
+                .as_ref()
+                .and_then(|cache| cache.get(&key).cloned())
+        })
+    {
+        return Some(reduced);
+    }
     let premises = RetainedPremises::from_context(&context);
     let premises = premises.named();
     if !(8..=128).contains(&premises.len()) {
@@ -2040,11 +2096,24 @@ fn reduce_simp_atomic_premises(
             evidence = trial_evidence;
         } else if end - start > 1 {
             let middle = start + (end - start) / 2;
-            pending.push((middle, end));
+            // Conditions precede propositions in the retained selection.
+            // Try withdrawing the later chunk first, so irrelevant frame
+            // propositions do not accompany every trial on an exact scalar
+            // equality's condition sources.
             pending.push((start, middle));
+            pending.push((middle, end));
         }
     }
-    (!simp_reasoning_interrupted()).then_some((context, context_id, evidence))
+    let reduced = (!simp_reasoning_interrupted()).then_some((context, context_id, evidence))?;
+    if let Some(key) = cache_key {
+        SIMP_ATOMIC_REDUCTIONS.with(|cache| {
+            if let Some(cache) = cache.borrow_mut().as_mut() {
+                crate::instrumentation::record_deterministic_work(1);
+                cache.insert(key, reduced.clone());
+            }
+        });
+    }
+    Some(reduced)
 }
 
 #[cfg(test)]
@@ -2098,6 +2167,84 @@ mod shared_atomic_premise_tests {
     mod scaling_tests {
         include!(
             "../../scaling_tests/surface/planning/proposition_search/shared_atomic_premise_tests.rs"
+        );
+    }
+}
+
+#[cfg(test)]
+mod atomic_reduction_tests {
+    use super::*;
+
+    fn selection(size: usize, middle: Variable) -> (PureFactContext, Proposition, u64) {
+        let left = Bitvector32Term::Variable(Variable(785_001));
+        let right = Bitvector32Term::Variable(Variable(785_002));
+        let middle = Bitvector32Term::Variable(middle);
+        let equal = |left, right| ConditionTerm::Bitvector32Equal(Box::new(left), Box::new(right));
+        let goal = Proposition::ConditionIs(equal(left.clone(), right.clone()), true);
+        let mut context = PureFactContext::new()
+            .assume_condition(equal(left.clone(), middle.clone()), true)
+            .assume_condition(equal(middle, right), true);
+        for index in 0..size {
+            context = context.assume_proposition(Proposition::Predicate {
+                name: format!("connected_{index}"),
+                arguments: vec![Term::Bitvector32(left.clone())],
+            });
+        }
+        let (evidence, id) = context.proves_atomic_for_derivation_with_id(&goal, true);
+        assert!(evidence.is_some());
+        (context, goal, id)
+    }
+
+    fn reduce(context: &PureFactContext, goal: &Proposition, id: u64) -> ReducedAtomicPremises {
+        // Exercise the compatibility producer's selection: it has established
+        // the equality but retained the connected context without a typed path.
+        reduce_simp_atomic_premises(
+            goal,
+            true,
+            (
+                context.clone(),
+                id,
+                AtomicPropositionDerivationEvidence::Legacy,
+            ),
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn cached_reductions_keep_their_selected_contexts_separate() {
+        let (first, goal, first_id) = selection(8, Variable(785_003));
+        let (second, same_goal, second_id) = selection(8, Variable(785_004));
+        assert_eq!(goal, same_goal);
+        assert_ne!(first_id, second_id);
+        with_simp_atomic_reduction_cache(|| {
+            let a = reduce(&first, &goal, first_id);
+            let b = reduce(&second, &goal, second_id);
+            for (selected, original) in [(&a.0, &first), (&b.0, &second)] {
+                assert!(
+                    selected
+                        .proves_atomic_for_derivation_with_id(&goal, true)
+                        .0
+                        .is_some()
+                );
+                assert!(
+                    selected
+                        .pure_facts()
+                        .iter()
+                        .all(|fact| original.pure_facts().contains(fact))
+                );
+            }
+            assert_ne!(a.0.pure_facts(), b.0.pure_facts());
+            assert_eq!(
+                reduce(&first, &goal, first_id).0.pure_facts(),
+                a.0.pure_facts()
+            );
+        });
+    }
+
+    #[cfg(test)]
+    mod scaling_tests {
+        include!(
+            "../../scaling_tests/surface/planning/proposition_search/atomic_reduction_tests.rs"
         );
     }
 }

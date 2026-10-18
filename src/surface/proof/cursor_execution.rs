@@ -1573,7 +1573,7 @@ thread_local! {
 }
 
 /// Records a statement step whose checking derived a prerequisite by a
-/// search the proof does not retain (`issues/simplify-step.md`).
+/// search the proof does not retain.
 #[cfg(test)]
 pub(in crate::surface::proof) fn record_planning_statement_transition(
     claim: &str,

@@ -605,7 +605,7 @@ fn verified_expansion(
 
 /// Checks the expansion before it is written. A whole claim's expansion has
 /// nothing smart left, so it is checked with the implicit `auto` off and so
-/// shown self-contained (`issues/simplify-step.md`); a single site's leaves
+/// shown self-contained; a single site's leaves
 /// the claim's other steps and smart tactics, which still use it.
 fn verify_expansion(
     project: Option<&ClickProject>,

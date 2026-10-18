@@ -4682,7 +4682,7 @@ impl SmartTactic {
 }
 
 /// The proofs written on a `step` for the obligations its fast path leaves
-/// open (`issues/simplify-step.md`).
+/// open (`docs/reference/tactics/index.md`).
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum StepProof {
     /// `step() by ...`: the body proves the one remaining obligation.

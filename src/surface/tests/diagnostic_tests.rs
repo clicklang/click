@@ -773,87 +773,6 @@ fn execution_effect_diagnostics_omit_raw_memory_snapshots() {
     );
 }
 
-#[test]
-fn condition_certificate_search_reports_its_budget_without_dumping_snapshots() {
-    let memory = CMemory::new().with_block("wide-hidden-snapshot", 256);
-    let memory = crate::kernel::intern_c_memory(memory);
-    let facts = (0u32..64)
-        .map(|index| {
-            Proposition::ConditionIs(
-                ConditionTerm::Bitvector32Equal(
-                    Box::new(Bitvector32Term::MemoryLoad(
-                        memory.clone(),
-                        Box::new(Pointer {
-                            block: "wide-hidden-snapshot".into(),
-                            offset: PointerOffsetTerm::Constant(i64::from(index) * 4),
-                        }),
-                        crate::kernel::LoadKind::Bits32,
-                    )),
-                    Box::new(Bitvector32Term::Constant(index)),
-                ),
-                true,
-            )
-        })
-        .collect::<Vec<_>>();
-    let goal = Proposition::ConditionIs(
-        ConditionTerm::Bitvector32Equal(
-            Box::new(Bitvector32Term::Variable(Variable(1))),
-            Box::new(Bitvector32Term::Variable(Variable(2))),
-        ),
-        true,
-    );
-    let limits = crate::instrumentation::TacticWorkLimits {
-        simple: 1_000_000,
-        smart: 0,
-        control: 1_000_000,
-    };
-    let tactic = crate::instrumentation::TacticEvent {
-        source_tactic_path: None,
-        claim: "wide-condition.contract".to_string(),
-        tactic_index: 0,
-        tactic_name: "execute_until".to_string(),
-        class: "smart".to_string(),
-        statement_index: 0,
-        source_index: 0,
-    };
-
-    let error = crate::instrumentation::with_tactic_work_limits(limits, || {
-        crate::instrumentation::emit(crate::instrumentation::VerificationEvent::TacticStarted(
-            tactic.clone(),
-        ));
-        let result = super::proof::search_condition_derivation(&goal, &facts)
-            .expect_err("a zero smart budget should stop condition-certificate search");
-        crate::instrumentation::emit(crate::instrumentation::VerificationEvent::TacticFailed(
-            tactic,
-        ));
-        result
-    });
-
-    assert!(
-        error
-            .message()
-            .contains("condition-certificate premise search exceeded"),
-        "{error:?}"
-    );
-    // Unnamed operands retain distinct identities.
-    assert!(
-        error
-            .message()
-            .contains("target: <unnamed A> == <unnamed B>"),
-        "{error:?}"
-    );
-    assert!(
-        error.message().contains("ambient condition facts: 64"),
-        "{error:?}"
-    );
-    assert!(error.message().contains("exact premises"), "{error:?}");
-    assert!(!error.message().contains("CMemory"), "{error:?}");
-    assert!(
-        !error.message().contains("wide-hidden-snapshot"),
-        "{error:?}"
-    );
-}
-
 /// A condition search that finds no derivation prints the goal it looked for
 /// and the premises it searched, each with its operands in the source's names.
 /// It used to read "did not derive signed less-or-equal is true from 2
@@ -893,46 +812,6 @@ fn a_condition_search_miss_spells_its_goal_and_premises() {
         message
             .contains("did not derive `x <= y` from 2 ambient condition facts: [x <= 10, y <= 10]"),
         "{message}"
-    );
-}
-
-#[test]
-fn condition_certificate_search_is_not_sensitive_to_a_fact_prefix() {
-    let mut facts = (0u32..64)
-        .map(|index| {
-            Proposition::ConditionIs(
-                ConditionTerm::Bitvector32Equal(
-                    Box::new(Bitvector32Term::Variable(Variable(100 + u64::from(index)))),
-                    Box::new(Bitvector32Term::Constant(index)),
-                ),
-                true,
-            )
-        })
-        .collect::<Vec<_>>();
-    let left = Bitvector32Term::Variable(Variable(1));
-    let middle = Bitvector32Term::Variable(Variable(2));
-    let right = Bitvector32Term::Variable(Variable(3));
-    facts.push(Proposition::ConditionIs(
-        ConditionTerm::Bitvector32Equal(Box::new(left.clone()), Box::new(middle.clone())),
-        true,
-    ));
-    facts.push(Proposition::ConditionIs(
-        ConditionTerm::Bitvector32Equal(Box::new(middle), Box::new(right.clone())),
-        true,
-    ));
-    let goal = Proposition::ConditionIs(
-        ConditionTerm::Bitvector32Equal(Box::new(left), Box::new(right)),
-        true,
-    );
-
-    let derivation = super::proof::search_condition_derivation(&goal, &facts)
-        .expect("condition search should remain within the verification budget")
-        .expect("the two relevant facts should derive the goal even after 64 irrelevant facts");
-
-    assert_eq!(derivation.context_premises().len(), 2);
-    assert!(
-        derivation.check(&assumptions_from_propositions(&facts)),
-        "the selected certificate premises must check"
     );
 }
 

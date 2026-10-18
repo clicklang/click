@@ -527,7 +527,7 @@ fn split_execution_proof_branch_contexts(
             &context.pure_facts,
             condition,
             "execution proof traversal",
-            StatementPrerequisitePolicy::Contextual,
+            StatementPrerequisitePolicy::Fast,
             None,
         )? {
             let next = PlanningExecutionContext {
@@ -622,7 +622,7 @@ fn advance_execution_proof_statement(
                 &label,
                 &mut context.next_opaque_call,
                 &mut context.next_kernel_variable,
-                StatementPrerequisitePolicy::Contextual,
+                StatementPrerequisitePolicy::Fast,
                 StatementFactTransportPolicy::Automatic,
                 None,
             )?,
