@@ -8064,8 +8064,9 @@ fn owned_pointer_parameters_scale_with_their_number() {
     );
     // Recorded pre-fix finishing work at 4/8/16 in the owned-parameter
     // exit-check report closed by 871f90f68.
-    let recorded = [6_100usize, 13_500, 35_000];
-    assert!((recorded[2] - recorded[1]) * 7 > (recorded[1] - recorded[0]) * 20);
+    // Keep the recorded larger-size curve as a negative control for the
+    // same increment validator used by the measured smaller-size curve.
+    assert!(!linear_increments(&[6_100, 13_500, 35_000]));
 }
 
 /// A selected field separation after unfold uses the live partition before
