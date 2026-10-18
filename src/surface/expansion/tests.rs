@@ -1,6 +1,61 @@
 use super::*;
 
 #[test]
+fn nested_match_retains_nominal_list_result() {
+    let c = "struct node { int32 value; }; struct other { int32 value; };";
+    let source = r#"
+verifying "node.c";
+spec enum Nodes { Empty, Link(struct node*, Nodes) }
+function keep_node(node: struct node*) -> struct node* { node }
+function singleton(node: struct node*) -> List<struct node*> {
+    List::Cons(node, List::Nil)
+}
+function singleton_return(node: struct node*) -> List<struct node*> {
+    List::Cons(keep_node(node), List::Nil)
+}
+function first(nodes: Nodes) -> List<struct node*> decreases nodes {
+    match nodes {
+        Nodes::Empty => List::Nil,
+        Nodes::Link(node, tail) => match tail {
+            Nodes::Empty => List::Cons(node, List::Nil),
+            Nodes::Link(next, rest) => first(tail),
+        },
+    }
+}
+theorem first_null() {
+    ensures first(Nodes::Link(0, Nodes::Empty))
+        == List<struct node*>::Cons(0, List<struct node*>::Nil) by {
+            unfold(first(Nodes::Link(0, Nodes::Empty)));
+            normalize();
+        }
+}
+theorem singleton_null() {
+    ensures singleton(0) == List<struct node*>::Cons(0, List<struct node*>::Nil)
+        by { unfold(singleton(0)); normalize(); }
+}
+theorem singleton_return_null() {
+    ensures singleton_return(0) == List<struct node*>::Cons(0, List<struct node*>::Nil)
+        by { unfold(singleton_return(0)); unfold(keep_node(0)); normalize(); }
+}
+"#;
+    verify_c0_sources(source, &[("node.c", c)])
+        .unwrap_or_else(|error| panic!("{}", error.message()));
+    for field_type in ["int32*", "struct other*"] {
+        let wrong = source.replace(
+            "Link(struct node*, Nodes)",
+            &format!("Link({field_type}, Nodes)"),
+        );
+        let error = verify_c0_sources(&wrong, &[("node.c", c)])
+            .expect_err("a matched payload must retain its own declared class");
+        assert!(
+            error.message().contains("function `first`"),
+            "{}",
+            error.message()
+        );
+    }
+}
+
+#[test]
 fn generic_list_induction_retains_nominal_pointer_fields() {
     let c = "struct node { int32 value; }; struct other { int32 value; };";
     let source = r#"

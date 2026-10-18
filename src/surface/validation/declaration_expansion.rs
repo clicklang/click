@@ -1152,9 +1152,12 @@ fn expand_declared_resource_clauses_with_rules(
 fn declaration_parameter_types(
     parameters: &[FunctionParameter],
 ) -> impl Iterator<Item = (String, ClickType)> + '_ {
-    parameters
-        .iter()
-        .map(|parameter| (parameter.name().to_string(), parameter.click_type().clone()))
+    parameters.iter().map(|parameter| {
+        (
+            parameter.name().to_string(),
+            parameter.click_type_with_object_class(),
+        )
+    })
 }
 
 fn expand_declared_resources_in_function_block(

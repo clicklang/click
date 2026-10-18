@@ -3368,6 +3368,14 @@ pub(super) fn instantiate_field_type(
 ) -> Result<ClickType, ClickError> {
     match field {
         AlgebraicFieldType::Integer => Ok(ClickType::Integer),
+        AlgebraicFieldType::C {
+            c_type,
+            struct_name: Some(struct_name),
+            ..
+        } => Ok(ClickType::CObjectPointer {
+            c_type: *c_type,
+            struct_name: struct_name.clone(),
+        }),
         AlgebraicFieldType::C { c_type, .. } => Ok(ClickType::C(*c_type)),
         AlgebraicFieldType::Parameter(name) => definition
             .type_parameters()

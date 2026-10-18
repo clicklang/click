@@ -51,6 +51,13 @@ impl ClickType {
 }
 
 impl FunctionParameter {
+    pub(super) fn click_type_with_object_class(&self) -> ClickType {
+        match self.pointer_object_class() {
+            Some(class) => ClickType::from_object_pointer_class(self.c_type(), &class),
+            None => self.click_type().clone(),
+        }
+    }
+
     pub(super) fn pointer_object_class(&self) -> Option<CAccessClass> {
         struct_pointer_class(self.click_type().c_type()?, self.struct_name()?)
     }
