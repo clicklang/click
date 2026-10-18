@@ -481,6 +481,15 @@ fn old_collect_spec_algebraic_bound_identities(
                 }
             }
         }
+        SpecAlgebraicExpressionNode::If {
+            condition,
+            then_branch,
+            else_branch,
+        } => {
+            old_collect_spec_proposition_bound_identities(condition, variables, integer_seen);
+            old_collect_spec_algebraic_bound_identities(then_branch, variables, integer_seen);
+            old_collect_spec_algebraic_bound_identities(else_branch, variables, integer_seen);
+        }
         SpecAlgebraicExpressionNode::Match { scrutinee, arms } => {
             old_collect_spec_algebraic_bound_identities(scrutinee, variables, integer_seen);
             for arm in arms {
@@ -654,6 +663,15 @@ fn old_collect_spec_algebraic_expression_bitvector_variables(
                     }
                 }
             }
+        }
+        SpecAlgebraicExpressionNode::If {
+            condition,
+            then_branch,
+            else_branch,
+        } => {
+            old_collect_spec_proposition_bitvector_variables(condition, variables);
+            old_collect_spec_algebraic_expression_bitvector_variables(then_branch, variables);
+            old_collect_spec_algebraic_expression_bitvector_variables(else_branch, variables);
         }
         SpecAlgebraicExpressionNode::Match { scrutinee, arms } => {
             old_collect_spec_algebraic_expression_bitvector_variables(scrutinee, variables);

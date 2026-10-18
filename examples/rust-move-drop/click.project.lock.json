@@ -4,21 +4,36 @@
     "guard": {
       "language": "rust",
       "lock": {
-        "artifact": "c4c5f3a67568e3acb7d1e847fad17cc263dbfe13f39c75d1848a6ed678254629",
-        "config": "3e63caa8db137e6808c68471ac647500087b34eb9cfbfbbceb5b1b6d5acb8d88",
+        "envelope": 1,
         "frontend": {
-          "click_version": "0.1.0",
-          "compiler_commit": "923c95cdf5ba65cea505aa2ea829f578e1506ed8",
-          "extractor_revision": "5d6b812e5f77dbf3d7f66c21b9b57091f0e084cb",
-          "extractor_version": "0.1.279",
-          "profile": "38b817cc5760845d2e37b8f72a333f6d36a3ccdbfbf19e8c22da436e67a79ab1"
+          "identity": "7c2e994c506684f2bc8c86d9798bf9cb35c42693c51c3dd401139ef6618ae66c",
+          "name": "charon"
         },
-        "identity": "3db30d5a00f7f7ca5efef04848b4e564fc1116d51379b334906b956c0403ee87",
-        "schema": 9,
-        "source": "a8c2dfeca48639fad16144a775c25c8057471e442ac134426e934abea76d61d6",
-        "source_files": {
-          "guard.rs": "a8c2dfeca48639fad16144a775c25c8057471e442ac134426e934abea76d61d6"
-        }
+        "rust": {
+          "frontend": {
+            "click_version": "0.1.0",
+            "compiler_commit": "923c95cdf5ba65cea505aa2ea829f578e1506ed8",
+            "extractor_revision": "5d6b812e5f77dbf3d7f66c21b9b57091f0e084cb",
+            "extractor_version": "0.1.279",
+            "profile": "38b817cc5760845d2e37b8f72a333f6d36a3ccdbfbf19e8c22da436e67a79ab1"
+          },
+          "schema": 9,
+          "source": "a8c2dfeca48639fad16144a775c25c8057471e442ac134426e934abea76d61d6"
+        },
+        "sources": {
+          "guard.rs": {
+            "artifact": {
+              "bytes": 70996,
+              "path": ".click/guard/guard.rs.ullbc",
+              "sha256": "c4c5f3a67568e3acb7d1e847fad17cc263dbfe13f39c75d1848a6ed678254629"
+            },
+            "identity": "02d5936df0082df4e8d19ca651760fa706397693a0839c2c81e35c4bde80e15e",
+            "inputs": {
+              "guard.rs": "a8c2dfeca48639fad16144a775c25c8057471e442ac134426e934abea76d61d6"
+            }
+          }
+        },
+        "unit": "3e63caa8db137e6808c68471ac647500087b34eb9cfbfbbceb5b1b6d5acb8d88"
       }
     }
   }

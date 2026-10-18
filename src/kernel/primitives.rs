@@ -2947,6 +2947,11 @@ pub enum SpecAlgebraicExpressionNode {
         name: String,
         arguments: Vec<SpecPureFunctionArgument>,
     },
+    If {
+        condition: Box<SpecProposition>,
+        then_branch: Box<SpecAlgebraicExpression>,
+        else_branch: Box<SpecAlgebraicExpression>,
+    },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
@@ -3277,6 +3282,13 @@ pub enum AlgebraicTermNode {
         name: String,
         arguments: Vec<PureFunctionArgument>,
     },
+    /// A conditional algebraic value, built by [`AlgebraicTerm::if_then_else`]
+    /// so that a constant condition or equal branches never stand.
+    If {
+        condition: Box<ConditionTerm>,
+        then_term: Box<AlgebraicTerm>,
+        else_term: Box<AlgebraicTerm>,
+    },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
@@ -3289,6 +3301,34 @@ pub enum PureFunctionArgument {
         pointer: CValue,
         element_type: CType,
     },
+}
+
+/// A condition rewritten by a rewrite of scalar terms: as the condition of
+/// `if condition { 1 } else { 0 }`, so a rewrite that decides it leaves the
+/// constant it decided.
+pub(crate) fn rewrite_condition_through_bits(
+    condition: &ConditionTerm,
+    rewrite: impl FnOnce(&Bitvector32Term) -> Bitvector32Term,
+) -> ConditionTerm {
+    let carrier = Bitvector32Term::If {
+        condition: Box::new(condition.clone()),
+        then_term: Box::new(Bitvector32Term::Constant(1)),
+        else_term: Box::new(Bitvector32Term::Constant(0)),
+    };
+    match rewrite(&carrier) {
+        Bitvector32Term::If {
+            condition,
+            then_term,
+            else_term,
+        } if *then_term == Bitvector32Term::Constant(1)
+            && *else_term == Bitvector32Term::Constant(0) =>
+        {
+            *condition
+        }
+        Bitvector32Term::Constant(1) => ConditionTerm::Constant(true),
+        Bitvector32Term::Constant(0) => ConditionTerm::Constant(false),
+        _ => condition.clone(),
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
@@ -3362,6 +3402,22 @@ impl AlgebraicTerm {
                             });
                         }
                     }
+                    AlgebraicTermNode::If {
+                        condition,
+                        then_term,
+                        else_term,
+                    } => {
+                        // The condition's terms are visited as the scalar
+                        // conditional that carries them, so a caller walks
+                        // them as it walks any condition.
+                        visit(&Bitvector32Term::If {
+                            condition: condition.clone(),
+                            then_term: Box::new(Bitvector32Term::Constant(0)),
+                            else_term: Box::new(Bitvector32Term::Constant(0)),
+                        });
+                        pending.push(Node::Algebraic(then_term));
+                        pending.push(Node::Algebraic(else_term));
+                    }
                 },
                 Node::Value(value) => match value.numeric_value() {
                     CValue::PointerInteger(_) => unreachable!("numeric projection"),
@@ -3391,6 +3447,28 @@ impl AlgebraicTerm {
                     | PointerOffsetTerm::Int64Scaled { value, .. } => visit(value),
                 },
             }
+        }
+    }
+
+    /// `if condition { then_term } else { else_term }`: one branch when the
+    /// condition is a constant or both branches are the same term.
+    pub(crate) fn if_then_else(
+        condition: ConditionTerm,
+        then_term: AlgebraicTerm,
+        else_term: AlgebraicTerm,
+    ) -> AlgebraicTerm {
+        match condition {
+            ConditionTerm::Constant(true) => then_term,
+            ConditionTerm::Constant(false) => else_term,
+            _ if then_term == else_term => then_term,
+            condition => AlgebraicTerm {
+                algebraic_type: then_term.algebraic_type.clone(),
+                node: AlgebraicTermNode::If {
+                    condition: Box::new(condition),
+                    then_term: Box::new(then_term),
+                    else_term: Box::new(else_term),
+                },
+            },
         }
     }
 
@@ -3425,6 +3503,16 @@ impl AlgebraicTerm {
             AlgebraicTermNode::Constructor { .. } => self.checked_constructor_fields().is_some(),
             AlgebraicTermNode::PureFunctionApplication { arguments, .. } => {
                 arguments.iter().all(PureFunctionArgument::is_well_formed)
+            }
+            AlgebraicTermNode::If {
+                then_term,
+                else_term,
+                ..
+            } => {
+                then_term.algebraic_type == self.algebraic_type
+                    && else_term.algebraic_type == self.algebraic_type
+                    && then_term.is_well_formed()
+                    && else_term.is_well_formed()
             }
             AlgebraicTermNode::Match { scrutinee, arms } => {
                 !scrutinee.algebraic_type.rigid

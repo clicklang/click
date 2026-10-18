@@ -119,28 +119,28 @@ updating the extractor or adapter semantics, refresh existing imports. The
 normal example gate checks locked native inputs offline, while the nightly
 gate's live Charon tests refresh and verify all 16 original Rust fixtures.
 
-New lock identities use the `click-rust-v1` profile name. Existing
-`click-charon-trial-v1` lock identities remain accepted with the same exact
-input, artifact and semantic-profile checks; loading preserves their original
-identities. Legacy configurations still accept `"charon-trial"` as a backend
-compatibility alias. Historical single-file crate/output labels inside serialized
-artifacts remain stable, so
-this naming cleanup requires no artifact rewrite or forced lock refresh.
+A Rust unit's lock entry uses the envelope shared with C and C++, and its
+import identity the shared formula ([import.md](cli/import.md)); the `rust`
+section records the lock schema, the source and the front end. Legacy
+configurations still accept `"charon-trial"` as a backend compatibility alias.
+Historical single-file crate/output labels inside serialized artifacts remain
+stable.
 
 Rust lock schema 9 records `frontend`: the Click release version, pinned Charon
 version/revision, rustc commit and a SHA-256 identity of the complete extraction
-and semantic profile. The import identity binds that contribution to the unit,
-source closure and artifact. Local executable bytes, runtime paths and host
+and semantic profile. The front end's `identity` is the SHA-256 of that record,
+so the import identity binds it to the unit, source closure and artifact. Local executable bytes, runtime paths and host
 installation directories are absent. Source-built overrides use the same pins
 and runtime handshakes, so equal inputs and extraction output give the same lock
 as the packaged release. Extraction still detects executable changes during a
 run. Single-file artifact source paths are normalized to their source filename;
 crate paths remain relative to the unit root.
 
-The shared project-lock envelope is unchanged. Legacy Rust schema-8 locks remain
-readable offline with their original identities and checks. `click import lock`
-explicitly refreshes them into schema 9; a Click release or semantic-profile
-change also requires refresh. Normal verification never rewrites a lock.
+A schema-8 section, from releases before the `frontend` record, names the
+exporter and Charon driver digests and the semantic profile it was prepared
+under; it loads only while that profile is current. `click import lock`
+refreshes it into schema 9; a Click release or semantic-profile change also
+requires refresh. Normal verification never rewrites a lock.
 
 ## Locked crates and qualified declarations
 

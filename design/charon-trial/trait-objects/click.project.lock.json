@@ -4,21 +4,36 @@
     "trait_objects": {
       "language": "rust",
       "lock": {
-        "artifact": "f17c3f745511bd412f8cf7102cdbb8eda3641604bb2782ffc4c44d8152f7f772",
-        "config": "315685c3b88382dabf091e38e22fd12f32c34f8fa5f1f88702968f25fefde07d",
+        "envelope": 1,
         "frontend": {
-          "click_version": "0.1.0",
-          "compiler_commit": "923c95cdf5ba65cea505aa2ea829f578e1506ed8",
-          "extractor_revision": "5d6b812e5f77dbf3d7f66c21b9b57091f0e084cb",
-          "extractor_version": "0.1.279",
-          "profile": "38b817cc5760845d2e37b8f72a333f6d36a3ccdbfbf19e8c22da436e67a79ab1"
+          "identity": "7c2e994c506684f2bc8c86d9798bf9cb35c42693c51c3dd401139ef6618ae66c",
+          "name": "charon"
         },
-        "identity": "625c8b35c768aefbe83e5da671fd76b97704f2d5d56ba8a92fa88c86c2a9934b",
-        "schema": 9,
-        "source": "92df893a85284360f7aec9e2bff4f058a47f2d904a89e739e2284be501e03a0f",
-        "source_files": {
-          "shapes.rs": "c831cf8dd426d0578b9f65bad347914617b97505b89ffae3aebc408a388332bf"
-        }
+        "rust": {
+          "frontend": {
+            "click_version": "0.1.0",
+            "compiler_commit": "923c95cdf5ba65cea505aa2ea829f578e1506ed8",
+            "extractor_revision": "5d6b812e5f77dbf3d7f66c21b9b57091f0e084cb",
+            "extractor_version": "0.1.279",
+            "profile": "38b817cc5760845d2e37b8f72a333f6d36a3ccdbfbf19e8c22da436e67a79ab1"
+          },
+          "schema": 9,
+          "source": "92df893a85284360f7aec9e2bff4f058a47f2d904a89e739e2284be501e03a0f"
+        },
+        "sources": {
+          "shapes.rs": {
+            "artifact": {
+              "bytes": 211996,
+              "path": ".click/trait_objects/shapes.rs.ullbc",
+              "sha256": "f17c3f745511bd412f8cf7102cdbb8eda3641604bb2782ffc4c44d8152f7f772"
+            },
+            "identity": "795fac39a14d7f38f5d5c5410abf7279289cce02f68b1a743138812946fa2a42",
+            "inputs": {
+              "shapes.rs": "c831cf8dd426d0578b9f65bad347914617b97505b89ffae3aebc408a388332bf"
+            }
+          }
+        },
+        "unit": "315685c3b88382dabf091e38e22fd12f32c34f8fa5f1f88702968f25fefde07d"
       }
     }
   }

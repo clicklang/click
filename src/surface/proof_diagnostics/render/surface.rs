@@ -2194,6 +2194,22 @@ impl Printer<'_> {
                     format!("{name}({})", spelled_fields.join(", "))
                 }))
             }
+            AlgebraicTermNode::If {
+                condition,
+                then_term,
+                else_term,
+            } => {
+                let condition = self.condition(condition, true, depth + 1)?;
+                let then_term = self.algebraic(then_term, depth + 1)?;
+                let else_term = self.algebraic(else_term, depth + 1)?;
+                Some(spelled(
+                    format!(
+                        "if {} {{ {} }} else {{ {} }}",
+                        condition.text, then_term.text, else_term.text
+                    ),
+                    0,
+                ))
+            }
             AlgebraicTermNode::Match { scrutinee, arms } => {
                 if !self.source_mode() {
                     return None;

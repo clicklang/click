@@ -534,6 +534,21 @@ fn collect_algebraic_carriers_seen(
                 }
             }
         }
+        AlgebraicTermNode::If {
+            condition,
+            then_term,
+            else_term,
+        } => {
+            collect_condition_carriers(condition, variables);
+            if variables.exhausted() {
+                return;
+            }
+            collect_algebraic_carriers_seen(then_term, variables, seen);
+            if variables.exhausted() {
+                return;
+            }
+            collect_algebraic_carriers_seen(else_term, variables, seen);
+        }
     }
 }
 
@@ -2673,6 +2688,41 @@ impl<'a> TermRewrite<'a> {
                 AlgebraicTermNode::Match {
                     scrutinee: Box::new(scrutinee),
                     arms: rewritten_arms,
+                }
+            }
+            AlgebraicTermNode::If {
+                condition,
+                then_term,
+                else_term,
+            } => {
+                // As a scalar conditional: a rewrite that decides the
+                // condition leaves the arm it selects.
+                if let Some(conditions) = &mut self.collected_conditions {
+                    conditions.push(condition.as_ref().clone());
+                }
+                let condition = self.condition(condition);
+                let condition = if self.integer_exact.is_some() {
+                    condition
+                } else {
+                    folded_machine_condition(condition)
+                };
+                if self.checked_work_exhausted() {
+                    return exhausted_algebraic(term);
+                }
+                if self.integer_exact.is_none()
+                    && let ConditionTerm::Constant(value) = condition
+                {
+                    return self.algebraic(if value { then_term } else { else_term });
+                }
+                let then_term = self.algebraic(then_term);
+                let else_term = self.algebraic(else_term);
+                if self.checked_work_exhausted() {
+                    return exhausted_algebraic(term);
+                }
+                AlgebraicTermNode::If {
+                    condition: Box::new(condition),
+                    then_term: Box::new(then_term),
+                    else_term: Box::new(else_term),
                 }
             }
         };

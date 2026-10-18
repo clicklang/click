@@ -244,36 +244,77 @@ fn related_memory_base_roots(
     base: &Pointer,
     assumptions: &PureFactContext,
 ) -> BTreeSet<MemoryBaseRoot> {
+    let mut roots = BTreeSet::new();
+    extend_related_memory_base_roots(base, assumptions, &mut roots, &mut BTreeSet::new());
+    roots
+}
+
+/// How a root scales its index term: whether it is the int64 form, its byte
+/// width, and whether it is unsigned.
+type IndexScale = (bool, i64, bool);
+
+/// Add `base`'s related roots (see [`related_memory_base_roots`]) to
+/// `roots`.
+///
+/// `walked` holds the equality classes already walked into `roots`, each
+/// member under its block and scale. A recorded-equality class is an
+/// equivalence class (its evidence edges are symmetric), so walking it from
+/// any member reaches the same members; a base whose index lies in a walked
+/// class relates to exactly the roots that walk added, and is not walked
+/// again. That holds when the base's own root is the image of its index,
+/// which both sides check: the class leaves its starting term out, and the
+/// root stands for it.
+fn extend_related_memory_base_roots(
+    base: &Pointer,
+    assumptions: &PureFactContext,
+    roots: &mut BTreeSet<MemoryBaseRoot>,
+    walked: &mut BTreeSet<(PointerBlock, IndexScale, Bitvector32Term)>,
+) {
     let root = memory_base_root(base);
-    let mut roots = BTreeSet::from([root.clone()]);
-    let (block, Some(atom)) = root else {
-        return roots;
+    roots.insert(root.clone());
+    let (block, Some(atom)) = root.clone() else {
+        return;
     };
-    let (value, rescale): (
+    let (value, scale, rescale): (
         &Bitvector32Term,
+        IndexScale,
         &dyn Fn(Bitvector32Term) -> PointerOffsetTerm,
     ) = match &atom {
-        PointerOffsetTerm::Int32Scaled { value, byte_width } => (value, &|member| {
-            PointerOffsetTerm::scale_int32(member, *byte_width)
-        }),
+        PointerOffsetTerm::Int32Scaled { value, byte_width } => {
+            (value, (false, *byte_width, false), &|member| {
+                PointerOffsetTerm::scale_int32(member, *byte_width)
+            })
+        }
         PointerOffsetTerm::Int64Scaled {
             value,
             byte_width,
             unsigned,
-        } => (value, &|member| {
+        } => (value, (true, *byte_width, *unsigned), &|member| {
             PointerOffsetTerm::scale_int64(member, *byte_width, *unsigned)
         }),
-        _ => return roots,
+        _ => return,
     };
+    let image = |member: Bitvector32Term| {
+        memory_base_root(&Pointer {
+            block: block.clone(),
+            offset: rescale(member),
+        })
+    };
+    let index = value.clone();
+    let root_is_own_image = image(index.clone()) == root;
+    if root_is_own_image && walked.contains(&(block.clone(), scale, index.clone())) {
+        return;
+    }
     for member in assumptions.recorded_equality_class(value) {
         crate::instrumentation::record_deterministic_work(1);
-        let scaled = rescale(member);
-        roots.insert(memory_base_root(&Pointer {
-            block: block.clone(),
-            offset: scaled,
-        }));
+        if root_is_own_image {
+            walked.insert((block.clone(), scale, member.clone()));
+        }
+        roots.insert(image(member));
     }
-    roots
+    if root_is_own_image {
+        walked.insert((block.clone(), scale, index));
+    }
 }
 
 /// A constant translation of exactly one unregistered int32 scalar atom.
@@ -7768,12 +7809,16 @@ fn related_pointer_roots(
     pointer: &Pointer,
     assumptions: &PureFactContext,
 ) -> BTreeSet<MemoryBaseRoot> {
-    let mut roots = related_memory_base_roots(pointer, assumptions);
+    // Aliases of one pointer usually have indexes in one equality class;
+    // `walked` lets that class be walked once rather than once per alias.
+    let mut roots = BTreeSet::new();
+    let mut walked = BTreeSet::new();
+    extend_related_memory_base_roots(pointer, assumptions, &mut roots, &mut walked);
     for alias in assumptions.exact_pointer_aliases(pointer) {
-        roots.extend(related_memory_base_roots(alias, assumptions));
+        extend_related_memory_base_roots(alias, assumptions, &mut roots, &mut walked);
     }
     for alias in assumptions.exact_pointer_offset_aliases(pointer) {
-        roots.extend(related_memory_base_roots(&alias, assumptions));
+        extend_related_memory_base_roots(&alias, assumptions, &mut roots, &mut walked);
     }
     roots
 }
@@ -11615,6 +11660,88 @@ fn absent_view_queries_ignore_owned_frames_and_track_view_lifecycle() {
         assert_eq!(
             work, 0,
             "removing the last view restores empty lookup: size={size}"
+        );
+    }
+}
+
+#[cfg(test)]
+mod related_pointer_root_tests {
+    use super::*;
+
+    fn external(index: u64) -> Pointer {
+        Pointer {
+            block: PointerBlock::ExternalArgument,
+            offset: PointerOffsetTerm::Int32Scaled {
+                value: Box::new(Bitvector32Term::Variable(Variable(986_400 + index))),
+                byte_width: 4,
+            },
+        }
+    }
+
+    /// `count` pointers each stated equal to one base, as `requires q == b`
+    /// states them.
+    fn aliases_of_base(count: u64) -> (Pointer, PureFactContext) {
+        let base = external(0);
+        let assumptions = (1..=count).fold(PureFactContext::new(), |assumptions, index| {
+            assumptions.assume_condition(
+                ConditionTerm::pointer_equal(external(index), base.clone()),
+                true,
+            )
+        });
+        (base, assumptions)
+    }
+
+    /// The roots as each alias computes them on its own, the reference the
+    /// shared walk must reproduce.
+    fn roots_alias_by_alias(
+        pointer: &Pointer,
+        assumptions: &PureFactContext,
+    ) -> BTreeSet<MemoryBaseRoot> {
+        let mut roots = related_memory_base_roots(pointer, assumptions);
+        for alias in assumptions.exact_pointer_aliases(pointer) {
+            roots.extend(related_memory_base_roots(alias, assumptions));
+        }
+        for alias in assumptions.exact_pointer_offset_aliases(pointer) {
+            roots.extend(related_memory_base_roots(&alias, assumptions));
+        }
+        roots
+    }
+
+    #[test]
+    fn aliases_in_one_class_relate_the_same_roots_as_alias_by_alias() {
+        let _session = crate::kernel::VerificationSession::enter();
+        for count in [1, 3, 17] {
+            let (base, assumptions) = aliases_of_base(count);
+            let roots = related_pointer_roots(&base, &assumptions);
+            assert_eq!(roots, roots_alias_by_alias(&base, &assumptions));
+            assert_eq!(roots.len(), count as usize + 1);
+            // Asking from an alias reaches the same class.
+            let alias = external(count);
+            assert_eq!(
+                related_pointer_roots(&alias, &assumptions),
+                roots_alias_by_alias(&alias, &assumptions)
+            );
+        }
+    }
+
+    /// One pointer with N recorded aliases, all in one equality class, used
+    /// to cost N walks of that N-member class.
+    #[test]
+    fn related_roots_of_aliased_pointers_walk_their_class_once() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let work_at = |count: u64| {
+            let (base, assumptions) = aliases_of_base(count);
+            let (roots, work) = crate::instrumentation::measure_deterministic_work(|| {
+                related_pointer_roots(&base, &assumptions)
+            });
+            assert_eq!(roots.len(), count as usize + 1);
+            work
+        };
+        let small = work_at(16);
+        let large = work_at(128);
+        assert!(
+            large <= 10 * small,
+            "related roots of 128 aliases cost {large} work units against {small} for 16"
         );
     }
 }

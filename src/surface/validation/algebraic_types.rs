@@ -2139,12 +2139,18 @@ fn validate_algebraic_expression_node(
                 definitions,
                 context,
             )?;
-            if then_type.is_some() || else_type.is_some() {
-                return Err(ClickError::new(format!(
-                    "algebraic-valued `if` expressions are not supported in {context}; use an exhaustive `match` on an algebraic discriminator"
-                )));
+            match (then_type, else_type) {
+                (None, None) => Ok(None),
+                (Some(then_type), Some(else_type)) if then_type == else_type => Ok(Some(then_type)),
+                (Some(then_type), Some(else_type)) => Err(ClickError::new(format!(
+                    "`if` has incompatible branch types {} and {} in {context}",
+                    describe_click_type(&ClickType::Algebraic(then_type)),
+                    describe_click_type(&ClickType::Algebraic(else_type))
+                ))),
+                (Some(_), None) | (None, Some(_)) => Err(ClickError::new(format!(
+                    "`if` has one algebraic branch and one that is not in {context}"
+                ))),
             }
-            Ok(None)
         }
         ContractExpression::RangeFold {
             start,

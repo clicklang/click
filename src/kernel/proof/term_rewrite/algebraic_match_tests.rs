@@ -209,3 +209,32 @@ fn algebraic_match_normalization_substitutes_integer_fields() {
         boxed(IntegerTerm::Variable(Variable(8)))
     ));
 }
+
+#[test]
+fn algebraic_conditional_is_one_branch_once_its_condition_is_decided() {
+    let condition = ConditionTerm::Bitvector32Equal(
+        Box::new(Bitvector32Term::Variable(Variable(7))),
+        Box::new(Bitvector32Term::Constant(0)),
+    );
+    // The smart constructor never builds a decided or branch-equal conditional.
+    assert_eq!(
+        AlgebraicTerm::if_then_else(ConditionTerm::Constant(true), empty(), var(1)),
+        empty()
+    );
+    assert_eq!(
+        AlgebraicTerm::if_then_else(condition.clone(), var(1), var(1)),
+        var(1)
+    );
+    let conditional = AlgebraicTerm::if_then_else(condition, empty(), pair(var(1), var(2)));
+    assert!(matches!(conditional.node, AlgebraicTermNode::If { .. }));
+    // Substituting the compared variable decides the condition, and the
+    // rewrite leaves the selected branch.
+    let variable = Bitvector32Term::Variable(Variable(7));
+    let (zero_value, one_value) = (Bitvector32Term::Constant(0), Bitvector32Term::Constant(1));
+    let mut zero = TermRewrite::for_bits(&variable, &zero_value);
+    assert_eq!(zero.algebraic(&conditional), empty());
+    let mut one = TermRewrite::for_bits(&variable, &one_value);
+    assert_eq!(one.algebraic(&conditional), pair(var(1), var(2)));
+    assert!(!normalizes(conditional.clone(), empty()));
+    assert!(normalizes(conditional.clone(), conditional));
+}
