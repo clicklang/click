@@ -2625,8 +2625,7 @@ fn charon_adler2_checksum_rejects_false_packing_and_missing_shared_authority() {
         let source =
             format!("verifying \"src/lib.rs\";\n{COMMON_ADLER_SPEC}\n{PACKING}\n{contract}");
         let error = verify_public_checksum_unit(&source, &prepared, "adler2::Adler32::checksum")
-            .err()
-            .expect("false packing or missing shared authority must be refused");
+            .expect_err("false packing or missing shared authority must be refused");
         assert!(
             !error.message().contains("budget exhausted"),
             "{}",
