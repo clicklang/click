@@ -1956,6 +1956,32 @@ pub(super) fn finish_ordered_proof<'a>(
                         .flatten()
                 })
                 .or_else(|| {
+                    // Conditional scalar values can split at return without
+                    // a written C branch. Their guard distinguishes the
+                    // outcomes; an earlier frame equality holds on both.
+                    shared_terminal_leaf
+                        .then(|| {
+                            claims
+                                .iter()
+                                .find_map(|claim| match claim.clause().ensure() {
+                                    Ensure::Proposition(ClickProposition::Comparison {
+                                        left,
+                                        right,
+                                        ..
+                                    }) => [left, right].into_iter().find_map(|expression| {
+                                        match expression {
+                                            ContractExpression::If { condition, .. } => {
+                                                Some(condition.as_ref().clone())
+                                            }
+                                            _ => None,
+                                        }
+                                    }),
+                                    _ => None,
+                                })
+                        })
+                        .flatten()
+                })
+                .or_else(|| {
                     // A scalar return can fork without a written C branch.
                     // Its checked postcondition can select distinct endings
                     // just as an OR arm or implication guard does. Each
