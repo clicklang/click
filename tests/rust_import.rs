@@ -630,22 +630,47 @@ fn charon_array_fields_check_bounds_authority_and_frames() {
     let p = charon_fields_project();
     let prepared = p.prepared().unwrap();
     C0VerificationSession::new_program_prepared(CHARON_FIELDS_SIDECAR, &prepared).unwrap();
-    for invalid in [
-        CHARON_FIELDS_SIDECAR.replace("requires index < 4u64;", "requires index == 4u64;"),
-        CHARON_FIELDS_SIDECAR.replace("requires index < 7u64;", "requires index == 4294967296u64;"),
-        CHARON_FIELDS_SIDECAR.replace("views state.values[0..4];", ""),
-        CHARON_FIELDS_SIDECAR.replace("owns state.values[0..4];", "views state.values[0..4];"),
-        CHARON_FIELDS_SIDECAR.replace(
-            "ensures state.values[index] == value;",
-            "ensures state.values[index] != value;",
+    // Check the changed functions, including every claim and path. The full
+    // original check above already covers the unchanged function bodies.
+    for (owners, invalid) in [
+        (
+            &["read", "tuple_read"][..],
+            CHARON_FIELDS_SIDECAR.replace("requires index < 4u64;", "requires index == 4u64;"),
         ),
-        CHARON_FIELDS_SIDECAR.replace(
-            "result == old(state.0[index])",
-            "result != old(state.0[index])",
+        (
+            &["byte_read"][..],
+            CHARON_FIELDS_SIDECAR
+                .replace("requires index < 7u64;", "requires index == 4294967296u64;"),
+        ),
+        (
+            &["read", "borrowed_first"][..],
+            CHARON_FIELDS_SIDECAR.replace("views state.values[0..4];", ""),
+        ),
+        (
+            &["write"][..],
+            CHARON_FIELDS_SIDECAR.replace("owns state.values[0..4];", "views state.values[0..4];"),
+        ),
+        (
+            &["write"][..],
+            CHARON_FIELDS_SIDECAR.replace(
+                "ensures state.values[index] == value;",
+                "ensures state.values[index] != value;",
+            ),
+        ),
+        (
+            &["tuple_read"][..],
+            CHARON_FIELDS_SIDECAR.replace(
+                "result == old(state.0[index])",
+                "result != old(state.0[index])",
+            ),
         ),
     ] {
         assert_ne!(invalid, CHARON_FIELDS_SIDECAR);
-        assert!(C0VerificationSession::new_program_prepared(&invalid, &prepared).is_err());
+        assert!(
+            owners
+                .iter()
+                .any(|owner| verify_rust_function(&invalid, &prepared, owner).is_err())
+        );
     }
 }
 #[test]
@@ -1094,28 +1119,60 @@ fn charon_slices_preserve_metadata_permissions_and_cleanup() {
     let p = charon_slice_project();
     let prepared = p.prepared().unwrap();
     C0VerificationSession::new_program_prepared(CHARON_SLICE_SIDECAR, &prepared).unwrap();
-    for invalid in [
-        CHARON_SLICE_SIDECAR.replace("ensures result == bytes.len();", "ensures result == 0;"),
-        CHARON_SLICE_SIDECAR.replace("ensures result == value;", "ensures result == value + 1;"),
-        CHARON_SLICE_SIDECAR.replace(
-            "ensures value[0] == old(value[0]);",
-            "ensures value[0] == 7;",
+    // Check the changed functions, including every claim and path. The full
+    // original check above already covers the unchanged function bodies.
+    for (owners, invalid) in [
+        (
+            &["length"][..],
+            CHARON_SLICE_SIDECAR.replace("ensures result == bytes.len();", "ensures result == 0;"),
         ),
-        CHARON_SLICE_SIDECAR.replace("    requires index < bytes.len();\n", ""),
-        CHARON_SLICE_SIDECAR.replace(
-            "    requires index < bytes.len();",
-            "    requires index == bytes.len();",
+        (
+            &["write_read"][..],
+            CHARON_SLICE_SIDECAR
+                .replace("ensures result == value;", "ensures result == value + 1;"),
         ),
-        CHARON_SLICE_SIDECAR.replace(
-            "    requires index < bytes.len();",
-            "    requires index == 4294967296u64;",
+        (
+            &["guarded_read"][..],
+            CHARON_SLICE_SIDECAR.replace(
+                "ensures value[0] == old(value[0]);",
+                "ensures value[0] == 7;",
+            ),
         ),
-        CHARON_SLICE_SIDECAR.replace("    requires bytes.len() <= 2147483647u64;\n", ""),
-        CHARON_SLICE_SIDECAR.replace("    views bytes[0..bytes.len()];\n", ""),
-        CHARON_SLICE_SIDECAR.replace("    owns bytes[0..bytes.len()];\n", ""),
+        (
+            &["read", "write", "alias", "write_read", "guarded_read"][..],
+            CHARON_SLICE_SIDECAR.replace("    requires index < bytes.len();\n", ""),
+        ),
+        (
+            &["read", "write", "alias", "write_read", "guarded_read"][..],
+            CHARON_SLICE_SIDECAR.replace(
+                "    requires index < bytes.len();",
+                "    requires index == bytes.len();",
+            ),
+        ),
+        (
+            &["read", "write", "alias", "write_read", "guarded_read"][..],
+            CHARON_SLICE_SIDECAR.replace(
+                "    requires index < bytes.len();",
+                "    requires index == 4294967296u64;",
+            ),
+        ),
+        (
+            &["read", "write", "alias", "write_read", "guarded_read"][..],
+            CHARON_SLICE_SIDECAR.replace("    requires bytes.len() <= 2147483647u64;\n", ""),
+        ),
+        (
+            &["read", "guarded_read"][..],
+            CHARON_SLICE_SIDECAR.replace("    views bytes[0..bytes.len()];\n", ""),
+        ),
+        (
+            &["write", "alias", "write_read"][..],
+            CHARON_SLICE_SIDECAR.replace("    owns bytes[0..bytes.len()];\n", ""),
+        ),
     ] {
         assert!(
-            C0VerificationSession::new_program_prepared(&invalid, &prepared).is_err(),
+            owners
+                .iter()
+                .any(|owner| verify_rust_function(&invalid, &prepared, owner).is_err()),
             "accepted {invalid}"
         );
     }
@@ -1226,21 +1283,49 @@ fn charon_arrays_compose_with_resolved_conversion_and_drop() {
     let p = charon_array_project();
     let prepared = p.prepared().unwrap();
     C0VerificationSession::new_program_prepared(CHARON_ARRAY_SIDECAR, &prepared).unwrap();
-    for invalid in [
-        CHARON_ARRAY_SIDECAR.replace("ensures result == x;", "ensures result == x + 1;"),
-        CHARON_ARRAY_SIDECAR.replace("value[0] == old(value[0]);", "value[0] == 7;"),
-        CHARON_ARRAY_SIDECAR.replace("ensures result == 7;", "ensures result == 8;"),
-        CHARON_ARRAY_SIDECAR.replace("ensures result == 9;", "ensures result == 2;"),
-        CHARON_ARRAY_SIDECAR.replace("ensures result == 1;", "ensures result == 257;"),
-        CHARON_ARRAY_SIDECAR.replace(
-            "value[0] == old(value[0]) + 1;",
-            "value[0] == old(value[0]);",
+    // Check the changed functions, including every claim and path. The full
+    // original check above already covers the unchanged function bodies.
+    for (owners, invalid) in [
+        (
+            &["guarded_array"][..],
+            CHARON_ARRAY_SIDECAR.replace("ensures result == x;", "ensures result == x + 1;"),
         ),
-        CHARON_ARRAY_SIDECAR.replace("    owns value[0..1];\n", ""),
-        CHARON_ARRAY_SIDECAR.replace("    requires value[0] < 2147483647;\n", ""),
+        (
+            &["guarded_array"][..],
+            CHARON_ARRAY_SIDECAR.replace("value[0] == old(value[0]);", "value[0] == 7;"),
+        ),
+        (
+            &["large_array", "increment"][..],
+            CHARON_ARRAY_SIDECAR.replace("ensures result == 7;", "ensures result == 8;"),
+        ),
+        (
+            &["explicit_array"][..],
+            CHARON_ARRAY_SIDECAR.replace("ensures result == 9;", "ensures result == 2;"),
+        ),
+        (
+            &["cast_array"][..],
+            CHARON_ARRAY_SIDECAR.replace("ensures result == 1;", "ensures result == 257;"),
+        ),
+        (
+            &["increment", "empty_array"][..],
+            CHARON_ARRAY_SIDECAR.replace(
+                "value[0] == old(value[0]) + 1;",
+                "value[0] == old(value[0]);",
+            ),
+        ),
+        (
+            &["guarded_array", "increment", "empty_array"][..],
+            CHARON_ARRAY_SIDECAR.replace("    owns value[0..1];\n", ""),
+        ),
+        (
+            &["increment", "empty_array"][..],
+            CHARON_ARRAY_SIDECAR.replace("    requires value[0] < 2147483647;\n", ""),
+        ),
     ] {
         assert!(
-            C0VerificationSession::new_program_prepared(&invalid, &prepared).is_err(),
+            owners
+                .iter()
+                .any(|owner| verify_rust_function(&invalid, &prepared, owner).is_err()),
             "accepted {invalid}"
         );
     }
@@ -1804,9 +1889,10 @@ fn verify_rust_function(
     prepared: &click::languages::rust::PreparedRustImport,
     name: &str,
 ) -> Result<(), click::surface::ClickError> {
-    let start = source
-        .find(&format!("fn {name}("))
-        .expect("the function exists");
+    let head = format!("fn {name}(");
+    let start = source.find(&head).expect("the function exists") + head.len();
+    // A qualified closure name itself contains `{closure#N}`. Only search
+    // for the contract brace after the complete function name.
     let offset = start + source[start..].find('{').unwrap();
     let prefix = &source[..offset];
     let line = prefix.bytes().filter(|&byte| byte == b'\n').count() + 1;
