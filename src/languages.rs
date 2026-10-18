@@ -3,6 +3,7 @@
 pub mod c;
 pub(crate) mod compiler_process;
 pub mod cpp;
+pub(crate) mod portable_paths;
 pub mod rust;
 
 /// The language a program's sources are written in.

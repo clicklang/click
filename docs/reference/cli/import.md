@@ -180,7 +180,13 @@ sees all of them, and verifies no other source. Preprocessor inputs under the
 unit root or the project directory are rechecked relative to those roots;
 inputs outside them, such as system, sysroot and Clang resource headers, are
 pinned by the digest the lock records and are not read when loading, so the
-lock verifies on another machine and after the checkout moves.
+lock verifies on another machine and after the checkout moves. The lock and
+the artifact name the unit root, the project directory and the pinned Clang's
+resource directory by the labels `$unit`, `$project` and `$clang-resource`,
+never by the preparing checkout's path, and the import identity covers the
+labelled form: preparing the project again from another checkout writes the
+same lock and artifacts (`cpp_project_locks_are_portable` in
+`tests/cpp_import.rs`).
 
 A sidecar selects a unit source with an ordinary `verifying` path, relative to
 the sidecar, that resolves to a file the unit lists; for example a sidecar in
@@ -197,7 +203,12 @@ toolchain. Each unit's entry records the digest of its description and the
 project target; editing either refuses the lock until it is prepared again.
 Loading rechecks the unit's sources and every header the compiler opened under
 the project directory or the unit root, so the lock still loads after the whole
-checkout moves, and a changed input is refused with the file named.
+checkout moves, and a changed input is refused with the file named. The lock
+names those roots `$project` and `$unit` rather than by the preparing
+checkout's path, and its invocation and source identities cover that form, so
+preparing the project at another path writes the same lock
+(`compiler_import_project_locks_are_portable` in `tests/compiler_import.rs`).
+The selected compiler and its backend are named by path and pinned by digest.
 
 ## The prepared snapshot
 

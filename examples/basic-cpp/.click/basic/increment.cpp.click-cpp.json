@@ -182,8 +182,8 @@
   "logical_source": "increment.cpp",
   "preprocessor_files": [
     {
-      "accessed_path": "/home/user/click-b/examples/basic-cpp/increment.cpp",
-      "canonical_path": "/home/user/click-b/examples/basic-cpp/increment.cpp"
+      "accessed_path": "$unit/increment.cpp",
+      "canonical_path": "$unit/increment.cpp"
     }
   ],
   "profile": {
@@ -206,7 +206,7 @@
       "-o",
       "increment.cpp.o"
     ],
-    "compilation_directory": "/home/user/click-b/examples/basic-cpp",
+    "compilation_directory": "$unit",
     "compilation_file": "increment.cpp",
     "exceptions": false,
     "frontend": "clang",

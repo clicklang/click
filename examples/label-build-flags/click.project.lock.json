@@ -6,9 +6,9 @@
       "lock": {
         "click_header_catalog_sha256": "1eb5c9764e83c5a13e4d4fb5274581350b8dd3b03a35ab1038ebc30d1be51108",
         "compiler_path": "/usr/bin/x86_64-linux-gnu-gcc-13",
-        "config_directory": "/home/user/click-b/examples/label-build-flags",
+        "config_directory": "$project",
         "config_sha256": "dc9891df9a2749e1e6ba0a81459f0558eab844fd559bc6cc13c5509447b7d0ee",
-        "invocation_sha256": "79a182cc449b441505c11448cfa9f3ef9de4e28601a1ba20800c85a53d6d9f15",
+        "invocation_sha256": "56f07c57786dbddebeded544d5bebbe137a4687b3f40ca9b62a9d22b8a0e3010",
         "mode": "userspace",
         "schema": 3,
         "sources": [
@@ -24,9 +24,9 @@
               "string.h": "53f7dee80b866def12ac723e6d36c36f0e2bbed343afbb4de40b0a8d85b489fd"
             },
             "dependencies": {
-              "/home/user/click-b/examples/label-build-flags/label.h": "6c588c7e8f6e1180c63f8a38a72de5ee0ae7bfc8d2d5574752fab41d5b2e8c91"
+              "$project/label.h": "6c588c7e8f6e1180c63f8a38a72de5ee0ae7bfc8d2d5574752fab41d5b2e8c91"
             },
-            "identity": "736efaff7734844d27259673ac34e01111507df44e4f8f4d528e889dd8658424",
+            "identity": "c480e7b43c1c817e18e2fd08d688a61b0c5936f538fb1cc971bbe3b5f33cb244",
             "local_dependencies": {
               "label.h": "6c588c7e8f6e1180c63f8a38a72de5ee0ae7bfc8d2d5574752fab41d5b2e8c91"
             },
@@ -43,10 +43,10 @@
             "artifact_bytes": 415,
             "artifact_sha256": "94dbb747ca3f57be0cbb7a5d715e8f5803a163c3189a58274a2dd7901b828485",
             "dependencies": {
-              "/home/user/click-b/examples/label-build-flags/include/label_config.h": "0df31092d5991f82d9d0dd156449f5932420fd74b247881d717bff19542fc3b8",
-              "/home/user/click-b/examples/label-build-flags/label.h": "6c588c7e8f6e1180c63f8a38a72de5ee0ae7bfc8d2d5574752fab41d5b2e8c91"
+              "$project/include/label_config.h": "0df31092d5991f82d9d0dd156449f5932420fd74b247881d717bff19542fc3b8",
+              "$project/label.h": "6c588c7e8f6e1180c63f8a38a72de5ee0ae7bfc8d2d5574752fab41d5b2e8c91"
             },
-            "identity": "71effd58296f4a1eabd03fa14242ca3d16177765912191a680cec34d5f50f094",
+            "identity": "535ee5c0d6d8001c1da69bb553058edb39fd101b5891a2952040e5bb5ac274e0",
             "local_dependencies": {
               "include/label_config.h": "0df31092d5991f82d9d0dd156449f5932420fd74b247881d717bff19542fc3b8",
               "label.h": "6c588c7e8f6e1180c63f8a38a72de5ee0ae7bfc8d2d5574752fab41d5b2e8c91"
@@ -210,7 +210,7 @@
           "specs_path": null,
           "specs_sha256": null
         },
-        "working_directory": "/home/user/click-b/examples/label-build-flags/."
+        "working_directory": "$project/."
       }
     }
   }

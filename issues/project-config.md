@@ -132,9 +132,7 @@ Proposed structure, to be confirmed while implementing:
   - toolchain, sysroot and front-end resource files are identified by content
     and front-end identity, not by absolute path.
 
-  A committed lock verifies offline on a fresh clone at another path. Today
-  C++ locks record absolute paths, so `examples/basic-cpp` keeps its locks
-  out of Git and is excluded from the nightly audit.
+  A committed lock verifies offline on a fresh clone at another path.
 - **Diagnostics:** an unsupported flag in a build description is named,
   and a stale lock names the changed file.
 - **Zero-config path stays:** a lone C sidecar with no root file keeps
@@ -265,6 +263,13 @@ C++ items were chosen explicitly; the rest are the recommended defaults.
   attributes on the project's functions. `examples/basic-cpp` and the
   Bitcoin integration were re-locked at `-O2`; Bitcoin keeps its own `-O2`
   argument, which repeats the level.
+- **Portable locks.** C and C++ locks, and C++ artifacts, name the unit
+  root and the project directory by `$unit` and `$project` (and the pinned
+  Clang's resource directory by `$clang-resource`) instead of the preparing
+  checkout's path, and their identities cover that form, so re-locking from
+  another checkout changes nothing. The committed locks were re-locked; the
+  cross-host fixture keeps its earlier absolute lock as a relocation
+  regression. A gate test refuses a committed lock that names a checkout path.
 - **Remaining:** the module root still comes
   from imports rather than the project file; the shared lock envelope.
 

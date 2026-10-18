@@ -6,9 +6,9 @@
       "lock": {
         "click_header_catalog_sha256": "1eb5c9764e83c5a13e4d4fb5274581350b8dd3b03a35ab1038ebc30d1be51108",
         "compiler_path": "/usr/bin/x86_64-linux-gnu-gcc-13",
-        "config_directory": "/home/user/click-b/design/charon-trial/zlib",
+        "config_directory": "$project",
         "config_sha256": "2562a7a6e1c446b404fdb12d7f976644bb3a79ebe7db4fe1c220d3fabc23175e",
-        "invocation_sha256": "f29d0ede71c3f7f1b6b20a47510c9978610dc1cd4bfaa20f630f60e7b096a281",
+        "invocation_sha256": "f98500b1459269a7aedd76fe0688f97cc52982bac67c2aeb480f6e27269ff9a6",
         "mode": "userspace",
         "schema": 3,
         "sources": [
@@ -28,11 +28,11 @@
               "sys/types.h": "007fe1ae0ba0a2f54101c6828a01cd1da67c56a647d4f7c50c6543253c77ff1a"
             },
             "dependencies": {
-              "/home/user/click-b/design/charon-trial/zlib/zconf.h": "f5134250a67d57459234b63858f0d9d3ef8dcc48e9e1028d3f4fdcf6eae677ae",
-              "/home/user/click-b/design/charon-trial/zlib/zlib.h": "8a5579af72ea4f427ff00a4150f0ccb3fc5c1e4379f726e101133b1ab9fc600c",
-              "/home/user/click-b/design/charon-trial/zlib/zutil.h": "dddb2dc7a1dc339ecf2c8e089b366f08bb731c0839c7110240d17ce731bb4fea"
+              "$project/zconf.h": "f5134250a67d57459234b63858f0d9d3ef8dcc48e9e1028d3f4fdcf6eae677ae",
+              "$project/zlib.h": "8a5579af72ea4f427ff00a4150f0ccb3fc5c1e4379f726e101133b1ab9fc600c",
+              "$project/zutil.h": "dddb2dc7a1dc339ecf2c8e089b366f08bb731c0839c7110240d17ce731bb4fea"
             },
-            "identity": "dfdc28cf93dddc49fef457cba3d1022064e437123eabc5e4c458405f56d50775",
+            "identity": "98be0d10ac5aa26fbf2541c45cd156c9a16faaad982a70a53ec03b85bec8ca76",
             "local_dependencies": {
               "zconf.h": "f5134250a67d57459234b63858f0d9d3ef8dcc48e9e1028d3f4fdcf6eae677ae",
               "zlib.h": "8a5579af72ea4f427ff00a4150f0ccb3fc5c1e4379f726e101133b1ab9fc600c",
@@ -58,12 +58,12 @@
               "sys/types.h": "007fe1ae0ba0a2f54101c6828a01cd1da67c56a647d4f7c50c6543253c77ff1a"
             },
             "dependencies": {
-              "/home/user/click-b/design/charon-trial/zlib/adler32.c": "9cd1443a24ff2a3053961695bd432035c58347386a420d3388232376ebabe211",
-              "/home/user/click-b/design/charon-trial/zlib/zconf.h": "f5134250a67d57459234b63858f0d9d3ef8dcc48e9e1028d3f4fdcf6eae677ae",
-              "/home/user/click-b/design/charon-trial/zlib/zlib.h": "8a5579af72ea4f427ff00a4150f0ccb3fc5c1e4379f726e101133b1ab9fc600c",
-              "/home/user/click-b/design/charon-trial/zlib/zutil.h": "dddb2dc7a1dc339ecf2c8e089b366f08bb731c0839c7110240d17ce731bb4fea"
+              "$project/adler32.c": "9cd1443a24ff2a3053961695bd432035c58347386a420d3388232376ebabe211",
+              "$project/zconf.h": "f5134250a67d57459234b63858f0d9d3ef8dcc48e9e1028d3f4fdcf6eae677ae",
+              "$project/zlib.h": "8a5579af72ea4f427ff00a4150f0ccb3fc5c1e4379f726e101133b1ab9fc600c",
+              "$project/zutil.h": "dddb2dc7a1dc339ecf2c8e089b366f08bb731c0839c7110240d17ce731bb4fea"
             },
-            "identity": "7b3b0cf9dcf4a023b83cde06ebd8fa27d3f21f01609bd75795522bd19e086905",
+            "identity": "2ed3c9d2575f0c8559150a1c405445e6abec9cf28a111532186660a70f0d0b18",
             "local_dependencies": {
               "adler32.c": "9cd1443a24ff2a3053961695bd432035c58347386a420d3388232376ebabe211",
               "zconf.h": "f5134250a67d57459234b63858f0d9d3ef8dcc48e9e1028d3f4fdcf6eae677ae",
@@ -229,7 +229,7 @@
           "specs_path": null,
           "specs_sha256": null
         },
-        "working_directory": "/home/user/click-b/design/charon-trial/zlib/."
+        "working_directory": "$project/."
       }
     }
   }
