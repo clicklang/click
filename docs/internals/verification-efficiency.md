@@ -1479,6 +1479,17 @@ at 8, 16, 32, and 64 variables; doubling the input permits at most three times
 the clone visits. This catches repeated tree copies that work-fee counters
 alone cannot expose.
 
+Compatibility atomic evidence can retain more premises than its decision used.
+Simp reduces that selection with bounded deletion trials, trying later
+proposition chunks before the earlier scalar conditions. Completed reductions
+of bare-variable equalities are shared across strategies within one simp
+closure. Their keys contain the selected context identity (including its
+logical-read generation) and the two variable identities; neither ambient
+state nor term trees are cache keys. The scope releases retained contexts when
+the closure finishes. Contexts with different source facts remain separate.
+`repeated_atomic_reduction_does_not_rebuild_its_selected_facts` checks repeated
+work at 8, 16, 32, and 64 connected premises.
+
 Candidate trials first check their named sources alone. When conditions are
 needed, they walk only the condition buckets connected to the goal and source,
 then rebuild and prove the restricted context. Separate condition and

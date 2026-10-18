@@ -1134,15 +1134,6 @@ pub(crate) fn directly_covering_loadability_fact(
     })
 }
 
-pub(crate) fn proposition_has_contextual_derivation_rules(proposition: &Proposition) -> bool {
-    !matches!(
-        proposition,
-        Proposition::CMemoryMutatesOnly { .. }
-            | Proposition::CMemoryEffectSummary { .. }
-            | Proposition::CHeapAllocationFreed { .. }
-    )
-}
-
 /// Whether two exact facts directly contradict each other. Execution steps
 /// decide this against a whole fact list through the list's conjunct index
 /// (`PureFactList::directly_conflicts_with`); this pairwise form is its

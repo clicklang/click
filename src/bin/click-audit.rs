@@ -1411,7 +1411,7 @@ fn inventory_sites(sources: &[PathBuf]) -> Result<Vec<AuditSite>, String> {
 
 /// One site per claim whose bare simple tactics the implicit `auto` proves
 /// and which holds no smart site: its whole expansion must verify without
-/// the implicit `auto` (`issues/simplify-step.md`), so the audit expands it
+/// the implicit `auto`, so the audit expands it
 /// as it does a claim of smart sites. Finding them verifies each source once;
 /// a source with no smart site that does not verify is returned as a failure.
 fn implicit_auto_sites(
@@ -2002,8 +2002,7 @@ fn audit_claim_rewrite(
             .stack_size(SESSION_THREAD_STACK_BYTES)
             .spawn_scoped(scope, || {
                 // The whole claim's expansion has nothing smart left: checked
-                // with the implicit `auto` off, it is shown self-contained
-                // (`issues/simplify-step.md`).
+                // with the implicit `auto` off, it is shown self-contained.
                 click::surface::without_implicit_auto(|| {
                     cold_verify(
                         &expanded,

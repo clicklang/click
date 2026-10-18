@@ -275,7 +275,7 @@ const ARTIFACT_REUSE_REJECTION_BASELINE: &[(ArtifactReuseRejection, usize)] = &[
 /// The hidden prerequisite ratchet (`docs/internals/testing.md`): count the
 /// prerequisites simple statement checking derived by a search the proof does
 /// not retain, over the whole unfiltered corpus, by route and top rule. A
-/// count may only fall; `issues/simplify-step.md` drives it to zero.
+/// count may only fall, and it is zero.
 const HIDDEN_PREREQUISITE_BASELINE: &[((HiddenPrerequisiteRoute, &str), usize)] = &[];
 
 #[test]

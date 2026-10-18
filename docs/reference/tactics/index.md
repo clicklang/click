@@ -300,8 +300,7 @@ An `assert`'s false-path obligation (as a Rust overflow check lowers to) is
 spelled as the asserted condition at the pre-state, less any disjunct an exact
 fact refutes, and the proved condition prunes the false path. When `auto` cannot
 spell or prove an obligation, the step is refused at it with the fast path's
-diagnostic; a step never searches the proof context for an obligation
-([`issues/simplify-step.md`](https://github.com/clicklang/click/blob/master/issues/simplify-step.md)).
+diagnostic; a step never searches the proof context for an obligation.
 
 Click carries no fact by list: a fact about a cell the context proves untouched
 keeps that cell's name. Expansion leaves a step unchanged unless the implicit
@@ -578,9 +577,6 @@ An entry that states no open obligation, including one the fast path already
 closes, or that repeats an earlier entry's obligation, fails where it is written
 and lists the open obligations. Expansion keeps each entry and prints its body's
 checked steps. Like the `by` form, it is checked in a `branch` arm.
-
-See
-[`issues/simplify-step.md`](https://github.com/clicklang/click/blob/master/issues/simplify-step.md).
 
 **Checked examples:** [`step_requires_proves_each_open_obligation.md`](https://github.com/clicklang/click/blob/master/mdtests/step_requires_proves_each_open_obligation.md)
 
@@ -2157,8 +2153,7 @@ implicit `auto`.
 
 An entry that states no open body fact, or repeats an earlier entry's, fails
 where it is written and lists the open body facts. Expansion keeps each entry
-and prints its body's checked steps. See
-[`issues/simplify-step.md`](https://github.com/clicklang/click/blob/master/issues/simplify-step.md).
+and prints its body's checked steps.
 
 **Checked examples:** [`fold_requires_proves_each_open_body_fact.md`](https://github.com/clicklang/click/blob/master/mdtests/fold_requires_proves_each_open_body_fact.md)
 

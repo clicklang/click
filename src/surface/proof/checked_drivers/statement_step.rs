@@ -6,35 +6,9 @@ pub(in crate::surface::proof) struct CheckedStatementStep {
     pub(in crate::surface::proof) added_facts: Vec<Proposition>,
 }
 
-/// Checks one statement transition in the complete proof context and
-/// atomically advances the caller-selected execution successor.
-///
-/// This is the audited semantic operation shared by explicit source check
-/// and the checked proof-object frontier. It performs no premise selection;
-/// the proof's facts and resources are the transition context.
-pub(in crate::surface::proof) fn check_statement_step(
-    execution: &mut ExecutionProofState,
-    proof_context: &ExecutionProofContext<'_>,
-    requirement_pure_facts: &ProofFacts,
-    context: Option<&PureFactContext>,
-) -> Result<CheckedStatementStep, ClickError> {
-    let prerequisite_policy = if context.is_some() {
-        StatementPrerequisitePolicy::Contextual
-    } else {
-        StatementPrerequisitePolicy::Explicit
-    };
-    check_statement_step_with_policy(
-        execution,
-        proof_context,
-        requirement_pure_facts,
-        context,
-        prerequisite_policy,
-    )
-}
-
-/// Checks one statement with the caller-selected prerequisite policy. The
-/// source-backed retry policy shares Contextual derivation and differs only in
-/// exposing a supported call carrier before hidden derivation.
+/// Checks one statement transition in the complete proof context with the
+/// caller-selected prerequisite policy, and atomically advances the
+/// caller-selected execution successor.
 pub(in crate::surface::proof) fn check_statement_step_with_policy(
     execution: &mut ExecutionProofState,
     proof_context: &ExecutionProofContext<'_>,
