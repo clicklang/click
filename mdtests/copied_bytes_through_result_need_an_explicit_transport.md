@@ -25,7 +25,7 @@ uint64 copy_r(char* dst, const char* src, uint64 n) {
     requires n < 32u64;
     requires separate(memory(dst[0u64..n + 1u64]), memory(src[0u64..n]));
     ensures bytes::equal(dst, 0u64, src, 0u64, result);
-} by { execute(); simp(); }
+} by { execute(); assumption(); simp(); }
 ```
 
 ```expect

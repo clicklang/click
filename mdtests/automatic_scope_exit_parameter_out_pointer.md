@@ -9,7 +9,7 @@ verifying "parameter_out_pointer.c";
 void leak(int32 value, int32** out) {
     owns out[0..1];
     ensures *out[0] == value;
-} by { execute(); simp(); }
+} by { execute(); assumption(); simp(); }
 ```
 
 ```expect

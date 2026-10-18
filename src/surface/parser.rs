@@ -864,6 +864,9 @@ struct Parser {
     /// its `name: &[T]` parameters. A call passes such a parameter a slice,
     /// which stands for its pointer and its length.
     pure_function_slices: BTreeMap<String, (usize, Vec<usize>)>,
+    /// Pure functions declared `-> Integer`, whose calls are Integer operands
+    /// for `arithmetic "integer";`.
+    integer_function_names: BTreeSet<String>,
     /// The slice parameters of the pure function whose parameter list is
     /// being parsed; `None` in any other parameter list, where a slice is
     /// not a parameter type.
@@ -1339,6 +1342,7 @@ impl Parser {
             names: NameTable::default(),
             pure_function_names: BTreeSet::new(),
             pure_function_slices: BTreeMap::new(),
+            integer_function_names: BTreeSet::new(),
             pending_slice_params: None,
             bool_value_context: false,
             algebraic_variant_fields: BTreeMap::new(),
@@ -1429,6 +1433,9 @@ impl Parser {
                 && let Some(Token::Ident(name)) = self.peek_next().cloned()
             {
                 self.pure_function_names.insert(name.clone());
+                if self.declares_integer_result(self.position + 2) {
+                    self.integer_function_names.insert(name.clone());
+                }
                 if let Some(slices) = self.written_slice_parameters(self.position + 2) {
                     self.pure_function_slices.insert(name.clone(), slices);
                 }
@@ -7658,6 +7665,7 @@ impl Parser {
             ContractExpression::Call { name, .. } => {
                 name == "to_integer"
                     || crate::surface::integer_truncation::is_integer_truncation(name)
+                    || self.integer_function_names.contains(name)
             }
             ContractExpression::Binding(name)
             | ContractExpression::CBinding(name)
@@ -7666,6 +7674,20 @@ impl Parser {
             }
             _ => false,
         }
+    }
+
+    /// Whether the function header whose parameter list opens at `start`
+    /// declares `-> Integer`: the parenthesis is matched, then the result
+    /// type follows the arrow.
+    fn declares_integer_result(&self, start: usize) -> bool {
+        if self.tokens.get(start) != Some(&Token::LParen) {
+            return false;
+        }
+        let Some(close) = self.matching_parentheses.get(start).copied().flatten() else {
+            return false;
+        };
+        self.tokens.get(close + 1) == Some(&Token::Arrow)
+            && matches!(self.tokens.get(close + 2), Some(Token::Ident(name)) if name == "Integer")
     }
 
     /// Whether an arithmetic operand of `expression` is a pointer parameter.
@@ -7722,7 +7744,9 @@ impl Parser {
                 }
             }
             ContractExpression::IntegerLiteral(value) => ContractExpression::IntegerLiteral(value),
-            leaf if self.integer_leaf(&leaf) => leaf,
+            // An Integer operand, including one under `old` or `at`, is
+            // already exact.
+            leaf if self.integer_operand(&leaf) => leaf,
             leaf => ContractExpression::Call {
                 name: "to_integer".to_string(),
                 arguments: vec![leaf],

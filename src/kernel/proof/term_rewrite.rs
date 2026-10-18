@@ -4270,6 +4270,23 @@ impl<'a> TermRewrite<'a> {
             result
         }
     }
+    fn cited_condition_value(&self, condition: &ConditionTerm) -> Option<bool> {
+        self.conditions
+            .and_then(|conditions| {
+                conditions
+                    .get(condition)
+                    .or_else(|| conditions.get(&condition.flipped()))
+                    .copied()
+            })
+            .or_else(|| {
+                self.cited_conditions.and_then(|graph| {
+                    [true, false]
+                        .into_iter()
+                        .find(|value| graph.knows_condition(condition, *value))
+                })
+            })
+    }
+
     pub(crate) fn condition(&mut self, v: &ConditionTerm) -> ConditionTerm {
         self.reserve_condition_variables_once(v);
         if self.checked_work_exhausted() {
@@ -4279,19 +4296,10 @@ impl<'a> TermRewrite<'a> {
         if self.checked_work_exhausted() {
             return ConditionTerm::Constant(false);
         }
-        if let Some(conditions) = self.conditions
-            && let Some(value) = conditions.get(v).or_else(|| conditions.get(&v.flipped()))
-        {
-            return ConditionTerm::Constant(*value);
-        }
         // Only the explicitly cited facts can refute a condition here. The
         // shared graph makes address-origin annotations numerically transparent.
-        if let Some(graph) = self.cited_conditions {
-            for value in [true, false] {
-                if graph.knows_condition(v, value) {
-                    return ConditionTerm::Constant(value);
-                }
-            }
+        if let Some(value) = self.cited_condition_value(v) {
+            return ConditionTerm::Constant(value);
         }
         let result = match v {
             ConditionTerm::Constant(_) | ConditionTerm::Variable(_) => v.clone(),
@@ -4304,6 +4312,27 @@ impl<'a> TermRewrite<'a> {
             }
             ConditionTerm::Float64(c) => {
                 ConditionTerm::Float64(c.map_bitvector_terms(|b| self.bits(b)))
+            }
+            ConditionTerm::Bitvector64Equal(a, b) => {
+                let left = self.bits(a);
+                let right = self.bits(b);
+                if matches!(
+                    (&left, &right),
+                    (Bitvector32Term::PointerAddress(_, _), zero)
+                        | (zero, Bitvector32Term::PointerAddress(_, _))
+                        if zero.uint64_as_const() == Some(0)
+                ) {
+                    // Rewriting can expose a null address after the original
+                    // comparison was constructed. Use the same relation as a
+                    // directly written zero-address comparison, then consume
+                    // only the selected conditions for that relation.
+                    self.changed = true;
+                    let canonical = ConditionTerm::int64_equal(left, right);
+                    self.cited_condition_value(&canonical)
+                        .map_or(canonical, ConditionTerm::Constant)
+                } else {
+                    ConditionTerm::Bitvector64Equal(Box::new(left), Box::new(right))
+                }
             }
             ConditionTerm::PointerValueEqual(a, b) => {
                 let CValue::Pointer(a) = self.value(&CValue::Pointer((**a).clone())) else {

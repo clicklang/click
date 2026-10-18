@@ -326,3 +326,94 @@ fn formation_selects_the_containing_symbolic_piece_beside_prefix_and_suffix_view
     assert!(!permits_at(&p, &position, &facts, &zero));
     assert!(permits_at(&p, &position, &facts, &resources));
 }
+
+#[test]
+fn null_pointer_zero_offsets_use_scalar_evidence_and_preserve_refusals() {
+    for (wide, unsigned) in [(false, false), (true, false), (true, true)] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let offset = Bitvector32Term::Variable(Variable(933_000));
+        let alias = Bitvector32Term::Variable(Variable(933_001));
+        let constant = |n| match (wide, unsigned) {
+            (true, true) => Bitvector32Term::UInt64Constant(n),
+            (true, false) => Bitvector32Term::Int64Constant(n as i64),
+            (false, _) => Bitvector32Term::Constant(n as u32),
+        };
+        let equal = |a, b| {
+            Proposition::ConditionIs(
+                if wide {
+                    ConditionTerm::int64_equal(a, b)
+                } else {
+                    ConditionTerm::equal(a, b)
+                },
+                true,
+            )
+        };
+        let root = PureFactContext::new();
+        let zero = equal(offset.clone(), constant(0));
+        let alias_zero = equal(alias.clone(), constant(0));
+        let linked = root
+            .clone()
+            .assume_proposition(equal(offset.clone(), alias));
+        let known = linked.clone().assume_proposition(alias_zero.clone());
+        let cases = [
+            (root.clone(), false),
+            (root.clone().assume_proposition(zero), true),
+            (known.clone(), true),
+            (known.without_exact_fact(&alias_zero), false),
+            (
+                root.assume_proposition(equal(offset.clone(), constant(1))),
+                false,
+            ),
+        ];
+        for (facts, expected_zero) in cases {
+            let result = pointer_offset_by_elements_paths(
+                &CState::new(),
+                CPointerValue::new(Pointer::null(), CType::Int32Pointer),
+                offset.clone(),
+                4,
+                unsigned,
+                wide,
+                ExecutionFacts::new(),
+                Vec::new(),
+                &facts,
+            );
+            assert_eq!(result.len(), 1);
+            if expected_zero {
+                assert!(matches!(&result[0].outcome,
+                    CExpressionOutcome::Value(CValue::Pointer(value)) if value.pointer() == &Pointer::null()));
+            } else {
+                assert!(matches!(
+                    &result[0].outcome,
+                    CExpressionOutcome::UndefinedBehavior(CUndefinedBehavior::PointerArithmetic)
+                ));
+            }
+        }
+    }
+}
+
+#[test]
+fn a_registered_zero_index_keeps_null_pointer_formation_unchanged() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let memory = crate::kernel::intern_c_memory(CMemory::new());
+    let address = Pointer::symbolic(Variable(933_100));
+    let load =
+        crate::kernel::eval::load_variable_for_exact_cell(&memory, &address, LoadKind::Bits32, 4);
+    let facts = PureFactContext::new().assume_condition(
+        ConditionTerm::equal(Bitvector32Term::Variable(load), 0u32.into()),
+        true,
+    );
+    let result = pointer_offset_by_elements_paths(
+        &CState::new(),
+        CPointerValue::new(Pointer::null(), CType::Int32Pointer),
+        Bitvector32Term::MemoryLoad(memory, Box::new(address), LoadKind::Bits32),
+        4,
+        false,
+        false,
+        ExecutionFacts::new(),
+        Vec::new(),
+        &facts,
+    );
+    assert!(matches!(result.as_slice(), [CExpressionPath {
+        outcome: CExpressionOutcome::Value(CValue::Pointer(value)), ..
+    }] if value.pointer() == &Pointer::null()));
+}

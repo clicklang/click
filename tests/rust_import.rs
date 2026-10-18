@@ -3519,13 +3519,13 @@ fn rust_byte_sum_proves_exact_prefix_sum_and_expands() {
     C0VerificationSession::new_program_prepared(&sidecar, &prepared).unwrap();
     for invalid in [
         sidecar.replace(
-            "ensures to_integer(result) == old(prefix",
-            "ensures to_integer(result) + 1 == old(prefix",
+            "ensures result == old(prefix",
+            "ensures result + 1 == old(prefix",
         ),
         sidecar.replace("invariant i <= bytes.len();", "invariant i < bytes.len();"),
         sidecar.replace(
-            "invariant to_integer(total) == prefix(bytes, i);",
-            "invariant to_integer(total) + 1 == prefix(bytes, i);",
+            "invariant total == prefix(bytes, i);",
+            "invariant total + 1 == prefix(bytes, i);",
         ),
         sidecar.replace("decreases bytes.len() - i;", "decreases i;"),
         sidecar.replace("requires bytes.len() <= 1000u64;", ""),
