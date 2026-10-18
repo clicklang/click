@@ -12672,6 +12672,36 @@ const RESOURCE_EXAMPLE_PIPELINE_CASES: &[(&str, &str, &str, &str)] = &[
     ),
 ];
 
+// These fixtures put a function's outer closing brace at column zero.
+// Compare both surrounding byte ranges so scoped checking cannot silently
+// omit a rewrite to a helper, contract, import, or another declaration.
+pub(super) fn assert_only_function_proof_changed(before: &str, after: &str, function: &str) {
+    let extent = |text: &str| {
+        let signature = format!(" {function}(");
+        assert_eq!(
+            text.matches(&signature).count(),
+            1,
+            "ambiguous function: {function}"
+        );
+        let start = text.find(&signature).unwrap();
+        let body = start + text[start..].find("} by {").unwrap() + "} by {".len();
+        let end = body + text[body..].find("\n}").unwrap() + "\n}".len();
+        (body, end)
+    };
+    let (before_start, before_end) = extent(before);
+    let (after_start, after_end) = extent(after);
+    assert_eq!(
+        &before[..before_start],
+        &after[..after_start],
+        "{function}: changed prefix"
+    );
+    assert_eq!(
+        &before[before_end..],
+        &after[after_end..],
+        "{function}: changed suffix"
+    );
+}
+
 fn assert_resource_example_pipeline_has_no_outcome_fallbacks(
     project: &str,
     sidecar: &str,
@@ -12693,12 +12723,24 @@ fn assert_resource_example_pipeline_has_no_outcome_fallbacks(
         expand_c0_claim_source(&click_source, &c_sources, function, CProofClaim::Grouped)
             .unwrap_or_else(|error| panic!("failed to expand `{}`: {error:?}", path.display()));
     assert!(expanded.contains(retained_step), "{expanded}");
-    verify_c0_sources(&expanded, &c_sources).unwrap_or_else(|error| {
-        panic!(
-            "expanded proof from `{}` failed independent verification: {error:?}",
-            path.display()
-        )
-    });
+    // The complete original project above checks every unchanged declaration.
+    // Expansion may rewrite only this proof; cold-check its complete function,
+    // including all claims and paths, rather than the untouched helpers again.
+    assert_only_function_proof_changed(&click_source, &expanded, function);
+    let checked =
+        crate::surface::verify_c0_sources_functions(&expanded, &c_sources, [function.to_string()])
+            .unwrap_or_else(|error| {
+                panic!(
+                    "expanded proof from `{}` failed independent verification: {error:?}",
+                    path.display()
+                )
+            });
+    assert!(!checked.is_empty());
+    assert!(
+        checked
+            .iter()
+            .all(|proof| proof.function_block.signature().name() == function)
+    );
 }
 
 #[test]

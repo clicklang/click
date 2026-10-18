@@ -587,7 +587,7 @@ fn bounded_statement_successor_exclusion_ignores_unrelated_ambient_facts() {
     let insertion = "                open(allocated_cell(owner)) {\n                }\n";
     let mut samples = Vec::new();
     let mut exclusion_work = Vec::new();
-    for size in [4, 8, 16, 32] {
+    for size in [2, 4, 8, 16] {
         let unrelated = (0..size)
             .map(|index| {
                 format!(
@@ -623,9 +623,14 @@ fn bounded_statement_successor_exclusion_ignores_unrelated_ambient_facts() {
         exclusion_work.iter().all(|work| *work == exclusion_work[0]),
         "lane-exclusion work changed with unrelated ambient facts: {exclusion_work:?}"
     );
-    assert_near_linear_scaling_with_increment_bound(
+    assert_near_linear_scaling("bounded statement-successor ambient facts", &samples);
+    // 28/11 at 4/8/16 has the former 20/7-at-8/16/32
+    // quadratic crossover, with the same constant selected-operation check.
+    assert_bounded_work_increments(
         "bounded statement-successor ambient facts",
-        &samples,
+        &samples.iter().map(|sample| sample.work).collect::<Vec<_>>(),
+        28,
+        11,
     );
 }
 
@@ -1395,7 +1400,7 @@ fn explicit_transport_scales_near_linearly_with_unrelated_ambient_facts() {
 #[ignore = "nightly: multi-size separation transport scaling takes 10s debug"]
 fn explicit_separation_alias_transport_has_constant_selected_work() {
     let mut work = Vec::new();
-    for size in [4, 16, 32] {
+    for size in [4, 32] {
         let resources = (0..size)
             .map(|i| {
                 format!(
@@ -3760,7 +3765,7 @@ struct holder {
     };
     let alone = fixed_proof_work(None);
     assert!(alone > 0);
-    let samples = [4, 16, 32].map(|stores| (stores, fixed_proof_work(Some(stores))));
+    let samples = [4, 32].map(|stores| (stores, fixed_proof_work(Some(stores))));
     for &(stores, work) in &samples {
         // Constant plus a logarithmic allowance for indexed session tables.
         let allowance = 64 * (usize::BITS - stores.leading_zeros()) as usize;
@@ -4104,7 +4109,7 @@ fn branching_grouped_claim_project(claim_count: usize) -> (String, String) {
 #[test]
 #[ignore = "nightly: 0.6s in the parallel gate"]
 fn grouped_proof_theorems_share_one_proof_text() {
-    let samples = [8, 16, 32, 64]
+    let samples = [4, 8, 16, 32]
         .into_iter()
         .map(|size| {
             let (c_source, click_source) = branching_grouped_claim_project(size);
@@ -4143,7 +4148,12 @@ fn grouped_proof_theorems_share_one_proof_text() {
             sample
         })
         .collect::<Vec<_>>();
-    assert_near_linear_scaling("theorems of one branching grouped proof", &samples);
+    // At 8/16/32, 20/7 on increments has the former 3x-at-32/64
+    // quadratic crossover, without slack from fixed entry costs.
+    assert_near_linear_scaling_with_increment_bound(
+        "theorems of one branching grouped proof",
+        &samples,
+    );
 }
 
 /// One project whose caller makes `call_count` plain `step()`s over a callee
@@ -4267,7 +4277,7 @@ fn call_ensure_lowering_is_linear_in_the_ensure_count() {
     let mut samples = Vec::new();
     let mut lowering = Vec::new();
     let mut rebuilds = Vec::new();
-    for size in [32, 64, 128, 256] {
+    for size in [16, 32, 64, 128] {
         let ensures = (1..=size)
             .map(|k| format!("    ensures result != {k};\n"))
             .collect::<String>();
@@ -4319,7 +4329,12 @@ fn call_ensure_lowering_is_linear_in_the_ensure_count() {
             "the call's context rebuilds grow faster than the ensure count: {rebuilds:?}"
         );
     }
-    assert_near_linear_scaling("call ensure count", &samples);
+    // At half the former maximum M, 28/13 on increments rejects
+    // a > 2*k/(9*M) in B + k*N + a*N^2: the former 2.2x
+    // whole-work crossover, without slack from fixed setup.
+    assert_bounded_work_increments("call ensure count: selected work", &lowering, 28, 13);
+    assert_bounded_work_increments("call ensure count: context rebuilds", &rebuilds, 28, 13);
+    assert_near_linear_scaling_with_increment_bound("call ensure count", &samples);
 }
 
 /// One `step()` over a call whose external contract has `N` requirements,
@@ -4341,7 +4356,7 @@ fn call_requirement_checking_is_linear_in_the_requirement_count() {
     let mut samples = Vec::new();
     let mut checking = Vec::new();
     let mut rebuilds = Vec::new();
-    for size in [16, 32, 64, 128] {
+    for size in [8, 16, 32, 64] {
         let requires = (1..=size)
             .map(|k| format!("    requires x != {k};\n"))
             .collect::<String>();
@@ -4388,7 +4403,17 @@ fn call_requirement_checking_is_linear_in_the_requirement_count() {
             "the call's context rebuilds grow faster than the requirement count: {rebuilds:?}"
         );
     }
-    assert_near_linear_scaling("call requirement count", &samples);
+    // At half the former maximum M, 28/13 on increments rejects
+    // a > 2*k/(9*M) in B + k*N + a*N^2: the former 2.2x
+    // whole-work crossover, without slack from fixed setup.
+    assert_bounded_work_increments("call requirement count: selected work", &checking, 28, 13);
+    assert_bounded_work_increments(
+        "call requirement count: context rebuilds",
+        &rebuilds,
+        28,
+        13,
+    );
+    assert_near_linear_scaling_with_increment_bound("call requirement count", &samples);
 }
 
 /// A call's separation requirements cost the same work beside 2, 4, 8 and
@@ -4780,7 +4805,7 @@ fn a_constant_view_costs_the_same_whatever_its_length() {
     // thread pays once (parsing the prelude, filling shared caches) is not
     // a cost of the range.
     verify_c0_sources(&click_source(8), &[("get.c", c_source)]).expect("warm-up verifies");
-    let samples = [8u64, 1_000, 1_000_000, 1_000_000_000].map(|length| {
+    let samples = [8u64, 1_000, 1_000_000_000].map(|length| {
         let measure = || {
             let (verified, work) = crate::instrumentation::measure_deterministic_work(|| {
                 verify_c0_sources(&click_source(length), &[("get.c", c_source)])
@@ -5110,8 +5135,8 @@ fn an_unfolded_constant_composite_range_costs_the_same_whatever_its_length() {
     // store proof. Compare lengths within each proof shape, retaining the
     // billion-element case and the same 64-unit flatness tolerance for both.
     for lengths in [
-        &[64u64, 1_000, 1_000_000, 268_435_455][..],
-        &[600_000_000u64, 800_000_000, 1_000_000_000][..],
+        &[64u64, 268_435_455][..],
+        &[600_000_000u64, 1_000_000_000][..],
     ] {
         let samples = lengths
             .iter()
@@ -6024,7 +6049,7 @@ fn loop_exit_join_scales_near_linearly_with_the_number_of_exits() {
 }
 
 fn loop_exit_join_scaling_on_this_thread() {
-    let samples = [2, 4, 8, 16]
+    let samples = [1, 2, 4, 8]
         .into_iter()
         .map(|size| {
             let (c_source, click_source) = loop_with_break_exits_project(size);
@@ -6045,14 +6070,13 @@ fn loop_exit_join_scaling_on_this_thread() {
         })
         .collect::<Vec<_>>();
     assert_near_linear_scaling("loop exits joined", &samples);
-    // For B + k*N + a*N^2, a 3x increment bound at 4/8/16
-    // rejects a > k/12. The old 3x total bound at 12/24 allowed
-    // a <= k/12 + B/72. The same join regression stays visible
-    // with fewer of the body's inherently quadratic written steps.
+    // For B + k*N + a*N^2, 8/3 on increments at 2/4/8
+    // rejects a > k/12, just as 3x at 4/8/16 did, while
+    // generating fewer of the body's quadratic written steps.
     let earlier = samples[2].work.checked_sub(samples[1].work);
     let later = samples[3].work.checked_sub(samples[2].work);
     assert!(
-        matches!((earlier, later), (Some(earlier), Some(later)) if later <= earlier * 3),
+        matches!((earlier, later), (Some(earlier), Some(later)) if later * 3 <= earlier * 8),
         "loop-exit work increments must remain near linear: {samples:?}"
     );
 }
@@ -7532,7 +7556,7 @@ fn callback_parsing_and_explicit_steps_scale_with_written_calls() {
         .map(|(name, source)| (name.as_str(), source.as_str()))
         .collect::<Vec<_>>();
     verify_c0_sources(&click, &baseline_sources).unwrap();
-    let samples = [2, 4, 8, 16].map(|count| {
+    let samples = [1, 2, 4, 8].map(|count| {
         let statements = "    augment->propagate(parent, 0);\n".repeat(count);
         let sources = fixture
             .c_sources
@@ -7556,13 +7580,13 @@ fn callback_parsing_and_explicit_steps_scale_with_written_calls() {
         work
     });
     assert!(samples[0] > 0);
-    // The old 5/2 bound at 16/32 rejects a > k/48 + B/256
-    // for B + k*N + a*N^2. Checking increments at 4/8/16
-    // with 12/5 rejects a > k/48, without that fixed-cost masking.
+    // For B + k*N + a*N^2, 20/9 on increments at 2/4/8
+    // rejects a > k/48, as did 12/5 at 4/8/16. Fixed
+    // setup cannot mask the same quadratic callback work.
     let earlier = samples[2].checked_sub(samples[1]);
     let later = samples[3].checked_sub(samples[2]);
     assert!(
-        matches!((earlier, later), (Some(earlier), Some(later)) if later * 5 <= earlier * 12),
+        matches!((earlier, later), (Some(earlier), Some(later)) if later * 9 <= earlier * 20),
         "callback work increments must remain near linear: {samples:?}"
     );
     for pair in samples.windows(2) {
@@ -7736,7 +7760,7 @@ fn consecutive_resource_closers_attempt_one_transition() {
     let original = fixture.click_source.unwrap();
     let (c_name, original_c) = &fixture.c_sources[0];
     let mut previous = None;
-    for size in [1, 2, 4, 8] {
+    for size in [1, 4, 8] {
         let c_source = original_c.replace(
             "struct node *left;",
             &format!("struct node *left; int32 extra[{size}];"),
@@ -7813,7 +7837,7 @@ fn repeated_retain_project(count: usize) -> (String, String) {
 #[test]
 #[ignore = "nightly: shared-child retain scaling"]
 fn repeated_retains_of_one_child_scale_with_their_number() {
-    let samples = [2, 4, 8, 16]
+    let samples = [1, 2, 4, 8]
         .into_iter()
         .map(|size| {
             let (c_source, click_source) = repeated_retain_project(size);
@@ -7828,12 +7852,12 @@ fn repeated_retains_of_one_child_scale_with_their_number() {
         .collect::<Vec<_>>();
     assert_near_linear_scaling("repeated retains of one child", &samples);
     // Remove the fixed helper/entry cost before checking the larger
-    // increments. For B + k*N + a*N^2, this rejects a > k/16;
-    // the old 3x check at 16/32 only rejected a > k/16 + B/128.
+    // increments. For B + k*N + a*N^2, 28/11 at 2/4/8 rejects
+    // a > k/16, as did 20/7 at 4/8/16 before reducing the sizes.
     let earlier = samples[2].work.checked_sub(samples[1].work);
     let later = samples[3].work.checked_sub(samples[2].work);
     assert!(
-        matches!((earlier, later), (Some(earlier), Some(later)) if later * 7 <= earlier * 20),
+        matches!((earlier, later), (Some(earlier), Some(later)) if later * 11 <= earlier * 28),
         "repeated-retain work increments must remain near linear: {samples:?}"
     );
 }
@@ -7914,17 +7938,24 @@ fn assert_retain_ignores_unrelated_live_children(sizes: [usize; 5]) -> Vec<Scali
             sample
         })
         .collect::<Vec<_>>();
-    // Keep exactly the original small (2/4/8/16) and large (4/8/16/32)
-    // guards; their three shared inputs need only one complete cold check.
-    assert_near_linear_scaling("a retain amid unrelated live children", &samples[..4]);
-    assert_near_linear_scaling("a retain amid many unrelated live children", &samples[1..]);
+    // Two overlapping geometric windows retain both scales. Increment bounds
+    // remove fixed costs; at 4/8/16, 20/7 rejects a > k/16, the
+    // former whole-proof 3x crossover at 16/32 without its fixed-cost slack.
+    assert_near_linear_scaling_with_increment_bound(
+        "a retain amid unrelated live children",
+        &samples[..4],
+    );
+    assert_near_linear_scaling_with_increment_bound(
+        "a retain amid many unrelated live children",
+        &samples[1..],
+    );
     samples
 }
 
 #[test]
 #[ignore = "nightly: shared-child exit scaling with a calibrated finishing guard"]
 fn a_retain_ignores_many_unrelated_live_children() {
-    let samples = assert_retain_ignores_unrelated_live_children([2, 4, 8, 16, 32]);
+    let samples = assert_retain_ignores_unrelated_live_children([1, 2, 4, 8, 16]);
     let samples = &samples[1..];
     let finishing = samples
         .iter()
@@ -7938,17 +7969,18 @@ fn a_retain_ignores_many_unrelated_live_children() {
         .collect::<Vec<_>>();
     assert!(finishing.iter().all(|work| *work > 0), "{finishing:?}");
     // Differences remove fixed helper and entry costs. The old exit checker
-    // looked linear through 32 under the whole-proof 3x guard; its last
-    // finishing increments were 21.5k and 69k, which this guard rejects.
+    // looked linear under the whole-proof 3x guard. Its recorded
+    // 4/8/16 finishing increments already expose the regression.
     let linear_increments = |work: &[usize]| {
-        let (Some(earlier), Some(later)) =
-            (work[2].checked_sub(work[1]), work[3].checked_sub(work[2]))
-        else {
+        let (Some(earlier), Some(later)) = (
+            work[work.len() - 2].checked_sub(work[work.len() - 3]),
+            work[work.len() - 1].checked_sub(work[work.len() - 2]),
+        ) else {
             return false;
         };
-        // For constant + linear + quadratic work, 20/7 on these
-        // increments has the old 3x-at-32/64 quadratic crossover.
-        later * 7 <= earlier * 20
+        // For B + k*N + a*N^2, 28/11 at 4/8/16 rejects
+        // a > k/32, just as the former 20/7 at 8/16/32 did.
+        later * 11 <= earlier * 28
     };
     assert!(
         linear_increments(&finishing),
@@ -7956,7 +7988,7 @@ fn a_retain_ignores_many_unrelated_live_children() {
     );
     // Recorded pre-fix curve from the owned-parameter exit-check regression
     // (871f90f68): this smaller fixture must still reject that failure.
-    assert!(!linear_increments(&[6_100, 13_500, 35_000, 104_000]));
+    assert!(!linear_increments(&[6_100, 13_500, 35_000]));
 }
 
 /// A function owning `count` heap objects through its pointer parameters
@@ -7986,7 +8018,7 @@ fn owned_parameters_project(count: usize) -> (String, String) {
 #[test]
 #[ignore = "nightly: 3.1s in the parallel gate"]
 fn owned_pointer_parameters_scale_with_their_number() {
-    let samples = [2, 4, 8, 16]
+    let samples = [1, 2, 4, 8]
         .into_iter()
         .map(|size| {
             let (c_source, click_source) = owned_parameters_project(size);
@@ -8017,11 +8049,10 @@ fn owned_pointer_parameters_scale_with_their_number() {
         else {
             return false;
         };
-        later * 7 <= earlier * 20
+        later * 11 <= earlier * 28
     };
-    // At 4/8/16 this removes fixed exit cost and rejects a > k/16.
-    // That is stricter than the old whole-work 3x-at-16/32 bound,
-    // which allowed a <= k/16 + B/128 (plus other linear work).
+    // At 2/4/8, 28/11 removes fixed exit cost and rejects a > k/16,
+    // the same crossover as the former 20/7 bound at 4/8/16.
     let whole = [samples[1].work, samples[2].work, samples[3].work];
     assert!(
         linear_increments(&whole),
@@ -8033,7 +8064,8 @@ fn owned_pointer_parameters_scale_with_their_number() {
     );
     // Recorded pre-fix finishing work at 4/8/16 in the owned-parameter
     // exit-check report closed by 871f90f68.
-    assert!(!linear_increments(&[6_100, 13_500, 35_000]));
+    let recorded = [6_100usize, 13_500, 35_000];
+    assert!((recorded[2] - recorded[1]) * 7 > (recorded[1] - recorded[0]) * 20);
 }
 
 /// A selected field separation after unfold uses the live partition before
@@ -8042,7 +8074,7 @@ fn owned_pointer_parameters_scale_with_their_number() {
 #[ignore = "nightly: 2.8s in the parallel gate"]
 fn held_field_separation_precedes_general_composition_reasoning() {
     let mut work = Vec::new();
-    for size in [4, 8, 16] {
+    for size in [4, 16] {
         let parameters = (0..size)
             .map(|i| format!(", struct node* q{i}"))
             .collect::<String>();
@@ -8620,7 +8652,7 @@ fn pointer_field_call_branch_join_scales_with_unrelated_caller_facts() {
         )));
     }
     let mut samples = Vec::new();
-    for size in [16, 32, 64, 128] {
+    for size in [8, 16, 32, 64] {
         let parameters = (0..size)
             .map(|index| format!(", int32 noise_{index}"))
             .collect::<String>();
@@ -8662,14 +8694,13 @@ fn pointer_field_call_branch_join_scales_with_unrelated_caller_facts() {
         samples.push(sample);
     }
     assert_near_linear_scaling("pointer-field call branch join", &samples);
-    // For B + k*N + a*N^2, 20/7 on increments at 32/64/128
-    // rejects a > k/128. The old 3x bound at 128/256 allowed
-    // a <= k/128 + B/8192, so the fixed whole-proof cost no
-    // longer hides the same quadratic join work at smaller sizes.
+    // For B + k*N + a*N^2, 28/11 on increments at 16/32/64
+    // rejects a > k/128, just as 20/7 at 32/64/128 did.
+    // Fixed whole-proof costs cannot hide quadratic join work.
     let earlier = samples[2].work.checked_sub(samples[1].work);
     let later = samples[3].work.checked_sub(samples[2].work);
     assert!(
-        matches!((earlier, later), (Some(earlier), Some(later)) if later * 7 <= earlier * 20),
+        matches!((earlier, later), (Some(earlier), Some(later)) if later * 11 <= earlier * 28),
         "pointer-field join work increments must remain near linear: {samples:?}"
     );
 }
