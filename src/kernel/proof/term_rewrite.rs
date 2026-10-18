@@ -4462,6 +4462,18 @@ impl<'a> TermRewrite<'a> {
                 return ConditionTerm::Constant(true);
             }
         }
+        if let Some(guards) = result.uint64_subtraction_upper_bound_guards() {
+            if let Some(conditions) = &mut self.collected_conditions {
+                conditions.extend(guards.iter().cloned());
+            }
+            if self.conditions.is_some_and(|conditions| {
+                guards.iter().all(|guard| {
+                    *guard == ConditionTerm::Constant(true) || conditions.get(guard) == Some(&true)
+                })
+            }) {
+                return ConditionTerm::Constant(true);
+            }
+        }
         if let Some(guards) = result.nonnegative_division_bound_guards() {
             if let Some(conditions) = &mut self.collected_conditions {
                 conditions.extend(guards.iter().cloned());

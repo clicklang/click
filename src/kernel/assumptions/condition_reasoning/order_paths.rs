@@ -3101,6 +3101,11 @@ impl PureFactContext {
         {
             return Some(true);
         }
+        if let Some(guards) = condition.uint64_subtraction_upper_bound_guards()
+            && guards.iter().all(|guard| self.decide(guard) == Some(true))
+        {
+            return Some(true);
+        }
         if let ConditionTerm::Bitvector64UnsignedLessEqual(left, right) = condition {
             let limit = right.uint64_as_const()?;
             if self.uint64_small_upper_bound(left)? <= limit {
