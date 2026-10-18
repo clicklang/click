@@ -52,24 +52,15 @@ fn preserves_source_and_checks_obligations(fixture: &str) {
             .err()
             .expect("the decrease is needed")
             .to_string();
-        // The rejected candidates a trace lists are formatted by the steps
-        // themselves; the report's own spelling comes before them.
-        let report = error
-            .lines()
-            .take_while(|line| !line.contains("checked candidate"))
-            .collect::<Vec<_>>()
-            .join("\n");
         assert!(
-            report.contains("at(iteration, iter_remaining) - 1u64 < at(iteration, iter_remaining)"),
+            error.contains("at(iteration, iter_remaining) - 1u64 < at(iteration, iter_remaining)"),
             "{error}"
         );
-        assert!(!report.contains("<unnamed"), "{error}");
+        assert!(!error.contains("<unnamed"), "{error}");
+        assert!(error.contains("missing exact fact:"), "{error}");
         assert!(!error.contains("__rust_"), "{error}");
-        assert!(report.contains(" + byte)"), "{error}");
-        assert!(
-            report.contains("prefix(old(bytes), bytes.len(),"),
-            "{error}"
-        );
+        assert!(error.contains(" + byte)"), "{error}");
+        assert!(error.contains("prefix(old(bytes), bytes.len(),"), "{error}");
     }
 }
 /// `proof` without the statement whose first line starts with `prefix`: that

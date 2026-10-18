@@ -76,6 +76,10 @@ memory a step may have changed or resources held together, are short description
 in angle brackets, in source terms: `<only p[1] changed between function entry
 and here>`.
 
+Missing assumption sides and bare-instantiation guards in step refusals and
+search-candidate details use the goal's source and recorded-snapshot names. They are retained
+as propositions and named when the report is rendered.
+
 An explicitly requested `--trace-proof` keeps its typed diagnostic notation:
 readable Click expressions are used there only when they preserve the checked
 operands, and otherwise a memory operand prints as
