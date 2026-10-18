@@ -57,6 +57,24 @@ fn model_source(pointer: &Pointer, condition: bool) -> Proposition {
 }
 
 #[test]
+fn integer_address_word_aliases_do_not_supply_an_object_type() {
+    let _session = VerificationSession::enter();
+    let a = Bitvector32Term::Variable(Variable(880_010));
+    let b = Bitvector32Term::Variable(Variable(880_011));
+    let p = Pointer::integer_address(a.clone());
+    let q = Pointer::integer_address(b.clone());
+    let context = PureFactContext::new()
+        .assume_proposition(source("typed", &p))
+        .assume_condition(ConditionTerm::uint64_equal(a, b), true);
+    assert!(can_type(&context, &p));
+    assert!(context.equality_graph.are_uint64_equal(
+        &Bitvector32Term::PointerAddress(Box::new(p), AddressObjectClass::NONE),
+        &Bitvector32Term::PointerAddress(Box::new(q.clone()), AddressObjectClass::NONE),
+    ));
+    assert!(!can_type(&context, &q));
+}
+
+#[test]
 fn object_type_evidence_follows_early_and_late_pointer_merges() {
     let _session = VerificationSession::enter();
     let (p, q, r) = (pointer(1), pointer(2), pointer(3));

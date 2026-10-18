@@ -361,6 +361,14 @@ General sibling and uncle subtrees, generalized double rotations, and flip
 chains ending in a rotation remain unfinished.
 
 
+`rbtree_size_reparent.click` models a root parent update and proves that it
+preserves cached values, count validity, and child structure.
+`rbtree_size_reparent_call.click` checks the existing `rb_set_parent_color`
+black-parent update for an arbitrary owned subtree, retaining its caches and
+children. The proof records explicit color bounds before the C store and uses
+checked certificates for the packed-word arithmetic. Composing this standalone
+contract with insertion's nonempty moved child remains separate work.
+
 `rbtree_size_recolor.click` supplies shared model operations for root recoloring
 and insertion color flips. Its explicit lemmas preserve cached values and
 recursive count validity for arbitrary subtrees and identify their shapes with
