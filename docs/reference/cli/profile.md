@@ -20,10 +20,10 @@ specific quarantined fixture can be diagnosed. Each selected project receives
 its own limits and report.
 
 Sidecar, example-project, and examples-directory targets select sidecars
-exactly as [`click verify`](verify.md#target-selection) does: a directory that
-contains sidecars is one project, and otherwise each immediate subdirectory
-with sidecars is a project; a project's declaration modules are not entries. A project report covers all of its sidecars, and
-local imports resolve within the same project root `click verify` uses. A
+exactly as [`click verify`](verify.md#target-selection) does: a directory
+selects every sidecar under it, grouped by the project each belongs to, and a
+project's declaration modules are not entries. A project report covers all of
+its selected sidecars, and local imports resolve within the project root. A
 directory is an mdtests directory instead when it directly contains a markdown
 test, even if it also holds `.click` modules those tests import.
 

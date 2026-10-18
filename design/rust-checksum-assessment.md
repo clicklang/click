@@ -3,7 +3,7 @@
 This assessment pins the unchanged Adler-32 implementations, build configuration,
 and common mathematical specification selected by
 [the completed Linux Rust frontend milestone](rust-charon-assessment.md#completed-linux-frontend-delivery). Native Charon imports the Rust
-selection, and the [Adler trial](charon-trial/adler2/README.md) records its current
+selection, and the [Adler trial](adler32/adler2/README.md) records its current
 checked computation correctness over the explicit signed observation range.
 The unchanged public entry point composes the checked constructor, general
 computation and checksum getter over that range. A real client connects two
@@ -13,11 +13,11 @@ client saves the prefix checksum, restores the same canonical state through
 The unchanged C implementation now satisfies the same specification for every
 length 0–2147483647 from arbitrary canonical decoded A/B, and its real two-call
 client composes every split under nonnull call-pointer contracts. The
-[checked correspondence demonstration](charon-trial/checksum-correspondence.md)
+[checked correspondence demonstration](adler32/checksum-correspondence.md)
 derives native C/Rust result equality for matched entry bytes, length and state,
 and connects C's null reset with Rust new/default and the checksum getter.
 
-The checked [common specification](adler32-spec.click) defines the unweighted
+The checked [common specification](adler32/adler32-spec.click) defines the unweighted
 byte sum, the byte-order-sensitive weighted sum, both canonical residues, and
 the packed checksum over a logical byte snapshot. Its lemmas prove the appended
 byte recurrence, weight shifts, nonnegative sums, residue uniqueness and

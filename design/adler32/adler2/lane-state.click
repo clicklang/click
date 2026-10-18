@@ -1,7 +1,7 @@
 import click::integer;
 
 // Integer observations of the optimized four-lane state.
-// Assemble after design/adler32-spec.click; every lemma is source-proved.
+// Assemble after design/adler32/adler32-spec.click; every lemma is source-proved.
 // These relations do not assume machine arithmetic is free of overflow.
 // The computation must supply checked observations of its native operations.
 

@@ -11,8 +11,8 @@ use std::process::Command;
 use sha2::{Digest, Sha256};
 
 use click::cli::{
-    CInput, files_with_extension, project_sidecars, read_c_inputs_for_project,
-    read_click_project_at_root, read_verifying_sources, source_refs,
+    CInput, files_with_extension, read_c_inputs_for_project, read_click_project,
+    read_click_project_at_root, read_verifying_sources, select_sidecars, source_refs,
 };
 use click::instrumentation::{self, ArtifactReuseRejection, HiddenPrerequisiteRoute};
 use click::surface::{
@@ -147,15 +147,15 @@ fn canonical_charon_examples_verify_locked_inputs() {
 /// measurement that put each one here.
 const NIGHTLY: &[(&str, &str)] = &[
     (
-        "rbtree-insert",
+        "rbtree/rbtree-insert",
         "verifies in about 118 s on 20 cores, most of the gate's budget alone (2026-10-06)",
     ),
     (
-        "rbtree-erase",
+        "rbtree/rbtree-erase",
         "the general unlink and color repair take minutes; 347 s in a debug test build (2026-10-14)",
     ),
     (
-        "rbtree-augmented",
+        "rbtree/rbtree-augmented",
         "261 s in a debug test build on 4 cores, 44 s release, the gate's long pole (2026-10-15)",
     ),
 ];
@@ -166,22 +166,18 @@ fn example_projects() {
     let examples_dir = manifest_dir.join("examples");
     let requested = std::env::var_os("CLICK_EXAMPLE");
     let run_quarantined = requested.is_some() || std::env::var_os(RUN_QUARANTINED).is_some();
-    let mut projects = fs::read_dir(&examples_dir)
-        .unwrap_or_else(|error| panic!("failed to read `{}`: {error}", examples_dir.display()))
-        .map(|entry| {
-            entry
-                .unwrap_or_else(|error| panic!("failed to read examples directory entry: {error}"))
-                .path()
-        })
-        .filter(|path| path.is_dir())
+    let examples_dir = fs::canonicalize(&examples_dir)
+        .unwrap_or_else(|error| panic!("failed to resolve `{}`: {error}", examples_dir.display()));
+    let mut projects = example_directories(&examples_dir)
+        .into_iter()
         .filter(|path| {
             requested.as_ref().is_none_or(|requested| {
-                path.file_name()
-                    .is_some_and(|name| name == requested.as_os_str())
+                let name = example_name(&examples_dir, path);
+                let requested = requested.to_string_lossy();
+                name == requested || name.starts_with(&format!("{requested}/"))
             })
         })
         .collect::<Vec<_>>();
-    projects.sort();
 
     // The gate has a ten-minute budget. An example that takes most of it
     // alone runs in the nightly gate (`scripts/check.sh --nightly`), or on
@@ -191,8 +187,8 @@ fn example_projects() {
     let skipped_nightly = requested.is_none() && std::env::var_os("CLICK_NIGHTLY").is_none() && {
         let before = projects.len();
         projects.retain(|path| {
-            let name = path.file_name().and_then(|name| name.to_str());
-            match name.and_then(|name| NIGHTLY.iter().find(|(nightly, _)| *nightly == name)) {
+            let name = example_name(&examples_dir, path);
+            match NIGHTLY.iter().find(|(nightly, _)| *nightly == name) {
                 Some((name, reason)) => {
                     println!("SKIPPING nightly example `{name}`: {reason}");
                     false
@@ -240,12 +236,10 @@ fn example_projects() {
     }
     if !run_quarantined {
         projects.retain(|path| {
-            let name = path.file_name().and_then(|name| name.to_str());
-            let quarantine = name.and_then(|name| {
-                QUARANTINED
-                    .iter()
-                    .find(|(quarantined, _)| *quarantined == name)
-            });
+            let name = example_name(&examples_dir, path);
+            let quarantine = QUARANTINED
+                .iter()
+                .find(|(quarantined, _)| *quarantined == name);
             match quarantine {
                 Some((name, reason)) => {
                     println!("SKIPPING quarantined example `{name}`: {reason}");
@@ -332,18 +326,18 @@ fn rbtree_insert_uses_the_unchanged_c_and_the_shared_model() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     for (relative, expected) in [
         (
-            "examples/rbtree-insert/rbtree.h",
+            "examples/rbtree/rbtree-insert/rbtree.h",
             "69fc7419118e4a37fb46a2469b981646a733b1a7c247094d0b48aa643575cee3",
         ),
         (
-            "examples/rbtree-insert/rb_insert_color.c",
+            "examples/rbtree/rbtree-insert/rb_insert_color.c",
             "b20d68f309682bdcebcf2176d655b92b582f2c88bcc0f4645a7384c0760df111",
         ),
     ] {
         let bytes = fs::read(root.join(relative)).expect("the unchanged insert C input exists");
         assert_eq!(hex_digest(sha256(&bytes)), expected, "changed {relative}");
     }
-    let source = fs::read_to_string(root.join("examples/rbtree-insert/rbtree_insert.click"))
+    let source = fs::read_to_string(root.join("examples/rbtree/rbtree-insert/rbtree_insert.click"))
         .expect("the insert sidecar should exist");
     assert!(source.contains("import \"../rbtree-model/rbtree_model.click\";"));
     assert!(!source.contains("spec enum RbTree"));
@@ -484,7 +478,7 @@ fn bounded_audit_batches_only_claims_that_fit_the_remaining_cap() {
 #[ignore = "nightly: rechecks rbtree recoloring expansion"]
 fn rbtree_auto_recolor_expansion_rechecks() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let path = root.join("examples/rbtree-insert/rbtree_insert.click");
+    let path = root.join("examples/rbtree/rbtree-insert/rbtree_insert.click");
     let mut source = fs::read_to_string(&path).unwrap();
     let anchor =
         "have rb_inorder(plug(Context::Top, RbTree::Node(nid, 0, Color::Black, nleft, nright)))";
@@ -505,7 +499,7 @@ fn rbtree_auto_recolor_expansion_rechecks() {
         .expect("the written proof block ends");
     source.replace_range(start..end, "by auto();");
     let c_sources = read_verifying_sources(&path, &source).unwrap();
-    let project = read_click_project_at_root(&path, &source, &root.join("examples")).unwrap();
+    let project = read_click_project(&path, &source).unwrap();
     let line = source[..start]
         .bytes()
         .filter(|byte| *byte == b'\n')
@@ -559,10 +553,10 @@ fn rbtree_auto_recolor_expansion_rechecks() {
 #[ignore = "nightly: whole rbtree insert expansion and cold verification exceed the gate budget"]
 fn rbtree_insert_whole_claim_expansion_verifies() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let path = root.join("examples/rbtree-insert/rbtree_insert.click");
+    let path = root.join("examples/rbtree/rbtree-insert/rbtree_insert.click");
     let source = fs::read_to_string(&path).unwrap();
     let c_sources = read_verifying_sources(&path, &source).unwrap();
-    let project = read_click_project_at_root(&path, &source, &root.join("examples")).unwrap();
+    let project = read_click_project(&path, &source).unwrap();
     limits::spawn(
         "rbtree insert whole-claim expansion",
         "click-rbtree-expansion".to_string(),
@@ -614,14 +608,13 @@ fn rbtree_sized_mirrored_context_double_rotation_retained_session_expansion_rech
 
 fn check_sized_context_rotation_retained_expansion(sidecar: &str) {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("examples/rbtree-augmented")
+        .join("examples/rbtree/rbtree-augmented")
         .join(sidecar);
     limits::spawn(
         "sized context rotation retained expansion",
         "click-sized-context-expansion".to_string(),
         move || {
-            let project_root = path.parent().unwrap().parent().unwrap();
-            let loaded = click::cli::load_target_inputs(&path, Some(project_root)).unwrap();
+            let loaded = click::cli::load_target_inputs(&path, None).unwrap();
             let (session, verified) = match &loaded.inputs {
                 CInput::Bundle(sources) => click::surface::C0VerificationSession::new_project(
                     &loaded.project,
@@ -669,7 +662,7 @@ fn check_sized_context_rotation_retained_expansion(sidecar: &str) {
 #[ignore = "nightly: 5s in the parallel gate"]
 fn rbtree_insert_refuses_a_skipped_recolour() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let path = root.join("examples/rbtree-insert/rbtree_insert.click");
+    let path = root.join("examples/rbtree/rbtree-insert/rbtree_insert.click");
     let source = fs::read_to_string(&path).expect("the insert sidecar should exist");
     let mut c_sources =
         read_verifying_sources(&path, &source).expect("the insert C bundle should load");
@@ -680,7 +673,7 @@ fn rbtree_insert_refuses_a_skipped_recolour() {
         .expect("the bundle holds rb_insert_color.c");
     assert_eq!(c.matches(recolour).count(), 1, "the root recolour moved");
     *c = c.replace(recolour, "");
-    let project = read_click_project_at_root(&path, &source, &root.join("examples"))
+    let project = read_click_project(&path, &source)
         .expect("the insert sidecar should resolve the shared model");
     // Like every other verification here, this runs on a harness verifier
     // thread: the proof is deep enough to overflow the default test stack.
@@ -701,7 +694,7 @@ fn rbtree_insert_refuses_a_skipped_recolour() {
 #[test]
 fn rbtree_erase_uses_the_unchanged_pinned_unlink() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let bytes = fs::read(root.join("examples/rbtree-erase/rb_erase_augmented.c"))
+    let bytes = fs::read(root.join("examples/rbtree/rbtree-erase/rb_erase_augmented.c"))
         .expect("the pinned erase C input exists");
     assert_eq!(
         hex_digest(sha256(&bytes)),
@@ -715,10 +708,10 @@ fn rbtree_erase_uses_the_unchanged_pinned_unlink() {
 #[ignore = "nightly: 41 s to expand and recheck the general unlink in a release build (2026-10-14)"]
 fn rbtree_erase_general_explicit_closers_preserve_ownership() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let path = root.join("examples/rbtree-erase/rbtree_erase_augmented.click");
+    let path = root.join("examples/rbtree/rbtree-erase/rbtree_erase_augmented.click");
     let source = fs::read_to_string(&path).unwrap();
     let c_sources = read_verifying_sources(&path, &source).unwrap();
-    let project = read_click_project_at_root(&path, &source, &root.join("examples")).unwrap();
+    let project = read_click_project(&path, &source).unwrap();
     let (line, text) = source
         .lines()
         .enumerate()
@@ -736,9 +729,8 @@ fn rbtree_erase_general_explicit_closers_preserve_ownership() {
                 line + 1,
                 column,
             )?;
-            let expanded_project =
-                read_click_project_at_root(&path, &expanded, &root.join("examples"))
-                    .expect("the expanded general unlink resolves its imports");
+            let expanded_project = read_click_project(&path, &expanded)
+                .expect("the expanded general unlink resolves its imports");
             click::surface::verify_c0_project(&expanded_project, &source_refs(&c_sources))
         },
     )
@@ -826,7 +818,7 @@ fn erase_source_replacement_error_for_function(
     function: Option<&str>,
 ) -> String {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let path = root.join("examples/rbtree-erase").join(sidecar);
+    let path = root.join("examples/rbtree/rbtree-erase").join(sidecar);
     let source = fs::read_to_string(&path).expect("the erase sidecar exists");
     let mut c_sources = read_verifying_sources(&path, &source).expect("the erase C bundle loads");
     let (_, c) = c_sources
@@ -839,7 +831,7 @@ fn erase_source_replacement_error_for_function(
         "mutation must identify the expected statements"
     );
     *c = c.replace(before, after);
-    let project = read_click_project_at_root(&path, &source, &root.join("examples"))
+    let project = read_click_project(&path, &source)
         .expect("the erase proof resolves its shared resources and model");
     let function = function.map(str::to_owned);
     limits::spawn(
@@ -1271,6 +1263,34 @@ fn imports_cpp(project: &Path) -> bool {
         })
 }
 
+/// The directories the example gate runs: each directory under `examples`
+/// that directly holds a sidecar, sorted. A project with sidecars in several
+/// directories (`examples/rbtree`) runs as several, so the gate can schedule
+/// and skip its parts by name.
+fn example_directories(examples: &Path) -> Vec<PathBuf> {
+    let selection = select_sidecars(examples)
+        .unwrap_or_else(|error| panic!("failed to select example sidecars: {error}"));
+    selection
+        .sidecars()
+        .filter_map(Path::parent)
+        .map(Path::to_path_buf)
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect()
+}
+
+/// An example directory's name: its path below `examples`, such as
+/// `rbtree/rbtree-insert`.
+fn example_name(examples: &Path, directory: &Path) -> String {
+    directory
+        .strip_prefix(examples)
+        .unwrap_or(directory)
+        .components()
+        .map(|component| component.as_os_str().to_string_lossy())
+        .collect::<Vec<_>>()
+        .join("/")
+}
+
 fn run_example_in_thread(project: &Path) -> Result<(), String> {
     let project = project.to_path_buf();
     limits::spawn("example verifier", "click-example".to_string(), move || {
@@ -1288,25 +1308,22 @@ fn run_example_project(project: &Path) -> Result<(), String> {
         );
     }
 
-    let mut click_paths = project_sidecars(project)?;
+    let selection = select_sidecars(project)?;
+    let click_paths = selection
+        .projects
+        .iter()
+        .flat_map(|selected| {
+            selected
+                .sidecars
+                .iter()
+                .map(|sidecar| (sidecar.clone(), selected.root.clone()))
+        })
+        .collect::<Vec<_>>();
 
-    if click_paths.is_empty() {
-        return Err(format!(
-            "example project `{}` must contain at least one .click sidecar",
-            project.display()
-        ));
-    }
-
-    click_paths.sort();
-
-    for click_path in click_paths {
+    for (click_path, project_root) in click_paths {
         let click_source = fs::read_to_string(&click_path)
             .map_err(|error| format!("failed to read `{}`: {error}", click_path.display()))?;
-        let click_project = read_click_project_at_root(
-            &click_path,
-            &click_source,
-            project.parent().unwrap_or(project),
-        )?;
+        let click_project = read_click_project_at_root(&click_path, &click_source, &project_root)?;
         let inputs = read_c_inputs_for_project(&click_path, &click_source, &click_project)?;
         match source_status {
             Some(SourceFixtureStatus::ParserOnly) => {
@@ -1668,7 +1685,7 @@ mod tests {
 #[test]
 fn rbtree_erase_color_uses_the_unchanged_pinned_function() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let bytes = fs::read(root.join("examples/rbtree-erase/rb_erase_color.c"))
+    let bytes = fs::read(root.join("examples/rbtree/rbtree-erase/rb_erase_color.c"))
         .expect("the pinned erase-color C input exists");
     assert_eq!(
         hex_digest(sha256(&bytes)),
@@ -2202,7 +2219,7 @@ fn rbtree_erase_color_flips_red_all_requires_left_inner_parent_link() {
 #[test]
 fn rbtree_erase_wrapper_uses_the_unchanged_pinned_callbacks_and_body() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let bytes = fs::read(root.join("examples/rbtree-erase/rb_erase.c"))
+    let bytes = fs::read(root.join("examples/rbtree/rbtree-erase/rb_erase.c"))
         .expect("the pinned erase wrapper exists");
     assert_eq!(
         hex_digest(sha256(&bytes)),
@@ -2231,13 +2248,13 @@ fn rbtree_augmented_wrappers_keep_the_pinned_c() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     assert_eq!(
         hex_digest(sha256(
-            &fs::read(root.join("examples/rbtree-augmented/rb_insert_augmented.c")).unwrap()
+            &fs::read(root.join("examples/rbtree/rbtree-augmented/rb_insert_augmented.c")).unwrap()
         )),
         "213bdc5c780db8f91b3595d7fdc1dc94cee1b56c8d0f7a54cb5e6859ed79ef58",
     );
     assert_eq!(
         hex_digest(sha256(
-            &fs::read(root.join("examples/rbtree-augmented/rb_erase_augmented.c")).unwrap()
+            &fs::read(root.join("examples/rbtree/rbtree-augmented/rb_erase_augmented.c")).unwrap()
         )),
         "62e586fbf9b20527ee6454b9481a0ac0d6cab78dc005f5b189ec602ec63089e5",
     );
@@ -2277,7 +2294,7 @@ fn rbtree_augmented_wrappers_reject_missing_or_wrong_calls() {
             "requires a call to `__rb_erase_color` at the current frontier",
         ),
     ] {
-        let path = root.join("examples/rbtree-augmented").join(sidecar);
+        let path = root.join("examples/rbtree/rbtree-augmented").join(sidecar);
         let source = fs::read_to_string(&path).unwrap();
         let mut inputs = read_verifying_sources(&path, &source).unwrap();
         let (_, c) = inputs
@@ -2286,7 +2303,7 @@ fn rbtree_augmented_wrappers_reject_missing_or_wrong_calls() {
             .unwrap();
         assert_eq!(c.matches(before).count(), 1, "{sidecar}: unique mutation");
         *c = c.replace(before, after);
-        let project = read_click_project_at_root(&path, &source, &root.join("examples")).unwrap();
+        let project = read_click_project(&path, &source).unwrap();
         let error = limits::spawn(
             "augmented wrapper mutation verifier",
             "click-augmented-wrapper-mutation".to_string(),

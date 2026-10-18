@@ -635,735 +635,735 @@
   "by_auto": true,
   "deletable": false
  },
- "examples/rbtree-augmented/rbtree_erase_leaf.click::ctx_consistent(deficit.model, RbTree::Empty, 0) == 1::0": {
+ "examples/rbtree/rbtree-augmented/rbtree_erase_leaf.click::ctx_consistent(deficit.model, RbTree::Empty, 0) == 1::0": {
   "by_auto": true,
   "deletable": false
  },
- "examples/rbtree-augmented/rbtree_erase_leaf.click::ctx_node_is(deficit.model, rebalance) == 1::0": {
-  "by_auto": true,
-  "deletable": true
- },
- "examples/rbtree-augmented/rbtree_erase_leaf.click::ctx_rb(deficit.model, Nat::Succ(Nat::Zero), Color::Black) == 1::0": {
-  "by_auto": true,
-  "deletable": false
- },
- "examples/rbtree-augmented/rbtree_erase_leaf.click::ctx_rb(deficit.model, Nat::Succ(black_height(RbTree::Empty)), Color::Black) == 1::0": {
-  "by_auto": false,
-  "deletable": false
- },
- "examples/rbtree-augmented/rbtree_erase_leaf.click::deficit.model != Context::Top::0": {
+ "examples/rbtree/rbtree-augmented/rbtree_erase_leaf.click::ctx_node_is(deficit.model, rebalance) == 1::0": {
   "by_auto": true,
   "deletable": true
  },
- "examples/rbtree-augmented/rbtree_erase_leaf.click::deficit.model == old(up.model)::0": {
+ "examples/rbtree/rbtree-augmented/rbtree_erase_leaf.click::ctx_rb(deficit.model, Nat::Succ(Nat::Zero), Color::Black) == 1::0": {
   "by_auto": true,
   "deletable": false
  },
- "examples/rbtree-augmented/rbtree_erase_leaf.click::erase_leaf_result(old(up.model), rb_color(old(tree.model))) == erase_flips_red_all_result(deficit.model, RbTree::Empty)::0": {
-  "by_auto": true,
+ "examples/rbtree/rbtree-augmented/rbtree_erase_leaf.click::ctx_rb(deficit.model, Nat::Succ(black_height(RbTree::Empty)), Color::Black) == 1::0": {
+  "by_auto": false,
   "deletable": false
  },
- "examples/rbtree-augmented/rbtree_erase_leaf.click::erase_leaf_result(old(up.model), rb_color(old(tree.model))) == plug(deficit.model, RbTree::Empty)::0": {
-  "by_auto": true,
-  "deletable": false
- },
- "examples/rbtree-augmented/rbtree_erase_leaf.click::is_rb_root(plug(deficit.model, RbTree::Empty)) == 1::0": {
-  "by_auto": true,
-  "deletable": false
- },
- "examples/rbtree-augmented/rbtree_erase_leaf.click::is_rb_root(whole.model) == 1::0": {
-  "by_auto": true,
-  "deletable": false
- },
- "examples/rbtree-augmented/rbtree_erase_leaf.click::rb_tree_parent_consistent(plug(deficit.model, RbTree::Empty)) == 1::0": {
-  "by_auto": true,
-  "deletable": false
- },
- "examples/rbtree-augmented/rbtree_erase_leaf.click::rb_tree_parent_consistent(plug(deficit.model, hole.model)) == 1::0": {
-  "by_auto": true,
-  "deletable": false
- },
- "examples/rbtree-augmented/rbtree_erase_leaf.click::rb_tree_parent_consistent(whole.model) == 1::0": {
-  "by_auto": true,
-  "deletable": false
- },
- "examples/rbtree-augmented/rbtree_erase_leaf.click::rebalance == 0::0": {
+ "examples/rbtree/rbtree-augmented/rbtree_erase_leaf.click::deficit.model != Context::Top::0": {
   "by_auto": true,
   "deletable": true
  },
- "examples/rbtree-augmented/rbtree_erase_leaf.click::whole.model == erase_leaf_result(old(up.model), rb_color(old(tree.model)))::0": {
+ "examples/rbtree/rbtree-augmented/rbtree_erase_leaf.click::deficit.model == old(up.model)::0": {
+  "by_auto": true,
+  "deletable": false
+ },
+ "examples/rbtree/rbtree-augmented/rbtree_erase_leaf.click::erase_leaf_result(old(up.model), rb_color(old(tree.model))) == erase_flips_red_all_result(deficit.model, RbTree::Empty)::0": {
+  "by_auto": true,
+  "deletable": false
+ },
+ "examples/rbtree/rbtree-augmented/rbtree_erase_leaf.click::erase_leaf_result(old(up.model), rb_color(old(tree.model))) == plug(deficit.model, RbTree::Empty)::0": {
+  "by_auto": true,
+  "deletable": false
+ },
+ "examples/rbtree/rbtree-augmented/rbtree_erase_leaf.click::is_rb_root(plug(deficit.model, RbTree::Empty)) == 1::0": {
+  "by_auto": true,
+  "deletable": false
+ },
+ "examples/rbtree/rbtree-augmented/rbtree_erase_leaf.click::is_rb_root(whole.model) == 1::0": {
+  "by_auto": true,
+  "deletable": false
+ },
+ "examples/rbtree/rbtree-augmented/rbtree_erase_leaf.click::rb_tree_parent_consistent(plug(deficit.model, RbTree::Empty)) == 1::0": {
+  "by_auto": true,
+  "deletable": false
+ },
+ "examples/rbtree/rbtree-augmented/rbtree_erase_leaf.click::rb_tree_parent_consistent(plug(deficit.model, hole.model)) == 1::0": {
+  "by_auto": true,
+  "deletable": false
+ },
+ "examples/rbtree/rbtree-augmented/rbtree_erase_leaf.click::rb_tree_parent_consistent(whole.model) == 1::0": {
+  "by_auto": true,
+  "deletable": false
+ },
+ "examples/rbtree/rbtree-augmented/rbtree_erase_leaf.click::rebalance == 0::0": {
   "by_auto": true,
   "deletable": true
  },
- "examples/rbtree-augmented/rbtree_erase_leaf.click::whole.model == plug(old(up.model), RbTree::Empty)::0": {
-  "by_auto": true,
-  "deletable": false
- },
- "examples/rbtree-erase/rbtree_change_child.click::ctx_node_is(Context::Left(identity, grandparent, color, sibling_model, outer_model), parent) != 1::0": {
-  "by_auto": false,
-  "deletable": false
- },
- "examples/rbtree-erase/rbtree_change_child.click::ctx_node_is(Context::Left(identity, grandparent, color, sibling_model, outer_model), parent) == 1::0": {
-  "by_auto": true,
-  "deletable": false
- },
- "examples/rbtree-erase/rbtree_change_child.click::ctx_node_is(Context::Right(identity, grandparent, color, sibling_model, outer_model), parent) != 1::0": {
-  "by_auto": false,
-  "deletable": false
- },
- "examples/rbtree-erase/rbtree_change_child.click::ctx_node_is(Context::Right(identity, grandparent, color, sibling_model, outer_model), parent) == 1::0": {
-  "by_auto": true,
-  "deletable": false
- },
- "examples/rbtree-erase/rbtree_change_child.click::ctx_node_is(Context::Top, parent) != 1::0": {
-  "by_auto": true,
-  "deletable": false
- },
- "examples/rbtree-erase/rbtree_change_child.click::ctx_node_is(Context::Top, parent) == 1::0": {
-  "by_auto": true,
-  "deletable": false
- },
- "examples/rbtree-erase/rbtree_change_child.click::parent == 0::0": {
-  "by_auto": false,
-  "deletable": false
- },
- "examples/rbtree-erase/rbtree_change_child.click::parent == identity::0": {
-  "by_auto": false,
-  "deletable": false
- },
- "examples/rbtree-erase/rbtree_change_child.click::parent == identity::1": {
-  "by_auto": false,
-  "deletable": false
- },
- "examples/rbtree-erase/rbtree_erase_color_flips_red_all.click::(parent->__rb_parent_color & 1) == color_bit(Color::Red)::1": {
+ "examples/rbtree/rbtree-augmented/rbtree_erase_leaf.click::whole.model == erase_leaf_result(old(up.model), rb_color(old(tree.model)))::0": {
   "by_auto": true,
   "deletable": true
  },
- "examples/rbtree-erase/rbtree_erase_color_flips_red_all.click::at(focus_split, t.model) == t.model::7": {
+ "examples/rbtree/rbtree-augmented/rbtree_erase_leaf.click::whole.model == plug(old(up.model), RbTree::Empty)::0": {
+  "by_auto": true,
+  "deletable": false
+ },
+ "examples/rbtree/rbtree-erase/rbtree_change_child.click::ctx_node_is(Context::Left(identity, grandparent, color, sibling_model, outer_model), parent) != 1::0": {
+  "by_auto": false,
+  "deletable": false
+ },
+ "examples/rbtree/rbtree-erase/rbtree_change_child.click::ctx_node_is(Context::Left(identity, grandparent, color, sibling_model, outer_model), parent) == 1::0": {
+  "by_auto": true,
+  "deletable": false
+ },
+ "examples/rbtree/rbtree-erase/rbtree_change_child.click::ctx_node_is(Context::Right(identity, grandparent, color, sibling_model, outer_model), parent) != 1::0": {
+  "by_auto": false,
+  "deletable": false
+ },
+ "examples/rbtree/rbtree-erase/rbtree_change_child.click::ctx_node_is(Context::Right(identity, grandparent, color, sibling_model, outer_model), parent) == 1::0": {
+  "by_auto": true,
+  "deletable": false
+ },
+ "examples/rbtree/rbtree-erase/rbtree_change_child.click::ctx_node_is(Context::Top, parent) != 1::0": {
+  "by_auto": true,
+  "deletable": false
+ },
+ "examples/rbtree/rbtree-erase/rbtree_change_child.click::ctx_node_is(Context::Top, parent) == 1::0": {
+  "by_auto": true,
+  "deletable": false
+ },
+ "examples/rbtree/rbtree-erase/rbtree_change_child.click::parent == 0::0": {
+  "by_auto": false,
+  "deletable": false
+ },
+ "examples/rbtree/rbtree-erase/rbtree_change_child.click::parent == identity::0": {
+  "by_auto": false,
+  "deletable": false
+ },
+ "examples/rbtree/rbtree-erase/rbtree_change_child.click::parent == identity::1": {
+  "by_auto": false,
+  "deletable": false
+ },
+ "examples/rbtree/rbtree-erase/rbtree_erase_color_flips_red_all.click::(parent->__rb_parent_color & 1) == color_bit(Color::Red)::1": {
   "by_auto": true,
   "deletable": true
  },
- "examples/rbtree-erase/rbtree_erase_color_flips_red_all.click::at(iteration, c.model) == Context::Right(id, above, pc, sm, um)::0": {
+ "examples/rbtree/rbtree-erase/rbtree_erase_color_flips_red_all.click::at(focus_split, t.model) == t.model::7": {
   "by_auto": true,
   "deletable": true
  },
- "examples/rbtree-erase/rbtree_erase_color_flips_red_all.click::ctx_node_is(Context::Top, parent) == 1::0": {
-  "by_auto": false,
-  "deletable": false
- },
- "examples/rbtree-erase/rbtree_erase_color_flips_red_all.click::erase_flips_red_all_result(Context::Left(id, above, pc, RbTree::Node(sid, id, Color::Black, slm, srm), um), nt.model) == erase_flips_red_all_result(old(c.model), RbTree::Empty)::0": {
-  "by_auto": false,
-  "deletable": false
- },
- "examples/rbtree-erase/rbtree_erase_color_flips_red_all.click::near.model == rb_reparent(ilm, parent)::1": {
-  "by_auto": true,
-  "deletable": false
- },
- "examples/rbtree-erase/rbtree_erase_color_flips_red_all.click::not(erase_flips_red_all(at(iteration, c.model)) == 1)::0": {
-  "by_auto": true,
-  "deletable": false
- },
- "examples/rbtree-erase/rbtree_erase_color_flips_red_all.click::rb_parent_consistent(plug(Context::Right(id, above, pc, RbTree::Node(sid, id, Color::Black, srm, slm), um), nt.model), 0) == 1::0": {
-  "by_auto": false,
-  "deletable": false
- },
- "examples/rbtree-erase/rbtree_erase_color_flips_red_all.click::rb_root_black(RbTree::Node(node, parent, Color::Black, left, right)) == 1::0": {
-  "by_auto": true,
-  "deletable": false
- },
- "examples/rbtree-erase/rbtree_erase_color_flips_red_all.click::rb_root_black(nt.model) == 1::1": {
-  "by_auto": true,
-  "deletable": false
- },
- "examples/rbtree-erase/rbtree_erase_color_flips_red_all.click::rb_tree_parent_consistent(plug(u.model, sub.model)) == 1::3": {
-  "by_auto": true,
-  "deletable": false
- },
- "examples/rbtree-erase/rbtree_erase_color_flips_red_all.click::rs.model == srm::6": {
-  "by_auto": true,
-  "deletable": false
- },
- "examples/rbtree-erase/rbtree_erase_color_flips_red_all.click::sibling == iid::2": {
+ "examples/rbtree/rbtree-erase/rbtree_erase_color_flips_red_all.click::at(iteration, c.model) == Context::Right(id, above, pc, sm, um)::0": {
   "by_auto": true,
   "deletable": true
  },
- "examples/rbtree-erase/rbtree_erase_color_flips_red_all.click::sibling == zid::0": {
+ "examples/rbtree/rbtree-erase/rbtree_erase_color_flips_red_all.click::ctx_node_is(Context::Top, parent) == 1::0": {
+  "by_auto": false,
+  "deletable": false
+ },
+ "examples/rbtree/rbtree-erase/rbtree_erase_color_flips_red_all.click::erase_flips_red_all_result(Context::Left(id, above, pc, RbTree::Node(sid, id, Color::Black, slm, srm), um), nt.model) == erase_flips_red_all_result(old(c.model), RbTree::Empty)::0": {
+  "by_auto": false,
+  "deletable": false
+ },
+ "examples/rbtree/rbtree-erase/rbtree_erase_color_flips_red_all.click::near.model == rb_reparent(ilm, parent)::1": {
+  "by_auto": true,
+  "deletable": false
+ },
+ "examples/rbtree/rbtree-erase/rbtree_erase_color_flips_red_all.click::not(erase_flips_red_all(at(iteration, c.model)) == 1)::0": {
+  "by_auto": true,
+  "deletable": false
+ },
+ "examples/rbtree/rbtree-erase/rbtree_erase_color_flips_red_all.click::rb_parent_consistent(plug(Context::Right(id, above, pc, RbTree::Node(sid, id, Color::Black, srm, slm), um), nt.model), 0) == 1::0": {
+  "by_auto": false,
+  "deletable": false
+ },
+ "examples/rbtree/rbtree-erase/rbtree_erase_color_flips_red_all.click::rb_root_black(RbTree::Node(node, parent, Color::Black, left, right)) == 1::0": {
+  "by_auto": true,
+  "deletable": false
+ },
+ "examples/rbtree/rbtree-erase/rbtree_erase_color_flips_red_all.click::rb_root_black(nt.model) == 1::1": {
+  "by_auto": true,
+  "deletable": false
+ },
+ "examples/rbtree/rbtree-erase/rbtree_erase_color_flips_red_all.click::rb_tree_parent_consistent(plug(u.model, sub.model)) == 1::3": {
+  "by_auto": true,
+  "deletable": false
+ },
+ "examples/rbtree/rbtree-erase/rbtree_erase_color_flips_red_all.click::rs.model == srm::6": {
+  "by_auto": true,
+  "deletable": false
+ },
+ "examples/rbtree/rbtree-erase/rbtree_erase_color_flips_red_all.click::sibling == iid::2": {
   "by_auto": true,
   "deletable": true
  },
- "examples/rbtree-erase/rbtree_erase_color_flips_red_all.click::sibling->rb_right == tmp1::4": {
+ "examples/rbtree/rbtree-erase/rbtree_erase_color_flips_red_all.click::sibling == zid::0": {
   "by_auto": true,
   "deletable": true
  },
- "examples/rbtree-erase/rbtree_erase_color_flips_red_all.click::sid->__rb_parent_color == (address(iid) | 1)::3": {
+ "examples/rbtree/rbtree-erase/rbtree_erase_color_flips_red_all.click::sibling->rb_right == tmp1::4": {
   "by_auto": true,
   "deletable": true
  },
- "examples/rbtree-erase/rbtree_erase_color_flips_red_all.click::sid->__rb_parent_color == at(outer_rotation, parent->__rb_parent_color)::0": {
+ "examples/rbtree/rbtree-erase/rbtree_erase_color_flips_red_all.click::sid->__rb_parent_color == (address(iid) | 1)::3": {
   "by_auto": true,
   "deletable": true
  },
- "examples/rbtree-erase/rbtree_erase_color_flips_red_all.click::zid->rb_left == rid::2": {
+ "examples/rbtree/rbtree-erase/rbtree_erase_color_flips_red_all.click::sid->__rb_parent_color == at(outer_rotation, parent->__rb_parent_color)::0": {
   "by_auto": true,
   "deletable": true
  },
- "examples/rbtree-erase/rbtree_erase_color_flips_red_all.click::zid->rb_right == rid::2": {
+ "examples/rbtree/rbtree-erase/rbtree_erase_color_flips_red_all.click::zid->rb_left == rid::2": {
   "by_auto": true,
   "deletable": true
  },
- "examples/rbtree-erase/rbtree_erase_color_flips_red_all.click::zlm == RbTree::Node(nid, np, nc, nrm, nlm)::0": {
+ "examples/rbtree/rbtree-erase/rbtree_erase_color_flips_red_all.click::zid->rb_right == rid::2": {
   "by_auto": true,
   "deletable": true
  },
- "examples/rbtree-erase/rbtree_erase_leaf_wrapper.click::ctx_consistent(remaining.model, hole.model, 0) == 1::2": {
-  "by_auto": true,
-  "deletable": false
- },
- "examples/rbtree-erase/rbtree_erase_leaf_wrapper.click::ctx_node_is(Context::Left(pid, gp, pc_model, sibling_model, above_model), parent_model) != 1::0": {
-  "by_auto": false,
-  "deletable": false
- },
- "examples/rbtree-erase/rbtree_erase_leaf_wrapper.click::ctx_node_is(Context::Left(pid, gp, pc_model, sibling_model, above_model), parent_model) == 1::0": {
-  "by_auto": true,
-  "deletable": false
- },
- "examples/rbtree-erase/rbtree_erase_leaf_wrapper.click::ctx_node_is(Context::Top, parent_model) == 1::0": {
-  "by_auto": true,
-  "deletable": false
- },
- "examples/rbtree-erase/rbtree_erase_leaf_wrapper.click::ctx_node_is(deficit.model, rebalance) == 1::0": {
+ "examples/rbtree/rbtree-erase/rbtree_erase_color_flips_red_all.click::zlm == RbTree::Node(nid, np, nc, nrm, nlm)::0": {
   "by_auto": true,
   "deletable": true
  },
- "examples/rbtree-erase/rbtree_erase_leaf_wrapper.click::ctx_rb(deficit.model, Nat::Succ(Nat::Zero), Color::Black) == 1::0": {
+ "examples/rbtree/rbtree-erase/rbtree_erase_leaf_wrapper.click::ctx_consistent(remaining.model, hole.model, 0) == 1::2": {
   "by_auto": true,
   "deletable": false
  },
- "examples/rbtree-erase/rbtree_erase_leaf_wrapper.click::ctx_rb(remaining.model, Nat::Succ(Nat::Zero), Color::Black) == 1::0": {
+ "examples/rbtree/rbtree-erase/rbtree_erase_leaf_wrapper.click::ctx_node_is(Context::Left(pid, gp, pc_model, sibling_model, above_model), parent_model) != 1::0": {
+  "by_auto": false,
+  "deletable": false
+ },
+ "examples/rbtree/rbtree-erase/rbtree_erase_leaf_wrapper.click::ctx_node_is(Context::Left(pid, gp, pc_model, sibling_model, above_model), parent_model) == 1::0": {
   "by_auto": true,
   "deletable": false
  },
- "examples/rbtree-erase/rbtree_erase_leaf_wrapper.click::erase_flips_red_all_result(remaining.model, RbTree::Empty) == plug(remaining.model, RbTree::Empty)::0": {
+ "examples/rbtree/rbtree-erase/rbtree_erase_leaf_wrapper.click::ctx_node_is(Context::Top, parent_model) == 1::0": {
   "by_auto": true,
   "deletable": false
  },
- "examples/rbtree-erase/rbtree_erase_leaf_wrapper.click::erase_leaf_result(old(up.model), rb_color(old(tree.model))) == erase_flips_red_all_result(old(up.model), RbTree::Empty)::0": {
-  "by_auto": true,
-  "deletable": false
- },
- "examples/rbtree-erase/rbtree_erase_leaf_wrapper.click::erase_leaf_result(old(up.model), rb_color(old(tree.model))) == plug(remaining.model, RbTree::Empty)::0": {
+ "examples/rbtree/rbtree-erase/rbtree_erase_leaf_wrapper.click::ctx_node_is(deficit.model, rebalance) == 1::0": {
   "by_auto": true,
   "deletable": true
  },
- "examples/rbtree-erase/rbtree_erase_leaf_wrapper.click::is_rb(RbTree::Empty) == 1::0": {
+ "examples/rbtree/rbtree-erase/rbtree_erase_leaf_wrapper.click::ctx_rb(deficit.model, Nat::Succ(Nat::Zero), Color::Black) == 1::0": {
   "by_auto": true,
   "deletable": false
  },
- "examples/rbtree-erase/rbtree_erase_leaf_wrapper.click::is_rb_root(plug(deficit.model, RbTree::Empty)) == 1::0": {
-  "by_auto": true,
-  "deletable": true
- },
- "examples/rbtree-erase/rbtree_erase_leaf_wrapper.click::is_rb_root(plug(remaining.model, RbTree::Empty)) == 1::0": {
-  "by_auto": false,
-  "deletable": false
- },
- "examples/rbtree-erase/rbtree_erase_leaf_wrapper.click::is_rb_root(whole.model) == 1::0": {
+ "examples/rbtree/rbtree-erase/rbtree_erase_leaf_wrapper.click::ctx_rb(remaining.model, Nat::Succ(Nat::Zero), Color::Black) == 1::0": {
   "by_auto": true,
   "deletable": false
  },
- "examples/rbtree-erase/rbtree_erase_leaf_wrapper.click::parent_model == pid::0": {
-  "by_auto": false,
-  "deletable": false
- },
- "examples/rbtree-erase/rbtree_erase_leaf_wrapper.click::parent_model == pid::1": {
-  "by_auto": false,
-  "deletable": false
- },
- "examples/rbtree-erase/rbtree_erase_leaf_wrapper.click::rb_tree_parent_consistent(plug(deficit.model, RbTree::Empty)) == 1::0": {
+ "examples/rbtree/rbtree-erase/rbtree_erase_leaf_wrapper.click::erase_flips_red_all_result(remaining.model, RbTree::Empty) == plug(remaining.model, RbTree::Empty)::0": {
   "by_auto": true,
   "deletable": false
  },
- "examples/rbtree-erase/rbtree_erase_leaf_wrapper.click::remaining.model == old(up.model)::2": {
+ "examples/rbtree/rbtree-erase/rbtree_erase_leaf_wrapper.click::erase_leaf_result(old(up.model), rb_color(old(tree.model))) == erase_flips_red_all_result(old(up.model), RbTree::Empty)::0": {
   "by_auto": true,
   "deletable": false
  },
- "examples/rbtree-erase/rbtree_erase_leaf_wrapper.click::result == 0::0": {
+ "examples/rbtree/rbtree-erase/rbtree_erase_leaf_wrapper.click::erase_leaf_result(old(up.model), rb_color(old(tree.model))) == plug(remaining.model, RbTree::Empty)::0": {
   "by_auto": true,
   "deletable": true
  },
- "examples/rbtree-erase/rbtree_erase_leaf_wrapper.click::whole.model == plug(old(up.model), RbTree::Empty)::0": {
+ "examples/rbtree/rbtree-erase/rbtree_erase_leaf_wrapper.click::is_rb(RbTree::Empty) == 1::0": {
   "by_auto": true,
   "deletable": false
  },
- "examples/rbtree-erase/rbtree_rotate_set_parents.click::(old->__rb_parent_color & ~3) == 0::0": {
-  "by_auto": false,
-  "deletable": false
- },
- "examples/rbtree-erase/rbtree_rotate_set_parents.click::(old->__rb_parent_color & ~3) == address(id)::1": {
-  "by_auto": false,
-  "deletable": false
- },
- "examples/rbtree-erase/rbtree_rotate_set_parents.click::at(words, old->__rb_parent_color) == address(new) + color::1": {
+ "examples/rbtree/rbtree-erase/rbtree_erase_leaf_wrapper.click::is_rb_root(plug(deficit.model, RbTree::Empty)) == 1::0": {
   "by_auto": true,
   "deletable": true
  },
- "examples/rbtree-erase/rbtree_rotate_set_parents.click::at(words, old->__rb_parent_color) == address(new) + color::2": {
+ "examples/rbtree/rbtree-erase/rbtree_erase_leaf_wrapper.click::is_rb_root(plug(remaining.model, RbTree::Empty)) == 1::0": {
+  "by_auto": false,
+  "deletable": false
+ },
+ "examples/rbtree/rbtree-erase/rbtree_erase_leaf_wrapper.click::is_rb_root(whole.model) == 1::0": {
+  "by_auto": true,
+  "deletable": false
+ },
+ "examples/rbtree/rbtree-erase/rbtree_erase_leaf_wrapper.click::parent_model == pid::0": {
+  "by_auto": false,
+  "deletable": false
+ },
+ "examples/rbtree/rbtree-erase/rbtree_erase_leaf_wrapper.click::parent_model == pid::1": {
+  "by_auto": false,
+  "deletable": false
+ },
+ "examples/rbtree/rbtree-erase/rbtree_erase_leaf_wrapper.click::rb_tree_parent_consistent(plug(deficit.model, RbTree::Empty)) == 1::0": {
+  "by_auto": true,
+  "deletable": false
+ },
+ "examples/rbtree/rbtree-erase/rbtree_erase_leaf_wrapper.click::remaining.model == old(up.model)::2": {
+  "by_auto": true,
+  "deletable": false
+ },
+ "examples/rbtree/rbtree-erase/rbtree_erase_leaf_wrapper.click::result == 0::0": {
   "by_auto": true,
   "deletable": true
  },
- "examples/rbtree-erase/rbtree_rotate_set_parents.click::ctx_node_is(Context::Top, parent) == 1::0": {
+ "examples/rbtree/rbtree-erase/rbtree_erase_leaf_wrapper.click::whole.model == plug(old(up.model), RbTree::Empty)::0": {
   "by_auto": true,
   "deletable": false
  },
- "examples/rbtree-erase/rbtree_rotate_set_parents.click::ctx_parent_word(d.model, old->__rb_parent_color) == 0::1": {
+ "examples/rbtree/rbtree-erase/rbtree_rotate_set_parents.click::(old->__rb_parent_color & ~3) == 0::0": {
   "by_auto": false,
   "deletable": false
  },
- "examples/rbtree-erase/rbtree_rotate_set_parents.click::ctx_parent_word(d.model, old->__rb_parent_color) == 1::0": {
-  "by_auto": true,
+ "examples/rbtree/rbtree-erase/rbtree_rotate_set_parents.click::(old->__rb_parent_color & ~3) == address(id)::1": {
+  "by_auto": false,
   "deletable": false
  },
- "examples/rbtree-erase/rbtree_rotate_set_parents.click::ctx_parent_word(d.model, old->__rb_parent_color) == 1::1": {
-  "by_auto": true,
-  "deletable": false
- },
- "examples/rbtree-erase/rbtree_rotate_set_parents.click::ctx_parent_word(d.model, old->__rb_parent_color) == 1::2": {
-  "by_auto": true,
-  "deletable": false
- },
- "examples/rbtree-erase/rbtree_rotate_set_parents.click::not(ctx_parent_word(d.model, old->__rb_parent_color) == 1)::2": {
-  "by_auto": true,
-  "deletable": false
- },
- "examples/rbtree-erase/rbtree_rotate_set_parents.click::old == 0::0": {
-  "by_auto": true,
-  "deletable": false
- },
- "examples/rbtree-erase/rbtree_rotate_set_parents.click::old->__rb_parent_color == (address(new) | color)::0": {
+ "examples/rbtree/rbtree-erase/rbtree_rotate_set_parents.click::at(words, old->__rb_parent_color) == address(new) + color::1": {
   "by_auto": true,
   "deletable": true
  },
- "examples/rbtree-erase/rbtree_rotate_set_parents.click::old->__rb_parent_color == address(id) + 1::0": {
-  "by_auto": false,
-  "deletable": false
- },
- "examples/rbtree-erase/rbtree_rotate_set_parents.click::old->__rb_parent_color == address(id) + 1::1": {
-  "by_auto": false,
-  "deletable": false
- },
- "examples/rbtree-erase/rbtree_rotate_set_parents.click::old->__rb_parent_color == address(new) + color::0": {
-  "by_auto": false,
-  "deletable": false
- },
- "examples/rbtree-erase/rbtree_rotate_set_parents.click::old->__rb_parent_color == address(new) + color::5": {
+ "examples/rbtree/rbtree-erase/rbtree_rotate_set_parents.click::at(words, old->__rb_parent_color) == address(new) + color::2": {
   "by_auto": true,
   "deletable": true
  },
- "examples/rbtree-erase/rbtree_rotate_set_parents.click::old->__rb_parent_color == at(words, old->__rb_parent_color)::1": {
+ "examples/rbtree/rbtree-erase/rbtree_rotate_set_parents.click::ctx_node_is(Context::Top, parent) == 1::0": {
+  "by_auto": true,
+  "deletable": false
+ },
+ "examples/rbtree/rbtree-erase/rbtree_rotate_set_parents.click::ctx_parent_word(d.model, old->__rb_parent_color) == 0::1": {
+  "by_auto": false,
+  "deletable": false
+ },
+ "examples/rbtree/rbtree-erase/rbtree_rotate_set_parents.click::ctx_parent_word(d.model, old->__rb_parent_color) == 1::0": {
+  "by_auto": true,
+  "deletable": false
+ },
+ "examples/rbtree/rbtree-erase/rbtree_rotate_set_parents.click::ctx_parent_word(d.model, old->__rb_parent_color) == 1::1": {
+  "by_auto": true,
+  "deletable": false
+ },
+ "examples/rbtree/rbtree-erase/rbtree_rotate_set_parents.click::ctx_parent_word(d.model, old->__rb_parent_color) == 1::2": {
+  "by_auto": true,
+  "deletable": false
+ },
+ "examples/rbtree/rbtree-erase/rbtree_rotate_set_parents.click::not(ctx_parent_word(d.model, old->__rb_parent_color) == 1)::2": {
+  "by_auto": true,
+  "deletable": false
+ },
+ "examples/rbtree/rbtree-erase/rbtree_rotate_set_parents.click::old == 0::0": {
+  "by_auto": true,
+  "deletable": false
+ },
+ "examples/rbtree/rbtree-erase/rbtree_rotate_set_parents.click::old->__rb_parent_color == (address(new) | color)::0": {
   "by_auto": true,
   "deletable": true
  },
- "examples/rbtree-erase/rbtree_rotate_set_parents.click::parent == 0::0": {
+ "examples/rbtree/rbtree-erase/rbtree_rotate_set_parents.click::old->__rb_parent_color == address(id) + 1::0": {
   "by_auto": false,
   "deletable": false
  },
- "examples/rbtree-erase/rbtree_rotate_set_parents.click::parent == 0::1": {
+ "examples/rbtree/rbtree-erase/rbtree_rotate_set_parents.click::old->__rb_parent_color == address(id) + 1::1": {
+  "by_auto": false,
+  "deletable": false
+ },
+ "examples/rbtree/rbtree-erase/rbtree_rotate_set_parents.click::old->__rb_parent_color == address(new) + color::0": {
+  "by_auto": false,
+  "deletable": false
+ },
+ "examples/rbtree/rbtree-erase/rbtree_rotate_set_parents.click::old->__rb_parent_color == address(new) + color::5": {
   "by_auto": true,
   "deletable": true
  },
- "examples/rbtree-erase/rbtree_rotate_set_parents.click::parent->rb_left != old::0": {
+ "examples/rbtree/rbtree-erase/rbtree_rotate_set_parents.click::old->__rb_parent_color == at(words, old->__rb_parent_color)::1": {
+  "by_auto": true,
+  "deletable": true
+ },
+ "examples/rbtree/rbtree-erase/rbtree_rotate_set_parents.click::parent == 0::0": {
+  "by_auto": false,
+  "deletable": false
+ },
+ "examples/rbtree/rbtree-erase/rbtree_rotate_set_parents.click::parent == 0::1": {
+  "by_auto": true,
+  "deletable": true
+ },
+ "examples/rbtree/rbtree-erase/rbtree_rotate_set_parents.click::parent->rb_left != old::0": {
   "by_auto": false,
   "deletable": true
  },
- "examples/rbtree-insert/rbtree_insert.click::(parent->__rb_parent_color & 1) == 1::1": {
+ "examples/rbtree/rbtree-insert/rbtree_insert.click::(parent->__rb_parent_color & 1) == 1::1": {
   "by_auto": false,
   "deletable": false
  },
- "examples/rbtree-insert/rbtree_insert.click::almost_rb_insert(RbTree::Node(cid, cgp, Color::Red, csib, t.model)) == 1::0": {
+ "examples/rbtree/rbtree-insert/rbtree_insert.click::almost_rb_insert(RbTree::Node(cid, cgp, Color::Red, csib, t.model)) == 1::0": {
   "by_auto": false,
   "deletable": false
  },
- "examples/rbtree-insert/rbtree_insert.click::black_height(csib) == black_height(t.model)::1": {
+ "examples/rbtree/rbtree-insert/rbtree_insert.click::black_height(csib) == black_height(t.model)::1": {
   "by_auto": false,
   "deletable": false
  },
- "examples/rbtree-insert/rbtree_insert.click::bn.model == rb_reparent(nright, cid)::1": {
+ "examples/rbtree/rbtree-insert/rbtree_insert.click::bn.model == rb_reparent(nright, cid)::1": {
   "by_auto": true,
   "deletable": false
  },
- "examples/rbtree-insert/rbtree_insert.click::color_bit(Color::Red) == 0::1": {
+ "examples/rbtree/rbtree-insert/rbtree_insert.click::color_bit(Color::Red) == 0::1": {
   "by_auto": true,
   "deletable": false
  },
- "examples/rbtree-insert/rbtree_insert.click::color_bit(bcol) == 1::0": {
+ "examples/rbtree/rbtree-insert/rbtree_insert.click::color_bit(bcol) == 1::0": {
   "by_auto": false,
   "deletable": false
  },
- "examples/rbtree-insert/rbtree_insert.click::is_rb(RbTree::Node(nid, nparent, ncolor, nleft, nright)) == 1::0": {
+ "examples/rbtree/rbtree-insert/rbtree_insert.click::is_rb(RbTree::Node(nid, nparent, ncolor, nleft, nright)) == 1::0": {
   "by_auto": true,
   "deletable": false
  },
- "examples/rbtree-insert/rbtree_insert.click::is_rb_root(tree.model) == 1::0": {
+ "examples/rbtree/rbtree-insert/rbtree_insert.click::is_rb_root(tree.model) == 1::0": {
   "by_auto": false,
   "deletable": false
  },
- "examples/rbtree-insert/rbtree_insert.click::ncolor == Color::Red::1": {
+ "examples/rbtree/rbtree-insert/rbtree_insert.click::ncolor == Color::Red::1": {
   "by_auto": false,
   "deletable": false
  },
- "examples/rbtree-insert/rbtree_insert.click::rb_inorder(plug(Context::Right(gparent, ugp, Color::Black, RbTree::Node(unid, gparent, Color::Red, unl, unr), uup), RbTree::Node(cid, gparent, Color::Red, RbTree::Node(nid, nparent, ncolor, nleft, nright), csib))) == rb_inorder(plug(old(c.model), RbTree::Node(identity, node_parent, color, left_model, right_model)))::0": {
+ "examples/rbtree/rbtree-insert/rbtree_insert.click::rb_inorder(plug(Context::Right(gparent, ugp, Color::Black, RbTree::Node(unid, gparent, Color::Red, unl, unr), uup), RbTree::Node(cid, gparent, Color::Red, RbTree::Node(nid, nparent, ncolor, nleft, nright), csib))) == rb_inorder(plug(old(c.model), RbTree::Node(identity, node_parent, color, left_model, right_model)))::0": {
   "by_auto": false,
   "deletable": false
  },
- "examples/rbtree-insert/rbtree_insert.click::rb_parent_consistent(plug(Context::Left(gparent, ugp, Color::Black, RbTree::Node(unid, gparent, Color::Red, unl, unr), uup), RbTree::Node(cid, gparent, Color::Red, csib, RbTree::Node(nid, nparent, ncolor, nleft, nright))), 0) == 1::0": {
+ "examples/rbtree/rbtree-insert/rbtree_insert.click::rb_parent_consistent(plug(Context::Left(gparent, ugp, Color::Black, RbTree::Node(unid, gparent, Color::Red, unl, unr), uup), RbTree::Node(cid, gparent, Color::Red, csib, RbTree::Node(nid, nparent, ncolor, nleft, nright))), 0) == 1::0": {
   "by_auto": false,
   "deletable": false
  },
- "examples/rbtree-insert/rbtree_insert.click::rb_parent_is(RbTree::Node(gparent, nid, Color::Red, usib, rb_reparent(nleft, gparent)), nid) == 1::0": {
+ "examples/rbtree/rbtree-insert/rbtree_insert.click::rb_parent_is(RbTree::Node(gparent, nid, Color::Red, usib, rb_reparent(nleft, gparent)), nid) == 1::0": {
   "by_auto": true,
   "deletable": false
  },
- "examples/rbtree-insert/rbtree_insert.click::rb_reparent(csib, gparent) == RbTree::Node(sx, gparent, scol, sl, sr)::1": {
+ "examples/rbtree/rbtree-insert/rbtree_insert.click::rb_reparent(csib, gparent) == RbTree::Node(sx, gparent, scol, sl, sr)::1": {
   "by_auto": false,
   "deletable": false
  },
- "examples/rbtree-insert/rbtree_insert.click::rb_reparent(nleft, gparent) == RbTree::Node(rx, gparent, rcol, rl, rr)::0": {
+ "examples/rbtree/rbtree-insert/rbtree_insert.click::rb_reparent(nleft, gparent) == RbTree::Node(rx, gparent, rcol, rl, rr)::0": {
   "by_auto": false,
   "deletable": false
  },
- "examples/rbtree-insert/rbtree_insert.click::rb_root_black(RbTree::Node(rx, rp, rcol, rl, rr)) == 1::1": {
+ "examples/rbtree/rbtree-insert/rbtree_insert.click::rb_root_black(RbTree::Node(rx, rp, rcol, rl, rr)) == 1::1": {
   "by_auto": false,
   "deletable": false
  },
- "examples/rbtree-insert/rbtree_insert.click::rn.model == rb_reparent(nright, gparent)::1": {
+ "examples/rbtree/rbtree-insert/rbtree_insert.click::rn.model == rb_reparent(nright, gparent)::1": {
   "by_auto": true,
   "deletable": false
  },
- "examples/rbtree-insert/rbtree_insert.click::t.model == RbTree::Node(nid, cid, Color::Red, nleft, nright)::0": {
+ "examples/rbtree/rbtree-insert/rbtree_insert.click::t.model == RbTree::Node(nid, cid, Color::Red, nleft, nright)::0": {
   "by_auto": true,
   "deletable": false
  },
- "examples/rbtree-insert/rbtree_insert.click::t.model == RbTree::Node(nid, cid, Color::Red, nleft, nright)::1": {
+ "examples/rbtree/rbtree-insert/rbtree_insert.click::t.model == RbTree::Node(nid, cid, Color::Red, nleft, nright)::1": {
   "by_auto": true,
   "deletable": false
  },
- "examples/rbtree-insert/rbtree_insert.click::ucolor == Color::Black::5": {
+ "examples/rbtree/rbtree-insert/rbtree_insert.click::ucolor == Color::Black::5": {
   "by_auto": false,
   "deletable": false
  },
- "examples/rbtree-insert/rbtree_insert.click::usib == RbTree::Node(unid, gparent, Color::Black, unl, unr)::3": {
+ "examples/rbtree/rbtree-insert/rbtree_insert.click::usib == RbTree::Node(unid, gparent, Color::Black, unl, unr)::3": {
   "by_auto": true,
   "deletable": false
  },
- "examples/rbtree-model/rbtree_erase_child.click::RbTree::Empty == RbTree::Empty::0": {
+ "examples/rbtree/rbtree-model/rbtree_erase_child.click::RbTree::Empty == RbTree::Empty::0": {
   "by_auto": true,
   "deletable": false
  },
- "examples/rbtree-model/rbtree_erase_child.click::RbTree::Empty == RbTree::Empty::1": {
+ "examples/rbtree/rbtree-model/rbtree_erase_child.click::RbTree::Empty == RbTree::Empty::1": {
   "by_auto": true,
   "deletable": false
  },
- "examples/rbtree-model/rbtree_erase_child.click::black_height(rb_reparent(rb_recolor(child, Color::Black), parent)) == Nat::Succ(Nat::Zero)::0": {
+ "examples/rbtree/rbtree-model/rbtree_erase_child.click::black_height(rb_reparent(rb_recolor(child, Color::Black), parent)) == Nat::Succ(Nat::Zero)::0": {
   "by_auto": true,
   "deletable": false
  },
- "examples/rbtree-model/rbtree_erase_child.click::color == Color::Red::0": {
+ "examples/rbtree/rbtree-model/rbtree_erase_child.click::color == Color::Red::0": {
   "by_auto": true,
   "deletable": false
  },
- "examples/rbtree-model/rbtree_erase_child.click::color_black(rb_color(rb_reparent(rb_recolor(child, Color::Black), parent))) == 1::0": {
+ "examples/rbtree/rbtree-model/rbtree_erase_child.click::color_black(rb_color(rb_reparent(rb_recolor(child, Color::Black), parent))) == 1::0": {
   "by_auto": true,
   "deletable": false
  },
- "examples/rbtree-model/rbtree_erase_child.click::ctx_rb(rb_min_context(tree, up), Nat::Succ(Nat::Zero), Color::Black) == 1::0": {
+ "examples/rbtree/rbtree-model/rbtree_erase_child.click::ctx_rb(rb_min_context(tree, up), Nat::Succ(Nat::Zero), Color::Black) == 1::0": {
   "by_auto": false,
   "deletable": false
  },
- "examples/rbtree-model/rbtree_erase_child.click::frame_black_height(color, black_height(left)) == Nat::Zero::0": {
+ "examples/rbtree/rbtree-model/rbtree_erase_child.click::frame_black_height(color, black_height(left)) == Nat::Zero::0": {
   "by_auto": true,
   "deletable": false
  },
- "examples/rbtree-model/rbtree_erase_child.click::is_rb(RbTree::Node(successor, successor, sc, RbTree::Empty, child)) == 1::0": {
+ "examples/rbtree/rbtree-model/rbtree_erase_child.click::is_rb(RbTree::Node(successor, successor, sc, RbTree::Empty, child)) == 1::0": {
   "by_auto": false,
   "deletable": false
  },
- "examples/rbtree-model/rbtree_erase_child.click::is_rb(rb_reparent(right, successor)) == 1::0": {
+ "examples/rbtree/rbtree-model/rbtree_erase_child.click::is_rb(rb_reparent(right, successor)) == 1::0": {
   "by_auto": true,
   "deletable": false
  },
- "examples/rbtree-model/rbtree_erase_child.click::not(color_black(Color::Red) == 1)::0": {
+ "examples/rbtree/rbtree-model/rbtree_erase_child.click::not(color_black(Color::Red) == 1)::0": {
   "by_auto": true,
   "deletable": false
  },
- "examples/rbtree-model/rbtree_erase_child.click::not(frame_black_height(Color::Black, height) == Nat::Zero)::0": {
+ "examples/rbtree/rbtree-model/rbtree_erase_child.click::not(frame_black_height(Color::Black, height) == Nat::Zero)::0": {
   "by_auto": true,
   "deletable": false
  },
- "examples/rbtree-model/rbtree_erase_child.click::not(rb_color(RbTree::Empty) == Color::Red)::0": {
+ "examples/rbtree/rbtree-model/rbtree_erase_child.click::not(rb_color(RbTree::Empty) == Color::Red)::0": {
   "by_auto": true,
   "deletable": false
  },
- "examples/rbtree-model/rbtree_erase_child.click::not(rb_minimum(RbTree::Empty) == RbMinimum::Found(successor, min_color, child))::0": {
+ "examples/rbtree/rbtree-model/rbtree_erase_child.click::not(rb_minimum(RbTree::Empty) == RbMinimum::Found(successor, min_color, child))::0": {
   "by_auto": true,
   "deletable": false
  },
- "examples/rbtree-model/rbtree_erase_child.click::not(rb_minimum(RbTree::Empty) == RbMinimum::Found(successor, min_color, child))::2": {
+ "examples/rbtree/rbtree-model/rbtree_erase_child.click::not(rb_minimum(RbTree::Empty) == RbMinimum::Found(successor, min_color, child))::2": {
   "by_auto": true,
   "deletable": false
  },
- "examples/rbtree-model/rbtree_erase_child.click::not(rb_minimum(RbTree::Empty) == RbMinimum::Found(successor, min_color, child))::3": {
+ "examples/rbtree/rbtree-model/rbtree_erase_child.click::not(rb_minimum(RbTree::Empty) == RbMinimum::Found(successor, min_color, child))::3": {
   "by_auto": true,
   "deletable": false
  },
- "examples/rbtree-model/rbtree_erase_child.click::not(rb_root_black(right) == 1)::0": {
+ "examples/rbtree/rbtree-model/rbtree_erase_child.click::not(rb_root_black(right) == 1)::0": {
   "by_auto": true,
   "deletable": false
  },
- "examples/rbtree-model/rbtree_erase_child.click::rb_color(right) == Color::Red::0": {
+ "examples/rbtree/rbtree-model/rbtree_erase_child.click::rb_color(right) == Color::Red::0": {
   "by_auto": false,
   "deletable": false
  },
- "examples/rbtree-model/rbtree_erase_child.click::rb_minimum(left) == RbMinimum::Found(successor, min_color, child)::1": {
+ "examples/rbtree/rbtree-model/rbtree_erase_child.click::rb_minimum(left) == RbMinimum::Found(successor, min_color, child)::1": {
   "by_auto": true,
   "deletable": false
  },
- "examples/rbtree-model/rbtree_erase_child.click::rb_parent_consistent(rb_successor_child_splice(successor, parent, color, left, right), parent) == 1::0": {
+ "examples/rbtree/rbtree-model/rbtree_erase_child.click::rb_parent_consistent(rb_successor_child_splice(successor, parent, color, left, right), parent) == 1::0": {
   "by_auto": false,
   "deletable": false
  },
- "examples/rbtree-model/rbtree_erase_child.click::rb_reparent(rb_recolor(RbTree::Empty, Color::Black), rb_min_parent(tree)) == RbTree::Empty::0": {
+ "examples/rbtree/rbtree-model/rbtree_erase_child.click::rb_reparent(rb_recolor(RbTree::Empty, Color::Black), rb_min_parent(tree)) == RbTree::Empty::0": {
   "by_auto": false,
   "deletable": false
  },
- "examples/rbtree-model/rbtree_erase_one_child.click::black_height(right) == black_height(left)::0": {
+ "examples/rbtree/rbtree-model/rbtree_erase_one_child.click::black_height(right) == black_height(left)::0": {
   "by_auto": true,
   "deletable": false
  },
- "examples/rbtree-model/rbtree_erase_one_child.click::black_height(right) == black_height(left)::1": {
+ "examples/rbtree/rbtree-model/rbtree_erase_one_child.click::black_height(right) == black_height(left)::1": {
   "by_auto": true,
   "deletable": false
  },
- "examples/rbtree-model/rbtree_erase_root.click::RbTree::Empty == RbTree::Empty::0": {
+ "examples/rbtree/rbtree-model/rbtree_erase_root.click::RbTree::Empty == RbTree::Empty::0": {
   "by_auto": true,
   "deletable": false
  },
- "examples/rbtree-model/rbtree_erase_root.click::left == RbTree::Empty::0": {
+ "examples/rbtree/rbtree-model/rbtree_erase_root.click::left == RbTree::Empty::0": {
   "by_auto": true,
   "deletable": false
  },
- "examples/rbtree-model/rbtree_erase_root.click::right == RbTree::Empty::0": {
+ "examples/rbtree/rbtree-model/rbtree_erase_root.click::right == RbTree::Empty::0": {
   "by_auto": true,
   "deletable": false
  },
- "examples/rbtree-model/rbtree_erase_splice.click::RbTree::Empty == RbTree::Empty::0": {
+ "examples/rbtree/rbtree-model/rbtree_erase_splice.click::RbTree::Empty == RbTree::Empty::0": {
   "by_auto": true,
   "deletable": false
  },
- "examples/rbtree-model/rbtree_erase_splice.click::RbTree::Empty == RbTree::Empty::1": {
+ "examples/rbtree/rbtree-model/rbtree_erase_splice.click::RbTree::Empty == RbTree::Empty::1": {
   "by_auto": true,
   "deletable": false
  },
- "examples/rbtree-model/rbtree_erase_splice.click::RbTree::Empty == RbTree::Empty::2": {
+ "examples/rbtree/rbtree-model/rbtree_erase_splice.click::RbTree::Empty == RbTree::Empty::2": {
   "by_auto": true,
   "deletable": false
  },
- "examples/rbtree-model/rbtree_erase_splice.click::RbTree::Empty == RbTree::Empty::3": {
+ "examples/rbtree/rbtree-model/rbtree_erase_splice.click::RbTree::Empty == RbTree::Empty::3": {
   "by_auto": true,
   "deletable": false
  },
- "examples/rbtree-model/rbtree_erase_splice.click::RbTree::Empty == RbTree::Empty::4": {
+ "examples/rbtree/rbtree-model/rbtree_erase_splice.click::RbTree::Empty == RbTree::Empty::4": {
   "by_auto": true,
   "deletable": false
  },
- "examples/rbtree-model/rbtree_erase_splice.click::black_height(rb_reparent(left, successor)) == black_height(rb_reparent(right, successor))::0": {
+ "examples/rbtree/rbtree-model/rbtree_erase_splice.click::black_height(rb_reparent(left, successor)) == black_height(rb_reparent(right, successor))::0": {
   "by_auto": true,
   "deletable": false
  },
- "examples/rbtree-model/rbtree_erase_splice.click::ctx_rb(rb_min_context(tree, up), Nat::Zero, Color::Red) == 1::0": {
+ "examples/rbtree/rbtree-model/rbtree_erase_splice.click::ctx_rb(rb_min_context(tree, up), Nat::Zero, Color::Red) == 1::0": {
   "by_auto": false,
   "deletable": false
  },
- "examples/rbtree-model/rbtree_erase_splice.click::ctx_rb(up, frame_black_height(color, black_height(left)), color) == 1::0": {
+ "examples/rbtree/rbtree-model/rbtree_erase_splice.click::ctx_rb(up, frame_black_height(color, black_height(left)), color) == 1::0": {
   "by_auto": true,
   "deletable": false
  },
- "examples/rbtree-model/rbtree_erase_splice.click::ctx_rb(up, frame_black_height(min_color, Nat::Zero), min_color) == 1::0": {
+ "examples/rbtree/rbtree-model/rbtree_erase_splice.click::ctx_rb(up, frame_black_height(min_color, Nat::Zero), min_color) == 1::0": {
   "by_auto": true,
   "deletable": false
  },
- "examples/rbtree-model/rbtree_erase_splice.click::is_rb(rb_reparent(left, successor)) == 1::0": {
+ "examples/rbtree/rbtree-model/rbtree_erase_splice.click::is_rb(rb_reparent(left, successor)) == 1::0": {
   "by_auto": true,
   "deletable": false
  },
- "examples/rbtree-model/rbtree_erase_splice.click::is_rb(rb_reparent(right, successor)) == 1::0": {
+ "examples/rbtree/rbtree-model/rbtree_erase_splice.click::is_rb(rb_reparent(right, successor)) == 1::0": {
   "by_auto": true,
   "deletable": false
  },
- "examples/rbtree-model/rbtree_erase_splice.click::is_rb(rb_reparent(right, successor)) == 1::1": {
+ "examples/rbtree/rbtree-model/rbtree_erase_splice.click::is_rb(rb_reparent(right, successor)) == 1::1": {
   "by_auto": true,
   "deletable": false
  },
- "examples/rbtree-model/rbtree_erase_splice.click::not(rb_minimum(RbTree::Empty) == RbMinimum::Found(successor, min_color, child))::0": {
+ "examples/rbtree/rbtree-model/rbtree_erase_splice.click::not(rb_minimum(RbTree::Empty) == RbMinimum::Found(successor, min_color, child))::0": {
   "by_auto": true,
   "deletable": false
  },
- "examples/rbtree-model/rbtree_erase_splice.click::rb_color(RbTree::Node(node, parent, color, left, right)) == min_color::0": {
+ "examples/rbtree/rbtree-model/rbtree_erase_splice.click::rb_color(RbTree::Node(node, parent, color, left, right)) == min_color::0": {
   "by_auto": true,
   "deletable": false
  },
- "examples/rbtree-model/rbtree_erase_splice.click::rb_minimum(RbTree::Empty) != RbMinimum::Found(successor, color, child)::0": {
+ "examples/rbtree/rbtree-model/rbtree_erase_splice.click::rb_minimum(RbTree::Empty) != RbMinimum::Found(successor, color, child)::0": {
   "by_auto": true,
   "deletable": false
  },
- "examples/rbtree-model/rbtree_erase_splice.click::rb_minimum(left) == RbMinimum::Found(successor, color, child)::0": {
+ "examples/rbtree/rbtree-model/rbtree_erase_splice.click::rb_minimum(left) == RbMinimum::Found(successor, color, child)::0": {
   "by_auto": true,
   "deletable": false
  },
- "examples/rbtree-model/rbtree_erase_splice.click::rb_minimum(left) == RbMinimum::Found(successor, min_color, RbTree::Empty)::0": {
+ "examples/rbtree/rbtree-model/rbtree_erase_splice.click::rb_minimum(left) == RbMinimum::Found(successor, min_color, RbTree::Empty)::0": {
   "by_auto": true,
   "deletable": false
  },
- "examples/rbtree-model/rbtree_erase_splice.click::rb_minimum(left) == RbMinimum::Found(successor, min_color, child)::0": {
+ "examples/rbtree/rbtree-model/rbtree_erase_splice.click::rb_minimum(left) == RbMinimum::Found(successor, min_color, child)::0": {
   "by_auto": true,
   "deletable": false
  },
- "examples/rbtree-model/rbtree_erase_splice.click::rb_minimum(left) == RbMinimum::Found(successor, min_color, child)::1": {
+ "examples/rbtree/rbtree-model/rbtree_erase_splice.click::rb_minimum(left) == RbMinimum::Found(successor, min_color, child)::1": {
   "by_auto": true,
   "deletable": false
  },
- "examples/rbtree-model/rbtree_erase_splice.click::rb_parent_consistent(rb_successor_splice(successor, parent, color, left, right), parent) == 1::0": {
+ "examples/rbtree/rbtree-model/rbtree_erase_splice.click::rb_parent_consistent(rb_successor_splice(successor, parent, color, left, right), parent) == 1::0": {
   "by_auto": false,
   "deletable": false
  },
- "examples/rbtree-model/rbtree_model.click::Nat::Succ(black_height(t)) == Nat::Succ(black_height(RbTree::Node(red, sibling, Color::Red, rl, rr)))::1": {
+ "examples/rbtree/rbtree-model/rbtree_model.click::Nat::Succ(black_height(t)) == Nat::Succ(black_height(RbTree::Node(red, sibling, Color::Red, rl, rr)))::1": {
   "by_auto": true,
   "deletable": false
  },
- "examples/rbtree-model/rbtree_model.click::Nat::Succ(black_height(t)) == black_height(sl)::1": {
+ "examples/rbtree/rbtree-model/rbtree_model.click::Nat::Succ(black_height(t)) == black_height(sl)::1": {
   "by_auto": true,
   "deletable": false
  },
- "examples/rbtree-model/rbtree_model.click::almost_rb_insert(RbTree::Node(node, parent, color, left, right)) != 1::0": {
+ "examples/rbtree/rbtree-model/rbtree_model.click::almost_rb_insert(RbTree::Node(node, parent, color, left, right)) != 1::0": {
   "by_auto": false,
   "deletable": false
  },
- "examples/rbtree-model/rbtree_model.click::almost_rb_insert(RbTree::Node(node, parent, color, left, right)) != 1::2": {
+ "examples/rbtree/rbtree-model/rbtree_model.click::almost_rb_insert(RbTree::Node(node, parent, color, left, right)) != 1::2": {
   "by_auto": false,
   "deletable": false
  },
- "examples/rbtree-model/rbtree_model.click::black_height(RbTree::Node(parent, above, Color::Black, RbTree::Node(sibling, parent, Color::Red, sl, sr), t)) == Nat::Succ(black_height(t))::1": {
+ "examples/rbtree/rbtree-model/rbtree_model.click::black_height(RbTree::Node(parent, above, Color::Black, RbTree::Node(sibling, parent, Color::Red, sl, sr), t)) == Nat::Succ(black_height(t))::1": {
   "by_auto": true,
   "deletable": false
  },
- "examples/rbtree-model/rbtree_model.click::black_height(a) == black_height(c)::0": {
+ "examples/rbtree/rbtree-model/rbtree_model.click::black_height(a) == black_height(c)::0": {
   "by_auto": true,
   "deletable": false
  },
- "examples/rbtree-model/rbtree_model.click::black_height(rb_reparent(c, parent)) == black_height(d)::1": {
+ "examples/rbtree/rbtree-model/rbtree_model.click::black_height(rb_reparent(c, parent)) == black_height(d)::1": {
   "by_auto": true,
   "deletable": false
  },
- "examples/rbtree-model/rbtree_model.click::black_height(rb_reparent(rr, sibling)) == black_height(far)::0": {
+ "examples/rbtree/rbtree-model/rbtree_model.click::black_height(rb_reparent(rr, sibling)) == black_height(far)::0": {
   "by_auto": true,
   "deletable": false
  },
- "examples/rbtree-model/rbtree_model.click::black_height(t) == black_height(rb_reparent(rl, parent))::0": {
+ "examples/rbtree/rbtree-model/rbtree_model.click::black_height(t) == black_height(rb_reparent(rl, parent))::0": {
   "by_auto": true,
   "deletable": false
  },
- "examples/rbtree-model/rbtree_model.click::color_black(rb_color(rb_reparent(sr, parent))) == 1::0": {
+ "examples/rbtree/rbtree-model/rbtree_model.click::color_black(rb_color(rb_reparent(sr, parent))) == 1::0": {
   "by_auto": true,
   "deletable": false
  },
- "examples/rbtree-model/rbtree_model.click::is_rb(RbTree::Node(node, parent, color, left, right)) != 1::0": {
+ "examples/rbtree/rbtree-model/rbtree_model.click::is_rb(RbTree::Node(node, parent, color, left, right)) != 1::0": {
   "by_auto": false,
   "deletable": false
  },
- "examples/rbtree-model/rbtree_model.click::node_color_ok(Color::Red, Color::Black, Color::Red) != 1::0": {
+ "examples/rbtree/rbtree-model/rbtree_model.click::node_color_ok(Color::Red, Color::Black, Color::Red) != 1::0": {
   "by_auto": false,
   "deletable": false
  },
- "examples/rbtree-model/rbtree_model.click::node_color_ok(pcolor, rb_color(RbTree::Node(parent, sibling, Color::Black, t, rb_reparent(near, parent))), rb_color(RbTree::Node(red, sibling, Color::Black, rl, rr))) == 1::0": {
+ "examples/rbtree/rbtree-model/rbtree_model.click::node_color_ok(pcolor, rb_color(RbTree::Node(parent, sibling, Color::Black, t, rb_reparent(near, parent))), rb_color(RbTree::Node(red, sibling, Color::Black, rl, rr))) == 1::0": {
   "by_auto": true,
   "deletable": false
  },
- "examples/rbtree-model/rbtree_model.click::rb_inorder(RbTree::Node(sibling, above, Color::Black, RbTree::Node(parent, sibling, Color::Red, t, rb_reparent(sl, parent)), sr)) == rb_inorder(RbTree::Node(parent, above, Color::Black, t, RbTree::Node(sibling, parent, Color::Red, sl, sr)))::0": {
+ "examples/rbtree/rbtree-model/rbtree_model.click::rb_inorder(RbTree::Node(sibling, above, Color::Black, RbTree::Node(parent, sibling, Color::Red, t, rb_reparent(sl, parent)), sr)) == rb_inorder(RbTree::Node(parent, above, Color::Black, t, RbTree::Node(sibling, parent, Color::Red, sl, sr)))::0": {
   "by_auto": true,
   "deletable": false
  },
- "examples/rbtree-model/rbtree_model.click::rb_node_is(a, b) != 1::0": {
+ "examples/rbtree/rbtree-model/rbtree_model.click::rb_node_is(a, b) != 1::0": {
   "by_auto": false,
   "deletable": false
  },
- "examples/rbtree-model/rbtree_model.click::rb_parent_consistent(RbTree::Node(node, parent, color, left, right), p) != 1::1": {
+ "examples/rbtree/rbtree-model/rbtree_model.click::rb_parent_consistent(RbTree::Node(node, parent, color, left, right), p) != 1::1": {
   "by_auto": false,
   "deletable": false
  },
- "examples/rbtree-model/rbtree_model.click::rb_root_black(a) == 1::0": {
+ "examples/rbtree/rbtree-model/rbtree_model.click::rb_root_black(a) == 1::0": {
   "by_auto": true,
   "deletable": false
  },
- "examples/rbtree-model/rbtree_model.click::rb_rotate_left_at_left(RbTree::Node(parent, above, pcolor, RbTree::Node(sibling, parent, Color::Black, far, RbTree::Node(red, sibling, Color::Red, rl, rr)), t)) == RbTree::Node(parent, above, pcolor, RbTree::Node(red, parent, Color::Red, RbTree::Node(sibling, red, Color::Black, far, rb_reparent(rl, sibling)), rr), t)::0": {
+ "examples/rbtree/rbtree-model/rbtree_model.click::rb_rotate_left_at_left(RbTree::Node(parent, above, pcolor, RbTree::Node(sibling, parent, Color::Black, far, RbTree::Node(red, sibling, Color::Red, rl, rr)), t)) == RbTree::Node(parent, above, pcolor, RbTree::Node(red, parent, Color::Red, RbTree::Node(sibling, red, Color::Black, far, rb_reparent(rl, sibling)), rr), t)::0": {
   "by_auto": false,
   "deletable": false
  },
- "examples/rbtree-model/rbtree_model.click::rb_rotate_right(RbTree::Node(parent, above, pcolor, RbTree::Node(red, parent, Color::Red, RbTree::Node(sibling, red, Color::Black, far, rb_reparent(rl, sibling)), rr), t)) == RbTree::Node(red, above, Color::Red, RbTree::Node(sibling, red, Color::Black, far, rb_reparent(rl, sibling)), RbTree::Node(parent, red, pcolor, rb_reparent(rr, parent), t))::0": {
+ "examples/rbtree/rbtree-model/rbtree_model.click::rb_rotate_right(RbTree::Node(parent, above, pcolor, RbTree::Node(red, parent, Color::Red, RbTree::Node(sibling, red, Color::Black, far, rb_reparent(rl, sibling)), rr), t)) == RbTree::Node(red, above, Color::Red, RbTree::Node(sibling, red, Color::Black, far, rb_reparent(rl, sibling)), RbTree::Node(parent, red, pcolor, rb_reparent(rr, parent), t))::0": {
   "by_auto": true,
   "deletable": false
  },
- "examples/rbtree-model/rbtree_model.click::rb_rotate_right(RbTree::Node(parent, above, pcolor, RbTree::Node(sibling, parent, Color::Black, RbTree::Node(red, sibling, Color::Red, rl, rr), near), t)) == RbTree::Node(sibling, above, Color::Black, RbTree::Node(red, sibling, Color::Red, rl, rr), RbTree::Node(parent, sibling, pcolor, rb_reparent(near, parent), t))::0": {
+ "examples/rbtree/rbtree-model/rbtree_model.click::rb_rotate_right(RbTree::Node(parent, above, pcolor, RbTree::Node(sibling, parent, Color::Black, RbTree::Node(red, sibling, Color::Red, rl, rr), near), t)) == RbTree::Node(sibling, above, Color::Black, RbTree::Node(red, sibling, Color::Red, rl, rr), RbTree::Node(parent, sibling, pcolor, rb_reparent(near, parent), t))::0": {
   "by_auto": true,
   "deletable": false
  },
- "examples/rbtree-model/rbtree_spine_model.click::(((word & 1) | address(p)) & 1) == (word & 1)::0": {
+ "examples/rbtree/rbtree-model/rbtree_spine_model.click::(((word & 1) | address(p)) & 1) == (word & 1)::0": {
   "by_auto": true,
   "deletable": false
  },
- "examples/rbtree-model/rbtree_spine_model.click::RbTree::Node(identity, parent, color, tree, sibling) != RbTree::Empty::0": {
+ "examples/rbtree/rbtree-model/rbtree_spine_model.click::RbTree::Node(identity, parent, color, tree, sibling) != RbTree::Empty::0": {
   "by_auto": true,
   "deletable": false
  },
- "examples/rbtree-model/rbtree_spine_model.click::RbTree::Node(identity, parent, color, tree, sibling) != RbTree::Empty::1": {
+ "examples/rbtree/rbtree-model/rbtree_spine_model.click::RbTree::Node(identity, parent, color, tree, sibling) != RbTree::Empty::1": {
   "by_auto": true,
   "deletable": false
  },
- "examples/rbtree-model/rbtree_spine_model.click::RbTree::Node(identity, parent, color, tree, sibling) != RbTree::Empty::2": {
+ "examples/rbtree/rbtree-model/rbtree_spine_model.click::RbTree::Node(identity, parent, color, tree, sibling) != RbTree::Empty::2": {
   "by_auto": true,
   "deletable": false
  },
- "examples/rbtree-model/rbtree_spine_model.click::RbTree::Node(identity, parent, color, tree, sibling) != RbTree::Empty::3": {
+ "examples/rbtree/rbtree-model/rbtree_spine_model.click::RbTree::Node(identity, parent, color, tree, sibling) != RbTree::Empty::3": {
   "by_auto": true,
   "deletable": false
  },
- "examples/rbtree-model/rbtree_spine_model.click::erase_context(EraseSpine::Left(identity, parent, color, sibling, up)) == Context::Left(identity, parent, color, sibling, erase_context(up))::0": {
+ "examples/rbtree/rbtree-model/rbtree_spine_model.click::erase_context(EraseSpine::Left(identity, parent, color, sibling, up)) == Context::Left(identity, parent, color, sibling, erase_context(up))::0": {
   "by_auto": true,
   "deletable": false
  },
- "examples/rbtree-model/rbtree_spine_model.click::parent == parent::0": {
+ "examples/rbtree/rbtree-model/rbtree_spine_model.click::parent == parent::0": {
   "by_auto": true,
   "deletable": false
  },
- "examples/rbtree-model/rbtree_spine_model.click::plug(erase_context(EraseSpine::Top), tree) == tree::0": {
+ "examples/rbtree/rbtree-model/rbtree_spine_model.click::plug(erase_context(EraseSpine::Top), tree) == tree::0": {
   "by_auto": false,
   "deletable": false
  },
- "examples/rbtree-model/rbtree_spine_model.click::rb_parent_consistent(plug(Context::Left(identity, parent, color, sibling, erase_context(up)), tree), anchor) == 1::0": {
+ "examples/rbtree/rbtree-model/rbtree_spine_model.click::rb_parent_consistent(plug(Context::Left(identity, parent, color, sibling, erase_context(up)), tree), anchor) == 1::0": {
   "by_auto": true,
   "deletable": false
  },
- "examples/rbtree-model/rbtree_spine_model.click::rb_parent_consistent(plug(erase_context(up), RbTree::Node(identity, parent, color, tree, sibling)), anchor) == 1::0": {
+ "examples/rbtree/rbtree-model/rbtree_spine_model.click::rb_parent_consistent(plug(erase_context(up), RbTree::Node(identity, parent, color, tree, sibling)), anchor) == 1::0": {
   "by_auto": true,
   "deletable": false
  },
- "examples/rbtree-model/successor_splice_checks.click::black_height(splice_black_leaf(successor, r)) == black_height(splice_black_leaf(far, r))::0": {
+ "examples/rbtree/rbtree-model/successor_splice_checks.click::black_height(splice_black_leaf(successor, r)) == black_height(splice_black_leaf(far, r))::0": {
   "by_auto": true,
   "deletable": false
  },
- "examples/rbtree-model/successor_splice_checks.click::is_rb(rb_reparent(splice_black_leaf(l, erased), successor)) == 1::0": {
+ "examples/rbtree/rbtree-model/successor_splice_checks.click::is_rb(rb_reparent(splice_black_leaf(l, erased), successor)) == 1::0": {
   "by_auto": true,
   "deletable": false
  },
- "examples/rbtree-model/successor_splice_checks.click::not(black_height(rb_reparent(splice_black_leaf(l, erased), successor)) == Nat::Zero)::0": {
+ "examples/rbtree/rbtree-model/successor_splice_checks.click::not(black_height(rb_reparent(splice_black_leaf(l, erased), successor)) == Nat::Zero)::0": {
   "by_auto": true,
   "deletable": false
  },

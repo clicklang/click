@@ -1,7 +1,25 @@
 {
   "units": {
+    "zlib": {
+      "language": "c",
+      "root": "zlib",
+      "compiler": "/usr/bin/gcc",
+      "env": {
+        "PATH": "/usr/bin:/bin",
+        "LC_ALL": "C",
+        "SOURCE_DATE_EPOCH": "0"
+      },
+      "args": [
+        "-std=c11"
+      ],
+      "sources": {
+        "adler32.c": {},
+        "incremental.c": {}
+      }
+    },
     "adler2": {
       "language": "rust",
+      "root": "adler2",
       "sources": {
         "src/lib.rs": {}
       },
@@ -23,6 +41,7 @@
     },
     "adler_incremental": {
       "language": "rust",
+      "root": "adler2",
       "sources": {
         "incremental.rs": {}
       },
@@ -44,6 +63,7 @@
     },
     "adler_resumed": {
       "language": "rust",
+      "root": "adler2",
       "sources": {
         "resumed.rs": {}
       },

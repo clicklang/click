@@ -3,7 +3,7 @@
 Soundness: not soundness. A previously verifying proof is refused; nothing
 false is accepted.
 
-`examples/rbtree-erase/rbtree_erase_color_flips_red_all.click` verified on
+`examples/rbtree/rbtree-erase/rbtree_erase_color_flips_red_all.click` verified on
 master at 6bd0854ca (2026-10-17). It is refused at 8ac4c0311. The C source
 and the sidecar are the same in both, so the change is in the verifier.
 
@@ -11,7 +11,7 @@ and the sidecar are the same in both, so the change is in the verifier.
 
 ```sh
 cargo build --release --bin click
-target/release/click verify examples/rbtree-erase/rbtree_erase_color_flips_red_all.click
+target/release/click verify examples/rbtree/rbtree-erase/rbtree_erase_color_flips_red_all.click
 ```
 
 ```text

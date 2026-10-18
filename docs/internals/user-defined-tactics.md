@@ -7,7 +7,7 @@ Status: delivery steps 1, 2, and 5 are implemented: declarations,
 certification, application in C proofs before function exit, self-recursion
 ranked by an expression measure (see
 [User-defined tactics](../reference/language/index.md#user-defined-tactics)),
-and the consumer, `refold_to_root` in `examples/rbtree-insert`, which gives
+and the consumer, `refold_to_root` in `examples/rbtree/rbtree-insert`, which gives
 `__rb_insert` its root-form contract. Steps 3 and 4 remain.
 
 ## Why Click needs them
@@ -59,7 +59,7 @@ tactic refold_to_root(focus: struct rb_node*, root: struct rb_root*) {
 }
 ```
 
-The full proof is in `examples/rbtree-insert/rbtree_insert.click`.
+The full proof is in `examples/rbtree/rbtree-insert/rbtree_insert.click`.
 
 A C proof applies it with an explicit binder map, like a call step but with no
 C statement:

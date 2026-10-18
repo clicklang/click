@@ -4,7 +4,7 @@ import click::machine_integer;
 target "x86_64-unknown-linux-gnu";
 verifying "adler32.c";
 import "byte.click";
-import "../../adler32-spec.click";
+import "../adler32-spec.click";
 import "short-prefix.click";
 uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
  requires adler == 1u64;

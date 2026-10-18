@@ -67,7 +67,7 @@ contract fn Comparator(left: i32, right: i32) -> i32 { ... }
 
 A named contract's resource handles are declared in its body, as concrete
 functions already declare them (`owns source: size_metadata(rb_old);` in
-`examples/rbtree-augmented/rbtree_size_copy.click`). In declaration order,
+`examples/rbtree/rbtree-augmented/rbtree_size_copy.click`). In declaration order,
 the named handles in a `contract` body are its proof parameters. This removes
 the forward reference in today's
 `contract Read(cell: marked_cell(p)) for int32(int32* p)`, where `cell` names

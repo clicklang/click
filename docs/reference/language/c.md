@@ -58,15 +58,12 @@ incremental verification markers include its name.
 
 ### Selecting a target
 
-A project can select its C implementation target in a `click.project.json` file
-beside its sidecars. For example, the JSON object
+A project can select its C implementation target in its `click.project.json`,
+the nearest one at or above a sidecar. For example, the JSON object
 `{"target":"x86_64-unknown-linux-gnu","runtime":"modeled-pthread"}` selects
 the user-space target and Click's conditional pthread model for every sidecar
-in that directory; `"mode": "kernel"` selects kernel mode.
-The fields are optional. When a command is given an
-explicit project root and the sidecar directory has no config, it looks for
-the config at that root, and otherwise in the nearest directory above the
-sidecar that has one. Conflicting sidecar directives are rejected. The same
+of the project; `"mode": "kernel"` selects kernel mode.
+The fields are optional. Conflicting sidecar directives are rejected. The same
 file can declare compiler-import units; see
 [Project units](../cli/import.md#project-units).
 
@@ -260,8 +257,8 @@ proofs. Owned global ranges can be folded into named resources and transferred
 through helper contracts. Resource tactics retain the current function's
 static bindings, including parameter shadowing; unfolding scalar ranges keeps
 their declared signedness and width. The unchanged pcg-c-basic wrappers over
-their private `pcg32_global` verify in `examples/pcg-basic/`, and a separate
-client of them in `examples/pcg-client/`.
+their private `pcg32_global` verify in `examples/pcg/pcg-basic/`, and a separate
+client of them in `examples/pcg/pcg-client/`.
 
 See `mdtests/program_entry_static_ownership.md` for ownership transferred
 through two calls to a pointer-taking helper without resetting the state.

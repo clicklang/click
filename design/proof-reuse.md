@@ -4,7 +4,7 @@ Design for the launch design review's item P5 ("copy-paste across case
 files and sidecars"), now closed: R2 and R3 are done, R4 is done for
 ordinary resources, and the rest of R4 and R5 are not pursued (maintainer,
 2026-10-17). It measures where the repetition in
-`examples/rbtree-erase` comes from, compares that with what Dafny, Verus,
+`examples/rbtree/rbtree-erase` comes from, compares that with what Dafny, Verus,
 Lean and separation-logic tools do, and lists what Click needs. It assumes
 [SMT-backed `auto`](smt-auto-stage1.md) lands; it has. Measurements are from master at
 `101ad5c7`.
@@ -130,7 +130,7 @@ keeps only its general proof and that proof's regressions.
 
 Done: the 22 increments are deleted. Their 80 nightly mutation tests named 39
 distinct C mutations; two were already checked against the general proof and
-the other 37 now are. `examples/rbtree-erase` went from 44 sidecars and 39,582
+the other 37 now are. `examples/rbtree/rbtree-erase` went from 44 sidecars and 39,582
 lines to 22 sidecars and 10,422 lines. The gate is unaffected: the example and
 all of these mutation tests were already nightly. The rule is in
 `examples/README.md`.
@@ -150,7 +150,7 @@ per-case development but re-execute the shared prefix once per case.
 Reconsider it only if R2's prototype shows the single-proof form failing on
 size or speed.
 
-Done (2026-10-14): both general contracts landed in `examples/rbtree-erase`
+Done (2026-10-14): both general contracts landed in `examples/rbtree/rbtree-erase`
 and replaced 16 per-case sidecars. The prototype first verified only with
 every exit's bookkeeping moved before the final C call, because return
 certification refused a theorem applied after return. That bug and a
@@ -228,10 +228,10 @@ general unlink is 2,607 lines and takes 19.2 s as one proof unit; the general
 `rb_erase` is 92 lines and takes 1.2 s. `refold_to_root` (94 lines, 0.7 s)
 moved out of the color-repair proof into `rbtree_refold_to_root.click`, which
 both proofs import. The single-proof form therefore does not fail on size or
-speed, and contract intersection is not needed. `examples/rbtree-erase` went
+speed, and contract intersection is not needed. `examples/rbtree/rbtree-erase` went
 from 22 sidecars and 9,747 lines to 9 sidecars and 7,504 lines.
 
-`rbtree_erase_leaf_wrapper.click` stays: `examples/rbtree-augmented` imports
+`rbtree_erase_leaf_wrapper.click` stays: `examples/rbtree/rbtree-augmented` imports
 its leaf unlink, whose hole-and-context outputs that proof consumes. The
 retired sidecars' 42 mutation tests named 25 distinct mutations of
 `rb_erase_augmented.c`, and 14 more mutated the inlined `__rb_change_child`,

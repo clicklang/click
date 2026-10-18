@@ -343,7 +343,7 @@ after:
 |---|---|---|---|
 | `examples/bounded-pool/bounded_pool.click` | 845 lines, 2.1 s | 455 lines, about 2 s | resource folds and authority steps; every arithmetic lemma is `by auto` |
 | `examples/rust-byte-sum/sum.click` | 184 lines, 0.29 s | 68 lines, about 1.4 s | memory transport for the read, fold laws (`peel`), loop control, and one invariant conjunct restated to cite it |
-| one arm of `examples/rbtree-erase/rbtree_erase_color_flips_red_all.click` | 23 one-line rewrite `have`s | 18 of them `by auto` | three-rewrite chains past the attempt budget, `unfold` after a rewrite, `plug` equalities over whole contexts |
+| one arm of `examples/rbtree/rbtree-erase/rbtree_erase_color_flips_red_all.click` | 23 one-line rewrite `have`s | 18 of them `by auto` | three-rewrite chains past the attempt budget, `unfold` after a rewrite, `plug` equalities over whole contexts |
 
 Equality reasoning is a bounded search for a chain of checked `rewrite`
 steps, tried after a single rewrite to an available fact, not the congruence

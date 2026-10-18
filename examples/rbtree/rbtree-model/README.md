@@ -1,7 +1,7 @@
 # Red-Black Tree Model
 
 This project is the pure Click library for the Linux rbtree proofs planned in
-[`rbtree-example.md`](../../issues/rbtree-example.md)
+[`rbtree-example.md`](../../../issues/rbtree-example.md)
 (decisions D1, D3, and D10). `rbtree_model.click` contains only specification
 values and proofs, with no `verifying` line or C ownership.
 `rbtree_resources.click` is the shared declaration-only ownership layer:
@@ -11,7 +11,7 @@ it is not a standalone verification entry. The insertion and erase sidecars shar
 `rbtree_erase_root.click` proves the root zero/one-child replacement is
 red-black and preserves exactly the two old subtrees' in-order sequence.
 
-Run `cargo run --bin click -- verify examples/rbtree-model` from the repository
+Run `cargo run --bin click -- verify examples/rbtree/rbtree-model` from the repository
 root. The example is also checked by `scripts/check.sh`.
 
 Linux rbtree stores no keys, so the model carries node identity rather than
@@ -54,7 +54,7 @@ ported proofs carry the re-parenting through without new inductions.
 
 `rb_inorder` derives the `List<struct rb_node*>` of node identities in left,
 node, right order, exactly as `heap_inorder` does in
-[`examples/modeled-binary-tree`](../modeled-binary-tree/README.md).
+[`examples/modeled-binary-tree`](../../modeled-binary-tree/README.md).
 `rb_member` is the recursive `bool` membership test on the model, and
 `rb_member_is_inorder_membership` proves it equals
 `list::contains(rb_inorder(tree), target)`. `rb_left`, `rb_right`, and
@@ -349,7 +349,7 @@ blackened replacement child, for both parent-link directions below the root.
 
 `plug(ctx, sub)` rebuilds the whole model from a context and the focused
 subtree, mirroring the scaffold's `plug` in
-[`examples/modeled-binary-tree`](../modeled-binary-tree/README.md) on the
+[`examples/modeled-binary-tree`](../../modeled-binary-tree/README.md) on the
 five-payload node. `plug_inorder_transport` is the scaffold theorem on
 `RbTree`: two subtrees with the same in-order list plug into whole trees with
 the same in-order list, proved by induction on the context with A16's

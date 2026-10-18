@@ -178,13 +178,13 @@ offsets, literal contents, division, and unterminated block comments; the
 existing `#` spelling remains supported.
 The first C-port attempt exposed an imported-resource binder collision, now
 covered by a regression and fixed by scoping learned binders to each declaration.
-The insertion resources are shared in `examples/rbtree-model/rbtree_resources.click`.
+The insertion resources are shared in `examples/rbtree/rbtree-model/rbtree_resources.click`.
 The loaded tagged-null conversion bug found in the root-leaf case is also
 fixed: explicit 64-bit casts now accept values proven zero by the current
 facts. `mdtests/tagged_pointer_null_word.md` covers loaded zero and masked
 loaded tag words, with a separate nonzero-load rejection fixture.
 
-`examples/rbtree-erase/rbtree_erase.click` consumes the focused `rb_at(node)`
+`examples/rbtree/rbtree-erase/rbtree_erase.click` consumes the focused `rb_at(node)`
 and its `Context::Top` resource and returns the detached node's raw fields and
 a whole root resource. It handles leaf, right-child, and left-child root
 removal, proves null as the fixup parent, and establishes a black-rooted
@@ -285,7 +285,7 @@ This section records what changed in the verifier since the insert proof was
 first written, and how to write the erase proofs so they do not need the same
 rework.
 
-**Where insert stands.** `examples/rbtree-insert/rbtree_insert.click` is about
+**Where insert stands.** `examples/rbtree/rbtree-insert/rbtree_insert.click` is about
 2,500 proof lines for 136 lines of C (19 times) and verifies in about 5.4
 seconds at 0.43 GB peak. The size and speed targets are in
 [verification efficiency](../docs/internals/verification-efficiency.md#proof-size-and-speed-targets).
@@ -364,7 +364,7 @@ instead of once for each cell), not worked around in the proof or the C.
 ## State, 2026-10-02
 
 **`__rb_insert` verifies end to end** on the unchanged Linux C
-(`examples/rbtree-insert/rbtree_insert.click`, in the example gate), and since
+(`examples/rbtree/rbtree-insert/rbtree_insert.click`, in the example gate), and since
 2026-10-03 with the root-form contract: it produces the whole fixed-up tree at
 `root->rb_node` as `rb_root_at(root)`. The recursive user-defined tactic
 `refold_to_root` folds the context frames above the fixup's stopping point back
@@ -376,8 +376,8 @@ to `__rb_insert` applies that contract.
 
 Fix what slows the work before completing the example:
 
-1. **Imports first: delivered.** `examples/rbtree-insert` now imports the
-   shared `examples/rbtree-model/rbtree_model.click`; its C is unchanged and
+1. **Imports first: delivered.** `examples/rbtree/rbtree-insert` now imports the
+   shared `examples/rbtree/rbtree-model/rbtree_model.click`; its C is unchanged and
    the unfinished proof remains an explicit negative frontier. I1 was the P1
    dependency; all retained import follow-ups are P2 and block neither C3 nor
    C5. C6 depends on callback packaging, not broader imports, unless its final
@@ -478,7 +478,7 @@ now reaches its next bounded proof frontier: `execute()` needs a view of
 the complete descent/ascent proof; this support does not claim traversal
 verification.
 
-**The insert fixture**, `examples/rbtree-insert`: `rbtree.h` and
+**The insert fixture**, `examples/rbtree/rbtree-insert`: `rbtree.h` and
 `rb_insert_color.c` retain the verbatim Linux `__rb_insert` and
 `rb_insert_color` C formerly embedded in `mdtests/rb_insert_color.md`.
 `rbtree_insert.click` is a green import/load entry and does not claim the
@@ -546,13 +546,13 @@ next folded-entry proof frontier). Uniform scoping: bb142e1c (theorem arguments,
 bodies), 99a07d5c (`using` premises in a `have` body).
 
 **Where to pick this up.** C3b starts from the frontier in
-`examples/rbtree-insert/rbtree_insert.frontier` at the `Color::Black` arm of
+`examples/rbtree/rbtree-insert/rbtree_insert.frontier` at the `Color::Black` arm of
 each `match uncolor`, which stands before `tmp = parent->rb_right` (or
 `rb_left`) with the uncle's cells unfolded as `ul`/`ur`, the grandparent
 frame unfolded as `us`/`uu`, and `cup == Context::Left(...)`/`Right(...)`
 already restated in constructor form. The branch `claude/rsm-c3-insert-fixup-7`
 named earlier no longer exists. To iterate on the frontier from the command
-line, copy it beside a copy of `examples/rbtree-model` under one scratch
+line, copy it beside a copy of `examples/rbtree/rbtree-model` under one scratch
 root and verify that directory (see the fixture README). Each resumption so
 far was one agent per package with the orchestrator integrating; doing the
 packages directly works the same way, the packages below are written to be
@@ -1078,7 +1078,7 @@ context and red subtree to `__rb_insert`'s `consumes` binders. A contract-less
 helper with a symbolic loop still runs away instead of failing promptly
 (`bugs/inline-helper-symbolic-loop-call-runs-away.md`).
 
-`examples/rbtree-insert/rbtree_insert.click` is now the proof and passes in
+`examples/rbtree/rbtree-insert/rbtree_insert.click` is now the proof and passes in
 the example gate; the `.frontier` file is gone. `tests/examples.rs` keeps the
 C's SHA-256 pins and refuses the proof against an in-memory copy of the C
 whose root case skips `rb_set_parent_color(node, NULL, RB_BLACK)` (refused
@@ -1157,7 +1157,7 @@ the new context. Helpers: `rb_inorder_node_congruence`, `ctx_rb_black_focus`,
 verifies and `click audit` of it passes.
 
 **Black-successor splice model written 2026-10-07.**
-`examples/rbtree-model/rbtree_erase_splice.click` adds
+`examples/rbtree/rbtree-model/rbtree_erase_splice.click` adds
 `rb_erase_black_successor_splice` for a black minimum with no right child.
 It proves all four facts needed before entering erase fixup: the exact
 `rb_successor_context` is valid at `Nat::Succ(Nat::Zero)` with a black focus;
@@ -1198,7 +1198,7 @@ Keep these cases separate from the black-leaf theorem, whose whole spliced
 tree still needs fixup.
 
 **Chunk 11. `__rb_erase_augmented`: C coverage complete.**
-One general contract, `examples/rbtree-erase/rbtree_erase_augmented.click`,
+One general contract, `examples/rbtree/rbtree-erase/rbtree_erase_augmented.click`,
 now covers every exit at every position, and
 `rbtree_erase_general_wrapper.click` verifies `rb_erase` on top of it. The
 per-case sidecars named in this chunk and in the 2026-10-09 handoff were
@@ -1206,7 +1206,7 @@ retired once those two subsumed them
 ([design/proof-reuse.md](../design/proof-reuse.md) R2); they remain in Git
 history, and their mutations now run against the general unlink.
 `rbtree_erase_leaf_wrapper.click` stays because
-`examples/rbtree-augmented/rbtree_erase_leaf.click` imports its leaf unlink.
+`examples/rbtree/rbtree-augmented/rbtree_erase_leaf.click` imports its leaf unlink.
 The unchanged C verifies zero/one-child deletion and every immediate and deeper
 successor exit, at the root and on either non-root parent link. The deeper
 sidecars verify the terminating descent loop, shared splice continuation, and
@@ -1376,7 +1376,7 @@ broader [global initializer issue](global-variables.md) is P2. Keep the table
 const and preserve the callback guarantees; the no-op fixture is not evidence
 for the complete mutation-capable augmentation proof.
 
-The public entry-point integration now verifies in `examples/rbtree-augmented`.
+The public entry-point integration now verifies in `examples/rbtree/rbtree-augmented`.
 `__rb_insert_augmented` and `rb_insert_augmented` reuse the checked insertion
 contract, and `__rb_erase_color` reuses the general repair contract.
 `rb_erase_augmented` is checked for leaf deletion at every position, including

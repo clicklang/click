@@ -67,7 +67,7 @@ local release assets through its ordinary curl subprocess, relocates the
 installed home, and verifies both examples with an empty PATH and no user
 Rust toolchain. It checks repeated installation and locking, then offline
 verification after removing the frontend. It also runs the
-[C/Rust checksum demonstration](https://github.com/clicklang/click/blob/master/design/charon-trial/checksum-correspondence.md#reproduce)
+[C/Rust checksum demonstration](https://github.com/clicklang/click/blob/master/design/adler32/checksum-correspondence.md#reproduce)
 from a relocated prepared directory, checking the complete C/Rust producer and
 helper bodies, real incremental/saved-state clients and correspondence theorem
 through locked imports after removing the frontend. The release workflow runs this check
@@ -780,7 +780,7 @@ modular reduction, shifts, packing, truncation, and unsigned comparison. Its
 [sidecar](https://github.com/clicklang/click/blob/master/examples/rust-unsigned/arithmetic.click)
 uses ordinary Click contracts and tactics. Expansion can use the shared
 `unsigned_sum_bound` arithmetic-certificate step for widened word bounds.
-The [unchanged Adler2 computation](https://github.com/clicklang/click/blob/master/design/charon-trial/adler2/README.md)
+The [unchanged Adler2 computation](https://github.com/clicklang/click/blob/master/design/adler32/adler2/README.md)
 is verified separately against the common checksum specification for lengths
 zero through 2,147,483,647 bytes from canonical initial states. The unchanged
 `write_slice` and `adler32_slice` wrappers compose checked bodies over the same
@@ -788,7 +788,7 @@ range, preserve input bytes, and prove field and packed checksum correctness.
 A locked client also proves that two actual updates equal the full-input
 checksum for every valid split over that range. The unchanged `from_checksum`
 constructor is checked for every `u32` checksum. A separate
-[resumed client](https://github.com/clicklang/click/blob/master/design/charon-trial/adler2/resumed.click)
+[resumed client](https://github.com/clicklang/click/blob/master/design/adler32/adler2/resumed.click)
 restores the checksum of a checked prefix, updates with the suffix, and proves
 the full-input checksum and byte preservation over the same length and split
 bounds. Arbitrary saved words need not satisfy the canonical-seed preconditions

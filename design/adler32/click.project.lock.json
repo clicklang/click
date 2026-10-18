@@ -1,6 +1,116 @@
 {
   "schema": 1,
   "units": {
+    "adler2": {
+      "language": "rust",
+      "lock": {
+        "envelope": 1,
+        "frontend": {
+          "identity": "7c2e994c506684f2bc8c86d9798bf9cb35c42693c51c3dd401139ef6618ae66c",
+          "name": "charon"
+        },
+        "rust": {
+          "frontend": {
+            "click_version": "0.1.0",
+            "compiler_commit": "923c95cdf5ba65cea505aa2ea829f578e1506ed8",
+            "extractor_revision": "5d6b812e5f77dbf3d7f66c21b9b57091f0e084cb",
+            "extractor_version": "0.1.279",
+            "profile": "38b817cc5760845d2e37b8f72a333f6d36a3ccdbfbf19e8c22da436e67a79ab1"
+          },
+          "schema": 9,
+          "source": "1eeb86173e0eb14ef276fc210ba5340a89a749a77a2894fbb12851167856bc98"
+        },
+        "sources": {
+          "src/lib.rs": {
+            "artifact": {
+              "bytes": 738490,
+              "path": ".click/adler2/src/lib.rs.ullbc",
+              "sha256": "ba226119c1aca0f07ee1c720f8b57d325a361854577c9f8fdc8ff9d9c232f23a"
+            },
+            "identity": "60560f79b2fca329551ac0c32a87e7d14dfba53980d7c2e552d51868f5597343",
+            "inputs": {
+              "src/algo.rs": "932c2bc591d13fe4470185125617b5aaa660a3898f23b553acc85df0bf49dded",
+              "src/lib.rs": "4acd41668fe30daffa37084e7e223f268957b816afc1864ffb3f5d6d7adf0890"
+            }
+          }
+        },
+        "unit": "499317fd0d50e078d65a034f7121001a7b33f20418f50451a2fbc6b101ad35e9"
+      }
+    },
+    "adler_incremental": {
+      "language": "rust",
+      "lock": {
+        "envelope": 1,
+        "frontend": {
+          "identity": "7c2e994c506684f2bc8c86d9798bf9cb35c42693c51c3dd401139ef6618ae66c",
+          "name": "charon"
+        },
+        "rust": {
+          "frontend": {
+            "click_version": "0.1.0",
+            "compiler_commit": "923c95cdf5ba65cea505aa2ea829f578e1506ed8",
+            "extractor_revision": "5d6b812e5f77dbf3d7f66c21b9b57091f0e084cb",
+            "extractor_version": "0.1.279",
+            "profile": "38b817cc5760845d2e37b8f72a333f6d36a3ccdbfbf19e8c22da436e67a79ab1"
+          },
+          "schema": 9,
+          "source": "06ebf5aea67af75de61471573c4ce05ea83b000e07a2d82d567ce8e19898e573"
+        },
+        "sources": {
+          "incremental.rs": {
+            "artifact": {
+              "bytes": 729139,
+              "path": ".click/adler_incremental/incremental.rs.ullbc",
+              "sha256": "68eeb96a6799d48eebcfb4821174fa4ac606789dc3839cdd8711acc1d1236271"
+            },
+            "identity": "656b2600e99aa9be35e8cde2a6797a9ebe1c5e3ca8175a198c0a305095460b18",
+            "inputs": {
+              "incremental.rs": "4a7a25094aa39f0f753d029ba4638a81e43a4ccff010749c36d7e248eecdce6d",
+              "src/algo.rs": "932c2bc591d13fe4470185125617b5aaa660a3898f23b553acc85df0bf49dded",
+              "src/lib.rs": "4acd41668fe30daffa37084e7e223f268957b816afc1864ffb3f5d6d7adf0890"
+            }
+          }
+        },
+        "unit": "b9cb320af81cff4c7ba3e9d9a999c883e80ddaf80463fad02dc8dec4d076aa1d"
+      }
+    },
+    "adler_resumed": {
+      "language": "rust",
+      "lock": {
+        "envelope": 1,
+        "frontend": {
+          "identity": "7c2e994c506684f2bc8c86d9798bf9cb35c42693c51c3dd401139ef6618ae66c",
+          "name": "charon"
+        },
+        "rust": {
+          "frontend": {
+            "click_version": "0.1.0",
+            "compiler_commit": "923c95cdf5ba65cea505aa2ea829f578e1506ed8",
+            "extractor_revision": "5d6b812e5f77dbf3d7f66c21b9b57091f0e084cb",
+            "extractor_version": "0.1.279",
+            "profile": "38b817cc5760845d2e37b8f72a333f6d36a3ccdbfbf19e8c22da436e67a79ab1"
+          },
+          "schema": 9,
+          "source": "cd88406e463ed20494d51151643e0da9962028becd85ee772999d639c8410ed2"
+        },
+        "sources": {
+          "resumed.rs": {
+            "artifact": {
+              "bytes": 739756,
+              "path": ".click/adler_resumed/resumed.rs.ullbc",
+              "sha256": "4a5f4a9628f684beff8ad8d263699f7937407ed51cef60955f5a44b3a0f3746f"
+            },
+            "identity": "c7125ce788ce4ab7f6fe65e41ff9aba29c6776a3d2efd291a3037a4a30edeaa1",
+            "inputs": {
+              "resumed.rs": "d78d1adf1e13b3ec971ac9c4faab4f96da28f32002c3102fb2533b993e5d7541",
+              "src/algo.rs": "932c2bc591d13fe4470185125617b5aaa660a3898f23b553acc85df0bf49dded",
+              "src/lib.rs": "4acd41668fe30daffa37084e7e223f268957b816afc1864ffb3f5d6d7adf0890"
+            }
+          }
+        },
+        "unit": "ee1ef9f5b7c5ceca85840dcd3a08be6966095ac9ee712c7ab221bcfc544e36c3"
+      }
+    },
     "zlib": {
       "language": "c",
       "lock": {
@@ -24,9 +134,9 @@
                 "sys/types.h": "007fe1ae0ba0a2f54101c6828a01cd1da67c56a647d4f7c50c6543253c77ff1a"
               },
               "local_dependencies": {
-                "zconf.h": "f5134250a67d57459234b63858f0d9d3ef8dcc48e9e1028d3f4fdcf6eae677ae",
-                "zlib.h": "8a5579af72ea4f427ff00a4150f0ccb3fc5c1e4379f726e101133b1ab9fc600c",
-                "zutil.h": "dddb2dc7a1dc339ecf2c8e089b366f08bb731c0839c7110240d17ce731bb4fea"
+                "zlib/zconf.h": "f5134250a67d57459234b63858f0d9d3ef8dcc48e9e1028d3f4fdcf6eae677ae",
+                "zlib/zlib.h": "8a5579af72ea4f427ff00a4150f0ccb3fc5c1e4379f726e101133b1ab9fc600c",
+                "zlib/zutil.h": "dddb2dc7a1dc339ecf2c8e089b366f08bb731c0839c7110240d17ce731bb4fea"
               },
               "logical_source": "adler32.c",
               "path": "adler32.c"
@@ -44,10 +154,10 @@
                 "sys/types.h": "007fe1ae0ba0a2f54101c6828a01cd1da67c56a647d4f7c50c6543253c77ff1a"
               },
               "local_dependencies": {
-                "adler32.c": "9cd1443a24ff2a3053961695bd432035c58347386a420d3388232376ebabe211",
-                "zconf.h": "f5134250a67d57459234b63858f0d9d3ef8dcc48e9e1028d3f4fdcf6eae677ae",
-                "zlib.h": "8a5579af72ea4f427ff00a4150f0ccb3fc5c1e4379f726e101133b1ab9fc600c",
-                "zutil.h": "dddb2dc7a1dc339ecf2c8e089b366f08bb731c0839c7110240d17ce731bb4fea"
+                "zlib/adler32.c": "9cd1443a24ff2a3053961695bd432035c58347386a420d3388232376ebabe211",
+                "zlib/zconf.h": "f5134250a67d57459234b63858f0d9d3ef8dcc48e9e1028d3f4fdcf6eae677ae",
+                "zlib/zlib.h": "8a5579af72ea4f427ff00a4150f0ccb3fc5c1e4379f726e101133b1ab9fc600c",
+                "zlib/zutil.h": "dddb2dc7a1dc339ecf2c8e089b366f08bb731c0839c7110240d17ce731bb4fea"
               },
               "logical_source": "incremental.c",
               "path": "incremental.c"
@@ -207,11 +317,11 @@
             "specs_path": null,
             "specs_sha256": null
           },
-          "working_directory": "$project/."
+          "working_directory": "$project/zlib"
         },
         "envelope": 1,
         "frontend": {
-          "identity": "f98500b1459269a7aedd76fe0688f97cc52982bac67c2aeb480f6e27269ff9a6",
+          "identity": "acd283aa712a0b9ff104b4dd89dea7afd22924fbeda601012961272cf0360b70",
           "name": "gcc"
         },
         "sources": {
@@ -221,11 +331,11 @@
               "path": ".click/zlib/adler32.c.i",
               "sha256": "46a4957cc681a51156c385736ccca9636f7e8aab0468dafdeeeb44f696241a75"
             },
-            "identity": "6e6789192e2a059d49c8f057c5467528abe22d3758ce4f54ac92f4f2a04af19b",
+            "identity": "b25fc166cb9f448645d9b2bba9ffa9d5c527db4cfb3b33496bae4f6bbebf046e",
             "inputs": {
-              "$project/zconf.h": "f5134250a67d57459234b63858f0d9d3ef8dcc48e9e1028d3f4fdcf6eae677ae",
-              "$project/zlib.h": "8a5579af72ea4f427ff00a4150f0ccb3fc5c1e4379f726e101133b1ab9fc600c",
-              "$project/zutil.h": "dddb2dc7a1dc339ecf2c8e089b366f08bb731c0839c7110240d17ce731bb4fea",
+              "$project/zlib/zconf.h": "f5134250a67d57459234b63858f0d9d3ef8dcc48e9e1028d3f4fdcf6eae677ae",
+              "$project/zlib/zlib.h": "8a5579af72ea4f427ff00a4150f0ccb3fc5c1e4379f726e101133b1ab9fc600c",
+              "$project/zlib/zutil.h": "dddb2dc7a1dc339ecf2c8e089b366f08bb731c0839c7110240d17ce731bb4fea",
               "adler32.c": "9cd1443a24ff2a3053961695bd432035c58347386a420d3388232376ebabe211"
             }
           },
@@ -235,17 +345,17 @@
               "path": ".click/zlib/incremental.c.i",
               "sha256": "a6f8919ed16280b8102a6c22925da10bb75ea019e2281b25c6615991f46edc2e"
             },
-            "identity": "a2cbb641df5901bfd09f18915c5b22ecd50b41302692a639b6f3e02717575219",
+            "identity": "e8e92eac727207639f69dbf0d82358c529c7dc1f62f86f36805407b44c837db6",
             "inputs": {
-              "$project/adler32.c": "9cd1443a24ff2a3053961695bd432035c58347386a420d3388232376ebabe211",
-              "$project/zconf.h": "f5134250a67d57459234b63858f0d9d3ef8dcc48e9e1028d3f4fdcf6eae677ae",
-              "$project/zlib.h": "8a5579af72ea4f427ff00a4150f0ccb3fc5c1e4379f726e101133b1ab9fc600c",
-              "$project/zutil.h": "dddb2dc7a1dc339ecf2c8e089b366f08bb731c0839c7110240d17ce731bb4fea",
+              "$project/zlib/adler32.c": "9cd1443a24ff2a3053961695bd432035c58347386a420d3388232376ebabe211",
+              "$project/zlib/zconf.h": "f5134250a67d57459234b63858f0d9d3ef8dcc48e9e1028d3f4fdcf6eae677ae",
+              "$project/zlib/zlib.h": "8a5579af72ea4f427ff00a4150f0ccb3fc5c1e4379f726e101133b1ab9fc600c",
+              "$project/zlib/zutil.h": "dddb2dc7a1dc339ecf2c8e089b366f08bb731c0839c7110240d17ce731bb4fea",
               "incremental.c": "c3daad149a45f4bcc7b68eb6a0b4cd99cba450ed3985318d05448a2b42300087"
             }
           }
         },
-        "unit": "2562a7a6e1c446b404fdb12d7f976644bb3a79ebe7db4fe1c220d3fabc23175e"
+        "unit": "5ef9c83b54b693103d25927c70e7a7267845f6106bd94530ca4c4538e730c420"
       }
     }
   }

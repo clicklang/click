@@ -61,7 +61,7 @@ initializer contracts prove `MOD = 65521` and `CHUNK_SIZE = 22208` by executing
 their imported CFGs.
 
 The [helper sidecar](helpers.click) uses the `adler2` unit of the
-[project file](click.project.json) and its native Charon artifact to prove every lane of these original helpers:
+[project file](../click.project.json) and its native Charon artifact to prove every lane of these original helpers:
 
 | Body | Contract |
 | --- | --- |
@@ -370,7 +370,7 @@ original modulo form: `a = (1 + byte) % MOD` and
 `b = (6 * MOD + 1 + byte) % MOD`. For a byte in `0..=255`, these are the
 single-byte checksum values `a = b = 1 + byte`.
 The contract also proves that both fields equal the
-[shared specification](../../adler32-spec.click) on the entry byte snapshot.
+[shared specification](../adler32-spec.click) on the entry byte snapshot.
 Checked unsigned remainder bridges and signed-witness congruence remove the
 `6 * MOD` offset. This focused connection covers one byte from the constructor state; the
 general contract below covers all supported lengths and canonical seeds.
@@ -608,9 +608,9 @@ Build Click and pinned Charon with the normal repository setup. The frozen
 artifact verifies without extracting again:
 
 ```sh
-target/debug/click verify design/charon-trial/adler2/helpers.click
-target/debug/click verify design/charon-trial/adler2/bounds.click
-target/debug/click verify design/charon-trial/adler2/iterator-bounds.click
+target/debug/click verify design/adler32/adler2/helpers.click
+target/debug/click verify design/adler32/adler2/bounds.click
+target/debug/click verify design/adler32/adler2/iterator-bounds.click
 ```
 
 Check the single-byte fragment against the same locked native body and shared
@@ -631,7 +631,7 @@ cargo nextest run --test rust_import --run-ignored all \
 Refresh every unit of the project through the production adapter:
 
 ```sh
-target/debug/click import lock design/charon-trial/adler2/helpers.click
+target/debug/click import lock design/adler32/adler2/helpers.click
 ```
 
 `CLICK_CHARON` selects a source-built Charon. Run the focused live regression to refresh a private copy and reprove the original helper bodies:

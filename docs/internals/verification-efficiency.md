@@ -228,7 +228,7 @@ the size target that verifies well under 300 lines per second points at the
 verifier, and the complexity contract above applies.
 
 Report both numbers when delivering an example. As of 2026-10-07,
-`examples/rbtree-insert` is about 2,500 proof lines for 136 lines of C, 19
+`examples/rbtree/rbtree-insert` is about 2,500 proof lines for 136 lines of C, 19
 times, and verifies in about 5.4 seconds, roughly 470 lines per second.
 
 `scripts/proof-ratio.py` measures the size of every example, and
@@ -771,7 +771,7 @@ whose sibling already decides it is not asked: the right disjunct of a
 null-guarded `p == 0 or separate(memory(q), memory(p->f))` once `p == 0`
 holds is a separation nothing establishes, which every route used to refuse
 only after asking the whole frame: six of the eight `sized_rotate` calls in
-`examples/rbtree-augmented/rbtree_size_rotate_model.click` charged 379,897
+`examples/rbtree/rbtree-augmented/rbtree_size_rotate_model.click` charged 379,897
 to 397,816 units of requirement checking, and all eight now charge 2,210 to
 6,768.
 `call_separation_requirements_ignore_unrelated_owned_objects` (nightly)

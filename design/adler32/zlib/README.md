@@ -7,7 +7,7 @@ The real two-call C client proves incremental processing across every split
 under its nonnull call-pointer contracts. Checked result and reset
 correspondence connect these proofs to the Rust trial over the same length
 range. See the [scoped demonstration](../checksum-correspondence.md).
-The C adapter uses the shared [checksum specification](../../adler32-spec.click).
+The C adapter uses the shared [checksum specification](../adler32-spec.click).
 
 `adler32.c`, `zutil.h`, `zlib.h`, and `zconf.h` are byte-for-byte upstream files
 from revision `51b7f2abdade71cd9bb0e7a373ef2610ec6f9daf` of
@@ -18,7 +18,7 @@ a C library's.
 
 The locked selection uses target `x86_64-unknown-linux-gnu` in `userspace` mode, LP64 little-endian layout,
 unsigned plain char, C11, and GCC 13. `NO_DIVIDE` and `Z_SOLO` are undefined.
-The [project file](click.project.json) declares one C unit, `zlib`, for
+The [project file](../click.project.json) declares one C unit, `zlib`, for
 `adler32.c` and the `incremental.c` client, built with `-std=c11` as zlib's
 own build is. `zconf.h` takes `va_list` and `off_t` from Click's `<stdarg.h>`
 and `<sys/types.h>`. The lock records
@@ -32,20 +32,20 @@ From the repository root:
 
 ```sh
 cargo build --bins
-target/debug/click verify design/charon-trial/zlib/empty.click
-target/debug/click verify design/charon-trial/zlib/one-byte.click
-target/debug/click verify design/charon-trial/zlib/reset.click
-target/debug/click verify design/charon-trial/zlib/short-memory.click
-target/debug/click verify design/charon-trial/zlib/sixteen.click
-target/debug/click verify design/charon-trial/zlib/full-stream.click
+target/debug/click verify design/adler32/zlib/empty.click
+target/debug/click verify design/adler32/zlib/one-byte.click
+target/debug/click verify design/adler32/zlib/reset.click
+target/debug/click verify design/adler32/zlib/short-memory.click
+target/debug/click verify design/adler32/zlib/sixteen.click
+target/debug/click verify design/adler32/zlib/full-stream.click
 ```
 
 To reproduce preparation on a machine with the unit's compiler, regenerate
 the lock and prepared sources:
 
 ```sh
-target/debug/click import lock design/charon-trial/zlib
-target/debug/click verify design/charon-trial/zlib/empty.click
+target/debug/click import lock design/adler32/zlib
+target/debug/click verify design/adler32/zlib/empty.click
 ```
 
 The normal compiler-import regression copies the fixture to an unrelated

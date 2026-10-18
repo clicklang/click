@@ -502,7 +502,7 @@ fn profile_targets(path: &Path) -> Result<Vec<ProfileTarget>, String> {
             .into_iter()
             .map(|project| ProfileTarget::Sidecars {
                 project: project.path,
-                project_root: selection.project_root.clone(),
+                project_root: project.root,
                 sidecars: project.sidecars,
             })
             .collect(),

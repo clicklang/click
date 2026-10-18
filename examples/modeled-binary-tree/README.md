@@ -346,5 +346,5 @@ continues on verbatim Linux bodies in the `rb_*` mdtests, with
 [`mdtests/rb_replace_node.md`](../../mdtests/rb_replace_node.md), and
 [`mdtests/rb_ascending_walk_to_root.md`](../../mdtests/rb_ascending_walk_to_root.md)
 as the current front, and its pure library is
-[`examples/rbtree-model`](../rbtree-model/README.md). The plan for the rest is
+[`examples/rbtree/rbtree-model`](../rbtree/rbtree-model/README.md). The plan for the rest is
 [`issues/rbtree-example.md`](../../issues/rbtree-example.md).

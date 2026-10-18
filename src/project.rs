@@ -143,6 +143,16 @@ impl Project {
     /// The project whose file is in `directory` or its nearest ancestor that
     /// has one, if any.
     pub fn find(directory: &Path) -> Result<Option<Self>, String> {
+        match Self::root_of(directory)? {
+            Some(root) => Self::load(&root.join(FILE_NAME)).map(Some),
+            None => Ok(None),
+        }
+    }
+
+    /// The root of the project `directory` belongs to: the directory itself
+    /// or its nearest ancestor holding a project file, canonical. The file is
+    /// not read.
+    pub fn root_of(directory: &Path) -> Result<Option<PathBuf>, String> {
         let start = match fs::canonicalize(directory) {
             Ok(start) => start,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
@@ -156,7 +166,7 @@ impl Project {
         for candidate in start.ancestors() {
             let file = candidate.join(FILE_NAME);
             match fs::symlink_metadata(&file) {
-                Ok(_) => return Self::load(&file).map(Some),
+                Ok(_) => return Ok(Some(candidate.to_path_buf())),
                 Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
                 Err(error) => {
                     return Err(format!("failed to inspect `{}`: {error}", file.display()));
@@ -402,6 +412,7 @@ impl Project {
                 }
                 "rust" => {
                     let unit = self.rust_unit(name)?;
+                    create_parent(&unit.artifact)?;
                     let (lock, artifacts) = rust_import::prepare_unit(&unit)
                         .map_err(|error| format!("unit `{name}`: {error}"))?;
                     ("rust", lock, artifacts)

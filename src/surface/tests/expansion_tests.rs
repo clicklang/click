@@ -15674,7 +15674,7 @@ int spin(int n) {
 
 #[test]
 fn each_smart_have_in_a_loop_initialize_script_expands_on_its_own() {
-    // Reduced from the insert fixup loop in `examples/rbtree-model`. The
+    // Reduced from the insert fixup loop in `examples/rbtree/rbtree-model`. The
     // per-invariant entry planner was handed the whole phase script as every
     // invariant's proof, so the second `have` had no expansion at all and
     // audit reported `Grouped proof has no source tactic 4` for a sidecar

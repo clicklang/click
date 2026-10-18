@@ -30,8 +30,8 @@ in-order contents are the old context's with the node removed.
 These two contracts replace 16 per-case sidecars: the `rb_erase` wrappers and
 splice contracts for each exit and position, and the three older root and
 leaf increments. Each is subsumed by the general contracts, so they were
-retired ([design/proof-reuse.md](../../design/proof-reuse.md#r2-one-general-contract-per-function));
-their history is in [the rbtree issue](../../issues/rbtree-example.md) and
+retired ([design/proof-reuse.md](../../../design/proof-reuse.md#r2-one-general-contract-per-function));
+their history is in [the rbtree issue](../../../issues/rbtree-example.md) and
 in Git. Their mutation checks are nightly checks in `tests/examples.rs` that
 the general unlink refuses each of the 25 distinct C mutations. A mutation
 that deleted a statement is now a same-length replacement, so the proof's
@@ -45,7 +45,7 @@ that tag separates the old node from a nonempty sibling. Three mutation checks
 reject a missing update on each link. Every exit of the general unlink steps
 this contract to transfer the context.
 
-Chunk 11 of [the rbtree issue](../../issues/rbtree-example.md) (deletion
+Chunk 11 of [the rbtree issue](../../../issues/rbtree-example.md) (deletion
 at any position, all immediate and deeper-successor exits) is the general
 unlink above. Erase-color repair, chunks 12–13, follows.
 
@@ -61,8 +61,8 @@ the black-deficit invariant, so callers need no case selector.
 The proof was developed through 22 per-case increments, from a single
 first-iteration color flip to propagated red-sibling rotations. The general
 proof subsumes every one of them, so they were retired
-([design/proof-reuse.md](../../design/proof-reuse.md#r1-retire-superseded-increments-process));
-their history is in [the rbtree issue](../../issues/rbtree-example.md) and in
+([design/proof-reuse.md](../../../design/proof-reuse.md#r1-retire-superseded-increments-process));
+their history is in [the rbtree issue](../../../issues/rbtree-example.md) and in
 Git. Each of the 39 distinct C mutations their tests pinned (a missing or
 wrong link, parent, color, or cursor write) is now a nightly check in
 `tests/examples.rs` that the general proof refuses.
@@ -79,7 +79,7 @@ two mutations reject a lost color bit and an incorrect parent.
 
 `rbtree_erase_leaf_wrapper.click` is the leaf-only `__rb_erase_augmented`
 and `rb_erase` contracts the general ones subsume. It stays because
-`examples/rbtree-augmented/rbtree_erase_leaf.click` imports its leaf unlink,
+`examples/rbtree/rbtree-augmented/rbtree_erase_leaf.click` imports its leaf unlink,
 whose outputs (an empty hole and the remaining context) that proof consumes.
 
 `rbtree_erase_callbacks.click` checks the shared dummy callbacks and their
@@ -98,15 +98,15 @@ separated from fields the C may write. Metadata-carrying callbacks remain
 chunk 14.
 
 The input is extracted from `include/linux/rbtree_augmented.h` inside
-[`input-closure.tar.gz`](../../integrations/linux-rbtree/input-closure.tar.gz).
+[`input-closure.tar.gz`](../../../integrations/linux-rbtree/input-closure.tar.gz).
 The `rb_augment_callbacks` declaration and `__rb_erase_augmented` definition,
 including comments, are verbatim. The header shim reuses the insertion
 example's supported rbtree types and macros and spells the pinned
 `__rb_parent` mask. This is not yet the complete pinned translation-unit
 integration planned in chunks 21–24. The source is GPL-2.0-or-later.
 
-The full erase project runs in the nightly example suite. Run `click verify examples/rbtree-erase` and
-`click verify examples/rbtree-model`. The latter checks the imported pure
+The full erase project runs in the nightly example suite. Run `click verify examples/rbtree/rbtree-erase` and
+`click verify examples/rbtree/rbtree-model`. The latter checks the imported pure
 root-deletion and successor-splice theorems independently. The pinned-source
 checks run in the ordinary gate; the mutation checks and the re-verification
 of the general unlink's expanded final closers run nightly.

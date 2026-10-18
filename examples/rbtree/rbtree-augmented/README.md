@@ -3,7 +3,7 @@
 These sidecars connect the public augmented entry points to the separately
 verified insertion, splice, and color-repair contracts. The wrapper definitions
 are extracted verbatim from Linux v6.8.12 in
-[`input-closure.tar.gz`](../../integrations/linux-rbtree/input-closure.tar.gz):
+[`input-closure.tar.gz`](../../../integrations/linux-rbtree/input-closure.tar.gz):
 `__rb_insert_augmented` and `__rb_erase_color` come from `lib/rbtree.c`;
 `rb_insert_augmented` and `rb_erase_augmented` come from
 `include/linux/rbtree_augmented.h`. The insertion implementation is the
@@ -35,7 +35,7 @@ augmented entry points remains unfinished.
 The C frontend checks the type query, static assertion, and member offset used
 by Linux `container_of`; unsigned pointer subtraction preserves the offset and
 GNU `void*` arithmetic uses byte steps. The unchanged macro's first-member
-address recovery is verified in [`c_container_of.md`](../../mdtests/c_container_of.md).
+address recovery is verified in [`c_container_of.md`](../../../mdtests/c_container_of.md).
 
 `rbtree_size_copy.click` verifies the unchanged generated copy callback in
 `rbtree_size_copy.c`. Its `size_metadata` resource ties the owned C size field to
@@ -147,14 +147,14 @@ entry-point cases are described below; general ancestor and writable erase
 integration remain unfinished.
 
 This is an entry-point integration increment of
-[chunk 14](../../issues/rbtree-example.md#augmented), not the completed
+[chunk 14](../../../issues/rbtree-example.md#augmented), not the completed
 augmentation proof. The general structural entry-point proofs still import
 callback contracts without writable footprints. The concrete sized insertion
 cases below connect verified writable callbacks to selected paths. Each
 imported module is verified separately; importing its contract does not rerun
 its proof.
 
-Run `click verify examples/rbtree-augmented` to check these entry points.
+Run `click verify examples/rbtree/rbtree-augmented` to check these entry points.
 
 `rbtree_size_metadata.click` separates a checked sized subtree into ordinary
 `rb_at` ownership and `sized_metadata_at` ownership of the cached size cells.

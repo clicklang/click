@@ -102,27 +102,47 @@ fn rust_release_archive_installs_and_verifies() {
         fs::read(basic.join("click.project.lock.json")).unwrap(),
         lock
     );
+    // The Adler project also holds the zlib C unit, which needs GCC to lock;
+    // this check is about the Rust frontend, so it locks the Rust units alone
+    // and compares their entries with the committed ones.
     let adler = t.path().join("adler-proof");
-    examples::committed_project(&adler, "design/charon-trial/adler2");
+    examples::committed_project(&adler, "design/adler32");
+    let mut config: serde_json::Value =
+        serde_json::from_slice(&fs::read(adler.join("click.project.json")).unwrap()).unwrap();
+    config["units"]
+        .as_object_mut()
+        .unwrap()
+        .retain(|_, unit| unit["language"] == "rust");
+    fs::write(
+        adler.join("click.project.json"),
+        serde_json::to_vec_pretty(&config).unwrap(),
+    )
+    .unwrap();
     success(cli(&binary, &relocated, &adler, &["import", "lock"]));
     success(cli(
         &binary,
         &relocated,
         &adler,
-        &["verify", "restoration.click"],
+        &["verify", "adler2/restoration.click"],
     ));
-    assert_eq!(
-        fs::read(adler.join("click.project.lock.json")).unwrap(),
-        include_bytes!("../design/charon-trial/adler2/click.project.lock.json")
-    );
+    let fresh: serde_json::Value =
+        serde_json::from_slice(&fs::read(adler.join("click.project.lock.json")).unwrap()).unwrap();
+    let mut committed: serde_json::Value =
+        serde_json::from_slice(include_bytes!("../design/adler32/click.project.lock.json"))
+            .unwrap();
+    committed["units"]
+        .as_object_mut()
+        .unwrap()
+        .retain(|_, unit| unit["language"] == "rust");
+    assert_eq!(fresh, committed);
     assert_eq!(
         fs::read(basic.join("borrow.rs")).unwrap(),
         include_bytes!("../examples/basic-rust/borrow.rs")
     );
-    let trial = Path::new(env!("CARGO_MANIFEST_DIR")).join("design/charon-trial/adler2");
+    let trial = Path::new(env!("CARGO_MANIFEST_DIR")).join("design/adler32/adler2");
     for file in ["src/lib.rs", "src/algo.rs"] {
         assert_eq!(
-            fs::read(adler.join(file)).unwrap(),
+            fs::read(adler.join("adler2").join(file)).unwrap(),
             fs::read(trial.join(file)).unwrap()
         );
     }
@@ -150,9 +170,9 @@ fn rust_release_archive_installs_and_verifies() {
         &binary,
         &relocated,
         &adler,
-        &["verify", "restoration.click"],
+        &["verify", "adler2/restoration.click"],
     ));
-    let trial = demo.join("design/charon-trial");
+    let trial = demo.join("design/adler32");
     for sidecar in [
         "zlib/canonical-demo.click",
         "zlib/incremental-demo.click",

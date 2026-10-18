@@ -8,7 +8,7 @@ about `c.model` is checked against the cell at it.
 
 What does not work yet is a pointer the two arms know differently, such as a
 child link that is null in one arm and a node in the other: the state the
-arms join in has no one pointer value to read. `examples/rbtree-insert` folds
+arms join in has no one pointer value to read. `examples/rbtree/rbtree-insert` folds
 the parent inside each arm and names the parent instead.
 
 ```c filename=proof_match_ensuring_names_a_resource_through_a_pointer_field.c
