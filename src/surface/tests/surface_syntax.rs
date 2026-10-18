@@ -5328,6 +5328,38 @@ trait shapes::Scale<i32> { fn scale(&self, x: i32) -> i32 { requires 0 <= x; ens
     }
 }
 
+// A generic crate trait's `function`s are each instance's object fields, at
+// the instance's types: `Bag<i32>`'s object is its own sealed resource.
+#[test]
+fn a_generic_rust_trait_object_is_each_instances_own() {
+    let source = "verifying \"shapes.rs\";
+trait bags::Bag<T> { function last(self) -> T; fn insert(&mut self, x: T) { ensures last(self) == x; } }";
+    let trait_name = crate::languages::rust::names::qualified_name(["bags", "Bag"]);
+    let layouts = parser::ProgramLayouts {
+        rust_trait_instances: [(
+            trait_name,
+            [vec!["i32".to_string()], vec!["u8".to_string()]].into(),
+        )]
+        .into(),
+        ..Default::default()
+    };
+    let file = parser::parse_with_layouts_and_aggregate_objects(source, layouts)
+        .expect("the generic block with object state parses");
+    let objects = file
+        .resource_definitions()
+        .iter()
+        .filter_map(|definition| {
+            crate::languages::rust::names::display_rust_names(definition.name())
+                .strip_suffix("::object")
+                .map(str::to_string)
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(objects, ["bags::Bag<i32>", "bags::Bag<u8>"]);
+    for definition in file.resource_definitions() {
+        assert!(definition.is_sealed());
+    }
+}
+
 /// A crate trait's `function`s are its object's fields: the object is a
 /// field-bearing abstract resource, a `&self` method's interface holds it and
 /// reads `size(self)` as its field, an implementation's method is stated on

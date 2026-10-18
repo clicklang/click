@@ -25,6 +25,9 @@ pub(super) enum ShadowRestore {
         binding: (Variable, String),
         target: Option<ResourceClause>,
     },
+    /// A contract value binder a proof binder of the same spelling hid, so
+    /// `name.parameter` reads the newer binding until its block ends.
+    ValueBinder { name: String, binder: ValueBinder },
 }
 
 /// A kind of lexical binding the parser tracks by name.
@@ -226,15 +229,25 @@ impl NameTable {
                     }
                     self.resource_bindings.insert(name, binding);
                 }
+                ShadowRestore::ValueBinder { name, binder } => {
+                    self.value_binders.insert(name, binder);
+                }
             }
         }
     }
 
-    /// Hides the fact, and for a value binder the resource instance, that
-    /// `name` names, until the block that binds it ends. `intro() as` uses
+    /// Hides the fact, the contract value binder, and for a value binder the
+    /// resource instance, that `name` names, until the block that binds it
+    /// ends. `intro() as` uses
     /// this directly: an introduced binder may hide a C parameter, which
     /// `outer.name` still reaches.
     pub(super) fn hide_for_proof_binder(&mut self, name: &str, resource: bool) {
+        if let Some(binder) = self.value_binders.remove(name) {
+            self.fact_name_restores.push(ShadowRestore::ValueBinder {
+                name: name.to_string(),
+                binder,
+            });
+        }
         if let Some(previous) = self.fact_names.remove(name) {
             self.fact_name_restores.push(ShadowRestore::Fact {
                 name: name.to_string(),

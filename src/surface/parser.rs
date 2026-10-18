@@ -2,6 +2,7 @@ mod cpp_class_objects;
 mod cpp_model;
 mod cpp_syntax;
 mod name_table;
+mod rust_generic_traits;
 mod rust_literals;
 use super::names;
 mod rust_syntax;
@@ -797,18 +798,6 @@ struct Parser {
     /// trait bounds, `T` of `<T: traits::Shape>`: a reference to one is a
     /// reference to a value of a type the function does not know.
     rust_trait_type_parameters: BTreeSet<String>,
-    /// Each generic crate trait's block, `trait traits::Scale<T> { ... }`,
-    /// by the trait's importer name: its type parameters and its tokens.
-    rust_generic_traits: BTreeMap<String, (Vec<String>, std::ops::Range<usize>)>,
-    /// Each instance block of a generic crate trait, `trait
-    /// traits::Scale<i32> { ... }`, by the trait's importer name and its type
-    /// arguments: its tokens.
-    rust_instance_traits: BTreeMap<(String, Vec<String>), std::ops::Range<usize>>,
-    /// The instances of each generic crate trait the import uses, by the
-    /// trait's importer name.
-    rust_trait_instances: BTreeMap<String, BTreeSet<Vec<String>>>,
-    /// Whether the trait block being read is an instance the parser built.
-    rust_instantiating: bool,
     /// Each crate trait method implementation read, by name, with the
     /// interface it inherits.
     rust_trait_implementations: Vec<(String, String)>,
@@ -1153,6 +1142,7 @@ impl Parser {
             BTreeMap::new(),
             BTreeMap::new(),
             None,
+            &BTreeMap::new(),
         )
     }
 
@@ -1170,6 +1160,7 @@ impl Parser {
             layouts.aggregate_array_objects,
             layouts.global_array_shapes,
             container,
+            &layouts.rust_trait_instances,
         )
         .map_err(|error| error.with_kind(ClickErrorKind::Syntax))?;
         parser.c_object_names_by_function = layouts.c_object_names;
@@ -1181,7 +1172,6 @@ impl Parser {
         parser.qualified_functions = layouts.qualified_functions;
         parser.local_struct_pointers_by_function = layouts.local_struct_pointers;
         parser.closure_captures = layouts.closure_captures;
-        parser.rust_trait_instances = layouts.rust_trait_instances;
         parser.plain_char = layouts.plain_char;
         parser.int64_t_rank = layouts.int64_t_rank.unwrap_or(LongRank::Long);
         parser.c_typedefs = layouts.c_typedefs;
@@ -1218,6 +1208,7 @@ impl Parser {
         aggregate_array_objects_by_function: BTreeMap<String, BTreeSet<String>>,
         global_array_shapes_by_function: BTreeMap<String, BTreeMap<String, GlobalArrayShape>>,
         container: Option<&crate::source::SourceContainer>,
+        rust_trait_instances: &BTreeMap<String, BTreeSet<Vec<String>>>,
     ) -> Result<Self, ClickError> {
         let (tokens, positions) = tokenize(source, container)?;
         let (tokens, positions) = rewrite_model_accessors(tokens, positions, &struct_layouts);
@@ -1265,7 +1256,13 @@ impl Parser {
         }
         // A Rust sidecar's trait object state is rewritten into contracts
         // over abstract resources before anything is parsed.
+        // Its generic crate traits are written out at each instance first.
         let (tokens, positions, rust_object_traits) = if language == SourceLanguage::Rust {
+            let (tokens, positions) = rust_generic_traits::expand_generic_traits(
+                tokens,
+                positions,
+                rust_trait_instances,
+            )?;
             rust_trait_objects::rewrite_trait_objects(tokens, positions)?
         } else {
             (tokens, positions, BTreeSet::new())
@@ -1310,10 +1307,6 @@ impl Parser {
             rust_impl_trait: None,
             rust_trait_interface: None,
             rust_trait_type_parameters: BTreeSet::new(),
-            rust_generic_traits: BTreeMap::new(),
-            rust_instance_traits: BTreeMap::new(),
-            rust_trait_instances: BTreeMap::new(),
-            rust_instantiating: false,
             rust_trait_implementations: Vec::new(),
             cpp_dispatches: Vec::new(),
             cpp_receiver_calls: BTreeMap::new(),
@@ -1684,9 +1677,6 @@ impl Parser {
                     definition.name
                 )));
             }
-        }
-        if self.language == SourceLanguage::Rust {
-            self.instantiate_rust_generic_traits(&mut function_blocks)?;
         }
         // A crate trait method's implementation, or a C++ override, inherits
         // its interface, which the sidecar may declare before or after it: a
@@ -7836,6 +7826,14 @@ impl Parser {
     /// the program's variable, so a proof binder of its name would change
     /// what the proof's propositions mean without changing what runs.
     fn bind_proof_name(&mut self, name: &str, resource: bool) -> Result<(), ClickError> {
+        if resource
+            && self.names.is_c_variable(name)
+            && self.names.resource_bindings.contains_key(name)
+        {
+            return Err(self.error(format!(
+                "`{name}` names both a C variable and the contract's resource instance `{name}`; a proof binder cannot hide the C variable, so the instance cannot be bound again under this name; rename the instance in the contract"
+            )));
+        }
         if self.names.is_c_variable(name) {
             return Err(self.error(format!(
                 "`{name}` names a C variable here; a proof binder cannot hide it, since execution keeps reading the program's `{name}`; choose another name"
@@ -9168,11 +9166,14 @@ impl Parser {
                         _ => {}
                     }
                 }
+                // `unfold(f(args))` applies `f` even where a resource
+                // instance shares its name; the instance is unfolded bare.
                 let tactic = if quantified
                     || self.peek_ident() == Some("authority")
-                    || self
+                    || (self
                         .peek_ident()
                         .is_some_and(|name| self.names.resource_targets.contains_key(name))
+                        && self.peek_next() != Some(&Token::LParen))
                 {
                     ProofTactic::UnfoldResource(self.parse_owned_resource_target()?)
                 } else if matches!(self.peek(), Some(Token::Ident(_)))

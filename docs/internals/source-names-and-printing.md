@@ -67,8 +67,9 @@ expansion still cites the label the proof wrote.
 
 Proof binders in the parser go through `bind_proof_name`. The newest binding
 of a name wins in every reading position: a value binder hides a `have` fact
-and a resource instance of the same spelling until its block ends, and a
-resource binder hides a fact. The hidden bindings are restored from the same
+and a resource instance of the same spelling until its block ends, a
+resource binder hides a fact, and any proof binder hides a contract value
+binder, so `s.n` reads the newer `s`. The hidden bindings are restored from the same
 log as fact names. In an execution proof, a proof binder may not take a C
 parameter's or C object's name; `intro()` binders keep their `outer.`
 shadowing. A step or call result is stored in the proof's local values by

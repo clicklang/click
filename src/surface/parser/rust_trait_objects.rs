@@ -129,13 +129,56 @@ fn path_at(source: &[Spanned], start: usize) -> Option<(Vec<String>, usize)> {
         segments.push(next.clone());
         index += 2;
     }
+    // A generic crate trait's instance, `traits::Scale<i32>`: its scalar
+    // type arguments join its last segment.
+    if source.get(index).map(|(token, _)| token) == Some(&Token::LessThan)
+        && let Some(close) = matching(source, index)
+        && close > index + 1
+        && source[index + 1..close]
+            .iter()
+            .enumerate()
+            .all(|(at, (token, _))| match (at % 2, token) {
+                (0, Token::Ident(argument)) => {
+                    super::rust_generic_traits::INSTANCE_SCALARS.contains(&argument.as_str())
+                }
+                (1, Token::Comma) => true,
+                _ => false,
+            })
+    {
+        let arguments = source[index + 1..close]
+            .iter()
+            .filter_map(|(token, _)| match token {
+                Token::Ident(argument) => Some(argument.as_str()),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        let last = segments.last_mut().expect("a path has a segment");
+        *last = format!("{last}<{}>", arguments.join(","));
+        index = close + 1;
+    }
     Some((segments, index))
 }
 
+/// The importer name of a path, its instance's type arguments included.
 fn path_name(segments: &[String]) -> String {
-    crate::languages::rust::names::path_name(
-        &segments.iter().map(String::as_str).collect::<Vec<_>>(),
-    )
+    let (last, arguments) = match segments.last().and_then(|last| last.split_once('<')) {
+        Some((name, arguments)) => (name, arguments.trim_end_matches('>')),
+        None => {
+            return crate::languages::rust::names::path_name(
+                &segments.iter().map(String::as_str).collect::<Vec<_>>(),
+            );
+        }
+    };
+    let mut plain = segments[..segments.len() - 1]
+        .iter()
+        .map(String::as_str)
+        .collect::<Vec<_>>();
+    plain.push(last);
+    let mut name = crate::languages::rust::names::path_name(&plain);
+    for argument in arguments.split(',') {
+        crate::languages::rust::names::push_type_argument(&mut name, argument);
+    }
+    name
 }
 
 /// Splits `body` into its clauses at the semicolons outside brackets,
