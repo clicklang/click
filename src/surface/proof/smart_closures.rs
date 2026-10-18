@@ -3677,6 +3677,32 @@ impl<'a> Proof<'a> {
                 ),
             },
         };
+        // The written goal retains nominal field places that the imported
+        // scalar execution expression can spell only as a lowered index.
+        // Cite its own conditional guards before reconstructing a premise
+        // from execution syntax, so printing preserves that field's type.
+        let written_guards = match self.surface_goal() {
+            Some(ClickProposition::Comparison { left, right, .. }) => [left, right]
+                .into_iter()
+                .filter_map(|expression| match expression {
+                    ContractExpression::If { condition, .. } => Some(condition.as_ref().clone()),
+                    _ => None,
+                })
+                .flat_map(|condition| {
+                    [
+                        condition.clone(),
+                        ClickProposition::Not(Box::new(condition)),
+                    ]
+                })
+                .filter_map(|surface| {
+                    let lowered = self
+                        .lower_surface_proposition_direct(&surface, "conditional goal guard")
+                        .ok()?;
+                    Some((lowered, surface))
+                })
+                .collect::<Vec<_>>(),
+            _ => Vec::new(),
+        };
         let mut premises = Vec::new();
         let mut selected = BTreeSet::new();
         for condition in guards {
@@ -3689,8 +3715,13 @@ impl<'a> Proof<'a> {
                 {
                     continue;
                 }
-                let surface = self
-                    .available_surface_fact(surfaces, anchor, &fact)
+                let surface = written_guards
+                    .iter()
+                    .find(|(lowered, _)| {
+                        *lowered == fact || condition_polarity_equivalent(lowered, &fact)
+                    })
+                    .map(|(_, surface)| surface.clone())
+                    .or_else(|| self.available_surface_fact(surfaces, anchor, &fact))
                     .or_else(|| {
                         condition_polarity_forms(&fact)
                             .iter()
