@@ -85,7 +85,9 @@ Proof binders in the parser go through `bind_proof_name`. The newest binding
 of a name wins in every reading position: a value binder hides a `have` fact
 and a resource instance of the same spelling until its block ends, a
 resource binder hides a fact, and any proof binder hides a contract value
-binder, so `s.n` reads the newer `s`. The hidden bindings are restored from the same
+binder, so `s.n` reads the newer `s`. A `forall` or `exists` variable hides the same
+bindings and the bare field of an enclosing resource body until its body
+ends; unlike a proof binder it may also hide a C variable. The hidden bindings are restored from the same
 log as fact names. In an execution proof, a proof binder may not take a C
 parameter's or C object's name; `intro()` binders keep their `outer.`
 shadowing. A step or call result is stored in the proof's local values by

@@ -94,7 +94,11 @@ arm an enclosing proof `match` on the parent's field selects
 (`mdtests/a_proof_match_selects_the_resource_of_a_slot_its_arms_differ_on.md`).
 A proof binder hides a contract value binder of its name, as it hides a fact
 or a resource instance
-(`mdtests/a_proof_binder_hides_a_value_binder_of_its_name.md`).
+(`mdtests/a_proof_binder_hides_a_value_binder_of_its_name.md`). A quantified
+variable now hides them too, and the bare field of an enclosing resource
+body. Before, `forall (s: int32) { s.n == 5 }` read the value binder `s`'s
+parameter and verified
+(`mdtests/a_quantified_variable_hides_a_value_binder_of_its_name.md`).
 
 Two names that read as two declarations are refused where they are declared.
 A value binder named like a C variable made `owns s.n` read the variable and
