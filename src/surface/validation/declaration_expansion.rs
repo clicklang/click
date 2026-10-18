@@ -21,6 +21,9 @@ struct DeclaredResourceInfo {
     /// resources. A child may name another declared resource, so the slot's
     /// family is a property of this definition rather than of the proof.
     child_slots: std::sync::Arc<BTreeMap<String, Option<String>>>,
+    /// The field this resource's body matches on, and each arm's child slots
+    /// with their resources ([`CompositeResourceBody::arm_child_slot_resources`]).
+    arm_child_slots: std::sync::Arc<Option<(String, BTreeMap<String, BTreeMap<String, String>>)>>,
 }
 
 /// Declared resources plus what the expansion has learned about the resource
@@ -41,6 +44,9 @@ struct DeclaredResourceScope {
     /// The previous value of each `families` entry changed since the
     /// declaration began, so an arm's changes can be undone.
     family_log: std::cell::RefCell<Vec<(Variable, Option<InstanceFamily>)>>,
+    /// The arms enclosing proof `match`es select, innermost last: the
+    /// instance, its field and the variant.
+    selected_arms: std::cell::RefCell<Vec<(Variable, String, String)>>,
     unowned_resource_parameters: std::cell::RefCell<BTreeMap<Variable, String>>,
     /// The enclosing C function's parameters of signed character pointer
     /// type. A resource argument naming one, passed to `uint8` bytes, is
@@ -158,6 +164,21 @@ impl DeclaredResourceScope {
 
     fn record_child(&self, identity: Variable, name: &str) {
         self.set_family(identity, Some(InstanceFamily::Child(name.to_string())));
+    }
+
+    /// The resource slot `slot` of `parent`'s instance `identity` owns in
+    /// the arm an enclosing proof `match` on its matched field selects.
+    fn selected_arm_slot(&self, identity: Variable, parent: &str, slot: &str) -> Option<String> {
+        let info = self.get(parent)?;
+        let (field, arms) = info.arm_child_slots.as_ref().as_ref()?;
+        let selected = self.selected_arms.borrow();
+        let (_, _, variant) = selected
+            .iter()
+            .rev()
+            .find(|(selected, selected_field, _)| {
+                *selected == identity && selected_field == field
+            })?;
+        arms.get(variant)?.get(slot).cloned()
     }
 
     /// Begins alternative arms: each arm ([`Self::arm`]) starts from the
@@ -882,6 +903,11 @@ fn expand_declared_resource_clauses_with_rules(
                             .map(CompositeResourceBody::child_slot_resources)
                             .unwrap_or_default(),
                     ),
+                    arm_child_slots: std::sync::Arc::new(
+                        definition
+                            .composite_body()
+                            .and_then(CompositeResourceBody::arm_child_slot_resources),
+                    ),
                 },
             ))
         })
@@ -898,6 +924,7 @@ fn expand_declared_resource_clauses_with_rules(
             parameter_types: vec![C0Type::Int32Pointer, C0Type::Int32],
             kind: ResourceKind::Token,
             child_slots: Default::default(),
+            arm_child_slots: Default::default(),
         });
     resource_definitions.insert(
         "mutex_guard".into(),
@@ -911,6 +938,7 @@ fn expand_declared_resource_clauses_with_rules(
             parameter_types: vec![C0Type::VoidPointer],
             kind: ResourceKind::Token,
             child_slots: Default::default(),
+            arm_child_slots: Default::default(),
         },
     );
     resource_definitions.insert(
@@ -925,6 +953,7 @@ fn expand_declared_resource_clauses_with_rules(
             parameter_types: vec![C0Type::VoidPointer],
             kind: ResourceKind::Token,
             child_slots: Default::default(),
+            arm_child_slots: Default::default(),
         },
     );
     resource_definitions.insert(
@@ -939,6 +968,7 @@ fn expand_declared_resource_clauses_with_rules(
             parameter_types: vec![C0Type::VoidPointer],
             kind: ResourceKind::Token,
             child_slots: Default::default(),
+            arm_child_slots: Default::default(),
         },
     );
     for side in ["publisher", "subscriber"] {
@@ -954,6 +984,7 @@ fn expand_declared_resource_clauses_with_rules(
                 parameter_types: vec![C0Type::VoidPointer],
                 kind: ResourceKind::Token,
                 child_slots: Default::default(),
+                arm_child_slots: Default::default(),
             },
         );
     }
@@ -969,6 +1000,7 @@ fn expand_declared_resource_clauses_with_rules(
             parameter_types: Vec::new(),
             kind: ResourceKind::Token,
             child_slots: Default::default(),
+            arm_child_slots: Default::default(),
         },
     );
     // The standard library's own expansion reads only its own
@@ -1017,6 +1049,7 @@ fn expand_declared_resource_clauses_with_rules(
         definitions: resource_definitions,
         families: Default::default(),
         family_log: Default::default(),
+        selected_arms: Default::default(),
         unowned_resource_parameters: Default::default(),
         character_parameters: Default::default(),
         constructors,
@@ -2444,6 +2477,14 @@ fn expand_declared_resource_tactic_with_nested_proofs(
             let scrutinee =
                 expand_declared_resource_expression(proof_match.scrutinee, resource_definitions)?;
             let scrutinee_type = constructors.scrutinee_type(&scrutinee);
+            // A match on an instance's own field selects one arm of its
+            // resource's matched body in each proof arm.
+            let selected_field = match &scrutinee {
+                ContractExpression::ResourceField(access) if access.children.is_empty() => {
+                    Some((access.identity, access.field.clone()))
+                }
+                _ => None,
+            };
             let ensuring =
                 expand_declared_join_interface(proof_match.ensuring, resource_definitions)?;
             let alternatives = resource_definitions.begin_alternatives();
@@ -2452,11 +2493,22 @@ fn expand_declared_resource_tactic_with_nested_proofs(
                 .into_iter()
                 .map(|arm| {
                     let types = constructors.proof_arm_binding_types(scrutinee_type.as_ref(), &arm);
+                    if let Some((identity, field)) = &selected_field {
+                        resource_definitions.selected_arms.borrow_mut().push((
+                            *identity,
+                            field.clone(),
+                            arm.variant.clone(),
+                        ));
+                    }
                     let tactics = constructors.with_bindings(&arm.bindings, types, || {
                         resource_definitions.arm(&alternatives, || {
                             expand_declared_resource_script(arm.tactics, resource_definitions)
                         })
-                    })?;
+                    });
+                    if selected_field.is_some() {
+                        resource_definitions.selected_arms.borrow_mut().pop();
+                    }
+                    let tactics = tactics?;
                     Ok(ProofInductionArm {
                         type_name: arm.type_name,
                         variant: arm.variant,
@@ -2701,9 +2753,15 @@ fn expand_declared_resource_clause(
                             "resource `{parent}` has no child slot or field `{slot}`"
                         )));
                     };
-                    let Some(declared) = declared else {
+                    // A slot whose resource differs between the parent's
+                    // arms owns the one in the arm an enclosing proof
+                    // `match` selects.
+                    let Some(declared) = declared.clone().or_else(|| {
+                        resource_definitions.selected_arm_slot(binding.identity, &parent, slot)
+                    }) else {
                         continue;
                     };
+                    let declared = &declared;
                     match resource_definitions.instance_resource(*identity) {
                         // An introduced child takes the slot's resource.
                         None => resource_definitions.record_child(*identity, declared),
