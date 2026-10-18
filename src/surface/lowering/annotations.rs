@@ -6825,6 +6825,29 @@ impl AnnotationLowerer<'_> {
                     },
                 })
             }
+            ContractExpression::If {
+                condition,
+                then_branch,
+                else_branch,
+            } => {
+                let condition =
+                    self.click_proposition_to_spec_proposition(condition, environment)?;
+                let then_branch =
+                    self.lower_contract_algebraic_to_spec(then_branch, environment)?;
+                let else_branch =
+                    self.lower_contract_algebraic_to_spec(else_branch, environment)?;
+                if then_branch.algebraic_type != else_branch.algebraic_type {
+                    return Err("an algebraic `if` has branches of two types".to_string());
+                }
+                Ok(SpecAlgebraicExpression {
+                    algebraic_type: then_branch.algebraic_type.clone(),
+                    node: SpecAlgebraicExpressionNode::If {
+                        condition: Box::new(condition),
+                        then_branch: Box::new(then_branch),
+                        else_branch: Box::new(else_branch),
+                    },
+                })
+            }
             ContractExpression::Old(inner) => {
                 let old_environment =
                     environment.old_state(&self.entry_values, self.entry_state.memory())?;

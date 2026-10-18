@@ -4,21 +4,36 @@
     "trial": {
       "language": "rust",
       "lock": {
-        "artifact": "f66178b7e926c6a6a32abc25fb70d0060cfb92e0fee2115860fbfdc36ac3b59a",
-        "config": "ff3210eea8b3b517cfb67afce5a0fb45f46b700f3a0bb5ed9127c3c1b767a245",
+        "envelope": 1,
         "frontend": {
-          "click_version": "0.1.0",
-          "compiler_commit": "923c95cdf5ba65cea505aa2ea829f578e1506ed8",
-          "extractor_revision": "5d6b812e5f77dbf3d7f66c21b9b57091f0e084cb",
-          "extractor_version": "0.1.279",
-          "profile": "38b817cc5760845d2e37b8f72a333f6d36a3ccdbfbf19e8c22da436e67a79ab1"
+          "identity": "7c2e994c506684f2bc8c86d9798bf9cb35c42693c51c3dd401139ef6618ae66c",
+          "name": "charon"
         },
-        "identity": "b6e029695a1ab0823dcc643e21a4c6840d7c99b0728c3be48836edfcea0cf769",
-        "schema": 9,
-        "source": "b9efc92fa672a9b0960330b4fbcad0c7d9d63b457121a716b22fdf2ed7631106",
-        "source_files": {
-          "trial.rs": "b9efc92fa672a9b0960330b4fbcad0c7d9d63b457121a716b22fdf2ed7631106"
-        }
+        "rust": {
+          "frontend": {
+            "click_version": "0.1.0",
+            "compiler_commit": "923c95cdf5ba65cea505aa2ea829f578e1506ed8",
+            "extractor_revision": "5d6b812e5f77dbf3d7f66c21b9b57091f0e084cb",
+            "extractor_version": "0.1.279",
+            "profile": "38b817cc5760845d2e37b8f72a333f6d36a3ccdbfbf19e8c22da436e67a79ab1"
+          },
+          "schema": 9,
+          "source": "b9efc92fa672a9b0960330b4fbcad0c7d9d63b457121a716b22fdf2ed7631106"
+        },
+        "sources": {
+          "trial.rs": {
+            "artifact": {
+              "bytes": 87193,
+              "path": ".click/trial/trial.rs.ullbc",
+              "sha256": "f66178b7e926c6a6a32abc25fb70d0060cfb92e0fee2115860fbfdc36ac3b59a"
+            },
+            "identity": "419f30590953fdee76abbb68c2eff08fae69ce08bab82cf4c37ef3bc47423299",
+            "inputs": {
+              "trial.rs": "b9efc92fa672a9b0960330b4fbcad0c7d9d63b457121a716b22fdf2ed7631106"
+            }
+          }
+        },
+        "unit": "ff3210eea8b3b517cfb67afce5a0fb45f46b700f3a0bb5ed9127c3c1b767a245"
       }
     }
   }

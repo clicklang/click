@@ -15,7 +15,7 @@ use click::surface::{
     expand_project_tactic_source_at, project_smart_tactic_source_sites,
     project_tactic_source_position, verify_program_prepared_project,
 };
-use cpp_description::{load_import, lock_entry_mut, refresh_import};
+use cpp_description::{load_import, lock_section_mut, lock_source_mut, refresh_import};
 #[path = "support/pinned_clang.rs"]
 mod pinned_clang;
 use pinned_clang::{output, pinned_clang, sha256};
@@ -1399,8 +1399,8 @@ fn pinned_byte_template_metadata_and_span_authority_are_checked() {
         }
         let bytes = serde_json::to_vec_pretty(&forged).unwrap();
         let mut forged_lock = lock.clone();
-        lock_entry_mut(&mut forged_lock)["artifact_sha256"] = sha256(&bytes).into();
-        lock_entry_mut(&mut forged_lock)["artifact_bytes"] = bytes.len().into();
+        lock_source_mut(&mut forged_lock)["artifact"]["sha256"] = sha256(&bytes).into();
+        lock_source_mut(&mut forged_lock)["artifact"]["bytes"] = bytes.len().into();
         fs::write(&artifact_path, bytes).unwrap();
         fs::write(&lock_path, serde_json::to_vec_pretty(&forged_lock).unwrap()).unwrap();
         assert!(
@@ -4256,8 +4256,8 @@ fn pinned_std_byte_pointer_artifacts_reject_forged_declarations_offline() {
         }
         let bytes = serde_json::to_vec_pretty(&forged).unwrap();
         let mut forged_lock = lock.clone();
-        lock_entry_mut(&mut forged_lock)["artifact_sha256"] = sha256(&bytes).into();
-        lock_entry_mut(&mut forged_lock)["artifact_bytes"] = bytes.len().into();
+        lock_source_mut(&mut forged_lock)["artifact"]["sha256"] = sha256(&bytes).into();
+        lock_source_mut(&mut forged_lock)["artifact"]["bytes"] = bytes.len().into();
         fs::write(&artifact_path, bytes).unwrap();
         fs::write(&lock_path, serde_json::to_vec_pretty(&forged_lock).unwrap()).unwrap();
         assert!(
@@ -4272,7 +4272,7 @@ fn pinned_std_byte_pointer_artifacts_reject_forged_declarations_offline() {
     header_bytes.extend_from_slice(b"\n// substituted standard header\n");
     fs::write(root.join(header), &header_bytes).unwrap();
     let mut forged_lock = lock;
-    lock_entry_mut(&mut forged_lock)["dependencies"][header] = sha256(&header_bytes).into();
+    lock_section_mut(&mut forged_lock)["dependencies"][header] = sha256(&header_bytes).into();
     fs::write(
         &artifact_path,
         serde_json::to_vec_pretty(&artifact).unwrap(),
@@ -4281,8 +4281,8 @@ fn pinned_std_byte_pointer_artifacts_reject_forged_declarations_offline() {
     // Preserve the original artifact bytes hashed by the lock, rather than
     // relying on JSON formatting to round-trip byte-for-byte.
     let restored = fs::read(&artifact_path).unwrap();
-    lock_entry_mut(&mut forged_lock)["artifact_sha256"] = sha256(&restored).into();
-    lock_entry_mut(&mut forged_lock)["artifact_bytes"] = restored.len().into();
+    lock_source_mut(&mut forged_lock)["artifact"]["sha256"] = sha256(&restored).into();
+    lock_source_mut(&mut forged_lock)["artifact"]["bytes"] = restored.len().into();
     fs::write(&lock_path, serde_json::to_vec_pretty(&forged_lock).unwrap()).unwrap();
     let error = load_import(&root.join("span.import-description.json")).unwrap_err();
     assert!(
@@ -4361,8 +4361,8 @@ fn pinned_std_byte_reinterpreted_call_result_preserves_pointer_identity_offline(
         }
         let bytes = serde_json::to_vec_pretty(&forged).unwrap();
         let mut forged_lock = lock.clone();
-        lock_entry_mut(&mut forged_lock)["artifact_sha256"] = sha256(&bytes).into();
-        lock_entry_mut(&mut forged_lock)["artifact_bytes"] = bytes.len().into();
+        lock_source_mut(&mut forged_lock)["artifact"]["sha256"] = sha256(&bytes).into();
+        lock_source_mut(&mut forged_lock)["artifact"]["bytes"] = bytes.len().into();
         fs::write(&artifact_path, bytes).unwrap();
         fs::write(&lock_path, serde_json::to_vec_pretty(&forged_lock).unwrap()).unwrap();
         assert!(

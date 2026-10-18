@@ -1940,7 +1940,9 @@ fn alpha_algebraic_key_with_bindings<const ALLOW_LOADS: bool>(
                 })
                 .collect::<Option<Vec<_>>>()?,
         },
-        AlgebraicTermNode::Match { .. } | AlgebraicTermNode::PureFunctionApplication { .. } => {
+        AlgebraicTermNode::Match { .. }
+        | AlgebraicTermNode::PureFunctionApplication { .. }
+        | AlgebraicTermNode::If { .. } => {
             return None;
         }
     })

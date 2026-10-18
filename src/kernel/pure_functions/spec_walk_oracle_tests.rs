@@ -168,6 +168,15 @@ fn old_collect_algebraic_body_reads(
             }
             Ok(())
         }
+        SpecAlgebraicExpressionNode::If {
+            condition,
+            then_branch,
+            else_branch,
+        } => {
+            old_collect_proposition_body_reads(condition, bound, reads)?;
+            old_collect_algebraic_body_reads(then_branch, bound, reads)?;
+            old_collect_algebraic_body_reads(else_branch, bound, reads)
+        }
         SpecAlgebraicExpressionNode::Match { scrutinee, arms } => {
             old_collect_algebraic_body_reads(scrutinee, bound, reads)?;
             for arm in arms {

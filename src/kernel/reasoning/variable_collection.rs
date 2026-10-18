@@ -448,6 +448,17 @@ pub(in crate::kernel) fn collect_term_bitvector_variables(
     }
 }
 
+/// A condition inside an algebraic conditional, carried as the scalar
+/// conditional `if condition { 1 } else { 0 }`: a walker reaches its terms as
+/// it reaches any scalar conditional's.
+fn condition_carrier(condition: &ConditionTerm) -> AlgebraicValue {
+    AlgebraicValue::C(CValue::Int32(Bitvector32Term::If {
+        condition: Box::new(condition.clone()),
+        then_term: Box::new(Bitvector32Term::Constant(1)),
+        else_term: Box::new(Bitvector32Term::Constant(0)),
+    }))
+}
+
 fn collect_algebraic_term_bitvector_variables(
     term: &AlgebraicTerm,
     variables: &mut BTreeSet<Variable>,
@@ -462,6 +473,15 @@ fn collect_algebraic_term_bitvector_variables(
             for field in fields {
                 collect_algebraic_value_bitvector_variables(field, variables);
             }
+        }
+        AlgebraicTermNode::If {
+            condition,
+            then_term,
+            else_term,
+        } => {
+            collect_algebraic_value_bitvector_variables(&condition_carrier(condition), variables);
+            collect_algebraic_term_bitvector_variables(then_term, variables);
+            collect_algebraic_term_bitvector_variables(else_term, variables);
         }
         AlgebraicTermNode::Match { scrutinee, arms } => {
             collect_algebraic_term_bitvector_variables(scrutinee, variables);
@@ -900,6 +920,19 @@ fn collect_algebraic_term_bound_identities(
             for field in fields {
                 collect_algebraic_value_bound_identities(field, variables, integer_seen);
             }
+        }
+        AlgebraicTermNode::If {
+            condition,
+            then_term,
+            else_term,
+        } => {
+            collect_algebraic_value_bound_identities(
+                &condition_carrier(condition),
+                variables,
+                integer_seen,
+            );
+            collect_algebraic_term_bound_identities(then_term, variables, integer_seen);
+            collect_algebraic_term_bound_identities(else_term, variables, integer_seen);
         }
         AlgebraicTermNode::Match { scrutinee, arms } => {
             collect_algebraic_term_bound_identities(scrutinee, variables, integer_seen);
@@ -2154,6 +2187,19 @@ fn collect_algebraic_free_integer_variables(
                 }
             }
         }
+        AlgebraicTermNode::If {
+            condition,
+            then_term,
+            else_term,
+        } => {
+            collect_algebraic_value_integer_variables(
+                &condition_carrier(condition),
+                variables,
+                seen,
+            );
+            collect_algebraic_free_integer_variables(then_term, variables, seen);
+            collect_algebraic_free_integer_variables(else_term, variables, seen);
+        }
         AlgebraicTermNode::Match { scrutinee, arms } => {
             collect_algebraic_free_integer_variables(scrutinee, variables, seen);
             if crate::instrumentation::checked_collection_exhausted() {
@@ -2324,6 +2370,15 @@ fn collect_algebraic_integer_variables(
                 }
                 collect_algebraic_value_integer_variables(field, variables, seen);
             }
+        }
+        AlgebraicTermNode::If {
+            condition,
+            then_term,
+            else_term,
+        } => {
+            collect_condition_integer_variables(condition, variables, seen);
+            collect_algebraic_integer_variables(then_term, variables, seen);
+            collect_algebraic_integer_variables(else_term, variables, seen);
         }
         AlgebraicTermNode::Match { scrutinee, arms } => {
             collect_algebraic_integer_variables(scrutinee, variables, seen);
@@ -2973,6 +3028,15 @@ fn collect_capture_variables_in_algebraic_term(
                 }
                 collect_capture_variables_in_algebraic_value(field, variables, integer_seen);
             }
+        }
+        AlgebraicTermNode::If {
+            condition,
+            then_term,
+            else_term,
+        } => {
+            collect_condition_capture_variables(condition, variables, integer_seen);
+            collect_capture_variables_in_algebraic_term(then_term, variables, integer_seen);
+            collect_capture_variables_in_algebraic_term(else_term, variables, integer_seen);
         }
         AlgebraicTermNode::Match { scrutinee, arms } => {
             collect_capture_variables_in_algebraic_term(scrutinee, variables, integer_seen);
@@ -3638,6 +3702,16 @@ fn collect_algebraic_scope_summary(
                 }
                 summary.merge(collect_algebraic_value_scope_summary(field, summaries));
             }
+            summary
+        }
+        AlgebraicTermNode::If {
+            condition,
+            then_term,
+            else_term,
+        } => {
+            let mut summary = collect_condition_scope_summary(condition, summaries);
+            summary.merge(collect_algebraic_scope_summary(then_term, summaries));
+            summary.merge(collect_algebraic_scope_summary(else_term, summaries));
             summary
         }
         AlgebraicTermNode::Match { scrutinee, arms } => {
@@ -4387,6 +4461,30 @@ fn collect_binder_variables_in_algebraic_term(
                     integer_seen,
                 );
             }
+        }
+        AlgebraicTermNode::If {
+            condition,
+            then_term,
+            else_term,
+        } => {
+            collect_condition_binder_variables(
+                condition,
+                integer_variables,
+                bitvector_variables,
+                integer_seen,
+            );
+            collect_binder_variables_in_algebraic_term(
+                then_term,
+                integer_variables,
+                bitvector_variables,
+                integer_seen,
+            );
+            collect_binder_variables_in_algebraic_term(
+                else_term,
+                integer_variables,
+                bitvector_variables,
+                integer_seen,
+            );
         }
         AlgebraicTermNode::Match { scrutinee, arms } => {
             collect_binder_variables_in_algebraic_term(

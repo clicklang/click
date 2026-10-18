@@ -456,31 +456,44 @@ fn linux_rbtree_pinned_translation_unit_locks_and_reproduces_its_frontier() {
     );
     let produced = unit_lock(&closure.0);
     let committed = unit_lock(&fixture());
+    assert_eq!(
+        produced["unit"], committed["unit"],
+        "the unit digest differs"
+    );
     for field in [
         "schema",
-        "config_sha256",
         "target",
         "compiler_path",
         "option_profile",
         "toolchain",
     ] {
         assert_eq!(
-            produced[field], committed[field],
+            produced["c"][field], committed["c"][field],
             "lock field `{field}` differs"
         );
     }
-    for field in [
-        "args",
-        "artifact_sha256",
-        "artifact_bytes",
-        "source_sha256",
-        "local_dependencies",
-    ] {
+    for field in ["args", "local_dependencies"] {
         assert_eq!(
-            produced["sources"][0][field], committed["sources"][0][field],
+            produced["c"]["sources"][0][field], committed["c"]["sources"][0][field],
             "locked source field `{field}` differs"
         );
     }
+    let logical = committed["c"]["sources"][0]["logical_source"]
+        .as_str()
+        .unwrap();
+    let path = committed["c"]["sources"][0]["path"].as_str().unwrap();
+    let (produced, committed) = (
+        &produced["sources"][logical],
+        &committed["sources"][logical],
+    );
+    assert_eq!(
+        produced["artifact"], committed["artifact"],
+        "the artifact differs"
+    );
+    assert_eq!(
+        produced["inputs"][path], committed["inputs"][path],
+        "the source digest differs"
+    );
     let imports = load(&closure.0).expect("load the fresh lock");
     assert_eq!(
         imports[0].promise_attributes(),

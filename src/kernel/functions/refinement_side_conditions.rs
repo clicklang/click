@@ -240,6 +240,7 @@ pub(super) fn state_independent_node(node: SpecNode<'_>) -> Visit<()> {
             }
             SpecAlgebraicExpressionNode::Constructor { .. }
             | SpecAlgebraicExpressionNode::Match { .. }
+            | SpecAlgebraicExpressionNode::If { .. }
             | SpecAlgebraicExpressionNode::PureFunctionApplication { .. } => Visit::Descend,
         },
         SpecNode::AlgebraicValue(_) => Visit::Descend,
@@ -349,6 +350,7 @@ pub(super) fn stateful_memory_refinement_node(node: SpecNode<'_>) -> Visit<()> {
             | SpecAlgebraicExpressionNode::ResourceField(_) => Visit::Skip,
             SpecAlgebraicExpressionNode::Constructor { .. }
             | SpecAlgebraicExpressionNode::Match { .. }
+            | SpecAlgebraicExpressionNode::If { .. }
             | SpecAlgebraicExpressionNode::PureFunctionApplication { .. } => Visit::Descend,
         },
         SpecNode::AlgebraicValue(value) => match value {
@@ -403,7 +405,10 @@ pub(super) fn obligation_free_node(node: SpecNode<'_>) -> Visit<()> {
                     Visit::Stop(())
                 }
             }
-            SpecAlgebraicExpressionNode::ResourceField(_) => Visit::Stop(()),
+            // A condition is a proposition, which this rule does not admit,
+            // as it does not admit a scalar `if`.
+            SpecAlgebraicExpressionNode::ResourceField(_)
+            | SpecAlgebraicExpressionNode::If { .. } => Visit::Stop(()),
         },
         SpecNode::AlgebraicValue(_) => Visit::Descend,
         SpecNode::Argument(SpecPureFunctionArgument::ArrayRef { .. }) => Visit::Stop(()),

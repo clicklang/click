@@ -199,13 +199,39 @@ unit, remove the config and its lock, and run `click import lock`.
 `click import lock` prepares every unit into `click.project.lock.json` beside
 the project file, with one entry per unit, and writes the artifacts to
 `.click/<unit>/<source>.i` there. Commit both so others verify without the
-toolchain. Each unit's entry records the digest of its description and the
-project target; editing either refuses the lock until it is prepared again.
+toolchain. Every language's entry has one shape:
+
+```json
+{
+  "envelope": 1,
+  "unit": "<SHA-256 of the unit's description>",
+  "frontend": {"name": "gcc", "identity": "<SHA-256 pinning the front end>"},
+  "sources": {
+    "src/label.c": {
+      "inputs": {"src/label.c": "<SHA-256>", "$unit/include/label.h": "<SHA-256>"},
+      "artifact": {"path": ".click/main/src/label.c.i", "sha256": "<SHA-256>", "bytes": 1234},
+      "identity": "<SHA-256>"
+    }
+  },
+  "c": {"target": "x86_64-unknown-linux-gnu", "...": "..."}
+}
+```
+
+`sources` is keyed by logical source. `inputs` are the digests of the files the
+source was prepared from, `artifact` the prepared output, and the one section
+named for the unit's language (`c`, `c++` or `rust`) holds what only that
+language records. A source's `identity` is the SHA-256 of all of it: the
+envelope schema, the language, the unit digest, the front end, the source's
+inputs and artifact, and the whole language section, so a change to any
+recorded field changes it. It is the import identity proofs and caches key on.
+An entry without `envelope`, written by an earlier release, is refused with
+``run `click import lock` to prepare it again``. Editing the description or
+the project target refuses the lock until it is prepared again.
 Loading rechecks the unit's sources and every header the compiler opened under
 the project directory or the unit root, so the lock still loads after the whole
 checkout moves, and a changed input is refused with the file named. The lock
 names those roots `$project` and `$unit` rather than by the preparing
-checkout's path, and its invocation and source identities cover that form, so
+checkout's path, and its front-end and source identities cover that form, so
 preparing the project at another path writes the same lock
 (`compiler_import_project_locks_are_portable` in `tests/compiler_import.rs`).
 The selected compiler and its backend are named by path and pinned by digest.
@@ -215,7 +241,7 @@ The selected compiler and its backend are named by path and pinned by digest.
 Verification loads a unit's recorded artifacts without executing or locating
 its compiler or front end. The artifacts and lock move with the project: loading
 checks their hashes, the artifact bytes and size, the target, the recorded
-toolchain and invocation identity, and the source projection identity. System
+toolchain and front-end identity, and each source's import identity. System
 headers used during preparation are identified in the lock but need not be
 installed on the verification host. A C unit's sources and project-local
 headers are rechecked in the unit root, so a changed one is refused by name.
