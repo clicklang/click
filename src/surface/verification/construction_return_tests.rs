@@ -6,16 +6,34 @@ use crate::kernel::*;
 // The source supplies nominal declarations only; the executable functions
 // explicitly select the shared construction-return mode.
 fn context(initialize_value: bool) -> CSourceContext<'static> {
+    context_with_member_view(initialize_value, true)
+}
+
+fn context_with_member_view(
+    initialize_value: bool,
+    select_member: bool,
+) -> CSourceContext<'static> {
     const DECLARATIONS: &str = "struct Node { int32* self; int32 value; };";
     let sources = CSourceContext::bundle(&[("construction.c", DECLARATIONS)]);
     let mut unit = parse_c_source_unit("construction.c", &sources, CTarget::SUPPORTED).unwrap();
     let nominal = unit.structs["Node"].clone();
     let layout = nominal.to_kernel_aggregate_layout();
+    let member = nominal.field("value").unwrap();
     let destination = c_variable(C_CONTRACT_RESULT_NAME);
     let field = c_cast(
-        c_pointer_offset_bytes(destination.clone(), 8),
+        c_pointer_offset_bytes(destination.clone(), member.offset_bytes()),
         CType::Int32Pointer,
     );
+    // Model &result.value, including its selected member bounds. A raw
+    // offset has the same address but retains the enclosing object's view.
+    let field = if select_member {
+        CExpression::Subobject {
+            pointer: Box::new(field),
+            width: member.byte_width(),
+        }
+    } else {
+        field
+    };
     let factory = c_function(
         CType::Int32Pointer,
         "factory",
@@ -158,6 +176,25 @@ struct Node factory(int32 input) {
         1,
     );
     verify_c0_sources_with_context(&expanded, &sources, None, None, None, None).unwrap();
+}
+
+#[test]
+fn native_construction_return_keeps_raw_offset_and_member_views_distinct() {
+    let sources = context_with_member_view(true, false);
+    let error = verify_c0_sources_with_context(
+        PROOF,
+        &sources,
+        Some(VerificationTarget::Function("factory".into())),
+        None,
+        None,
+        None,
+    )
+    .expect_err("a raw offset is not the full pointer selected by &result.value");
+    assert!(
+        error.message().contains("factory.ensures_0"),
+        "{}",
+        error.message()
+    );
 }
 
 // The hidden resource needs no written storage clause, but returning it must
