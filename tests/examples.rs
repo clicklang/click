@@ -2460,17 +2460,18 @@ fn c_buffer_resource_modular_output_expands_and_rechecks() {
             .unwrap();
             let source = fixture.click_source.as_deref().unwrap();
             let sources = source_refs(&fixture.c_sources);
+            let (session, verified) =
+                click::surface::C0VerificationSession::new(source, &sources).unwrap();
+            assert!(!verified.is_empty());
             let mut rewrites = Vec::new();
             for name in ["init", "probe"] {
-                let expanded = click::surface::expand_c0_claim_source(
+                let expanded = click::surface::expand_verified_function_claim_source_by_label(
                     source,
-                    &sources,
-                    name,
-                    click::surface::CProofClaim::Grouped,
+                    &verified,
+                    &format!("{name}.contract"),
                 )
-                .expect("the complete buffer output claim must expand");
-                verify_c0_sources(&expanded, &sources)
-                    .expect("the written buffer output certificate must check fresh");
+                .expect("the complete buffer output claim must expand")
+                .expect("the original verification contains the buffer output claim");
                 let needle = format!("void {name}(");
                 let declaration = expanded.find(&needle).unwrap();
                 let offset = declaration + expanded[declaration..].find("ensures").unwrap();
@@ -2482,16 +2483,17 @@ fn c_buffer_resource_modular_output_expands_and_rechecks() {
                 let column = expanded[..offset].rsplit('\n').next().unwrap().len() + 1;
                 rewrites.push((expanded, line, column));
             }
-            // Finish all cold checks first: they reset the thread-local kernel
-            // tables. Construction then cold-verifies the complete original
-            // once and provides one retained baseline for both rewritten claims.
-            let (session, verified) =
-                click::surface::C0VerificationSession::new(source, &sources).unwrap();
-            assert!(!verified.is_empty());
-            for (expanded, line, column) in rewrites {
+            for (expanded, line, column) in &rewrites {
                 session
-                    .verify_at(&expanded, line, column)
+                    .verify_at(expanded, *line, *column)
                     .expect("the expanded buffer output must check in its retained session");
+            }
+            // Generate and retain every rewrite before any cold check resets
+            // the thread-local kernel tables.
+            drop(session);
+            for (expanded, _, _) in rewrites {
+                verify_c0_sources(&expanded, &sources)
+                    .expect("the written buffer output certificate must check fresh");
             }
         },
     )
