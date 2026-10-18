@@ -14,10 +14,10 @@ served to the next one. A name that any function addresses is therefore
 absent for every function, which costs proofs about innocent same-named
 locals and can never serve a stale answer.
 
-The original program is retained here. The conservative refusal now occurs
-while establishing that the final addition cannot overflow, before checking
-the result postcondition: `read_literal`'s claim is true, but the symbolic
-frame still cannot preserve the values needed for that definedness check.
+The original program is retained here. Narrow integer type-range facts
+establish that the final addition cannot overflow even when the loaded byte's
+value has been forgotten. The conservative frame still cannot preserve that
+value, so `read_literal`'s true result postcondition remains unproved.
 
 ```c filename=a_local_addressed_in_another_function_is_not_framed.c
 int32* echo(int32* p) { return p; }
@@ -75,5 +75,5 @@ int32 read_literal() {
 ```
 
 ```expect
-fail: signed overflow
+fail: unclosed goal: result ==
 ```
