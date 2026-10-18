@@ -1788,3 +1788,10 @@ writable rotation callback under an arbitrary owned ancestor context. Both
 augmented wrappers return the whole repaired tree; the imported model theorem
 preserves its in-order identity sequence. General moved subtrees and the
 mirrored nonempty-middle case remain.
+
+The left-left moved-child case now accepts an arbitrary nonempty black subtree
+with arbitrary owned descendants and a symbolic valid cached size. The focused
+node's children and the outer ancestor context remain arbitrary. The proof
+derives callback bounds from the original cached total and certifies the exact
+in-order sequence independently; both augmented wrappers verify. The uncle is
+still empty. This increment changes proof files only.
