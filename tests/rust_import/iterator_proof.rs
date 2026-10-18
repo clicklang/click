@@ -28,8 +28,8 @@ fn preserves_source_and_checks_obligations(fixture: &str) {
     for invalid in [
         proof.replacen("views bytes[0..bytes.len()];", "", 1),
         proof.replacen(
-            "ensures to_integer(result) == old(prefix(bytes, bytes.len()));",
-            "ensures to_integer(result) == old(prefix(bytes, bytes.len())) + 1;",
+            "== old(prefix(bytes, bytes.len()));",
+            "== old(prefix(bytes, bytes.len())) + 1;",
             1,
         ),
         // The remaining count is a `usize`; a measure that grows is refused.
@@ -41,6 +41,51 @@ fn preserves_source_and_checks_obligations(fixture: &str) {
         assert_ne!(invalid, proof, "negative proof must change the sidecar");
         assert!(C0VerificationSession::new_program_prepared(&invalid, &prepared).is_err());
     }
+    // The decrease left open at the back edge is spelled through the
+    // iteration's mark: the `usize` remaining count it held there is a
+    // pointer integer, and no recent statement snapshot holds it.
+    if let Some(without) = without_statement(
+        &proof,
+        "have iter_remaining < at(iteration, iter_remaining)",
+    ) {
+        let error = C0VerificationSession::new_program_prepared(&without, &prepared)
+            .err()
+            .expect("the decrease is needed")
+            .to_string();
+        // The rejected candidates a trace lists are formatted by the steps
+        // themselves; the report's own spelling comes before them.
+        let report = error
+            .lines()
+            .take_while(|line| !line.contains("checked candidate"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(
+            report.contains("at(iteration, iter_remaining) - 1u64 < at(iteration, iter_remaining)"),
+            "{error}"
+        );
+        assert!(!report.contains("<unnamed"), "{error}");
+    }
+}
+/// `proof` without the statement whose first line starts with `prefix`: that
+/// line when it ends the statement, otherwise through the `}` closing its
+/// `by { ... }` block at the same indentation.
+fn without_statement(proof: &str, prefix: &str) -> Option<String> {
+    let lines = proof.lines().collect::<Vec<_>>();
+    let start = lines
+        .iter()
+        .position(|line| line.trim_start().starts_with(prefix))?;
+    let indent = &lines[start][..lines[start].len() - lines[start].trim_start().len()];
+    let end = if lines[start].ends_with(';') {
+        start
+    } else {
+        start
+            + lines[start..]
+                .iter()
+                .position(|line| *line == format!("{indent}}}"))?
+    };
+    let mut kept = lines[..start].to_vec();
+    kept.extend_from_slice(&lines[end + 1..]);
+    Some(kept.join("\n"))
 }
 fn profile_agrees(fixture: &str) {
     let p = project(fixture);
