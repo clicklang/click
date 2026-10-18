@@ -87,8 +87,12 @@ declaration expansion. The parser records a new child under its slot's
 resource when the parent's arms agree on it, so an `unfold` of the child
 reads the child's own fields and slots
 (`mdtests/an_unfold_of_a_child_reads_the_child_resource_slots.md`). A slot
-whose resource differs between the parent's arms still fixes no resource for
-its child.
+whose resource differs between the parent's arms takes the resource of the
+arm an enclosing proof `match` on the parent's field selects
+(`mdtests/a_proof_match_selects_the_resource_of_a_slot_its_arms_differ_on.md`).
+A proof binder hides a contract value binder of its name, as it hides a fact
+or a resource instance
+(`mdtests/a_proof_binder_hides_a_value_binder_of_its_name.md`).
 
 The complete scoped table for parameters, fields, binders, constructors,
 resources, program points and project modules remains open. Proof inventories

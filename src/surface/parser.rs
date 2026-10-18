@@ -7826,6 +7826,14 @@ impl Parser {
     /// the program's variable, so a proof binder of its name would change
     /// what the proof's propositions mean without changing what runs.
     fn bind_proof_name(&mut self, name: &str, resource: bool) -> Result<(), ClickError> {
+        if resource
+            && self.names.is_c_variable(name)
+            && self.names.resource_bindings.contains_key(name)
+        {
+            return Err(self.error(format!(
+                "`{name}` names both a C variable and the contract's resource instance `{name}`; a proof binder cannot hide the C variable, so the instance cannot be bound again under this name; rename the instance in the contract"
+            )));
+        }
         if self.names.is_c_variable(name) {
             return Err(self.error(format!(
                 "`{name}` names a C variable here; a proof binder cannot hide it, since execution keeps reading the program's `{name}`; choose another name"
@@ -9158,11 +9166,14 @@ impl Parser {
                         _ => {}
                     }
                 }
+                // `unfold(f(args))` applies `f` even where a resource
+                // instance shares its name; the instance is unfolded bare.
                 let tactic = if quantified
                     || self.peek_ident() == Some("authority")
-                    || self
+                    || (self
                         .peek_ident()
                         .is_some_and(|name| self.names.resource_targets.contains_key(name))
+                        && self.peek_next() != Some(&Token::LParen))
                 {
                     ProofTactic::UnfoldResource(self.parse_owned_resource_target()?)
                 } else if matches!(self.peek(), Some(Token::Ident(_)))
