@@ -171,6 +171,29 @@ impl Drop for Project {
     }
 }
 
+/// A C project lock names the project's own files by `$project`: one
+/// project prepared at two paths writes the same lock, so each copy's import
+/// has the same identity.
+#[test]
+#[ignore = "nightly: 5.4s in the parallel gate"]
+fn compiler_import_project_locks_are_portable() {
+    let first = Project::new();
+    let second = Project::new();
+    create_lock(&first.config()).expect("lock the first copy");
+    create_lock(&second.config()).expect("lock the second copy");
+    let read =
+        |project: &Project| fs::read_to_string(project.0.join(click::project::LOCK_NAME)).unwrap();
+    let lock = read(&first);
+    assert!(!lock.contains(first.0.to_str().unwrap()), "{lock}");
+    assert_eq!(lock, read(&second));
+    let identity = |project: &Project| {
+        load_imports(&project.config()).expect("offline locked import")[0]
+            .identity()
+            .to_string()
+    };
+    assert_eq!(identity(&first), identity(&second));
+}
+
 #[test]
 #[ignore = "nightly: 3s in the parallel gate"]
 fn compiler_import_fixture_verifies_targets_and_checked_expansion() {

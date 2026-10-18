@@ -380,8 +380,8 @@
   "logical_source": "with_restore.cpp",
   "preprocessor_files": [
     {
-      "accessed_path": "/home/user/click-b/examples/basic-cpp/with_restore.cpp",
-      "canonical_path": "/home/user/click-b/examples/basic-cpp/with_restore.cpp"
+      "accessed_path": "$unit/with_restore.cpp",
+      "canonical_path": "$unit/with_restore.cpp"
     }
   ],
   "profile": {
@@ -405,7 +405,7 @@
       "-o",
       "with_restore.cpp.o"
     ],
-    "compilation_directory": "/home/user/click-b/examples/basic-cpp",
+    "compilation_directory": "$unit",
     "compilation_file": "with_restore.cpp",
     "exceptions": false,
     "frontend": "clang",

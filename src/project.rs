@@ -857,6 +857,44 @@ mod tests {
         );
     }
 
+    /// Every committed project lock names its project's files by a root's
+    /// label, not by the checkout that prepared it. The cross-host fixture
+    /// keeps a lock in the earlier absolute form on purpose: it shows such a
+    /// lock still loads after relocation.
+    #[test]
+    fn committed_project_locks_name_no_checkout_path() {
+        fn visit(directory: &Path, found: &mut Vec<PathBuf>) {
+            for entry in fs::read_dir(directory).unwrap() {
+                let entry = entry.unwrap();
+                let path = entry.path();
+                if entry.file_type().unwrap().is_dir() {
+                    visit(&path, found);
+                } else if entry.file_name() == LOCK_NAME {
+                    found.push(path);
+                }
+            }
+        }
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+        let mut locks = Vec::new();
+        for directory in ["design", "examples", "integrations", "mdtests", "tests"] {
+            visit(&root.join(directory), &mut locks);
+        }
+        assert!(locks.len() > 50, "found only {} project locks", locks.len());
+        for lock in locks {
+            if lock.ends_with("tests/fixtures/cross-host-c-import/click.project.lock.json") {
+                continue;
+            }
+            let text = fs::read_to_string(&lock).unwrap();
+            assert!(
+                !text.contains("\"/home/")
+                    && !text.contains("\"/tmp/")
+                    && !text.contains("\"/Users/"),
+                "`{}` names a checkout path; run `click import lock` there",
+                lock.display()
+            );
+        }
+    }
+
     #[test]
     fn unit_digest_covers_the_description_and_target() {
         let (_scratch, project) = project_with(
