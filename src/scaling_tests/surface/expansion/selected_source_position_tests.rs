@@ -14,7 +14,7 @@ fn one_position_does_not_convert_unrequested_tactic_positions() {
         );
         let file = parse_source_with_c_layouts(&source, &[]).unwrap();
         let (_, scan_work) = crate::instrumentation::measure_deterministic_work(|| {
-            proof_source_tokens(&source).unwrap()
+            proof_source_tokens(&source, &file.source_spans().implicit_proofs).unwrap()
         });
         let (first, first_work) = crate::instrumentation::measure_deterministic_work(|| {
             c0_tactic_source_position_file(&file, &source, "locations.ensures_0", 0).unwrap()

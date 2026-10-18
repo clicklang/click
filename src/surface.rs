@@ -6548,7 +6548,7 @@ impl ClickFile {
     }
 
     /// Where the parser read the entry module's declarations and proofs.
-    pub(in crate::surface) fn source_spans(&self) -> &parser::SourceSpans {
+    pub(in crate::surface) fn source_spans(&self) -> &std::sync::Arc<parser::SourceSpans> {
         &self.source_spans
     }
 

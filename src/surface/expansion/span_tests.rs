@@ -66,7 +66,7 @@ fn the_source_index_holds_the_blocks_the_parser_reads() {
     for (name, source) in corpus() {
         // A file that needs C layouts or imported declarations is read by
         // verification, not by this context-free parse.
-        let Ok(spans) = parser::proof_block_spans(&source, parser::ProgramLayouts::default())
+        let Ok(spans) = parser::parsed_source_spans(&source, parser::ProgramLayouts::default())
         else {
             unparsed += 1;
             continue;
@@ -84,7 +84,7 @@ fn the_source_index_holds_the_blocks_the_parser_reads() {
             .map(|(open, close, tactics)| ((open.line, open.column), (close, tactics)))
             .collect::<BTreeMap<_, _>>();
         let mut parsed = BTreeMap::new();
-        for span in spans {
+        for span in spans.proof_blocks {
             parsed.insert(
                 (span.open.line, span.open.column),
                 (span.close, span.tactics),
