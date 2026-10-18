@@ -6050,7 +6050,7 @@ fn loop_exit_join_scales_near_linearly_with_the_number_of_exits() {
 }
 
 fn loop_exit_join_scaling_on_this_thread() {
-    let samples = [3, 6, 12, 24]
+    let samples = [2, 4, 8, 16]
         .into_iter()
         .map(|size| {
             let (c_source, click_source) = loop_with_break_exits_project(size);
@@ -6071,6 +6071,16 @@ fn loop_exit_join_scaling_on_this_thread() {
         })
         .collect::<Vec<_>>();
     assert_near_linear_scaling("loop exits joined", &samples);
+    // For B + k*N + a*N^2, a 3x increment bound at 4/8/16
+    // rejects a > k/12. The old 3x total bound at 12/24 allowed
+    // a <= k/12 + B/72. The same join regression stays visible
+    // with fewer of the body's inherently quadratic written steps.
+    let earlier = samples[2].work.checked_sub(samples[1].work);
+    let later = samples[3].work.checked_sub(samples[2].work);
+    assert!(
+        matches!((earlier, later), (Some(earlier), Some(later)) if later <= earlier * 3),
+        "loop-exit work increments must remain near linear: {samples:?}"
+    );
 }
 
 /// Each selected arm follows an earlier checked `have`, rather than a
@@ -7631,7 +7641,7 @@ fn callback_parsing_and_explicit_steps_scale_with_written_calls() {
         .map(|(name, source)| (name.as_str(), source.as_str()))
         .collect::<Vec<_>>();
     verify_c0_sources(&click, &baseline_sources).unwrap();
-    let samples = [4, 8, 16, 32].map(|count| {
+    let samples = [2, 4, 8, 16].map(|count| {
         let statements = "    augment->propagate(parent, 0);\n".repeat(count);
         let sources = fixture
             .c_sources
@@ -7655,6 +7665,15 @@ fn callback_parsing_and_explicit_steps_scale_with_written_calls() {
         work
     });
     assert!(samples[0] > 0);
+    // The old 5/2 bound at 16/32 rejects a > k/48 + B/256
+    // for B + k*N + a*N^2. Checking increments at 4/8/16
+    // with 12/5 rejects a > k/48, without that fixed-cost masking.
+    let earlier = samples[2].checked_sub(samples[1]);
+    let later = samples[3].checked_sub(samples[2]);
+    assert!(
+        matches!((earlier, later), (Some(earlier), Some(later)) if later * 5 <= earlier * 12),
+        "callback work increments must remain near linear: {samples:?}"
+    );
     for pair in samples.windows(2) {
         assert!(
             pair[1] * 2 <= pair[0] * 5,
@@ -8037,7 +8056,7 @@ fn owned_parameters_project(count: usize) -> (String, String) {
 #[test]
 #[ignore = "nightly: 3.1s in the parallel gate"]
 fn owned_pointer_parameters_scale_with_their_number() {
-    let samples = [4, 8, 16, 32]
+    let samples = [2, 4, 8, 16]
         .into_iter()
         .map(|size| {
             let (c_source, click_source) = owned_parameters_project(size);
@@ -8051,6 +8070,40 @@ fn owned_pointer_parameters_scale_with_their_number() {
         })
         .collect::<Vec<_>>();
     assert_near_linear_scaling("owned pointer parameters", &samples);
+    let finishing = samples
+        .iter()
+        .map(|sample| {
+            sample
+                .named_work
+                .get("operation `proof context finishing`")
+                .copied()
+                .unwrap_or(0)
+        })
+        .collect::<Vec<_>>();
+    assert!(finishing.iter().all(|work| *work > 0), "{finishing:?}");
+    let linear_increments = |work: &[usize]| {
+        let (Some(earlier), Some(later)) =
+            (work[1].checked_sub(work[0]), work[2].checked_sub(work[1]))
+        else {
+            return false;
+        };
+        later * 7 <= earlier * 20
+    };
+    // At 4/8/16 this removes fixed exit cost and rejects a > k/16.
+    // That is stricter than the old whole-work 3x-at-16/32 bound,
+    // which allowed a <= k/16 + B/128 (plus other linear work).
+    let whole = [samples[1].work, samples[2].work, samples[3].work];
+    assert!(
+        linear_increments(&whole),
+        "owned-parameter total work increments: {samples:?}"
+    );
+    assert!(
+        linear_increments(&finishing[1..]),
+        "owned-parameter finishing increments: {finishing:?}"
+    );
+    // Recorded pre-fix finishing work at 4/8/16 in the owned-parameter
+    // exit-check report closed by 871f90f68.
+    assert!(!linear_increments(&[6_100, 13_500, 35_000]));
 }
 
 /// A selected field separation after unfold uses the live partition before
@@ -8607,8 +8660,34 @@ fn pointer_field_call_branch_join_scales_with_unrelated_caller_facts() {
     .unwrap();
     let source = fixture.click_source.unwrap();
     let c_source = &fixture.c_sources[0].1;
+    const CALLER: &str = "vector_replace_if";
+    // The helpers never call the changing entry point. Check their complete
+    // implementations once; every sample below cold-checks the entire caller.
+    assert_eq!(source.matches(CALLER).count(), 1);
+    assert_eq!(c_source.matches(CALLER).count(), 1);
+    let source_helpers = &source[..source.find(CALLER).unwrap()];
+    let c_helpers = &c_source[..c_source.find(CALLER).unwrap()];
+    {
+        let helpers = crate::surface::verify_c0_sources_functions(
+            &source,
+            &[("vector.c", c_source.as_str())],
+            ["vector_get".to_string(), "vector_set".to_string()],
+        )
+        .expect("both unchanged helper implementations must verify");
+        for name in ["vector_get", "vector_set"] {
+            assert!(
+                helpers
+                    .iter()
+                    .any(|proof| proof.function_block.signature().name() == name)
+            );
+        }
+        assert!(helpers.iter().all(|proof| matches!(
+            proof.function_block.signature().name(),
+            "vector_get" | "vector_set"
+        )));
+    }
     let mut samples = Vec::new();
-    for size in [32, 64, 128, 256] {
+    for size in [16, 32, 64, 128] {
         let parameters = (0..size)
             .map(|index| format!(", int32 noise_{index}"))
             .collect::<String>();
@@ -8631,13 +8710,35 @@ fn pointer_field_call_branch_join_scales_with_unrelated_caller_facts() {
                 1,
             )
         );
+        assert_eq!(&source[..source.find(CALLER).unwrap()], source_helpers);
+        assert_eq!(&c_source[..c_source.find(CALLER).unwrap()], c_helpers);
         let (result, sample) = scaling_sample(size, || {
-            verify_c0_sources(&source, &[("vector.c", c_source.as_str())])
+            crate::surface::verify_c0_sources_functions(
+                &source,
+                &[("vector.c", c_source.as_str())],
+                [CALLER.to_string()],
+            )
         });
-        result.unwrap_or_else(|error| panic!("size {size}: {}", error.message()));
+        let checked = result.unwrap_or_else(|error| panic!("size {size}: {}", error.message()));
+        assert!(!checked.is_empty(), "the complete caller must be checked");
+        assert!(
+            checked
+                .iter()
+                .all(|proof| proof.function_block.signature().name() == CALLER)
+        );
         samples.push(sample);
     }
     assert_near_linear_scaling("pointer-field call branch join", &samples);
+    // For B + k*N + a*N^2, 20/7 on increments at 32/64/128
+    // rejects a > k/128. The old 3x bound at 128/256 allowed
+    // a <= k/128 + B/8192, so the fixed whole-proof cost no
+    // longer hides the same quadratic join work at smaller sizes.
+    let earlier = samples[2].work.checked_sub(samples[1].work);
+    let later = samples[3].work.checked_sub(samples[2].work);
+    assert!(
+        matches!((earlier, later), (Some(earlier), Some(later)) if later * 7 <= earlier * 20),
+        "pointer-field join work increments must remain near linear: {samples:?}"
+    );
 }
 
 /// A proof `if` at an execution frontier lowers its condition against the

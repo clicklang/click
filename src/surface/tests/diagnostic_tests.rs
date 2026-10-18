@@ -2725,9 +2725,12 @@ fn memory_history_diagnostic_names_the_store_and_limits_its_claim() {
 /// Long checked paths retain their beginning, late target, and added facts.
 /// Multiple sizes exercise both former aggregate caps without timing thresholds.
 #[test]
-#[ignore = "nightly: complete 4096-tactic traces and deterministic lineage scaling take 10s locally"]
+#[ignore = "nightly: complete traces above the former step/text caps and lineage scaling"]
 fn long_theorem_traces_retain_every_step_and_reach_late_targets() {
-    for size in [512, 2048, 4096] {
+    // Keep a complete path above the former 2048-step and 64-KiB caps.
+    // Even the smallest size exceeds the lineage guard's 20x allowance,
+    // so walking the full earlier path per step still fails that guard.
+    for size in [128, 512, 2049] {
         let mut source = String::from(
             "theorem long_trace(x: int32) {\n requires x == 0;\n ensures x == 0 by {\n",
         );
