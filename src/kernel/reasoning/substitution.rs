@@ -3204,6 +3204,12 @@ fn collect_algebraic_bound_variables(term: &AlgebraicTerm, variables: &mut BTree
             // scalar variables and binders. Freshness must reserve them too.
             variables.insert(*variable);
         }
+        AlgebraicTermNode::MemoryLoad { memory, pointer } => {
+            collect_algebraic_value_bound_variables(
+                &AlgebraicTermNode::memory_load_carrier_value(memory, pointer),
+                variables,
+            );
+        }
         AlgebraicTermNode::Constructor { fields, .. } => {
             for field in fields {
                 collect_algebraic_value_bound_variables(field, variables);
@@ -3325,6 +3331,19 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_term(
             algebraic_type: term.algebraic_type.clone(),
             node: match &term.node {
                 AlgebraicTermNode::Variable(variable) => AlgebraicTermNode::Variable(*variable),
+                AlgebraicTermNode::MemoryLoad { memory, pointer } => {
+                    match substitute_bitvector_variable_in_algebraic_value(
+                        &AlgebraicTermNode::memory_load_carrier_value(memory, pointer),
+                        from,
+                        to,
+                    ) {
+                        AlgebraicValue::C(value) => {
+                            AlgebraicTermNode::memory_load_from_carrier(&value)
+                                .unwrap_or_else(|| term.node.clone())
+                        }
+                        _ => term.node.clone(),
+                    }
+                }
                 AlgebraicTermNode::Constructor { variant, fields } => {
                     AlgebraicTermNode::Constructor {
                         variant: variant.clone(),
@@ -5835,6 +5854,17 @@ fn substitute_pointer_variable_in_algebraic_term_node(
 ) -> AlgebraicTermNode {
     match &term.node {
         AlgebraicTermNode::Variable(variable) => AlgebraicTermNode::Variable(*variable),
+        AlgebraicTermNode::MemoryLoad { memory, pointer } => {
+            match substitute_pointer_variable_in_algebraic_value(
+                &AlgebraicTermNode::memory_load_carrier_value(memory, pointer),
+                from,
+                to,
+            ) {
+                AlgebraicValue::C(value) => AlgebraicTermNode::memory_load_from_carrier(&value)
+                    .unwrap_or_else(|| term.node.clone()),
+                _ => term.node.clone(),
+            }
+        }
         AlgebraicTermNode::Constructor { variant, fields } => AlgebraicTermNode::Constructor {
             variant: variant.clone(),
             fields: fields

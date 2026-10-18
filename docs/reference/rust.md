@@ -674,10 +674,28 @@ scalar types, `echo.keep(x)` with `x: i32`, calls the instance
 declares and whose contract is the generic function's at those types: a
 clause that reads its abstract values only by `==` and `!=` means the same
 at every type. A type parameter is instantiated at `i32`, `u8`, `u16`,
-`u32`, `usize` or `bool`; a reference to a value of `T`, a `T` in a struct
-or memory, a generic call from generic code, and a generic block whose
-object carries state are refused
+`u32`, `usize` or `bool`; a reference to a value of `T`, a generic call
+from generic code, and a generic block whose object carries state are
+refused
 ([`design/charon-trial/generic-impls`](https://github.com/clicklang/click/blob/master/design/charon-trial/generic-impls/shapes.click)).
+
+A generic struct, `struct Cell<T> { value: T, count: u32 }`, holds values of
+its type parameters in memory. Each instance a type names is a record of its
+own, spelled with its arguments in the sidecar, `generic_structs::Cell<T>` in
+generic code and `generic_structs::Cell<i32>` in a caller. Rust fixes no
+layout for a generic struct and safe code reads none, so Click lays each
+instance out in declaration order: a scalar field at its size and alignment,
+a field of an abstract `T` at eight bytes. A generic function over the
+struct, `fn read<T: Copy>(cell: &generic_structs::Cell<T>) -> T { views
+cell.value; ensures result == cell.value; }`, is verified once: a store of a
+`T` value into a field and a load from it are value moves, and two fields of
+`T` are two values. Each instance a call names has the generic function's
+signature and clauses at its types, read again at the instance's own layout:
+`read<i32>` reads `Cell<i32>`'s `value` at its offset. A sidecar does not
+write an instance's block; `fn generic_structs::read<i32>(...)` is refused.
+A generic struct's field is of one of its type parameters or a scalar type,
+and the struct has no `Drop` or methods of its own yet
+([`design/charon-trial/generic-structs`](https://github.com/clicklang/click/blob/master/design/charon-trial/generic-structs/cells.click)).
 
 A generic trait's object may carry state, as any trait's does (below): the
 generic block's `function last(self) -> T;` and `function items(self) ->

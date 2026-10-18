@@ -4774,9 +4774,9 @@ pub(in crate::kernel) fn declare_local(
     register_block_alignment(&pointer.block, c_type.abi_alignment());
     let byte_width = match c_type {
         CType::Int128 | CType::UInt128 => 16,
-        // An abstract value's object has no addressable bytes: its value is
-        // held by its binding, and its address is never taken.
-        CType::Parameter(_) => 0,
+        // An abstract value's object holds its value in its binding; its
+        // bytes are the model width it takes in memory.
+        CType::Parameter(_) => crate::kernel::ABSTRACT_VALUE_WIDTH,
         CType::Void => unreachable!("void local objects are not supported"),
         CType::Bool => 1,
         CType::VoidPointer | CType::VoidPointerPointer => C_POINTER_BYTE_WIDTH,

@@ -2491,7 +2491,7 @@ fn collect_proposition_algebraic_terms(
 fn collect_algebraic_term_roots(term: &AlgebraicTerm, terms: &mut BTreeSet<AlgebraicTerm>) {
     terms.insert(term.clone());
     match &term.node {
-        AlgebraicTermNode::Variable(_) => {}
+        AlgebraicTermNode::Variable(_) | AlgebraicTermNode::MemoryLoad { .. } => {}
         AlgebraicTermNode::Constructor { fields, .. } => {
             for field in fields {
                 if let AlgebraicValue::Algebraic(value) = field {

@@ -2,6 +2,7 @@ mod cpp_class_objects;
 mod cpp_model;
 mod cpp_syntax;
 mod name_table;
+mod rust_generic_functions;
 mod rust_generic_traits;
 mod rust_literals;
 use super::names;
@@ -810,6 +811,9 @@ struct Parser {
     /// The generic Rust function instances the import declares, as the
     /// layouts give them.
     rust_generic_instances: Vec<(String, String, Vec<C0Type>, C0Type)>,
+    /// The index of each `fn` token of a generic function's instance the
+    /// parser wrote out: only these may name an instance.
+    rust_written_instances: BTreeSet<usize>,
     /// Each crate trait method implementation read, by name, with the
     /// interface it inherits.
     rust_trait_implementations: Vec<(String, String)>,
@@ -1185,6 +1189,31 @@ impl Parser {
         parser.local_struct_pointers_by_function = layouts.local_struct_pointers;
         parser.closure_captures = layouts.closure_captures;
         parser.rust_generic_instances = layouts.rust_generic_instances;
+        // A generic function's instances are written out at their types.
+        let mut function_instances = BTreeMap::<String, BTreeSet<Vec<String>>>::new();
+        for (instance, generic, _, _) in &parser.rust_generic_instances {
+            if let Some(arguments) =
+                crate::languages::rust::names::instance_type_arguments(instance, generic)
+            {
+                function_instances
+                    .entry(generic.clone())
+                    .or_default()
+                    .insert(arguments);
+            }
+        }
+        // An instance is only ever written out: one the sidecar writes is
+        // refused, whatever the import declares.
+        if parser.language == SourceLanguage::Rust {
+            let (tokens, positions, written) = rust_generic_functions::expand_generic_functions(
+                std::mem::take(&mut parser.tokens),
+                std::mem::take(&mut parser.positions),
+                &function_instances,
+            )?;
+            parser.matching_parentheses = validate_parenthesis_nesting(&tokens, &positions)?;
+            parser.tokens = tokens;
+            parser.positions = positions;
+            parser.rust_written_instances = written;
+        }
         parser.plain_char = layouts.plain_char;
         parser.int64_t_rank = layouts.int64_t_rank.unwrap_or(LongRank::Long);
         parser.c_typedefs = layouts.c_typedefs;
@@ -1322,6 +1351,7 @@ impl Parser {
             rust_trait_type_parameters: BTreeSet::new(),
             rust_abstract_type_parameters: BTreeSet::new(),
             rust_generic_instances: Vec::new(),
+            rust_written_instances: BTreeSet::new(),
             rust_trait_implementations: Vec::new(),
             cpp_dispatches: Vec::new(),
             cpp_receiver_calls: BTreeMap::new(),
@@ -5360,6 +5390,8 @@ impl Parser {
                         // A callback field is an eight-byte pointer value,
                         // matching the C boundary's own by-value field set.
                         | C0Type::FunctionPointer(_)
+                        // A generic Rust struct's field of a type parameter.
+                        | C0Type::Parameter(_)
                 )
             {
                 return Err(self.error(format!(

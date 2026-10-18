@@ -720,6 +720,10 @@ fn rewrite_atomic_proposition_by_exact_equality(
     ) -> AlgebraicTerm {
         let node = match &term.node {
             AlgebraicTermNode::Variable(variable) => AlgebraicTermNode::Variable(*variable),
+            AlgebraicTermNode::MemoryLoad { memory, pointer } => AlgebraicTermNode::MemoryLoad {
+                memory: memory.clone(),
+                pointer: Box::new(rewrite_pointer(pointer)),
+            },
             AlgebraicTermNode::Constructor { variant, fields } => AlgebraicTermNode::Constructor {
                 variant: variant.clone(),
                 fields: fields

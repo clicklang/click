@@ -270,7 +270,9 @@ fn lower_function(
             return Err("duplicate Rust parameter".into());
         }
         if let Type::Record { name } = &p.value_type {
-            if f.mir.is_none() {
+            // A generic function's instance takes the record as the
+            // generic function, whose MIR is checked, does.
+            if f.mir.is_none() && f.instance_of.is_none() {
                 return Err("owned record parameters require compiler MIR".into());
             }
             let layout = layouts.get(name).ok_or("missing parameter record layout")?;
@@ -388,8 +390,11 @@ fn lower_function(
         if f.mir.is_some() || !f.body.is_empty() {
             return Err("Rust extern function must not carry a body".into());
         }
-        let declaration = C0Function::external(return_type, f.name.clone(), parameters)
+        let mut declaration = C0Function::external(return_type, f.name.clone(), parameters)
             .with_generic_instance(f.instance_of.clone());
+        if let Some((name, layout)) = return_layout {
+            declaration = declaration.with_struct_return(name.clone(), layout.clone());
+        }
         // A generic function's instance names its parameters as the generic
         // function does.
         return Ok(if f.instance_of.is_some() {

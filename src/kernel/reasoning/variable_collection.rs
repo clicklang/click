@@ -459,6 +459,14 @@ fn condition_carrier(condition: &ConditionTerm) -> AlgebraicValue {
     }))
 }
 
+/// A [`AlgebraicTermNode::MemoryLoad`]'s memory and address as the scalar
+/// load at them: a walker reaches them as it reaches a scalar load's.
+fn load_carrier(memory: &crate::kernel::SharedCMemory, pointer: &crate::kernel::Pointer) -> AlgebraicValue {
+    AlgebraicValue::C(CValue::UInt64(AlgebraicTermNode::memory_load_carrier(
+        memory, pointer,
+    )))
+}
+
 fn collect_algebraic_term_bitvector_variables(
     term: &AlgebraicTerm,
     variables: &mut BTreeSet<Variable>,
@@ -473,6 +481,9 @@ fn collect_algebraic_term_bitvector_variables(
             for field in fields {
                 collect_algebraic_value_bitvector_variables(field, variables);
             }
+        }
+        AlgebraicTermNode::MemoryLoad { memory, pointer } => {
+            collect_algebraic_value_bitvector_variables(&load_carrier(memory, pointer), variables);
         }
         AlgebraicTermNode::If {
             condition,
@@ -920,6 +931,9 @@ fn collect_algebraic_term_bound_identities(
             for field in fields {
                 collect_algebraic_value_bound_identities(field, variables, integer_seen);
             }
+        }
+        AlgebraicTermNode::MemoryLoad { memory, pointer } => {
+            collect_algebraic_value_bound_identities(&load_carrier(memory, pointer), variables, integer_seen);
         }
         AlgebraicTermNode::If {
             condition,
@@ -2190,6 +2204,9 @@ fn collect_algebraic_free_integer_variables(
                 }
             }
         }
+        AlgebraicTermNode::MemoryLoad { memory, pointer } => {
+            collect_algebraic_value_integer_variables(&load_carrier(memory, pointer), variables, seen);
+        }
         AlgebraicTermNode::If {
             condition,
             then_term,
@@ -2373,6 +2390,9 @@ fn collect_algebraic_integer_variables(
                 }
                 collect_algebraic_value_integer_variables(field, variables, seen);
             }
+        }
+        AlgebraicTermNode::MemoryLoad { memory, pointer } => {
+            collect_algebraic_value_integer_variables(&load_carrier(memory, pointer), variables, seen);
         }
         AlgebraicTermNode::If {
             condition,
@@ -3034,6 +3054,9 @@ fn collect_capture_variables_in_algebraic_term(
                 }
                 collect_capture_variables_in_algebraic_value(field, variables, integer_seen);
             }
+        }
+        AlgebraicTermNode::MemoryLoad { memory, pointer } => {
+            collect_capture_variables_in_algebraic_value(&load_carrier(memory, pointer), variables, integer_seen);
         }
         AlgebraicTermNode::If {
             condition,
@@ -3710,6 +3733,9 @@ fn collect_algebraic_scope_summary(
                 summary.merge(collect_algebraic_value_scope_summary(field, summaries));
             }
             summary
+        }
+        AlgebraicTermNode::MemoryLoad { memory, pointer } => {
+            return collect_algebraic_value_scope_summary(&load_carrier(memory, pointer), summaries);
         }
         AlgebraicTermNode::If {
             condition,
@@ -4474,6 +4500,9 @@ fn collect_binder_variables_in_algebraic_term(
                     integer_seen,
                 );
             }
+        }
+        AlgebraicTermNode::MemoryLoad { memory, pointer } => {
+            collect_binder_variables_in_algebraic_value(&load_carrier(memory, pointer), integer_variables, bitvector_variables, integer_seen);
         }
         AlgebraicTermNode::If {
             condition,

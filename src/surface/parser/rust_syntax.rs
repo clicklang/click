@@ -40,10 +40,24 @@ impl Parser {
                 "a `fn` signature is the Rust spelling; a C or C++ source's contract is written `type name(type parameter, ...)`",
             ));
         }
+        let written_instance = self.rust_written_instances.contains(&self.position);
         self.expect_ident_spelling("fn")?;
         let path = self.expect_rust_path("function name")?;
         self.rust_trait_type_parameters.clear();
-        let callable_parameters = self.parse_rust_generic_parameters()?;
+        // A generic function's instance, written out at its types,
+        // `fn cells::read<i32>(...)`, is named with them.
+        let instance_arguments = self.rust_instance_arguments();
+        if !instance_arguments.is_empty() && !written_instance {
+            return Err(self.error(
+                "a generic function's instance has its generic function's contract at its \
+                 types; write the contract once, on the generic function",
+            ));
+        }
+        let callable_parameters = if instance_arguments.is_empty() {
+            self.parse_rust_generic_parameters()?
+        } else {
+            BTreeMap::new()
+        };
         let name = if self.rust_impl_type.is_some() || self.rust_trait_interface.is_some() {
             // A method's own name; an item inside it, `compute::LIMIT`,
             // follows as the importer writes path segments.
@@ -51,9 +65,7 @@ impl Parser {
                 &path.iter().map(String::as_str).collect::<Vec<_>>(),
             )
         } else {
-            crate::languages::rust::names::path_name(
-                &path.iter().map(String::as_str).collect::<Vec<_>>(),
-            )
+            trait_instance_name(&path, &instance_arguments)
         };
         self.expect(Token::LParen)?;
         let mut parameters = Vec::new();
@@ -574,6 +586,46 @@ impl Parser {
         ))
     }
 
+    /// A type's path and any type arguments, as the importer names an
+    /// instance of a generic struct: `cells::Cell<T>` or `cells::Cell<i32>`.
+    fn expect_rust_type_name(&mut self, what: &str) -> Result<String, ClickError> {
+        let path = self.expect_rust_path(what)?;
+        let arguments = if rust_scalar_type(&path.join("::")).is_none() {
+            self.parse_rust_type_arguments()?
+        } else {
+            Vec::new()
+        };
+        Ok(trait_instance_name(&path, &arguments))
+    }
+
+    /// The scalar type arguments after a function's name, `<i32>`, that
+    /// name a generic function's instance, with the list consumed; none,
+    /// with nothing consumed, otherwise.
+    fn rust_instance_arguments(&mut self) -> Vec<String> {
+        if self.peek() != Some(&Token::LessThan) {
+            return Vec::new();
+        }
+        let mut arguments = Vec::new();
+        let mut index = self.position + 1;
+        loop {
+            match self.tokens.get(index) {
+                Some(Token::Ident(argument))
+                    if rust_generic_traits::INSTANCE_SCALARS.contains(&argument.as_str()) =>
+                {
+                    arguments.push(argument.clone());
+                }
+                _ => return Vec::new(),
+            }
+            match self.tokens.get(index + 1) {
+                Some(Token::Comma) => index += 2,
+                Some(Token::GreaterThan) => break,
+                _ => return Vec::new(),
+            }
+        }
+        self.position = index + 2;
+        arguments
+    }
+
     /// A lifetime, `'a` in `&'a T`, which a contract does not use.
     pub(super) fn skip_rust_lifetime(&mut self) {
         if matches!(self.peek(), Some(Token::Lifetime(_))) {
@@ -879,7 +931,7 @@ impl Parser {
         if array {
             self.position += 1;
         }
-        let spelling = self.expect_rust_path_name("type")?;
+        let spelling = self.expect_rust_type_name("type")?;
         if array {
             self.expect(Token::Semicolon)?;
             // The length is a constant expression; the importer checks it.
@@ -1024,7 +1076,7 @@ impl Parser {
             self.position += 1;
             return Ok(scalar(C0Type::Parameter(parameter)));
         }
-        let spelling = self.expect_rust_path_name("type")?;
+        let spelling = self.expect_rust_type_name("type")?;
         Ok(match rust_scalar_type(&spelling) {
             Some(c_type) => scalar(c_type),
             None => ParsedType {
@@ -1076,7 +1128,7 @@ impl Parser {
                 .peek_ident()
                 .is_some_and(|word| rust_scalar_type(word).is_none())
             {
-                let spelling = self.expect_rust_path_name("pointee type")?;
+                let spelling = self.expect_rust_type_name("pointee type")?;
                 return Ok(Some(ParsedType {
                     c_type: C0Type::Int32Pointer,
                     struct_name: Some(spelling),

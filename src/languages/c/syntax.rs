@@ -4504,6 +4504,12 @@ impl C0StructLayout {
                 C0Type::Int64(_) | C0Type::UInt64(_) => (8, 8),
                 C0Type::UInt16 => (2, 2),
                 C0Type::Int32 | C0Type::UInt32 => (4, 4),
+                // A value of an abstract type parameter, a generic Rust
+                // struct's field, at its model width.
+                C0Type::Parameter(_) => (
+                    crate::kernel::ABSTRACT_VALUE_WIDTH,
+                    crate::kernel::ABSTRACT_VALUE_WIDTH,
+                ),
                 C0Type::Int32Pointer
                 | C0Type::UInt8Pointer
                 | C0Type::UInt16Pointer

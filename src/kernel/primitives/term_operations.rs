@@ -3384,9 +3384,10 @@ impl CType {
 
     pub fn byte_width(self) -> u32 {
         match self {
-            // An abstract value is held by its binding, with no addressable
-            // bytes: its address is never taken.
-            Self::Parameter(_) => 0,
+            // An abstract value stored in memory, as a generic struct's
+            // field, takes a word: no program reads its bytes, so its
+            // width is the model's choice. A local holds one in its binding.
+            Self::Parameter(_) => ABSTRACT_VALUE_WIDTH,
             Self::Void => 0,
             Self::Bool => 1,
             Self::VoidPointer => C_POINTER_BYTE_WIDTH,
@@ -3615,7 +3616,7 @@ impl CValue {
     pub(in crate::kernel) fn byte_width(&self) -> u32 {
         match self {
             Self::PointerInteger(_) => 8,
-            Self::Parameter(_) => 0,
+            Self::Parameter(_) => ABSTRACT_VALUE_WIDTH,
             Self::Void => 0,
             Self::Bool(_) => 1,
             Self::Int8(_) => 1,

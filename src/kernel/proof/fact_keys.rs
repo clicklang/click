@@ -1944,7 +1944,8 @@ fn alpha_algebraic_key_with_bindings<const ALLOW_LOADS: bool>(
         },
         AlgebraicTermNode::Match { .. }
         | AlgebraicTermNode::PureFunctionApplication { .. }
-        | AlgebraicTermNode::If { .. } => {
+        | AlgebraicTermNode::If { .. }
+        | AlgebraicTermNode::MemoryLoad { .. } => {
             return None;
         }
     })

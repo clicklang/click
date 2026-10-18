@@ -164,3 +164,53 @@ fn charon_generic_implementations_are_verified_once_for_every_type() {
         assert!(rendered.contains(expected), "{rendered}");
     }
 }
+
+const STRUCT_SIDECAR: &str =
+    include_str!("../../design/charon-trial/generic-structs/cells.click");
+
+// A generic struct's fields of `T` are values of `T` in memory: generic
+// functions over `&Cell<T>` and `&mut Pair<T>` are verified once with `T`
+// abstract, and calls at `i32` and `u8` use their contracts at the
+// instances' own layouts.
+#[test]
+fn charon_generic_struct_fields_are_verified_once_for_every_type() {
+    let p = Project::from_fixture("design/charon-trial/generic-structs");
+    fs::write(p.root.join("borrow.click"), STRUCT_SIDECAR).unwrap();
+    let prepared = p.prepared().unwrap();
+    C0VerificationSession::new_program_prepared(STRUCT_SIDECAR, &prepared)
+        .unwrap_or_else(|error| panic!("{error:?}"));
+    for (before, after, expected) in [
+        // A stored value of `T` reads back as itself, and only as itself.
+        (
+            "    ensures result == cell.value;",
+            "    ensures result != cell.value;",
+            "generic_structs::read.ensures_0",
+        ),
+        // Two fields of `T` are two values.
+        (
+            "    ensures pair.first == old(pair.second);",
+            "    ensures pair.first == old(pair.first);",
+            "generic_structs::swap.ensures_0",
+        ),
+        // Callers at `i32` and `u8` know the instances' contracts and no more.
+        (
+            "    ensures result == x;",
+            "    ensures result == 0;",
+            "generic_structs::round_trip.ensures_0",
+        ),
+        (
+            "    ensures result == y;",
+            "    ensures result == x;",
+            "generic_structs::swapped.ensures_0",
+        ),
+    ] {
+        assert!(STRUCT_SIDECAR.contains(before), "{before}");
+        let invalid = STRUCT_SIDECAR.replacen(before, after, 1);
+        let error = C0VerificationSession::new_program_prepared(&invalid, &prepared)
+            .err()
+            .expect("a claim the generic contracts do not justify must fail");
+        let rendered = format!("{error:?} {error}");
+        let rendered = click::languages::rust::names::display_rust_names(&rendered);
+        assert!(rendered.contains(expected), "{rendered}");
+    }
+}
