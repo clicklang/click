@@ -149,6 +149,11 @@ enum Establish {
     },
 }
 
+#[cfg(test)]
+thread_local! {
+    static BRIDGE_ESTABLISHMENTS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
 thread_local! {
     // A bridge may ask for this operation's definedness or no-wrap bound.
     // Proving that prerequisite can find the same operation among connected
@@ -181,6 +186,8 @@ impl Drop for OperationBridgeScope {
 
 impl Carried {
     fn establish<'a>(&self, proof: &Proof<'a>) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        BRIDGE_ESTABLISHMENTS.with(|count| count.set(count.get() + 1));
         match &self.establish {
             Establish::Steps(steps) => Ok(steps
                 .iter()
@@ -477,73 +484,100 @@ impl<'a> Proof<'a> {
             return Ok(None);
         }
 
-        // Establish every carried fact once to learn its kernel form; the
-        // solver then picks among them.
-        let mut trial = self.clone();
-        let mut established: Vec<(Proposition, &Carried)> = Vec::new();
-        for item in &carried {
-            check_verification_deadline()?;
-            let Some(next) = item.establish(&trial)? else {
-                continue;
-            };
-            let Ok(kernel) = next.lower_cited_surface_proposition(&item.surface, "carried fact")
-            else {
-                continue;
-            };
-            trial = next;
-            established.push((kernel, item));
-        }
-        let mut premises = candidates;
-        premises.extend(established.iter().map(|(kernel, _)| kernel.clone()));
-        check_verification_deadline()?;
-        let IntegerRefutation::Proved {
-            certificate,
-            premises: used,
-        } = crate::instrumentation::measure_operation(
-            "surface",
-            "auto solver",
-            "auto solver: bridged integer refutation",
-            || plan_integer_refutation(goal, &premises),
-        )
-        else {
-            return Ok(None);
-        };
-        // Keep only the carried facts the certificate cites, in their order.
+        // Lower candidate statements without constructing proofs for them.
+        // Only a successful solver plan selects which bridge steps to issue.
+        let planned = carried
+            .iter()
+            .filter_map(|item| {
+                self.lower_cited_surface_proposition(&item.surface, "planned carried fact")
+                    .ok()
+                    .map(|kernel| (kernel, item))
+            })
+            .collect::<Vec<_>>();
+        let mut rejected = BTreeSet::new();
+        let mut established = BTreeSet::new();
         let mut proof = self.clone();
-        for (kernel, item) in &established {
-            if used.contains(kernel) {
+        loop {
+            let mut premises = candidates.clone();
+            premises.extend(
+                planned
+                    .iter()
+                    .enumerate()
+                    .filter(|(index, _)| !rejected.contains(index))
+                    .map(|(_, (kernel, _))| kernel.clone()),
+            );
+            check_verification_deadline()?;
+            let IntegerRefutation::Proved {
+                certificate,
+                premises: used,
+            } = crate::instrumentation::measure_operation(
+                "surface",
+                "auto solver",
+                "auto solver: bridged integer refutation",
+                || plan_integer_refutation(goal, &premises),
+            )
+            else {
+                return Ok(None);
+            };
+            // A proposed bridge can have an unproved prerequisite, such as
+            // an unsigned operation's no-wrap bound. Remove that candidate
+            // and try another plan, retaining every successful construction.
+            let mut failed = None;
+            for (index, (kernel, item)) in planned.iter().enumerate() {
+                if rejected.contains(&index)
+                    || established.contains(&index)
+                    || !used.contains(kernel)
+                {
+                    continue;
+                }
+                if proof.facts().contains(kernel) {
+                    established.insert(index);
+                    continue;
+                }
                 match item.establish(&proof)? {
-                    Some(next) => proof = next,
-                    None => return Ok(None),
+                    Some(next) => {
+                        proof = next;
+                        established.insert(index);
+                    }
+                    None => {
+                        failed = Some(index);
+                        break;
+                    }
                 }
             }
+            if let Some(index) = failed {
+                rejected.insert(index);
+                continue;
+            }
+            // A cited fact with no source spelling leaves the certificate
+            // unwritable, so the solver does not close the goal.
+            let Some(pairs) =
+                used.iter()
+                    .map(|premise| {
+                        match planned.iter().enumerate().find(|(index, (kernel, _))| {
+                            !rejected.contains(index) && kernel == premise
+                        }) {
+                            Some((_, (_, item))) => Some((premise.clone(), item.surface.clone())),
+                            None => proof
+                                .resolve_simp_premises(std::slice::from_ref(premise), &[])
+                                .and_then(|mut spelled| spelled.pop()),
+                        }
+                    })
+                    .collect::<Option<Vec<_>>>()
+            else {
+                return Ok(None);
+            };
+            let Some(surface) = super::smart_closures::integer_plan_to_surface_certificate(
+                &certificate,
+                &pairs,
+                surface_goal,
+            ) else {
+                return Ok(None);
+            };
+            return attempt::candidate_outcome(proof.apply_step(ProofStep::ArithmeticCertificate(
+                ArithmeticCertificate::integer(surface),
+            )));
         }
-        // A cited fact with no source spelling leaves the certificate
-        // unwritable, so the solver does not close the goal.
-        let Some(pairs) = used
-            .iter()
-            .map(
-                |premise| match established.iter().find(|(kernel, _)| kernel == premise) {
-                    Some((_, item)) => Some((premise.clone(), item.surface.clone())),
-                    None => proof
-                        .resolve_simp_premises(std::slice::from_ref(premise), &[])
-                        .and_then(|mut spelled| spelled.pop()),
-                },
-            )
-            .collect::<Option<Vec<_>>>()
-        else {
-            return Ok(None);
-        };
-        let Some(surface) = super::smart_closures::integer_plan_to_surface_certificate(
-            &certificate,
-            &pairs,
-            surface_goal,
-        ) else {
-            return Ok(None);
-        };
-        attempt::candidate_outcome(proof.apply_step(ProofStep::ArithmeticCertificate(
-            ArithmeticCertificate::integer(surface),
-        )))
     }
 
     /// Close an `Integer` equality goal `l == r` by proving `l <= r` and
@@ -1750,4 +1784,9 @@ fn integer_literal_value(expression: &ContractExpression) -> Option<i128> {
         ContractExpression::IntegerLiteral(text) => text.parse().ok(),
         _ => None,
     }
+}
+
+#[cfg(test)]
+mod scaling_tests {
+    include!("../../scaling_tests/surface/proof/solver_bridges.rs");
 }
