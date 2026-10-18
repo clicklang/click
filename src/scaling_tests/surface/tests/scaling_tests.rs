@@ -4468,66 +4468,6 @@ fn call_separation_requirements_ignore_unrelated_owned_objects() {
     );
 }
 
-/// `execute()` runs an early-return fan-out on the checked `Proof` in work
-/// near linear in its length.
-///
-/// The main path of an early-return fan-out learns one condition per `if`,
-/// so its facts grow with its length. The function opens with a null check
-/// on a fresh `malloc` result, which `execute()` used to hand to the planner;
-/// the planner then built its own fact contexts along the path, 136, 248,
-/// 472, and 920 entries at 4, 8, 16, and 32 returns on 2026-09-27. The
-/// branch now splits on the `Proof`, which extends the goal's indexed facts
-/// and builds no path context of its own. Measured on 2026-10-02 at the same
-/// sizes: 1630, 2730, 5506, and 13362 units of `execute` work, against 3678,
-/// 5946, 11058, and 23586 through the planner.
-///
-/// Each early return is a terminal join nested in the one before it. A
-/// terminal join used to carry every arm's condition spellings into its
-/// parent, so the innermost condition was recorded again at each enclosing
-/// join: 29762 and then 70690 units at 32 and 64 returns on 2026-10-05, 2.4
-/// times per doubling. A terminal join has no successor to read them, and
-/// each path keeps its own, so it no longer carries them: 3874, 6598,
-/// 12070, 23030, and 44950 units at 4 to 64 returns.
-///
-/// The whole verification's context builds are not asserted: finalization
-/// reads every path's facts, which the checked execution stores whole per
-/// path, so they grow with the square of the path on either route (75, 159,
-/// 423, and 1335 entries here).
-#[test]
-#[ignore = "nightly: 7s in the parallel gate"]
-fn executing_a_fan_out_is_near_linear_in_its_length() {
-    std::thread::Builder::new()
-        .name("fan-out-execute".into())
-        .stack_size(64 << 20)
-        .spawn(|| {
-            let _ = roundtrip_sample(1, 0);
-            const EXECUTE: &str = "smart tactic `execute`";
-            let click = "verifying \"fan_out.c\";\n\nint g(int a) {\n    ensures result == a or result == -1;\n} by {\n    execute();\n    simp();\n}\n";
-            let mut execute = Vec::new();
-            for returns in [4, 8, 16, 32, 64] {
-                let c = early_return_fan_out(returns);
-                let (verified, sample) = scaling_sample(returns, || {
-                    verify_c0_sources(click, &[("fan_out.c", c.as_str())])
-                });
-                verified.unwrap_or_else(|error| {
-                    panic!("fan-out of {returns} returns failed: {}", error.message())
-                });
-                execute.push(ScalingSample {
-                    size: returns,
-                    work: *sample.named_work.get(EXECUTE).unwrap_or_else(|| {
-                        panic!("the fan-out was not run by `execute`: {sample:?}")
-                    }),
-                    named_work: BTreeMap::new(),
-                });
-            }
-            eprintln!("fan-out execute work: {execute:?}");
-            assert_near_linear_scaling("executing a fan-out's paths", &execute);
-        })
-        .expect("spawn the fan-out thread")
-        .join()
-        .expect("fan-out thread");
-}
-
 /// A copy loop whose preservation `simp` reaches a fact transport the
 /// explicit-premise planner cannot view: the element just stored is named
 /// `dst[k]` under `k == i - 1`, so `old(src[k]) == old(src[k])` does not
@@ -6948,51 +6888,6 @@ fn failing_simp_work_is_flat_along_a_variable_chain() {
     );
 }
 
-/// simp offers its goal as a transport from function entry and from a fixed
-/// number of recently recorded program points, not from every point the
-/// path recorded. A path records a point per statement it ran, so offering
-/// them all cost each early-return path work linear in its length: 112k of
-/// the 254k units this fan-out took at 64 returns on 2026-10-05. Bounded,
-/// the search costs each path the same, so its total is linear in the
-/// returns.
-///
-/// This regression asserts only the transport search's own work, rather
-/// than the cost of the whole verification.
-#[test]
-#[ignore = "nightly: 4s in the parallel gate"]
-fn simp_snapshot_transport_search_is_linear_in_early_returns() {
-    std::thread::Builder::new()
-        .name("fan-out-transport".into())
-        .stack_size(64 << 20)
-        .spawn(|| {
-            let _ = roundtrip_sample(1, 0);
-            const TRANSPORT: &str = "operation `simp closure: snapshot transport`";
-            let click = "verifying \"fan_out.c\";\n\nint g(int a) {\n    ensures result == a or result == -1;\n} by {\n    execute();\n    simp();\n}\n";
-            let mut transport = Vec::new();
-            for returns in [4, 8, 16, 32, 64] {
-                let c = early_return_fan_out(returns);
-                let (verified, sample) = scaling_sample(returns, || {
-                    verify_c0_sources(click, &[("fan_out.c", c.as_str())])
-                });
-                verified.unwrap_or_else(|error| {
-                    panic!("fan-out of {returns} returns failed: {}", error.message())
-                });
-                transport.push(ScalingSample {
-                    size: returns,
-                    work: *sample.named_work.get(TRANSPORT).unwrap_or_else(|| {
-                        panic!("simp did not try a snapshot transport: {sample:?}")
-                    }),
-                    named_work: BTreeMap::new(),
-                });
-            }
-            eprintln!("fan-out snapshot transport work: {transport:?}");
-            assert_near_linear_scaling("simp's snapshot transport search", &transport);
-        })
-        .expect("spawn the fan-out thread")
-        .join()
-        .expect("fan-out thread");
-}
-
 /// The `execute(); simp();` proof of [`early_return_fan_out`] written with
 /// simple tactics only, as `click expand` writes it when it expands
 /// `execute()` and then `simp()`: the steps and C branches of `execute`, then
@@ -7045,54 +6940,16 @@ fn early_return_fan_out_explicit_proof(returns: usize) -> String {
     proof
 }
 
-/// Indexed constant equalities avoid selecting every earlier guard about `a`.
-/// Pin the selector's work and the complete transaction, so a shortcut cannot
-/// move its quadratic selection work to another phase. The context-reuse
-/// regression below separately bounds context construction and shared storage.
-#[test]
-#[ignore = "nightly: 5s in the parallel gate"]
-fn indexed_simp_premises_reduce_whole_early_return_work() {
-    std::thread::Builder::new()
-        .name("fan-out-indexed-premises".into())
-        .stack_size(64 << 20)
-        .spawn(|| {
-            let _ = roundtrip_sample(1, 0);
-            let mut samples = Vec::new();
-            let mut selection = Vec::new();
-            let click = "verifying \"fan_out.c\";\nint g(int a) { ensures result == a or result == -1; } by { execute(); simp(); }";
-            for returns in [4, 8, 16, 32, 64] {
-                let c = early_return_fan_out(returns);
-                let (verified, sample) = scaling_sample(returns, || {
-                    verify_c0_sources(click, &[("fan_out.c", c.as_str())])
-                });
-                verified.unwrap_or_else(|error| {
-                    panic!("fan-out of {returns} returns: {}", error.message())
-                });
-                selection.push(*sample.named_work.get("operation `atomic dependency selection`").unwrap_or(&0));
-                samples.push(sample);
-            }
-            eprintln!("indexed fan-out: {samples:?}; selection: {selection:?}");
-            assert!(selection.windows(2).all(|pair| pair[1] <= pair[0] * 2 + 8),
-                "indexed constant selection must stay linear: {selection:?}");
-            assert!(samples.windows(2).skip(2).all(|pair| pair[1].work * 100 <= pair[0].work * 215),
-                "whole verification must retain the selection saving: {samples:?}; {}", named_growth_diagnostic(&samples));
-            let c = early_return_fan_out(64);
-            let false_click = click.replace("result == -1", "result == -2");
-            let error = verify_c0_sources(&false_click, &[("fan_out.c", c.as_str())])
-                .expect_err("indexed premises cannot prove an incorrect postcondition");
-            assert!(!error.message().contains("budget"), "{}", error.message());
-        })
-        .expect("spawn the indexed fan-out thread")
-        .join()
-        .expect("indexed fan-out thread");
-}
-
 /// Return preparation and contract preparation share checked contexts in both
 /// proof forms. Bound whole-transaction construction, not just one tactic.
 /// Both forms must also keep whole-verification work and retained fact storage
 /// near linear, at candidate publication and at checked completion.
 fn check_completed_early_return_context_reuse(explicit: bool) {
     let mut samples = Vec::new();
+    let mut transport = Vec::new();
+    let mut execute = Vec::new();
+    let mut spelling = Vec::new();
+    let mut selection = Vec::new();
     let mut outcome_reads = Vec::new();
     let mut terminal_reads = Vec::new();
     let mut statement_entries = Vec::new();
@@ -7162,6 +7019,38 @@ fn check_completed_early_return_context_reuse(explicit: bool) {
         outcome_reads.push(crate::surface::proof::take_outcome_fact_reads());
         terminal_reads.push(crate::surface::proof::take_terminal_publication_visits());
         statement_entries.push(crate::kernel::proof::take_statement_priority_entries());
+        if !explicit {
+            execute.push(ScalingSample {
+                size: returns,
+                work: *sample
+                    .named_work
+                    .get("smart tactic `execute`")
+                    .unwrap_or_else(|| panic!("the fan-out was not run by `execute`: {sample:?}")),
+                named_work: BTreeMap::new(),
+            });
+            transport.push(ScalingSample {
+                size: returns,
+                work: *sample
+                    .named_work
+                    .get("operation `simp closure: snapshot transport`")
+                    .unwrap_or_else(|| panic!("simp did not try a snapshot transport: {sample:?}")),
+                named_work: BTreeMap::new(),
+            });
+            spelling.push(ScalingSample {
+                size: returns,
+                work: *sample
+                    .named_work
+                    .get("operation `simp closure: premise spelling`")
+                    .unwrap_or(&0),
+                named_work: BTreeMap::new(),
+            });
+            selection.push(
+                *sample
+                    .named_work
+                    .get("operation `atomic dependency selection`")
+                    .unwrap_or(&0),
+            );
+        }
         samples.push(sample);
     }
     eprintln!("stored execution facts, explicit={explicit}: {stored:?}");
@@ -7286,10 +7175,39 @@ fn check_completed_early_return_context_reuse(explicit: bool) {
             "checked leaf contexts must share case prefixes: explicit={explicit}, returns={returns}, entries={entries}"
         );
     }
+    if explicit {
+        // Keep every original 8/16/32/64 proof and its whole-work guard.
+        assert_near_linear_scaling("an explicit early-return proof", &samples[1..]);
+    } else {
+        eprintln!("fan-out execute work: {execute:?}");
+        assert_near_linear_scaling("executing a fan-out's paths", &execute);
+        eprintln!("fan-out snapshot transport work: {transport:?}");
+        assert_near_linear_scaling("simp's snapshot transport search", &transport);
+        eprintln!("fan-out premise spelling work: {spelling:?}");
+        assert_near_linear_scaling("simp's premise spelling", &spelling);
+        eprintln!("indexed fan-out: {samples:?}; selection: {selection:?}");
+        assert!(
+            selection.windows(2).all(|pair| pair[1] <= pair[0] * 2 + 8),
+            "indexed constant selection must stay linear: {selection:?}"
+        );
+        assert!(
+            samples
+                .windows(2)
+                .skip(2)
+                .all(|pair| pair[1].work * 100 <= pair[0].work * 215),
+            "whole verification must retain the selection saving: {samples:?}; {}",
+            named_growth_diagnostic(&samples)
+        );
+        let c = early_return_fan_out(64);
+        let false_click = "verifying \"fan_out.c\";\nint g(int a) { ensures result == a or result == -2; } by { execute(); simp(); }";
+        let error = verify_c0_sources(false_click, &[("fan_out.c", c.as_str())])
+            .expect_err("indexed premises cannot prove an incorrect postcondition");
+        assert!(!error.message().contains("budget"), "{}", error.message());
+    }
 }
 
 #[test]
-#[ignore = "nightly: 6s in the parallel gate"]
+#[ignore = "nightly: shared full-size early-return regression matrix"]
 fn completed_early_return_contexts_are_reused_for_certification() {
     std::thread::Builder::new()
         .name("fan-out-context-reuse".into())
@@ -7303,40 +7221,6 @@ fn completed_early_return_contexts_are_reused_for_certification() {
         .expect("spawn the context-reuse thread")
         .join()
         .expect("context-reuse thread");
-}
-
-/// Completed early-return cases are processed iteratively, so an explicit
-/// proof reaches 64 returns despite the written nesting. Keep the broad work
-/// guard, which rejects 4x growth per doubling. The context-reuse regression
-/// separately bounds shared storage and logical imports more tightly.
-#[test]
-#[ignore = "nightly: 3s in the parallel gate"]
-fn explicit_early_return_proof_completes_through_sixty_four_returns() {
-    std::thread::Builder::new()
-        .name("fan-out-explicit".into())
-        .stack_size(64 << 20)
-        .spawn(|| {
-            let _ = roundtrip_sample(1, 0);
-            let mut samples = Vec::new();
-            for returns in [8, 16, 32, 64] {
-                let c = early_return_fan_out(returns);
-                let click = early_return_fan_out_explicit_proof(returns);
-                let (verified, sample) = scaling_sample(returns, || {
-                    verify_c0_sources(&click, &[("fan_out.c", c.as_str())])
-                });
-                verified.unwrap_or_else(|error| {
-                    panic!(
-                        "explicit fan-out of {returns} returns failed: {}",
-                        error.message()
-                    )
-                });
-                samples.push(sample);
-            }
-            assert_near_linear_scaling("an explicit early-return proof", &samples);
-        })
-        .expect("spawn the fan-out thread")
-        .join()
-        .expect("fan-out thread");
 }
 
 fn check_early_return_execution_expansion(returns: usize) {
@@ -7407,53 +7291,6 @@ fn long_proof_else_spines_parse_on_a_small_stack_and_restore_block_bindings() {
         .unwrap()
         .join()
         .unwrap();
-}
-
-/// simp spells only the premises its derivation's recorded path names, not
-/// every fact the derivation's selection held. On path `k` of the
-/// early-return fan-out the selection formerly held all `k` conditions about
-/// `a` while the equality path named one, and a derivation that only selects a
-/// disjunct spells none: its disjunct is proved on its own goal. Spelling
-/// the whole selection cost each path work linear in its length (the three
-/// spelling sites charged 15.8k units at 64 returns on 2026-10-06); now the
-/// spelling is linear in the returns.
-///
-/// Constant-pinned equality selection is separately covered by
-/// `indexed_simp_premises_reduce_whole_early_return_work`.
-#[test]
-#[ignore = "nightly: 4s in the parallel gate"]
-fn simp_premise_spelling_is_linear_in_early_returns() {
-    std::thread::Builder::new()
-        .name("fan-out-spelling".into())
-        .stack_size(64 << 20)
-        .spawn(|| {
-            let _ = roundtrip_sample(1, 0);
-            const SPELLING: &str = "operation `simp closure: premise spelling`";
-            let click = "verifying \"fan_out.c\";\n\nint g(int a) {\n    ensures result == a or result == -1;\n} by {\n    execute();\n    simp();\n}\n";
-            let mut spelling = Vec::new();
-            for returns in [4, 8, 16, 32, 64] {
-                let c = early_return_fan_out(returns);
-                let (verified, sample) = scaling_sample(returns, || {
-                    verify_c0_sources(click, &[("fan_out.c", c.as_str())])
-                });
-                verified.unwrap_or_else(|error| {
-                    panic!("fan-out of {returns} returns failed: {}", error.message())
-                });
-                spelling.push(ScalingSample {
-                    size: returns,
-                    work: *sample
-                        .named_work
-                        .get(SPELLING)
-                        .unwrap_or(&0),
-                    named_work: BTreeMap::new(),
-                });
-            }
-            eprintln!("fan-out premise spelling work: {spelling:?}");
-            assert_near_linear_scaling("simp's premise spelling", &spelling);
-        })
-        .expect("spawn the fan-out thread")
-        .join()
-        .expect("fan-out thread");
 }
 
 #[test]
