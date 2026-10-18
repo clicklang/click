@@ -875,19 +875,23 @@ impl PropositionSearch for PureFactContext {
         if let Some(rule) = direct {
             return Some(Box::new(proposition_derivation(proposition, rule)));
         }
-        if self.is_inconsistent() {
-            return Some(Box::new(proposition_derivation(
+        if let Some(rule) = self.derive_by_singleton_substitution(proposition, for_simp) {
+            return Some(Box::new(proposition_derivation(proposition, rule)));
+        }
+        if let Some(rule) = self.derive_by_disjunction_cases(proposition, for_simp) {
+            return Some(Box::new(proposition_derivation(proposition, rule)));
+        }
+        // A selected equality or case proof needs no global contradiction
+        // search. Building consistency indexes first would charge a local
+        // successful proof for unrelated ambient order facts.
+        self.is_inconsistent().then(|| {
+            Box::new(proposition_derivation(
                 proposition,
                 PropositionDerivationRule::Explosion {
                     premises: RetainedPremises::from_context(self),
                 },
-            )));
-        }
-        if let Some(rule) = self.derive_by_singleton_substitution(proposition, for_simp) {
-            return Some(Box::new(proposition_derivation(proposition, rule)));
-        }
-        self.derive_by_disjunction_cases(proposition, for_simp)
-            .map(|rule| Box::new(proposition_derivation(proposition, rule)))
+            ))
+        })
     }
 
     #[inline(never)]
