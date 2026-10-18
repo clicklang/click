@@ -1849,9 +1849,13 @@ arm proved, or the `cases` is refused
 `mdtests/cases_arms_that_do_not_rejoin_are_refused.md`); an arm that reaches
 function exit finishes its own path
 (`mdtests/cases_at_a_frontier_finishes_each_arm.md`). In a loop's `preserve`
-proof its arms must rejoin. After execution `cases` is not yet a case split:
-write it before execution reaches the function exit, or inside
-`have P by { cases { ... } }`.
+proof its arms must rejoin. After execution it splits each outcome path as a
+proof `if` does: on a path whose facts decide a disjunct only that arm runs;
+elsewhere the path forks into one path per arm, which needs the disjunction as an
+exact fact on that path (`mdtests/cases_after_execution_splits_each_outcome_path.md`,
+`mdtests/cases_after_execution_takes_the_decided_arm.md`), and tactics written
+after a `cases` that forks are refused
+(`mdtests/cases_after_execution_that_would_fork_is_refused.md`).
 
 **Failure, checking, and tools:**
 
@@ -1859,7 +1863,7 @@ An unavailable disjunction or unfinished arm fails; this never substitutes `not
 A` for `B` or implicitly branches C. Click checks both proof branches, expansion
 recurses, and profiling reports descendants.
 
-**Checked examples:** [`logical_tactics.rs`](https://github.com/clicklang/click/blob/master/src/surface/tests/tactic_tests/logical_tactics.rs), [`cases_in_have_before_and_after_execute.md`](https://github.com/clicklang/click/blob/master/mdtests/cases_in_have_before_and_after_execute.md), [`cases_at_a_frontier_finishes_each_arm.md`](https://github.com/clicklang/click/blob/master/mdtests/cases_at_a_frontier_finishes_each_arm.md), [`cases_arms_rejoin_with_the_facts_every_arm_proved.md`](https://github.com/clicklang/click/blob/master/mdtests/cases_arms_rejoin_with_the_facts_every_arm_proved.md), [`cases_at_a_frontier_requires_its_disjunction.md`](https://github.com/clicklang/click/blob/master/mdtests/cases_at_a_frontier_requires_its_disjunction.md), [`cases_after_execution_is_not_yet_a_case_split.md`](https://github.com/clicklang/click/blob/master/mdtests/cases_after_execution_is_not_yet_a_case_split.md)
+**Checked examples:** [`logical_tactics.rs`](https://github.com/clicklang/click/blob/master/src/surface/tests/tactic_tests/logical_tactics.rs), [`cases_in_have_before_and_after_execute.md`](https://github.com/clicklang/click/blob/master/mdtests/cases_in_have_before_and_after_execute.md), [`cases_at_a_frontier_finishes_each_arm.md`](https://github.com/clicklang/click/blob/master/mdtests/cases_at_a_frontier_finishes_each_arm.md), [`cases_arms_rejoin_with_the_facts_every_arm_proved.md`](https://github.com/clicklang/click/blob/master/mdtests/cases_arms_rejoin_with_the_facts_every_arm_proved.md), [`cases_at_a_frontier_requires_its_disjunction.md`](https://github.com/clicklang/click/blob/master/mdtests/cases_at_a_frontier_requires_its_disjunction.md), [`cases_after_execution_splits_each_outcome_path.md`](https://github.com/clicklang/click/blob/master/mdtests/cases_after_execution_splits_each_outcome_path.md), [`cases_after_execution_requires_its_disjunction.md`](https://github.com/clicklang/click/blob/master/mdtests/cases_after_execution_requires_its_disjunction.md)
 
 ### Scoped resource opening
 

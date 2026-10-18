@@ -107,11 +107,87 @@ fn post_execution_if_forks_the_proof() -> ClickError {
     )
 }
 
-/// The refusal for a `cases` written after execution, which is not yet a
-/// case split there.
-fn cases_after_execution_is_not_supported() -> ClickError {
+/// Defers a proof `if` or `cases` reached at function exit onto the outcome
+/// paths. Where its case is open on some path, the paths fork, one per arm;
+/// a fork with tactics written after the split is refused, since they would
+/// be checked once per arm.
+#[allow(clippy::too_many_arguments)]
+fn defer_post_execution_case_split<'a>(
+    proof: Proof<'a>,
+    index: usize,
+    source_index: usize,
+    condition: &ClickProposition,
+    disjunction: bool,
+    then_branch: &InternalProofNode,
+    else_branch: &InternalProofNode,
+    continuation: &InternalProofNode,
+    expansion_capture: Option<&mut ExpansionCapture>,
+) -> Driven<Proof<'a>> {
+    let mut proof = proof;
+    let Some(then_tactics) = deferred_post_execution_region(then_branch) else {
+        return decline();
+    };
+    let Some(else_tactics) = deferred_post_execution_region(else_branch) else {
+        return decline();
+    };
+    let nested = then_tactics
+        .iter()
+        .chain(&else_tactics)
+        .any(|tactic| matches!(tactic.tactic, PostExecutionTactic::If { .. }));
+    let explicit_cursor = !disjunction
+        && deferred_post_execution_if_is_explicit_path_cursor(
+            condition,
+            &then_tactics,
+            &else_tactics,
+        );
+    if nested
+        || !explicit_cursor && !proof.post_execution_if_is_path_decided(condition, disjunction)?
+    {
+        // The case is open on some outcome path: fork those paths, one per
+        // arm.
+        let before = outcome_path_count(&proof);
+        match proof.split_outcome_paths_by_case(
+            condition,
+            disjunction,
+            &then_tactics,
+            &else_tactics,
+        ) {
+            Ok(split) => proof = split,
+            Err(error) if disjunction => return Err(error),
+            Err(_) => {
+                check_verification_deadline()?;
+                return decline();
+            }
+        }
+        // What follows a case split is checked once, after execution as
+        // before it: a split that forks paths would check it once per arm.
+        if outcome_path_count(&proof) > before && !matches!(continuation, InternalProofNode::Done) {
+            return Err(if disjunction {
+                post_execution_cases_forks_the_proof()
+            } else {
+                post_execution_if_forks_the_proof()
+            });
+        }
+    }
+    Ok(Ok(proof.defer_post_execution_source_tactic(
+        index,
+        source_index,
+        PostExecutionTactic::If {
+            condition: condition.clone(),
+            disjunction,
+            execution_route: None,
+            then_tactics,
+            else_tactics,
+        },
+        expansion_capture,
+    )?))
+}
+
+/// The refusal for a `cases` after execution whose disjuncts are open on
+/// some outcome path while tactics follow it.
+fn post_execution_cases_forks_the_proof() -> ClickError {
     ClickError::new(
-        "`cases` after execution is not supported yet: write the case split before execution reaches the function exit, or prove its conclusion with `have P by { cases { ... } }`",
+        "the arms of this `cases` after execution do not rejoin: no disjunct is decided on some outcome path, so the tactics written after the `cases` would be checked once per arm. Move those tactics into the arms",
     )
 }
 
@@ -826,8 +902,29 @@ fn deferred_post_execution_region(
                 });
                 continuation
             }
+            InternalProofNode::Cases {
+                index,
+                source_index,
+                disjunction,
+                then_branch,
+                else_branch,
+                continuation,
+            } => {
+                deferred.push(DeferredPostExecutionTactic {
+                    lexical_bindings: None,
+                    tactic_index: *index,
+                    source_index: *source_index,
+                    tactic: PostExecutionTactic::If {
+                        condition: disjunction.clone(),
+                        disjunction: true,
+                        execution_route: None,
+                        then_tactics: deferred_post_execution_region(then_branch)?,
+                        else_tactics: deferred_post_execution_region(else_branch)?,
+                    },
+                });
+                continuation
+            }
             InternalProofNode::Match { .. }
-            | InternalProofNode::Cases { .. }
             | InternalProofNode::Open { .. }
             | InternalProofNode::Branch { .. } => return None,
         };
@@ -1492,14 +1589,27 @@ fn try_check_structural_function_proof_inner<'a>(
             }
             InternalProofNode::Cases {
                 index,
+                source_index,
                 disjunction,
                 then_branch,
                 else_branch,
                 continuation,
-                ..
             } => {
                 if proof.is_at_function_exit() {
-                    return Err(cases_after_execution_is_not_supported());
+                    proof = driven!(defer_post_execution_case_split(
+                        proof,
+                        *index,
+                        *source_index,
+                        disjunction,
+                        true,
+                        then_branch,
+                        else_branch,
+                        continuation,
+                        staged_expansion_capture.as_mut(),
+                    ));
+                    saw_structure = true;
+                    current = continuation;
+                    continue;
                 }
                 proof = proof.with_execution_tactic_index(*index)?;
                 if !matches!(continuation.as_ref(), InternalProofNode::Done) {
@@ -1729,57 +1839,17 @@ fn try_check_structural_function_proof_inner<'a>(
                 ..
             } => {
                 if proof.is_at_function_exit() {
-                    let Some(then_tactics) = deferred_post_execution_region(then_branch) else {
-                        return decline();
-                    };
-                    let Some(else_tactics) = deferred_post_execution_region(else_branch) else {
-                        return decline();
-                    };
-                    if then_tactics
-                        .iter()
-                        .chain(&else_tactics)
-                        .any(|tactic| matches!(tactic.tactic, PostExecutionTactic::If { .. }))
-                        || !deferred_post_execution_if_is_explicit_path_cursor(
-                            condition,
-                            &then_tactics,
-                            &else_tactics,
-                        ) && !proof.post_execution_if_is_path_decided(condition)?
-                    {
-                        // The condition is a proof-level case split on some
-                        // outcome path: fork those paths, one per polarity.
-                        let before = outcome_path_count(&proof);
-                        match proof.split_outcome_paths_by_case(
-                            condition,
-                            &then_tactics,
-                            &else_tactics,
-                        ) {
-                            Ok(split) => proof = split,
-                            Err(_) => {
-                                check_verification_deadline()?;
-                                return decline();
-                            }
-                        }
-                        // What follows a proof `if` is checked once, after
-                        // execution as before it: a split that forks paths
-                        // would check it once per arm.
-                        if outcome_path_count(&proof) > before
-                            && !matches!(&**continuation, InternalProofNode::Done)
-                        {
-                            return Err(post_execution_if_forks_the_proof());
-                        }
-                    }
-                    proof = proof.defer_post_execution_source_tactic(
+                    proof = driven!(defer_post_execution_case_split(
+                        proof,
                         *index,
                         *source_index,
-                        PostExecutionTactic::If {
-                            condition: condition.clone(),
-                            disjunction: false,
-                            execution_route: None,
-                            then_tactics,
-                            else_tactics,
-                        },
+                        condition,
+                        false,
+                        then_branch,
+                        else_branch,
+                        continuation,
                         staged_expansion_capture.as_mut(),
-                    )?;
+                    ));
                     saw_structure = true;
                     current = continuation;
                     continue;
@@ -3777,14 +3847,27 @@ fn advance_focused_execution_region_with_branch_continuation<'a>(
             }
             InternalProofNode::Cases {
                 index,
+                source_index,
                 disjunction,
                 then_branch,
                 else_branch,
                 continuation,
-                ..
             } => {
                 if proof.is_at_function_exit() {
-                    return Err(cases_after_execution_is_not_supported());
+                    proof = driven!(defer_post_execution_case_split(
+                        proof,
+                        *index,
+                        *source_index,
+                        disjunction,
+                        true,
+                        then_branch,
+                        else_branch,
+                        continuation,
+                        expansion_capture.as_deref_mut(),
+                    ));
+                    region = continuation;
+                    branch_continuation = None;
+                    continue;
                 }
                 let owner = proof.clone();
                 let mut proof_at_cases = proof.with_execution_tactic_index(*index)?;
@@ -3826,57 +3909,17 @@ fn advance_focused_execution_region_with_branch_continuation<'a>(
                 ..
             } => {
                 if proof.is_at_function_exit() {
-                    let Some(then_tactics) = deferred_post_execution_region(then_branch) else {
-                        return decline();
-                    };
-                    let Some(else_tactics) = deferred_post_execution_region(else_branch) else {
-                        return decline();
-                    };
-                    if then_tactics
-                        .iter()
-                        .chain(&else_tactics)
-                        .any(|tactic| matches!(tactic.tactic, PostExecutionTactic::If { .. }))
-                        || !deferred_post_execution_if_is_explicit_path_cursor(
-                            condition,
-                            &then_tactics,
-                            &else_tactics,
-                        ) && !proof.post_execution_if_is_path_decided(condition)?
-                    {
-                        // A proof-level case split on some outcome path, as at
-                        // the top level: fork those paths, one per polarity.
-                        let before = outcome_path_count(&proof);
-                        match proof.split_outcome_paths_by_case(
-                            condition,
-                            &then_tactics,
-                            &else_tactics,
-                        ) {
-                            Ok(split) => proof = split,
-                            Err(_) => {
-                                check_verification_deadline()?;
-                                return decline();
-                            }
-                        }
-                        // What follows a proof `if` is checked once, after
-                        // execution as before it: a split that forks paths
-                        // would check it once per arm.
-                        if outcome_path_count(&proof) > before
-                            && !matches!(&**continuation, InternalProofNode::Done)
-                        {
-                            return Err(post_execution_if_forks_the_proof());
-                        }
-                    }
-                    proof = proof.defer_post_execution_source_tactic(
+                    proof = driven!(defer_post_execution_case_split(
+                        proof,
                         *index,
                         *source_index,
-                        PostExecutionTactic::If {
-                            condition: condition.clone(),
-                            disjunction: false,
-                            execution_route: None,
-                            then_tactics,
-                            else_tactics,
-                        },
+                        condition,
+                        false,
+                        then_branch,
+                        else_branch,
+                        continuation,
                         expansion_capture.as_deref_mut(),
-                    )?;
+                    ));
                     region = continuation;
                     branch_continuation = None;
                     continue;

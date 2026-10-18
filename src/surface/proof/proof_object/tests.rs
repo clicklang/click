@@ -13144,7 +13144,7 @@ fn terminal_execution_branch_retains_distinct_outcomes_as_a_logical_if() {
             ))),
         };
         let forked = joined
-            .split_outcome_paths_by_case(&unknown, &[], &[])
+            .split_outcome_paths_by_case(&unknown, false, &[], &[])
             .unwrap();
         let forked_execution = forked.execution().unwrap();
         let forked_paths = forked_execution.core.frontier.execution().unwrap().paths();

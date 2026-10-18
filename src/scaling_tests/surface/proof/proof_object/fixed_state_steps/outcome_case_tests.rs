@@ -19,6 +19,7 @@ fn nested_case_partition_reuses_decisions_without_relowering_or_forking() {
             .map(|(index, condition)| OutcomeCase {
                 fingerprint: ExecutionBranchDecisions::key(condition),
                 condition,
+                disjunction: false,
                 execution_route: None,
                 arms: [None, (index + 1 < size).then_some(index + 1)],
             })
