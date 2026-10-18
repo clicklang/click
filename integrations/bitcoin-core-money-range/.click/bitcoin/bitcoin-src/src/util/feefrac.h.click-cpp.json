@@ -1118,7 +1118,7 @@
           "kind": "library_assert",
           "metadata": [
             {
-              "declaration_file": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/source_location",
+              "declaration_file": "$unit/sysroot/usr/include/c++/12/source_location",
               "function": "std::source_location::current",
               "kind": "consteval"
             },
@@ -1129,7 +1129,7 @@
                 "header": "sysroot/usr/include/c++/12/string_view",
                 "sha256": "9b1a575ffad1e8575cd6fc1c9a24b0cdde3793275be431726cc9c1b178a8733c"
               },
-              "declaration_file": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/string_view",
+              "declaration_file": "$unit/sysroot/usr/include/c++/12/string_view",
               "kind": "literal",
               "literal": "d > 0",
               "record": "std::basic_string_view",
@@ -1829,1284 +1829,1284 @@
   "logical_source": "bitcoin-src/src/util/feefrac.h",
   "preprocessor_files": [
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/bitcoin-src/src/attributes.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/bitcoin-src/src/attributes.h"
+      "accessed_path": "$clang-resource/include/__stdarg___gnuc_va_list.h",
+      "canonical_path": "$clang-resource/include/__stdarg___gnuc_va_list.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/bitcoin-src/src/compat/assumptions.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/bitcoin-src/src/compat/assumptions.h"
+      "accessed_path": "$clang-resource/include/__stddef_header_macro.h",
+      "canonical_path": "$clang-resource/include/__stddef_header_macro.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/bitcoin-src/src/compat/byteswap.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/bitcoin-src/src/compat/byteswap.h"
+      "accessed_path": "$clang-resource/include/__stddef_max_align_t.h",
+      "canonical_path": "$clang-resource/include/__stddef_max_align_t.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/bitcoin-src/src/compat/endian.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/bitcoin-src/src/compat/endian.h"
+      "accessed_path": "$clang-resource/include/__stddef_null.h",
+      "canonical_path": "$clang-resource/include/__stddef_null.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/bitcoin-src/src/consensus/amount.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/bitcoin-src/src/consensus/amount.h"
+      "accessed_path": "$clang-resource/include/__stddef_nullptr_t.h",
+      "canonical_path": "$clang-resource/include/__stddef_nullptr_t.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/bitcoin-src/src/policy/feerate.cpp",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/bitcoin-src/src/policy/feerate.cpp"
+      "accessed_path": "$clang-resource/include/__stddef_offsetof.h",
+      "canonical_path": "$clang-resource/include/__stddef_offsetof.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/bitcoin-src/src/policy/feerate.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/bitcoin-src/src/policy/feerate.h"
+      "accessed_path": "$clang-resource/include/__stddef_ptrdiff_t.h",
+      "canonical_path": "$clang-resource/include/__stddef_ptrdiff_t.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/bitcoin-src/src/prevector.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/bitcoin-src/src/prevector.h"
+      "accessed_path": "$clang-resource/include/__stddef_size_t.h",
+      "canonical_path": "$clang-resource/include/__stddef_size_t.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/bitcoin-src/src/serialize.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/bitcoin-src/src/serialize.h"
+      "accessed_path": "$clang-resource/include/__stddef_wchar_t.h",
+      "canonical_path": "$clang-resource/include/__stddef_wchar_t.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/bitcoin-src/src/span.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/bitcoin-src/src/span.h"
+      "accessed_path": "$clang-resource/include/limits.h",
+      "canonical_path": "$clang-resource/include/limits.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/bitcoin-src/src/tinyformat.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/bitcoin-src/src/tinyformat.h"
+      "accessed_path": "$clang-resource/include/stdarg.h",
+      "canonical_path": "$clang-resource/include/stdarg.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/bitcoin-src/src/util/check.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/bitcoin-src/src/util/check.h"
+      "accessed_path": "$clang-resource/include/stddef.h",
+      "canonical_path": "$clang-resource/include/stddef.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/bitcoin-src/src/util/feefrac.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/bitcoin-src/src/util/feefrac.h"
+      "accessed_path": "$clang-resource/include/stdint.h",
+      "canonical_path": "$clang-resource/include/stdint.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/bitcoin-src/src/util/fees.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/bitcoin-src/src/util/fees.h"
+      "accessed_path": "$unit/bitcoin-src/src/attributes.h",
+      "canonical_path": "$unit/bitcoin-src/src/attributes.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/bitcoin-src/src/util/string.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/bitcoin-src/src/util/string.h"
+      "accessed_path": "$unit/bitcoin-src/src/compat/assumptions.h",
+      "canonical_path": "$unit/bitcoin-src/src/compat/assumptions.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/alloca.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/alloca.h"
+      "accessed_path": "$unit/bitcoin-src/src/compat/byteswap.h",
+      "canonical_path": "$unit/bitcoin-src/src/compat/byteswap.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/asm-generic/errno-base.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/asm-generic/errno-base.h"
+      "accessed_path": "$unit/bitcoin-src/src/compat/endian.h",
+      "canonical_path": "$unit/bitcoin-src/src/compat/endian.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/asm-generic/errno.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/asm-generic/errno.h"
+      "accessed_path": "$unit/bitcoin-src/src/consensus/amount.h",
+      "canonical_path": "$unit/bitcoin-src/src/consensus/amount.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/assert.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/assert.h"
+      "accessed_path": "$unit/bitcoin-src/src/policy/feerate.cpp",
+      "canonical_path": "$unit/bitcoin-src/src/policy/feerate.cpp"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/algorithm",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/algorithm"
+      "accessed_path": "$unit/bitcoin-src/src/policy/feerate.h",
+      "canonical_path": "$unit/bitcoin-src/src/policy/feerate.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/array",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/array"
+      "accessed_path": "$unit/bitcoin-src/src/prevector.h",
+      "canonical_path": "$unit/bitcoin-src/src/prevector.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/atomic",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/atomic"
+      "accessed_path": "$unit/bitcoin-src/src/serialize.h",
+      "canonical_path": "$unit/bitcoin-src/src/serialize.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/backward/auto_ptr.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/backward/auto_ptr.h"
+      "accessed_path": "$unit/bitcoin-src/src/span.h",
+      "canonical_path": "$unit/bitcoin-src/src/span.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/backward/binders.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/backward/binders.h"
+      "accessed_path": "$unit/bitcoin-src/src/tinyformat.h",
+      "canonical_path": "$unit/bitcoin-src/src/tinyformat.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bit",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bit"
+      "accessed_path": "$unit/bitcoin-src/src/util/check.h",
+      "canonical_path": "$unit/bitcoin-src/src/util/check.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/algorithmfwd.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/algorithmfwd.h"
+      "accessed_path": "$unit/bitcoin-src/src/util/feefrac.h",
+      "canonical_path": "$unit/bitcoin-src/src/util/feefrac.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/align.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/align.h"
+      "accessed_path": "$unit/bitcoin-src/src/util/fees.h",
+      "canonical_path": "$unit/bitcoin-src/src/util/fees.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/alloc_traits.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/alloc_traits.h"
+      "accessed_path": "$unit/bitcoin-src/src/util/string.h",
+      "canonical_path": "$unit/bitcoin-src/src/util/string.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/allocated_ptr.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/allocated_ptr.h"
+      "accessed_path": "$unit/sysroot/usr/include/alloca.h",
+      "canonical_path": "$unit/sysroot/usr/include/alloca.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/allocator.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/allocator.h"
+      "accessed_path": "$unit/sysroot/usr/include/asm-generic/errno-base.h",
+      "canonical_path": "$unit/sysroot/usr/include/asm-generic/errno-base.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/atomic_base.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/atomic_base.h"
+      "accessed_path": "$unit/sysroot/usr/include/asm-generic/errno.h",
+      "canonical_path": "$unit/sysroot/usr/include/asm-generic/errno.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/atomic_lockfree_defines.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/atomic_lockfree_defines.h"
+      "accessed_path": "$unit/sysroot/usr/include/assert.h",
+      "canonical_path": "$unit/sysroot/usr/include/assert.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/atomic_wait.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/atomic_wait.h"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/algorithm",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/algorithm"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/basic_ios.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/basic_ios.h"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/array",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/array"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/basic_ios.tcc",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/basic_ios.tcc"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/atomic",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/atomic"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/basic_string.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/basic_string.h"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/backward/auto_ptr.h",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/backward/auto_ptr.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/basic_string.tcc",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/basic_string.tcc"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/backward/binders.h",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/backward/binders.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/char_traits.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/char_traits.h"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/bit",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/bit"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/charconv.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/charconv.h"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/bits/algorithmfwd.h",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/bits/algorithmfwd.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/codecvt.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/codecvt.h"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/bits/align.h",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/bits/align.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/concept_check.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/concept_check.h"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/bits/alloc_traits.h",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/bits/alloc_traits.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/cpp_type_traits.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/cpp_type_traits.h"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/bits/allocated_ptr.h",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/bits/allocated_ptr.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/cxxabi_forced.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/cxxabi_forced.h"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/bits/allocator.h",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/bits/allocator.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/cxxabi_init_exception.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/cxxabi_init_exception.h"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/bits/atomic_base.h",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/bits/atomic_base.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/enable_special_members.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/enable_special_members.h"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/bits/atomic_lockfree_defines.h",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/bits/atomic_lockfree_defines.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/erase_if.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/erase_if.h"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/bits/atomic_wait.h",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/bits/atomic_wait.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/exception.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/exception.h"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/bits/basic_ios.h",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/bits/basic_ios.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/exception_defines.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/exception_defines.h"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/bits/basic_ios.tcc",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/bits/basic_ios.tcc"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/exception_ptr.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/exception_ptr.h"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/bits/basic_string.h",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/bits/basic_string.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/functexcept.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/functexcept.h"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/bits/basic_string.tcc",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/bits/basic_string.tcc"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/functional_hash.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/functional_hash.h"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/bits/char_traits.h",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/bits/char_traits.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/hash_bytes.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/hash_bytes.h"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/bits/charconv.h",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/bits/charconv.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/invoke.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/invoke.h"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/bits/codecvt.h",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/bits/codecvt.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/ios_base.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/ios_base.h"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/bits/concept_check.h",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/bits/concept_check.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/istream.tcc",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/istream.tcc"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/bits/cpp_type_traits.h",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/bits/cpp_type_traits.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/iterator_concepts.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/iterator_concepts.h"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/bits/cxxabi_forced.h",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/bits/cxxabi_forced.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/locale_classes.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/locale_classes.h"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/bits/cxxabi_init_exception.h",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/bits/cxxabi_init_exception.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/locale_classes.tcc",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/locale_classes.tcc"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/bits/enable_special_members.h",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/bits/enable_special_members.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/locale_conv.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/locale_conv.h"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/bits/erase_if.h",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/bits/erase_if.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/locale_facets.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/locale_facets.h"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/bits/exception.h",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/bits/exception.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/locale_facets.tcc",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/locale_facets.tcc"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/bits/exception_defines.h",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/bits/exception_defines.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/locale_facets_nonio.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/locale_facets_nonio.h"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/bits/exception_ptr.h",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/bits/exception_ptr.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/locale_facets_nonio.tcc",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/locale_facets_nonio.tcc"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/bits/functexcept.h",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/bits/functexcept.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/localefwd.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/localefwd.h"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/bits/functional_hash.h",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/bits/functional_hash.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/max_size_type.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/max_size_type.h"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/bits/hash_bytes.h",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/bits/hash_bytes.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/memoryfwd.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/memoryfwd.h"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/bits/invoke.h",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/bits/invoke.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/move.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/move.h"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/bits/ios_base.h",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/bits/ios_base.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/nested_exception.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/nested_exception.h"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/bits/istream.tcc",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/bits/istream.tcc"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/new_allocator.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/new_allocator.h"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/bits/iterator_concepts.h",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/bits/iterator_concepts.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/node_handle.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/node_handle.h"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/bits/locale_classes.h",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/bits/locale_classes.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/ostream.tcc",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/ostream.tcc"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/bits/locale_classes.tcc",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/bits/locale_classes.tcc"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/ostream_insert.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/ostream_insert.h"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/bits/locale_conv.h",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/bits/locale_conv.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/postypes.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/postypes.h"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/bits/locale_facets.h",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/bits/locale_facets.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/predefined_ops.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/predefined_ops.h"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/bits/locale_facets.tcc",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/bits/locale_facets.tcc"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/ptr_traits.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/ptr_traits.h"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/bits/locale_facets_nonio.h",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/bits/locale_facets_nonio.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/range_access.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/range_access.h"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/bits/locale_facets_nonio.tcc",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/bits/locale_facets_nonio.tcc"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/ranges_algo.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/ranges_algo.h"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/bits/localefwd.h",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/bits/localefwd.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/ranges_algobase.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/ranges_algobase.h"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/bits/max_size_type.h",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/bits/max_size_type.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/ranges_base.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/ranges_base.h"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/bits/memoryfwd.h",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/bits/memoryfwd.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/ranges_cmp.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/ranges_cmp.h"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/bits/move.h",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/bits/move.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/ranges_uninitialized.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/ranges_uninitialized.h"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/bits/nested_exception.h",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/bits/nested_exception.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/ranges_util.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/ranges_util.h"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/bits/new_allocator.h",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/bits/new_allocator.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/refwrap.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/refwrap.h"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/bits/node_handle.h",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/bits/node_handle.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/shared_ptr.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/shared_ptr.h"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/bits/ostream.tcc",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/bits/ostream.tcc"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/shared_ptr_atomic.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/shared_ptr_atomic.h"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/bits/ostream_insert.h",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/bits/ostream_insert.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/shared_ptr_base.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/shared_ptr_base.h"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/bits/postypes.h",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/bits/postypes.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/sstream.tcc",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/sstream.tcc"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/bits/predefined_ops.h",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/bits/predefined_ops.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/std_abs.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/std_abs.h"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/bits/ptr_traits.h",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/bits/ptr_traits.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/std_mutex.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/std_mutex.h"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/bits/range_access.h",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/bits/range_access.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/stl_algo.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/stl_algo.h"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/bits/ranges_algo.h",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/bits/ranges_algo.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/stl_algobase.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/stl_algobase.h"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/bits/ranges_algobase.h",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/bits/ranges_algobase.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/stl_bvector.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/stl_bvector.h"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/bits/ranges_base.h",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/bits/ranges_base.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/stl_construct.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/stl_construct.h"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/bits/ranges_cmp.h",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/bits/ranges_cmp.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/stl_function.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/stl_function.h"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/bits/ranges_uninitialized.h",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/bits/ranges_uninitialized.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/stl_heap.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/stl_heap.h"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/bits/ranges_util.h",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/bits/ranges_util.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/stl_iterator.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/stl_iterator.h"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/bits/refwrap.h",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/bits/refwrap.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/stl_iterator_base_funcs.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/stl_iterator_base_funcs.h"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/bits/shared_ptr.h",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/bits/shared_ptr.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/stl_iterator_base_types.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/stl_iterator_base_types.h"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/bits/shared_ptr_atomic.h",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/bits/shared_ptr_atomic.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/stl_map.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/stl_map.h"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/bits/shared_ptr_base.h",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/bits/shared_ptr_base.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/stl_multimap.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/stl_multimap.h"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/bits/sstream.tcc",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/bits/sstream.tcc"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/stl_multiset.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/stl_multiset.h"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/bits/std_abs.h",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/bits/std_abs.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/stl_pair.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/stl_pair.h"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/bits/std_mutex.h",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/bits/std_mutex.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/stl_raw_storage_iter.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/stl_raw_storage_iter.h"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/bits/stl_algo.h",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/bits/stl_algo.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/stl_relops.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/stl_relops.h"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/bits/stl_algobase.h",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/bits/stl_algobase.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/stl_set.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/stl_set.h"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/bits/stl_bvector.h",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/bits/stl_bvector.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/stl_tempbuf.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/stl_tempbuf.h"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/bits/stl_construct.h",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/bits/stl_construct.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/stl_tree.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/stl_tree.h"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/bits/stl_function.h",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/bits/stl_function.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/stl_uninitialized.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/stl_uninitialized.h"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/bits/stl_heap.h",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/bits/stl_heap.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/stl_vector.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/stl_vector.h"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/bits/stl_iterator.h",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/bits/stl_iterator.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/stream_iterator.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/stream_iterator.h"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/bits/stl_iterator_base_funcs.h",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/bits/stl_iterator_base_funcs.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/streambuf.tcc",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/streambuf.tcc"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/bits/stl_iterator_base_types.h",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/bits/stl_iterator_base_types.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/streambuf_iterator.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/streambuf_iterator.h"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/bits/stl_map.h",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/bits/stl_map.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/string_view.tcc",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/string_view.tcc"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/bits/stl_multimap.h",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/bits/stl_multimap.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/stringfwd.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/stringfwd.h"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/bits/stl_multiset.h",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/bits/stl_multiset.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/uniform_int_dist.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/uniform_int_dist.h"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/bits/stl_pair.h",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/bits/stl_pair.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/unique_ptr.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/unique_ptr.h"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/bits/stl_raw_storage_iter.h",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/bits/stl_raw_storage_iter.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/uses_allocator.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/uses_allocator.h"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/bits/stl_relops.h",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/bits/stl_relops.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/uses_allocator_args.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/uses_allocator_args.h"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/bits/stl_set.h",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/bits/stl_set.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/utility.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/utility.h"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/bits/stl_tempbuf.h",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/bits/stl_tempbuf.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/vector.tcc",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/bits/vector.tcc"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/bits/stl_tree.h",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/bits/stl_tree.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/cassert",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/cassert"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/bits/stl_uninitialized.h",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/bits/stl_uninitialized.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/cctype",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/cctype"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/bits/stl_vector.h",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/bits/stl_vector.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/cerrno",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/cerrno"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/bits/stream_iterator.h",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/bits/stream_iterator.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/climits",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/climits"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/bits/streambuf.tcc",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/bits/streambuf.tcc"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/clocale",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/clocale"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/bits/streambuf_iterator.h",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/bits/streambuf_iterator.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/compare",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/compare"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/bits/string_view.tcc",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/bits/string_view.tcc"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/concepts",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/concepts"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/bits/stringfwd.h",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/bits/stringfwd.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/cstddef",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/cstddef"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/bits/uniform_int_dist.h",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/bits/uniform_int_dist.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/cstdint",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/cstdint"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/bits/unique_ptr.h",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/bits/unique_ptr.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/cstdio",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/cstdio"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/bits/uses_allocator.h",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/bits/uses_allocator.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/cstdlib",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/cstdlib"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/bits/uses_allocator_args.h",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/bits/uses_allocator_args.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/cstring",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/cstring"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/bits/utility.h",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/bits/utility.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/ctime",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/ctime"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/bits/vector.tcc",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/bits/vector.tcc"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/cwchar",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/cwchar"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/cassert",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/cassert"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/cwctype",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/cwctype"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/cctype",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/cctype"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/debug/assertions.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/debug/assertions.h"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/cerrno",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/cerrno"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/debug/debug.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/debug/debug.h"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/climits",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/climits"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/exception",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/exception"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/clocale",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/clocale"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/ext/aligned_buffer.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/ext/aligned_buffer.h"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/compare",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/compare"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/ext/alloc_traits.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/ext/alloc_traits.h"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/concepts",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/concepts"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/ext/atomicity.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/ext/atomicity.h"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/cstddef",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/cstddef"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/ext/concurrence.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/ext/concurrence.h"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/cstdint",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/cstdint"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/ext/numeric_traits.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/ext/numeric_traits.h"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/cstdio",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/cstdio"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/ext/string_conversions.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/ext/string_conversions.h"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/cstdlib",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/cstdlib"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/ext/type_traits.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/ext/type_traits.h"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/cstring",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/cstring"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/initializer_list",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/initializer_list"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/ctime",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/ctime"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/ios",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/ios"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/cwchar",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/cwchar"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/iosfwd",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/iosfwd"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/cwctype",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/cwctype"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/iostream",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/iostream"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/debug/assertions.h",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/debug/assertions.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/istream",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/istream"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/debug/debug.h",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/debug/debug.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/iterator",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/iterator"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/exception",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/exception"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/limits",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/limits"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/ext/aligned_buffer.h",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/ext/aligned_buffer.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/locale",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/locale"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/ext/alloc_traits.h",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/ext/alloc_traits.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/map",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/map"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/ext/atomicity.h",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/ext/atomicity.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/memory",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/memory"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/ext/concurrence.h",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/ext/concurrence.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/new",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/new"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/ext/numeric_traits.h",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/ext/numeric_traits.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/numbers",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/numbers"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/ext/string_conversions.h",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/ext/string_conversions.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/optional",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/optional"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/ext/type_traits.h",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/ext/type_traits.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/ostream",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/ostream"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/initializer_list",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/initializer_list"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/pstl/execution_defs.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/pstl/execution_defs.h"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/ios",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/ios"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/pstl/glue_algorithm_defs.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/pstl/glue_algorithm_defs.h"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/iosfwd",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/iosfwd"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/pstl/glue_memory_defs.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/pstl/glue_memory_defs.h"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/iostream",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/iostream"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/pstl/pstl_config.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/pstl/pstl_config.h"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/istream",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/istream"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/set",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/set"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/iterator",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/iterator"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/source_location",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/source_location"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/limits",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/limits"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/span",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/span"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/locale",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/locale"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/sstream",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/sstream"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/map",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/map"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/stdexcept",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/stdexcept"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/memory",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/memory"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/streambuf",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/streambuf"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/new",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/new"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/string",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/string"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/numbers",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/numbers"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/string_view",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/string_view"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/optional",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/optional"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/system_error",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/system_error"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/ostream",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/ostream"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/tuple",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/tuple"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/pstl/execution_defs.h",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/pstl/execution_defs.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/type_traits",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/type_traits"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/pstl/glue_algorithm_defs.h",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/pstl/glue_algorithm_defs.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/typeinfo",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/typeinfo"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/pstl/glue_memory_defs.h",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/pstl/glue_memory_defs.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/utility",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/utility"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/pstl/pstl_config.h",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/pstl/pstl_config.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/vector",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/c++/12/vector"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/set",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/set"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/ctype.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/ctype.h"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/source_location",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/source_location"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/endian.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/endian.h"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/span",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/span"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/errno.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/errno.h"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/sstream",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/sstream"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/features-time64.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/features-time64.h"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/stdexcept",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/stdexcept"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/features.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/features.h"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/streambuf",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/streambuf"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/libintl.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/libintl.h"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/string",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/string"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/limits.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/limits.h"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/string_view",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/string_view"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/linux/close_range.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/linux/close_range.h"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/system_error",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/system_error"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/linux/errno.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/linux/errno.h"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/tuple",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/tuple"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/linux/limits.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/linux/limits.h"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/type_traits",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/type_traits"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/locale.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/locale.h"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/typeinfo",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/typeinfo"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/pthread.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/pthread.h"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/utility",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/utility"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/sched.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/sched.h"
+      "accessed_path": "$unit/sysroot/usr/include/c++/12/vector",
+      "canonical_path": "$unit/sysroot/usr/include/c++/12/vector"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/stdc-predef.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/stdc-predef.h"
+      "accessed_path": "$unit/sysroot/usr/include/ctype.h",
+      "canonical_path": "$unit/sysroot/usr/include/ctype.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/stdint.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/stdint.h"
+      "accessed_path": "$unit/sysroot/usr/include/endian.h",
+      "canonical_path": "$unit/sysroot/usr/include/endian.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/stdio.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/stdio.h"
+      "accessed_path": "$unit/sysroot/usr/include/errno.h",
+      "canonical_path": "$unit/sysroot/usr/include/errno.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/stdlib.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/stdlib.h"
+      "accessed_path": "$unit/sysroot/usr/include/features-time64.h",
+      "canonical_path": "$unit/sysroot/usr/include/features-time64.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/string.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/string.h"
+      "accessed_path": "$unit/sysroot/usr/include/features.h",
+      "canonical_path": "$unit/sysroot/usr/include/features.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/strings.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/strings.h"
+      "accessed_path": "$unit/sysroot/usr/include/libintl.h",
+      "canonical_path": "$unit/sysroot/usr/include/libintl.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/syscall.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/syscall.h"
+      "accessed_path": "$unit/sysroot/usr/include/limits.h",
+      "canonical_path": "$unit/sysroot/usr/include/limits.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/time.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/time.h"
+      "accessed_path": "$unit/sysroot/usr/include/linux/close_range.h",
+      "canonical_path": "$unit/sysroot/usr/include/linux/close_range.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/unistd.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/unistd.h"
+      "accessed_path": "$unit/sysroot/usr/include/linux/errno.h",
+      "canonical_path": "$unit/sysroot/usr/include/linux/errno.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/wchar.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/wchar.h"
+      "accessed_path": "$unit/sysroot/usr/include/linux/limits.h",
+      "canonical_path": "$unit/sysroot/usr/include/linux/limits.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/wctype.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/wctype.h"
+      "accessed_path": "$unit/sysroot/usr/include/locale.h",
+      "canonical_path": "$unit/sysroot/usr/include/locale.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/asm/errno.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/asm/errno.h"
+      "accessed_path": "$unit/sysroot/usr/include/pthread.h",
+      "canonical_path": "$unit/sysroot/usr/include/pthread.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/asm/unistd.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/asm/unistd.h"
+      "accessed_path": "$unit/sysroot/usr/include/sched.h",
+      "canonical_path": "$unit/sysroot/usr/include/sched.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/asm/unistd_64.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/asm/unistd_64.h"
+      "accessed_path": "$unit/sysroot/usr/include/stdc-predef.h",
+      "canonical_path": "$unit/sysroot/usr/include/stdc-predef.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/atomic_wide_counter.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/atomic_wide_counter.h"
+      "accessed_path": "$unit/sysroot/usr/include/stdint.h",
+      "canonical_path": "$unit/sysroot/usr/include/stdint.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/byteswap.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/byteswap.h"
+      "accessed_path": "$unit/sysroot/usr/include/stdio.h",
+      "canonical_path": "$unit/sysroot/usr/include/stdio.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/confname.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/confname.h"
+      "accessed_path": "$unit/sysroot/usr/include/stdlib.h",
+      "canonical_path": "$unit/sysroot/usr/include/stdlib.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/cpu-set.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/cpu-set.h"
+      "accessed_path": "$unit/sysroot/usr/include/string.h",
+      "canonical_path": "$unit/sysroot/usr/include/string.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/endian.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/endian.h"
+      "accessed_path": "$unit/sysroot/usr/include/strings.h",
+      "canonical_path": "$unit/sysroot/usr/include/strings.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/endianness.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/endianness.h"
+      "accessed_path": "$unit/sysroot/usr/include/syscall.h",
+      "canonical_path": "$unit/sysroot/usr/include/syscall.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/environments.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/environments.h"
+      "accessed_path": "$unit/sysroot/usr/include/time.h",
+      "canonical_path": "$unit/sysroot/usr/include/time.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/errno.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/errno.h"
+      "accessed_path": "$unit/sysroot/usr/include/unistd.h",
+      "canonical_path": "$unit/sysroot/usr/include/unistd.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/floatn-common.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/floatn-common.h"
+      "accessed_path": "$unit/sysroot/usr/include/wchar.h",
+      "canonical_path": "$unit/sysroot/usr/include/wchar.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/floatn.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/floatn.h"
+      "accessed_path": "$unit/sysroot/usr/include/wctype.h",
+      "canonical_path": "$unit/sysroot/usr/include/wctype.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/getopt_core.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/getopt_core.h"
+      "accessed_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/asm/errno.h",
+      "canonical_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/asm/errno.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/getopt_posix.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/getopt_posix.h"
+      "accessed_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/asm/unistd.h",
+      "canonical_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/asm/unistd.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/libc-header-start.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/libc-header-start.h"
+      "accessed_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/asm/unistd_64.h",
+      "canonical_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/asm/unistd_64.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/local_lim.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/local_lim.h"
+      "accessed_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/atomic_wide_counter.h",
+      "canonical_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/atomic_wide_counter.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/locale.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/locale.h"
+      "accessed_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/byteswap.h",
+      "canonical_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/byteswap.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/long-double.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/long-double.h"
+      "accessed_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/confname.h",
+      "canonical_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/confname.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/posix1_lim.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/posix1_lim.h"
+      "accessed_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/cpu-set.h",
+      "canonical_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/cpu-set.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/posix2_lim.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/posix2_lim.h"
+      "accessed_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/endian.h",
+      "canonical_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/endian.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/posix_opt.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/posix_opt.h"
+      "accessed_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/endianness.h",
+      "canonical_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/endianness.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/pthread_stack_min-dynamic.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/pthread_stack_min-dynamic.h"
+      "accessed_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/environments.h",
+      "canonical_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/environments.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/pthreadtypes-arch.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/pthreadtypes-arch.h"
+      "accessed_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/errno.h",
+      "canonical_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/errno.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/pthreadtypes.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/pthreadtypes.h"
+      "accessed_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/floatn-common.h",
+      "canonical_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/floatn-common.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/sched.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/sched.h"
+      "accessed_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/floatn.h",
+      "canonical_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/floatn.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/select.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/select.h"
+      "accessed_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/getopt_core.h",
+      "canonical_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/getopt_core.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/select2.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/select2.h"
+      "accessed_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/getopt_posix.h",
+      "canonical_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/getopt_posix.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/setjmp.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/setjmp.h"
+      "accessed_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/libc-header-start.h",
+      "canonical_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/libc-header-start.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/stdint-intn.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/stdint-intn.h"
+      "accessed_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/local_lim.h",
+      "canonical_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/local_lim.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/stdint-uintn.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/stdint-uintn.h"
+      "accessed_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/locale.h",
+      "canonical_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/locale.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/stdio.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/stdio.h"
+      "accessed_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/long-double.h",
+      "canonical_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/long-double.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/stdio2-decl.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/stdio2-decl.h"
+      "accessed_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/posix1_lim.h",
+      "canonical_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/posix1_lim.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/stdio2.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/stdio2.h"
+      "accessed_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/posix2_lim.h",
+      "canonical_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/posix2_lim.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/stdio_lim.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/stdio_lim.h"
+      "accessed_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/posix_opt.h",
+      "canonical_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/posix_opt.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/stdlib-bsearch.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/stdlib-bsearch.h"
+      "accessed_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/pthread_stack_min-dynamic.h",
+      "canonical_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/pthread_stack_min-dynamic.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/stdlib-float.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/stdlib-float.h"
+      "accessed_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/pthreadtypes-arch.h",
+      "canonical_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/pthreadtypes-arch.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/stdlib.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/stdlib.h"
+      "accessed_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/pthreadtypes.h",
+      "canonical_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/pthreadtypes.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/string_fortified.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/string_fortified.h"
+      "accessed_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/sched.h",
+      "canonical_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/sched.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/strings_fortified.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/strings_fortified.h"
+      "accessed_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/select.h",
+      "canonical_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/select.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/struct_mutex.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/struct_mutex.h"
+      "accessed_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/select2.h",
+      "canonical_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/select2.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/struct_rwlock.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/struct_rwlock.h"
+      "accessed_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/setjmp.h",
+      "canonical_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/setjmp.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/syscall.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/syscall.h"
+      "accessed_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/stdint-intn.h",
+      "canonical_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/stdint-intn.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/thread-shared-types.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/thread-shared-types.h"
+      "accessed_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/stdint-uintn.h",
+      "canonical_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/stdint-uintn.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/time.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/time.h"
+      "accessed_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/stdio.h",
+      "canonical_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/stdio.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/time64.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/time64.h"
+      "accessed_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/stdio2-decl.h",
+      "canonical_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/stdio2-decl.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/timesize.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/timesize.h"
+      "accessed_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/stdio2.h",
+      "canonical_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/stdio2.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/timex.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/timex.h"
+      "accessed_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/stdio_lim.h",
+      "canonical_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/stdio_lim.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/types.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/types.h"
+      "accessed_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/stdlib-bsearch.h",
+      "canonical_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/stdlib-bsearch.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/types/FILE.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/types/FILE.h"
+      "accessed_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/stdlib-float.h",
+      "canonical_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/stdlib-float.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/types/__FILE.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/types/__FILE.h"
+      "accessed_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/stdlib.h",
+      "canonical_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/stdlib.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/types/__fpos64_t.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/types/__fpos64_t.h"
+      "accessed_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/string_fortified.h",
+      "canonical_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/string_fortified.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/types/__fpos_t.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/types/__fpos_t.h"
+      "accessed_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/strings_fortified.h",
+      "canonical_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/strings_fortified.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/types/__locale_t.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/types/__locale_t.h"
+      "accessed_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/struct_mutex.h",
+      "canonical_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/struct_mutex.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/types/__mbstate_t.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/types/__mbstate_t.h"
+      "accessed_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/struct_rwlock.h",
+      "canonical_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/struct_rwlock.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/types/__sigset_t.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/types/__sigset_t.h"
+      "accessed_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/syscall.h",
+      "canonical_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/syscall.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/types/clock_t.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/types/clock_t.h"
+      "accessed_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/thread-shared-types.h",
+      "canonical_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/thread-shared-types.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/types/clockid_t.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/types/clockid_t.h"
+      "accessed_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/time.h",
+      "canonical_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/time.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/types/cookie_io_functions_t.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/types/cookie_io_functions_t.h"
+      "accessed_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/time64.h",
+      "canonical_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/time64.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/types/error_t.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/types/error_t.h"
+      "accessed_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/timesize.h",
+      "canonical_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/timesize.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/types/locale_t.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/types/locale_t.h"
+      "accessed_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/timex.h",
+      "canonical_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/timex.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/types/mbstate_t.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/types/mbstate_t.h"
+      "accessed_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/types.h",
+      "canonical_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/types.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/types/sigset_t.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/types/sigset_t.h"
+      "accessed_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/types/FILE.h",
+      "canonical_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/types/FILE.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/types/struct_FILE.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/types/struct_FILE.h"
+      "accessed_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/types/__FILE.h",
+      "canonical_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/types/__FILE.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/types/struct___jmp_buf_tag.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/types/struct___jmp_buf_tag.h"
+      "accessed_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/types/__fpos64_t.h",
+      "canonical_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/types/__fpos64_t.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/types/struct_itimerspec.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/types/struct_itimerspec.h"
+      "accessed_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/types/__fpos_t.h",
+      "canonical_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/types/__fpos_t.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/types/struct_sched_param.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/types/struct_sched_param.h"
+      "accessed_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/types/__locale_t.h",
+      "canonical_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/types/__locale_t.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/types/struct_timespec.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/types/struct_timespec.h"
+      "accessed_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/types/__mbstate_t.h",
+      "canonical_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/types/__mbstate_t.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/types/struct_timeval.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/types/struct_timeval.h"
+      "accessed_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/types/__sigset_t.h",
+      "canonical_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/types/__sigset_t.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/types/struct_tm.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/types/struct_tm.h"
+      "accessed_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/types/clock_t.h",
+      "canonical_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/types/clock_t.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/types/time_t.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/types/time_t.h"
+      "accessed_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/types/clockid_t.h",
+      "canonical_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/types/clockid_t.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/types/timer_t.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/types/timer_t.h"
+      "accessed_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/types/cookie_io_functions_t.h",
+      "canonical_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/types/cookie_io_functions_t.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/types/wint_t.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/types/wint_t.h"
+      "accessed_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/types/error_t.h",
+      "canonical_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/types/error_t.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/typesizes.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/typesizes.h"
+      "accessed_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/types/locale_t.h",
+      "canonical_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/types/locale_t.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/uintn-identity.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/uintn-identity.h"
+      "accessed_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/types/mbstate_t.h",
+      "canonical_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/types/mbstate_t.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/uio_lim.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/uio_lim.h"
+      "accessed_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/types/sigset_t.h",
+      "canonical_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/types/sigset_t.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/unistd.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/unistd.h"
+      "accessed_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/types/struct_FILE.h",
+      "canonical_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/types/struct_FILE.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/unistd_ext.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/unistd_ext.h"
+      "accessed_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/types/struct___jmp_buf_tag.h",
+      "canonical_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/types/struct___jmp_buf_tag.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/waitflags.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/waitflags.h"
+      "accessed_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/types/struct_itimerspec.h",
+      "canonical_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/types/struct_itimerspec.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/waitstatus.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/waitstatus.h"
+      "accessed_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/types/struct_sched_param.h",
+      "canonical_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/types/struct_sched_param.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/wchar.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/wchar.h"
+      "accessed_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/types/struct_timespec.h",
+      "canonical_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/types/struct_timespec.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/wchar2-decl.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/wchar2-decl.h"
+      "accessed_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/types/struct_timeval.h",
+      "canonical_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/types/struct_timeval.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/wchar2.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/wchar2.h"
+      "accessed_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/types/struct_tm.h",
+      "canonical_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/types/struct_tm.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/wctype-wchar.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/wctype-wchar.h"
+      "accessed_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/types/time_t.h",
+      "canonical_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/types/time_t.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/wordsize.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/wordsize.h"
+      "accessed_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/types/timer_t.h",
+      "canonical_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/types/timer_t.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/xopen_lim.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/bits/xopen_lim.h"
+      "accessed_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/types/wint_t.h",
+      "canonical_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/types/wint_t.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/c++/12/bits/atomic_word.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/c++/12/bits/atomic_word.h"
+      "accessed_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/typesizes.h",
+      "canonical_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/typesizes.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/c++/12/bits/c++allocator.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/c++/12/bits/c++allocator.h"
+      "accessed_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/uintn-identity.h",
+      "canonical_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/uintn-identity.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/c++/12/bits/c++config.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/c++/12/bits/c++config.h"
+      "accessed_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/uio_lim.h",
+      "canonical_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/uio_lim.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/c++/12/bits/c++locale.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/c++/12/bits/c++locale.h"
+      "accessed_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/unistd.h",
+      "canonical_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/unistd.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/c++/12/bits/cpu_defines.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/c++/12/bits/cpu_defines.h"
+      "accessed_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/unistd_ext.h",
+      "canonical_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/unistd_ext.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/c++/12/bits/ctype_base.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/c++/12/bits/ctype_base.h"
+      "accessed_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/waitflags.h",
+      "canonical_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/waitflags.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/c++/12/bits/ctype_inline.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/c++/12/bits/ctype_inline.h"
+      "accessed_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/waitstatus.h",
+      "canonical_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/waitstatus.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/c++/12/bits/error_constants.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/c++/12/bits/error_constants.h"
+      "accessed_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/wchar.h",
+      "canonical_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/wchar.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/c++/12/bits/gthr-default.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/c++/12/bits/gthr-default.h"
+      "accessed_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/wchar2-decl.h",
+      "canonical_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/wchar2-decl.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/c++/12/bits/gthr.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/c++/12/bits/gthr.h"
+      "accessed_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/wchar2.h",
+      "canonical_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/wchar2.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/c++/12/bits/messages_members.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/c++/12/bits/messages_members.h"
+      "accessed_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/wctype-wchar.h",
+      "canonical_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/wctype-wchar.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/c++/12/bits/os_defines.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/c++/12/bits/os_defines.h"
+      "accessed_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/wordsize.h",
+      "canonical_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/wordsize.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/c++/12/bits/time_members.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/c++/12/bits/time_members.h"
+      "accessed_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/xopen_lim.h",
+      "canonical_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/bits/xopen_lim.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/gnu/stubs-64.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/gnu/stubs-64.h"
+      "accessed_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/c++/12/bits/atomic_word.h",
+      "canonical_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/c++/12/bits/atomic_word.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/gnu/stubs.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/gnu/stubs.h"
+      "accessed_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/c++/12/bits/c++allocator.h",
+      "canonical_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/c++/12/bits/c++allocator.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/sys/cdefs.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/sys/cdefs.h"
+      "accessed_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/c++/12/bits/c++config.h",
+      "canonical_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/c++/12/bits/c++config.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/sys/select.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/sys/select.h"
+      "accessed_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/c++/12/bits/c++locale.h",
+      "canonical_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/c++/12/bits/c++locale.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/sys/single_threaded.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/sys/single_threaded.h"
+      "accessed_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/c++/12/bits/cpu_defines.h",
+      "canonical_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/c++/12/bits/cpu_defines.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/sys/syscall.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/sys/syscall.h"
+      "accessed_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/c++/12/bits/ctype_base.h",
+      "canonical_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/c++/12/bits/ctype_base.h"
     },
     {
-      "accessed_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/sys/types.h",
-      "canonical_path": "/home/user/click-b/integrations/bitcoin-core-money-range/sysroot/usr/include/x86_64-linux-gnu/sys/types.h"
+      "accessed_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/c++/12/bits/ctype_inline.h",
+      "canonical_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/c++/12/bits/ctype_inline.h"
     },
     {
-      "accessed_path": "/opt/LLVM-19.1.7-Linux-X64/lib/clang/19/include/__stdarg___gnuc_va_list.h",
-      "canonical_path": "/opt/LLVM-19.1.7-Linux-X64/lib/clang/19/include/__stdarg___gnuc_va_list.h"
+      "accessed_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/c++/12/bits/error_constants.h",
+      "canonical_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/c++/12/bits/error_constants.h"
     },
     {
-      "accessed_path": "/opt/LLVM-19.1.7-Linux-X64/lib/clang/19/include/__stddef_header_macro.h",
-      "canonical_path": "/opt/LLVM-19.1.7-Linux-X64/lib/clang/19/include/__stddef_header_macro.h"
+      "accessed_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/c++/12/bits/gthr-default.h",
+      "canonical_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/c++/12/bits/gthr-default.h"
     },
     {
-      "accessed_path": "/opt/LLVM-19.1.7-Linux-X64/lib/clang/19/include/__stddef_max_align_t.h",
-      "canonical_path": "/opt/LLVM-19.1.7-Linux-X64/lib/clang/19/include/__stddef_max_align_t.h"
+      "accessed_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/c++/12/bits/gthr.h",
+      "canonical_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/c++/12/bits/gthr.h"
     },
     {
-      "accessed_path": "/opt/LLVM-19.1.7-Linux-X64/lib/clang/19/include/__stddef_null.h",
-      "canonical_path": "/opt/LLVM-19.1.7-Linux-X64/lib/clang/19/include/__stddef_null.h"
+      "accessed_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/c++/12/bits/messages_members.h",
+      "canonical_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/c++/12/bits/messages_members.h"
     },
     {
-      "accessed_path": "/opt/LLVM-19.1.7-Linux-X64/lib/clang/19/include/__stddef_nullptr_t.h",
-      "canonical_path": "/opt/LLVM-19.1.7-Linux-X64/lib/clang/19/include/__stddef_nullptr_t.h"
+      "accessed_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/c++/12/bits/os_defines.h",
+      "canonical_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/c++/12/bits/os_defines.h"
     },
     {
-      "accessed_path": "/opt/LLVM-19.1.7-Linux-X64/lib/clang/19/include/__stddef_offsetof.h",
-      "canonical_path": "/opt/LLVM-19.1.7-Linux-X64/lib/clang/19/include/__stddef_offsetof.h"
+      "accessed_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/c++/12/bits/time_members.h",
+      "canonical_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/c++/12/bits/time_members.h"
     },
     {
-      "accessed_path": "/opt/LLVM-19.1.7-Linux-X64/lib/clang/19/include/__stddef_ptrdiff_t.h",
-      "canonical_path": "/opt/LLVM-19.1.7-Linux-X64/lib/clang/19/include/__stddef_ptrdiff_t.h"
+      "accessed_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/gnu/stubs-64.h",
+      "canonical_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/gnu/stubs-64.h"
     },
     {
-      "accessed_path": "/opt/LLVM-19.1.7-Linux-X64/lib/clang/19/include/__stddef_size_t.h",
-      "canonical_path": "/opt/LLVM-19.1.7-Linux-X64/lib/clang/19/include/__stddef_size_t.h"
+      "accessed_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/gnu/stubs.h",
+      "canonical_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/gnu/stubs.h"
     },
     {
-      "accessed_path": "/opt/LLVM-19.1.7-Linux-X64/lib/clang/19/include/__stddef_wchar_t.h",
-      "canonical_path": "/opt/LLVM-19.1.7-Linux-X64/lib/clang/19/include/__stddef_wchar_t.h"
+      "accessed_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/sys/cdefs.h",
+      "canonical_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/sys/cdefs.h"
     },
     {
-      "accessed_path": "/opt/LLVM-19.1.7-Linux-X64/lib/clang/19/include/limits.h",
-      "canonical_path": "/opt/LLVM-19.1.7-Linux-X64/lib/clang/19/include/limits.h"
+      "accessed_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/sys/select.h",
+      "canonical_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/sys/select.h"
     },
     {
-      "accessed_path": "/opt/LLVM-19.1.7-Linux-X64/lib/clang/19/include/stdarg.h",
-      "canonical_path": "/opt/LLVM-19.1.7-Linux-X64/lib/clang/19/include/stdarg.h"
+      "accessed_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/sys/single_threaded.h",
+      "canonical_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/sys/single_threaded.h"
     },
     {
-      "accessed_path": "/opt/LLVM-19.1.7-Linux-X64/lib/clang/19/include/stddef.h",
-      "canonical_path": "/opt/LLVM-19.1.7-Linux-X64/lib/clang/19/include/stddef.h"
+      "accessed_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/sys/syscall.h",
+      "canonical_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/sys/syscall.h"
     },
     {
-      "accessed_path": "/opt/LLVM-19.1.7-Linux-X64/lib/clang/19/include/stdint.h",
-      "canonical_path": "/opt/LLVM-19.1.7-Linux-X64/lib/clang/19/include/stdint.h"
+      "accessed_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/sys/types.h",
+      "canonical_path": "$unit/sysroot/usr/include/x86_64-linux-gnu/sys/types.h"
     }
   ],
   "profile": {
@@ -3170,7 +3170,7 @@
       "-o",
       "bitcoin-src/src/policy/feerate.cpp.o"
     ],
-    "compilation_directory": "/home/user/click-b/integrations/bitcoin-core-money-range",
+    "compilation_directory": "$unit",
     "compilation_file": "bitcoin-src/src/policy/feerate.cpp",
     "exceptions": true,
     "frontend": "clang",

@@ -171,7 +171,7 @@ fn call_produced_instances_unfold_after_return_in_all_proof_modes() {
         verify_c0_sources(&source, &sources).unwrap();
         let expanded =
             expand_c0_claim_source(&source, &sources, "pick", CProofClaim::Grouped).unwrap();
-        verify_c0_sources(&expanded, &sources).unwrap();
+        verify_expanded_function_source(&source, &expanded, &sources, "pick").unwrap();
         let position =
             expansion::position_at_offset(&expanded, expanded.find("ensures o.model").unwrap());
         let (session, _) = C0VerificationSession::new(&source, &sources).unwrap();
@@ -3232,18 +3232,20 @@ fn branch_interface_service_simp_expands_and_rechecks() {
     let position = expansion::position_at_offset(source, offset);
     let expanded =
         expand_c0_tactic_source_at(source, &sources, position.line, position.column).unwrap();
-    verify_c0_sources(&expanded, &sources).unwrap_or_else(|error| {
-        panic!(
-            "{}\n{}",
-            error.message(),
-            expanded
-                .lines()
-                .skip(position.line - 1)
-                .take(8)
-                .collect::<Vec<_>>()
-                .join("\n")
-        )
-    });
+    verify_expanded_function_source(source, &expanded, &sources, "service_step").unwrap_or_else(
+        |error| {
+            panic!(
+                "{}\n{}",
+                error.message(),
+                expanded
+                    .lines()
+                    .skip(position.line - 1)
+                    .take(8)
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            )
+        },
+    );
 }
 
 #[test]
@@ -12705,7 +12707,7 @@ const RESOURCE_EXAMPLE_PIPELINE_CASES: &[(&str, &str, &str, &str)] = &[
 // These fixtures put a function's outer closing brace at column zero.
 // Compare both surrounding byte ranges so scoped checking cannot silently
 // omit a rewrite to a helper, contract, import, or another declaration.
-fn only_function_proof_changed(before: &str, after: &str, function: &str) -> bool {
+pub(super) fn only_function_proof_changed(before: &str, after: &str, function: &str) -> bool {
     let extent = |text: &str| {
         let signature = format!(" {function}(");
         assert_eq!(
@@ -12728,6 +12730,52 @@ pub(super) fn assert_only_function_proof_changed(before: &str, after: &str, func
         only_function_proof_changed(before, after, function),
         "{function}: changed outside the selected proof"
     );
+}
+
+pub(super) fn verify_expanded_function_source(
+    before: &str,
+    after: &str,
+    sources: &[(&str, &str)],
+    function: &str,
+) -> Result<Vec<VerifiedCTheorem>, ClickError> {
+    if !only_function_proof_changed(before, after, function) {
+        return verify_c0_sources(after, sources);
+    }
+    let checked = verify_c0_sources_functions(after, sources, [function.to_string()])?;
+    assert!(!checked.is_empty());
+    assert!(
+        checked
+            .iter()
+            .all(|proof| proof.function_block.signature().name() == function)
+    );
+    Ok(checked)
+}
+
+// Use the same project API/profile as the complete original check. Every
+// rewritten function is cold-checked, including all claims and paths; a
+// declaration/import rewrite falls back to the complete project.
+pub(super) fn verify_expanded_project_function_source(
+    before: &str,
+    after: &str,
+    project: &ClickProject,
+    c: &[(&str, &str)],
+    owner: &str,
+) -> Result<Vec<VerifiedCTheorem>, ClickError> {
+    if !only_function_proof_changed(before, after, owner) {
+        return verify_c0_project(project, c);
+    }
+    let checked = verify_project_functions(
+        project,
+        &ProgramInputs::Bundle(c.to_vec()),
+        [owner.to_string()],
+    )?;
+    assert!(!checked.is_empty());
+    assert!(
+        checked
+            .iter()
+            .all(|proof| proof.function_block.signature().name() == owner)
+    );
+    Ok(checked)
 }
 
 fn assert_resource_example_pipeline_has_no_outcome_fallbacks(
@@ -16365,13 +16413,7 @@ fn authority_population_certification_expands_every_smart_site() {
             .unwrap();
     assert!(!sites.is_empty());
     for site in sites {
-        let position = project_tactic_source_position(
-            &project,
-            &ProgramInputs::Bundle(c_sources.to_vec()),
-            &site.claim_label,
-            site.source_index,
-        )
-        .unwrap();
+        let position = site.position;
         let expanded = expand_project_tactic_source_at(
             &project,
             &ProgramInputs::Bundle(c_sources.to_vec()),
@@ -16606,13 +16648,7 @@ void caller(struct parent* p, struct child* kid) {
     for site in
         project_smart_tactic_source_sites(&project, &ProgramInputs::Bundle(c.to_vec())).unwrap()
     {
-        let position = project_tactic_source_position(
-            &project,
-            &ProgramInputs::Bundle(c.to_vec()),
-            &site.claim_label,
-            site.source_index,
-        )
-        .unwrap();
+        let position = site.position;
         let expanded = expand_project_tactic_source_at(
             &project,
             &ProgramInputs::Bundle(c.to_vec()),
@@ -16620,8 +16656,15 @@ void caller(struct parent* p, struct child* kid) {
             position.column,
         )
         .unwrap();
-        verify_c0_project(&project_for(&expanded), &c)
-            .expect("the explicit proof preserves actual instance fields and the caller frame");
+        let owner = site.claim_label.rsplit_once('.').unwrap().0;
+        verify_expanded_project_function_source(
+            source,
+            &expanded,
+            &project_for(&expanded),
+            &c,
+            owner,
+        )
+        .expect("the explicit proof preserves actual instance fields and the caller frame");
     }
 }
 
@@ -18860,11 +18903,10 @@ fn modular_buffer_ranges_rejoin_in_all_proof_modes() {
     }
     for (source, sources, function) in cases {
         let sources = crate::cli::source_refs(&sources);
-        verify_c0_sources(&source, &sources)
-            .unwrap_or_else(|error| panic!("{function}: {}", error.report()));
+
         let expanded = expand_c0_claim_source(&source, &sources, function, CProofClaim::Grouped)
             .unwrap_or_else(|error| panic!("{function}: {}", error.report()));
-        verify_c0_sources(&expanded, &sources)
+        verify_expanded_function_source(&source, &expanded, &sources, function)
             .unwrap_or_else(|error| panic!("expanded {function}: {}", error.report()));
         let position = expansion::c0_tactic_source_position(
             &expanded,
@@ -18873,7 +18915,15 @@ fn modular_buffer_ranges_rejoin_in_all_proof_modes() {
             0,
         )
         .unwrap();
-        let (session, _) = C0VerificationSession::new(&source, &sources).unwrap();
+        // Construction cold-verifies the complete original source before
+        // capturing its baseline. It supplies the original positive check
+        // once; all cold expansion checks stay before this retained session.
+        let (session, original) = C0VerificationSession::new(&source, &sources).unwrap();
+        assert!(
+            original
+                .iter()
+                .any(|proof| proof.function_block.signature().name() == function)
+        );
         session
             .verify_at(&expanded, position.line, position.column)
             .unwrap_or_else(|error| panic!("retained {function}: {}", error.report()));
@@ -18896,12 +18946,14 @@ fn repeated_retains_expand_with_checked_count_bounds() {
     verify_c0_sources(source, &sources).expect("the four original retain calls verify");
     let expanded = expand_c0_claim_source(source, &sources, "retain_many", CProofClaim::Grouped)
         .expect("retain bounds should expand as checked obligation proofs");
-    verify_c0_sources(&expanded, &sources).expect("the expanded retain proof rechecks");
+    verify_expanded_function_source(source, &expanded, &sources, "retain_many")
+        .expect("the expanded retain proof rechecks");
     for (offset, _) in source.match_indices("step(child_retain(obj), {});") {
         let position = expansion::position_at_offset(source, offset);
         let expanded = expand_c0_tactic_source_at(source, &sources, position.line, position.column)
             .expect("each retained call's implicit proof should expand");
-        verify_c0_sources(&expanded, &sources).expect("the selected call expansion rechecks");
+        verify_expanded_function_source(source, &expanded, &sources, "retain_many")
+            .expect("the selected call expansion rechecks");
     }
 }
 

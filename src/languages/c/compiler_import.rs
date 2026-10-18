@@ -370,8 +370,52 @@ pub(crate) fn prepare_unit(
 ) -> Result<(serde_json::Value, Vec<(PathBuf, Vec<u8>)>), String> {
     let config = unit_config(unit, ConfigUse::Prepare).map_err(bounded_error)?;
     let (lock, artifacts) = build_lock(&config).map_err(bounded_error)?;
+    let lock = portable_lock(&config, lock)?;
     let value = serde_json::to_value(&lock).map_err(|e| format!("encode import lock: {e}"))?;
     Ok((value, artifacts))
+}
+
+/// The lock with the project and unit roots it records replaced by their
+/// labels, and the invocation and source identities that bind those paths
+/// recomputed over the labels. Loading compares the lock's identities only
+/// with its own recorded fields and resolves dependencies by stripping the
+/// recorded root, so the labelled lock loads from any checkout.
+fn portable_lock(config: &Config, lock: Lock) -> Result<Lock, String> {
+    let project = PathBuf::from(&lock.config_directory);
+    let unit = lock.unit_directory.as_ref().map(PathBuf::from);
+    let mut roots = vec![("$project", project.as_path())];
+    if let Some(unit) = &unit {
+        roots.push(("$unit", unit.as_path()));
+    }
+    let labels = crate::languages::portable_paths::PathLabels::new(&roots)?;
+    let text = serde_json::to_string(&lock).map_err(|e| format!("encode import lock: {e}"))?;
+    let mut lock: Lock = serde_json::from_str(&labels.to_portable(&text))
+        .map_err(|e| format!("encode import lock: {e}"))?;
+    lock.invocation_sha256 = invocation_digest_parts(
+        config.target,
+        config.optimization,
+        &lock.compiler_path,
+        &lock.working_directory,
+        &config.environment.allow,
+        &lock.toolchain,
+    );
+    for (locked, source) in lock.sources.iter_mut().zip(&config.sources) {
+        locked.identity = source_identity_parts(
+            lock.schema,
+            config.target.name(),
+            &lock.invocation_sha256,
+            source,
+            &SourceDigests {
+                source_sha256: &locked.source_sha256,
+                dependencies: &locked.dependencies,
+                local_dependencies: &locked.local_dependencies,
+                click_header_catalog_sha256: lock.click_header_catalog_sha256.as_deref(),
+                click_headers: &locked.click_headers,
+                artifact_sha256: &locked.artifact_sha256,
+            },
+        );
+    }
+    Ok(lock)
 }
 
 /// Loads a project unit's sources from its lock entry.
