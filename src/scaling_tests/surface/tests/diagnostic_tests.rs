@@ -8,7 +8,7 @@ use super::*;
 #[ignore = "nightly: growing generated loop-bundle expansion and checked work"]
 fn wide_loop_invariant_bundle_expansion_work_scales_with_members() {
     let mut samples = Vec::new();
-    for size in [32, 64, 128] {
+    for size in [32, 48, 64] {
         let (source, proof) = wide_loop_invariant_fixture(size);
         let sources = [("bundle.c", source.as_str())];
         // Expansion constructs a checked proof of the original claim. Retain
@@ -27,4 +27,25 @@ fn wide_loop_invariant_bundle_expansion_work_scales_with_members() {
     // Quadrupling input allows the logarithmic bundle-indexing factor and
     // fixed setup, but rejects quadratic expansion/checking growth.
     assert!(samples[2].1 <= samples[0].1 * 6, "{samples:?}");
+    // Proof shape changes can make adjacent work non-monotonic, so
+    // compare the retained endpoints rather than subtracting increments.
+    // For B + k*N + a*N^2, the old sixfold 32-to-128 guard allowed
+    // a <= B/2048 + k/160. The 19/10 guard at 32/64 allows only
+    // a <= 3*B/7168 - k/672, a stricter bound for B,k >= 0.
+    let bounded = |work: &[(usize, usize)]| work[2].1 * 10 <= work[0].1 * 19;
+    assert!(
+        bounded(&samples),
+        "wide-bundle work grew too quickly: {samples:?}"
+    );
+    // The old observed curve was 152088/211960/507978 at 32/64/128.
+    // Forty additional units per squared member made its original guard
+    // fail. Keep sensitivity to that same added quadratic scan here.
+    let quadratic = samples
+        .iter()
+        .map(|&(size, work)| (size, work + 40 * size * size))
+        .collect::<Vec<_>>();
+    assert!(
+        !bounded(&quadratic),
+        "the smaller grid must detect the original quadratic crossover: {samples:?}"
+    );
 }

@@ -131,6 +131,35 @@ fn native_construction_return_contracts_forward_hidden_storage() {
     verify_c0_sources_with_context(&expanded, &sources, None, None, None, None).unwrap();
 }
 
+#[test]
+fn native_construction_return_member_addresses_bind_result() {
+    let source = r#"verifying "construction.c";
+struct Node factory(int32 input) {
+    ensures address(result.self) == address(&result.value);
+    ensures result.value == input;
+} by { execute(); simp(); }
+"#;
+    let sources = context(true);
+    let (verified, environment) =
+        verify_c0_sources_with_context(source, &sources, None, None, None, None).unwrap();
+    let _tables = crate::kernel::VerificationSession::resume();
+    verify_c0_sources_with_context(
+        source,
+        &sources,
+        Some(VerificationTarget::Function("factory".into())),
+        Some(environment.without_verified_function_rule("factory")),
+        None,
+        None,
+    )
+    .unwrap();
+    let expanded = source.replacen(
+        "by { execute(); simp(); }",
+        &verified[0].expanded_proof_source().unwrap(),
+        1,
+    );
+    verify_c0_sources_with_context(&expanded, &sources, None, None, None, None).unwrap();
+}
+
 // The hidden resource needs no written storage clause, but returning it must
 // not mark an unwritten field initialized. Keep the value claim independent
 // of the fields so this exercises construction completion itself.
