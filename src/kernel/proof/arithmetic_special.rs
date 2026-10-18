@@ -753,14 +753,24 @@ impl SpecialArithmeticCertificate {
                 let relation_proposition = premises
                     .get(*relation)
                     .ok_or(SpecialArithmeticCheckError::InvalidPremise(*relation))?;
+                // An Integer comparison of exact observations holds exactly
+                // when its native comparison does, so a bound listed in that
+                // form reads as the native bound it is equivalent to.
                 let bound_propositions = bounds
                     .iter()
                     .map(|bound| {
-                        premises
+                        let premise = premises
                             .get(*bound)
-                            .ok_or(SpecialArithmeticCheckError::InvalidPremise(*bound))
+                            .ok_or(SpecialArithmeticCheckError::InvalidPremise(*bound))?;
+                        Ok(
+                            crate::kernel::assumptions::native_reading_of_integer_observation_fact(
+                                premise,
+                            )
+                            .unwrap_or_else(|| premise.clone()),
+                        )
                     })
                     .collect::<Result<Vec<_>, _>>()?;
+                let bound_propositions = bound_propositions.iter().collect::<Vec<_>>();
                 let accepted =
                     pointer_translation(relation_proposition, &bound_propositions, result);
                 if !accepted {
@@ -3198,6 +3208,64 @@ mod tests {
             Err(SpecialArithmeticCheckError::NodeResultMismatch(0))
                 | Err(SpecialArithmeticCheckError::InvalidPremise(_))
         ));
+    }
+
+    #[test]
+    fn translation_reads_an_integer_observation_bound_as_its_native_bound() {
+        let p = PointerOffsetTerm::Variable(crate::kernel::Variable(100));
+        let arr = PointerOffsetTerm::Variable(crate::kernel::Variable(101));
+        let i = Bitvector32Term::Variable(crate::kernel::Variable(1));
+        let n = Bitvector32Term::Variable(crate::kernel::Variable(2));
+        let relation = pointer_eq(p.clone(), add(arr.clone(), scaled(i.clone())));
+        let observe = |value: &Bitvector32Term| {
+            crate::kernel::SharedIntegerTerm::from(crate::kernel::IntegerTerm::Machine(
+                crate::kernel::SharedMachineIntegerTerm::intern(
+                    crate::kernel::MachineIntegerType::Int32,
+                    value.clone(),
+                ),
+            ))
+        };
+        // `to_integer(i) < to_integer(n)` holds exactly when `i < n` does.
+        let bound = Proposition::ConditionIs(
+            ConditionTerm::IntegerLessThan(observe(&i), observe(&n)),
+            true,
+        );
+        let goal = pointer_eq(
+            add(p, PointerOffsetTerm::Constant(4)),
+            add(
+                arr,
+                scaled(Bitvector32Term::Add(
+                    Box::new(i),
+                    Box::new(Bitvector32Term::Constant(1)),
+                )),
+            ),
+        );
+        let certificate = SpecialArithmeticCertificate {
+            nodes: vec![SpecialArithmeticNode::PointerTranslation {
+                relation: 0,
+                bounds: vec![1],
+                result: goal.clone(),
+            }],
+            conclusion: 0,
+        };
+        certificate
+            .check(&goal, &[relation.clone(), bound])
+            .unwrap();
+        // An Integer comparison that is not an observation of machine values
+        // is not a native bound.
+        let sum = Proposition::ConditionIs(
+            ConditionTerm::IntegerLessThan(
+                crate::kernel::SharedIntegerTerm::from(crate::kernel::IntegerTerm::Add(
+                    observe(&Bitvector32Term::Variable(crate::kernel::Variable(1))),
+                    crate::kernel::SharedIntegerTerm::from(
+                        crate::kernel::IntegerTerm::constant_i64(0),
+                    ),
+                )),
+                observe(&Bitvector32Term::Variable(crate::kernel::Variable(2))),
+            ),
+            true,
+        );
+        assert!(certificate.check(&goal, &[relation, sum]).is_err());
     }
 
     #[test]

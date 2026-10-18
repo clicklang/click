@@ -9481,6 +9481,19 @@ pub(in crate::kernel) fn wrapped_equality_of_integer_equality(
     (observed && !matches!(wrapped, ConditionTerm::Constant(_))).then_some(wrapped)
 }
 
+/// The native comparison fact that an Integer comparison fact of exact
+/// observations of one machine type holds exactly when it does
+/// (`native_comparison_of_integer_observation`), or `None` for any other fact.
+pub(crate) fn native_reading_of_integer_observation_fact(
+    proposition: &Proposition,
+) -> Option<Proposition> {
+    let Proposition::ConditionIs(condition, value) = proposition else {
+        return None;
+    };
+    let (native, truth) = native_comparison_of_integer_observation(condition, *value)?;
+    Some(Proposition::ConditionIs(native, truth))
+}
+
 pub(in crate::kernel) fn native_comparison_of_integer_observation(
     condition: &ConditionTerm,
     value: bool,

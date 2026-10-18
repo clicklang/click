@@ -3374,6 +3374,16 @@ impl RecordedSnapshots {
         result
     }
 
+    /// The proof's marks, at most `limit` of them. `Mark` selectors sort
+    /// after every program point, so they lead the newest-first walk and
+    /// the walk stops at the first program point.
+    fn marks(&self, limit: usize) -> Vec<(&SnapshotSelector, &CState)> {
+        self.iter_newest_first()
+            .take_while(|(selector, _)| matches!(selector, SnapshotSelector::Mark(_)))
+            .take(limit)
+            .collect()
+    }
+
     fn retain(&mut self, mut keep: impl FnMut(&SnapshotSelector, &mut CState) -> bool) {
         let mut retained = Self::new();
         retained.loop_labels = self.loop_labels.clone();
