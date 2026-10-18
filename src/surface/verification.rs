@@ -2177,6 +2177,9 @@ fn verify_c0_sources_in_context(
         let parsed_sources = parse_verified_sources_context(&file, c_sources)?;
         let (file, parsed_sources) = with_tactic_procedures(file, parsed_sources)?;
         record_never_address_taken_locals(&parsed_sources, session_is_fresh);
+        if session_is_fresh {
+            super::lowering::reset_input_identities();
+        }
         let expansion_functions = expansion_capture
             .as_deref()
             .map(|capture| {
@@ -2512,6 +2515,26 @@ fn verify_c0_sources_in_context(
         }
         ordered_function_blocks
             .sort_by_key(|block| create_callers.contains(block.signature().name()));
+    }
+    // Name the inputs of every function this file verifies, in the order a
+    // whole-file run verifies them, before any proof runs. Naming them when
+    // each proof starts would number a function's inputs by how many the
+    // functions verified before it in this run had, so a selected unit and
+    // the same unit in a whole-file run would name them differently, and
+    // a tactic's search order and work with them. A function that cannot be
+    // named here reports why when it is verified; an unselected one is not.
+    for function_block in &ordered_function_blocks {
+        if function_block.is_external() {
+            continue;
+        }
+        if let Ok(Some((_, _, parsed_function))) = parsed_function_for_source_name(
+            &parsed_sources,
+            function_block.signature().name(),
+            Some(function_block.signature()),
+        ) {
+            let parsed_function = witnessed_function(parsed_function, function_block);
+            super::lowering::reserve_input_identities(&parsed_function);
+        }
     }
     let mut early_thread_termination_published = false;
     for function_block in ordered_function_blocks {
