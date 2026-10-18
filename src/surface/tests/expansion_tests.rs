@@ -4270,6 +4270,7 @@ fn grouped_post_execution_simp_publishes_checked_obligations_through_proof() {
         } by {
             execute();
             simp();
+            simp();
         }
     "#;
 
@@ -4287,7 +4288,8 @@ fn grouped_post_execution_simp_publishes_checked_obligations_through_proof() {
         position.column,
     )
     .expect("the retained grouped simp certificate should expand");
-    assert_eq!(expanded.matches("have result == result by {").count(), 2);
+    // The first `simp` acts on the first open goal; the second keeps its own.
+    assert_eq!(expanded.matches("have result == result by {").count(), 1);
     assert!(expanded.contains("normalize();"), "{expanded}");
     assert!(expanded.contains("assumption();"), "{expanded}");
     verify_c0_sources(&expanded, &[("identity.c", c_source)])
@@ -14562,6 +14564,7 @@ fn outcome_predecessor_bound_simp_expands_to_the_named_rule() {
             } by {
                 unfold(ordered_pair);
                 execute();
+                assumption();
                 simp();
             }
         "#;

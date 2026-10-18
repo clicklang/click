@@ -21,6 +21,7 @@ void fill_short(uint8* dst) {
     ensures (0u64..5u64).all(|k| { dst[k] == 7u8 });
 } by {
     execute();
+    assumption();
     simp();
 }
 ```
