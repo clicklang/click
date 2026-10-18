@@ -13,6 +13,15 @@ function singleton(node: struct node*) -> List<struct node*> {
 function singleton_return(node: struct node*) -> List<struct node*> {
     List::Cons(keep_node(node), List::Nil)
 }
+function singleton_contains(node: struct node*) -> bool {
+    list::contains(singleton(node), node)
+}
+function singleton_contains_return(node: struct node*) -> bool {
+    list::contains(singleton(node), keep_node(node))
+}
+predicate typed_contains(nodes: List<struct node*>, node: struct node*) {
+    list::contains(nodes, node)
+}
 function first(nodes: Nodes) -> List<struct node*> decreases nodes {
     match nodes {
         Nodes::Empty => List::Nil,
@@ -37,6 +46,10 @@ theorem singleton_return_null() {
     ensures singleton_return(0) == List<struct node*>::Cons(0, List<struct node*>::Nil)
         by { unfold(singleton_return(0)); unfold(keep_node(0)); normalize(); }
 }
+theorem typed_membership(xs: List<struct node*>, target: struct node*) {
+    ensures list::contains(xs, target) == list::contains(xs, target)
+        by { normalize(); }
+}
 "#;
     verify_c0_sources(source, &[("node.c", c)])
         .unwrap_or_else(|error| panic!("{}", error.message()));
@@ -49,6 +62,15 @@ theorem singleton_return_null() {
             .expect_err("a matched payload must retain its own declared class");
         assert!(
             error.message().contains("function `first`"),
+            "{}",
+            error.message()
+        );
+        let wrong = source.replace("target: struct node*", &format!("target: {field_type}"));
+        let error = verify_c0_sources(&wrong, &[("node.c", c)])
+            .expect_err("a bool result does not remove its arguments' nominal requirements");
+        assert!(
+            error.message().contains("cannot infer type arguments")
+                || error.message().contains("requires original object class"),
             "{}",
             error.message()
         );

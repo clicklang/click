@@ -1847,6 +1847,17 @@ pub(super) fn validate_to_nat_argument_type(
     }
 }
 
+fn return_type_needs_instantiation(click_type: &ClickType) -> bool {
+    match click_type {
+        ClickType::Parameter(_) => true,
+        ClickType::Algebraic(application) => application
+            .arguments
+            .iter()
+            .any(return_type_needs_instantiation),
+        ClickType::C(_) | ClickType::CObjectPointer { .. } | ClickType::Integer => false,
+    }
+}
+
 fn infer_spec_value_type(
     expression: &ContractExpression,
     variables: &BTreeMap<String, C0Type>,
@@ -2032,7 +2043,13 @@ fn infer_spec_value_type(
                     context,
                 )?));
             };
-            let substitution = if function.type_parameters.is_empty() {
+            // This pass determines the result's value category from C carrier
+            // types. Generic argument consistency is checked with the full
+            // logical types; do not repeat it after erasing struct tags when
+            // the result does not depend on the substitution.
+            let substitution = if function.type_parameters.is_empty()
+                || !return_type_needs_instantiation(&function.return_type)
+            {
                 None
             } else {
                 let actual_types = arguments

@@ -50,6 +50,15 @@ impl ClickType {
     }
 }
 
+impl ClickFunctionDefinition {
+    pub(super) fn return_type_with_object_class(&self) -> ClickType {
+        match (self.return_type().c_type(), self.return_object_class()) {
+            (Some(c_type), Some(class)) => ClickType::from_object_pointer_class(c_type, class),
+            _ => self.return_type().clone(),
+        }
+    }
+}
+
 impl FunctionParameter {
     pub(super) fn click_type_with_object_class(&self) -> ClickType {
         match self.pointer_object_class() {

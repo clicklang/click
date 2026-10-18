@@ -78,7 +78,7 @@ pub(in crate::surface) fn validate_click_definitions(file: &ClickFile) -> Result
             ClickFunctionType {
                 type_parameters: definition.type_parameters().to_vec(),
                 parameters: definition.parameters().to_vec(),
-                return_type: definition.return_type().clone(),
+                return_type: definition.return_type_with_object_class(),
             },
         );
     }
