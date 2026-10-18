@@ -82,7 +82,7 @@ int32 seven() { ensures result == 7; } by { execute(); simp(); }
 int32 read(const int32& value) { views value; ensures result == value; } by { execute(); simp(); }
 int32 probe() { ensures result == 11; } by { execute(); simp(); }
 "#;
-    check_arithmetic_sidecar(&project, &import, proof);
+    check_arithmetic_sidecar_with_tools(&project, &import, proof, tools);
     if tools {
         let parsed =
             read_click_project(&project.directory.join("arithmetic.click"), proof).unwrap();
@@ -192,7 +192,7 @@ int32 probe(struct View& input) {
  ensures input.data[0] == 9;
 } by { execute(); simp(); }
 "#;
-    check_arithmetic_sidecar(&project, &import, proof);
+    check_arithmetic_sidecar_with_tools(&project, &import, proof, tools);
     if tools {
         let parsed =
             read_click_project(&project.directory.join("arithmetic.click"), proof).unwrap();
@@ -6973,6 +6973,17 @@ fn check_arithmetic_sidecar(
     check_sidecar_tactic(project, import, source, None);
 }
 
+// The paired tool test exercises expansion and retained checking on the same
+// complete fixture; its ordinary counterpart needs only direct verification.
+fn check_arithmetic_sidecar_with_tools(
+    project: &Project,
+    import: &click::languages::cpp::PreparedCppImport,
+    source: &str,
+    tools: bool,
+) {
+    check_sidecar_tactic_with_tools(project, import, source, None, tools);
+}
+
 fn check_return_call_sidecar(
     project: &Project,
     import: &click::languages::cpp::PreparedCppImport,
@@ -6991,6 +7002,16 @@ fn check_sidecar_tactic(
     source: &str,
     claim_prefix: Option<&str>,
 ) {
+    check_sidecar_tactic_with_tools(project, import, source, claim_prefix, true);
+}
+
+fn check_sidecar_tactic_with_tools(
+    project: &Project,
+    import: &click::languages::cpp::PreparedCppImport,
+    source: &str,
+    claim_prefix: Option<&str>,
+    tools: bool,
+) {
     let sidecar = project.directory.join("arithmetic.click");
     let source = source.replace(
         "-9223372036854775808i64",
@@ -7000,6 +7021,9 @@ fn check_sidecar_tactic(
     let parsed = read_click_project(&sidecar, &source).unwrap();
     verify_program_prepared_project(&parsed, import)
         .unwrap_or_else(|error| panic!("{}\n{source}", error.message()));
+    if !tools {
+        return;
+    }
     let sites =
         project_smart_tactic_source_sites(&parsed, &ProgramInputs::program(import)).unwrap();
     let first = match claim_prefix {
