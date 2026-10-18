@@ -10101,10 +10101,14 @@ impl ExecutionProofCore {
         path_index: usize,
         before_facts: &ProofFacts,
         selected: &CResourceFact,
-        presented_before_state: &CState,
+        outcome: &super::OutcomeProofCore,
         after_state: &CState,
         after_facts: &ProofFacts,
     ) -> Result<(), String> {
+        // The checked outcome operation owns this goal's current logical
+        // presentation, including expansions cached since the C return.
+        // Retain it directly rather than reconstructing it from C history.
+        let presented_before_state = &*outcome.state;
         self.flush_return_propositions(path_index)?;
         if !self.evidence_completed {
             return Err("return resource rewrite requires completed execution".into());
@@ -10180,39 +10184,8 @@ impl ExecutionProofCore {
             return Ok(());
         }
         let context = self.return_context_for_path(path_index)?;
-        let CFunctionOutcome::Return {
-            state: published, ..
-        } = &context.published
-        else {
+        if !matches!(&context.published, CFunctionOutcome::Return { .. }) {
             return Err("return composite exchange requires a returning path".into());
-        };
-        let mut previous = self
-            .return_resource_rewrites
-            .get(&path_index)
-            .unwrap_or(&self.execution_evidence[path_index])
-            .clone();
-        let expected = loop {
-            match previous.pop() {
-                Some(CheckedExecutionEvent::ResourceRewrite(rewrite)) => {
-                    break if let Some(observation) = rewrite.return_observation {
-                        observation.after.clone()
-                    } else if let Some(presentation) = rewrite.return_presentation {
-                        presentation.rewrite.after_state.clone()
-                    } else {
-                        return Err("return exchange lost its preceding presentation".into());
-                    };
-                }
-                Some(CheckedExecutionEvent::ReturnProposition(_)) => {}
-                _ => break published.as_ref().clone(),
-            }
-        };
-        if *presented_before_state != expected {
-            let difference = presented_before_state
-                .first_difference(&expected)
-                .unwrap_or_default();
-            return Err(format!(
-                "return composite exchange has a different published state: {difference}"
-            ));
         }
         let presented = CheckedResourceRewrite::check_with_children(
             function,

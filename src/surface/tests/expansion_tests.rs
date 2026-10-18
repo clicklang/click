@@ -8981,6 +8981,36 @@ fn execution_bare_apply_selects_and_retains_its_step_through_proof() {
 }
 
 #[test]
+fn post_return_resource_exchange_accepts_a_preceding_pure_have() {
+    let c_source = "int32 identity(int32 x) { return x; }";
+    // A macro refold may change only the logical presentation. The second
+    // unfold must use that current goal rather than an older C-body event.
+    let click_source = r#"
+        resource marker(x: int32) { fact x == x; }
+        verifying "identity.c";
+        int32 identity(int32 x) {
+            owns marker(x);
+            ensures result == x;
+        } by {
+            execute();
+            have 1000 == 1000 by { normalize(); }
+            unfold(marker(x));
+            fold(marker(x));
+            unfold(marker(x));
+            fold(marker(x));
+            simp();
+        }
+    "#;
+    let sources = [("identity.c", c_source)];
+    verify_c0_sources(click_source, &sources)
+        .expect("a pure have must preserve the return resource presentation");
+    let expanded = expand_c0_claim_source(click_source, &sources, "identity", CProofClaim::Grouped)
+        .expect("the return resource exchange should expand");
+    verify_c0_sources(&expanded, &sources)
+        .expect("the expanded return resource exchange should check independently");
+}
+
+#[test]
 fn execution_resource_unfold_is_recorded_once_and_checks() {
     let c_source = r#"
         int32 discard(int32 x) {
@@ -12672,6 +12702,34 @@ const RESOURCE_EXAMPLE_PIPELINE_CASES: &[(&str, &str, &str, &str)] = &[
     ),
 ];
 
+// These fixtures put a function's outer closing brace at column zero.
+// Compare both surrounding byte ranges so scoped checking cannot silently
+// omit a rewrite to a helper, contract, import, or another declaration.
+fn only_function_proof_changed(before: &str, after: &str, function: &str) -> bool {
+    let extent = |text: &str| {
+        let signature = format!(" {function}(");
+        assert_eq!(
+            text.matches(&signature).count(),
+            1,
+            "ambiguous function: {function}"
+        );
+        let start = text.find(&signature).unwrap();
+        let body = start + text[start..].find("} by {").unwrap() + "} by {".len();
+        let end = body + text[body..].find("\n}").unwrap() + "\n}".len();
+        (body, end)
+    };
+    let (before_start, before_end) = extent(before);
+    let (after_start, after_end) = extent(after);
+    before[..before_start] == after[..after_start] && before[before_end..] == after[after_end..]
+}
+
+pub(super) fn assert_only_function_proof_changed(before: &str, after: &str, function: &str) {
+    assert!(
+        only_function_proof_changed(before, after, function),
+        "{function}: changed outside the selected proof"
+    );
+}
+
 fn assert_resource_example_pipeline_has_no_outcome_fallbacks(
     project: &str,
     sidecar: &str,
@@ -12693,12 +12751,34 @@ fn assert_resource_example_pipeline_has_no_outcome_fallbacks(
         expand_c0_claim_source(&click_source, &c_sources, function, CProofClaim::Grouped)
             .unwrap_or_else(|error| panic!("failed to expand `{}`: {error:?}", path.display()));
     assert!(expanded.contains(retained_step), "{expanded}");
-    verify_c0_sources(&expanded, &c_sources).unwrap_or_else(|error| {
-        panic!(
-            "expanded proof from `{}` failed independent verification: {error:?}",
-            path.display()
-        )
-    });
+    // An added import can affect every declaration, so retain the full-file
+    // output check whenever anything outside this proof changes.
+    if !only_function_proof_changed(&click_source, &expanded, function) {
+        verify_c0_sources(&expanded, &c_sources).unwrap_or_else(|error| {
+            panic!(
+                "expanded proof from `{}` failed independent verification: {error:?}",
+                path.display()
+            )
+        });
+        return;
+    }
+    // The complete original project above checks every unchanged declaration.
+    // Cold-check the complete rewritten function, including every claim/path,
+    // rather than its untouched helpers again.
+    let checked =
+        crate::surface::verify_c0_sources_functions(&expanded, &c_sources, [function.to_string()])
+            .unwrap_or_else(|error| {
+                panic!(
+                    "expanded proof from `{}` failed independent verification: {error:?}",
+                    path.display()
+                )
+            });
+    assert!(!checked.is_empty());
+    assert!(
+        checked
+            .iter()
+            .all(|proof| proof.function_block.signature().name() == function)
+    );
 }
 
 #[test]

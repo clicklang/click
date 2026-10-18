@@ -1792,8 +1792,17 @@ impl CLocalBinding {
     }
 }
 
-/// The integer term an object binding holds, as a surface spelling compares
-/// it: the numeric value of a scalar of integer or truth type.
+fn held_pointer_block(binding: &CLocalBinding) -> Option<&PointerBlock> {
+    match binding {
+        CLocalBinding::Object {
+            value: CValue::Pointer(pointer),
+            ..
+        } => Some(&pointer.block),
+        _ => None,
+    }
+}
+
+/// The numeric value of a scalar of integer or truth type.
 fn held_integer_term(binding: &CLocalBinding) -> Option<&Bitvector32Term> {
     let CLocalBinding::Object { value, .. } = binding else {
         return None;
@@ -1851,10 +1860,25 @@ impl CLocalEnvironment {
                     .map(|term| ((held_term_fingerprint(term), name.clone()), ()))
             })
             .collect();
+        let mut pointer_objects_by_block = crate::persistent::PersistentMap::<
+            PointerBlock,
+            crate::persistent::PersistentMap<String, ()>,
+        >::default();
+        for (name, binding) in bindings.iter() {
+            if let Some(block) = held_pointer_block(binding) {
+                let mut names = pointer_objects_by_block
+                    .get(block)
+                    .cloned()
+                    .unwrap_or_default();
+                names.insert(name.clone(), ());
+                pointer_objects_by_block.insert(block.clone(), names);
+            }
+        }
         Self {
             bindings,
             slots,
             held_terms,
+            pointer_objects_by_block,
         }
     }
 
@@ -1864,6 +1888,22 @@ impl CLocalEnvironment {
         let old_slot = old.map(CLocalBinding::slot).cloned();
         let old_held = old.and_then(held_integer_term).map(held_term_fingerprint);
         let new_held = held_integer_term(&binding).map(held_term_fingerprint);
+        let old_block = old.and_then(held_pointer_block).cloned();
+        let new_block = held_pointer_block(&binding);
+        if old_block.as_ref() != new_block {
+            if let Some(block) = old_block.as_ref() {
+                self.remove_pointer_object(block, &name);
+            }
+            if let Some(block) = new_block {
+                let mut names = self
+                    .pointer_objects_by_block
+                    .get(block)
+                    .cloned()
+                    .unwrap_or_default();
+                names.insert(name.clone(), ());
+                self.pointer_objects_by_block.insert(block.clone(), names);
+            }
+        }
         if old_held != new_held {
             if let Some(fingerprint) = old_held {
                 self.held_terms.remove(&(fingerprint, name.clone()));
@@ -1879,6 +1919,36 @@ impl CLocalEnvironment {
             self.slots.remove(&old_slot);
         }
         self.slots.insert(slot, name);
+    }
+
+    fn remove_pointer_object(&mut self, block: &PointerBlock, name: &str) {
+        let Some(mut names) = self.pointer_objects_by_block.get(block).cloned() else {
+            return;
+        };
+        names.remove(&name.to_string());
+        if names.is_empty() {
+            self.pointer_objects_by_block.remove(block);
+        } else {
+            self.pointer_objects_by_block.insert(block.clone(), names);
+        }
+    }
+
+    /// Pointer-valued locals in name order whose held pointers have `block`.
+    /// Looking up a spelling visits these candidates, never unrelated locals.
+    pub(crate) fn pointer_objects_in_block<'a>(
+        &'a self,
+        block: &PointerBlock,
+    ) -> impl Iterator<Item = (&'a str, &'a CPointerValue)> {
+        self.pointer_objects_by_block
+            .get(block)
+            .into_iter()
+            .flat_map(|names| names.iter())
+            .map(|(name, ())| {
+                let Some(CValue::Pointer(pointer)) = self.get(name) else {
+                    unreachable!("pointer object index follows its binding")
+                };
+                (name.as_str(), pointer)
+            })
     }
 
     /// The names, in name order, of the scalar objects holding exactly
@@ -1969,6 +2039,9 @@ impl CLocalEnvironment {
         if let Some(term) = held_integer_term(&binding) {
             self.held_terms
                 .remove(&(held_term_fingerprint(term), name.to_string()));
+        }
+        if let Some(block) = held_pointer_block(&binding) {
+            self.remove_pointer_object(block, name);
         }
         self.bindings.remove(&name.to_string());
         self.slots.remove(binding.slot());
@@ -9870,6 +9943,56 @@ mod local_variable_spelling_tests {
             .clone()
             .store(CMemory::local_pointer(name), value.clone());
         state.with_local(name, value).with_memory(memory)
+    }
+
+    #[test]
+    fn pointer_object_index_tracks_rebindings_and_scope_changes() {
+        let blocks = [
+            PointerBlock::Symbolic(Variable(971_030)),
+            PointerBlock::Symbolic(Variable(971_031)),
+        ];
+        let mut locals = CLocalEnvironment::new();
+        for step in 0..60usize {
+            let name = format!("p{}", step % 7);
+            if step % 5 == 0 {
+                locals.remove(&name);
+            } else if step % 5 == 1 {
+                locals.set(&name, int32(7));
+            } else {
+                locals.set(
+                    &name,
+                    CValue::pointer(Pointer {
+                        block: blocks[step % 2].clone(),
+                        offset: PointerOffsetTerm::Constant(step as i64),
+                    }),
+                );
+            }
+            if step % 11 == 0 {
+                locals.forget_initialization(&name);
+            }
+            let saved = locals.clone();
+            if let Some(binding) = locals.binding(&name).cloned() {
+                locals.remove(&name);
+                locals.restore_binding(&name, binding);
+            }
+            let rebuilt =
+                CLocalEnvironment::from_parts(locals.bindings.clone(), locals.slots.clone());
+            for block in &blocks {
+                let scanned = locals
+                    .object_values()
+                    .filter_map(|(name, value)| match value {
+                        CValue::Pointer(p) if &p.block == block => Some((name, p)),
+                        _ => None,
+                    })
+                    .collect::<Vec<_>>();
+                for indexed in [&locals, &saved, &rebuilt] {
+                    assert_eq!(
+                        indexed.pointer_objects_in_block(block).collect::<Vec<_>>(),
+                        scanned
+                    );
+                }
+            }
+        }
     }
 
     #[test]
