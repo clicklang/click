@@ -19046,3 +19046,34 @@ fn class_bool_member_whole_certificate_preserves_every_return_case() {
             .expect("the complete certificate verifies cold");
     }
 }
+
+// A diagnostic prints a record by its C++ path, the instance Clang prints,
+// not by the layout name the importer records for it.
+#[test]
+fn diagnostics_print_record_types_by_their_cpp_paths() {
+    let project = Project::with_fixture("instances.cpp", "both", CLASS_INSTANCE_SOURCE);
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let swapped = "verifying \"instances.cpp\"; int32 both(const Box<WeightTag, true>& left, const Box<SizeTag, true>& right) { views left.value; ensures result == left.value; } by { execute(); simp(); }";
+    fs::write(project.directory.join("bad.click"), swapped).unwrap();
+    let parsed = read_click_project(&project.directory.join("bad.click"), swapped).unwrap();
+    let error = verify_program_prepared_project(&parsed, &import)
+        .expect_err("the swapped record types are refused");
+    let shown = click::surface::display_source_names(&error.to_string()).into_owned();
+    assert!(
+        shown.contains(
+            ".click has const Box<WeightTag, true>& left, C has const Box<SizeTag, true>& left"
+        ),
+        "{shown}"
+    );
+    let unknown_field = "verifying \"instances.cpp\"; int32 both(const Box<SizeTag, true>& left, const Box<WeightTag, true>& right) { views left.value; ensures result == left.nope; } by { execute(); simp(); }";
+    fs::write(project.directory.join("bad.click"), unknown_field).unwrap();
+    let parsed = read_click_project(&project.directory.join("bad.click"), unknown_field).unwrap();
+    let error =
+        verify_program_prepared_project(&parsed, &import).expect_err("the field does not exist");
+    let shown = click::surface::display_source_names(&error.to_string()).into_owned();
+    assert!(
+        shown.contains("`Box<SizeTag, true>` has no field `nope`"),
+        "{shown}"
+    );
+}

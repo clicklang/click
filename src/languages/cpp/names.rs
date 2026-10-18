@@ -140,6 +140,85 @@ pub fn cpp_display_name(name: &str) -> Option<String> {
 /// `text` with every whole C++ importer name it contains spelled as C++
 /// spells it.
 pub fn display_cpp_names(text: &str) -> std::borrow::Cow<'_, str> {
+    match display_function_names(text) {
+        std::borrow::Cow::Borrowed(text) => display_record_names(text),
+        std::borrow::Cow::Owned(text) => {
+            std::borrow::Cow::Owned(display_record_names(&text).into_owned())
+        }
+    }
+}
+
+/// The C++ path of each record whose importer layout name differs from it,
+/// `Box__int__bool_false` for `Box<int, false>`, by layout name. A layout
+/// name is no encoding a diagnostic can decode, so each prepared import
+/// records its own here ([`register_record_display`]).
+static RECORD_DISPLAY: std::sync::RwLock<std::collections::BTreeMap<String, String>> =
+    std::sync::RwLock::new(std::collections::BTreeMap::new());
+
+/// Records that layout name `layout` prints as C++ path `path`.
+pub(crate) fn register_record_display(layout: &str, path: &str) {
+    if layout == path {
+        return;
+    }
+    let mut table = RECORD_DISPLAY
+        .write()
+        .unwrap_or_else(|error| error.into_inner());
+    if table.get(layout).map(String::as_str) != Some(path) {
+        table.insert(layout.to_string(), path.to_string());
+    }
+}
+
+/// `text` with each registered record layout name, `struct
+/// Box__int__bool_false` or bare, written as its C++ path, `Box<int, false>`.
+fn display_record_names(text: &str) -> std::borrow::Cow<'_, str> {
+    let table = RECORD_DISPLAY
+        .read()
+        .unwrap_or_else(|error| error.into_inner());
+    if table.is_empty() {
+        return std::borrow::Cow::Borrowed(text);
+    }
+    let mut output = String::with_capacity(text.len());
+    let mut changed = false;
+    let mut rest = text;
+    while let Some(start) = rest.find(|c: char| c.is_ascii_alphabetic() || c == '_') {
+        crate::instrumentation::record_deterministic_work(1);
+        let preceded_by_identifier = rest[..start]
+            .bytes()
+            .last()
+            .is_some_and(|byte| byte.is_ascii_alphanumeric() || byte == b'_');
+        output.push_str(&rest[..start]);
+        let candidate = &rest[start..];
+        let end = candidate
+            .bytes()
+            .position(|byte| !(byte.is_ascii_alphanumeric() || byte == b'_'))
+            .unwrap_or(candidate.len());
+        let identifier = &candidate[..end];
+        match (!preceded_by_identifier)
+            .then(|| table.get(identifier))
+            .flatten()
+        {
+            Some(path) => {
+                // C++ writes the record by its path alone.
+                if output.ends_with("struct ") {
+                    output.truncate(output.len() - "struct ".len());
+                }
+                output.push_str(path);
+                changed = true;
+            }
+            None => output.push_str(identifier),
+        }
+        rest = &candidate[end..];
+    }
+    output.push_str(rest);
+    if changed {
+        std::borrow::Cow::Owned(output)
+    } else {
+        std::borrow::Cow::Borrowed(text)
+    }
+}
+
+/// `text` with each importer function name written as its C++ path.
+fn display_function_names(text: &str) -> std::borrow::Cow<'_, str> {
     if !text.contains(PATH_PREFIX) {
         return std::borrow::Cow::Borrowed(text);
     }
