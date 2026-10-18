@@ -343,17 +343,16 @@ fn vector_field_input_pointer_certificates_round_trip() {
         expansion::position_at_offset(source, source.find("have i < owner->cap;").unwrap());
     let expanded =
         expand_c0_tactic_source_at(source, &sources, position.line, position.column).unwrap();
-    assert!(
-        expanded.contains("at(function.entry, owner)->cap"),
-        "{expanded}"
-    );
+    // An unchanged input can print directly as `owner`; the cold recheck
+    // must resolve it without requiring one particular snapshot spelling.
+    assert!(!expanded.contains("have i < owner->cap;"), "{expanded}");
     assert!(!expanded.contains("the pointer value at this program point"));
     verify_c0_sources(&expanded, &sources).unwrap();
+    let false_bound = expanded.replacen("have i < owner->cap by {", "have i < 0 by {", 1);
+    assert_ne!(false_bound, expanded);
+    verify_c0_sources(&false_bound, &sources)
+        .expect_err("the expanded bound proof must not establish a false bound");
     let expanded = expand_c0_claim_source(source, &sources, name, CProofClaim::Grouped).unwrap();
-    assert!(
-        expanded.contains("at(function.entry, owner)->cap"),
-        "{expanded}"
-    );
     assert!(!expanded.contains("the pointer value at this program point"));
     assert!(
         c0_smart_tactic_source_sites(&expanded, &sources)
