@@ -1,6 +1,7 @@
 //! Typed term classes inside the trusted graph: offset addition congruence and
 //! int32 addition and registered same-snapshot int32 loads, connected by int32
-//! scaling. Unsigned division/remainder and bitwise XOR have congruence only;
+//! scaling. Full-width scaling retains its signed interpretation. Unsigned
+//! division/remainder and bitwise XOR have congruence only;
 //! UInt64 arithmetic/bitwise applications, pointer addresses and complete
 //! same-snapshot 64-bit reads share those classes. Other integer operators
 //! and conversions use typed curried applications; congruence supplies no
@@ -219,7 +220,7 @@ enum Node {
     Variable(Variable),
     Add(u64, u64),
     Int32Scaled(u64, i64),
-    Int64Scaled(MachineAtom, i64, bool),
+    Int64Scaled(u64, i64, bool),
 }
 
 // Operand IDs in an application are structural; in a signature they are
@@ -241,6 +242,7 @@ enum Application {
     Int32Binary(Int32Binary, u64, u64),
     Int32Unary(Int32Unary, u64),
     Int32Scaled(u64, i64),
+    Int64Scaled(u64, i64, bool),
     // Defining snapshot, exact storage block ID, offset node/class ID.
     // Only registered four-byte loads in the int32 interpretation enter here.
     Int32Load((u32, u32), u64),
@@ -264,6 +266,7 @@ impl Application {
             | Self::PointerRead(_, value, _)
             | Self::AddressShift(value, _)
             | Self::Int32Scaled(value, _)
+            | Self::Int64Scaled(value, _, _)
             | Self::Int32Load(_, value) => [Some(value), None],
         }
         .into_iter()
@@ -309,6 +312,9 @@ impl Application {
             }
             Self::Int32Unary(op, value) => Self::Int32Unary(op, classes.root(value)),
             Self::Int32Scaled(value, width) => Self::Int32Scaled(classes.root(value), width),
+            Self::Int64Scaled(value, width, unsigned) => {
+                Self::Int64Scaled(classes.root(value), width, unsigned)
+            }
             Self::Int32Load(snapshot, address) => Self::Int32Load(snapshot, classes.root(address)),
         }
     }
@@ -1280,18 +1286,7 @@ impl TermClasses {
                         value,
                         byte_width,
                         unsigned,
-                    } => Node::Int64Scaled(
-                        MachineAtom::new(
-                            if *unsigned {
-                                crate::kernel::MachineIntegerType::UInt64
-                            } else {
-                                crate::kernel::MachineIntegerType::Int64
-                            },
-                            value.as_ref().clone(),
-                        ),
-                        *byte_width,
-                        *unsigned,
-                    ),
+                    } => Node::Int64Scaled(self.intern_uint64(value), *byte_width, *unsigned),
                 },
             };
             let id = self.intern_node(node);
@@ -1353,6 +1348,9 @@ impl TermClasses {
             }
             Node::Int32Unary(op, value) => Some(Application::Int32Unary(*op, *value)),
             Node::Int32Scaled(value, width) => Some(Application::Int32Scaled(*value, *width)),
+            Node::Int64Scaled(value, width, unsigned) => {
+                Some(Application::Int64Scaled(*value, *width, *unsigned))
+            }
             Node::Int32(value) => {
                 if let Some(value) = value.value().as_const() {
                     self.int32_constants.insert(id, value as i32);
@@ -1725,6 +1723,7 @@ impl TermClasses {
                     | Application::Int32Binary(..)
                     | Application::Int32Unary(..)
                     | Application::Int32Scaled(..)
+                    | Application::Int64Scaled(..)
             ) {
                 let uses = self.constant_uses.get(&root).cloned().unwrap_or_default();
                 self.constant_uses.insert(root, uses.with_value(id));
@@ -1799,6 +1798,21 @@ impl TermClasses {
         if let Application::Int32Scaled(value, width) = signature
             && let Some(value) = self.int32_constants.get(&value)
             && let Some(bytes) = i64::from(*value).checked_mul(width)
+        {
+            let constant = self.intern_node(Node::Constant(bytes));
+            pending.push((id, constant));
+        }
+        // Full-word equality selects the index value. Scaling is exact
+        // offset arithmetic: preserve signedness and reject products outside
+        // i64 rather than folding their wrapped low bits.
+        if let Application::Int64Scaled(value, width, unsigned) = signature
+            && let Some(bits) = self.uint64_constants.get(&value).copied()
+            && let Some(index) = if unsigned {
+                i64::try_from(bits).ok()
+            } else {
+                Some(bits as i64)
+            }
+            && let Some(bytes) = index.checked_mul(width)
         {
             let constant = self.intern_node(Node::Constant(bytes));
             pending.push((id, constant));
@@ -2319,6 +2333,55 @@ mod tests {
         let plus_one =
             |x| PointerOffsetTerm::Add(Box::new(x), Box::new(PointerOffsetTerm::Constant(1)));
         assert!(branch.are_offsets_equal(&plus_one(a), &plus_one(c)));
+    }
+
+    #[test]
+    fn late_wide_constants_reconnect_offsets_without_using_low_words_or_wrapping() {
+        let value = Bitvector32Term::Variable(Variable(895_080));
+        let base = Pointer::symbolic(Variable(895_081));
+        let scaled = |width, unsigned| Pointer {
+            block: base.block.clone(),
+            offset: PointerOffsetTerm::Int64Scaled {
+                value: Box::new(value.clone()),
+                byte_width: width,
+                unsigned,
+            },
+        };
+        for unsigned in [false, true] {
+            for width in [1, 4, 8] {
+                let pointer = scaled(width, unsigned);
+                let mut graph = EqualityGraph::default();
+                assert!(!graph.are_equal(&pointer, &base));
+                let sibling = graph.clone();
+                graph.add_uint64_equality(&value, &Bitvector32Term::UInt64Constant(0));
+                assert!(
+                    graph.are_equal(&pointer, &base),
+                    "late zero: {width}, {unsigned}"
+                );
+                assert!(!sibling.are_equal(&pointer, &base));
+            }
+        }
+        let mut low_word_only = EqualityGraph::default();
+        low_word_only.add_int32_equality(
+            &Bitvector32Term::UInt32From64(Box::new(value.clone())),
+            &Bitvector32Term::Constant(0),
+        );
+        assert!(!low_word_only.are_equal(&scaled(1, true), &base));
+        let mut high_word = EqualityGraph::default();
+        high_word.add_uint64_equality(&value, &Bitvector32Term::UInt64Constant(1u64 << 32));
+        assert!(high_word.are_equal(
+            &scaled(4, true),
+            &Pointer {
+                block: base.block.clone(),
+                offset: PointerOffsetTerm::Constant(4i64 << 32)
+            }
+        ));
+        assert!(!high_word.are_equal(&scaled(4, true), &base));
+        let mut overflow = EqualityGraph::default();
+        overflow.add_uint64_equality(&value, &Bitvector32Term::UInt64Constant(1u64 << 63));
+        for unsigned in [false, true] {
+            assert!(!overflow.are_equal(&scaled(2, unsigned), &base));
+        }
     }
 
     #[test]
