@@ -6,7 +6,7 @@
 //! loading checks the recorded artifact without running the compiler.
 
 use std::collections::{BTreeMap, BTreeSet, HashSet};
-use std::fs::{self, File, OpenOptions};
+use std::fs::{self, OpenOptions};
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -22,6 +22,9 @@ use super::system_headers::{self, HeaderKind};
 use super::target::{COptimization, CTarget};
 use crate::cli::write_file_atomically;
 use crate::languages::compiler_process::{CompilerLimits, run_compiler};
+use crate::languages::inputs::{
+    Leaf, hex_digest, open_regular, path_identity, read_regular, read_stable,
+};
 
 const SCHEMA: u32 = 1;
 const LOCK_SCHEMA: u32 = 3;
@@ -527,7 +530,12 @@ fn load_locked(config: &Config, lock: &Lock) -> Result<Vec<PreparedCImport>, Str
             .ok_or_else(|| format!("lock has no source `{}`", source.logical_source))?;
         validate_locked_source(source, locked, config, lock)?;
         let artifact_path = resolve_artifact(config, &source.artifact)?;
-        let existing = read_stable(&artifact_path, MAX_ARTIFACT_BYTES, "locked artifact")?;
+        let existing = read_stable(
+            &artifact_path,
+            MAX_ARTIFACT_BYTES,
+            "locked artifact",
+            Leaf::Follow,
+        )?;
         charge_artifact_bytes(&mut artifact_bytes, existing.len())?;
         if existing.len() != locked.artifact_bytes
             || hex_digest(&existing) != locked.artifact_sha256
@@ -720,7 +728,12 @@ fn preprocess(context: &Context<'_>, source: &SourceConfig) -> Result<Preprocess
             ));
         }
     };
-    let dep = read_bounded(&dep_path, MAX_CONFIG_BYTES, "compiler dependency output");
+    let dep = read_regular(
+        &dep_path,
+        MAX_CONFIG_BYTES,
+        "compiler dependency output",
+        Leaf::Follow,
+    );
     let _ = fs::remove_file(&dep_path);
     let dep = dep?;
     if output.stdout.len() > MAX_ARTIFACT_BYTES {
@@ -1931,23 +1944,6 @@ fn reject_symlink_components(path: &Path) -> Result<(), String> {
     Ok(())
 }
 
-fn path_identity(path: &Path) -> Result<PathBuf, String> {
-    match fs::canonicalize(path) {
-        Ok(path) => Ok(path),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-            let parent = path
-                .parent()
-                .ok_or_else(|| format!("path {} has no parent", path.display()))?;
-            let parent = fs::canonicalize(parent)
-                .map_err(|e| format!("canonicalize parent {}: {e}", parent.display()))?;
-            Ok(parent.join(
-                path.file_name()
-                    .ok_or_else(|| format!("path {} has no filename", path.display()))?,
-            ))
-        }
-        Err(error) => Err(format!("canonicalize {}: {error}", path.display())),
-    }
-}
 fn absolute_path(path: &Path, base: &Path) -> Result<PathBuf, String> {
     if path.as_os_str().is_empty() {
         return Err("empty path".into());
@@ -2021,53 +2017,6 @@ fn unique_temp_path(prefix: &str, suffix: &str) -> Result<PathBuf, String> {
         .map_err(|e| format!("reserve temporary compiler input: {e}"))?;
     Ok(path)
 }
-fn read_bounded(path: &Path, max: usize, label: &str) -> Result<Vec<u8>, String> {
-    let file = open_regular(path, label)?;
-    let mut bytes = Vec::new();
-    file.take(max as u64 + 1)
-        .read_to_end(&mut bytes)
-        .map_err(|e| format!("read {label}: {e}"))?;
-    if bytes.len() > max {
-        return Err(format!("{label} exceeds {max} bytes"));
-    }
-    Ok(bytes)
-}
-fn read_stable(path: &Path, max: usize, label: &str) -> Result<Vec<u8>, String> {
-    let before =
-        fs::symlink_metadata(path).map_err(|e| format!("stat {label} {}: {e}", path.display()))?;
-    let bytes = read_bounded(path, max, label)?;
-    let after =
-        fs::symlink_metadata(path).map_err(|e| format!("stat {label} {}: {e}", path.display()))?;
-    if metadata_signature(&before) != metadata_signature(&after) {
-        return Err(format!("{label} changed while being read"));
-    }
-    Ok(bytes)
-}
-fn metadata_signature(metadata: &fs::Metadata) -> (u64, u128, u128, u64) {
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::MetadataExt;
-        (
-            metadata.len(),
-            (metadata.mtime() as i128 * 1_000_000_000 + metadata.mtime_nsec() as i128) as u128,
-            (metadata.ctime() as i128 * 1_000_000_000 + metadata.ctime_nsec() as i128) as u128,
-            metadata.ino(),
-        )
-    }
-    #[cfg(not(unix))]
-    {
-        (
-            metadata.len(),
-            metadata
-                .modified()
-                .ok()
-                .and_then(|x| x.duration_since(std::time::UNIX_EPOCH).ok())
-                .map_or(0, |x| x.as_nanos()),
-            0,
-            0,
-        )
-    }
-}
 fn validate_lock_shape(lock: &Lock, config: &Config) -> Result<(), String> {
     if lock.target != CTarget::TRIPLE || lock.mode != config.target.mode() {
         return Err(format!(
@@ -2097,7 +2046,7 @@ fn validate_lock_shape(lock: &Lock, config: &Config) -> Result<(), String> {
     Ok(())
 }
 fn file_digest(path: &Path) -> Result<String, String> {
-    let mut file = open_regular(path, "input")?;
+    let mut file = open_regular(path, "input", Leaf::Follow)?;
     if file.metadata().map_err(|e| e.to_string())?.len() > MAX_ROOT_BYTES {
         return Err("input file exceeds byte bound".into());
     }
@@ -2134,23 +2083,6 @@ fn charge_artifact_bytes(total: &mut usize, bytes: usize) -> Result<(), String> 
     }
     *total += bytes;
     Ok(())
-}
-
-fn open_regular(path: &Path, label: &str) -> Result<File, String> {
-    let mut options = OpenOptions::new();
-    options.read(true);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::OpenOptionsExt;
-        options.custom_flags(libc::O_NONBLOCK);
-    }
-    let file = options
-        .open(path)
-        .map_err(|e| format!("read {label} {}: {e}", path.display()))?;
-    if !file.metadata().map_err(|e| e.to_string())?.is_file() {
-        return Err(format!("{label} must be a regular file"));
-    }
-    Ok(file)
 }
 
 fn check_cancelled() -> Result<(), String> {
@@ -2193,13 +2125,6 @@ fn prune_roots(roots: Vec<PathBuf>) -> Vec<PathBuf> {
         }
     }
     selected
-}
-
-fn hex_digest(bytes: &[u8]) -> String {
-    Sha256::digest(bytes)
-        .iter()
-        .map(|b| format!("{b:02x}"))
-        .collect()
 }
 
 #[cfg(test)]
@@ -2944,7 +2869,7 @@ mod tests {
         let name = std::ffi::CString::new(path.as_os_str().as_bytes()).unwrap();
         assert_eq!(unsafe { libc::mkfifo(name.as_ptr(), 0o600) }, 0);
         assert!(
-            read_bounded(&path, 64, "config")
+            read_regular(&path, 64, "config", Leaf::Follow)
                 .unwrap_err()
                 .contains("regular")
         );
