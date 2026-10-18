@@ -175,27 +175,48 @@ pub fn artifact(description: &Path) -> PathBuf {
     ))
 }
 
-/// A unit's one source entry in a project lock.
-pub fn lock_entry(lock: &serde_json::Value) -> &serde_json::Value {
+/// A fixture project's one unit entry in a project lock.
+pub fn unit_entry(lock: &serde_json::Value) -> &serde_json::Value {
     let units = lock["units"].as_object().unwrap();
     assert_eq!(units.len(), 1, "a fixture's project has one unit");
-    units.values().next().unwrap()["lock"]
-        .as_object()
-        .unwrap()
-        .values()
-        .next()
-        .unwrap()
+    &units.values().next().unwrap()["lock"]
 }
 
-pub fn lock_entry_mut(lock: &mut serde_json::Value) -> &mut serde_json::Value {
+pub fn unit_entry_mut(lock: &mut serde_json::Value) -> &mut serde_json::Value {
     let units = lock["units"].as_object_mut().unwrap();
     assert_eq!(units.len(), 1, "a fixture's project has one unit");
-    units.values_mut().next().unwrap()["lock"]
-        .as_object_mut()
-        .unwrap()
-        .values_mut()
-        .next()
-        .unwrap()
+    &mut units.values_mut().next().unwrap()["lock"]
+}
+
+fn only(sources: &serde_json::Value) -> &serde_json::Value {
+    let sources = sources.as_object().unwrap();
+    assert_eq!(sources.len(), 1, "a fixture's unit has one source");
+    sources.values().next().unwrap()
+}
+
+fn only_mut(sources: &mut serde_json::Value) -> &mut serde_json::Value {
+    let sources = sources.as_object_mut().unwrap();
+    assert_eq!(sources.len(), 1, "a fixture's unit has one source");
+    sources.values_mut().next().unwrap()
+}
+
+/// The unit's one source in a project lock's envelope: its inputs, artifact
+/// and identity.
+pub fn lock_source(lock: &serde_json::Value) -> &serde_json::Value {
+    only(&unit_entry(lock)["sources"])
+}
+
+pub fn lock_source_mut(lock: &mut serde_json::Value) -> &mut serde_json::Value {
+    only_mut(&mut unit_entry_mut(lock)["sources"])
+}
+
+/// The unit's one source in the lock's C++ section.
+pub fn lock_section(lock: &serde_json::Value) -> &serde_json::Value {
+    only(&unit_entry(lock)["c++"]["sources"])
+}
+
+pub fn lock_section_mut(lock: &mut serde_json::Value) -> &mut serde_json::Value {
+    only_mut(&mut unit_entry_mut(lock)["c++"]["sources"])
 }
 
 /// The digest a project lock records for the described unit: its
