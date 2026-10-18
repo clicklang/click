@@ -12,5 +12,5 @@ theorem mismatched(m: Maybe<int32>) {
 ```
 
 ```expect
-fail: algebraic comparison type mismatch
+fail: `Maybe<int32>` and `Maybe<uint32>`
 ```
