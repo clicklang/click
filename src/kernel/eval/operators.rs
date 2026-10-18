@@ -2315,7 +2315,7 @@ struct PointerFormationGuard {
     value: bool,
 }
 
-fn pointer_index_term(
+pub(in crate::kernel) fn pointer_index_term(
     value: CValue,
     facts: &(impl ExecutionFactSource + ?Sized),
     assumptions: &PureFactContext,
