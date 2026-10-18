@@ -6219,6 +6219,12 @@ impl<'a> Proof<'a> {
                 .into_iter()
                 .chain(proof.facts().algebraic_equalities_mentioning(&goal));
             for equality in equalities {
+                // A registered read definition remains available to the
+                // kernel, but cannot supply a source rewrite. Do not search
+                // recorded snapshots for a spelling of this metadata.
+                if crate::kernel::is_verified_load_variable_defining_fact(&equality) {
+                    continue;
+                }
                 let equality_has_literal_endpoint = matches!(
                     &equality,
                     Proposition::ConditionIs(
