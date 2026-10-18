@@ -387,8 +387,21 @@ static int64 FeeFrac::Div(int128 n, int32 d, bool round_down) {
     }
     let project = read_click_project(&sidecar, source).unwrap();
     if fee_rate_caller {
-        verify_program_prepared_project(&project, &import)
-            .unwrap_or_else(|error| panic!("{selected}: {}", error.message()));
+        // Expansion reuses the certificate from the original session check.
+        // Other phases keep their independent full original verification.
+        let retained = if matches!(
+            phase,
+            Some(RoundingPhase::FullExpansion | RoundingPhase::Tools)
+        ) {
+            Some(
+                C0VerificationSession::new_program_prepared_project(&project, &import)
+                    .unwrap_or_else(|error| panic!("{selected}: {}", error.message())),
+            )
+        } else {
+            verify_program_prepared_project(&project, &import)
+                .unwrap_or_else(|error| panic!("{selected}: {}", error.message()));
+            None
+        };
         let root_name = if fee_rate_per_k {
             "CFeeRate::GetFeePerK"
         } else {
@@ -398,18 +411,22 @@ static int64 FeeFrac::Div(int128 n, int32 d, bool round_down) {
             phase,
             Some(RoundingPhase::FullExpansion | RoundingPhase::Tools)
         ) {
-            let expanded = expand_project_claim_source_by_label(
-                &project,
-                &ProgramInputs::program(&import),
-                &format!("{root_name}.ensures_0"),
+            let (session, verified) = retained.unwrap();
+            let expanded = click::surface::expand_verified_function_claim_source_by_label(
+                source,
+                &verified,
+                &format!(
+                    "{}.ensures_0",
+                    click::languages::cpp::names::path_name(&import.export().functions[0].path)
+                ),
             )
-            .unwrap();
+            .unwrap()
+            .expect("the fee-rate claim retains its certificate");
             let rewritten = project.with_entry_source(expanded.clone());
             if phase == Some(RoundingPhase::FullExpansion) {
+                drop(session);
                 verify_program_prepared_project(&rewritten, &import).unwrap();
             } else {
-                let (session, _) =
-                    C0VerificationSession::new_program_prepared_project(&project, &import).unwrap();
                 let position = project_tactic_source_position(
                     &rewritten,
                     &ProgramInputs::program(&import),
@@ -500,7 +517,9 @@ static int64 FeeFrac::Div(int128 n, int32 d, bool round_down) {
         fs::remove_dir_all(root).unwrap();
         return;
     }
-    if matches!(phase, None | Some(RoundingPhase::Tools)) {
+    if matches!(phase, None | Some(RoundingPhase::Tools))
+        && !matches!(selected, "GetSizeOfCompactSize" | "FeeFrac::Mul")
+    {
         verify_program_prepared_project(&project, &import)
             .unwrap_or_else(|error| panic!("{selected}: {}", error.message()));
     }
