@@ -1322,11 +1322,6 @@ struct CPointerQualifiers {
     object_class: Option<crate::kernel::effective_type::CAccessClass>,
     object_type_evidence: Option<ObjectTypeEvidence>,
     local_reference: Option<super::loans::LocalScalarReference>,
-    /// The opaque extent of the pointer this one selected a member of, if
-    /// any (`design/pointer-subobject-extents.md`, Phase C): a clause
-    /// through the member also claims that pointer designates the member.
-    /// Not part of the value's identity.
-    within: RangeDesignation,
 }
 
 /// The subobject a pointer was formed from, narrower than its complete
@@ -1352,45 +1347,6 @@ pub struct SubobjectExtent {
 }
 
 impl SubobjectExtent {
-    /// The first identity an opaque extent may use.
-    pub(crate) const OPAQUE_VARIABLE_BASE: u64 = 1 << 44;
-    /// The first identity past the opaque-extent range.
-    pub(crate) const OPAQUE_VARIABLE_CEILING: u64 = 1 << 45;
-
-    /// The unknown extent of a pointer whose formation the function did not
-    /// see (`design/pointer-subobject-extents.md`, Phase C). `variable` names
-    /// it and nothing else: its start and width are opaque, so no access
-    /// through it is inside it until evidence says so. No producer assigns
-    /// one yet (Phase C step 2).
-    #[cfg(test)]
-    pub(crate) fn opaque(variable: Variable) -> Self {
-        debug_assert!(
-            (Self::OPAQUE_VARIABLE_BASE..Self::OPAQUE_VARIABLE_CEILING).contains(&variable.0)
-        );
-        Self {
-            start: Pointer::symbolic(variable),
-            width: Bitvector32Term::Variable(variable),
-        }
-    }
-
-    /// The variable naming this extent, when it is opaque.
-    pub(crate) fn opaque_variable(&self) -> Option<Variable> {
-        let PointerBlock::Symbolic(variable) = &self.start.block else {
-            return None;
-        };
-        self.is_opaque().then_some(*variable)
-    }
-
-    /// Whether this is an opaque extent, known only through coverage facts.
-    pub(crate) fn is_opaque(&self) -> bool {
-        let PointerBlock::Symbolic(variable) = &self.start.block else {
-            return false;
-        };
-        (Self::OPAQUE_VARIABLE_BASE..Self::OPAQUE_VARIABLE_CEILING).contains(&variable.0)
-            && self.start.offset == PointerOffsetTerm::Constant(0)
-            && self.width == Bitvector32Term::Variable(*variable)
-    }
-
     /// The fact that this opaque extent covers `range`.
     pub(crate) fn coverage_fact(&self, range: &CMemoryRange) -> Proposition {
         let pointer = |pointer: Pointer| {
@@ -1687,38 +1643,7 @@ impl CPointerValue {
         let qualifiers = Arc::make_mut(self.qualifiers.get_or_insert_with(Default::default));
         qualifiers.extent = None;
         qualifiers.extent_known = true;
-        qualifiers.within = RangeDesignation::default();
         self
-    }
-
-    /// The opaque extents a clause through this pointer makes claims about:
-    /// its own, and the one it selected a member of.
-    pub(crate) fn designations(&self) -> [Option<Variable>; 2] {
-        [
-            self.extent().and_then(SubobjectExtent::opaque_variable),
-            self.qualifiers
-                .as_ref()
-                .and_then(|qualifiers| qualifiers.within.0),
-        ]
-    }
-
-    /// Selects a member of this pointer: the member's extent replaces this
-    /// one, and an opaque extent is remembered as the one it lies within.
-    pub(crate) fn with_member_extent(self, extent: SubobjectExtent) -> Self {
-        let within = self
-            .extent()
-            .and_then(SubobjectExtent::opaque_variable)
-            .or_else(|| {
-                self.qualifiers
-                    .as_ref()
-                    .and_then(|qualifiers| qualifiers.within.0)
-            });
-        let mut value = self.with_extent(Some(extent));
-        if within.is_some() {
-            Arc::make_mut(value.qualifiers.get_or_insert_with(Default::default)).within =
-                RangeDesignation(within);
-        }
-        value
     }
 
     pub(crate) fn object_class(&self) -> Option<crate::kernel::effective_type::CAccessClass> {
@@ -4200,52 +4125,9 @@ pub struct CMemoryRange {
     /// How the bounds are read. Last, so ranges order by base first and
     /// `Int32` ranges keep the order they had among themselves.
     kind: RangeIndexKind,
-    /// The opaque extent of the pointer whose clause named this range, if
-    /// any. Not part of the range's identity.
-    extent_claims: RangeDesignation<[Option<Variable>; 2]>,
     /// Parent-member bounds established while evaluating this footprint.
     /// Evidence only: it never changes the identity or authority of the range.
     pub(super) formation_coverage: Arc<[Proposition]>,
-}
-
-/// The opaque subobject extent a held range was named through
-/// (`design/pointer-subobject-extents.md`, Phase C). A clause through a
-/// pointer of unseen formation claims the pointer designates the range, and
-/// whoever established the clause checked that claim, so holding the range
-/// is evidence for accesses through that extent. It never distinguishes two
-/// ranges: matching, splitting and joining ignore it, and a range that loses
-/// it only loses that evidence.
-#[derive(Clone, Copy, Default)]
-pub(crate) struct RangeDesignation<T = Option<Variable>>(T);
-
-impl<T: std::fmt::Debug> std::fmt::Debug for RangeDesignation<T> {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(formatter, "{:?}", self.0)
-    }
-}
-
-impl<T> PartialEq for RangeDesignation<T> {
-    fn eq(&self, _: &Self) -> bool {
-        true
-    }
-}
-
-impl<T> Eq for RangeDesignation<T> {}
-
-impl<T> std::hash::Hash for RangeDesignation<T> {
-    fn hash<H: std::hash::Hasher>(&self, _: &mut H) {}
-}
-
-impl<T> PartialOrd for RangeDesignation<T> {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl<T> Ord for RangeDesignation<T> {
-    fn cmp(&self, _: &Self) -> std::cmp::Ordering {
-        std::cmp::Ordering::Equal
-    }
 }
 
 impl CMemoryRange {

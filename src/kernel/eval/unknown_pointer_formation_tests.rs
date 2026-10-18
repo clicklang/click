@@ -130,7 +130,7 @@ fn member_coverage_does_not_follow_numeric_aliases_or_survive_withdrawal() {
     assert!(!permits(&p, 8, &full.without_exact_fact(&equality), &empty));
     let member = p
         .clone()
-        .with_member_extent(SubobjectExtent::constant(p.pointer().clone(), 4));
+        .with_extent(Some(SubobjectExtent::constant(p.pointer().clone(), 4)));
     assert!(!permits(&member, 8, &full, &empty));
 }
 

@@ -437,6 +437,14 @@ fn path_error(positions: &[SourcePosition], index: usize, message: String) -> Cl
     .with_kind(ClickErrorKind::Syntax)
 }
 
+/// The top-level declaration names of the user modules a file imports.
+#[derive(Clone, Debug, Default)]
+pub(in crate::surface) struct ImportedDeclarationNames {
+    pub(in crate::surface) theorems: BTreeSet<String>,
+    /// Functions, predicates, resources, enums, tactics and contracts.
+    pub(in crate::surface) others: BTreeSet<String>,
+}
+
 /// File-level declaration and import bindings shared by lowering and source
 /// spelling. Canonical library identities never depend on printed text.
 #[derive(Clone, Debug, Default)]
@@ -600,6 +608,33 @@ impl FileSymbols {
         self.written_paths
             .get(position)
             .map(|path| path.written.as_str())
+    }
+
+    /// Binds the declarations of the user modules this file imports as the
+    /// file's own bind theirs: an imported theorem shadows a bare library
+    /// theorem, and a selective import of a name an imported module declares
+    /// is refused, so one bare name never reads as two declarations.
+    pub(super) fn import_declarations(
+        &mut self,
+        imported: &ImportedDeclarationNames,
+    ) -> Result<(), ClickError> {
+        if let Some(name) = imported
+            .theorems
+            .iter()
+            .chain(&imported.others)
+            .find(|name| self.selected.contains_key(*name))
+        {
+            return Err(ClickError::new(format!(
+                "`{name}` is imported from the Click library as `{}` and also declared by an imported module; drop the library import, rename the declaration, or write the library's by its path",
+                self.selected[name]
+            ))
+            .with_kind(ClickErrorKind::Syntax));
+        }
+        if self.own.is_none() {
+            self.local_theorems
+                .extend(imported.theorems.iter().cloned());
+        }
+        Ok(())
     }
 
     pub(super) fn theorem_identity(&self, name: String) -> String {
