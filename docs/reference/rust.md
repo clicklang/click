@@ -678,7 +678,12 @@ at every type. A type parameter is instantiated at `i32`, `u8`, `u16`,
 code: `read_twice<U: Copy>` calling `read(cell)` calls `read<U>`, whose
 contract is `read`'s with `T` read as `U`, and a call at the callee's own
 parameter names calls the generic function itself. A reference to a value
-of `T` and a generic block whose object carries state are refused
+of `T`, `&T` or `&mut T`, points at one value of `T` in memory, a word as a
+generic struct's field is: `fn peek<T: Copy>(value: &T) -> T { views
+*value; ensures result == *value; }` reads it, and a caller at `u32` lends
+`&mut slots.a` as it lends any `&mut u32`
+([`design/charon-trial/generic-refs`](https://github.com/clicklang/click/blob/master/design/charon-trial/generic-refs/refs.click)).
+A generic block whose object carries state is refused
 ([`design/charon-trial/generic-impls`](https://github.com/clicklang/click/blob/master/design/charon-trial/generic-impls/shapes.click)).
 
 A generic struct, `struct Cell<T> { value: T, count: u32 }`, holds values of

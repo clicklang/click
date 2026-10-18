@@ -412,7 +412,8 @@ pub(crate) fn symbolic_call_result(c_type: CType, variable: Variable) -> CValue 
         CType::Int8Pointer | CType::Int8PointerPointer => {
             CValue::typed_pointer(Pointer::symbolic(variable), c_type)
         }
-        CType::Int16Pointer
+        CType::ParameterPointer(_)
+        | CType::Int16Pointer
         | CType::UInt16Pointer
         | CType::Int32Pointer
         | CType::UInt8Pointer

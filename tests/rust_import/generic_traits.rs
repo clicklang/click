@@ -221,3 +221,42 @@ fn charon_generic_struct_fields_are_verified_once_for_every_type() {
         assert!(rendered.contains(expected), "{rendered}");
     }
 }
+
+const REFERENCE_SIDECAR: &str = include_str!("../../design/charon-trial/generic-refs/refs.click");
+
+// A reference to a value of `T`, `&T` or `&mut T`, reads and writes one value
+// of `T` in memory: generic functions over them are verified once, and calls
+// at `u32` pass references to struct fields.
+#[test]
+fn charon_references_to_type_parameter_values_are_verified_once() {
+    let p = Project::from_fixture("design/charon-trial/generic-refs");
+    fs::write(p.root.join("borrow.click"), REFERENCE_SIDECAR).unwrap();
+    let prepared = p.prepared().unwrap();
+    C0VerificationSession::new_program_prepared(REFERENCE_SIDECAR, &prepared)
+        .unwrap_or_else(|error| panic!("{error:?}"));
+    for (before, after, expected) in [
+        // Two references to `T` are two places.
+        (
+            "    ensures *left == old(*right);",
+            "    ensures *left == old(*left);",
+            "generic_refs::exchange.ensures_0",
+        ),
+        // A caller at `u32` owns what it lends as `&mut u32`. (A false
+        // `ensures` here is rejected too, but slowly:
+        // bugs/rust-auto-slow-to-reject-after-field-reference-calls.md.)
+        (
+            "    owns slots.a;\n    owns slots.b;\n    ensures result",
+            "    owns slots.a;\n    views slots.b;\n    ensures result",
+            "generic_refs::use_refs",
+        ),
+    ] {
+        assert!(REFERENCE_SIDECAR.contains(before), "{before}");
+        let invalid = REFERENCE_SIDECAR.replacen(before, after, 1);
+        let error = C0VerificationSession::new_program_prepared(&invalid, &prepared)
+            .err()
+            .expect("a claim the generic contracts do not justify must fail");
+        let rendered = format!("{error:?} {error}");
+        let rendered = click::languages::rust::names::display_rust_names(&rendered);
+        assert!(rendered.contains(expected), "{rendered}");
+    }
+}

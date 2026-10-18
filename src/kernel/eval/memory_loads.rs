@@ -4057,6 +4057,7 @@ pub(in crate::kernel) fn symbolic_load_value_unrecorded(
             value_type,
         )),
         CType::VoidPointerPointer
+        | CType::ParameterPointer(_)
         | CType::Int16Pointer
         | CType::UInt16Pointer
         | CType::Int32Pointer

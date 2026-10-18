@@ -2252,6 +2252,9 @@ pub enum CValue {
 pub enum CType {
     /// A value of the abstract type parameter with this interned name.
     Parameter(TypeParameterName),
+    /// A pointer to a value of the abstract type parameter with this name,
+    /// a Rust `&T`.
+    ParameterPointer(TypeParameterName),
     Void,
     Bool,
     /// An opaque object pointer with provenance but no modeled pointee type.

@@ -3086,7 +3086,7 @@ impl CType {
             Some(
                 match c_type {
                     // A function pointer over an abstract type is not encoded.
-                    CType::Parameter(_) => return None,
+                    CType::Parameter(_) | CType::ParameterPointer(_) => return None,
                     CType::Void => 0,
                     CType::Bool => 19,
                     CType::VoidPointer => 20,
@@ -3190,7 +3190,8 @@ impl CType {
 
     pub(crate) fn pointer_to(self) -> Option<Self> {
         match self {
-            Self::Parameter(_) => None,
+            Self::Parameter(parameter) => Some(Self::ParameterPointer(parameter)),
+            Self::ParameterPointer(_) => None,
             Self::Bool => None,
             Self::Int8 => Some(Self::Int8Pointer),
             Self::Int16 => Some(Self::Int16Pointer),
@@ -3388,6 +3389,7 @@ impl CType {
             // field, takes a word: no program reads its bytes, so its
             // width is the model's choice. A local holds one in its binding.
             Self::Parameter(_) => ABSTRACT_VALUE_WIDTH,
+            Self::ParameterPointer(_) => C_POINTER_BYTE_WIDTH,
             Self::Void => 0,
             Self::Bool => 1,
             Self::VoidPointer => C_POINTER_BYTE_WIDTH,
@@ -3444,6 +3446,7 @@ impl CType {
     pub fn pointee_type(self) -> Option<Self> {
         match self {
             Self::VoidPointerPointer => Some(Self::VoidPointer),
+            Self::ParameterPointer(parameter) => Some(Self::Parameter(parameter)),
             Self::Int8Pointer => Some(Self::Int8),
             Self::Int16Pointer => Some(Self::Int16),
             Self::Int32Pointer => Some(Self::Int32),

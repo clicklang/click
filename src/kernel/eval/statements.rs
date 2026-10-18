@@ -4787,7 +4787,8 @@ pub(in crate::kernel) fn declare_local(
         CType::UInt8 => 1,
         CType::UInt32 | CType::Float32 => 4,
         CType::Int8Pointer | CType::Int8PointerPointer => C_POINTER_BYTE_WIDTH,
-        CType::Int16Pointer
+        CType::ParameterPointer(_)
+        | CType::Int16Pointer
         | CType::UInt16Pointer
         | CType::Int32Pointer
         | CType::UInt8Pointer
