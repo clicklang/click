@@ -474,6 +474,7 @@ pub(super) fn pure_induction_hypothesis(
     // Lower the hypothesis in its own requirement scope. These premises
     // are retained below as implications, so definedness is never granted
     // to an application that does not establish the smaller argument's guards.
+    // Mathematical parameters keep the same Integer bindings as the theorem.
     let mut assumptions = PureFactContext::new();
     let mut opaque_requirements = Vec::new();
     for requirement in &setup.surface_requires {
@@ -481,8 +482,7 @@ pub(super) fn pure_induction_hypothesis(
             &setup.hypothesis,
             requirement,
             &assumptions,
-            ContractEnvironment::new(&context.values, &context.array_refs),
-            &context.memory,
+            context,
             spec_definitions,
         )
         .map_err(ClickError::new)?;
@@ -493,8 +493,7 @@ pub(super) fn pure_induction_hypothesis(
         &setup.hypothesis,
         &setup.surface_goal,
         &assumptions,
-        ContractEnvironment::new(&context.values, &context.array_refs),
-        &context.memory,
+        context,
         spec_definitions,
     )
     .map_err(ClickError::new)?;
@@ -3583,8 +3582,7 @@ fn lower_pure_theorem_proposition_opaque(
     theorem_name: &str,
     proposition: &ClickProposition,
     assumptions: &PureFactContext,
-    contract_environment: ContractEnvironment<'_>,
-    memory: &CMemory,
+    context: &PureTheoremContext,
     spec_definitions: SpecDefinitions<'_>,
 ) -> Result<Proposition, String> {
     let opaque = spec_definitions
@@ -3593,14 +3591,15 @@ fn lower_pure_theorem_proposition_opaque(
         .keys()
         .cloned()
         .collect::<BTreeSet<_>>();
-    let state = CState::new().with_memory(memory.clone());
+    let state = CState::new().with_memory(context.memory.clone());
     lower_fixed_state_proposition_through_kernel_with(
         proposition,
         assumptions,
-        contract_environment,
+        ContractEnvironment::new(&context.values, &context.array_refs),
         FixedStateFrame::new(&state, &state, None, &RecordedSnapshots::new()),
         spec_definitions,
         FixedStateLoweringOptions {
+            integer_values: Some(&context.integer_values),
             opaque_click_functions: Some(&opaque),
             ..Default::default()
         },

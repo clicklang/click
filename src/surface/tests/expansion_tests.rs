@@ -1,5 +1,35 @@
 use super::*;
 
+#[test]
+fn scalar_induction_keeps_integer_parameters_and_their_guards() {
+    let (source, _) = mdtest_sources("mdtests/scalar_induction_keeps_fixed_integer_parameters.md");
+    let expanded = expand_c0_claim_source_by_label(
+        &source,
+        &[],
+        "carry_seed_returns_the_same_integer.ensures_0",
+    )
+    .unwrap();
+    verify_click_theorems(&expanded).unwrap();
+    let start = expanded.find("apply(ih(").unwrap();
+    let end = start + expanded[start..].find("};").unwrap() + 2;
+    let application = &expanded[start..end];
+    assert!(application.contains("0 < seed;"), "{expanded}");
+    let missing_guard = format!(
+        "{}{}{}",
+        &expanded[..start],
+        application.replace("0 < seed;", ""),
+        &expanded[end..],
+    );
+    assert!(verify_click_theorems(&missing_guard).is_err());
+    let wrong_result = source.replacen(
+        "ensures carry_seed(n, seed) == seed",
+        "ensures carry_seed(n, seed) == seed + 1",
+        1,
+    );
+    assert_ne!(wrong_result, source);
+    assert!(verify_click_theorems(&wrong_result).is_err());
+}
+
 fn check_member_pointer_address_expansion(fixture: &str, function: &str) {
     let (source, sources) = mdtest_sources(&format!("mdtests/{fixture}.md"));
     let sources = sources
