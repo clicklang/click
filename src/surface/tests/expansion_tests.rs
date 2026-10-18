@@ -7935,30 +7935,31 @@ fn restricted_simp_certifies_unchanged_prefix_after_indexed_store() {
             simp();
         }
     "#;
-    let offset = click_source.rfind("simp();").unwrap();
-    let line = click_source[..offset]
-        .bytes()
-        .filter(|byte| *byte == b'\n')
-        .count()
-        + 1;
-    let column = offset
-        - click_source[..offset]
-            .rfind('\n')
-            .map(|offset| offset + 1)
-            .unwrap_or(0)
-        + 1;
-
-    let expanded =
-        expand_c0_tactic_source_at(click_source, &[("vector_push.c", c_source)], line, column)
-            .expect("unchanged-prefix simp should expand to a checkable frame transport");
+    // The first goal at `simp` can already be an available fact. Expand
+    // the whole contract so this checks the quantified prefix as well.
+    let expanded = expand_c0_claim_source_by_label(
+        click_source,
+        &[("vector_push.c", c_source)],
+        "vector_push.contract",
+    )
+    .expect("unchanged-prefix simp should expand to a checkable frame transport");
     assert!(
         expanded.contains("transport(old(owner->data[k])"),
         "{expanded}"
     );
     assert!(expanded.contains("k < old(owner->len)"), "{expanded}");
     assert!(!expanded.contains("simp();"), "{expanded}");
+    assert!(!expanded.contains("auto();"), "{expanded}");
     verify_c0_sources(&expanded, &[("vector_push.c", c_source)])
         .expect("unchanged-prefix certificate should check");
+    let includes_store = expanded.replacen(
+        "k < old(owner->len) implies",
+        "k <= old(owner->len) implies",
+        1,
+    );
+    assert_ne!(includes_store, expanded);
+    verify_c0_sources(&includes_store, &[("vector_push.c", c_source)])
+        .expect_err("the unchanged prefix must exclude the overwritten element");
 }
 
 #[test]
