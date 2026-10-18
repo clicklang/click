@@ -3344,3 +3344,6 @@ pub(in crate::surface) use outcomes_and_focus::take_outcome_fact_reads;
 pub(in crate::surface) fn take_terminal_publication_visits() -> (usize, usize) {
     TERMINAL_PUBLICATION_VISITS.with(|counts| counts.replace((0, 0)))
 }
+
+#[cfg(test)]
+mod authority_control_tests;
