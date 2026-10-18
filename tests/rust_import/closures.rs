@@ -20,23 +20,30 @@ fn charon_closures_passed_for_a_function_pointer_meet_its_named_contract() {
         .unwrap_or_else(|error| panic!("{error:?}"));
     let caller_closure = "fn closures::caller::{closure#0}(y: i32) -> i32 {\n    requires 0 <= y and y <= 1000;\n    ensures result == y + y;\n} by { execute(); simp(); }\n";
     assert!(SIDECAR.contains(caller_closure));
-    for (before, after, expected) in [
+    // Keep the original full positive check. Select complete function
+    // proofs for local failures; declaration/interface boundary cases
+    // retain their original whole-module checks.
+    for (head, before, after, expected) in [
         (
+            Some("fn closures::caller("),
             caller_closure,
             caller_closure.replace("ensures result == y + y;", "ensures result >= 0;"),
             "does not satisfy named contract `Doubling`",
         ),
         (
+            Some("fn closures::choose::{closure#1}("),
             "    ensures result == z + z;",
             "    ensures result == z + z + 1;".to_string(),
             "failed for `__rust_q_I8_closures_I6_choose_K1.ensures_0`",
         ),
         (
+            Some("fn closures::caller("),
             caller_closure,
             String::new(),
             "is missing prerequisite (precondition clause 1 of",
         ),
         (
+            None,
             "fn closures::choose::{closure#1}(z: i32)",
             "fn closures::choose::{closure#2}(z: i32)".to_string(),
             "choose_K2` is not defined by any `verifying` source",
@@ -44,9 +51,14 @@ fn charon_closures_passed_for_a_function_pointer_meet_its_named_contract() {
     ] {
         let invalid = SIDECAR.replace(before, &after);
         assert_ne!(invalid, SIDECAR);
-        let error = C0VerificationSession::new_program_prepared(&invalid, &prepared)
-            .err()
-            .expect("a closure without the contract its use needs must fail");
+        let error = if let Some(head) = head {
+            verify_rust_proof_after(&invalid, &prepared, head)
+                .expect_err("a closure without the contract its use needs must fail")
+        } else {
+            C0VerificationSession::new_program_prepared(&invalid, &prepared)
+                .err()
+                .expect("a closure without the contract its use needs must fail")
+        };
         let rendered = format!("{error:?} {error}");
         assert!(rendered.contains(expected), "{rendered}");
     }

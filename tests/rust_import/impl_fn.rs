@@ -19,33 +19,41 @@ fn charon_impl_fn_arguments_meet_named_contracts() {
     let prepared = p.prepared().unwrap();
     C0VerificationSession::new_program_prepared(SIDECAR, &prepared)
         .unwrap_or_else(|error| panic!("{error:?}"));
-    for (before, after, expected) in [
+    // Keep the original full positive check. Select complete function
+    // proofs for local failures; declaration/interface boundary cases
+    // retain their original whole-module checks.
+    for (head, before, after, expected) in [
         // A capturing closure's contract weaker than the one required.
         (
+            Some("fn impl_fn::caller("),
             "    ensures result == y + k;\n} by { execute(); simp(); }\n\nfn impl_fn::caller(",
             "    ensures result >= y;\n} by { execute(); simp(); }\n\nfn impl_fn::caller(",
             "precondition clause 1 of",
         ),
         // A function item passed for `impl Fn` that does not meet its contract.
         (
+            Some("fn impl_fn::named("),
             "fn impl_fn::inc(y: i32) -> i32 {\n    requires 0 <= y and y <= 2000;\n    ensures result == y + 1;",
             "fn impl_fn::inc(y: i32) -> i32 {\n    requires 0 <= y and y <= 2000;\n    ensures result >= y;",
             "does not satisfy named contract `Increments`",
         ),
         // A call through a callable with no contract.
         (
+            Some("fn impl_fn::both("),
             "    requires Increments(g);\n",
             "",
             "cannot verify call through function pointer",
         ),
         // A false closure contract.
         (
+            Some("fn impl_fn::twice::{closure#0}("),
             "    ensures result == y + k;\n} by { execute(); simp(); }\n\nfn impl_fn::twice::{closure#1}",
             "    ensures result == y + k + 1;\n} by { execute(); simp(); }\n\nfn impl_fn::twice::{closure#1}",
             "ensures_1",
         ),
         // A type parameter's bound must be the source's.
         (
+            None,
             "fn impl_fn::apply<F: Fn(i32) -> i32>(f: F,",
             "fn impl_fn::apply<F: Fn(i32) -> u32>(f: F,",
             "contract `Increments` expects int32 (*)(int32), got uint32 (*)(int32)",
@@ -53,9 +61,14 @@ fn charon_impl_fn_arguments_meet_named_contracts() {
     ] {
         let invalid = SIDECAR.replacen(before, after, 1);
         assert_ne!(invalid, SIDECAR, "{before}");
-        let error = C0VerificationSession::new_program_prepared(&invalid, &prepared)
-            .err()
-            .expect("a callable without the contract its use needs must fail");
+        let error = if let Some(head) = head {
+            verify_rust_proof_after(&invalid, &prepared, head)
+                .expect_err("a callable without the contract its use needs must fail")
+        } else {
+            C0VerificationSession::new_program_prepared(&invalid, &prepared)
+                .err()
+                .expect("a callable without the contract its use needs must fail")
+        };
         let rendered = format!("{error:?} {error}");
         assert!(rendered.contains(expected), "{rendered}");
     }

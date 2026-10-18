@@ -232,16 +232,30 @@ fn charon_owned_array_fields_check_moves_snapshots_boundaries_and_frames() {
     let p = charon_owned_array_project();
     let prepared = p.prepared().unwrap();
     C0VerificationSession::new_program_prepared(CHARON_OWNED_ARRAY_SIDECAR, &prepared).unwrap();
-    for invalid in [
-        CHARON_OWNED_ARRAY_SIDECAR
-            .replace("requires index < 4u64;", "requires index == 4294967296u64;"),
-        CHARON_OWNED_ARRAY_SIDECAR
-            .replace("ensures result == replacement;", "ensures result == value;"),
-        CHARON_OWNED_ARRAY_SIDECAR.replace("ensures result == 28u32;", "ensures result == 29u32;"),
-        CHARON_OWNED_ARRAY_SIDECAR.replace("ensures result == value;", "ensures result != value;"),
+    for (head, invalid) in [
+        (
+            "fn construct(",
+            CHARON_OWNED_ARRAY_SIDECAR
+                .replace("requires index < 4u64;", "requires index == 4294967296u64;"),
+        ),
+        (
+            "fn reassigned(",
+            CHARON_OWNED_ARRAY_SIDECAR
+                .replace("ensures result == replacement;", "ensures result == value;"),
+        ),
+        (
+            "fn neighboring_fields(",
+            CHARON_OWNED_ARRAY_SIDECAR
+                .replace("ensures result == 28u32;", "ensures result == 29u32;"),
+        ),
+        (
+            "fn construct(",
+            CHARON_OWNED_ARRAY_SIDECAR
+                .replace("ensures result == value;", "ensures result != value;"),
+        ),
     ] {
         assert_ne!(invalid, CHARON_OWNED_ARRAY_SIDECAR);
-        assert!(C0VerificationSession::new_program_prepared(&invalid, &prepared).is_err());
+        assert!(verify_rust_proof_after(&invalid, &prepared, head).is_err());
     }
 }
 #[test]
@@ -291,15 +305,31 @@ fn charon_array_snapshots_check_computed_lanes_and_copy_independence() {
     let p = charon_snapshot_project();
     let prepared = p.prepared().unwrap();
     C0VerificationSession::new_program_prepared(CHARON_SNAPSHOT_SIDECAR, &prepared).unwrap();
-    for (before, after) in [
-        ("ensures result == a;", "ensures result == 99u32;"),
-        ("ensures result == b;", "ensures result != b;"),
-        ("ensures result == 28u32;", "ensures result == 29u32;"),
-        ("ensures result == b ^ 1u32;", "ensures result == b;"),
+    for (head, before, after) in [
+        (
+            "fn source_write(",
+            "ensures result == a;",
+            "ensures result == 99u32;",
+        ),
+        (
+            "fn target_write(",
+            "ensures result == b;",
+            "ensures result != b;",
+        ),
+        (
+            "fn neighbors(",
+            "ensures result == 28u32;",
+            "ensures result == 29u32;",
+        ),
+        (
+            "fn computed_move(",
+            "ensures result == b ^ 1u32;",
+            "ensures result == b;",
+        ),
     ] {
         let invalid = CHARON_SNAPSHOT_SIDECAR.replace(before, after);
         assert_ne!(invalid, CHARON_SNAPSHOT_SIDECAR);
-        assert!(C0VerificationSession::new_program_prepared(&invalid, &prepared).is_err());
+        assert!(verify_rust_proof_after(&invalid, &prepared, head).is_err());
     }
 }
 #[test]
@@ -1889,8 +1919,17 @@ fn verify_rust_function(
     prepared: &click::languages::rust::PreparedRustImport,
     name: &str,
 ) -> Result<(), click::surface::ClickError> {
-    let head = format!("fn {name}(");
-    let start = source.find(&head).expect("the function exists") + head.len();
+    verify_rust_proof_after(source, prepared, &format!("fn {name}("))
+}
+
+// A unique source head also selects methods inside an impl and generic
+// functions, whose spelling does not end with an opening parenthesis.
+fn verify_rust_proof_after(
+    source: &str,
+    prepared: &click::languages::rust::PreparedRustImport,
+    head: &str,
+) -> Result<(), click::surface::ClickError> {
+    let start = source.find(head).expect("the function exists") + head.len();
     // A qualified closure name itself contains `{closure#N}`. Only search
     // for the contract brace after the complete function name.
     let offset = start + source[start..].find('{').unwrap();

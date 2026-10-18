@@ -60,27 +60,34 @@ fn charon_generic_trait_objects_carry_state_at_each_instance() {
     let prepared = p.prepared().unwrap();
     C0VerificationSession::new_program_prepared(OBJECT_SIDECAR, &prepared)
         .unwrap_or_else(|error| panic!("{error:?}"));
-    for (before, after, expected) in [
+    // Keep the original full positive check. Select complete function
+    // proofs for local failures; declaration/interface boundary cases
+    // retain their original whole-module checks.
+    for (head, before, after, expected) in [
         // The generic interface binds the implementation's memory.
         (
+            Some("fn insert(&mut self, x: i32)"),
             "        ensures count(self) == old(count(self)) + 1;",
             "        ensures count(self) == old(count(self)) + 2;",
             "`<bags::Counter as bags::Bag<i32>>::insert.interface_ensures_0`",
         ),
         // A call through the instance knows the interface's fields only.
         (
+            Some("fn bags::fill<"),
             "    ensures result == old(count(bag)) + 1;\n    ensures last(bag) == x;\n} by { execute(); simp(); }\n\nfn bags::fill_dyn",
             "    ensures result == old(count(bag)) + 1;\n    ensures last(bag) == x + 1;\n} by { execute(); simp(); }\n\nfn bags::fill_dyn",
             "bags::fill.ensures_1",
         ),
         // The packed struct's fields follow its definitions.
         (
+            Some("fn bags::through_dyn("),
             "fn bags::through_dyn(x: i32) -> i32 {\n    ensures result == x;",
             "fn bags::through_dyn(x: i32) -> i32 {\n    ensures result == x + 1;",
             "bags::through_dyn.ensures_0",
         ),
         // An implementation defines a `List<T>` field at its instance.
         (
+            Some("fn put(&mut self, x: i32)"),
             "        List<i32>::Cons(self.value, List<i32>::Nil)",
             "        List<i32>::Nil",
             "`<bags::Slot as bags::Holder<i32>>::put.interface_ensures_0`",
@@ -88,9 +95,14 @@ fn charon_generic_trait_objects_carry_state_at_each_instance() {
     ] {
         assert!(OBJECT_SIDECAR.contains(before), "{before}");
         let invalid = OBJECT_SIDECAR.replacen(before, after, 1);
-        let error = C0VerificationSession::new_program_prepared(&invalid, &prepared)
-            .err()
-            .expect("a claim the object state does not justify must fail");
+        let error = if let Some(head) = head {
+            verify_rust_proof_after(&invalid, &prepared, head)
+                .expect_err("a claim the object state does not justify must fail")
+        } else {
+            C0VerificationSession::new_program_prepared(&invalid, &prepared)
+                .err()
+                .expect("a claim the object state does not justify must fail")
+        };
         let rendered = format!("{error:?} {error}");
         let rendered = click::languages::rust::names::display_rust_names(&rendered);
         assert!(rendered.contains(expected), "{rendered}");

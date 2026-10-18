@@ -20,10 +20,14 @@ fn charon_trait_method_implementations_refine_their_interface() {
     let prepared = p.prepared().unwrap();
     C0VerificationSession::new_program_prepared(SIDECAR, &prepared)
         .unwrap_or_else(|error| panic!("{error:?}"));
-    for (edits, expected) in [
+    // Keep the original full positive check. Select complete function
+    // proofs for local failures; declaration/interface boundary cases
+    // retain their original whole-module checks.
+    for (head, edits, expected) in [
         // An implementation inherits the interface's guarantee, read with
         // its own parameter names, which its proof must establish.
         (
+            Some("impl trait_methods::Shape for trait_methods::Square {\n    fn area("),
             &[(
                 "        ensures scale < result and result <= 3001;\n    }\n    fn twice",
                 "        ensures scale < result and result <= 2000;\n    }\n    fn twice",
@@ -32,6 +36,7 @@ fn charon_trait_method_implementations_refine_their_interface() {
         ),
         // An implementation that refuses a call the interface allows.
         (
+            Some("impl trait_methods::Shape for trait_methods::Square {\n    fn area("),
             &[(
                 "        requires factor <= 2000;\n",
                 "        requires factor <= 500;\n",
@@ -41,6 +46,7 @@ fn charon_trait_method_implementations_refine_their_interface() {
         // A call through the trait knows only the interface, not which
         // implementation it reaches.
         (
+            Some("fn trait_methods::through_dyn("),
             &[(
                 "fn trait_methods::through_dyn(scale: i32) -> i32 {\n    requires 0 <= scale and scale <= 1000;\n    ensures scale < result;",
                 "fn trait_methods::through_dyn(scale: i32) -> i32 {\n    requires 0 <= scale and scale <= 1000;\n    ensures result == scale + scale + 1;",
@@ -50,6 +56,7 @@ fn charon_trait_method_implementations_refine_their_interface() {
         // Without an interface for `area`, a call through the trait has no
         // contract.
         (
+            None,
             &[
                 (
                     "    fn area(&self, scale: i32) -> i32 {\n        requires 0 <= scale and scale <= 1000;\n        ensures scale < result and result <= 3001;\n    }\n",
@@ -65,6 +72,7 @@ fn charon_trait_method_implementations_refine_their_interface() {
         ),
         // The interface has no field of `self` to read, nor its resources.
         (
+            None,
             &[(
                 "        ensures scale < result and result <= 3001;\n    }\n    fn twice",
                 "        ensures scale < result and result <= 3001;\n        ensures self.side == 3;\n    }\n    fn twice",
@@ -72,6 +80,7 @@ fn charon_trait_method_implementations_refine_their_interface() {
             "a trait method's interface reads nothing through `self`",
         ),
         (
+            None,
             &[(
                 "        ensures scale < result and result <= 3001;\n    }\n    fn twice",
                 "        views self.side;\n        ensures scale < result and result <= 3001;\n    }\n    fn twice",
@@ -80,6 +89,7 @@ fn charon_trait_method_implementations_refine_their_interface() {
         ),
         // An implementation must be verified against its own contract.
         (
+            None,
             &[(
                 "impl trait_methods::Shape for trait_methods::Circle {\n    fn area(&self, scale: i32) -> i32 {\n        ensures result == scale + scale + 1;\n    } by { execute(); simp(); }\n    fn twice(&self, scale: i32) -> i32 {\n        ensures result == scale + 3;\n    } by { execute(); simp(); }\n}\n",
                 "",
@@ -89,6 +99,7 @@ fn charon_trait_method_implementations_refine_their_interface() {
         // A trait-bound parameter is a reference to a value of unknown type,
         // not to one implementation's.
         (
+            None,
             &[(
                 "(shape: &T, scale: i32)",
                 "(shape: &trait_methods::Square, scale: i32)",
@@ -98,6 +109,7 @@ fn charon_trait_method_implementations_refine_their_interface() {
         // A default method's body is verified against its own contract,
         // its calls of `area` assuming `area`'s interface.
         (
+            None,
             &[(
                 "        ensures result <= 6002;\n    } by { execute(); simp(); }\n}",
                 "        ensures result <= 5000;\n    } by { execute(); simp(); }\n}",
@@ -107,6 +119,7 @@ fn charon_trait_method_implementations_refine_their_interface() {
         // An override of a default method inherits its contract and must
         // accept every call it allows.
         (
+            Some("ensures result == scale + 3;\n    } by "),
             &[(
                 "    fn twice(&self, scale: i32) -> i32 {\n        ensures result == scale + 3;",
                 "    fn twice(&self, scale: i32) -> i32 {\n        requires 0 <= scale and scale <= 10;\n        ensures result == scale + 3;",
@@ -116,6 +129,7 @@ fn charon_trait_method_implementations_refine_their_interface() {
         // A call on a type that keeps the default gets the default's
         // contract, and no more.
         (
+            Some("fn trait_methods::direct_default("),
             &[(
                 "fn trait_methods::direct_default(scale: i32) -> i32 {\n    requires 0 <= scale and scale <= 1000;\n    ensures result <= 6002;",
                 "fn trait_methods::direct_default(scale: i32) -> i32 {\n    requires 0 <= scale and scale <= 1000;\n    ensures result <= 6001;",
@@ -128,9 +142,14 @@ fn charon_trait_method_implementations_refine_their_interface() {
             assert!(invalid.contains(before), "{before}");
             invalid = invalid.replacen(before, after, 1);
         }
-        let error = C0VerificationSession::new_program_prepared(&invalid, &prepared)
-            .err()
-            .expect("an implementation or call the interface does not justify must fail");
+        let error = if let Some(head) = head {
+            verify_rust_proof_after(&invalid, &prepared, head)
+                .expect_err("an implementation or call the interface does not justify must fail")
+        } else {
+            C0VerificationSession::new_program_prepared(&invalid, &prepared)
+                .err()
+                .expect("an implementation or call the interface does not justify must fail")
+        };
         let rendered = format!("{error:?} {error}");
         let rendered = click::languages::rust::names::display_rust_names(&rendered);
         assert!(rendered.contains(expected), "{rendered}");

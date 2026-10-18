@@ -35,7 +35,8 @@ fn charon_array_lengths_preserve_unchanged_sources_and_reject_false_claims() {
         C0VerificationSession::new_program_prepared(sidecar, &prepared).unwrap();
         let invalid = sidecar.replace("ensures result == 0u64;", "ensures result == 1u64;");
         assert_ne!(invalid, sidecar);
-        assert!(C0VerificationSession::new_program_prepared(&invalid, &prepared).is_err());
+        let head = if bounds { "fn empty_len(" } else { "fn empty(" };
+        assert!(verify_rust_proof_after(&invalid, &prepared, head).is_err());
     }
 }
 #[test]
