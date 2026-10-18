@@ -29,14 +29,18 @@ The parser tokenizer supplies exact byte spans through `source_tokens`.
 Expansion and `ProofSourceIndex` use these tokens; there is no expansion
 lexer. Path separators, arrows, suffixed literals, closure names, lambda names,
 comments and lexical refusals therefore have the parser's boundaries. The
-proof source adapter inserts only zero-width braces around an implicit
-single-tactic `by` body. The splicer materializes those braces when a rewrite
+parser records each one-tactic proof it reads without braces, `by T(args);`
+(`ImplicitProofSpan`: the tactic's first and last token), in the file's
+`SourceSpans` and in the `DeclarationBody` of the theorem or function that
+holds it. The proof source adapter inserts zero-width braces around exactly
+those tactics, so a certificate's `scale 1 by 2 => ...` is never taken for a
+proof. The splicer materializes those braces when a rewrite
 needs several tactics and preserves source outside its selected byte span.
 The parser records each braced proof block it reads (`ProofBlockSpan`: its
 braces and the start of each tactic), and `ProofSourceIndex::for_project`
 indexes exactly the blocks the entry module's verification parse recorded.
-Expansion's proof-block and declaration inventories still interpret the token
-structure; they are not yet parser-produced spans.
+A tactic's extent within a block is the range from its recorded start to
+the next one's, so expansion finds no tactic's end by scanning tokens.
 
 `printing::print_proposition` is the common Surface proposition printer.
 Callers select source, ordinary diagnostic, or refusal spelling explicitly. Source output always

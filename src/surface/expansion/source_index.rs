@@ -1,7 +1,7 @@
 //! An immutable index of a container's proof blocks, shared by every
 //! location query in one trace.
 use super::*;
-use crate::surface::parser::ProofBlockSpan;
+use crate::surface::parser::SourceSpans;
 use std::collections::{BTreeSet, HashMap, HashSet};
 
 thread_local! {
@@ -57,7 +57,7 @@ impl ProofSourceIndex {
         let source = project.entry_source().ok_or_else(|| {
             ClickError::new(format!("missing entry module `{}`", project.entry()))
         })?;
-        let mut index = Self::build(source, Some(&file.source_spans().proof_blocks))?;
+        let mut index = Self::build(source, Some(file.source_spans()))?;
         index.file = Some(file);
         Ok(index)
     }
@@ -67,7 +67,7 @@ impl ProofSourceIndex {
     pub fn for_sidecar(click_source: &str, inputs: &ProgramInputs<'_>) -> Result<Self, ClickError> {
         let sources = CSourceContext::of(inputs)?;
         let file = parse_source_with_c_layouts_context(click_source, &sources)?;
-        let mut index = Self::build(click_source, Some(&file.source_spans().proof_blocks))?;
+        let mut index = Self::build(click_source, Some(file.source_spans()))?;
         index.file = Some(file);
         Ok(index)
     }
@@ -79,12 +79,13 @@ impl ProofSourceIndex {
         Self::build(source, None)
     }
 
-    pub(super) fn build(
-        source: &str,
-        parsed: Option<&[ProofBlockSpan]>,
-    ) -> Result<Self, ClickError> {
+    pub(super) fn build(source: &str, spans: Option<&SourceSpans>) -> Result<Self, ClickError> {
         crate::instrumentation::record_deterministic_work(source.len());
-        let tokens = proof_source_tokens(source)?;
+        let tokens = match spans {
+            Some(spans) => proof_source_tokens(source, &spans.implicit_proofs)?,
+            None => plain_source_tokens(source)?,
+        };
+        let parsed = spans.map(|spans| spans.proof_blocks.as_slice());
         let mut pairs = vec![None; tokens.len()];
         let mut stack = Vec::new();
         for (index, token) in tokens.iter().enumerate() {

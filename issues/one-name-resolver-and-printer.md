@@ -54,8 +54,10 @@ entry module's verification parse recorded, instead of guessing from the
 token before each brace. The guess also took resource `match` arms, `if`
 expression branches in pure functions and the bodies of C functions named
 `open` for proofs. Expansion reads each block's tactics from those records
-too. Only the end of a one-tactic proof, `by T();`, is still found from tokens
-(`tactic_end_token`), in expansion and in `ProofSourceIndex`.
+too. The parser also records each one-tactic proof, `by T();`, and the
+implicit block expansion and `ProofSourceIndex` give it comes from that
+record, so no tactic's end is found by scanning tokens (`tactic_end_token` is
+removed).
 
 Selectively imported names resolve in the parser, where it reads a Click call
 or an `unfold` target, instead of in a pre-parse rewrite that guessed a
@@ -145,9 +147,9 @@ it was lowered from, and no expansion path calls the kernel-fact printer.
 diagnostic extension, with its own explicit modes.
 
 The complete scoped table for parameters, fields, binders, constructors,
-resources, program points and project modules remains open. Proof inventories
-still interpret shared parser tokens; parser-produced AST spans and integration
-of all source printers are also still required. Keep this issue until all
+resources, program points and project modules remains open. Within a
+tactic's parser-recorded range, expansion still finds the arm blocks of `if`,
+`cases` and `both` by matching their braces' tokens. Keep this issue until all
 acceptance criteria below are met. The audit below describes the original
 baseline; the separate lexer and raw-text spelling helpers it names are removed.
 

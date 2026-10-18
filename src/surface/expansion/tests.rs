@@ -946,8 +946,9 @@ fn expansion_keeps_explicit_library_paths_and_unimported_predicates() {
 #[test]
 fn block_tactic_optional_semicolon_belongs_to_the_tactic() {
     let source = "theorem t() {\n    ensures true by { step(); simp(); }\n}\n";
-    let tokens = proof_source_tokens(source).expect("source should tokenize");
     let file = parser::parse_file_items(source).expect("source should parse");
+    let tokens = proof_source_tokens(source, &file.source_spans().implicit_proofs)
+        .expect("source should tokenize");
     let tokens = ProofTokens::new(&file, &tokens);
     let by = tokens
         .iter()
@@ -1021,8 +1022,8 @@ fn expand_top_level_tactic_for_test(
     claim: CProofClaim,
     tactic_index: usize,
 ) -> Result<String, ClickError> {
-    let tokens = proof_source_tokens(click_source)?;
     let file = parse_source_with_c_layouts(click_source, c_sources)?;
+    let tokens = proof_source_tokens(click_source, &file.source_spans().implicit_proofs)?;
     let function_block = file
         .function_blocks()
         .iter()
@@ -1485,8 +1486,9 @@ int32 nested_nonnegative(int32 x, int32 flag) {
 fn locates_a_block_tactic_as_one_source_statement() {
     let source =
         "theorem t(x: int32) {\n    ensures x == x by { have x == x by simp(); simp(); }\n}\n";
-    let tokens = proof_source_tokens(source).expect("source should scan");
     let file = parser::parse_file_items(source).expect("source should parse");
+    let tokens = proof_source_tokens(source, &file.source_spans().implicit_proofs)
+        .expect("source should scan");
     let tokens = ProofTokens::new(&file, &tokens);
     let by = tokens.iter().position(|token| token.text == "by").unwrap();
     let proof = proof_span(&tokens, by).expect("proof should have a span");
@@ -2391,8 +2393,8 @@ fn int64_arithmetic_expands_to_its_integer_bridge_steps() {
 /// The braces the parser recorded around function `name`'s clauses, found
 /// among the source's tokens.
 fn parsed_function_body(source: &str, name: &str) -> Result<FunctionSource, ClickError> {
-    let tokens = proof_source_tokens(source)?;
     let file = parser::parse_file_items(source)?;
+    let tokens = proof_source_tokens(source, &file.source_spans().implicit_proofs)?;
     let block = file
         .function_blocks()
         .iter()
@@ -2417,7 +2419,7 @@ fn a_generic_rust_head_is_located_by_its_path() {
 #[test]
 fn an_inherent_method_is_located_inside_its_impl_block() {
     let source = "verifying \"lib.rs\";\nimpl adler2::Adler32 {\n    fn compute(&mut self, seed: u32) {\n        ensures 0 == 0;\n    } by { execute(); simp(); }\n}\n";
-    let tokens = proof_source_tokens(source).unwrap();
+    let tokens = plain_source_tokens(source).unwrap();
     let name = "__rust_q_I6_adler2_T29___rust_q_I6_adler2_I7_Adler32_I7_compute";
     let body = parsed_function_body(source, name).expect("the parser reads the method's body");
     assert_eq!(tokens[body.body_open - 1].text, ")");
@@ -3435,7 +3437,7 @@ fn a_declaration_position_skips_uses_inside_bodies() {
 #[test]
 fn a_parsed_source_index_holds_only_proof_blocks() {
     let source = "spec enum Mode {\n    Off,\n    On(int32),\n}\n\nresource mode_at(p: int32*) {\n    field model: Mode;\n    match model {\n        Mode::Off => { fact p == 0; },\n        Mode::On(count) => { fact count > 0; },\n    }\n}\n\ntheorem t() {\n    ensures true by { simp(); }\n}\n";
-    let spans = parser::proof_block_spans(source, parser::ProgramLayouts::default()).unwrap();
+    let spans = parser::parsed_source_spans(source, parser::ProgramLayouts::default()).unwrap();
     let opens = |index: &ProofSourceIndex| {
         index
             .written_blocks()
@@ -3490,8 +3492,10 @@ fn trace_source_index_preserves_nested_locations_and_containment() {
 fn trace_source_index_preserves_unicode_and_implicit_proof_columns() {
     // `by T();` is read as the block `by { T(); }`: both spellings answer
     // every query alike.
-    let answers = |source: &str| {
-        let index = ProofSourceIndex::new(source).unwrap();
+    let answers = |proof: &str| {
+        let source = &format!("theorem t() {{\n    /* αβ */ ensures true {proof}\n}}\n");
+        let spans = parser::parsed_source_spans(source, parser::ProgramLayouts::default()).unwrap();
+        let index = ProofSourceIndex::build(source, Some(&spans)).unwrap();
         let have = position_at_offset(source, source.find("have").unwrap());
         let child = index.nested_position(&have, &[0]).unwrap();
         assert_eq!(
@@ -3505,8 +3509,8 @@ fn trace_source_index_preserves_unicode_and_implicit_proof_columns() {
         )
     };
     assert_eq!(
-        answers("/* αβ */ by { have true by normalize(); simp(); }"),
-        answers("/* αβ */ by { have true by { normalize(); } simp(); }")
+        answers("by { have true by normalize(); simp(); }"),
+        answers("by { have true by { normalize(); } simp(); }")
     );
 }
 
@@ -3523,7 +3527,7 @@ int32 evaluate(int32 at_size) {
     ensures result == 0;
 } by { execute(); simp(); }
 "#;
-    let tokens = proof_source_tokens(source).unwrap();
+    let tokens = plain_source_tokens(source).unwrap();
     let function = parsed_function_body(source, "evaluate").unwrap();
     assert_eq!(tokens[function.body_close + 1].text, "by");
     assert_eq!(tokens[function.body_open - 1].text, ")");
@@ -3589,7 +3593,7 @@ fn premise_free_applications_are_simple_but_required_premises_stay_smart() {
 #[test]
 fn qualified_c_contract_source_locations_preserve_file_aliases() {
     let source = "verifying \"first.c\" as first;\nverifying \"second.c\" as second;\nint32 first::helper() { ensures result == 1; } by { execute(); simp(); }\nint32 second::helper() { ensures result == 2; } by { execute(); simp(); }\n";
-    let tokens = proof_source_tokens(source).unwrap();
+    let tokens = plain_source_tokens(source).unwrap();
     for (name, line) in [("first::helper", 3), ("second::helper", 4)] {
         let found = parsed_function_body(source, name).unwrap();
         assert_eq!(
@@ -3721,4 +3725,32 @@ fn resource_and_theorem_name_namespaces_roundtrip_with_commented_imports() {
         let expanded = expand_c0_claim_source_by_label(source, &sources, label).unwrap();
         verify_c0_sources(&expanded, &sources).unwrap();
     }
+}
+
+// The implicit block of a one-tactic proof is the tactic the parser read
+// after `by`, not a guess from the tokens: a certificate's `scale 1 by 2 =>`
+// is no proof, and a nested `by normalize();` is its own block.
+#[test]
+fn implicit_proof_blocks_are_the_tactics_the_parser_read() {
+    let source = "theorem t(x: Integer) {\n    requires 2 * x <= 10;\n    ensures x <= 5 by {\n        arithmetic_certificate {\n            premise 0: 2 * x <= 10 => 2 * x <= 10;\n            negated_goal => 5 < x;\n            scale 1 by 2 => 2 * 6 <= 2 * x;\n            add 0, 2 => 2 * x + 2 * 6 <= 10 + 2 * x;\n            conclusion 3;\n        }\n    }\n    ensures true by { have true by normalize(); simp(); }\n    ensures x == x by simp();\n}\n";
+    let spans = parser::parsed_source_spans(source, parser::ProgramLayouts::default()).unwrap();
+    let read = spans
+        .implicit_proofs
+        .iter()
+        .map(|span| (span.first.clone(), span.last.clone()))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        read,
+        [
+            (SourcePosition::new(12, 36), SourcePosition::new(12, 47)),
+            (SourcePosition::new(13, 23), SourcePosition::new(13, 29)),
+        ]
+    );
+    let tokens = proof_source_tokens(source, &spans.implicit_proofs).unwrap();
+    let blocks = tokens
+        .iter()
+        .filter(|token| token.span.is_empty())
+        .map(|token| (token.text.as_str(), token.start.line))
+        .collect::<Vec<_>>();
+    assert_eq!(blocks, [("{", 12), ("}", 12), ("{", 13), ("}", 13)]);
 }

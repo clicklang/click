@@ -253,6 +253,14 @@ pub(in crate::surface) struct ProofBlockSpan {
     pub(in crate::surface) tactics: Vec<SourcePosition>,
 }
 
+/// A proof written as one tactic without braces, `by T(args);`, as the
+/// parser read it: the positions of the tactic's first and last tokens.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(in crate::surface) struct ImplicitProofSpan {
+    pub(in crate::surface) first: SourcePosition,
+    pub(in crate::surface) last: SourcePosition,
+}
+
 /// Where the parser read a declaration's clauses: the brace that opens them,
 /// and the first token of each written claim clause (`ensures`, `owns` or
 /// `produces`, in source order). It records where the declaration was read,
@@ -261,6 +269,8 @@ pub(in crate::surface) struct ProofBlockSpan {
 pub struct DeclarationBody {
     pub(in crate::surface) open: Option<SourcePosition>,
     pub(in crate::surface) clauses: Vec<Option<SourcePosition>>,
+    /// The unbraced one-tactic proofs read inside the declaration.
+    pub(in crate::surface) implicit_proofs: Vec<ImplicitProofSpan>,
 }
 
 impl PartialEq for DeclarationBody {
@@ -277,6 +287,7 @@ impl Eq for DeclarationBody {}
 #[derive(Clone, Debug, Default)]
 pub(in crate::surface) struct SourceSpans {
     pub(in crate::surface) proof_blocks: Vec<ProofBlockSpan>,
+    pub(in crate::surface) implicit_proofs: Vec<ImplicitProofSpan>,
 }
 
 impl PartialEq for SourceSpans {
@@ -287,19 +298,17 @@ impl PartialEq for SourceSpans {
 
 impl Eq for SourceSpans {}
 
-/// The braced proof blocks of `source`, as the parser reads them.
+/// Where the parser reads `source`'s proofs.
 #[cfg(test)]
-pub(in crate::surface) fn proof_block_spans(
+pub(in crate::surface) fn parsed_source_spans(
     source: &str,
     layouts: ProgramLayouts,
-) -> Result<Vec<ProofBlockSpan>, ClickError> {
+) -> Result<SourceSpans, ClickError> {
     let mut parser = Parser::with_program_layouts(source, layouts, None)?;
     parser.plain_char = Some(crate::languages::c::target::CTarget::SUPPORTED.plain_char());
-    Ok(parser
-        .parse_file_items()?
-        .source_spans()
-        .proof_blocks
-        .clone())
+    Ok(SourceSpans::clone(
+        parser.parse_file_items()?.source_spans(),
+    ))
 }
 
 pub(super) fn parse_with_layouts_and_aggregate_objects(
@@ -840,6 +849,7 @@ struct Parser {
     /// Every braced proof block parsed so far, in parse order: the block's
     /// braces and the first token of each tactic it holds.
     proof_block_spans: Vec<ProofBlockSpan>,
+    implicit_proof_spans: Vec<ImplicitProofSpan>,
     matching_parentheses: Vec<Option<usize>>,
     position: usize,
     struct_layouts: BTreeMap<String, syntax::C0StructLayout>,
@@ -1399,6 +1409,7 @@ impl Parser {
             in_function_block: false,
             integer_literal_context: false,
             proof_block_spans: Vec::new(),
+            implicit_proof_spans: Vec::new(),
         })
     }
 
@@ -1935,6 +1946,7 @@ impl Parser {
             entry_module: None,
             source_spans: std::sync::Arc::new(SourceSpans {
                 proof_blocks: std::mem::take(&mut self.proof_block_spans),
+                implicit_proofs: std::mem::take(&mut self.implicit_proof_spans),
             }),
         };
         Ok(file)
@@ -3474,6 +3486,7 @@ impl Parser {
         };
         let mut target_instances = Vec::new();
         let body_open = self.here();
+        let first_implicit_proof = self.implicit_proof_spans.len();
         self.expect(Token::LBrace)?;
 
         let parameter_names = parsed_parameters
@@ -3722,6 +3735,7 @@ impl Parser {
             body: DeclarationBody {
                 open: body_open,
                 clauses: clause_positions,
+                implicit_proofs: self.implicit_proof_spans[first_implicit_proof..].to_vec(),
             },
             name,
             type_parameters,
@@ -3792,6 +3806,7 @@ impl Parser {
             }
         }
         let body_open = self.here();
+        let first_implicit_proof = self.implicit_proof_spans.len();
         self.expect(Token::LBrace)?;
 
         let parameter_names = signature
@@ -4481,6 +4496,7 @@ impl Parser {
             body: DeclarationBody {
                 open: body_open,
                 clauses: clause_positions,
+                implicit_proofs: self.implicit_proof_spans[first_implicit_proof..].to_vec(),
             },
             c_object_names,
             recursion_peers,
@@ -7982,11 +7998,14 @@ impl Parser {
 
         // `auto()` uses whole-proof automation. Other single calls are one-step scripts.
         if self.starts_standalone_smart_proof() {
-            return Ok(SourceProof::Tactic(self.parse_tactic()?));
+            let first = self.position;
+            let tactic = self.parse_tactic()?;
+            self.record_implicit_proof(first);
+            return Ok(SourceProof::Tactic(tactic));
         }
         match self.peek() {
             Some(Token::Ident(_)) if self.peek_next() == Some(&Token::LParen) => {
-                Ok(SourceProof::Script(vec![self.parse_proof_tactic()?]))
+                Ok(SourceProof::Script(vec![self.parse_implicit_proof_tactic()?]))
             }
             Some(Token::Ident(name)) => Err(self.error(format!(
                 "expected a proof after `by`, got `{name}`: write one tactic call such as `{name}();`, or a block `{{ ... }}`"
@@ -9839,7 +9858,7 @@ impl Parser {
             return Ok(body);
         }
         match self.peek() {
-            Some(Token::Ident(_)) => Ok(vec![self.parse_proof_tactic()?]),
+            Some(Token::Ident(_)) => Ok(vec![self.parse_implicit_proof_tactic()?]),
             Some(token) => Err(self.error(format!(
                 "expected a proof after a step's `by`, got {token}: write one tactic call or a block `{{ ... }}`"
             ))),
@@ -9862,7 +9881,7 @@ impl Parser {
             ));
         }
         match self.peek() {
-            Some(Token::Ident(_)) => Ok(vec![self.parse_proof_tactic()?]),
+            Some(Token::Ident(_)) => Ok(vec![self.parse_implicit_proof_tactic()?]),
             Some(token) => Err(self.error(format!(
                 "expected a proof after `close_invariants() by`, got {token}: write one tactic call or a block `{{ ... }}`"
             ))),
@@ -9877,6 +9896,30 @@ impl Parser {
         let tactics = self.parse_tactics_until_rbrace()?;
         self.expect(Token::RBrace)?;
         Ok(tactics)
+    }
+
+    /// The one tactic of a proof written without braces, recording its span.
+    fn parse_implicit_proof_tactic(&mut self) -> Result<ProofTactic, ClickError> {
+        let first = self.position;
+        let tactic = self.parse_proof_tactic()?;
+        self.record_implicit_proof(first);
+        Ok(tactic)
+    }
+
+    /// Records the unbraced one-tactic proof from token `first` to the
+    /// token before the cursor.
+    fn record_implicit_proof(&mut self, first: usize) {
+        if let (Some(first), Some(last)) = (
+            self.positions.get(first),
+            self.position
+                .checked_sub(1)
+                .and_then(|last| self.positions.get(last)),
+        ) {
+            self.implicit_proof_spans.push(ImplicitProofSpan {
+                first: first.clone(),
+                last: last.clone(),
+            });
+        }
     }
 
     /// Records a braced proof block whose `}` is at the cursor.

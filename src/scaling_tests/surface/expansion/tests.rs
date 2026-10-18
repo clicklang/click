@@ -163,8 +163,8 @@ fn locating_every_declaration_scales_with_source() {
         for index in 0..size {
             source.push_str(&format!("verifying \"unit{index}.c\" as unit{index};\nint32 unit{index}::helper() {{ ensures result == 1; }} by {{ execute(); simp(); }}\n"));
         }
-        let tokens = proof_source_tokens(&source).unwrap();
         let file = parser::parse_file_items(&source).unwrap();
+        let tokens = proof_source_tokens(&source, &file.source_spans().implicit_proofs).unwrap();
         let (located, work) = crate::instrumentation::measure_deterministic_work(|| {
             let declarations = DeclarationSources::new(&tokens);
             file.function_blocks()
