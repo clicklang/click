@@ -64,7 +64,7 @@ fn preserves_source_and_checks_obligations(fixture: &str) {
             "{error}"
         );
         assert!(!report.contains("<unnamed"), "{error}");
-        assert!(!report.contains("__rust_"), "{error}");
+        assert!(!error.contains("__rust_"), "{error}");
         assert!(report.contains(" + byte)"), "{error}");
         assert!(
             report.contains("prefix(old(bytes), bytes.len(),"),

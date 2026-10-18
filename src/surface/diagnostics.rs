@@ -3885,7 +3885,8 @@ pub(in crate::surface) fn diagnostic_source_cell(
     parameter_binding: ParameterBinding<'_>,
 ) -> Option<String> {
     let cell = describe_source_cell(pointer, parameter_binding)?;
-    (!matches!(cell.index, CellIndex::Unnamed)).then(|| cell.text())
+    (!cell.object.starts_with("__rust_") && !matches!(cell.index, CellIndex::Unnamed))
+        .then(|| cell.text())
 }
 
 pub(in crate::surface) fn diagnostic_model_load_cell(
