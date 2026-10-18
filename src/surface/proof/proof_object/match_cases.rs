@@ -772,7 +772,7 @@ impl<'a> Proof<'a> {
             marker: successor.checkpoint(),
             split,
             arm_branches: ids,
-            surface_condition: condition,
+            case_condition: ProofCaseCondition::If(condition),
             base_facts: [branch.state.facts.clone(), branch.state.facts.clone()],
             base_executions: [execution.clone(), execution.clone()],
             path_facts,

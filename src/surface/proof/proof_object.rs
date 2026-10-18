@@ -131,13 +131,81 @@ pub(super) enum CheckedExecutionSplit {
     CallOutcomes(CheckedCallOutcomeSplit),
 }
 
+/// What a proof-level case split splits on, as written. A proof `if P`
+/// gives its arms `P` and `not P`; `cases` gives them the two sides of an
+/// available disjunction, nested on the left for more than two arms as
+/// `A or B or C` parses.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(in crate::surface::proof) enum ProofCaseCondition {
+    If(ClickProposition),
+    Cases(ClickProposition),
+}
+
+impl ProofCaseCondition {
+    /// The written proposition: the `if` condition, or the `cases`
+    /// disjunction. It names the split in recorded routes.
+    pub(in crate::surface::proof) fn proposition(&self) -> &ClickProposition {
+        match self {
+            Self::If(condition) | Self::Cases(condition) => condition,
+        }
+    }
+
+    pub(in crate::surface::proof) fn is_cases(&self) -> bool {
+        matches!(self, Self::Cases(_))
+    }
+
+    /// The certificate step for the split with its two arm proofs.
+    pub(in crate::surface::proof) fn step(
+        &self,
+        ensuring: Option<Vec<ProofAssertion>>,
+        then_proof: ProofCertificate,
+        else_proof: ProofCertificate,
+    ) -> ProofStep {
+        match self {
+            Self::If(condition) => ProofStep::If {
+                condition: condition.clone(),
+                ensuring,
+                then_proof: Box::new(then_proof),
+                else_proof: Box::new(else_proof),
+            },
+            Self::Cases(disjunction) => {
+                debug_assert!(ensuring.is_none(), "`cases` has no join interface");
+                ProofStep::Cases {
+                    disjunction: disjunction.clone(),
+                    left_proof: Box::new(then_proof),
+                    right_proof: Box::new(else_proof),
+                }
+            }
+        }
+    }
+
+    /// The written tactic for the split with its two arms' tactics.
+    pub(in crate::surface::proof) fn tactic(
+        &self,
+        then_tactics: Vec<ProofTactic>,
+        else_tactics: Vec<ProofTactic>,
+    ) -> ProofTactic {
+        match self {
+            Self::If(condition) => ProofTactic::If(crate::surface::ProofIf {
+                condition: condition.clone(),
+                ensuring: None,
+                then_tactics,
+                else_tactics,
+            }),
+            Self::Cases(disjunction) => ProofTactic::Cases(
+                crate::surface::ProofCases::from_binary(disjunction, then_tactics, else_tactics),
+            ),
+        }
+    }
+}
+
 /// Bookkeeping for an exhaustive proof-level case split over one execution
-/// frontier. The `if` is logical rather than a C branch.
+/// frontier. The split is logical rather than a C branch.
 pub(super) struct ExecutionProofCaseSplit<'a> {
     marker: ProofCheckpoint<'a>,
     split: SplitId,
     arm_branches: [BranchId; 2],
-    surface_condition: ClickProposition,
+    case_condition: ProofCaseCondition,
     base_facts: [ProofFacts; 2],
     base_executions: [Arc<ExecutionProofState>; 2],
     path_facts: [Vec<Proposition>; 2],
@@ -147,14 +215,11 @@ pub(super) struct ExecutionProofCaseSplit<'a> {
     execution_start_state: CState,
 }
 
-/// Bookkeeping for one logical `cases` split over an execution frontier.
-/// Unlike an execution `if`, this split introduces the two exact disjuncts
-/// from an already-available proposition and does not write a C-path choice
-/// into the execution state.
-#[cfg(test)]
-pub(super) struct ExecutionLogicalCasesSplit {
-    arm_branches: [BranchId; 2],
-    path_facts: [Vec<Proposition>; 2],
+impl ExecutionProofCaseSplit<'_> {
+    /// Whether this split is a `cases` rather than a proof `if`.
+    pub(in crate::surface::proof) fn is_cases(&self) -> bool {
+        self.case_condition.is_cases()
+    }
 }
 
 /// One checked branch arm's contribution to a checked execution join: the

@@ -432,6 +432,12 @@ mod certificate_tests {
                 continuation,
                 ..
             }
+            | InternalProofNode::Cases {
+                then_branch,
+                else_branch,
+                continuation,
+                ..
+            }
             | InternalProofNode::Branch {
                 then_branch,
                 else_branch,
@@ -886,6 +892,18 @@ enum InternalProofNode {
         else_branch: Box<InternalProofNode>,
         continuation: Box<InternalProofNode>,
     },
+    /// `cases` on two sides of an available disjunction. A wider `cases`
+    /// nests on the left, as `A or B or C` parses: `then_branch` is then
+    /// itself a `Cases` on the earlier arms. Its arms rejoin and finish as
+    /// a proof `if`'s do.
+    Cases {
+        index: usize,
+        source_index: usize,
+        disjunction: ClickProposition,
+        then_branch: Box<InternalProofNode>,
+        else_branch: Box<InternalProofNode>,
+        continuation: Box<InternalProofNode>,
+    },
     Branch {
         index: usize,
         source_index: usize,
@@ -976,6 +994,12 @@ fn set_generated_proof_source_index(node: &mut InternalProofNode, owning_source_
                 else_branch,
                 ..
             }
+            | InternalProofNode::Cases {
+                source_index,
+                then_branch,
+                else_branch,
+                ..
+            }
             | InternalProofNode::Branch {
                 source_index,
                 then_branch,
@@ -1044,6 +1068,13 @@ fn detach_generated_suffix_from_source_indices(
                 else_branch,
                 ..
             }
+            | InternalProofNode::Cases {
+                index,
+                source_index,
+                then_branch,
+                else_branch,
+                ..
+            }
             | InternalProofNode::Branch {
                 index,
                 source_index,
@@ -1084,6 +1115,7 @@ impl InternalProofNode {
             | InternalProofNode::Linear { continuation, .. }
             | InternalProofNode::Open { continuation, .. }
             | InternalProofNode::If { continuation, .. }
+            | InternalProofNode::Cases { continuation, .. }
             | InternalProofNode::Branch { continuation, .. }
             | InternalProofNode::CallOutcomes { continuation, .. } => Some(continuation),
         }
@@ -1162,6 +1194,24 @@ impl Clone for InternalProofNode {
                         source_index: *source_index,
                         condition: condition.clone(),
                         ensuring: ensuring.clone(),
+                        then_branch: then_branch.clone(),
+                        else_branch: else_branch.clone(),
+                        continuation: Box::new(InternalProofNode::Done),
+                    },
+                    continuation,
+                ),
+                InternalProofNode::Cases {
+                    index,
+                    source_index,
+                    disjunction,
+                    then_branch,
+                    else_branch,
+                    continuation,
+                } => (
+                    InternalProofNode::Cases {
+                        index: *index,
+                        source_index: *source_index,
+                        disjunction: disjunction.clone(),
                         then_branch: then_branch.clone(),
                         else_branch: else_branch.clone(),
                         continuation: Box::new(InternalProofNode::Done),
@@ -1258,6 +1308,7 @@ fn build_internal_proof_at(
                 matches!(
                     tactic,
                     ProofTactic::If(_)
+                        | ProofTactic::Cases(_)
                         | ProofTactic::Branch(_)
                         | ProofTactic::CallOutcomes(_)
                         | ProofTactic::Open(_)
@@ -1330,6 +1381,9 @@ fn build_internal_proof_at(
                     continuation: Box::new(InternalProofNode::Done),
                 }
             }
+            ProofTactic::Cases(proof_cases) => {
+                build_cases_node(proof_cases.arms(), index, source_index, source_index + 1)?
+            }
             ProofTactic::Branch(proof_branch) => {
                 let then_width = source_tactic_count(&proof_branch.then_tactics);
                 InternalProofNode::Branch {
@@ -1389,6 +1443,65 @@ fn build_internal_proof_at(
 
     Ok(link_proof_segments(segments))
 }
+
+/// Builds `cases` over `arms`, whose tactics start at source index
+/// `arms_source_start`, as nested two-way splits: the last arm against the
+/// disjunction of the earlier ones, which split again inside the left arm.
+/// Only the outermost split is the written tactic; the inner ones are
+/// numbered past every source position, so no site lookup names them.
+fn build_cases_node(
+    arms: &[ProofCaseArm],
+    index: usize,
+    source_index: usize,
+    arms_source_start: usize,
+) -> Result<InternalProofNode, ClickError> {
+    let (last, earlier) = arms
+        .split_last()
+        .expect("the parser gives `cases` at least two arms");
+    let earlier_width = earlier
+        .iter()
+        .map(|arm| source_tactic_count(arm.tactics()))
+        .sum::<usize>();
+    let then_branch = if let [only] = earlier {
+        build_internal_proof_at(only.tactics(), index + 1, arms_source_start)?
+    } else {
+        // The earlier arms split again inside this arm and rejoin there
+        // when the outer split's arms do; arms that finish the proof finish
+        // it on their own as before.
+        let mut inner = build_cases_node(
+            earlier,
+            index + 1,
+            SYNTHETIC_CASES_SOURCE_INDEX_BASE
+                + source_index * MAX_SYNTHETIC_CASES_DEPTH
+                + earlier.len(),
+            arms_source_start,
+        )?;
+        if let InternalProofNode::Cases { continuation, .. } = &mut inner {
+            **continuation = InternalProofNode::Linear {
+                tactics: Vec::new(),
+                continuation: Box::new(InternalProofNode::Done),
+            };
+        }
+        inner
+    };
+    Ok(InternalProofNode::Cases {
+        index,
+        source_index,
+        disjunction: ProofCases::new(arms.to_vec()).disjunction(),
+        then_branch: Box::new(then_branch),
+        else_branch: Box::new(build_internal_proof_at(
+            last.tactics(),
+            index + 1,
+            arms_source_start + earlier_width,
+        )?),
+        continuation: Box::new(InternalProofNode::Done),
+    })
+}
+
+/// Where the inner splits of a wide `cases` are numbered: past every source
+/// script and every synthetic tactic.
+const SYNTHETIC_CASES_SOURCE_INDEX_BASE: usize = usize::MAX / 4 * 3;
+const MAX_SYNTHETIC_CASES_DEPTH: usize = 1 << 16;
 
 fn indexed_linear_tactics(
     tactics: &[ProofTactic],
@@ -1528,6 +1641,12 @@ fn internal_proof_contains_source_index(node: &InternalProofNode, wanted: usize)
                 continuation
             }
             InternalProofNode::If {
+                then_branch,
+                else_branch,
+                continuation,
+                ..
+            }
+            | InternalProofNode::Cases {
                 then_branch,
                 else_branch,
                 continuation,

@@ -120,10 +120,6 @@ pub(crate) enum FrontierSplitError {
     Completed,
     NotFrontier,
     MissingExecution,
-    #[cfg(test)]
-    MissingDisjunction,
-    #[cfg(test)]
-    ExpectedDisjunction,
     NonComplementaryCases,
 }
 
@@ -2157,62 +2153,6 @@ impl<L: Clone, P: Clone, O: Clone, S: Clone>
         ))
     }
 
-    #[cfg(test)]
-    pub(crate) fn split_frontier_cases(
-        &self,
-        disjunction: Proposition,
-    ) -> Result<ProofSplit<L, ProofObligation<P, O>, ProofExecutionState<S>>, FrontierSplitError>
-    {
-        let branch = self
-            .state
-            .open_branches
-            .get(self.focused_branch)
-            .ok_or(FrontierSplitError::Completed)?;
-        let ProofObligation::Frontier(frontier) = &branch.obligation else {
-            return Err(FrontierSplitError::NotFrontier);
-        };
-        let execution = branch
-            .state
-            .execution
-            .clone()
-            .ok_or(FrontierSplitError::MissingExecution)?;
-        if !branch.state.facts.contains(&disjunction) {
-            return Err(FrontierSplitError::MissingDisjunction);
-        }
-        let Proposition::Or(left, right) = disjunction else {
-            return Err(FrontierSplitError::ExpectedDisjunction);
-        };
-        let introduced_facts = [vec![left.as_ref().clone()], vec![right.as_ref().clone()]];
-        let arm = |disjunct: Proposition| {
-            ProofBranch::new(
-                ProofObligation::Frontier(frontier.clone()),
-                ProofBranchState {
-                    facts: branch.state.facts.with_fact(disjunct),
-                    unfolded_predicates: branch.state.unfolded_predicates.clone(),
-                    execution: Some(execution.clone()),
-                },
-            )
-        };
-        let (split, branches, open_branches) = self
-            .state
-            .open_branches
-            .split_at(self.focused_branch, [arm(*left), arm(*right)]);
-        Ok(ProofSplit {
-            proof: Self::new(
-                ProofState {
-                    locals: self.state.locals.clone(),
-                    open_branches,
-                    added_facts: Arc::new(introduced_facts[0].clone()),
-                    checked_facts: Arc::new(introduced_facts[0].clone()),
-                },
-                branches[0],
-            ),
-            split,
-            branches,
-            introduced_facts,
-        })
-    }
-
     pub(crate) fn split_frontier_if(
         &self,
         then_fact: Proposition,
@@ -2233,10 +2173,11 @@ impl<L: Clone, P: Clone, O: Clone, S: Clone>
             .execution
             .as_ref()
             .ok_or(FrontierSplitError::MissingExecution)?;
-        let negated_then = Proposition::Not(Box::new(then_fact.clone()));
-        if else_fact != negated_then
-            && !super::fact_reasoning::condition_polarity_forms(&negated_then).contains(&else_fact)
-        {
+        if !super::execution::proof_cases_are_exhaustive(
+            &branch.state.facts,
+            &then_fact,
+            &else_fact,
+        ) {
             return Err(FrontierSplitError::NonComplementaryCases);
         }
         let introduced_facts = [vec![then_fact.clone()], vec![else_fact.clone()]];

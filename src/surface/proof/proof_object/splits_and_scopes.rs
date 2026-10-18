@@ -701,28 +701,96 @@ impl<'a> Proof<'a> {
         condition: ClickProposition,
         surface_condition: ClickProposition,
     ) -> Result<(Self, ExecutionProofCaseSplit<'a>), ClickError> {
+        let else_surface = ClickProposition::Not(Box::new(condition.clone()));
+        self.split_focused_execution_case_partition(
+            [condition.clone(), else_surface],
+            None,
+            ProofCaseCondition::If(surface_condition),
+            "proof `if`",
+        )
+    }
+
+    /// Splits one retained execution frontier under `cases`: the arms take
+    /// the two sides of the written disjunction, which must be an exact
+    /// available fact. For more than two arms the left side is itself the
+    /// disjunction of the earlier arms, split again inside the left arm.
+    pub(in crate::surface::proof) fn split_focused_execution_disjunction(
+        &self,
+        disjunction: ClickProposition,
+    ) -> Result<(Self, ExecutionProofCaseSplit<'a>), ClickError> {
+        let ClickProposition::Or(left, right) = &disjunction else {
+            return Err(self.step_error(format!(
+                "`cases` requires a disjunction, got `{}`",
+                crate::surface::diagnostics::describe_click_proposition(&disjunction)
+            )));
+        };
+        // The arms take the two sides of the disjunction as it lowered, so
+        // they are exactly the sides of the available fact.
+        let lowered = self.lower_surface_proposition(&disjunction, "`cases` disjunction")?;
+        let Proposition::Or(left_fact, right_fact) = lowered else {
+            return Err(self.step_error(format!(
+                "`cases` disjunction `{}` did not lower to a disjunction",
+                crate::surface::diagnostics::describe_click_proposition(&disjunction)
+            )));
+        };
+        let arms = [left.as_ref().clone(), right.as_ref().clone()];
+        self.split_focused_execution_case_partition(
+            arms,
+            Some([*left_fact, *right_fact]),
+            ProofCaseCondition::Cases(disjunction),
+            "`cases`",
+        )
+    }
+
+    /// The shared split: each arm receives exactly its own case fact. For a
+    /// proof `if` the facts are complementary; for `cases` the kernel
+    /// requires their disjunction as an available fact.
+    fn split_focused_execution_case_partition(
+        &self,
+        arm_surfaces: [ClickProposition; 2],
+        arm_facts: Option<[Proposition; 2]>,
+        case_condition: ProofCaseCondition,
+        tactic: &str,
+    ) -> Result<(Self, ExecutionProofCaseSplit<'a>), ClickError> {
         let branch_state = &self.focused_branch().expect("focused branch exists").state;
         let parent_execution = branch_state
             .execution
             .clone()
             .expect("an execution frontier owns its checked state");
-        let then_fact = self.lower_surface_proposition(&condition, "proof `if` condition")?;
-        let else_surface = ClickProposition::Not(Box::new(condition.clone()));
-        let else_fact = self.lower_surface_proposition(&else_surface, "proof `if` negation")?;
+        let [then_surface, else_surface] = arm_surfaces;
+        let [then_fact, else_fact] = match arm_facts {
+            Some(facts) => facts,
+            None => [
+                self.lower_surface_proposition(&then_surface, &format!("{tactic} case"))?,
+                self.lower_surface_proposition(&else_surface, &format!("{tactic} case"))?,
+            ],
+        };
         let ProofContext::Execution(context) = self.context.as_ref() else {
             unreachable!("an execution frontier has an execution context")
         };
         let at_function_entry = parent_execution.core.frontier.is_at_function_entry();
-        let decision_key = ExecutionBranchDecisions::key(&surface_condition);
         let arm_presentation = |surface_fact: ClickProposition, fact: &Proposition, value: bool| {
             let mut presentation = parent_execution.presentation.clone();
             presentation
                 .surface_propositions
                 .record_lowering(&surface_fact, fact)?;
+            // An `if` records the polarity of its condition; each `cases`
+            // arm records that its own disjunct holds, which stays true
+            // where the disjuncts overlap.
+            let (case_surface, case_value) = match &case_condition {
+                ProofCaseCondition::If(condition) => (condition.clone(), value),
+                ProofCaseCondition::Cases(_) => (surface_fact.clone(), true),
+            };
             presentation.case_assumptions.push(CaseAssumption {
                 tactic_index: context.tactic_index,
-                condition: condition.clone(),
-                value,
+                condition: match &case_condition {
+                    ProofCaseCondition::If(_) => then_surface.clone(),
+                    ProofCaseCondition::Cases(_) => surface_fact.clone(),
+                },
+                value: match &case_condition {
+                    ProofCaseCondition::If(_) => value,
+                    ProofCaseCondition::Cases(_) => true,
+                },
                 fact: Some(fact.clone()),
                 at_function_entry,
                 match_arm: None,
@@ -731,14 +799,16 @@ impl<'a> Proof<'a> {
             // Returned paths then share the already ordered prefix instead
             // of rebuilding every nested decision at each terminal join.
             presentation.branch_decisions.push(ExecutionBranchDecision {
-                fingerprint: std::sync::OnceLock::from(decision_key),
-                condition: surface_condition.clone(),
-                value,
+                fingerprint: std::sync::OnceLock::from(ExecutionBranchDecisions::key(
+                    &case_surface,
+                )),
+                condition: case_surface,
+                value: case_value,
             });
             Ok(presentation)
         };
         let presentations = [
-            arm_presentation(condition.clone(), &then_fact, true)?,
+            arm_presentation(then_surface.clone(), &then_fact, true)?,
             arm_presentation(else_surface, &else_fact, false)?,
         ];
         let (state, split, ids, path_facts) = self
@@ -746,21 +816,23 @@ impl<'a> Proof<'a> {
             .split_frontier_if(then_fact, else_fact, presentations)
             .map_err(|error| match error {
                 FrontierSplitError::Completed => {
-                    self.step_error("proof `if` follows a completed proof")
+                    self.step_error(format!("{tactic} follows a completed proof"))
                 }
-                FrontierSplitError::NotFrontier => self
-                    .step_error("proof `if` cannot advance C execution inside a proposition proof"),
+                FrontierSplitError::NotFrontier => self.step_error(format!(
+                    "{tactic} cannot advance C execution inside a proposition proof"
+                )),
                 FrontierSplitError::MissingExecution => {
                     self.step_error("execution-frontier proof lost its semantic state")
                 }
-                FrontierSplitError::NonComplementaryCases => self.step_error(
-                    "proof `if` condition and negation did not lower to complementary facts",
-                ),
-                #[cfg(test)]
-                FrontierSplitError::MissingDisjunction
-                | FrontierSplitError::ExpectedDisjunction => {
-                    unreachable!("proof if does not require a disjunction")
-                }
+                FrontierSplitError::NonComplementaryCases => match &case_condition {
+                    ProofCaseCondition::If(_) => self.step_error(
+                        "proof `if` condition and negation did not lower to complementary facts",
+                    ),
+                    ProofCaseCondition::Cases(disjunction) => self.step_error(format!(
+                        "`cases` requires its exact disjunction as an available fact: `{}`",
+                        crate::surface::diagnostics::describe_click_proposition(disjunction)
+                    )),
+                },
             })?
             .into_parts_with_facts();
         let then_branch = state
@@ -789,12 +861,12 @@ impl<'a> Proof<'a> {
             state,
             node: ProofNode::marker(&self.node, self.focused_branch_id(), ids.to_vec()),
         };
-        successor.record_trace_branch(&successor.node, ids, &path_facts, &condition);
+        successor.record_trace_branch(&successor.node, ids, &path_facts, &then_surface);
         let record = ExecutionProofCaseSplit {
             marker: successor.checkpoint(),
             split,
             arm_branches: ids,
-            surface_condition,
+            case_condition,
             base_facts: [then_facts, else_facts],
             base_executions: [then_execution, else_execution],
             path_facts,
@@ -808,74 +880,6 @@ impl<'a> Proof<'a> {
                 .clone(),
         };
         Ok((successor, record))
-    }
-
-    /// Splits one retained execution frontier under the two exact disjuncts
-    /// of an available proposition. The disjunction is checked once at the
-    /// split; each sibling receives only its own disjunct in its persistent
-    /// fact context, and no semantic state is exported to a construction cursor.
-    #[cfg(test)]
-    pub(in crate::surface::proof) fn split_focused_execution_cases(
-        &self,
-        disjunction: ClickProposition,
-    ) -> Result<(Self, ExecutionLogicalCasesSplit), ClickError> {
-        let lowered = self.lower_surface_proposition(&disjunction, "`cases` disjunction")?;
-        let (state, _, ids, path_facts) = self
-            .state
-            .split_frontier_cases(lowered)
-            .map_err(|error| match error {
-                FrontierSplitError::Completed => {
-                    self.step_error("`cases` follows a completed proof")
-                }
-                FrontierSplitError::NotFrontier => {
-                    self.step_error("`cases` cannot advance C execution inside a proposition proof")
-                }
-                FrontierSplitError::MissingExecution => {
-                    self.step_error("execution-frontier proof lost its semantic state")
-                }
-                FrontierSplitError::MissingDisjunction => self.step_error(format!(
-                    "`cases` requires its exact disjunction as an available fact: `{}`",
-                    crate::surface::diagnostics::describe_click_proposition(&disjunction)
-                )),
-                FrontierSplitError::ExpectedDisjunction => self.step_error(format!(
-                    "`cases` requires a disjunction, got `{}`",
-                    crate::surface::diagnostics::describe_click_proposition(&disjunction)
-                )),
-                FrontierSplitError::NonComplementaryCases => {
-                    unreachable!("execution cases does not supply complementary branch facts")
-                }
-            })?
-            .into_parts_with_facts();
-        let successor = Self {
-            site: self.site.clone(),
-            context: self.context.clone(),
-            state,
-            node: ProofNode::marker(&self.node, self.focused_branch_id(), ids.to_vec()),
-        };
-        let record = ExecutionLogicalCasesSplit {
-            arm_branches: ids,
-            path_facts,
-        };
-        Ok((successor, record))
-    }
-
-    /// Focuses one arm of a logical execution-frontier `cases` split. The
-    /// arm's exact disjunct is re-presented only as this focused branch operation's
-    /// local fact delta.
-    #[cfg(test)]
-    pub(in crate::surface::proof) fn focus_execution_cases_arm(
-        &self,
-        record: &ExecutionLogicalCasesSplit,
-        take_left: bool,
-    ) -> Result<Self, ClickError> {
-        let arm_index = usize::from(!take_left);
-        let focused_branch = self.focus_branch(record.arm_branches[arm_index])?;
-        let path_facts = record.path_facts[arm_index].clone();
-        Ok(focused_branch.with_kernel_state(
-            focused_branch
-                .state
-                .with_fact_deltas(path_facts.clone(), path_facts),
-        ))
     }
 
     /// Applies one recursively driven proof-level execution `if` as an

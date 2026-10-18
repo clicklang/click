@@ -10838,7 +10838,7 @@ fn execution_proof_cases_split_is_logarithmic_in_unrelated_facts() {
         );
         let before = fact_node_allocations();
         let (split, record) = root
-            .split_focused_execution_cases(disjunction.clone())
+            .split_focused_execution_disjunction(disjunction.clone())
             .expect("exact cases should open two execution siblings");
         let allocations = fact_node_allocations() - before;
         samples.push((
@@ -10847,11 +10847,11 @@ fn execution_proof_cases_split_is_logarithmic_in_unrelated_facts() {
             allocations,
         ));
         let left = split
-            .focus_execution_cases_arm(&record, true)
+            .focus_execution_if_arm(&record, true)
             .expect("the left cases sibling should focus");
         assert_eq!(left.added_facts(), std::slice::from_ref(&*expected_left));
         let right = left
-            .focus_execution_cases_arm(&record, false)
+            .focus_execution_if_arm(&record, false)
             .expect("the right cases sibling should focus");
         assert_eq!(right.added_facts(), std::slice::from_ref(&*expected_right));
         assert!(root.certificate().steps().is_empty());

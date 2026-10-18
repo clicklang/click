@@ -142,11 +142,15 @@ fn outcome_case_region<'a>(
     for tactic in tactics.iter().rev() {
         if let PostExecutionTactic::If {
             condition,
+            disjunction,
             execution_route,
             then_tactics,
             else_tactics,
         } = &tactic.tactic
         {
+            // A `cases` split reaches here only through a terminal join,
+            // which routes each path to the arm it ran.
+            debug_assert!(!disjunction || execution_route.is_some());
             let arms = [
                 outcome_case_region(then_tactics, next, nodes),
                 outcome_case_region(else_tactics, next, nodes),

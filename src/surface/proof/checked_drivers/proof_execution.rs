@@ -91,12 +91,27 @@ fn proof_if_arms_do_not_rejoin() -> ClickError {
     )
 }
 
+/// The refusal for a `cases` whose arms are live and end apart.
+fn cases_arms_do_not_rejoin() -> ClickError {
+    ClickError::new(
+        "the arms of this `cases` do not rejoin: with tactics written after the `cases`, every arm must end at the same program point in the same state. Move the tactics after the `cases` into its arms",
+    )
+}
+
 /// The refusal for a proof `if` after execution whose condition is open on
 /// some outcome path while tactics follow it: its arms do not rejoin, so
 /// what follows would be checked once per arm.
 fn post_execution_if_forks_the_proof() -> ClickError {
     ClickError::new(
         "the arms of this proof `if` after execution do not rejoin: its condition is not decided on every outcome path, so the tactics written after the `if` would be checked once per arm. Move those tactics into the arms",
+    )
+}
+
+/// The refusal for a `cases` written after execution, which is not yet a
+/// case split there.
+fn cases_after_execution_is_not_supported() -> ClickError {
+    ClickError::new(
+        "`cases` after execution is not supported yet: write the case split before execution reaches the function exit, or prove its conclusion with `have P by { cases { ... } }`",
     )
 }
 
@@ -152,6 +167,7 @@ pub(in crate::surface::proof) fn internal_proof_first_index(
         InternalProofNode::Open { index, .. }
         | InternalProofNode::Match { index, .. }
         | InternalProofNode::If { index, .. }
+        | InternalProofNode::Cases { index, .. }
         | InternalProofNode::Branch { index, .. }
         | InternalProofNode::CallOutcomes { index, .. } => Some(*index),
     }
@@ -358,6 +374,12 @@ fn checked_execution_region_end_at(
                 else_branch,
                 continuation,
                 ..
+            }
+            | InternalProofNode::Cases {
+                then_branch,
+                else_branch,
+                continuation,
+                ..
             } => {
                 let then_end = checked_execution_region_end_at(then_branch, depth + 1, initial)?;
                 let else_end = checked_execution_region_end_at(else_branch, depth + 1, initial)?;
@@ -486,6 +508,13 @@ fn note_dropped_execution_region(
                     continuation,
                     ..
                 }
+                | InternalProofNode::Cases {
+                    source_index,
+                    then_branch: first,
+                    else_branch: second,
+                    continuation,
+                    ..
+                }
                 | InternalProofNode::CallOutcomes {
                     source_index,
                     returned_branch: first,
@@ -568,6 +597,13 @@ fn checked_execution_region_contains_source_at(
                 ..
             }
             | InternalProofNode::If {
+                source_index: own,
+                then_branch: first,
+                else_branch: second,
+                continuation,
+                ..
+            }
+            | InternalProofNode::Cases {
                 source_index: own,
                 then_branch: first,
                 else_branch: second,
@@ -764,6 +800,7 @@ fn deferred_post_execution_region(
                     source_index: *source_index,
                     tactic: PostExecutionTactic::If {
                         condition: condition.clone(),
+                        disjunction: false,
                         execution_route: None,
                         then_tactics: deferred_post_execution_region(then_branch)?,
                         else_tactics: deferred_post_execution_region(else_branch)?,
@@ -790,6 +827,7 @@ fn deferred_post_execution_region(
                 continuation
             }
             InternalProofNode::Match { .. }
+            | InternalProofNode::Cases { .. }
             | InternalProofNode::Open { .. }
             | InternalProofNode::Branch { .. } => return None,
         };
@@ -1222,6 +1260,169 @@ pub(in crate::surface::proof) fn try_check_structural_function_proof<'a>(
     result
 }
 
+/// Runs the two arms of a proof-level case split, a proof `if` or `cases`,
+/// and joins them. What follows the
+/// split is checked once: two live arms must rejoin, through `ensuring` or
+/// because they end at one program point in one state, and a lone live arm
+/// owns the continuation. Returns the joined proof and whether the
+/// continuation was consumed inside an arm.
+#[allow(clippy::too_many_arguments)]
+fn advance_case_split_arms<'a>(
+    split: Proof<'a>,
+    record: &ExecutionProofCaseSplit<'a>,
+    ensuring: &Option<Vec<ProofAssertion>>,
+    then_branch: &InternalProofNode,
+    else_branch: &InternalProofNode,
+    continuation: &InternalProofNode,
+    consumed_leading_steps: bool,
+    enclosing_record: Option<&ExecutionSplit<'a>>,
+    mut expansion_capture: Option<&mut ExpansionCapture>,
+    proof_site: Option<&ProofSite>,
+    owning_source_index: usize,
+    depth: usize,
+) -> Driven<(Proof<'a>, bool)> {
+    let must_rejoin = ensuring.is_some();
+    if must_rejoin || !matches!(continuation, InternalProofNode::Done) {
+        let mut advanced = split;
+        let mut live = [false, false];
+        for (take_then, branch) in [(true, then_branch), (false, else_branch)] {
+            let focused = advanced.focus_execution_if_arm(record, take_then)?;
+            let next = if consumed_leading_steps {
+                advance_focused_execution_region_after_leading_tactic(
+                    focused,
+                    enclosing_record,
+                    branch,
+                    expansion_capture.as_deref_mut(),
+                    proof_site,
+                    owning_source_index,
+                    depth + 1,
+                )?
+            } else {
+                advance_focused_execution_region(
+                    focused,
+                    enclosing_record,
+                    branch,
+                    expansion_capture.as_deref_mut(),
+                    proof_site,
+                    owning_source_index,
+                    depth + 1,
+                )?
+            };
+            let next = match next {
+                Ok(next) => next,
+                Err(decline) => return Ok(Err(decline)),
+            };
+            live[usize::from(!take_then)] = !next.is_at_function_exit();
+            advanced = next;
+        }
+        if live == [true, true] {
+            let joined = match ensuring {
+                Some(assertions) => {
+                    advanced.join_focused_execution_if_interface(record, assertions.clone())?
+                }
+                None => advanced
+                    .try_join_focused_execution_if(record)?
+                    .ok_or_else(|| {
+                        if record.is_cases() {
+                            cases_arms_do_not_rejoin()
+                        } else {
+                            proof_if_arms_do_not_rejoin()
+                        }
+                    })?,
+            };
+            return Ok(Ok((joined, false)));
+        }
+        if must_rejoin {
+            return Err(if_ensuring_arm_did_not_end());
+        }
+        let mut consumed_continuation = false;
+        if live != [false, false] {
+            // One arm is live. It is the else arm, still in
+            // focus, or the then arm, focused again where it
+            // stopped.
+            let focused = if live[0] {
+                advanced.focus_execution_if_arm(record, true)?
+            } else {
+                advanced
+            };
+            let continued = driven!(advance_focused_execution_region(
+                focused,
+                enclosing_record,
+                continuation,
+                expansion_capture.as_deref_mut(),
+                proof_site,
+                owning_source_index,
+                depth + 1,
+            ));
+            if !continued.is_at_function_exit() {
+                return decline_short_of_exit();
+            }
+            advanced = continued;
+            consumed_continuation = true;
+        }
+        return Ok(Ok((
+            advanced.join_focused_execution_if_terminal(record)?,
+            consumed_continuation,
+        )));
+    }
+    let mut advanced = split;
+    let mut consumed_continuation = false;
+    for (take_then, branch) in [(true, then_branch), (false, else_branch)] {
+        let focused = advanced.focus_execution_if_arm(record, take_then)?;
+        let next = if consumed_leading_steps {
+            advance_focused_execution_region_after_leading_tactic(
+                focused,
+                enclosing_record,
+                branch,
+                expansion_capture.as_deref_mut(),
+                proof_site,
+                owning_source_index,
+                depth + 1,
+            )?
+        } else {
+            advance_focused_execution_region(
+                focused,
+                enclosing_record,
+                branch,
+                expansion_capture.as_deref_mut(),
+                proof_site,
+                owning_source_index,
+                depth + 1,
+            )?
+        };
+        let mut next = match next {
+            Ok(next) => next,
+            Err(decline) => return Ok(Err(decline)),
+        };
+        // A proof `if` is a case split: each case is the function
+        // running linearly under one assumed polarity. A case
+        // whose arm ends short of function exit keeps running
+        // through the shared continuation to its own exit; the
+        // cases never rejoin as one state.
+        if !next.is_at_function_exit() && !matches!(continuation, InternalProofNode::Done) {
+            let continued = driven!(advance_focused_execution_region(
+                next,
+                enclosing_record,
+                continuation,
+                expansion_capture.as_deref_mut(),
+                proof_site,
+                owning_source_index,
+                depth + 1,
+            ));
+            next = continued;
+            consumed_continuation = true;
+        }
+        if !next.is_at_function_exit() {
+            return decline_short_of_exit();
+        }
+        advanced = next;
+    }
+    Ok(Ok((
+        advanced.join_focused_execution_if_terminal(record)?,
+        consumed_continuation,
+    )))
+}
+
 #[allow(clippy::too_many_arguments)]
 fn try_check_structural_function_proof_inner<'a>(
     execution: &ExecutionProofState,
@@ -1288,6 +1489,45 @@ fn try_check_structural_function_proof_inner<'a>(
                 saw_structure = true;
                 // A rejoined `match` leaves its continuation to run once.
                 current = continuation;
+            }
+            InternalProofNode::Cases {
+                index,
+                disjunction,
+                then_branch,
+                else_branch,
+                continuation,
+                ..
+            } => {
+                if proof.is_at_function_exit() {
+                    return Err(cases_after_execution_is_not_supported());
+                }
+                proof = proof.with_execution_tactic_index(*index)?;
+                if !matches!(continuation.as_ref(), InternalProofNode::Done) {
+                    proof = proof.prepare_entry_interface()?;
+                }
+                let (split, record) =
+                    proof.split_focused_execution_disjunction(disjunction.clone())?;
+                let (joined, consumed_continuation) = driven!(advance_case_split_arms(
+                    split,
+                    &record,
+                    &None,
+                    then_branch,
+                    else_branch,
+                    continuation,
+                    false,
+                    None,
+                    staged_expansion_capture.as_mut(),
+                    proof_site.as_ref(),
+                    owning_source_index,
+                    0,
+                ));
+                proof = joined;
+                saw_structure = true;
+                current = if consumed_continuation {
+                    &DONE_PROOF
+                } else {
+                    continuation
+                };
             }
             InternalProofNode::Done => break,
             InternalProofNode::Linear {
@@ -1533,6 +1773,7 @@ fn try_check_structural_function_proof_inner<'a>(
                         *source_index,
                         PostExecutionTactic::If {
                             condition: condition.clone(),
+                            disjunction: false,
                             execution_route: None,
                             then_tactics,
                             else_tactics,
@@ -1544,7 +1785,9 @@ fn try_check_structural_function_proof_inner<'a>(
                     continue;
                 }
                 proof = proof.with_execution_tactic_index(*index)?;
-                if ensuring.is_some() {
+                // Arms that rejoin before the first statement continue from
+                // the bound entry state, as an interface join does.
+                if ensuring.is_some() || !matches!(continuation.as_ref(), InternalProofNode::Done) {
                     proof = proof.prepare_entry_interface()?;
                 }
                 if expanded_execution_if_has_pruned_arm(then_branch, else_branch)
@@ -1664,149 +1907,21 @@ fn try_check_structural_function_proof_inner<'a>(
                 // that is an error, not a reason to run the continuation
                 // once per arm. When only one arm is live (the other reached
                 // function exit), the continuation belongs to that arm.
-                let must_rejoin = ensuring.is_some();
-                if must_rejoin || !matches!(continuation.as_ref(), InternalProofNode::Done) {
-                    let mut advanced = split;
-                    let mut live = [false, false];
-                    for (take_then, branch) in
-                        [(true, then_branch.as_ref()), (false, else_branch.as_ref())]
-                    {
-                        let focused = advanced.focus_execution_if_arm(&record, take_then)?;
-                        let next = if consumed_leading_steps {
-                            advance_focused_execution_region_after_leading_tactic(
-                                focused,
-                                None,
-                                branch,
-                                staged_expansion_capture.as_mut(),
-                                proof_site.as_ref(),
-                                owning_source_index,
-                                1,
-                            )?
-                        } else {
-                            advance_focused_execution_region(
-                                focused,
-                                None,
-                                branch,
-                                staged_expansion_capture.as_mut(),
-                                proof_site.as_ref(),
-                                owning_source_index,
-                                1,
-                            )?
-                        };
-                        let next = match next {
-                            Ok(next) => next,
-                            Err(decline) => return Ok(Err(decline)),
-                        };
-                        live[usize::from(!take_then)] = !next.is_at_function_exit();
-                        advanced = next;
-                    }
-                    if live == [true, true] {
-                        let joined = match ensuring {
-                            Some(assertions) => advanced
-                                .join_focused_execution_if_interface(&record, assertions.clone())?,
-                            None => advanced
-                                .try_join_focused_execution_if(&record)?
-                                .ok_or_else(proof_if_arms_do_not_rejoin)?,
-                        };
-                        proof = joined;
-                        saw_structure = true;
-                        current = continuation;
-                        continue;
-                    }
-                    if must_rejoin {
-                        return Err(if_ensuring_arm_did_not_end());
-                    }
-                    let mut consumed_continuation = false;
-                    if live != [false, false] {
-                        // One arm is live. It is the else arm, still in
-                        // focus, or the then arm, focused again where it
-                        // stopped.
-                        let focused = if live[0] {
-                            advanced.focus_execution_if_arm(&record, true)?
-                        } else {
-                            advanced
-                        };
-                        let continued = driven!(advance_focused_execution_region(
-                            focused,
-                            None,
-                            continuation,
-                            staged_expansion_capture.as_mut(),
-                            proof_site.as_ref(),
-                            owning_source_index,
-                            1,
-                        ));
-                        if !continued.is_at_function_exit() {
-                            return decline_short_of_exit();
-                        }
-                        advanced = continued;
-                        consumed_continuation = true;
-                    }
-                    proof = advanced.join_focused_execution_if_terminal(&record)?;
-                    saw_structure = true;
-                    current = if consumed_continuation {
-                        &DONE_PROOF
-                    } else {
-                        continuation
-                    };
-                    continue;
-                }
-                let mut advanced = split;
-                let mut consumed_continuation = false;
-                for (take_then, branch) in
-                    [(true, then_branch.as_ref()), (false, else_branch.as_ref())]
-                {
-                    let focused = advanced.focus_execution_if_arm(&record, take_then)?;
-                    let next = if consumed_leading_steps {
-                        advance_focused_execution_region_after_leading_tactic(
-                            focused,
-                            None,
-                            branch,
-                            staged_expansion_capture.as_mut(),
-                            proof_site.as_ref(),
-                            owning_source_index,
-                            1,
-                        )?
-                    } else {
-                        advance_focused_execution_region(
-                            focused,
-                            None,
-                            branch,
-                            staged_expansion_capture.as_mut(),
-                            proof_site.as_ref(),
-                            owning_source_index,
-                            1,
-                        )?
-                    };
-                    let mut next = match next {
-                        Ok(next) => next,
-                        Err(decline) => return Ok(Err(decline)),
-                    };
-                    // A proof `if` is a case split: each case is the function
-                    // running linearly under one assumed polarity. A case
-                    // whose arm ends short of function exit keeps running
-                    // through the shared continuation to its own exit; the
-                    // cases never rejoin as one state.
-                    if !next.is_at_function_exit()
-                        && !matches!(continuation.as_ref(), InternalProofNode::Done)
-                    {
-                        let continued = driven!(advance_focused_execution_region(
-                            next,
-                            None,
-                            continuation,
-                            staged_expansion_capture.as_mut(),
-                            proof_site.as_ref(),
-                            owning_source_index,
-                            1,
-                        ));
-                        next = continued;
-                        consumed_continuation = true;
-                    }
-                    if !next.is_at_function_exit() {
-                        return decline_short_of_exit();
-                    }
-                    advanced = next;
-                }
-                proof = advanced.join_focused_execution_if_terminal(&record)?;
+                let (joined, consumed_continuation) = driven!(advance_case_split_arms(
+                    split,
+                    &record,
+                    ensuring,
+                    then_branch,
+                    else_branch,
+                    continuation,
+                    consumed_leading_steps,
+                    None,
+                    staged_expansion_capture.as_mut(),
+                    proof_site.as_ref(),
+                    owning_source_index,
+                    0,
+                ));
+                proof = joined;
                 saw_structure = true;
                 current = if consumed_continuation {
                     &DONE_PROOF
@@ -2617,6 +2732,44 @@ pub(in crate::surface::proof) fn advance_preservation_region<'a, 'node>(
                     )?;
                 }
                 Ok(advanced)
+            }
+            InternalProofNode::Cases {
+                index,
+                source_index,
+                disjunction,
+                then_branch,
+                else_branch,
+                continuation,
+            } => {
+                proof = proof.with_execution_tactic_index(*index)?;
+                // A loop body's `cases` rejoins where its arms end, as a
+                // straight-line proof `if` does there.
+                let alone = InternalProofNode::Cases {
+                    index: *index,
+                    source_index: *source_index,
+                    disjunction: disjunction.clone(),
+                    then_branch: then_branch.clone(),
+                    else_branch: else_branch.clone(),
+                    continuation: Box::new(rejoin_here()),
+                };
+                let Ok(joined) = advance_focused_execution_region(
+                    proof,
+                    None,
+                    &alone,
+                    expansion_capture.as_deref_mut(),
+                    proof_site,
+                    owning_source_index,
+                    0,
+                )?
+                else {
+                    return Err(ClickError::new(format!(
+                        "`{claim_label}` tactic {index}: the arms of this `cases` in a loop body do not rejoin; in a `preserve` proof each arm must end at the same program point in the same state"
+                    )));
+                };
+                proof = joined;
+                node = continuation;
+                last_tactic = Some((*index, "cases"));
+                continue;
             }
             InternalProofNode::Branch {
                 index,
@@ -3622,6 +3775,46 @@ fn advance_focused_execution_region_with_branch_continuation<'a>(
                 region = continuation;
                 branch_continuation = None;
             }
+            InternalProofNode::Cases {
+                index,
+                disjunction,
+                then_branch,
+                else_branch,
+                continuation,
+                ..
+            } => {
+                if proof.is_at_function_exit() {
+                    return Err(cases_after_execution_is_not_supported());
+                }
+                let owner = proof.clone();
+                let mut proof_at_cases = proof.with_execution_tactic_index(*index)?;
+                if !matches!(continuation.as_ref(), InternalProofNode::Done) {
+                    proof_at_cases = proof_at_cases.prepare_entry_interface()?;
+                }
+                let (split, record) =
+                    proof_at_cases.split_focused_execution_disjunction(disjunction.clone())?;
+                let (joined, consumed_continuation) = driven!(advance_case_split_arms(
+                    split,
+                    &record,
+                    &None,
+                    then_branch,
+                    else_branch,
+                    continuation,
+                    false,
+                    enclosing_record,
+                    expansion_capture.as_deref_mut(),
+                    proof_site,
+                    owning_source_index,
+                    depth,
+                ));
+                proof = joined.restore_execution_tactic_attribution(&owner)?;
+                if consumed_continuation {
+                    return join_terminal_execution_cases(proof, &mut terminal_cases);
+                }
+                region = continuation;
+                branch_continuation = None;
+                continue;
+            }
             InternalProofNode::If {
                 index,
                 source_index,
@@ -3677,6 +3870,7 @@ fn advance_focused_execution_region_with_branch_continuation<'a>(
                         *source_index,
                         PostExecutionTactic::If {
                             condition: condition.clone(),
+                            disjunction: false,
                             execution_route: None,
                             then_tactics,
                             else_tactics,

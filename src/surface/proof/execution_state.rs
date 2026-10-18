@@ -489,6 +489,9 @@ pub(super) struct SurfacePathChoice {
 #[derive(Clone, PartialEq)]
 pub(super) enum SurfacePathSelector {
     Proposition(ClickProposition),
+    /// The arm of a `cases` split on this disjunction: `true` is its left
+    /// side.
+    Disjunction(ClickProposition),
     CallOutcome,
 }
 
@@ -1291,6 +1294,11 @@ pub(super) fn synthesize_surface_paths(
             then_proof,
             else_proof,
         },
+        SurfacePathSelector::Disjunction(disjunction) => ProofStep::Cases {
+            disjunction,
+            left_proof: then_proof,
+            right_proof: else_proof,
+        },
         SurfacePathSelector::CallOutcome => ProofStep::CallOutcomes {
             returned_proof: then_proof,
             threw_proof: else_proof,
@@ -1330,6 +1338,9 @@ pub(super) enum PostExecutionTactic {
     /// selected arm's checked operations to that same descendant.
     If {
         condition: ClickProposition,
+        /// The arms are the two sides of `condition`, a `cases` disjunction,
+        /// rather than `condition` and its negation.
+        disjunction: bool,
         /// A terminal join routes its deferred operations through this exact
         /// checked decision. Written post-execution cases have no such route.
         execution_route: Option<usize>,
