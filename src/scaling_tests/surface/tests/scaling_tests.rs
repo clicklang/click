@@ -1,6 +1,37 @@
 use super::*;
 
 #[test]
+fn refined_pure_arithmetic_does_not_rescan_unrelated_parameters() {
+    let (source, _) = mdtest_sources("mdtests/pure_arithmetic_retains_a_rewritten_fold_goal.md");
+    let mut samples = Vec::new();
+    for size in [0, 4, 16, 64] {
+        let parameters = (0..size)
+            .map(|index| format!(", unused{index}: uint64"))
+            .collect::<String>();
+        let source = source.replace(
+            "theorem count_step(n: uint64)",
+            &format!("theorem count_step(n: uint64{parameters})"),
+        );
+        let (result, work) = crate::instrumentation::collect_tactic_work(|| {
+            verify_click_theorems(&source)
+        });
+        result.unwrap();
+        let work = work
+            .iter()
+            .filter(|sample| sample.tactic.tactic_name == "arithmetic")
+            .next_back()
+            .expect("the final arithmetic closure ran")
+            .work;
+        samples.push((size, work));
+    }
+    let baseline = samples[0].1;
+    assert!(
+        samples.iter().all(|(_, work)| *work <= baseline + 32),
+        "unrelated parameters grew the refined arithmetic step: {samples:?}"
+    );
+}
+
+#[test]
 #[ignore = "nightly: multi-size quantified frame refusal and positive controls"]
 fn false_quantified_frames_do_not_materialize_the_constant_domain() {
     use crate::instrumentation::measure_deterministic_work;
