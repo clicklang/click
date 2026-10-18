@@ -3615,6 +3615,44 @@ fn a_rust_verifying_alias_does_not_change_path_identity() {
 }
 
 #[test]
+fn rust_integer_literal_spans_keep_later_declarations_addressable() {
+    let source = "verifying \"arrays.rs\";\n\
+        fn before(bytes: &[u8; 0x4usize]) -> usize {\n\
+            requires 0b1_00usize == 4_usize;\n\
+            ensures result == 4_usize;\n\
+        } by { execute(); simp(); }\n\
+        fn length(words: &[u32; 1 + 2]) -> usize {\n\
+            ensures result == 0o3usize;\n\
+        } by { execute(); simp(); }\n";
+    let tokens = parser::source_tokens(source).unwrap();
+    for literal in ["0x4usize", "0b1_00usize", "4_usize", "0o3usize"] {
+        let written = source
+            .match_indices(literal)
+            .map(|(offset, _)| offset)
+            .collect::<Vec<_>>();
+        let found = tokens
+            .iter()
+            .filter(|token| token.text == literal)
+            .collect::<Vec<_>>();
+        assert_eq!(
+            found.len(),
+            written.len(),
+            "missing literal span: {literal}"
+        );
+        for (token, offset) in found.into_iter().zip(written) {
+            assert_eq!(token.span, offset..offset + literal.len());
+            assert_eq!(token.start, position_at_offset(source, offset));
+        }
+    }
+    for name in ["before", "length"] {
+        let declaration = source.find(&format!("fn {name}(")).unwrap();
+        let open = declaration + source[declaration..].find('{').unwrap();
+        let body = parsed_function_body(source, name).unwrap();
+        assert_eq!(tokens[body.body_open].span.start, open);
+    }
+}
+
+#[test]
 fn source_tools_share_parser_tokens_and_byte_spans() {
     let source = "/* λ # } */ import click::list::{append}; caller::{closure#12}; Box::(lambda#3); 37u64 -> value => next;";
     let tokens = parser::source_tokens(source).unwrap();
