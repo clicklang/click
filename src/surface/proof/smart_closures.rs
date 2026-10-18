@@ -1818,6 +1818,15 @@ impl<'a> Proof<'a> {
                 scope.succeed();
                 return Ok(Some(closed));
             }
+            // The kernel introduces only these outer connectives. An
+            // atomic goal cannot take this step; constructing its rejection
+            // would also capture an unused memory-history diagnostic.
+            if !matches!(
+                proof.goal(),
+                Some(Proposition::Implies(..) | Proposition::ForAll { .. } | Proposition::Not(_))
+            ) {
+                return Ok(None);
+            }
             match attempt::candidate_outcome(proof.apply_step(ProofStep::Intro))? {
                 Some(introduced) => proof = introduced,
                 None => return Ok(None),
