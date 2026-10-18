@@ -50,16 +50,36 @@ fn run_compiler_cancellable(
         return Err("compiler invocation cancelled before launch".into());
     }
     let started = Instant::now();
-    let child = Command::new(executable)
-        .args(arguments)
-        .current_dir(cwd)
-        .env_clear()
-        .envs(environment)
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .process_group(0)
-        .spawn()
+    let spawn = || {
+        Command::new(executable)
+            .args(arguments)
+            .current_dir(cwd)
+            .env_clear()
+            .envs(environment)
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .process_group(0)
+            .spawn()
+    };
+    // An executable just written by this process can be briefly busy: a
+    // child forked by another thread while the file was open for writing
+    // holds that descriptor until it execs. The launch is retried a few
+    // times, within the invocation's timeout.
+    let mut child = spawn();
+    for _ in 0..20 {
+        match &child {
+            Err(error) if error.raw_os_error() == Some(ETXTBSY) => {
+                if started.elapsed() >= limits.timeout || cancelled() {
+                    break;
+                }
+                std::thread::sleep(Duration::from_millis(10));
+                child = spawn();
+            }
+            _ => break,
+        }
+    }
+    let child = child
         .map_err(|error| format!("cannot start compiler `{}`: {error}", executable.display()))?;
     let mut group = OwnedCompilerGroup(child);
     let mut stdout = group.0.stdout.take().expect("compiler stdout was piped");
@@ -362,3 +382,7 @@ mod tests {
         }
     }
 }
+
+/// `ETXTBSY` on Linux and macOS: the executable is open for writing.
+#[cfg(unix)]
+const ETXTBSY: i32 = 26;

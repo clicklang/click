@@ -20,6 +20,7 @@ use super::schema::{
 use crate::cli::write_file_atomically;
 use crate::languages::c::target::COptimization;
 use crate::languages::compiler_process::{CompilerLimits, run_compiler};
+use crate::languages::portable_paths::PathLabels;
 
 const CONFIG_SCHEMA: u32 = 6;
 const MAX_COMPILATION_DATABASE_BYTES: usize = 16 << 20;
@@ -322,16 +323,17 @@ fn run_cpp_exporter(
     Ok(output.stdout)
 }
 
-/// Checks a lock against `config`'s current inputs and loads its artifact.
+/// Checks a lock against `config`'s current inputs and loads `artifact`.
 /// `current_roots` are the current locations of a project unit's
 /// `prepared_roots`; without them, every preprocessor input is re-read at its
-/// recorded path.
+/// recorded path. The import reports `identity`, the lock's portable one.
 fn load_locked(
     config: &Config,
     lock: Lock,
     working_directory: &Path,
-    artifact_path: &Path,
+    artifact: Vec<u8>,
     current_roots: &[PathBuf],
+    identity: String,
 ) -> Result<PreparedCppImport, String> {
     if lock.schema != CONFIG_SCHEMA {
         return Err(format!(
@@ -369,7 +371,6 @@ fn load_locked(
     if lock.dependencies != dependency_digests {
         return Err("C++ dependency inventory differs from the import lock; refresh it".into());
     }
-    let artifact = read_stable(artifact_path, MAX_ARTIFACT_BYTES, "C++ semantic artifact")?;
     if lock.artifact_bytes != artifact.len() || lock.artifact_sha256 != hex_digest(&artifact) {
         return Err("C++ semantic artifact differs from the import lock; refresh it".into());
     }
@@ -399,18 +400,7 @@ fn load_locked(
         )?
     };
     validate_library_headers(config, &dependencies, &preprocessor_files)?;
-    let identity = semantic_identity(
-        &lock.config_sha256,
-        &lock.compilation_database_sha256,
-        &lock.source_sha256,
-        &lock.logical_source_sha256,
-        &lock.dependencies,
-        &lock.preprocessor_files,
-        &lock.exporter_sha256,
-        &lock.artifact_sha256,
-        &lock.profile,
-    );
-    if lock.identity != identity {
+    if lock.identity != lock_identity(&lock) {
         return Err("C++ import identity does not match its locked inputs".into());
     }
 
@@ -746,6 +736,92 @@ fn validate_library_headers(
         }
     }
     Ok(())
+}
+
+/// The identity of `lock`'s recorded inputs and artifact.
+fn lock_identity(lock: &Lock) -> String {
+    semantic_identity(
+        &lock.config_sha256,
+        &lock.compilation_database_sha256,
+        &lock.source_sha256,
+        &lock.logical_source_sha256,
+        &lock.dependencies,
+        &lock.preprocessor_files,
+        &lock.exporter_sha256,
+        &lock.artifact_sha256,
+        &lock.profile,
+    )
+}
+
+/// Replaces each label in `lock` and `artifact`, which `labels` names, by
+/// its root, or each root by its label when `portable`. The artifact's
+/// preprocessor inventory is sorted again under the new spelling, so a
+/// portable artifact is the same from every checkout. The artifact digest
+/// and the identity follow the replaced text.
+fn relabel(
+    labels: &PathLabels,
+    lock: &Lock,
+    artifact: &[u8],
+    portable: bool,
+) -> Result<(Lock, Vec<u8>), String> {
+    let replace = |text: &str| {
+        if portable {
+            labels.to_portable(text)
+        } else {
+            labels.to_absolute(text)
+        }
+    };
+    let artifact = std::str::from_utf8(artifact)
+        .map_err(|_| "C++ semantic artifact is not UTF-8".to_string())?;
+    let mut value: serde_json::Value = serde_json::from_str(&replace(artifact))
+        .map_err(|error| format!("parse C++ semantic artifact: {error}"))?;
+    if let Some(files) = value
+        .get_mut("preprocessor_files")
+        .and_then(serde_json::Value::as_array_mut)
+    {
+        files.sort_by(|left, right| {
+            left["accessed_path"]
+                .as_str()
+                .cmp(&right["accessed_path"].as_str())
+        });
+    }
+    let mut artifact = serde_json::to_vec_pretty(&value).map_err(|error| error.to_string())?;
+    artifact.push(b'\n');
+    let text = serde_json::to_string(lock).map_err(|error| error.to_string())?;
+    let mut lock: Lock = serde_json::from_str(&replace(&text))
+        .map_err(|error| format!("parse C++ import lock: {error}"))?;
+    lock.artifact_sha256 = hex_digest(&artifact);
+    lock.artifact_bytes = artifact.len();
+    lock.identity = lock_identity(&lock);
+    Ok((lock, artifact))
+}
+
+/// Where a loaded lock places the pinned Clang's resource directory, whose
+/// builtin headers lie outside every project root: they are pinned by their
+/// recorded digest and never read, so the directory need not exist.
+const PINNED_RESOURCE_ROOT: &str = "/click-pinned-clang-resource";
+
+/// The pinned Clang resource directory the exporter at `exporter` supplies
+/// to a command that names none.
+fn exporter_resource_directory(
+    exporter: &Path,
+    working_directory: &Path,
+) -> Result<PathBuf, String> {
+    let output = run_compiler(
+        exporter,
+        &["--print-resource-dir".to_string()],
+        working_directory,
+        &BTreeMap::new(),
+        CompilerLimits {
+            timeout: Duration::from_secs(10),
+            max_stdout_bytes: 4096,
+            max_stderr_bytes: MAX_DIAGNOSTIC_BYTES,
+        },
+    )
+    .map_err(|error| format!("ask the C++ exporter for its resource directory: {error}"))?;
+    let text = String::from_utf8(output.stdout)
+        .map_err(|_| "the C++ exporter's resource directory is not UTF-8".to_string())?;
+    Ok(PathBuf::from(text.trim()))
 }
 
 fn semantic_identity(
@@ -1360,6 +1436,12 @@ pub(crate) fn prepare_unit(
         .map_err(|error| format!("C++ exporter `{}`: {error}", exporter.display()))?;
     let working_directory = unit.working_directory()?;
     let roots = unit.roots()?;
+    let resources = exporter_resource_directory(&exporter, &working_directory)?;
+    let labels = PathLabels::new(&[
+        ("$unit", roots[0].as_path()),
+        ("$project", roots[1].as_path()),
+        ("$clang-resource", resources.as_path()),
+    ])?;
     let scratch = std::env::temp_dir().join(format!(
         "click-cpp-unit-{}-{}",
         std::process::id(),
@@ -1376,12 +1458,10 @@ pub(crate) fn prepare_unit(
         for (index, source) in sources.iter().enumerate() {
             let config = unit.config(source)?;
             let database = scratch.join(format!("{index}/compile_commands.json"));
-            write_file_atomically(
-                &database,
-                &unit.compilation_database(source, &working_directory)?,
-            )?;
+            let database_bytes = unit.compilation_database(source, &working_directory)?;
+            write_file_atomically(&database, &database_bytes)?;
             let outputs = [artifact_path(&config)?, unit.lock_path.clone()];
-            let (mut lock, artifact) = export(
+            let (lock, artifact) = export(
                 &config,
                 unit.unit_digest.clone(),
                 &ExportInputs {
@@ -1393,10 +1473,16 @@ pub(crate) fn prepare_unit(
                 },
             )
             .map_err(bounded_error)?;
-            lock.prepared_roots = roots
-                .iter()
-                .map(|root| root.to_string_lossy().into_owned())
-                .collect();
+            // The lock and artifact name the unit's own files by their root's
+            // label, so they read the same from any checkout.
+            let (mut lock, artifact) = relabel(&labels, &lock, &artifact, true)?;
+            lock.prepared_roots = vec!["$unit".into(), "$project".into()];
+            lock.compilation_database_sha256 = hex_digest(
+                labels
+                    .to_portable(&String::from_utf8_lossy(&database_bytes))
+                    .as_bytes(),
+            );
+            lock.identity = lock_identity(&lock);
             entries.insert(
                 source.logical_source.clone(),
                 serde_json::to_value(&lock).map_err(|error| error.to_string())?,
@@ -1433,14 +1519,39 @@ pub(crate) fn load_unit(
             unit.unit_name
         ));
     }
-    load_locked(
-        &config,
-        lock,
-        &unit.working_directory()?,
+    let artifact = read_stable(
         &artifact_path(&config)?,
-        &unit.roots()?,
+        MAX_ARTIFACT_BYTES,
+        "C++ semantic artifact",
+    )?;
+    if lock.artifact_bytes != artifact.len() || lock.artifact_sha256 != hex_digest(&artifact) {
+        return Err("C++ semantic artifact differs from the import lock; refresh it".into());
+    }
+    // Checked as recorded, the lock and artifact are then read with each
+    // root's label replaced by the root's current location.
+    let roots = unit.roots()?;
+    let labels = PathLabels::new(&[
+        ("$unit", roots[0].as_path()),
+        ("$project", roots[1].as_path()),
+        ("$clang-resource", Path::new(PINNED_RESOURCE_ROOT)),
+    ])?;
+    let identity = lock.identity.clone();
+    let (current, artifact) = relabel(&labels, &lock, &artifact, false)?;
+    let import = load_locked(
+        &config,
+        current,
+        &unit.working_directory()?,
+        artifact,
+        &roots,
+        identity,
     )
-    .map_err(bounded_error)
+    .map_err(bounded_error)?;
+    // As recorded, after the inputs and artifact are checked, so a changed
+    // input is named before a mismatched identity.
+    if lock.identity != lock_identity(&lock) {
+        return Err("C++ import identity does not match its locked inputs".into());
+    }
+    Ok(import)
 }
 
 #[cfg(test)]

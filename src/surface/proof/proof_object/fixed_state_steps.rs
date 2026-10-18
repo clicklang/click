@@ -846,7 +846,7 @@ impl<'a> Proof<'a> {
                 PropositionCloseError::IntegerChoiceSourceUnavailable => self
                     .step_error("required existential fact is not available")
                     .with_missing_tactic_requirement(
-                        crate::surface::printing::source_click_proposition(&binding.proposition),
+                        crate::surface::printing::authored_click_proposition(&binding.proposition),
                     ),
                 PropositionCloseError::IntegerChoiceWrongSort => self.step_error(
                     "`obtain (...)` has more binders than the available existential, or an unsupported binder type",

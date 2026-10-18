@@ -5744,6 +5744,13 @@ private:
 } // namespace
 
 int main(int argc, const char **argv) {
+  // The pinned Clang's resource directory, which Click labels in a lock so
+  // the builtin headers read from it are not named by this installation's
+  // path.
+  if (argc == 2 && std::string(argv[1]) == "--print-resource-dir") {
+    llvm::outs() << kClangResourceDir << "\n";
+    return 0;
+  }
   auto options = parse_options(argc, argv);
   if (!options) {
     return 2;
