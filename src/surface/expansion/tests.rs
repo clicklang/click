@@ -1,6 +1,57 @@
 use super::*;
 
 #[test]
+fn generic_list_induction_retains_nominal_pointer_fields() {
+    let c = "struct node { int32 value; }; struct other { int32 value; };";
+    let source = r#"
+verifying "node.c";
+function retain<T>(value: T) -> T { value }
+theorem null_has_nominal_list_type() {
+    ensures List<struct node*>::Cons(0, List<struct node*>::Nil)
+        == List<struct node*>::Cons(0, List<struct node*>::Nil) by { normalize(); }
+}
+theorem typed_head(head: struct node*) {
+    ensures head == head by { normalize(); }
+}
+theorem typed_tail(items: List<struct node*>) {
+    ensures 0 == 0 by { normalize(); }
+}
+theorem list_has_typed_heads(xs: List<struct node*>) {
+    ensures 0 == 0 by {
+        induct(xs) as ih {
+            List::Nil => { normalize(); }
+            List::Cons(head, tail) => {
+                apply(typed_head(head));
+                apply(typed_head(retain(head)));
+                apply(typed_tail(tail));
+                apply(list::append_cons(head, tail, tail));
+                apply(list::append_cons((void*)head, List<void*>::Nil, List<void*>::Nil));
+                apply(list::append_cons((int32*)head, List<int32*>::Nil, List<int32*>::Nil));
+                apply(list::append_cons(retain((void*)head), List<void*>::Nil, List<void*>::Nil));
+                apply(list::append_cons(retain((int32*)head), List<int32*>::Nil, List<int32*>::Nil));
+                normalize();
+            }
+        }
+    }
+}
+"#;
+    verify_c0_sources(source, &[("node.c", c)])
+        .unwrap_or_else(|error| panic!("{}", error.message()));
+    for element in ["int32*", "struct other*"] {
+        let wrong = source.replace("List<struct node*>", &format!("List<{element}>"));
+        let error = verify_c0_sources(&wrong, &[("node.c", c)])
+            .expect_err("an untyped or differently typed payload cannot acquire node's class");
+        assert!(
+            error
+                .message()
+                .contains("requires original object class `struct node`"),
+            "{}",
+            error.message()
+        );
+    }
+}
+
+#[test]
 fn callback_refinement_preserves_generated_address_obligations() {
     let path = std::path::Path::new("rb_augment_callbacks_const_suite.md");
     let fixture = crate::cli::parse_mdtest(

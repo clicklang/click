@@ -1076,7 +1076,10 @@ fn algebraic_parameter_types(
             ClickType::Algebraic(application) => {
                 Some((parameter.name().to_string(), (application.clone(), index)))
             }
-            ClickType::Parameter(_) | ClickType::C(_) | ClickType::Integer => None,
+            ClickType::Parameter(_)
+            | ClickType::C(_)
+            | ClickType::CObjectPointer { .. }
+            | ClickType::Integer => None,
         })
         .collect()
 }
@@ -7406,7 +7409,7 @@ impl Parser {
                                 self.names.insert(NameKind::IntegerParameter, name.clone());
                                 self.integer_literal_context = true;
                             }
-                            ClickType::C(_) => {
+                            ClickType::C(_) | ClickType::CObjectPointer { .. } => {
                                 self.names.remove(NameKind::IntegerParameter, &name);
                                 self.names.remove(NameKind::IntegerLet, &name);
                                 self.names.remove(NameKind::ContractBinding, &name);
@@ -8502,7 +8505,7 @@ impl Parser {
                     self.names.insert(NameKind::IntegerLet, name.clone());
                     self.integer_literal_context = true;
                 }
-                ClickType::C(_) | ClickType::Algebraic(_) => {
+                ClickType::C(_) | ClickType::CObjectPointer { .. } | ClickType::Algebraic(_) => {
                     self.names.remove(NameKind::IntegerLet, name);
                     self.names.insert(NameKind::ContractBinding, name.clone());
                     self.integer_literal_context = false;
@@ -13907,11 +13910,19 @@ impl Parser {
         self.position += 1;
         let mut arguments = Vec::new();
         loop {
-            let (argument, parsed_c_type) = self.parse_click_type()?;
-            if let Some(parsed) = parsed_c_type
-                && !algebraic_field_c_type_supported(parsed.c_type)
-            {
-                return Err(self.error("algebraic datatype arguments must be value types"));
+            let (mut argument, parsed_c_type) = self.parse_click_type()?;
+            if let Some(parsed) = parsed_c_type {
+                if !algebraic_field_c_type_supported(parsed.c_type) {
+                    return Err(self.error("algebraic datatype arguments must be value types"));
+                }
+                if parsed.c_type.is_pointer()
+                    && let Some(struct_name) = parsed.struct_name
+                {
+                    argument = ClickType::CObjectPointer {
+                        c_type: parsed.c_type,
+                        struct_name,
+                    };
+                }
             }
             arguments.push(argument);
             match self.peek() {

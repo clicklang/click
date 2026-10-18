@@ -452,7 +452,7 @@ fn validate_scoped_integer_proposition_one(
             let previous_c = variables.remove(name);
             let previous_integer = integer_bindings.remove(name);
             match click_type {
-                ClickType::C(c_type) => {
+                ClickType::C(c_type) | ClickType::CObjectPointer { c_type, .. } => {
                     variables.insert(name.clone(), *c_type);
                 }
                 ClickType::Integer => {
@@ -884,10 +884,14 @@ pub(super) enum SpecValueType {
 
 fn spec_value_matches_click_type(actual: &SpecValueType, expected: &ClickType) -> bool {
     match (actual, expected) {
-        (SpecValueType::Scalar(None), ClickType::C(_)) => true,
-        (SpecValueType::Scalar(Some(actual)), ClickType::C(expected)) => {
-            click_types_compatible(*actual, *expected)
-        }
+        (SpecValueType::Scalar(None), ClickType::C(_) | ClickType::CObjectPointer { .. }) => true,
+        (
+            SpecValueType::Scalar(Some(actual)),
+            ClickType::C(expected)
+            | ClickType::CObjectPointer {
+                c_type: expected, ..
+            },
+        ) => click_types_compatible(*actual, *expected),
         (SpecValueType::Integer, ClickType::Integer) => true,
         (SpecValueType::Algebraic(actual), ClickType::Algebraic(expected)) => actual == expected,
         _ => false,
@@ -1267,10 +1271,15 @@ pub(super) fn infer_scoped_spec_value_type(
                     // parameter, in a pure function exactly as in a resource
                     // argument.
                     ClickType::C(expected)
-                        if crate::surface::lowering::argument_is_null_pointer_constant(
-                            argument, *expected,
-                        ) => {}
-                    ClickType::C(expected) => {
+                    | ClickType::CObjectPointer {
+                        c_type: expected, ..
+                    } if crate::surface::lowering::argument_is_null_pointer_constant(
+                        argument, *expected,
+                    ) => {}
+                    ClickType::C(expected)
+                    | ClickType::CObjectPointer {
+                        c_type: expected, ..
+                    } => {
                         if matches!(&actual, SpecValueType::Integer) {
                             return Err(ClickError::new(format!(
                                 "function `{name}` argument {index} expects {}, got Integer in {context}",
@@ -1292,7 +1301,9 @@ pub(super) fn infer_scoped_spec_value_type(
             }
             Ok(match &function.return_type {
                 ClickType::Integer => SpecValueType::Integer,
-                ClickType::C(c_type) => SpecValueType::Scalar(Some(*c_type)),
+                ClickType::C(c_type) | ClickType::CObjectPointer { c_type, .. } => {
+                    SpecValueType::Scalar(Some(*c_type))
+                }
                 ClickType::Algebraic(application) => SpecValueType::Algebraic(application.clone()),
                 ClickType::Parameter(_) => SpecValueType::Scalar(None),
             })
@@ -1546,7 +1557,7 @@ fn infer_scoped_range_fold_type(
             ClickType::Integer => {
                 body_integer_bindings.insert(name.clone());
             }
-            ClickType::C(ty) => {
+            ClickType::C(ty) | ClickType::CObjectPointer { c_type: ty, .. } => {
                 body_variables.insert(name.clone(), *ty);
             }
             _ => unreachable!(),
@@ -1565,9 +1576,13 @@ fn infer_scoped_range_fold_type(
         (ClickType::Integer, _) => Err(ClickError::new(format!(
             "range fold body must preserve Integer accumulator in {context}"
         ))),
-        (ClickType::C(initial), SpecValueType::Scalar(body))
-            if body.is_none_or(|body| click_types_compatible(initial, body)) =>
-        {
+        (
+            ClickType::C(initial)
+            | ClickType::CObjectPointer {
+                c_type: initial, ..
+            },
+            SpecValueType::Scalar(body),
+        ) if body.is_none_or(|body| click_types_compatible(initial, body)) => {
             Ok(SpecValueType::Scalar(Some(initial)))
         }
         _ => Err(ClickError::new(format!(
@@ -2064,7 +2079,9 @@ fn infer_spec_value_type(
                 .unwrap_or_else(|| function.return_type.clone());
             Ok(match return_type {
                 ClickType::Algebraic(application) => SpecValueType::Algebraic(application),
-                ClickType::C(c_type) => SpecValueType::Scalar(Some(c_type)),
+                ClickType::C(c_type) | ClickType::CObjectPointer { c_type, .. } => {
+                    SpecValueType::Scalar(Some(c_type))
+                }
                 ClickType::Integer => SpecValueType::Integer,
                 ClickType::Parameter(_) => SpecValueType::Scalar(None),
             })
@@ -2509,6 +2526,18 @@ pub(in crate::surface) fn describe_click_type(click_type: &ClickType) -> String 
     match click_type {
         ClickType::Parameter(name) => name.clone(),
         ClickType::C(c_type) => describe_c0_type(*c_type),
+        ClickType::CObjectPointer {
+            c_type,
+            struct_name,
+        } => format!(
+            "struct {struct_name}{}",
+            "*".repeat(
+                describe_c0_type(*c_type)
+                    .chars()
+                    .filter(|ch| *ch == '*')
+                    .count()
+            )
+        ),
         ClickType::Integer => "Integer".to_string(),
         ClickType::Algebraic(application) => {
             if application.arguments.is_empty() {

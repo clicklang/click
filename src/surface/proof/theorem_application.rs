@@ -726,22 +726,61 @@ fn theorem_application_argument_type(
     context: &TheoremApplicationContext<'_>,
     spec_definitions: SpecDefinitions<'_>,
 ) -> Result<Option<ClickType>, String> {
+    if let Some(cast_type) = generics::explicit_cast_click_type(argument) {
+        return Ok(Some(cast_type));
+    }
+    // A call's declared/instantiated result is its logical type. A generic
+    // identity can preserve a pointer's original object evidence while its
+    // selected type is int32* or void*, just as an explicit cast can.
+    if let ContractExpression::Call { name, arguments } = argument
+        && let Some(function) = spec_definitions.functions.get(name)
+        && arguments.len() == function.parameters().len()
+    {
+        let return_type = if function.type_parameters().is_empty() {
+            function.return_type().clone()
+        } else {
+            let actual_types = arguments
+                .iter()
+                .map(|argument| {
+                    theorem_application_argument_type(
+                        argument,
+                        assumptions,
+                        context,
+                        spec_definitions,
+                    )
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            let substitution = generics::infer_type_substitution(
+                "function",
+                function.name(),
+                function.type_parameters(),
+                function
+                    .parameters()
+                    .iter()
+                    .map(|parameter| parameter.click_type().clone()),
+                actual_types,
+            )?;
+            generics::instantiate_click_type(function.return_type(), &substitution)?
+        };
+        return Ok(Some(
+            match (return_type.c_type(), function.return_object_class()) {
+                (Some(c_type), Some(class)) => ClickType::from_object_pointer_class(c_type, class),
+                _ => return_type,
+            },
+        ));
+    }
     match argument {
         ContractExpression::AlgebraicVariable { algebraic_type, .. }
         | ContractExpression::AlgebraicConstructor { algebraic_type, .. } => {
             return Ok(Some(ClickType::Algebraic(algebraic_type.clone())));
         }
         ContractExpression::CFragment(CExpression::Value(value)) => {
-            return Ok(Some(ClickType::C(generics::c0_type_from_kernel(
-                value.c_type(),
-            ))));
+            return Ok(Some(generics::click_type_from_c_value(value)));
         }
         ContractExpression::Binding(name)
         | ContractExpression::CFragment(CExpression::Variable(name)) => {
             if let Some(value) = context.values.get(name) {
-                return Ok(Some(ClickType::C(generics::c0_type_from_kernel(
-                    value.c_type(),
-                ))));
+                return Ok(Some(generics::click_type_from_c_value(value)));
             }
         }
         _ => {}
@@ -771,7 +810,7 @@ fn theorem_application_argument_type(
         spec_definitions,
         &active_functions,
     )
-    .map(|value| Some(ClickType::C(generics::c0_type_from_kernel(value.c_type()))))
+    .map(|value| Some(generics::click_type_from_c_value(&value)))
 }
 
 // Native arguments can contain checked Integer conversions. Lower them in
@@ -900,6 +939,13 @@ pub(super) fn theorem_application_bindings(
                         ClickType::Algebraic(expected),
                         crate::kernel::AlgebraicValueType::Parameter(name),
                     ) => expected.rigid && expected.name == *name,
+                    (
+                        expected @ ClickType::CObjectPointer { c_type, .. },
+                        crate::kernel::AlgebraicValueType::ObjectPointer(actual, class),
+                    ) => {
+                        c_type.to_kernel_type() == *actual
+                            && expected.pointer_object_class().as_ref() == Some(class)
+                    }
                     (
                         ClickType::C(expected),
                         crate::kernel::AlgebraicValueType::C(actual)

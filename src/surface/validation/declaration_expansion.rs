@@ -2962,7 +2962,9 @@ fn declared_resource_type_schema(
         .iter()
         .map(|(name, (index, ty))| {
             let ty = match ty {
-                ClickType::C(ty) => crate::kernel::ResourceFieldType::C(ty.to_kernel_type()),
+                ClickType::C(ty) | ClickType::CObjectPointer { c_type: ty, .. } => {
+                    crate::kernel::ResourceFieldType::C(ty.to_kernel_type())
+                }
                 ClickType::Integer => crate::kernel::ResourceFieldType::Integer,
                 _ => {
                     return Err(ClickError::new(

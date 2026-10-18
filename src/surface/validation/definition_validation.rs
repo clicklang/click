@@ -866,7 +866,7 @@ fn validate_contract_applications_in_proposition_one(
         } => {
             let mut variables = variables.clone();
             match c_type {
-                ClickType::C(c_type) => {
+                ClickType::C(c_type) | ClickType::CObjectPointer { c_type, .. } => {
                     variables.insert(name.clone(), *c_type);
                 }
                 ClickType::Integer => {

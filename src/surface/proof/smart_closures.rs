@@ -9968,7 +9968,7 @@ impl<'a> Proof<'a> {
             ClickType::Integer | ClickType::Algebraic(_) => {
                 ContractExpression::Binding(choice_name.clone())
             }
-            ClickType::C(_) => {
+            ClickType::C(_) | ClickType::CObjectPointer { .. } => {
                 ContractExpression::CFragment(CExpression::Variable(choice_name.clone()))
             }
             ClickType::Parameter(_) => return Ok(None),

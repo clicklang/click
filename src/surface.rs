@@ -798,6 +798,11 @@ pub enum ClickType {
     /// types when checking theorem declarations, before crossing into Kernel Click.
     Parameter(String),
     C(C0Type),
+    /// A C pointer type whose generic payload retains its declared struct.
+    CObjectPointer {
+        c_type: C0Type,
+        struct_name: String,
+    },
     /// An exact, specification-only signed integer with no C representation.
     Integer,
     Algebraic(AlgebraicTypeApplication),
@@ -807,7 +812,7 @@ impl ClickType {
     pub fn c_type(&self) -> Option<C0Type> {
         match self {
             Self::Parameter(_) => None,
-            Self::C(c_type) => Some(*c_type),
+            Self::C(c_type) | Self::CObjectPointer { c_type, .. } => Some(*c_type),
             Self::Integer => None,
             Self::Algebraic(_) => None,
         }
@@ -7510,7 +7515,7 @@ impl FunctionParameter {
             ClickType::Parameter(_) => {
                 panic!("a generic Click parameter has no concrete C type")
             }
-            ClickType::C(c_type) => *c_type,
+            ClickType::C(c_type) | ClickType::CObjectPointer { c_type, .. } => *c_type,
             ClickType::Integer => panic!("a mathematical Integer parameter has no C type"),
             ClickType::Algebraic(_) => {
                 panic!("an algebraic Click parameter has no C type")
@@ -7527,7 +7532,10 @@ impl FunctionParameter {
     }
 
     pub fn struct_name(&self) -> Option<&str> {
-        self.struct_name.as_deref()
+        self.struct_name.as_deref().or(match &self.click_type {
+            ClickType::CObjectPointer { struct_name, .. } => Some(struct_name.as_str()),
+            _ => None,
+        })
     }
 
     pub fn function_pointer_signature(&self) -> Option<&syntax::C0FunctionPointerSignature> {
