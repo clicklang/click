@@ -18,6 +18,21 @@ mod congruence;
 pub(super) mod constants;
 pub(super) use congruence::has_machine_operands;
 
+/// The producer distinguishes affine definitions from assumed equalities.
+/// Keep that distinction on each edge through iterative congruence closure.
+#[derive(Default)]
+struct PendingUnions(Vec<(u64, u64, bool)>);
+
+impl PendingUnions {
+    fn push(&mut self, (left, right): (u64, u64)) {
+        self.0.push((left, right, false));
+    }
+
+    fn push_definition(&mut self, (left, right): (u64, u64)) {
+        self.0.push((left, right, true));
+    }
+}
+
 #[cfg(test)]
 thread_local! {
     static POINTER_FACT_MERGE_VISITS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
@@ -885,7 +900,7 @@ impl TermClasses {
             .flatten()
     }
 
-    fn merge_address_offsets(&mut self, moved: u64, kept: u64, pending: &mut Vec<(u64, u64)>) {
+    fn merge_address_offsets(&mut self, moved: u64, kept: u64, pending: &mut PendingUnions) {
         let Some(moved_offsets) = self.offsets_by_address_block.get(&moved).cloned() else {
             return;
         };
@@ -1704,7 +1719,8 @@ impl TermClasses {
             let root = self.root(operand);
             if matches!(
                 application,
-                Application::UInt64Binary(..)
+                Application::Add(..)
+                    | Application::UInt64Binary(..)
                     | Application::Int32Add(..)
                     | Application::Int32Binary(..)
                     | Application::Int32Unary(..)
@@ -1723,9 +1739,9 @@ impl TermClasses {
                 self.weights.insert(root, self.weight(root) + 1);
             }
         }
-        let mut pending = Vec::new();
+        let mut pending = PendingUnions::default();
         self.reindex_application(id, &mut pending);
-        self.close(pending);
+        self.close_pending(pending);
     }
 
     fn retain_condition_truth(&mut self, id: u64, truth: u8) {
@@ -1738,7 +1754,7 @@ impl TermClasses {
         }
     }
 
-    fn reindex_application(&mut self, id: u64, pending: &mut Vec<(u64, u64)>) {
+    fn reindex_application(&mut self, id: u64, pending: &mut PendingUnions) {
         crate::instrumentation::record_deterministic_work(1);
         if let Some(old) = self.application_signatures.get(&id).copied()
             && self.signatures.get(&old) == Some(&id)
@@ -1786,6 +1802,19 @@ impl TermClasses {
         {
             let constant = self.intern_node(Node::Constant(bytes));
             pending.push((id, constant));
+        }
+        // PointerOffsetTerm removes zero addends at construction. Retain
+        // that identity when a selected scaled index learns zero later;
+        // parent-use indexing then reconnects the existing address and reads.
+        if let Application::Add(left, right) = signature
+            && let Some(zero) = self.nodes.get(&Node::Constant(0)).copied()
+        {
+            let zero = self.root(zero);
+            if left == zero {
+                pending.push_definition((id, right));
+            } else if right == zero {
+                pending.push_definition((id, left));
+            }
         }
         // Kernel int32 values are bitvectors. Folding their sum wraps at 32
         // bits, just like Bitvector32Term::as_const; C signed definedness is a
@@ -1881,12 +1910,24 @@ impl TermClasses {
 
     fn close_with_affine_definition(
         &mut self,
-        mut pending: Vec<(u64, u64)>,
-        mut affine_definition: bool,
+        pending: Vec<(u64, u64)>,
+        affine_definition: bool,
     ) -> bool {
+        let last = pending.len().checked_sub(1);
+        self.close_pending(PendingUnions(
+            pending
+                .into_iter()
+                .enumerate()
+                .map(|(index, (left, right))| {
+                    (left, right, affine_definition && Some(index) == last)
+                })
+                .collect(),
+        ))
+    }
+
+    fn close_pending(&mut self, mut pending: PendingUnions) -> bool {
         let mut changed = false;
-        while let Some((left, right)) = pending.pop() {
-            let definitional = std::mem::take(&mut affine_definition);
+        while let Some((left, right, definitional)) = pending.0.pop() {
             crate::instrumentation::record_deterministic_work(1);
             let mut kept = self.root(left);
             let mut moved = self.root(right);
@@ -1896,6 +1937,10 @@ impl TermClasses {
             if self.weight(kept) < self.weight(moved) {
                 std::mem::swap(&mut kept, &mut moved);
             }
+            let learns_offset_zero = self
+                .nodes
+                .get(&Node::Constant(0))
+                .is_some_and(|zero| self.root(*zero) == moved);
             let non_affine = (!definitional && !self.address_nodes.contains(&kept))
                 || self.non_affine_classes.contains(&kept)
                 || self.non_affine_classes.contains(&moved);
@@ -2034,6 +2079,19 @@ impl TermClasses {
                     kept_literal_uses = kept_literal_uses.with_value(*id);
                 }
                 self.constant_uses.insert(kept, kept_literal_uses);
+            }
+            // A zero literal joining the heavier offset class changes its
+            // value without changing that class's root. Revisit only its
+            // existing addition parents, just as scalar literal propagation
+            // revisits its selected constant uses.
+            if learns_offset_zero {
+                let additions = self.constant_uses.get(&kept).cloned().unwrap_or_default();
+                for id in additions.iter() {
+                    crate::instrumentation::record_deterministic_work(1);
+                    if matches!(self.applications.get(id), Some(Application::Add(..))) {
+                        self.reindex_application(*id, &mut pending);
+                    }
+                }
             }
             for id in moved_uses.iter() {
                 crate::instrumentation::record_deterministic_work(1);
