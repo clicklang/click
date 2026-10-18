@@ -1083,6 +1083,7 @@ struct node* unpack(struct node* node) {
     unfold(packed(node));
     execute();
     fold(packed(node));
+    assumption();
     arithmetic() using {
         aligned(result, 8);
         node->word == address(result) + (node->word & 1);
