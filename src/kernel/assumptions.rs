@@ -2175,6 +2175,9 @@ fn collect_cvalue_memory_loads(
             seen_integers,
         ),
 
+        CValue::Parameter(term) => {
+            collect_algebraic_memory_loads(term, current_memory, loads, seen_integers)
+        }
         CValue::Void => Ok(()),
         CValue::Bool(term) | CValue::UInt8(term) => collect_bitvector_memory_loads_with_width(
             term,

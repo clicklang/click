@@ -1083,13 +1083,27 @@ impl PureFactContext {
         None
     }
 
+    /// Whether written signed-order facts chain from `left` to `right`,
+    /// strictly when `require_strict`.
+    ///
+    /// A non-constant node's edges are read from the endpoint index
+    /// (`signed_order_bounds`), which files every written order fact under
+    /// its lower endpoint, so a walk costs the edges it follows rather than
+    /// every order fact at every node. Two matches no index key spells read
+    /// the order facts whose lower end has the node's shape, collected once
+    /// per walk: a constant node connects to any edge whose lower end is a
+    /// constant at least as large, and with extended bridging a load connects
+    /// to its forms at other snapshots.
     pub(in crate::kernel) fn has_exact_order_path(
         &self,
         left: &Bitvector32Term,
         right: &Bitvector32Term,
         require_strict: bool,
     ) -> bool {
-        let order_facts = self.condition_order_facts();
+        let bridging = crate::kernel::api::extended_dag_bridging_active();
+        // The order facts whose lower end is a constant or a load: the only
+        // edges a constant node, or a load under bridging, can take.
+        let mut shaped_edges = None;
         // Two forms of one load at different snapshots connect along
         // recorded memory-derivation edges; the walk is deterministic (exact
         // facts plus DAG edges, no ambient condition reasoning), so an exact
@@ -1097,7 +1111,7 @@ impl PureFactContext {
         // extended-bridging scope only. Non-loads still match verbatim.
         let terms_match = |current: &Bitvector32Term, other: &Bitvector32Term| {
             current == other
-                || crate::kernel::api::extended_dag_bridging_active()
+                || bridging
                     && crate::kernel::api::atomic_loads_equal_along_memory_derivations(
                         current, other, self,
                     )
@@ -1108,6 +1122,7 @@ impl PureFactContext {
             if !seen.insert((current.clone(), strict_so_far)) {
                 continue;
             }
+            crate::instrumentation::record_deterministic_work(1);
             let constant_connection = signed_bitvector_constant(&current)
                 .zip(signed_bitvector_constant(right))
                 .and_then(|(current, right)| (current <= right).then_some(current < right));
@@ -1116,17 +1131,47 @@ impl PureFactContext {
             {
                 return true;
             }
-            for (edge_left, edge_right, edge_strict) in order_facts.iter() {
-                let constant_connection = signed_bitvector_constant(&current)
-                    .zip(signed_bitvector_constant(edge_left))
-                    .and_then(|(current, edge_left)| {
-                        (current <= edge_left).then_some(current < edge_left)
-                    });
-                if terms_match(&current, edge_left) || constant_connection.is_some() {
-                    stack.push((
-                        edge_right.clone(),
-                        strict_so_far || *edge_strict || constant_connection == Some(true),
-                    ));
+            // Bridging relates two loads only (`atomic_memory_load_equality_evidence`).
+            let bridged_load = bridging && matches!(current, Bitvector32Term::MemoryLoad(..));
+            if bridged_load || signed_bitvector_constant(&current).is_some() {
+                let shaped_edges = shaped_edges.get_or_insert_with(|| {
+                    self.condition_order_facts()
+                        .iter()
+                        .filter(|(edge_left, _, _)| {
+                            crate::instrumentation::record_deterministic_work(1);
+                            matches!(
+                                edge_left,
+                                Bitvector32Term::Constant(_) | Bitvector32Term::MemoryLoad(..)
+                            )
+                        })
+                        .cloned()
+                        .collect::<Vec<_>>()
+                });
+                for (edge_left, edge_right, edge_strict) in shaped_edges.iter() {
+                    crate::instrumentation::record_deterministic_work(1);
+                    let constant_connection = signed_bitvector_constant(&current)
+                        .zip(signed_bitvector_constant(edge_left))
+                        .and_then(|(current, edge_left)| {
+                            (current <= edge_left).then_some(current < edge_left)
+                        });
+                    if terms_match(&current, edge_left) || constant_connection.is_some() {
+                        stack.push((
+                            edge_right.clone(),
+                            strict_so_far || *edge_strict || constant_connection == Some(true),
+                        ));
+                    }
+                }
+                continue;
+            }
+            let Some(bounds) = self.signed_order_bounds.get(&current) else {
+                continue;
+            };
+            for ((lower, upper, edge_strict, outgoing), _) in bounds.iter() {
+                crate::instrumentation::record_deterministic_work(1);
+                // Entries filed under a canonical alias carry the written
+                // lower end, which an exact walk does not match.
+                if *outgoing && *lower == current {
+                    stack.push((upper.clone(), strict_so_far || *edge_strict));
                 }
             }
         }
@@ -3381,6 +3426,145 @@ mod annotated_alignment_premise_tests {
                 .without_exact_fact(&Proposition::ConditionIs(bare, true))
                 .pointer_alignment_certificate_decision(&pointer, 4),
             None
+        );
+    }
+}
+
+#[cfg(test)]
+mod exact_order_path_tests {
+    use super::*;
+
+    fn var(index: u64) -> Bitvector32Term {
+        Bitvector32Term::Variable(Variable(986_500 + index))
+    }
+
+    /// The walk as it was before the endpoint index: every node scans every
+    /// order fact. The indexed walk must answer exactly as this does.
+    fn scanned_order_path(
+        context: &PureFactContext,
+        left: &Bitvector32Term,
+        right: &Bitvector32Term,
+        require_strict: bool,
+    ) -> bool {
+        let order_facts = context.condition_order_facts();
+        let mut stack = vec![(left.clone(), false)];
+        let mut seen = BTreeSet::new();
+        while let Some((current, strict_so_far)) = stack.pop() {
+            if !seen.insert((current.clone(), strict_so_far)) {
+                continue;
+            }
+            let constant_connection = signed_bitvector_constant(&current)
+                .zip(signed_bitvector_constant(right))
+                .and_then(|(current, right)| (current <= right).then_some(current < right));
+            if (&current == right || constant_connection.is_some())
+                && (!require_strict || strict_so_far || constant_connection == Some(true))
+            {
+                return true;
+            }
+            for (edge_left, edge_right, edge_strict) in order_facts.iter() {
+                let constant_connection = signed_bitvector_constant(&current)
+                    .zip(signed_bitvector_constant(edge_left))
+                    .and_then(|(current, edge_left)| {
+                        (current <= edge_left).then_some(current < edge_left)
+                    });
+                if &current == edge_left || constant_connection.is_some() {
+                    stack.push((
+                        edge_right.clone(),
+                        strict_so_far || *edge_strict || constant_connection == Some(true),
+                    ));
+                }
+            }
+        }
+        false
+    }
+
+    struct Terms(u64);
+    impl Terms {
+        fn next(&mut self) -> u64 {
+            self.0 = self
+                .0
+                .wrapping_mul(6_364_136_223_846_793_005)
+                .wrapping_add(1);
+            self.0 >> 33
+        }
+        fn term(&mut self) -> Bitvector32Term {
+            match self.next() % 5 {
+                0 => Bitvector32Term::Constant((self.next() % 5) as u32),
+                1 => Bitvector32Term::add(var(self.next() % 6), Bitvector32Term::Constant(1)),
+                // A sum whose canonical form differs from its spelling, so
+                // its facts are also filed under an alias key.
+                2 => Bitvector32Term::add(Bitvector32Term::Constant(1), var(self.next() % 6)),
+                _ => var(self.next() % 6),
+            }
+        }
+    }
+
+    #[test]
+    fn indexed_walk_agrees_with_scanning_every_order_fact() {
+        let _session = crate::kernel::VerificationSession::enter();
+        for seed in 0..30u64 {
+            let mut terms = Terms(seed + 1);
+            let mut context = PureFactContext::new();
+            for _ in 0..14 {
+                let (left, right) = (Box::new(terms.term()), Box::new(terms.term()));
+                let condition = match terms.next() % 4 {
+                    0 => ConditionTerm::Bitvector32SignedLessThan(left, right),
+                    1 => ConditionTerm::Bitvector32SignedLessEqual(left, right),
+                    2 => ConditionTerm::Bitvector32SignedGreaterThan(left, right),
+                    _ => ConditionTerm::Bitvector32SignedGreaterEqual(left, right),
+                };
+                context = context.assume_condition(condition, !terms.next().is_multiple_of(3));
+            }
+            for _ in 0..40 {
+                let (left, right) = (terms.term(), terms.term());
+                let strict = terms.next().is_multiple_of(2);
+                assert_eq!(
+                    context.has_exact_order_path(&left, &right, strict),
+                    scanned_order_path(&context, &left, &right, strict),
+                    "seed {seed}: {left:?} to {right:?}, strict {strict}"
+                );
+            }
+        }
+    }
+
+    /// An order chain of fixed length beside many unrelated order facts:
+    /// the walk follows the chain's edges only.
+    #[test]
+    fn exact_order_path_ignores_unrelated_order_facts() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let work_beside = |unrelated: u64| {
+            let mut context = PureFactContext::new();
+            for index in 0..8 {
+                context = context.assume_condition(
+                    ConditionTerm::Bitvector32SignedLessThan(
+                        Box::new(var(index)),
+                        Box::new(var(index + 1)),
+                    ),
+                    true,
+                );
+            }
+            for index in 0..unrelated {
+                context = context.assume_condition(
+                    ConditionTerm::Bitvector32SignedLessThan(
+                        Box::new(var(1_000 + 2 * index)),
+                        Box::new(var(1_001 + 2 * index)),
+                    ),
+                    true,
+                );
+            }
+            let (found, work) = crate::instrumentation::measure_deterministic_work(|| {
+                context.has_exact_order_path(&var(0), &var(8), true)
+            });
+            assert!(found);
+            work
+        };
+        let small = work_beside(16);
+        let large = work_beside(1_024);
+        // The walk charges the nodes and edges it visits.
+        assert!(small > 0);
+        assert_eq!(
+            large, small,
+            "the walk cost {large} beside 1,024 facts and {small} beside 16"
         );
     }
 }

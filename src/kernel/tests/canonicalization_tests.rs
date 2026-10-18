@@ -22,7 +22,7 @@ fn collect_offset_load_variables_from_value(
 ) {
     match value.numeric_value() {
         CValue::PointerInteger(_) => unreachable!("numeric projection"),
-        CValue::Void => {}
+        CValue::Void | CValue::Parameter(_) => {}
         crate::kernel::arithmetic_c_value!(term) => {
             collect_offset_load_variables_from_term(term, load_variables);
         }

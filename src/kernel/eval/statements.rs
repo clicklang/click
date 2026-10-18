@@ -1527,6 +1527,7 @@ fn allocation_size_value(value: CValue, assumptions: &PureFactContext) -> Option
         | CValue::UInt128(_)
         | CValue::Void
         | CValue::Pointer(_)
+        | CValue::Parameter(_)
         | CValue::Float32(_)
         | CValue::Float64(_) => None,
     }
@@ -4762,6 +4763,8 @@ pub(in crate::kernel) fn declare_local(
     register_block_alignment(&pointer.block, c_type.abi_alignment());
     let byte_width = match c_type {
         CType::Int128 | CType::UInt128 => 16,
+        // An abstract value's object has no width to allocate yet.
+        CType::Parameter(_) => return Err(CRuntimeError::TypeMismatch),
         CType::Void => unreachable!("void local objects are not supported"),
         CType::Bool => 1,
         CType::VoidPointer | CType::VoidPointerPointer => C_POINTER_BYTE_WIDTH,

@@ -1123,6 +1123,10 @@ impl DiagnosticNaming {
 fn diagnostic_value_variable(value: &CValue) -> Option<Variable> {
     match value.numeric_value() {
         CValue::PointerInteger(_) => unreachable!("numeric projection"),
+        CValue::Parameter(term) => match term.node {
+            crate::kernel::AlgebraicTermNode::Variable(variable) => Some(variable),
+            _ => None,
+        },
         crate::kernel::arithmetic_c_value!(term) => match term {
             Bitvector32Term::Variable(variable) => Some(*variable),
             _ => None,
@@ -1951,6 +1955,10 @@ type OpenBranch = ProofBranch<Obligation, ExecutionProofState>;
 #[derive(Clone, Default)]
 pub(in crate::surface::proof) struct PropositionPresentation {
     pub(in crate::surface::proof) surface: Option<Arc<ClickProposition>>,
+    /// The producer synthesized this display for an existing kernel goal.
+    /// Its logical children may keep their kernel goals without a spelling;
+    /// a user-written claim still requires exact presentation correspondence.
+    pub(in crate::surface::proof) generated_surface: bool,
     /// Surface names introduced while refining this exact proposition goal.
     /// Universal binders are goal-local: sibling goals share the persistent
     /// map root at a split, then refine independently without leaking names.
@@ -2471,6 +2479,7 @@ impl<'a> Proof<'a> {
             Some(Obligation::Proposition(goal)) => PropositionPresentation {
                 surface: surface.map(Arc::new),
                 surface_bindings: goal.surface_bindings.clone(),
+                generated_surface: goal.generated_surface,
                 introductions: GoalIntroductions::default(),
                 introduced_antecedents: goal.introduced_antecedents.clone(),
                 both_children: None,
@@ -3344,3 +3353,6 @@ pub(in crate::surface) use outcomes_and_focus::take_outcome_fact_reads;
 pub(in crate::surface) fn take_terminal_publication_visits() -> (usize, usize) {
     TERMINAL_PUBLICATION_VISITS.with(|counts| counts.replace((0, 0)))
 }
+
+#[cfg(test)]
+mod authority_control_tests;

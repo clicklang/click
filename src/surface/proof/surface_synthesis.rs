@@ -3522,7 +3522,11 @@ fn synthesize_local_struct_pointer_field(
                 | CValue::UInt64(value)
                 | CValue::Int128(value)
                 | CValue::UInt128(value) => value,
-                CValue::Pointer(_) | CValue::Void | CValue::Float32(_) | CValue::Float64(_) => {
+                CValue::Pointer(_)
+                | CValue::Parameter(_)
+                | CValue::Void
+                | CValue::Float32(_)
+                | CValue::Float64(_) => {
                     continue;
                 }
             };
@@ -3597,6 +3601,7 @@ fn synthesize_local_aggregate_field(
                         | CValue::Int128(value)
                         | CValue::UInt128(value) => value,
                         CValue::Pointer(_)
+                        | CValue::Parameter(_)
                         | CValue::Void
                         | CValue::Float32(_)
                         | CValue::Float64(_) => return None,

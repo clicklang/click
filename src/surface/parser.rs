@@ -800,6 +800,9 @@ struct Parser {
     /// trait bounds, `T` of `<T: traits::Shape>`: a reference to one is a
     /// reference to a value of a type the function does not know.
     rust_trait_type_parameters: BTreeSet<String>,
+    /// The type parameters of the generic `trait` block being read, `T` of
+    /// `trait p::Scale<T>`: a value of one is an abstract value.
+    rust_abstract_type_parameters: BTreeSet<String>,
     /// Each crate trait method implementation read, by name, with the
     /// interface it inherits.
     rust_trait_implementations: Vec<(String, String)>,
@@ -1309,6 +1312,7 @@ impl Parser {
             rust_impl_trait: None,
             rust_trait_interface: None,
             rust_trait_type_parameters: BTreeSet::new(),
+            rust_abstract_type_parameters: BTreeSet::new(),
             rust_trait_implementations: Vec::new(),
             cpp_dispatches: Vec::new(),
             cpp_receiver_calls: BTreeMap::new(),
@@ -9464,6 +9468,12 @@ impl Parser {
                 ProofTactic::ConstructResource(resource)
             }
             "induct" => return self.parse_induct_proof_tactic(),
+            // `auto();` closes every goal still open in its block, as the
+            // closer an omitted one stands for does.
+            "auto" => {
+                self.expect_empty_tactic_args(&name)?;
+                ProofTactic::AutoClose
+            }
             _ if is_tactic_name(&name) => {
                 return Err(self.error(format!(
                     "`{name}` is only available as a standalone smart tactic; use `by {name}();`"

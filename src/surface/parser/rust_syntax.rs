@@ -368,15 +368,28 @@ impl Parser {
         }
         let arguments = self.parse_rust_type_arguments()?;
         let interface = trait_instance_name(&path, &arguments);
-        // A generic trait's blocks are written out at each instance before
-        // any block is read.
-        if arguments.iter().any(|argument| {
-            !super::rust_generic_traits::INSTANCE_SCALARS.contains(&argument.as_str())
-        }) {
+        // A block naming the trait's type parameters is the generic block,
+        // read once with each parameter an abstract type; one naming scalar
+        // types is an instance's. The token pass has written each instance
+        // out already.
+        let scalars = arguments
+            .iter()
+            .filter(|argument| {
+                super::rust_generic_traits::INSTANCE_SCALARS.contains(&argument.as_str())
+            })
+            .count();
+        if scalars != 0 && scalars != arguments.len() {
             return Err(self.error(
-                "a generic crate trait's block is read at each instance the import declares",
+                "a crate trait's `trait` block names its type parameters, `trait crate_name::Scale<T>`, or an instance's scalar types, `trait crate_name::Scale<i32>`",
             ));
         }
+        let abstract_parameters = if scalars == 0 {
+            arguments.iter().cloned().collect()
+        } else {
+            BTreeSet::new()
+        };
+        let previous_abstract =
+            std::mem::replace(&mut self.rust_abstract_type_parameters, abstract_parameters);
         self.expect(Token::LBrace)?;
         let previous = self.rust_trait_interface.replace(interface);
         let mut result = Ok(());
@@ -412,6 +425,7 @@ impl Parser {
             }
         }
         self.rust_trait_interface = previous;
+        self.rust_abstract_type_parameters = previous_abstract;
         result?;
         self.expect(Token::RBrace)?;
         Ok(())
@@ -919,6 +933,14 @@ impl Parser {
             return Err(self.error(
                 "an array or slice passed by value in a `fn` signature is not supported; the Rust importer refuses it",
             ));
+        }
+        if let Some(name) = self.peek_ident()
+            && self.rust_abstract_type_parameters.contains(name)
+            && self.peek_next() != Some(&Token::ColonColon)
+        {
+            let parameter = crate::kernel::TypeParameterName::intern(name);
+            self.position += 1;
+            return Ok(scalar(C0Type::Parameter(parameter)));
         }
         let spelling = self.expect_rust_path_name("type")?;
         Ok(match rust_scalar_type(&spelling) {

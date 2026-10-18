@@ -4519,6 +4519,7 @@ fn materialized_cell_source(cell_pointer: &Pointer, value: &CValue) -> Option<Sh
             }
             index.as_ref()
         }
+        CValue::Parameter(_) => return None,
         CValue::Void | CValue::UInt32(_) => return None,
     };
     let load = match bits {

@@ -2431,7 +2431,8 @@ impl RankingMachineTerm {
             | CValue::Void
             | CValue::Float32(_)
             | CValue::Float64(_)
-            | CValue::Pointer(_) => return None,
+            | CValue::Pointer(_)
+            | CValue::Parameter(_) => return None,
         };
         Some(Self {
             machine_type,

@@ -63,7 +63,7 @@ impl CarrierWidth {
             | CValue::Float32(_) => Self::Bits32,
             CValue::Int64(_) | CValue::UInt64(_) | CValue::Float64(_) => Self::Bits64,
             CValue::Int128(_) | CValue::UInt128(_) => Self::Bits128,
-            CValue::Void | CValue::Pointer(_) => return None,
+            CValue::Void | CValue::Pointer(_) | CValue::Parameter(_) => return None,
         })
     }
 }
@@ -309,7 +309,7 @@ pub(crate) fn value_width_mismatch(value: &CValue) -> Option<WidthMismatch> {
     let expected = CarrierWidth::of_value(value)?;
     let term = match value.numeric_value() {
         CValue::PointerInteger(_) => unreachable!("numeric projection"),
-        CValue::Void | CValue::Pointer(_) => return None,
+        CValue::Void | CValue::Pointer(_) | CValue::Parameter(_) => return None,
         CValue::Bool(term)
         | CValue::Int8(term)
         | CValue::Int16(term)
@@ -398,7 +398,7 @@ fn value_site(value: &CValue) -> &'static str {
         CValue::UInt128(_) => "CValue::UInt128",
         CValue::Float32(_) => "CValue::Float32",
         CValue::Float64(_) => "CValue::Float64",
-        CValue::Void | CValue::Pointer(_) => "CValue",
+        CValue::Void | CValue::Pointer(_) | CValue::Parameter(_) => "CValue",
     }
 }
 

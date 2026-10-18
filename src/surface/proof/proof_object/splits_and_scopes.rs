@@ -247,6 +247,19 @@ impl<'a> Proof<'a> {
                     },
                 ]);
             }
+            // Refinement obligations are assembled by the kernel producer.
+            // A generated child can lower to a reduced form (for example a
+            // reflexive address comparison becomes true). Keep matching
+            // spellings and let unspelled children retain their kernel goals.
+            if self
+                .proposition_obligation()
+                .is_some_and(|goal| goal.generated_surface)
+            {
+                return Ok(children.map(|surface| CheckedBothSurfaceChild {
+                    surface,
+                    introductions: None,
+                }));
+            }
             // A synthesized bundle form that does not mean the goal is a
             // spelling miss, not a written claim; spell the members alone.
             if self.goal_is_synthesized_bundle() {

@@ -2353,6 +2353,7 @@ pub(in crate::kernel) fn pointer_index_term(
         | CValue::UInt128(_)
         | CValue::Void
         | CValue::Pointer(_)
+        | CValue::Parameter(_)
         | CValue::Float32(_)
         | CValue::Float64(_) => None,
     }
@@ -3790,6 +3791,7 @@ fn promote_c_shift_count(value: CValue) -> Option<(Bitvector32Term, bool, bool)>
         | CValue::UInt128(_)
         | CValue::Void
         | CValue::Pointer(_)
+        | CValue::Parameter(_)
         | CValue::Float32(_)
         | CValue::Float64(_) => None,
     }
@@ -3900,6 +3902,7 @@ pub(in crate::kernel) fn apply_c_shift_left(
         | CValue::UInt128(_)
         | CValue::Void
         | CValue::Pointer(_)
+        | CValue::Parameter(_)
         | CValue::Float32(_)
         | CValue::Float64(_) => {
             vec![c_type_mismatch_expression_path(facts, obligations)]
@@ -4052,6 +4055,7 @@ pub(in crate::kernel) fn apply_c_shift_right(
         | CValue::UInt128(_)
         | CValue::Void
         | CValue::Pointer(_)
+        | CValue::Parameter(_)
         | CValue::Float32(_)
         | CValue::Float64(_) => {
             vec![c_type_mismatch_expression_path(facts, obligations)]
@@ -4600,6 +4604,26 @@ fn apply_c_equality(
     assumptions: &PureFactContext,
 ) -> Vec<CExpressionPath> {
     let negated = operator == CComparisonOperator::NotEqual;
+    // Two values of one abstract type are equal exactly when the values of
+    // that rigid type they are are; a value of an abstract type compares
+    // with nothing else.
+    match (&left, &right) {
+        (CValue::Parameter(left), CValue::Parameter(right))
+            if left.algebraic_type == right.algebraic_type =>
+        {
+            return condition_as_c_int32_paths_valued(
+                ConditionTerm::AlgebraicEqual(left.clone(), right.clone()),
+                facts,
+                obligations,
+                assumptions,
+                negated,
+            );
+        }
+        (CValue::Parameter(_), _) | (_, CValue::Parameter(_)) => {
+            return vec![c_type_mismatch_expression_path(facts, obligations)];
+        }
+        _ => {}
+    }
     if matches!(left, CValue::Int128(_) | CValue::UInt128(_))
         || matches!(right, CValue::Int128(_) | CValue::UInt128(_))
     {

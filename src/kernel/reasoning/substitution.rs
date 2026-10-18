@@ -2464,6 +2464,7 @@ fn collect_c_value_bound_variables(value: &CValue, variables: &mut BTreeSet<Vari
                 collect_pointer_bound_variables(address, variables);
             }
         }
+        CValue::Parameter(term) => collect_algebraic_bound_variables(term, variables),
         CValue::Void => {}
     }
 }
@@ -5734,6 +5735,9 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_c_value(
                     .map_pointers(|p| substitute_bitvector_variable_in_pointer(p, from, to)),
             ),
         }),
+        CValue::Parameter(term) => CValue::Parameter(Box::new(
+            substitute_bitvector_variable_in_algebraic_term(term, from, to),
+        )),
         CValue::Void => CValue::Void,
         CValue::Bool(bits) => CValue::Bool(substitute_bitvector_variable(bits, from, to)),
         CValue::Int8(bits) => int8(substitute_bitvector_variable(bits, from, to)),

@@ -2052,6 +2052,7 @@ impl Printer<'_> {
         };
         match value.numeric_value() {
             CValue::PointerInteger(_) => unreachable!("numeric projection"),
+            CValue::Parameter(term) => self.algebraic(term, depth),
             CValue::Void => Some(atom("void")),
             CValue::Bool(Bitvector32Term::Constant(0)) => Some(atom("false")),
             CValue::Bool(Bitvector32Term::Constant(1)) => Some(atom("true")),

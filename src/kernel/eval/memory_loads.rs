@@ -4011,6 +4011,8 @@ pub(in crate::kernel) fn symbolic_load_value_unrecorded(
         CType::Int128 | CType::UInt128 => {
             memory.symbolic_wide_integer_load(pointer, MachineIntegerType::from_c_type(value_type)?)
         }
+        // An abstract value has no cells of its own (yet).
+        CType::Parameter(_) => None,
         CType::Void | CType::VoidPointer => None,
         CType::Bool => {
             let load = Bitvector32Term::MemoryLoad(

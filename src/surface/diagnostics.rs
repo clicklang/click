@@ -4924,6 +4924,7 @@ pub(super) fn diagnostic_parameter_element_width(parameter: &syntax::C0Parameter
     }
     match parameter.c_type() {
         C0Type::Int128 | C0Type::UInt128 | C0Type::Int128Array(_) | C0Type::UInt128Array(_) => 16,
+        C0Type::Parameter(_) => 0,
         C0Type::Void => 0,
         C0Type::Bool => 1,
         C0Type::VoidPointer | C0Type::VoidPointerPointer => 8,
@@ -5082,6 +5083,7 @@ fn typed_literal_spelling(spelled: String, suffix: &str) -> String {
 pub(super) fn describe_c_value(value: &CValue, parameter_binding: ParameterBinding<'_>) -> String {
     match value.numeric_value() {
         CValue::PointerInteger(_) => unreachable!("numeric projection"),
+        CValue::Parameter(term) => format!("{term:?}"),
         CValue::Void => "void".to_string(),
         CValue::Bool(Bitvector32Term::Constant(0)) => "false".to_string(),
         CValue::Bool(Bitvector32Term::Constant(1)) => "true".to_string(),
@@ -5403,6 +5405,7 @@ pub(super) fn describe_c_expression(expression: &CExpression) -> String {
             let name = match value_type {
                 CType::Int128 => "load_int128",
                 CType::UInt128 => "load_uint128",
+                CType::Parameter(_) => "load_parameter",
                 CType::Void => "load_void",
                 CType::Bool => "load_bool",
                 CType::VoidPointer => "load_void_pointer",

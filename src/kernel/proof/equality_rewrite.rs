@@ -690,6 +690,11 @@ fn rewrite_atomic_proposition_by_exact_equality(
                 )),
                 pointer: Box::new(record.pointer.map_addresses(rewrite_pointer)),
             }),
+            CValue::Parameter(term) => CValue::Parameter(Box::new(rewrite_algebraic(
+                term,
+                rewrite_term,
+                rewrite_pointer,
+            ))),
             CValue::Void => CValue::Void,
             CValue::Bool(term) => CValue::Bool(rewrite_term(term)),
             CValue::Int8(term) => CValue::Int8(rewrite_term(term)),
