@@ -30,6 +30,23 @@ fn scalar_induction_keeps_integer_parameters_and_their_guards() {
     assert!(verify_click_theorems(&wrong_result).is_err());
 }
 
+#[test]
+fn arithmetic_after_fold_rewrites_expands_and_rechecks() {
+    let (source, _) = mdtest_sources("mdtests/pure_arithmetic_retains_a_rewritten_fold_goal.md");
+    let position = expansion::position_at_offset(&source, source.rfind("arithmetic()").unwrap());
+    let expanded =
+        expand_c0_tactic_source_at(&source, &[], position.line, position.column).unwrap();
+    assert!(expanded.contains("arithmetic_certificate"), "{expanded}");
+    verify_click_theorems(&expanded).unwrap();
+    let invalid = expanded.replacen(
+        "ensures full_width_count(n) == to_integer(n)",
+        "ensures full_width_count(n) == to_integer(n) + 1",
+        1,
+    );
+    assert_ne!(invalid, expanded);
+    assert!(verify_click_theorems(&invalid).is_err());
+}
+
 fn check_member_pointer_address_expansion(fixture: &str, function: &str) {
     let (source, sources) = mdtest_sources(&format!("mdtests/{fixture}.md"));
     let sources = sources

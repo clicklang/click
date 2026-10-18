@@ -1609,6 +1609,17 @@ retain the existing behavior. Connected pointer-alias regressions at 8, 16,
 The native-prefix fixture also checks that redundant bounds cannot crowd out
 the source view and its necessary coverage bound.
 
+### Pure arithmetic after goal refinements
+
+Pure arithmetic can reconstruct a source goal after `peel` or `rewrite`
+has discarded its syntactic template. Each pure proof root builds an indexed
+state of its native parameters and a map of mathematical binder names;
+successors share these values. Reconstruction visits the current goal and
+queries those indexes, rather than rebuilding the parameter environment for
+each arithmetic step. The ordinary explicit certificate operation checks the
+result against the current kernel goal. Scaling coverage varies unrelated
+parameters at 0, 4, 16, and 64 beside the same refined arithmetic step.
+
 ### Native read alignment and theorem premise spelling
 
 A read of a held native range uses the address graph's retained wide-index

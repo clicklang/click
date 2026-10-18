@@ -1384,10 +1384,25 @@ impl<'a> Proof<'a> {
                 )));
             }
         }
+        // A checked rewrite can outlive its syntactic goal template. Recover
+        // the arithmetic claim from the actual goal and the root's indexed
+        // parameter values, without scanning parameters at every step.
+        let synthesized_goal = self.surface_goal().is_none().then(|| {
+            let ProofContext::Pure(context) = self.context.as_ref() else {
+                return None;
+            };
+            crate::surface::proof::surface_synthesis::synthesize_surface_proposition_with_bound_variable_names(
+                self.goal()?,
+                ParameterBinding::new(&[], &[]),
+                &context.source_state,
+                &context.source_names,
+            )
+        }).flatten();
+        let surface_goal = self.surface_goal().or(synthesized_goal.as_ref());
         if let Some(goal) = self.goal()
             && let Some(plan) =
                 crate::surface::checking::plan_special_arithmetic_certificate(goal, &premises)
-            && let Some(surface_goal) = self.surface_goal()
+            && let Some(surface_goal) = surface_goal
         {
             let pairs = premises
                 .iter()
@@ -1408,7 +1423,7 @@ impl<'a> Proof<'a> {
             }
         }
         if let Some(goal) = self.goal()
-            && let Some(surface_goal) = self.surface_goal()
+            && let Some(surface_goal) = surface_goal
             && let Some(plan) =
                 crate::surface::checking::plan_integer_affine_certificate(goal, &premises)
         {
@@ -1434,7 +1449,7 @@ impl<'a> Proof<'a> {
                     goal, &premises,
                 )
         {
-            let surface_goal = self.surface_goal().cloned().or_else(|| {
+            let surface_goal = surface_goal.cloned().or_else(|| {
                 let context = self.execution_context()?;
                 let execution = self.execution()?;
                 crate::surface::proof::surface_synthesis::synthesize_surface_proposition(

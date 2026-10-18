@@ -2175,6 +2175,9 @@ fn synthesize_surface_integer(
             )))
         }
         IntegerTerm::Constant(value) => ContractExpression::IntegerLiteral(value.to_string()),
+        IntegerTerm::Variable(variable) => {
+            ContractExpression::Binding(bound_variables.get(variable)?.clone())
+        }
         IntegerTerm::Machine(machine) => ContractExpression::Call {
             name: "to_integer".into(),
             arguments: vec![synthesize_surface_bitvector(

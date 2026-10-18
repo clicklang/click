@@ -1639,3 +1639,183 @@ fn indexed_rewrite_does_not_spell_registered_read_definitions() {
         "registered definition filtering exceeded input growth: {samples:?}"
     );
 }
+
+#[test]
+fn current_scalar_premise_spelling_ignores_unrelated_recorded_snapshots() {
+    let predicates = PredicateEnvironment::new(&[]);
+    let functions = ClickFunctionEnvironment::new(&[]);
+    let theorems = TheoremEnvironment::new(&[]);
+    let before = Bitvector32Term::Variable(Variable(8_179_500));
+    let now = Bitvector32Term::Variable(Variable(8_179_501));
+    let entry = CState::new().with_local("value", CValue::Int32(before.clone()));
+    let state = CState::new().with_local("value", CValue::Int32(now.clone()));
+    let equal_zero = |value| {
+        Proposition::ConditionIs(
+            ConditionTerm::Bitvector32Equal(
+                Box::new(value),
+                Box::new(Bitvector32Term::Constant(0)),
+            ),
+            true,
+        )
+    };
+    let current = equal_zero(now);
+    let old = equal_zero(before);
+    let facts = vec![current.clone(), old.clone()];
+    let surfaces = SurfacePropositionMap::default();
+    let mut samples = Vec::new();
+    for size in [16usize, 64, 256] {
+        let mut snapshots = RecordedSnapshots::new();
+        for index in 0..size {
+            snapshots.insert(
+                ProgramPointRef {
+                    region: CodeRegionRef::Statement(index),
+                    kind: ProgramPointKind::Entry,
+                },
+                entry.clone(),
+            );
+        }
+        let anchor = ProgramPointRef {
+            region: CodeRegionRef::Statement(size - 1),
+            kind: ProgramPointKind::Entry,
+        };
+        let root = Proof::for_fixed_state_goal_with_requirements(
+            "current scalar premise",
+            0,
+            &facts,
+            Proposition::ConditionIs(ConditionTerm::Constant(true), true),
+            ParameterBinding::default(),
+            FixedStateFrame::new(&entry, &state, None, &snapshots),
+            Some(&anchor),
+            &surfaces,
+            SpecDefinitions::new(&predicates, &functions),
+            &theorems,
+            &[],
+            &[],
+            &[],
+        );
+        let (surface, work) = crate::instrumentation::measure_deterministic_work(|| {
+            root.available_surface_fact(&surfaces, Some(&anchor), &current)
+        });
+        let surface = surface.expect("the current state names this selected fact");
+        assert!(!proposition_contains_at_expression(&surface));
+        assert!(!proposition_contains_old_expression(&surface));
+        assert_eq!(
+            root.lower_surface_proposition_direct(&surface, "current premise control")
+                .unwrap(),
+            current
+        );
+        // The same name has another value at entry. Its older fact must keep
+        // that state instead of being reinterpreted as the current value.
+        let old_surface = root
+            .available_surface_fact(&surfaces, Some(&anchor), &old)
+            .expect("the entry state names the older selected fact");
+        assert!(
+            proposition_contains_at_expression(&old_surface)
+                || proposition_contains_old_expression(&old_surface)
+        );
+        assert_eq!(
+            root.lower_surface_proposition_direct(&old_surface, "old premise control")
+                .unwrap(),
+            old
+        );
+        samples.push(work);
+    }
+    assert!(
+        samples.iter().all(|work| *work <= samples[0] + 64),
+        "current premise spelling searched unrelated snapshots: {samples:?}"
+    );
+}
+
+#[test]
+fn mixed_entry_and_current_premise_spelling_ignores_unrelated_snapshots() {
+    let predicates = PredicateEnvironment::new(&[]);
+    let functions = ClickFunctionEnvironment::new(&[]);
+    let theorems = TheoremEnvironment::new(&[]);
+    let pointer = Pointer {
+        block: crate::kernel::PointerBlock::Concrete("mixed-premise".into()),
+        offset: PointerOffsetTerm::Constant(0),
+    };
+    let entry = CState::new()
+        .with_memory(CMemory::new().with_block("mixed-premise", 4))
+        .with_local(
+            "p",
+            CValue::typed_pointer(pointer.clone(), CType::UInt32Pointer),
+        )
+        .with_local(
+            "now",
+            CValue::UInt32(Bitvector32Term::Variable(Variable(8_179_510))),
+        );
+    let state = entry
+        .clone()
+        .with_memory(
+            entry
+                .memory()
+                .clone()
+                .store(pointer, CValue::UInt32(Bitvector32Term::Constant(5))),
+        )
+        .with_local(
+            "now",
+            CValue::UInt32(Bitvector32Term::Variable(Variable(8_179_511))),
+        );
+    let fixture = crate::surface::parse("theorem mixed(p: uint32*, now: uint32) { requires now == old(p[0]) % 7u32; ensures true; }").unwrap();
+    let surface = fixture.theorem_definitions()[0].requires[0]
+        .proposition()
+        .unwrap();
+    let surfaces = SurfacePropositionMap::default();
+    let mut samples = Vec::new();
+    for size in [16usize, 64, 256] {
+        let mut snapshots = RecordedSnapshots::new();
+        for index in 0..size {
+            snapshots.insert(
+                ProgramPointRef {
+                    region: CodeRegionRef::Statement(index),
+                    kind: ProgramPointKind::Entry,
+                },
+                entry.clone(),
+            );
+        }
+        let anchor = ProgramPointRef {
+            region: CodeRegionRef::Statement(size - 1),
+            kind: ProgramPointKind::Entry,
+        };
+        let kernel = lower_fixed_state_proposition_with_assumptions(
+            surface,
+            &PureFactContext::new(),
+            ParameterBinding::default(),
+            FixedStateFrame::new(&entry, &state, None, &snapshots),
+            SpecDefinitions::new(&predicates, &functions),
+        )
+        .unwrap();
+        let facts = [kernel.clone()];
+        let root = Proof::for_fixed_state_goal_with_requirements(
+            "mixed entry/current premise",
+            0,
+            &facts,
+            Proposition::ConditionIs(ConditionTerm::Constant(true), true),
+            ParameterBinding::default(),
+            FixedStateFrame::new(&entry, &state, None, &snapshots),
+            Some(&anchor),
+            &surfaces,
+            SpecDefinitions::new(&predicates, &functions),
+            &theorems,
+            &[],
+            &[],
+            &[],
+        );
+        let (spelled, work) = crate::instrumentation::measure_deterministic_work(|| {
+            root.available_surface_fact(&surfaces, Some(&anchor), &kernel)
+        });
+        let spelled = spelled.expect("entry and current states together name this fact");
+        assert!(proposition_contains_old_expression(&spelled));
+        assert_eq!(
+            root.lower_surface_proposition_direct(&spelled, "mixed premise control")
+                .unwrap(),
+            kernel
+        );
+        samples.push(work);
+    }
+    assert!(
+        samples.iter().all(|work| *work <= samples[0] + 64),
+        "mixed premise spelling searched unrelated history: {samples:?}"
+    );
+}
