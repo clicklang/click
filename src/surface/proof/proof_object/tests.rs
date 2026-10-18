@@ -5774,6 +5774,27 @@ fn fixed_state_transport_can_follow_another_checked_step() {
         });
         assert!(rejected.is_err());
         assert!(refined.state.shares_state_with(&retained_refined.state));
+        if size == 16 {
+            assert!(
+                refined
+                    .try_fixed_state_fact_transport(&source, &missing, std::iter::empty())
+                    .expect("an ordinary optional transport miss is not a proof error")
+                    .is_none()
+            );
+            assert!(
+                crate::instrumentation::with_deadline(std::time::Duration::ZERO, || {
+                    refined.try_fixed_state_fact_transport(&source, &missing, std::iter::empty())
+                })
+                .is_err(),
+                "an interrupted search must not become an ordinary miss"
+            );
+            let searched = refined
+                .try_fixed_state_fact_transport(&source, &source, std::iter::empty())
+                .expect("the optional transport search should run")
+                .expect("the available source should transport");
+            assert_eq!(searched.certificate().steps().len(), 2);
+            assert!(refined.state.shares_state_with(&retained_refined.state));
+        }
 
         let transport = ProofStep::TransportUsing {
             source: source.clone(),

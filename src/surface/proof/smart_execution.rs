@@ -167,12 +167,12 @@ impl<'a> Proof<'a> {
     /// to this immutable root. Failed descendants are discarded; the
     /// returned `Proof` is the already-checked, deletion-minimized success,
     /// so callers never reconstruct or check the selected certificate.
-    pub(in crate::surface::proof) fn search_fixed_state_fact_transport(
+    pub(in crate::surface::proof) fn try_fixed_state_fact_transport(
         &self,
         source: &ClickProposition,
         target: &ClickProposition,
         candidates: impl IntoIterator<Item = ClickProposition>,
-    ) -> Result<Self, ClickError> {
+    ) -> Result<Option<Self>, ClickError> {
         let result_aware = matches!(self.context.as_ref(), ProofContext::FixedState(_))
             || self.focused_outcome_data().is_some()
             || self.execution_proposition_fixed_state_view().is_some();
@@ -181,12 +181,7 @@ impl<'a> Proof<'a> {
                 "fact-transport search requires a fixed-state proof, focused outcome goal, or execution proposition scope",
             ));
         }
-        self.search_fact_transport_from_candidates(
-            source,
-            target,
-            candidates,
-            "post-execution fact transport",
-        )
+        self.try_fact_transport_from_candidates(source, target, candidates)
     }
 
     /// Plans one explicit transport for a proposition scope borrowing an
@@ -315,26 +310,21 @@ impl<'a> Proof<'a> {
         }
     }
 
-    pub(super) fn search_fact_transport_from_candidates(
+    /// Ordinary search misses carry no outer diagnostic: smart callers
+    /// discard them. The checked candidate refusals remain available to
+    /// the execution planner that needs to report a written operation.
+    pub(super) fn try_fact_transport_from_candidates(
         &self,
         source: &ClickProposition,
         target: &ClickProposition,
         candidates: impl IntoIterator<Item = ClickProposition>,
-        description: &str,
-    ) -> Result<Self, ClickError> {
-        match self.fact_transport_candidate_search(source, target, candidates)? {
-            Ok(proof) => Ok(proof),
-            Err(last_error) => Err(self.step_error(format!(
-                "{description} has no explicit surface-premise certificate: {}",
-                last_error
-                    .as_ref()
-                    .map(|error| error.raw_summary())
-                    .unwrap_or("no candidate was checked")
-            ))),
-        }
+    ) -> Result<Option<Self>, ClickError> {
+        Ok(self
+            .fact_transport_candidate_search(source, target, candidates)?
+            .ok())
     }
 
-    /// The candidate search behind [`Self::search_fact_transport_from_candidates`].
+    /// The candidate search behind [`Self::try_fact_transport_from_candidates`].
     /// A refusal is the last candidate's refusal, if any candidate was checked;
     /// the outer error is a stopped search.
     fn fact_transport_candidate_search(
