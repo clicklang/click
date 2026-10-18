@@ -1986,27 +1986,37 @@ fn verifications_on_one_thread_are_independent() {
 /// `earlier` unrelated functions with pointer parameters, then `combine`,
 /// which copies a field between two struct pointers. Returns the sidecar and the C
 /// source.
-pub(super) fn earlier_units_then_combine(earlier: usize) -> (String, String) {
-    let mut c_source = String::from("struct region { int32 start; int32 end; };\n");
+fn earlier_units_then_combine(earlier: usize, reverse: bool) -> (String, String) {
+    let mut c_source = String::from(
+        "struct arena { int32* occupied; int32 capacity; };\nstruct region { struct arena* arena; int32 start; int32 end; };\n",
+    );
     let mut click_source = String::from("verifying \"pipe.c\";\n");
-    for index in 0..earlier {
+    for index in (0..earlier).map(|index| if reverse { earlier - 1 - index } else { index }) {
         c_source.push_str(&format!(
-            "int32 mark_{index}(int32* cells) {{ return {index}; }}\n"
+            "void mark_{index}(struct region* r, int32* cells) {{ cells[0] = {index}; }}\n"
         ));
         click_source.push_str(&format!(
-            "int32 mark_{index}(int32* cells) {{\n    ensures result == {index};\n}} by {{\n    execute();\n    simp();\n}}\n"
+            "void mark_{index}(struct region* r, int32* cells) {{ owns cells[0..1]; ensures cells[0] == {index}; }} by {{ execute(); simp(); }}\n"
         ));
     }
     c_source.push_str(
-        "void combine(struct region* first, struct region* combined) {\n\
-         combined->start = first->start;\n}\n",
+        "int32 combine(struct arena* arena, struct region* first, struct region* combined) {\n\
+         combined->start = first->start; combined->end = first->end;\n\
+         combined->arena = arena; return combined->end - combined->start; }\n",
     );
     click_source.push_str(
-        "void combine(struct region* first, struct region* combined) {
-    owns first->start;
-    owns combined->start;
-    ensures combined->start == old(first->start);
+        "int32 combine(struct arena* arena, struct region* first, struct region* combined) {
+    owns first->arena; owns first->start; owns first->end;
+    owns combined->arena; owns combined->start; owns combined->end;
+    requires first->arena == arena;
+    requires 0 <= first->start; requires first->start <= first->end; requires first->end <= 1000;
+    ensures combined->arena == arena;
+    ensures result == combined->end - combined->start;
 } by {
+    step(); step(); step();
+    have combined->arena == arena by auto();
+    have combined->start == first->start by auto();
+    have combined->end == first->end by auto();
     execute();
     simp();
 }
@@ -2023,7 +2033,15 @@ pub(super) fn combine_names_and_work(
     earlier: usize,
     selected: bool,
 ) -> (Vec<(usize, crate::kernel::Variable)>, Vec<(String, usize)>) {
-    let (click_source, c_source) = earlier_units_then_combine(earlier);
+    combine_names_and_work_in_order(earlier, selected, false)
+}
+
+pub(super) fn combine_names_and_work_in_order(
+    earlier: usize,
+    selected: bool,
+    reverse: bool,
+) -> (Vec<(usize, crate::kernel::Variable)>, Vec<(String, usize)>) {
+    let (click_source, c_source) = earlier_units_then_combine(earlier, reverse);
     std::thread::Builder::new()
         .stack_size(64 << 20)
         .spawn(move || {
@@ -2072,27 +2090,13 @@ pub(super) fn combine_names_and_work(
 /// follows them: `arena_pipeline`'s control `have` took 375,000 units
 /// selected and exhausted its 2,500,000-unit budget in the whole file.
 #[test]
+#[ignore = "nightly: checks the original eight-tactic input-name reproduction twice"]
 fn a_selected_unit_names_its_inputs_as_the_whole_file_run_does() {
     let (whole_names, whole_work) = combine_names_and_work(1, false);
     let (selected_names, selected_work) = combine_names_and_work(1, true);
-    assert_eq!(selected_names.len(), 2, "{selected_names:?}");
+    assert_eq!(selected_names.len(), 3, "{selected_names:?}");
     assert_eq!(selected_names, whole_names);
-    assert_eq!(
-        selected_work
-            .iter()
-            .map(|(tactic, _)| tactic)
-            .collect::<Vec<_>>(),
-        whole_work
-            .iter()
-            .map(|(tactic, _)| tactic)
-            .collect::<Vec<_>>()
-    );
-    for ((tactic, selected), (_, whole)) in selected_work.iter().zip(&whole_work) {
-        assert!(
-            *whole <= 2 * selected && *selected <= 2 * whole,
-            "{tactic}: selected {selected}, whole file {whole}"
-        );
-    }
+    assert_eq!(selected_work, whole_work);
 }
 
 #[test]
