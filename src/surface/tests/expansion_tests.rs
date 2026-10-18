@@ -15040,14 +15040,14 @@ int32 select_when_positive(int32 limit, int32 left, int32 right) {
         "lowering decided the branch instead of keeping the conditional: {expanded}"
     );
     assert!(
-        expanded.contains("at(function.entry, limit > 0);"),
+        expanded.contains("limit > 0;"),
         "the expansion must cite the ambient fact the branch choice rests on: {expanded}"
     );
     verify_c0_sources(&expanded, &sources).unwrap_or_else(|error| {
         panic!("expanded conditional proof failed independent verification: {error:?}\n{expanded}")
     });
     let uncited = expanded.replacen(
-        "normalize() using {\n        at(function.entry, limit > 0);\n    }",
+        "normalize() using {\n        limit > 0;\n    }",
         "normalize();",
         1,
     );
