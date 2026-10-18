@@ -958,12 +958,12 @@ fn load_variable_project(statement_count: usize, axis: LoadAxis) -> (String, Str
     for _ in 0..=statement_count + 1 {
         click_source.push_str("    step();\n");
     }
-    click_source.push_str("    normalize();\n");
     if matches!(axis, LoadAxis::OneCellAcrossStores) {
         // The returned ownership of `owns` has no simple closer and takes the
-        // one smart tactic in this fixture.
+        // one smart tactic in this fixture, before the scalar result goal.
         click_source.push_str("    simp();\n");
     }
+    click_source.push_str("    normalize();\n");
     click_source.push_str("}\n");
     (c_source, click_source)
 }
