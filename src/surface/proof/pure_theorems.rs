@@ -1,5 +1,6 @@
 use super::*;
 use crate::kernel::AlgebraicValueType;
+use crate::kernel::MachineIntegerType;
 use crate::kernel::c_function_contract_refinement_obligations;
 
 const STRUCTURAL_INDUCTION_VARIABLE_BASE: u64 = 1 << 60;
@@ -466,10 +467,10 @@ pub(super) fn pure_induction_hypothesis(
     context: &PureTheoremContext,
     spec_definitions: SpecDefinitions<'_>,
 ) -> Result<Proposition, ClickError> {
-    let Some(CValue::Int32(Bitvector32Term::Variable(current_variable))) =
-        context.values.get(&setup.parameter)
-    else {
-        return Err(ClickError::new("invalid int32 induction parameter"));
+    let (current_variable, unsigned) = match context.values.get(&setup.parameter) {
+        Some(CValue::Int32(Bitvector32Term::Variable(variable))) => (variable, false),
+        Some(CValue::UInt64(Bitvector32Term::Variable(variable))) => (variable, true),
+        _ => return Err(ClickError::new("invalid scalar induction parameter")),
     };
     // Lower the hypothesis in its own requirement scope. These premises
     // are retained below as implications, so definedness is never granted
@@ -526,24 +527,37 @@ pub(super) fn pure_induction_hypothesis(
         body = Proposition::Implies(Box::new(requirement), Box::new(body));
     }
     let smaller = Proposition::ConditionIs(
-        ConditionTerm::Bitvector32SignedLessThan(
-            Box::new(value.clone()),
-            Box::new(Bitvector32Term::Variable(*current_variable)),
-        ),
+        if unsigned {
+            ConditionTerm::uint64_less_than(
+                value.clone(),
+                Bitvector32Term::Variable(*current_variable),
+            )
+        } else {
+            ConditionTerm::Bitvector32SignedLessThan(
+                Box::new(value.clone()),
+                Box::new(Bitvector32Term::Variable(*current_variable)),
+            )
+        },
         true,
     );
     body = Proposition::Implies(Box::new(smaller), Box::new(body));
-    let nonnegative = Proposition::ConditionIs(
-        ConditionTerm::Bitvector32SignedGreaterEqual(
-            Box::new(value),
-            Box::new(Bitvector32Term::Constant(0)),
-        ),
-        true,
-    );
-    body = Proposition::Implies(Box::new(nonnegative), Box::new(body));
+    if !unsigned {
+        let nonnegative = Proposition::ConditionIs(
+            ConditionTerm::Bitvector32SignedGreaterEqual(
+                Box::new(value),
+                Box::new(Bitvector32Term::Constant(0)),
+            ),
+            true,
+        );
+        body = Proposition::Implies(Box::new(nonnegative), Box::new(body));
+    }
     Ok(Proposition::ForAll {
         var: variable,
-        sort: Sort::CInt32,
+        sort: if unsigned {
+            Sort::CMachineInteger(MachineIntegerType::UInt64)
+        } else {
+            Sort::CInt32
+        },
         body: Box::new(body),
     })
 }
@@ -568,13 +582,12 @@ fn prepare_pure_induction_tactics(
         }
         return Ok((tactics.to_vec(), None));
     };
-    if !theorem
-        .parameters()
-        .iter()
-        .any(|candidate| candidate.name() == parameter && candidate.c_type() == C0Type::Int32)
-    {
+    if !theorem.parameters().iter().any(|candidate| {
+        candidate.name() == parameter
+            && matches!(candidate.c_type(), C0Type::Int32 | C0Type::UInt64(_))
+    }) {
         return Err(ClickError::new(format!(
-            "`induct({parameter})` requires an int32 theorem parameter with that name"
+            "`induct({parameter})` requires an int32 or uint64 theorem parameter with that name"
         )));
     }
     let surface_requires = theorem_requirement_propositions(theorem)?;
@@ -590,7 +603,7 @@ fn prepare_pure_induction_tactics(
                     "a pure theorem proof may contain only one top-level `induct` tactic",
                 )),
                 ProofTactic::ApplyTheorem(application) if application.name == hypothesis => {
-                    // Measure induction quantifies one `int32` variable, so
+                    // Measure induction quantifies one scalar variable, so
                     // its hypothesis names only the replacement measure.
                     let [argument] = application.arguments.as_slice() else {
                         return Err(ClickError::new(format!(

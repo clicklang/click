@@ -3219,22 +3219,26 @@ impl<'a> Proof<'a> {
                 self.step_error("`induct` must be the first step of the pure theorem proof")
             );
         }
-        let Some(CValue::Int32(current)) = context.theorem_context.values.get(parameter) else {
-            return Err(self.step_error("induction parameter must have type int32"));
-        };
-        let nonnegative = Proposition::ConditionIs(
-            ConditionTerm::Bitvector32SignedGreaterEqual(
-                Box::new(current.clone()),
-                Box::new(Bitvector32Term::Constant(0)),
-            ),
-            true,
-        );
-        if !self.facts().contains(&nonnegative)
-            && !self.facts().has_nonnegative_induction_domain(current)
-        {
-            return Err(self.step_error(format!(
-                "`induct({parameter})` requires a proof that `{parameter}` is nonnegative"
-            )));
+        match context.theorem_context.values.get(parameter) {
+            Some(CValue::Int32(current)) => {
+                let nonnegative = Proposition::ConditionIs(
+                    ConditionTerm::Bitvector32SignedGreaterEqual(
+                        Box::new(current.clone()),
+                        Box::new(Bitvector32Term::Constant(0)),
+                    ),
+                    true,
+                );
+                if !self.facts().contains(&nonnegative)
+                    && !self.facts().has_nonnegative_induction_domain(current)
+                {
+                    return Err(self.step_error(format!(
+                        "`induct({parameter})` requires a proof that `{parameter}` is nonnegative"
+                    )));
+                }
+            }
+            // Every native unsigned value is in the well-founded domain.
+            Some(CValue::UInt64(_)) => {}
+            _ => return Err(self.step_error("induction parameter must have type int32 or uint64")),
         }
         let quantified = super::super::pure_theorems::pure_induction_hypothesis(
             setup,
@@ -3279,7 +3283,7 @@ impl<'a> Proof<'a> {
         if hypothesis != setup.hypothesis {
             return Err(self.step_error(format!("unknown induction hypothesis `{hypothesis}`")));
         }
-        // Measure induction quantifies one `int32` variable: its hypothesis
+        // Measure induction quantifies one scalar variable: its hypothesis
         // holds every other theorem parameter at its current value.
         let [argument] = arguments else {
             return Err(self.step_error(format!(
@@ -3322,8 +3326,10 @@ impl<'a> Proof<'a> {
         .map_err(|message| {
             self.step_error(format!("could not evaluate induction argument: {message}"))
         })?;
-        let CValue::Int32(argument) = value else {
-            return Err(self.step_error("induction argument must have type int32"));
+        let argument = match (context.theorem_context.values.get(&setup.parameter), value) {
+            (Some(CValue::Int32(_)), CValue::Int32(argument))
+            | (Some(CValue::UInt64(_)), CValue::UInt64(argument)) => argument,
+            _ => return Err(self.step_error("induction argument must have the measure's type")),
         };
         let quantified = super::super::pure_theorems::pure_induction_hypothesis(
             setup,
