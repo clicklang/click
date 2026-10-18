@@ -652,18 +652,6 @@ impl PropositionSearch for PureFactContext {
                 candidate.proves_atomic_for_derivation_with_id(proposition, for_simp);
             evidence.map(|evidence| (candidate, premises_id, evidence))
         };
-        if let Proposition::CMemoryLoadable {
-            memory,
-            base,
-            bytes,
-            wide: false,
-        } = proposition
-            && let Some(premises) = self.adjacent_loadable_region_facts(memory, base, bytes)
-            && (!exclude_exact_goal || !premises.contains(&proposition.clone()))
-            && let Some(found) = trial(&premises)
-        {
-            return Some(found);
-        }
         let try_each = |candidates: &[Proposition]| {
             for selected in candidates {
                 if simp_reasoning_interrupted() {
@@ -679,6 +667,21 @@ impl PropositionSearch for PureFactContext {
             Err(()) => return None,
             Ok(Some(found)) => return Some(found),
             Ok(None) => {}
+        }
+        // Try a covering source before searching the ambient block for a
+        // concatenation: unknown offsets in unrelated ranges can otherwise
+        // trigger order reasoning over unrelated conditions for every range.
+        if let Proposition::CMemoryLoadable {
+            memory,
+            base,
+            bytes,
+            wide: false,
+        } = proposition
+            && let Some(premises) = self.adjacent_loadable_region_facts(memory, base, bytes)
+            && (!exclude_exact_goal || !premises.contains(&proposition.clone()))
+            && let Some(found) = trial(&premises)
+        {
+            return Some(found);
         }
         // Two loadable ranges justify a goal only by concatenation, and the
         // kernel names the pair that concatenates. The first lookup above
