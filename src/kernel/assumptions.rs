@@ -3965,6 +3965,17 @@ impl PureFactContext {
         self.equality_graph.pointer_at_base(pointer, base)
     }
 
+    /// Retain the supplying native index while aligning one selected address.
+    /// The spelling supplies no range bounds or access authority.
+    pub(in crate::kernel) fn pointer_at_known_base_with_wide_index(
+        &self,
+        pointer: &Pointer,
+        base: &Pointer,
+    ) -> Option<Pointer> {
+        self.equality_graph
+            .pointer_at_base_with_wide_index(pointer, base)
+    }
+
     /// Re-express a selected field only when the maintained affine classes
     /// give a constant byte displacement. This does not expand producer
     /// expressions or retry symbolic range-bound reasoning.

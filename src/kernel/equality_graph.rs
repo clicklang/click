@@ -1170,6 +1170,29 @@ impl EqualityGraph {
         pointer: &Pointer,
         base: &Pointer,
     ) -> Option<Pointer> {
+        // A native step from a captured cursor has its own wide offset,
+        // but aligning that offset alone can select a narrow spelling of
+        // the cursor. Retain the cursor's native producer before adding
+        // the original step. Bounds still apply to the complete result.
+        if pointer.block != base.block
+            && matches!(
+                pointer.offset,
+                PointerOffsetTerm::Int64Scaled { unsigned: true, .. }
+            )
+        {
+            let cursor = Pointer {
+                block: pointer.block.clone(),
+                offset: PointerOffsetTerm::Constant(0),
+            };
+            if let Some(spelling) = self.wide_additive_address(&cursor)
+                && let Some(aligned) = self.pointer_at_base_with_spelling(&spelling, base, false)
+            {
+                return Some(Pointer {
+                    block: aligned.block,
+                    offset: PointerOffsetTerm::add(aligned.offset, pointer.offset.clone()),
+                });
+            }
+        }
         if let Some(spelling) = self.wide_additive_address(pointer)
             && let Some(aligned) = self.pointer_at_base_with_spelling(&spelling, base, false)
         {
