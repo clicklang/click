@@ -363,7 +363,7 @@ struct Adapter<'a> {
     trait_impl_methods: BTreeMap<a::FunDeclId, String>,
     /// Each crate struct a call passes as a crate trait's object, with the
     /// trait: the struct's pack and unpack functions are imported.
-    object_coercions: std::cell::RefCell<BTreeSet<(a::TypeDeclId, a::TraitDeclId)>>,
+    object_coercions: std::cell::RefCell<BTreeSet<(a::TypeDeclId, a::TraitDeclId, String)>>,
     /// Each generic crate trait's instances an implementation or a call
     /// names, by importer name, with their type arguments after `Self`.
     trait_instances: std::cell::RefCell<BTreeMap<a::TraitDeclId, BTreeMap<String, Vec<a::Ty>>>>,
@@ -580,7 +580,7 @@ struct BodyAdapter<'a, 'b> {
     iterator_discriminants: BTreeMap<a::LocalId, a::LocalId>,
     /// The locals a crate struct reference is unsized into a `&dyn` crate
     /// trait for.
-    unsized_objects: BTreeMap<a::LocalId, (a::TypeDeclId, a::TraitDeclId, bool)>,
+    unsized_objects: BTreeMap<a::LocalId, (a::TypeDeclId, (a::TraitDeclId, String), bool)>,
     /// The pack, unpack, and argument of each object the block's call makes
     /// from a crate struct reference.
     coercions: std::cell::RefCell<Vec<(String, String, E)>>,
@@ -1551,20 +1551,22 @@ impl BodyAdapter<'_, '_> {
                         let unsized_object = match operand {
                             a::Operand::Move(place) | a::Operand::Copy(place) => match place.kind {
                                 a::PlaceKind::Local(local) => {
-                                    self.unsized_objects.get(&local).copied()
+                                    self.unsized_objects.get(&local).cloned()
                                 }
                                 _ => None,
                             },
                             _ => None,
                         };
-                        if let Some((record, trait_id, shared)) = generic.or(unsized_object) {
+                        if let Some((record, (trait_id, instance), shared)) =
+                            generic.or(unsized_object)
+                        {
                             let (pack, unpack) = self
                                 .adapter
-                                .object_coercion_names(record, trait_id, shared)?;
+                                .object_coercion_names(record, &instance, shared)?;
                             self.adapter
                                 .object_coercions
                                 .borrow_mut()
-                                .insert((record, trait_id));
+                                .insert((record, trait_id, instance));
                             self.coercions.borrow_mut().push((
                                 pack,
                                 unpack,
@@ -2189,8 +2191,8 @@ pub(super) fn decode_crate(
             functions.push(function);
         }
     }
-    for (record, trait_id) in adapter.object_coercions.borrow().iter() {
-        functions.extend(adapter.object_coercion_functions(*record, *trait_id)?);
+    for (record, trait_id, instance) in adapter.object_coercions.borrow().iter() {
+        functions.extend(adapter.object_coercion_functions(*record, *trait_id, instance)?);
     }
     for imp in krate.trait_impls.iter() {
         let id = imp.impl_trait.id;

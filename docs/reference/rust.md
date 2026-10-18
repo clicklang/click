@@ -653,6 +653,15 @@ not checked once for every type. An instance is taken at `i32`, `u8`,
 of a generic trait
 ([`design/charon-trial/generic-traits`](https://github.com/clicklang/click/blob/master/design/charon-trial/generic-traits/shapes.click)).
 
+A generic trait's object may carry state, as any trait's does (below): the
+generic block's `function last(self) -> T;` and `function items(self) ->
+List<T>;` are fields of each instance's own object,
+`bags::Bag<i32>::object`, at the instance's types, and an `impl` of the
+instance defines them, `function items(self) -> List<i32> {
+List<i32>::Cons(self.value, List<i32>::Nil) }`. Its pack and unpack are
+named for the instance, `<bags::Slot as bags::Holder<i32>>::__pack`
+([`design/charon-trial/generic-trait-objects`](https://github.com/clicklang/click/blob/master/design/charon-trial/generic-trait-objects/shapes.click)).
+
 ### Trait object state
 
 A trait block may declare model functions of its object, `function

@@ -1,0 +1,23 @@
+{
+  "units": {
+    "bags": {
+      "language": "rust",
+      "sources": {
+        "shapes.rs": {}
+      },
+      "crate": {
+        "name": "bags",
+        "edition": "2021",
+        "features": [],
+        "roots": [
+          "bags::through_fill",
+          "bags::through_dyn",
+          "bags::through_store"
+        ],
+        "files": [
+          "shapes.rs"
+        ]
+      }
+    }
+  }
+}
