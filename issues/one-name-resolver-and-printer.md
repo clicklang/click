@@ -105,9 +105,11 @@ than the file's constructor
 A pure `have` no longer matches a theorem requirement by spelling when the
 proof has bound one of its names again: after `intro()` introduces a `y` that
 hides the parameter `y`, `have y == 7` reads the introduced variable
-(`mdtests/an_introduced_variable_is_not_the_parameter_it_hides.md`). Names
-the proof binds are still invisible to constructor type inference, which
-refuses `List::Cons(y, List::Nil)` after `intro()` or `obtain`.
+(`mdtests/an_introduced_variable_is_not_the_parameter_it_hides.md`).
+Declaration expansion follows a script's goal: an `intro()` variable, under
+its written or `intro() as` name, and an `obtain` witness have their types
+for constructor inference in the tactics after them
+(`mdtests/a_proof_binder_has_its_type_for_constructor_inference.md`).
 
 The complete scoped table for parameters, fields, binders, constructors,
 resources, program points and project modules remains open. Proof inventories
