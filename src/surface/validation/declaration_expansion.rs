@@ -1166,9 +1166,14 @@ fn expand_declared_resources_in_function_block(
 ) -> Result<(), ClickError> {
     resolve_value_binders(function, resource_definitions)?;
     resource_definitions.constructors.enter_declaration(
-        function_signature_type_environment(function.signature(), true)
-            .into_iter()
-            .map(|(name, c_type)| (name, ClickType::C(c_type))),
+        declaration_parameter_types(function.signature().parameters()).chain(
+            (function.signature().return_type() != C0Type::Void).then(|| {
+                (
+                    "result".to_string(),
+                    ClickType::C(function.signature().return_type()),
+                )
+            }),
+        ),
     );
     crate::surface::enter_ambient_declaration(function.signature().name());
     *resource_definitions.character_parameters.borrow_mut() = function

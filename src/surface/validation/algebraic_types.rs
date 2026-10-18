@@ -17,22 +17,15 @@ impl std::ops::Deref for AlgebraicVariables {
     }
 }
 
-impl From<BTreeMap<String, C0Type>> for AlgebraicVariables {
-    fn from(c_types: BTreeMap<String, C0Type>) -> Self {
-        Self {
-            c_types,
-            nominal_types: BTreeMap::new(),
-        }
-    }
-}
-
-impl FromIterator<(String, C0Type)> for AlgebraicVariables {
-    fn from_iter<T: IntoIterator<Item = (String, C0Type)>>(values: T) -> Self {
-        BTreeMap::from_iter(values).into()
-    }
-}
-
 impl AlgebraicVariables {
+    fn function(signature: &FunctionSignature, include_result: bool) -> Self {
+        let mut variables = Self::parameters(signature.parameters());
+        if include_result && signature.return_type() != C0Type::Void {
+            variables.insert("result".to_string(), signature.return_type());
+        }
+        variables
+    }
+
     fn parameters(parameters: &[FunctionParameter]) -> Self {
         let mut variables = Self::default();
         for parameter in parameters {
@@ -1310,10 +1303,8 @@ pub(super) fn validate_algebraic_type_uses(
             .iter()
             .map(|tactic| tactic.function_block()),
     ) {
-        let requires_variables: AlgebraicVariables =
-            function_signature_type_environment(function.signature(), false).into();
-        let ensures_variables: AlgebraicVariables =
-            function_signature_type_environment(function.signature(), true).into();
+        let requires_variables = AlgebraicVariables::function(function.signature(), false);
+        let ensures_variables = AlgebraicVariables::function(function.signature(), true);
         for requirement in function
             .requires()
             .iter()

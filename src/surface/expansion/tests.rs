@@ -2,7 +2,8 @@ use super::*;
 
 #[test]
 fn nested_match_retains_nominal_list_result() {
-    let c = "struct node { int32 value; }; struct other { int32 value; };";
+    let c = "struct node { int32 value; }; struct other { int32 value; };
+        int32 member(struct node* node) { return 1; }";
     let source = r#"
 verifying "node.c";
 spec enum Nodes { Empty, Link(struct node*, Nodes) }
@@ -22,6 +23,11 @@ function singleton_contains_return(node: struct node*) -> bool {
 predicate typed_contains(nodes: List<struct node*>, node: struct node*) {
     list::contains(nodes, node)
 }
+int32 member(struct node* node) {
+    requires list::contains(singleton(node), node);
+    requires list::contains(List::Cons(node, List::Nil), node);
+    ensures result == 1;
+} by { execute(); }
 function first(nodes: Nodes) -> List<struct node*> decreases nodes {
     match nodes {
         Nodes::Empty => List::Nil,
