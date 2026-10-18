@@ -3327,6 +3327,18 @@ pub(in crate::surface) fn lower_integer_certificate_proposition(
     }
 }
 
+/// The decimal spelling of an integer literal, negated or not.
+fn integer_literal_spelling(expression: &ContractExpression) -> Option<String> {
+    match expression {
+        ContractExpression::IntegerLiteral(text) => Some(text.clone()),
+        ContractExpression::Negate(inner) => match inner.as_ref() {
+            ContractExpression::IntegerLiteral(text) => Some(format!("-{text}")),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
 pub(in crate::surface) fn lower_contract_integer_to_spec(
     expression: &ContractExpression,
     integer_values: &crate::persistent::PersistentMap<String, crate::kernel::SpecIntegerExpression>,
@@ -6683,6 +6695,30 @@ impl AnnotationLowerer<'_> {
                                     *c_type,
                                 ),
                             )))
+                        }
+                        // An integer literal is a value of its field's type,
+                        // as a C initializer's is. Without the type it lowers
+                        // at the narrowest width that holds it, so `2` in an
+                        // `int64` field is an `int32` and the constructor
+                        // compares with no `Seq<int64>` value. A literal the
+                        // type cannot hold is refused, never wrapped.
+                        AlgebraicValueType::C(c_type)
+                            if crate::kernel::MachineIntegerType::from_c_type(*c_type).is_some()
+                                && integer_literal_spelling(argument).is_some() =>
+                        {
+                            let text = integer_literal_spelling(argument)
+                                .expect("the guard matched an integer literal");
+                            let ty = crate::kernel::MachineIntegerType::from_c_type(*c_type)
+                                .expect("the guard matched an integer type");
+                            crate::kernel::MachineIntegerConstant::parse_decimal(ty.format(), &text)
+                                .and_then(|value| ty.constant_value(value))
+                                .map(|value| SpecAlgebraicValue::C(SpecExpression::Value(value)))
+                                .ok_or_else(|| {
+                                    format!(
+                                        "the literal `{text}` is not a value of field type `{}` of `{variant}`",
+                                        crate::surface::printing::machine_integer_type_name(ty)
+                                    )
+                                })
                         }
                         AlgebraicValueType::C(c_type)
                         | AlgebraicValueType::ObjectPointer(c_type, _) => {
