@@ -1,6 +1,28 @@
 use super::*;
 
 #[test]
+fn grouped_expansion_keeps_postexecution_closers_in_source_order() {
+    let path = std::path::Path::new("simp_after_execution_acts_on_the_first_open_claim.md");
+    let fixture = crate::cli::parse_mdtest(
+        path,
+        include_str!("../../../mdtests/simp_after_execution_acts_on_the_first_open_claim.md"),
+    )
+    .unwrap();
+    let source = fixture.click_source.as_deref().unwrap();
+    let sources = fixture
+        .c_sources
+        .iter()
+        .map(|(name, source)| (name.as_str(), source.as_str()))
+        .collect::<Vec<_>>();
+    let (_session, verified) = C0VerificationSession::new(source, &sources).unwrap();
+    let expanded = expand_verified_function_claim_source_by_label(source, &verified, "f.contract")
+        .unwrap()
+        .unwrap();
+    without_implicit_auto(|| verify_c0_sources(&expanded, &sources))
+        .unwrap_or_else(|error| panic!("{}\n{expanded}", error.message()));
+}
+
+#[test]
 fn project_claim_expansion_retains_imported_resources() {
     let source = r#"
 import "cell.click";

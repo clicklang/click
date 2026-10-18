@@ -2387,13 +2387,19 @@ pub(super) fn finish_ordered_proof<'a>(
                     // shares the persistent fact store.
                     let mut post_return_facts = Vec::new();
                     let mut post_execution_count = 0;
-                    while let Some(deferred) = next_checked_post_execution_tactic(
-                        outcome_proof.as_ref(),
-                        &mut pending_post_execution_tactics,
-                        &mut surface_post_choices,
-                        path_surface_post_tactics.len(),
-                        path_index,
-                    )? {
+                    while let Some(deferred) = {
+                        // A checked closer belongs at its source occurrence,
+                        // before the next post-return tactic. Include it in
+                        // the prefix used to place any subsequent proof cases.
+                        path_surface_post_tactics.append(&mut path_grouped_surface_closers);
+                        next_checked_post_execution_tactic(
+                            outcome_proof.as_ref(),
+                            &mut pending_post_execution_tactics,
+                            &mut surface_post_choices,
+                            path_surface_post_tactics.len(),
+                            path_index,
+                        )?
+                    } {
                         let post_execution_index = post_execution_count;
                         post_execution_count += 1;
                         visits_selected_capture |= path_capture.is_some_and(|capture| {
