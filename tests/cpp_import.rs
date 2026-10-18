@@ -18925,3 +18925,40 @@ int total(const Shape& shape, int scale) {
         assert!(rendered.contains(expected), "{rendered}");
     }
 }
+
+#[test]
+#[ignore = "nightly: C++ imports and whole-claim retained/cold certificate checks"]
+fn class_bool_member_whole_certificate_preserves_every_return_case() {
+    let source = include_str!("fixtures/cpp-verification/class-record/class_record.cpp");
+    let sidecar = include_str!("fixtures/cpp-verification/class-record/is_empty.click");
+    for access in ["private:", "protected:", ""] {
+        let project = Project::with_fixture(
+            "class_record.cpp",
+            "FeeRateState::IsEmpty",
+            &source.replace("private:", access),
+        );
+        refresh_import(&project.config()).unwrap();
+        let import = load_import(&project.config()).unwrap();
+        let path = project.directory.join("original.click");
+        fs::write(&path, sidecar).unwrap();
+        let parsed = read_click_project(&path, sidecar).unwrap();
+        let inputs = ProgramInputs::program(&import);
+        let sites = project_smart_tactic_source_sites(&parsed, &inputs).unwrap();
+        let claim = sites[0].claim_label.clone();
+        let (session, verified) =
+            C0VerificationSession::new_program_prepared_project(&parsed, &import).unwrap();
+        let expanded = click::surface::expand_verified_function_claim_source_by_label(
+            sidecar, &verified, &claim,
+        )
+        .unwrap()
+        .expect("the checked claim is declared in the original source");
+        let rewritten = parsed.with_entry_source(expanded.clone());
+        let position = project_tactic_source_position(&rewritten, &inputs, &claim, 0).unwrap();
+        session
+            .verify_at_project(&expanded, position.line, position.column)
+            .expect("the complete certificate verifies retained");
+        drop(session);
+        verify_program_prepared_project(&rewritten, &import)
+            .expect("the complete certificate verifies cold");
+    }
+}
