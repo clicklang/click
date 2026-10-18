@@ -94,6 +94,14 @@ A proof binder hides a contract value binder of its name, as it hides a fact
 or a resource instance
 (`mdtests/a_proof_binder_hides_a_value_binder_of_its_name.md`).
 
+Two names that read as two declarations are refused where they are declared.
+A value binder named like a C variable made `owns s.n` read the variable and
+`requires s.n` the binder, and a false claim verified
+(`mdtests/a_value_binder_cannot_take_a_c_variable_name.md`). An enum named
+like an in-scope library module made `nat::add` the library's function rather
+than the file's constructor
+(`mdtests/an_enum_cannot_take_a_library_module_name.md`).
+
 The complete scoped table for parameters, fields, binders, constructors,
 resources, program points and project modules remains open. Proof inventories
 still interpret shared parser tokens; parser-produced AST spans and integration
