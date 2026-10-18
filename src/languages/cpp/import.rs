@@ -8,6 +8,7 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
@@ -1478,6 +1479,20 @@ fn validate_unit_args(args: &[String], optimization: COptimization) -> Result<()
     Ok(())
 }
 
+fn unit_scratch_directory(base: &Path, clock_stamp: u128) -> Result<PathBuf, String> {
+    // Concurrent imports can observe one clock tick. Each owns its database
+    // until cleanup, so a timestamp must never make two imports share it.
+    static NEXT_IMPORT: AtomicU64 = AtomicU64::new(0);
+    let sequence = NEXT_IMPORT.fetch_add(1, Ordering::Relaxed);
+    let scratch = base.join(format!(
+        "click-cpp-unit-{}-{clock_stamp}-{sequence}",
+        std::process::id()
+    ));
+    // Claim this directory exclusively; never reuse another owner's files.
+    fs::create_dir(&scratch).map_err(|error| format!("create `{}`: {error}", scratch.display()))?;
+    Ok(scratch)
+}
+
 /// Exports every source of a project unit with the exporter at `exporter`:
 /// the unit's lock entry, keyed by logical source, and the artifacts to write.
 pub(crate) fn prepare_unit(
@@ -1495,16 +1510,13 @@ pub(crate) fn prepare_unit(
         ("$project", roots[1].as_path()),
         ("$clang-resource", resources.as_path()),
     ])?;
-    let scratch = std::env::temp_dir().join(format!(
-        "click-cpp-unit-{}-{}",
-        std::process::id(),
+    let scratch = unit_scratch_directory(
+        &std::env::temp_dir(),
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
-            .as_nanos()
-    ));
-    fs::create_dir_all(&scratch)
-        .map_err(|error| format!("create `{}`: {error}", scratch.display()))?;
+            .as_nanos(),
+    )?;
     let result = (|| {
         let mut locks = BTreeMap::new();
         let mut artifact_paths = BTreeMap::new();
@@ -1600,6 +1612,43 @@ pub(crate) fn load_unit(
 #[cfg(test)]
 mod unit_tests {
     use super::*;
+
+    #[test]
+    fn imports_at_one_clock_tick_keep_their_compilation_databases_independent() {
+        let base = std::env::temp_dir().join(format!(
+            "click-cpp-scratch-isolation-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos(),
+        ));
+        fs::create_dir(&base).unwrap();
+        struct RemoveDirectory(PathBuf);
+        impl Drop for RemoveDirectory {
+            fn drop(&mut self) {
+                let _ = fs::remove_dir_all(&self.0);
+            }
+        }
+        let _guard = RemoveDirectory(base.clone());
+        let first = unit_scratch_directory(&base, 17).unwrap();
+        let first_database = first.join("compile_commands.json");
+        fs::write(&first_database, b"first import").unwrap();
+        let second = unit_scratch_directory(&base, 17).unwrap();
+        fs::write(second.join("compile_commands.json"), b"second import").unwrap();
+        let before_cleanup = fs::read(&first_database);
+        fs::remove_dir_all(&second).unwrap();
+        let after_cleanup = fs::read(&first_database);
+        assert!(
+            before_cleanup
+                .as_deref()
+                .is_ok_and(|bytes| bytes == b"first import")
+                && after_cleanup
+                    .as_deref()
+                    .is_ok_and(|bytes| bytes == b"first import"),
+            "one import changed another's database: before {before_cleanup:?}, after {after_cleanup:?}",
+        );
+    }
 
     /// A unit's preprocessor inputs under a prepared root are rechecked at
     /// the root's current location; inputs outside every root are pinned by
