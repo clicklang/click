@@ -1108,29 +1108,51 @@ fn simple_unrelated_functions_have_a_deterministic_scaling_control() {
     assert_near_linear_scaling("unrelated simple functions", &samples);
 }
 
-/// One function's tactics do not do more work beside more earlier
-/// functions, and beside the most of them a selected run names its inputs
-/// as the whole-file run does. The names still shift with the earlier
-/// functions' inputs, and the order the closers search in follows them, so
-/// the totals can vary by a few percent; see
-/// `bugs/tactic-work-depends-on-input-name-numbers.md`.
+/// Every tactic and input identity remains unchanged beside unrelated functions
+/// and when verification selects only the target.
 #[test]
 #[ignore = "nightly: 1.0s alone, 1.3s in the parallel gate"]
 fn a_functions_tactic_work_does_not_grow_with_earlier_unrelated_functions() {
-    let mut totals = Vec::new();
-    let mut names = None;
+    let expected = super::project_tests::combine_names_and_work(1, false);
+    assert!(expected.1.iter().any(|(_, work)| *work > 0));
     for earlier in [1, 2, 4, 8] {
-        let (whole_names, work) = super::project_tests::combine_names_and_work(earlier, false);
-        totals.push(work.iter().map(|(_, work)| work).sum::<usize>());
-        names = Some(whole_names);
+        for selected in [false, true] {
+            assert_eq!(
+                super::project_tests::combine_names_and_work(earlier, selected),
+                expected,
+                "earlier functions: {earlier}, selected: {selected}"
+            );
+        }
     }
-    let (selected_names, work) = super::project_tests::combine_names_and_work(8, true);
-    assert_eq!(Some(selected_names), names);
-    totals.push(work.iter().map(|(_, work)| work).sum::<usize>());
-    let least = *totals.iter().min().unwrap();
-    let most = *totals.iter().max().unwrap();
-    assert!(least > 0);
-    assert!(most <= least + least / 5, "{totals:?}");
+    for selected in [false, true] {
+        assert_eq!(
+            super::project_tests::combine_names_and_work_in_order(8, selected, true),
+            expected,
+            "reordered earlier functions, selected: {selected}"
+        );
+    }
+}
+
+/// An alternate valid proof of a recorded arena load must survive the stable
+/// function-specific input identities, in selected and whole-file verification.
+#[test]
+#[ignore = "nightly: verifies the arena example twice"]
+fn arena_pipeline_auto_at_recorded_snapshot_survives_stable_input_names() {
+    let path =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("examples/arena/arena_cells.click");
+    let source = std::fs::read_to_string(&path).unwrap();
+    let original = "have at(f4, combined->arena->occupied[k]) == at(f4, arena->occupied[k]) by {\n                simp() using {\n                    at(f4, combined->arena) == arena;\n                };\n            }";
+    assert!(source.contains(original));
+    let edited = source.replacen(
+        original,
+        "have at(f4, combined->arena->occupied[k]) == at(f4, arena->occupied[k]) by auto();",
+        1,
+    );
+    let sources = crate::cli::read_verifying_sources(&path, &edited).unwrap();
+    let refs = crate::cli::source_refs(&sources);
+    verify_c0_sources_functions(&edited, &refs, ["arena_pipeline".to_string()])
+        .expect("the edited selected arena proof verifies");
+    verify_c0_sources(&edited, &refs).expect("the edited whole arena proof verifies");
 }
 
 #[test]

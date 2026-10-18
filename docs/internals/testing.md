@@ -1057,17 +1057,26 @@ contracts are assumptions, not recursively selected proofs. This is the same
 location scheme `click profile`, `click expand`, and `click audit` use, and the
 targeted entry point the audit's cold reverification runs.
 
-A selected unit sees the same input names as it does in the whole-file run.
-Before any proof runs, verification names the pointer inputs of every function
-the file verifies, in whole-file order, from a table it empties when a fresh
-`VerificationSession` starts. Load names and snapshot content hashes derive
-from these numbers, and closers search facts and recorded snapshots in an
-order that follows them. When names were assigned as each proof started,
-`arena_pipeline`'s control `have` took 375,000 units when selected and
-exhausted its 2,500,000-unit budget in the whole file.
-`a_selected_unit_names_its_inputs_as_the_whole_file_run_does` checks the
-names and per-tactic work both ways. The names still depend on the earlier
-functions' inputs; see `bugs/tactic-work-depends-on-input-name-numbers.md`.
+A function's pointer input names depend on its kernel name and parameter index,
+including the implicit construction-result parameter. They occupy the reserved
+`2^34 .. 2^40` range, below load variables and above frontend, callback, termination,
+and resource-matching variables. Allocation order, earlier functions, and selected-unit
+verification do not change them. The input registry rejects hash collisions
+instead of aliasing inputs or probing for an order-dependent replacement.
+Metadata is cleared alongside the kernel tables when a fresh
+`VerificationSession` starts. Verification prepares all functions' input
+metadata before any proof runs.
+
+Load names and snapshot content hashes derive from input names, and closers
+search facts and recorded snapshots in an order that follows them.
+The nightly `a_selected_unit_names_its_inputs_as_the_whole_file_run_does` checks exact
+input-name and per-tactic work equality. The nightly
+`a_functions_tactic_work_does_not_grow_with_earlier_unrelated_functions` checks
+that equality beside 1, 2, 4, and 8 unrelated earlier functions, including
+reversed declaration order. Both use the original eight-tactic reproduction.
+Signed-order automation tries an indexed, checked arithmetic certificate before
+broad atomic premise spelling, keeping the changed identities from exposing
+budget failures through irrelevant recorded-snapshot candidates.
 
 A directory verifies every sidecar in it: the directory
 itself when it holds sidecars, otherwise each immediate subdirectory that does.
