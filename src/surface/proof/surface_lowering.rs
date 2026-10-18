@@ -569,10 +569,15 @@ impl<'a> Proof<'a> {
             // correspondence, which carries no lowering of its own; only a
             // lowering performed here records a head chain.
             ProofContext::Pure(context) => {
-                if let Some(recorded) = context
-                    .theorem_context
-                    .surface_requirements
-                    .available_kernel_matching(surface, |kernel| self.facts().contains(kernel))
+                // A requirement matches by its written spelling, which names
+                // what the requirement's names meant. A name the proof bound
+                // again since, such as an `intro()` variable that hides a
+                // parameter, means the newer binding here.
+                if !self.rebinds_a_referenced_name(surface)
+                    && let Some(recorded) = context
+                        .theorem_context
+                        .surface_requirements
+                        .available_kernel_matching(surface, |kernel| self.facts().contains(kernel))
                 {
                     return Ok((recorded.clone(), None));
                 }
@@ -771,6 +776,21 @@ impl<'a> Proof<'a> {
     /// selection elsewhere; eagerly substituting them into every transport
     /// candidate turns prompt form rejection into expensive semantic
     /// alias search.
+    /// Whether a name `proposition` reads is bound by this goal's retained
+    /// binders or the scoped proof's locals, and so means something other
+    /// than what the theorem's own requirements wrote.
+    fn rebinds_a_referenced_name(&self, proposition: &ClickProposition) -> bool {
+        let mut names = BTreeSet::new();
+        collect_click_proposition_referenced_names(proposition, &mut names);
+        let surface_bindings = self
+            .proposition_obligation()
+            .map(|goal| &goal.surface_bindings);
+        names.iter().any(|name| {
+            surface_bindings.is_some_and(|bindings| bindings.get(name).is_some())
+                || self.local_binding(name).is_some()
+        })
+    }
+
     pub(super) fn substitute_goal_surface_bindings_in_proposition(
         &self,
         proposition: &ClickProposition,
