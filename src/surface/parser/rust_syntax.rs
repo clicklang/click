@@ -840,6 +840,14 @@ impl Parser {
                 "a reference to a reference or to `()` in a `fn` signature is not supported; the Rust importer refuses it",
             ));
         }
+        // A value of an abstract type parameter is held by value only.
+        if matches!(self.peek_ident(), Some(name) if self.rust_abstract_type_parameters.contains(name))
+            && !matches!(self.peek_next(), Some(Token::ColonColon))
+        {
+            return Err(self.error(
+                "a reference to a value of an abstract type parameter is not supported; the Rust importer refuses it",
+            ));
+        }
         // `&dyn traits::Shape`, or `&T` for a crate trait's type parameter:
         // a value of a type the function does not know, whose fields it
         // cannot name.
