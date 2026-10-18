@@ -171,21 +171,26 @@ impl EqualityGraph {
         }
         let mut state = self.state.lock().expect("equality graph");
         let identity = std::sync::Arc::as_ptr(source) as *const () as usize;
-        let inputs = if matches!(proposition, Proposition::ConditionIs(..)) {
+        let condition = matches!(proposition, Proposition::ConditionIs(..));
+        let inputs = if condition {
             &mut state.condition_pointer_fact_inputs
         } else {
             &mut state.pointer_fact_inputs
         };
-        if insert {
-            inputs.insert(identity, source.clone());
+        let order = if insert {
+            inputs.insert(identity, source.clone())
         } else {
-            inputs.remove(&identity);
-        }
+            let Some(order) = inputs.remove(&identity) else {
+                return;
+            };
+            order
+        };
+        let order = (condition, order);
         for (pointer, key) in keys {
             let address = state.register_pointer_address(&pointer);
             state
                 .terms
-                .adjust_pointer_fact(address, key, source, insert);
+                .adjust_pointer_fact(address, key, order, source, insert);
         }
         // A contract fact names its function value first; the values after
         // it fix the contract's value parameters.
@@ -201,6 +206,7 @@ impl EqualityGraph {
             state.terms.adjust_pointer_fact(
                 address,
                 terms::PointerFactKey::FunctionContracts,
+                order,
                 source,
                 insert,
             );

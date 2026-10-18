@@ -38,13 +38,16 @@ impl EqualityGraph {
             state.register_pointer_address(pointer);
         }
         let identity = Arc::as_ptr(source) as *const () as usize;
-        if insert {
+        let order = if insert {
             state.separation_sources = state.separation_sources.with_value(identity);
-            state.pointer_fact_inputs.insert(identity, source.clone());
+            state.pointer_fact_inputs.insert(identity, source.clone())
         } else {
             state.separation_sources = state.separation_sources.without_value(&identity);
-            state.pointer_fact_inputs.remove(&identity);
-        }
+            let Some(order) = state.pointer_fact_inputs.remove(&identity) else {
+                return true;
+            };
+            order
+        };
         // Indexed condition applications already propagate operand unions and
         // retain exact source payloads. No independent alias graph is needed.
         for (a, b) in [(&anchors[0], &anchors[1]), (&anchors[1], &anchors[0])] {
@@ -60,6 +63,7 @@ impl EqualityGraph {
             state.terms.adjust_pointer_fact(
                 node,
                 terms::PointerFactKey::AddressSeparation,
+                (false, order),
                 source,
                 insert,
             );

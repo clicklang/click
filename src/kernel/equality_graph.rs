@@ -549,10 +549,8 @@ enum OffsetPart {
 struct EqualityGraphState {
     separation_sources: crate::persistent::PersistentSet<usize>,
     /// Exact source handles survive closure reconstruction and branch cloning.
-    pointer_fact_inputs:
-        crate::persistent::PersistentMap<usize, std::sync::Arc<dyn terms::PointerFactSource>>,
-    condition_pointer_fact_inputs:
-        crate::persistent::PersistentMap<usize, std::sync::Arc<dyn terms::PointerFactSource>>,
+    pointer_fact_inputs: terms::PointerFactSources,
+    condition_pointer_fact_inputs: terms::PointerFactSources,
     /// Pointer definitions alone must not activate scalar constant discovery.
     has_scalar_inputs: bool,
     terms: terms::TermClasses,
@@ -2678,6 +2676,60 @@ impl EqualityGraph {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn pointer_fact_search_uses_admission_order_across_allocations_and_rebuilds() {
+        let domain = crate::kernel::CPointerValue::new(
+            Pointer::symbolic(Variable(985_000)),
+            crate::kernel::CType::Int32Pointer,
+        );
+        let origin = domain
+            .opaque_extent()
+            .expect("an unseen pointer has an opaque domain")
+            .clone();
+        let mut sources = (1..=4)
+            .map(|end| {
+                std::sync::Arc::new(crate::kernel::ExecutionPureFact::certified(
+                    domain
+                        .opaque_coverage_fact(&crate::kernel::CMemoryRange::new(
+                            at(symbolic(985_100), 0),
+                            Bitvector32Term::Constant(0),
+                            Bitvector32Term::Constant(end),
+                        ))
+                        .expect("coverage names the opaque domain"),
+                ))
+            })
+            .collect::<Vec<_>>();
+        // Force admission to oppose allocation-address order, irrespective of
+        // the allocator's layout. The old address-keyed index reverses this.
+        sources.sort_by_key(|source| std::cmp::Reverse(std::sync::Arc::as_ptr(source) as usize));
+        let expected = sources
+            .iter()
+            .map(|source| source.proposition().clone())
+            .collect::<Vec<_>>();
+        let mut graph = EqualityGraph::default();
+        for source in &sources {
+            graph.adjust_pointer_fact(source, true);
+            graph.adjust_pointer_fact(source, true); // Exact re-admission is idempotent.
+        }
+        assert_eq!(graph.subobject_coverage_facts(&origin), expected);
+        graph.rebuild_from_inputs();
+        assert_eq!(graph.subobject_coverage_facts(&origin), expected);
+        let fork = graph.clone();
+        fork.adjust_pointer_fact(&sources[1], false);
+        assert_eq!(
+            fork.subobject_coverage_facts(&origin),
+            vec![
+                expected[0].clone(),
+                expected[2].clone(),
+                expected[3].clone()
+            ]
+        );
+        assert_eq!(graph.subobject_coverage_facts(&origin), expected);
+        fork.clear_proposition_pointer_facts();
+        assert!(fork.subobject_coverage_facts(&origin).is_empty());
+        assert_eq!(graph.subobject_coverage_facts(&origin), expected);
+    }
 
     fn symbolic(id: u64) -> PointerBlock {
         PointerBlock::Symbolic(Variable(id))
