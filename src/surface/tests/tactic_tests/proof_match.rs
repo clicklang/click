@@ -139,13 +139,29 @@ fn modeled_tree_rotate_left_checks_model_and_ownership() {
         c.replace("pivot->left = root;", "pivot->left = middle;"),
     ] {
         assert_ne!(bad_c, c);
+        // Only the left rotation's C body changes. The complete original
+        // example was checked above; every other C byte and the full sidecar
+        // stay identical, so make the mutated function itself reject.
+        let extent = |text: &str| {
+            let signature = "struct tree_node *tree_rotate_left(";
+            assert_eq!(text.matches(signature).count(), 1);
+            let start = text.find(signature).unwrap();
+            let body = start + text[start..].find('{').unwrap() + 1;
+            let end = body + text[body..].find("\n}").unwrap() + "\n}".len();
+            (body, end)
+        };
+        let (before_body, before_end) = extent(c);
+        let (after_body, after_end) = extent(&bad_c);
+        assert_eq!(&c[..before_body], &bad_c[..after_body]);
+        assert_eq!(&c[before_end..], &bad_c[after_end..]);
         assert!(
-            verify_c0_sources(
+            crate::surface::verify_c0_sources_functions(
                 source,
                 &[
                     ("modeled_binary_tree.c", &bad_c),
                     ("modeled_binary_tree.h", header)
-                ]
+                ],
+                ["tree_rotate_left".to_string()],
             )
             .is_err()
         );

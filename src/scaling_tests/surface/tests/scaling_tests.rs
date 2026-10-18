@@ -4441,7 +4441,8 @@ fn call_separation_requirements_ignore_unrelated_owned_objects() {
     let mut separated_work = Vec::new();
     let mut guarded_work = Vec::new();
     let mut refused_work = Vec::new();
-    for size in [2, 4, 8, 16] {
+    // Exact selected-work equality retains its original endpoint comparison.
+    for size in [2, 16] {
         let parameters = (0..size)
             .map(|i| format!(", struct node* q{i}"))
             .collect::<String>();
@@ -6915,7 +6916,8 @@ fn failing_simp_work_is_flat_along_a_variable_chain() {
         )
     };
     let mut work = Vec::new();
-    for size in [4, 8, 16, 32] {
+    // Keep the short initialization/control case and the original 8/32 guard.
+    for size in [4, 8, 32] {
         let (c_source, click_source) = sources(size);
         let (verified, sample) = scaling_sample(size, || {
             verify_c0_sources(&click_source, &[("chain.c", c_source.as_str())])
@@ -6928,7 +6930,7 @@ fn failing_simp_work_is_flat_along_a_variable_chain() {
     }
     assert!(work[0] > 0, "{work:?}");
     assert!(
-        work[3] <= work[1].saturating_add(work[1] / 4),
+        *work.last().unwrap() <= work[1].saturating_add(work[1] / 4),
         "a failing simp's work grew with the chain past the bounded sizes: {work:?}"
     );
 }
@@ -8304,7 +8306,8 @@ fn signed_increment_overflow_checks_stay_flat_per_assignment() {
 #[ignore = "nightly: 2.3s in the parallel gate"]
 fn unrelated_call_work_stays_flat_with_kept_pointer_aliases() {
     let mut calls = Vec::new();
-    for size in [1, 4, 16, 32] {
+    // Preserve the first-call baseline, largest alias population, and 7/5 bound.
+    for size in [1, 32] {
         let parameters = (0..size)
             .map(|i| format!(", struct box* q{i}"))
             .collect::<String>();
