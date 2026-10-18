@@ -151,7 +151,9 @@ records the result. It is configured in `click.project.json` at the project's
 root, the nearest directory above the sidecar that has one; the file declares
 *units*, here one C unit for the library's sources. Copy the preprocessor flags
 from the compile command: `-I`, `-iquote`, `-isystem`, `-D`, `-U`, and
-`-include`. Other flags are refused, so copying the whole command line fails:
+`-include`. The language standard and optimization flags may repeat the fixed
+profile, but other flags such as `-Wall` are refused. Copying the whole compile
+command therefore fails:
 
 ```json filename=click.project.json
 {
@@ -160,7 +162,7 @@ from the compile command: `-I`, `-iquote`, `-isystem`, `-D`, `-U`, and
       "language": "c",
       "compiler": "/usr/bin/gcc",
       "env": {"PATH": "/usr/bin:/bin", "LC_ALL": "C"},
-      "args": ["-std=c11", "-O2", "-Iinclude", "-DLABEL_CAPACITY=32"],
+      "args": ["-std=c11", "-O2", "-Wall", "-Iinclude", "-DLABEL_CAPACITY=32"],
       "sources": {
         "label_fit.c": {}
       }
@@ -171,12 +173,13 @@ from the compile command: `-I`, `-iquote`, `-isystem`, `-D`, `-U`, and
 
 ```console
 $ click import lock label.click
-click: unit `label`: source `label_fit.c`: unsupported compiler argument 2 `-O2`; only -D/-U/-I/-iquote/-isystem/-include are supported
+click: unit `label`: source `label_fit.c`: unsupported compiler argument 3 `-Wall`; only -D/-U/-I/-iquote/-isystem/-include are supported
 ```
 
-The language standard and the ABI come from the target's fixed profile, so
-`-std=c11` is accepted only because it matches it. Keep only the
-preprocessor flags:
+The language standard and ABI come from the target's fixed profile. The
+project uses `-O2` by default; its top-level `optimization` setting selects a
+different level for every C unit. Here `-std=c11` and `-O2` are accepted because
+they match that profile. Keep only the preprocessor flags:
 
 ```json filename=click.project.json
 {
@@ -292,31 +295,12 @@ uint64 label_fit(uint64 length) {
 
 ```console
 $ click verify label.click
-proof error:
-  `label_fit.contract` path 0, tactic 1
-  checked outcome `simp` search did not retain a complete proof for `label_fit.ensures_1`
-  `label_fit.contract` proof step tactic 1
-  `ensures result <= length` failed for `label_fit.ensures_1` path 0
-  unclosed goal
-  result <= length; left side evaluated to 31u64, right side evaluated to length
-  proof context
-  case: [length >= 32u64]
-
-tactic@8:
-  simp();
-goal: 31u64 <= length
-available premises at the failed check (showing up to 8 relevant facts from 2 recorded premises):
-  length >= 32u64
-
-To get a trace:
-  click verify --trace-proof label_fit label.click
+1 selected proof verified
 ```
 
-This claim is true: on that path `length >= 32`, so `31 <= length`. The miss
-is `simp()`'s, a bounded search whose arithmetic step handles `int32` goals,
-while this one is a 64-bit `unsigned long` comparison. State the fact with
-`have ... by auto()`, which carries machine comparisons to integer arithmetic and
-solves them:
+`simp()` closes both claims. On the branch with `length >= 32`, the returned
+`31` is at most `length`. To make this arithmetic step explicit, state it as a
+separate `have` proved by `auto()`:
 
 ```click filename=label.click
 verifying "label_fit.c";
