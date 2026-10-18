@@ -4512,7 +4512,10 @@ impl<'a> TermRewrite<'a> {
                 return ConditionTerm::Constant(true);
             }
         }
-        if let Some(guards) = result.uint64_subtraction_upper_bound_guards() {
+        if let Some(guards) = result
+            .uint64_subtraction_upper_bound_guards()
+            .or_else(|| result.uint64_partial_restoration_upper_bound_guards())
+        {
             if let Some(conditions) = &mut self.collected_conditions {
                 conditions.extend(guards.iter().cloned());
             }

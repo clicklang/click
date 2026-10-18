@@ -9765,7 +9765,7 @@ fn wide_memory_range_covers_window(
         return false;
     }
     let aligned = assumptions
-        .pointer_at_known_base(&selected, available.base())
+        .pointer_at_known_base_with_wide_index(&selected, available.base())
         .unwrap_or_else(|| selected.clone());
     let covers_index = |index: Bitvector32Term| {
         if let Bitvector32Term::UInt64Subtract(whole, taken) = &index
@@ -9803,6 +9803,14 @@ fn wide_memory_range_covers_window(
                         Bitvector32Term::uint64_subtract(end.clone(), last.clone()),
                     )))
     };
+    // The supplied address can already carry the complete native coordinate.
+    // Use it before alignment can choose another spelling of the same address.
+    if assumptions
+        .wide_element_index_of_access(&selected, available.base(), available.element_width())
+        .is_some_and(&covers_index)
+    {
+        return true;
+    }
     // Only aliases explicitly indexed for this selected address are candidates.
     // Each candidate still owes exact address equality and the complete native
     // extent; equality proposes a spelling, never memory authority.

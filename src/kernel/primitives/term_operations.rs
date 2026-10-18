@@ -2396,6 +2396,30 @@ impl ConditionTerm {
         ])
     }
 
+    /// Restoring at most the removed amount cannot exceed the original
+    /// value: `(whole - removed) + restored <= upper`, with exact native
+    /// subtraction and addition under the three guards below.
+    pub(crate) fn uint64_partial_restoration_upper_bound_guards(&self) -> Option<Vec<Self>> {
+        let Self::Bitvector64UnsignedLessEqual(sum, upper) = self else {
+            return None;
+        };
+        let Bitvector32Term::UInt64Add(left, right) = sum.as_ref() else {
+            return None;
+        };
+        let (whole, removed, restored) = match (left.as_ref(), right.as_ref()) {
+            (Bitvector32Term::UInt64Subtract(whole, removed), restored)
+            | (restored, Bitvector32Term::UInt64Subtract(whole, removed)) => {
+                (whole.as_ref(), removed.as_ref(), restored)
+            }
+            _ => return None,
+        };
+        Some(vec![
+            Self::uint64_less_equal(removed.clone(), whole.clone()),
+            Self::uint64_less_equal(restored.clone(), removed.clone()),
+            Self::uint64_less_equal(whole.clone(), upper.as_ref().clone()),
+        ])
+    }
+
     pub(crate) fn uint64_less_than(left: Bitvector32Term, right: Bitvector32Term) -> Self {
         // A value masked by a constant is bounded by that mask, so a tag
         // read `word & m` is below any bound above `m`.
