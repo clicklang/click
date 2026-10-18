@@ -3754,10 +3754,7 @@ fn collect_algebraic_scope_summary(
             summary
         }
         AlgebraicTermNode::MemoryLoad { memory, pointer } => {
-            return collect_algebraic_value_scope_summary(
-                &load_carrier(memory, pointer),
-                summaries,
-            );
+            collect_algebraic_value_scope_summary(&load_carrier(memory, pointer), summaries)
         }
         AlgebraicTermNode::If {
             condition,
