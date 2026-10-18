@@ -2896,7 +2896,7 @@ pub(crate) fn count_canonical_at_creation_violations<T>(body: impl FnOnce() -> T
 /// exported from a certified store record and cited by certificates through
 /// `at(statement(n).exit, ...)`. Like defining facts, store facts are the
 /// base the invariant rests on and keep their load term.
-fn is_store_fact(condition: &ConditionTerm, value: bool) -> bool {
+pub(crate) fn is_store_fact(condition: &ConditionTerm, value: bool) -> bool {
     if !value {
         return false;
     }

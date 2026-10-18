@@ -113,15 +113,44 @@ fn charon_array_reference_assignments_check_values_and_independent_snapshots() {
     let p = project();
     let prepared = p.prepared().unwrap();
     C0VerificationSession::new_program_prepared(SIDECAR, &prepared).unwrap();
-    for (before, after) in [
-        ("ensures result == 5u32;", "ensures result == 3u32;"),
-        ("ensures result == -3;", "ensures result == 7;"),
-        ("ensures result == 7u32;", "ensures result == 9u32;"),
-        ("ensures result == 0u64;", "ensures result == 1u64;"),
+    // The full original check covers the unchanged bodies. Each refusal
+    // still checks the complete changed function, including every claim.
+    for (owners, before, after) in [
+        (
+            &["swap"][..],
+            "ensures result == 5u32;",
+            "ensures result == 3u32;",
+        ),
+        (
+            &["signed"][..],
+            "ensures result == -3;",
+            "ensures result == 7;",
+        ),
+        (
+            &[
+                "fill_small",
+                "copy_small",
+                "fill_medium",
+                "copy_medium",
+                "fill_million",
+                "copy_million",
+            ][..],
+            "ensures result == 7u32;",
+            "ensures result == 9u32;",
+        ),
+        (
+            &["empty"][..],
+            "ensures result == 0u64;",
+            "ensures result == 1u64;",
+        ),
     ] {
         let invalid = SIDECAR.replace(before, after);
         assert_ne!(invalid, SIDECAR);
-        assert!(C0VerificationSession::new_program_prepared(&invalid, &prepared).is_err());
+        assert!(
+            owners
+                .iter()
+                .any(|owner| verify_rust_function(&invalid, &prepared, owner).is_err())
+        );
     }
 }
 
@@ -264,14 +293,38 @@ fn charon_external_array_copies_and_fills_verify_and_reject_false_bytes() {
     let sidecar = fs::read_to_string(p.root.join("borrow.click")).unwrap();
     let prepared = p.prepared().unwrap();
     C0VerificationSession::new_program_prepared(&sidecar, &prepared).unwrap();
-    for (before, after) in [
-        ("old(source[0])", "old(source[1])"),
-        ("target[999999] == value", "target[999999] == value + 1u32"),
-        ("result == old(source[0])", "result == source[0]"),
+    // The full original check covers the unchanged bodies. Each refusal
+    // still checks the complete changed function, including every claim.
+    for (owners, before, after) in [
+        (
+            &[
+                "copy_small",
+                "copy_medium",
+                "copy_million",
+                "independent",
+                "bytes",
+            ][..],
+            "old(source[0])",
+            "old(source[1])",
+        ),
+        (
+            &["fill_million"][..],
+            "target[999999] == value",
+            "target[999999] == value + 1u32",
+        ),
+        (
+            &["independent"][..],
+            "result == old(source[0])",
+            "result == source[0]",
+        ),
     ] {
         let invalid = sidecar.replace(before, after);
         assert_ne!(invalid, sidecar);
-        assert!(C0VerificationSession::new_program_prepared(&invalid, &prepared).is_err());
+        assert!(
+            owners
+                .iter()
+                .any(|owner| verify_rust_function(&invalid, &prepared, owner).is_err())
+        );
     }
     for command in ["profile", "audit"] {
         assert_cli(&p, &[command]);
