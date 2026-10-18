@@ -130,6 +130,9 @@ mod projection_path_tests {
 struct OutcomeCase<'a> {
     fingerprint: u64,
     condition: &'a ClickProposition,
+    /// `condition` is a `cases` disjunction whose two sides the arms take,
+    /// rather than an `if` condition and its negation.
+    disjunction: bool,
     execution_route: Option<usize>,
     arms: [Option<usize>; 2],
 }
@@ -148,9 +151,6 @@ fn outcome_case_region<'a>(
             else_tactics,
         } = &tactic.tactic
         {
-            // A `cases` split reaches here only through a terminal join,
-            // which routes each path to the arm it ran.
-            debug_assert!(!disjunction || execution_route.is_some());
             let arms = [
                 outcome_case_region(then_tactics, next, nodes),
                 outcome_case_region(else_tactics, next, nodes),
@@ -158,6 +158,7 @@ fn outcome_case_region<'a>(
             nodes.push(OutcomeCase {
                 fingerprint: ExecutionBranchDecisions::key(condition),
                 condition,
+                disjunction: *disjunction,
                 execution_route: *execution_route,
                 arms,
             });
@@ -167,11 +168,21 @@ fn outcome_case_region<'a>(
     next
 }
 
+/// The case one arm of a post-execution split stands for, as it records it
+/// on the path: an `if` arm records its condition's polarity, a `cases` arm
+/// that its own disjunct holds.
+struct OutcomeArmCase<'a> {
+    surface: &'a ClickProposition,
+    lowered: &'a Proposition,
+    value: bool,
+}
+
+#[allow(clippy::too_many_arguments)]
 fn descend_outcome_case(
     nodes: &[OutcomeCase<'_>],
     node: &OutcomeCase<'_>,
-    lowered: &Proposition,
-    value: bool,
+    arm_case: OutcomeArmCase<'_>,
+    take_then: bool,
     authority: &ProofFacts,
     query: &ProofFacts,
     facts: &mut Vec<Proposition>,
@@ -182,20 +193,20 @@ fn descend_outcome_case(
 ) -> Result<OutcomeEvidenceFork, ClickError> {
     let mut child = provenance;
     child.branch_decisions.push(ExecutionBranchDecision {
-        fingerprint: std::sync::OnceLock::from(node.fingerprint),
-        condition: node.condition.clone(),
-        value,
+        fingerprint: std::sync::OnceLock::from(ExecutionBranchDecisions::key(arm_case.surface)),
+        condition: arm_case.surface.clone(),
+        value: arm_case.value,
     });
     child
         .surface_propositions
-        .record_lowering(node.condition, lowered)?;
+        .record_lowering(arm_case.surface, arm_case.lowered)?;
     let old_len = facts.len();
     if let Some(fact) = fact {
         facts.push(fact);
     }
     let result = partition_outcome_cases(
         nodes,
-        node.arms[usize::from(!value)],
+        node.arms[usize::from(!take_then)],
         authority,
         query,
         facts,
@@ -226,17 +237,44 @@ fn partition_outcome_cases(
     // Retained C and proof case decisions already choose this source arm.
     // Consult them at every nested node, not only at the root: re-lowering
     // a short-circuit condition can otherwise lose its checked truth value
-    // and fork an inconsistent descendant.
-    if let Some(value) = match node.execution_route {
-        Some(position) => Some(
+    // and fork an inconsistent descendant. A `cases` arm recorded that its
+    // own disjunct holds.
+    let arm_surfaces = if node.disjunction {
+        let Some((left, right)) = crate::surface::split_case_disjunction(node.condition) else {
+            return Err(ClickError::new(
+                "a post-execution `cases` split is not on a disjunction",
+            ));
+        };
+        Some([left, right])
+    } else {
+        None
+    };
+    let recorded = match (node.execution_route, &arm_surfaces) {
+        (Some(position), _) => Some(
             provenance
                 .branch_decisions
                 .value_for_route(position, node.condition)?,
         ),
-        None => provenance
+        (None, None) => provenance
             .branch_decisions
             .value_for_key(node.condition, node.fingerprint)?,
-    } {
+        (None, Some([left, right])) => {
+            let holds = |surface: &ClickProposition| {
+                provenance
+                    .branch_decisions
+                    .value_for_key(surface, ExecutionBranchDecisions::key(surface))
+                    .map(|value| value == Some(true))
+            };
+            if holds(left)? {
+                Some(true)
+            } else if holds(right)? {
+                Some(false)
+            } else {
+                None
+            }
+        }
+    };
+    if let Some(value) = recorded {
         return partition_outcome_cases(
             nodes,
             node.arms[usize::from(!value)],
@@ -249,32 +287,88 @@ fn partition_outcome_cases(
         );
     }
     let lowered = lower(node.condition, facts)?;
-    let positive = crate::kernel::canonical_condition_fact(&lowered);
-    let negative =
-        crate::kernel::canonical_condition_fact(&Proposition::Not(Box::new(lowered.clone())));
-    let known = if crate::surface::planning::proposition_search::decided_without_search(
-        query.assumptions(),
-        &positive,
-    ) {
+    // The two cases: an `if` condition and its negation, or the two sides
+    // of the `cases` disjunction as it lowered.
+    let negated_surface;
+    let (cases, case_surfaces) = match &arm_surfaces {
+        None => {
+            negated_surface = ClickProposition::Not(Box::new(node.condition.clone()));
+            (
+                [
+                    crate::kernel::canonical_condition_fact(&lowered),
+                    crate::kernel::canonical_condition_fact(&Proposition::Not(Box::new(
+                        lowered.clone(),
+                    ))),
+                ],
+                [node.condition, &negated_surface],
+            )
+        }
+        Some([left, right]) => {
+            let Proposition::Or(left_fact, right_fact) = &lowered else {
+                return Err(ClickError::new(
+                    "a post-execution `cases` disjunction did not lower to a disjunction",
+                ));
+            };
+            (
+                [left_fact.as_ref().clone(), right_fact.as_ref().clone()],
+                [left, right],
+            )
+        }
+    };
+    let arm_case = |index: usize| match &arm_surfaces {
+        None => OutcomeArmCase {
+            surface: node.condition,
+            lowered: &lowered,
+            value: index == 0,
+        },
+        Some(_) => OutcomeArmCase {
+            surface: case_surfaces[index],
+            lowered: &cases[index],
+            value: true,
+        },
+    };
+    let decided = |fact: &Proposition| {
+        crate::surface::planning::proposition_search::decided_without_search(
+            query.assumptions(),
+            fact,
+        )
+    };
+    // A case the path's facts already decide selects its arm. For `cases`
+    // that is a disjunct the facts establish.
+    let known = if decided(&cases[0]) {
         Some(true)
-    } else if crate::surface::planning::proposition_search::decided_without_search(
-        query.assumptions(),
-        &negative,
-    ) {
+    } else if decided(&cases[1]) {
         Some(false)
     } else {
         None
     };
-    if let Some(value) = known {
+    if let Some(take_then) = known {
+        let index = usize::from(!take_then);
         return descend_outcome_case(
-            nodes, node, &lowered, value, authority, query, facts, provenance, None, lower, emit,
+            nodes,
+            node,
+            arm_case(index),
+            take_then,
+            authority,
+            query,
+            facts,
+            provenance,
+            None,
+            lower,
+            emit,
         );
     }
+    let [positive, negative] = cases.clone();
     let partition = CheckedProofCasePartition::check(authority, positive.clone(), negative.clone())
         .ok_or_else(|| {
-            ClickError::new(
-                "post-execution case split did not produce complementary case facts".to_string(),
-            )
+            ClickError::new(match &arm_surfaces {
+                None => "post-execution case split did not produce complementary case facts"
+                    .to_string(),
+                Some(_) => format!(
+                    "`cases` after execution requires its exact disjunction as an available fact on each outcome path: `{}`",
+                    crate::surface::diagnostics::describe_click_proposition(node.condition)
+                ),
+            })
         })?;
     let arm_facts = [
         authority.with_kernel_checked_fact(positive.clone()),
@@ -283,7 +377,7 @@ fn partition_outcome_cases(
     let then_arm = descend_outcome_case(
         nodes,
         node,
-        &lowered,
+        arm_case(0),
         true,
         &arm_facts[0],
         &query.with_kernel_checked_fact(positive.clone()),
@@ -296,7 +390,7 @@ fn partition_outcome_cases(
     let else_arm = descend_outcome_case(
         nodes,
         node,
-        &lowered,
+        arm_case(1),
         false,
         &arm_facts[1],
         &query.with_kernel_checked_fact(negative.clone()),
@@ -2969,6 +3063,59 @@ impl<'a> Proof<'a> {
         }
     }
 
+    /// Decides which arm of a `cases` after execution this focused outcome
+    /// takes: `true` for the left side of `disjunction`. A recorded
+    /// decision chooses the arm the path entered; otherwise a disjunct the
+    /// outcome's facts establish does. Like `checked_outcome_if_value` this
+    /// only selects source; the arm's tactics are checked on the path.
+    pub(in crate::surface::proof) fn checked_outcome_cases_value(
+        &self,
+        disjunction: &ClickProposition,
+        execution_route: Option<usize>,
+    ) -> Result<bool, ClickError> {
+        if !matches!(
+            self.focused_obligation(),
+            Some(Obligation::FunctionOutcome(_))
+        ) {
+            return Err(self.step_error("post-execution `cases` requires a focused outcome goal"));
+        }
+        let data = self
+            .focused_outcome_data()
+            .expect("a focused outcome judgment resolves its proof data");
+        if let Some(position) = execution_route {
+            return data.branch_decisions.value_for_route(position, disjunction);
+        }
+        let (left, right) =
+            crate::surface::split_case_disjunction(disjunction).ok_or_else(|| {
+                self.step_error("a post-execution `cases` split is not on a disjunction")
+            })?;
+        for (surface, value) in [(&left, true), (&right, false)] {
+            if data
+                .branch_decisions
+                .value_for_key(surface, ExecutionBranchDecisions::key(surface))?
+                == Some(true)
+            {
+                return Ok(value);
+            }
+        }
+        let assumptions = self.facts().assumptions();
+        for (surface, value) in [(&left, true), (&right, false)] {
+            let fact = self.lower_surface_proposition(surface, "post-execution `cases` case")?;
+            if self.facts().contains(&fact)
+                || crate::surface::planning::proposition_search::decided_without_search(
+                    assumptions,
+                    &fact,
+                )
+            {
+                return Ok(value);
+            }
+        }
+        Err(self.step_error(format!(
+            "focused outcome does not decide which side of the `cases` disjunction holds: `{}`",
+            crate::surface::diagnostics::describe_click_proposition(disjunction)
+        )))
+    }
+
     /// Partitions checked outcomes along the explicitly written case tree.
     /// Known conditions select one arm; unknown conditions introduce checked
     /// complementary facts and traverse only the corresponding subtrees.
@@ -2977,6 +3124,7 @@ impl<'a> Proof<'a> {
     pub(in crate::surface::proof) fn split_outcome_paths_by_case(
         &self,
         condition: &ClickProposition,
+        disjunction: bool,
         then_tactics: &[DeferredPostExecutionTactic],
         else_tactics: &[DeferredPostExecutionTactic],
     ) -> Result<Self, ClickError> {
@@ -3016,6 +3164,7 @@ impl<'a> Proof<'a> {
         nodes.push(OutcomeCase {
             fingerprint: ExecutionBranchDecisions::key(condition),
             condition,
+            disjunction,
             execution_route: None,
             arms,
         });
@@ -3167,6 +3316,7 @@ impl<'a> Proof<'a> {
     pub(in crate::surface::proof) fn post_execution_if_is_path_decided(
         &self,
         condition: &ClickProposition,
+        disjunction: bool,
     ) -> Result<bool, ClickError> {
         self.require_execution_frontier("post-execution `if`")?;
         let execution = self
@@ -3179,9 +3329,31 @@ impl<'a> Proof<'a> {
             execution.core.frontier.execution().ok_or_else(|| {
                 self.step_error("post-execution `if` has no checked execution paths")
             })?;
+        let sides = if disjunction {
+            Some(
+                crate::surface::split_case_disjunction(condition).ok_or_else(|| {
+                    self.step_error("a post-execution `cases` split is not on a disjunction")
+                })?,
+            )
+        } else {
+            None
+        };
         for path_index in 0..checked.paths().len() {
             check_verification_deadline()?;
             let provenance = execution.provenance_for_outcome(path_index);
+            // A `cases` arm records that its own disjunct holds.
+            if let Some((left, right)) = &sides {
+                let holds = |surface: &ClickProposition| {
+                    provenance
+                        .branch_decisions
+                        .value_for_key(surface, ExecutionBranchDecisions::key(surface))
+                        .map(|value| value == Some(true))
+                };
+                if !holds(left)? && !holds(right)? {
+                    return Ok(false);
+                }
+                continue;
+            }
             let mut recorded = None;
             for decision in provenance.branch_decisions.iter() {
                 if &decision.condition != condition {
@@ -3756,6 +3928,7 @@ mod outcome_case_tests {
                 .map(|(index, condition)| OutcomeCase {
                     fingerprint: ExecutionBranchDecisions::key(condition),
                     condition,
+                    disjunction: false,
                     execution_route: None,
                     arms: [
                         if index + 1 < size {

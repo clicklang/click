@@ -60,11 +60,12 @@ fn next_checked_post_execution_tactic<'a>(
                 if let Some(bindings) = &deferred.lexical_bindings {
                     scoped = scoped.with_surface_local_scope(bindings);
                 }
-                let value = scoped
-                    .checked_outcome_if_value(condition, *execution_route)
-                    .map_err(|error| {
-                        error.with_context(format!("post-execution path {path_index}"))
-                    })?;
+                let value = if *disjunction {
+                    scoped.checked_outcome_cases_value(condition, *execution_route)
+                } else {
+                    scoped.checked_outcome_if_value(condition, *execution_route)
+                }
+                .map_err(|error| error.with_context(format!("post-execution path {path_index}")))?;
                 (
                     if *disjunction {
                         SurfacePathSelector::Disjunction(condition.clone())
