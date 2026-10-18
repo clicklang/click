@@ -156,6 +156,15 @@ arguments do not decide, or an end that is not a constant, is a miss. See
 [`auto_reads_a_condition_out_of_a_definition.md`](https://github.com/clicklang/click/blob/master/mdtests/auto_reads_a_condition_out_of_a_definition.md)
 and
 [`auto_does_not_read_an_unforced_condition.md`](https://github.com/clicklang/click/blob/master/mdtests/auto_does_not_read_an_unforced_condition.md).
+The function may be generic, and `bool`-valued with `true`/`false` ends: the
+fact `list::contains(xs, x)` reads as `== true`, and is refuted by
+`have not list::contains(xs, x)`. An end that applies a defined function, as
+`list::contains(Nil, x)`, is followed into that definition (at most 4 deep)
+and unfolded after the fact's own application. A condition spelled other than
+the goal, `v == x` against a postcondition's `result == x`, matches when it
+lowers to the same goal. So `list::contains(Cons(v, Nil), x)` forces `v == x`
+([`auto_reads_a_condition_out_of_a_generic_bool_definition.md`](https://github.com/clicklang/click/blob/master/mdtests/auto_reads_a_condition_out_of_a_generic_bool_definition.md),
+[`auto_does_not_read_an_unforced_generic_condition.md`](https://github.com/clicklang/click/blob/master/mdtests/auto_does_not_read_an_unforced_generic_condition.md)).
 
 Signed `int32` arithmetic substitutes equalities: `x == 5` bounds `x` on
 both sides, so it proves `x - 1` defined and closes `x - 1 == 4`; a listed

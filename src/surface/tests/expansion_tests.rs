@@ -12562,18 +12562,20 @@ fn early_return_postcondition_path_selection_expands_and_reverifies() {
 #[test]
 #[ignore = "nightly: 1.4s in the parallel gate"]
 fn snapshot_and_post_call_transport_fixtures_have_no_outcome_fallbacks() {
-    for (filename, function, claim, retained_step) in [
+    for (filename, function, claim, retained_step, corrupted_step) in [
         (
             "execute_expands_certified_post_call_fact.md",
             "restore_one",
             CProofClaim::Grouped,
-            "rewrite(at(function.entry, cell->value",
+            "have cell->value == 1",
+            "have cell->value == 0",
         ),
         (
             "separate_symbolic_unwritten_read.md",
             "write_i_read_j",
             CProofClaim::Ensure(0),
             "normalize();",
+            "normalize() using { 0u32 == 1u32; };",
         ),
     ] {
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -12605,16 +12607,14 @@ fn snapshot_and_post_call_transport_fixtures_have_no_outcome_fallbacks() {
             )
         });
 
-        let without_retained_step = expanded
-            .lines()
-            .filter(|line| !line.contains(retained_step))
-            .collect::<Vec<_>>()
-            .join("\n");
-        assert!(
-            verify_c0_sources(&without_retained_step, &c_sources).is_err(),
-            "`{}` checked after deleting its selected retained step",
-            path.display()
-        );
+        // Corrupt a checked step even when C evaluation already establishes
+        // the final value, so a fallback cannot hide an invalid certificate.
+        let corrupted = expanded.replacen(retained_step, corrupted_step, 1);
+        assert_ne!(corrupted, expanded);
+        expansion::parse_source_with_c_layouts(&corrupted, &c_sources)
+            .expect("the corrupted proof must remain well formed");
+        verify_c0_sources(&corrupted, &c_sources)
+            .expect_err("a corrupted retained proof step must be rejected");
     }
 }
 

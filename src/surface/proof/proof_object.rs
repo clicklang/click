@@ -1217,10 +1217,13 @@ fn register_snapshot_names(
             // the local.
             // A temporary the translation introduced has no source spelling.
             if name.starts_with("__click")
+                || name.starts_with("__rust_")
                 || !name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
             {
                 continue;
             }
+            let name = crate::surface::diagnostics::rust_variable_spelling(name)
+                .unwrap_or_else(|| name.to_string());
             // A `usize` or `uintptr_t` local is a pointer integer; its
             // numeric value is the scalar the local held.
             match value.numeric_value() {
@@ -1294,8 +1297,14 @@ impl crate::surface::proof_diagnostics::ProofDiagnosticState for ProofDiagnostic
             if self.3.is_none() {
                 labels.register_current_state(&execution.core.state);
                 for (name, value) in execution.core.state.locals().object_values() {
-                    if let Some(variable) = diagnostic_value_variable(value) {
-                        labels.source_name(variable, name.to_string());
+                    if !name.starts_with("__rust_")
+                        && let Some(variable) = diagnostic_value_variable(value)
+                    {
+                        labels.source_name(
+                            variable,
+                            crate::surface::diagnostics::rust_variable_spelling(name)
+                                .unwrap_or_else(|| name.to_string()),
+                        );
                     }
                 }
             }
