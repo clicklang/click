@@ -2118,14 +2118,23 @@ fn c_loop_state_components_match_at_back_edge_inner(
         changed.push("pointer subobject extents");
     }
     // Likewise the class of the object a pointer local designates
-    // (`design/effective-types.md`).
+    // (`design/effective-types.md`). A proved-null back edge designates no
+    // object, so it cannot conflict with that class. This does not attach
+    // the head's class to the null value.
     let object_class_mismatch = top_state
         .locals()
         .object_values()
         .find_map(|(name, value)| {
             let head = c_value_object_class(value)?;
-            let back_edge = next_state.locals().get(name).map(c_value_object_class);
-            (back_edge != Some(Some(head.clone()))).then(|| (name.to_owned(), head, back_edge))
+            let next = next_state.locals().get(name);
+            let back_edge = next.map(c_value_object_class);
+            if back_edge == Some(Some(head.clone()))
+                || matches!(next, Some(CValue::Pointer(pointer))
+                    if assumptions.pointers_known_equal(pointer.pointer(), &Pointer::null()))
+            {
+                return None;
+            }
+            Some((name.to_owned(), head, back_edge))
         });
     if object_class_mismatch.is_some() {
         changed.push("pointer object classes");
