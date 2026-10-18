@@ -1,6 +1,88 @@
 use super::*;
 
 #[test]
+fn aggregate_leaf_resources_retain_enclosing_subobject_bounds() {
+    let path = std::path::Path::new("struct_aggregate_resources.md");
+    let fixture = crate::cli::parse_mdtest(
+        path,
+        include_str!("../../../mdtests/struct_aggregate_resources.md"),
+    )
+    .unwrap();
+    let source = fixture.click_source.as_deref().unwrap();
+    let sources = fixture
+        .c_sources
+        .iter()
+        .map(|(name, source)| (name.as_str(), source.as_str()))
+        .collect::<Vec<_>>();
+    verify_c0_sources_functions(source, &sources, ["read_inner".to_string()])
+        .unwrap_or_else(|error| panic!("{}", error.message()));
+    let changed =
+        fixture.c_sources[0]
+            .1
+            .replacen("return packet->inner.count;", "return packet->tail;", 1);
+    let error = verify_c0_sources_functions(
+        source,
+        &[(fixture.c_sources[0].0.as_str(), changed.as_str())],
+        ["read_inner".to_string()],
+    )
+    .expect_err("the enclosing member's bounds do not authorize the following field");
+    assert!(
+        error
+            .message()
+            .contains("access outside the subobject the pointer designates"),
+        "{}",
+        error.message()
+    );
+}
+
+#[test]
+fn retained_caller_expansion_preserves_declared_object_return_evidence() {
+    let path = std::path::Path::new("model_pointer_c_returns_keep_declared_object_evidence.md");
+    let fixture = crate::cli::parse_mdtest(
+        path,
+        include_str!("../../../mdtests/model_pointer_c_returns_keep_declared_object_evidence.md"),
+    )
+    .unwrap();
+    let source = fixture.click_source.as_deref().unwrap();
+    let sources = fixture
+        .c_sources
+        .iter()
+        .map(|(name, source)| (name.as_str(), source.as_str()))
+        .collect::<Vec<_>>();
+    let (session, verified) = C0VerificationSession::new(source, &sources).unwrap();
+    let expanded =
+        expand_verified_function_claim_source_by_label(source, &verified, "caller.contract")
+            .unwrap()
+            .unwrap();
+    let position = c0_tactic_source_position(&expanded, &sources, "caller.contract", 0).unwrap();
+    without_implicit_auto(|| session.verify_at(&expanded, position.line, position.column))
+        .unwrap_or_else(|error| panic!("{}\n{expanded}", error.message()));
+    without_implicit_auto(|| verify_c0_sources(&expanded, &sources)).unwrap();
+}
+
+#[test]
+fn grouped_expansion_keeps_postexecution_closers_in_source_order() {
+    let path = std::path::Path::new("simp_after_execution_acts_on_the_first_open_claim.md");
+    let fixture = crate::cli::parse_mdtest(
+        path,
+        include_str!("../../../mdtests/simp_after_execution_acts_on_the_first_open_claim.md"),
+    )
+    .unwrap();
+    let source = fixture.click_source.as_deref().unwrap();
+    let sources = fixture
+        .c_sources
+        .iter()
+        .map(|(name, source)| (name.as_str(), source.as_str()))
+        .collect::<Vec<_>>();
+    let (_session, verified) = C0VerificationSession::new(source, &sources).unwrap();
+    let expanded = expand_verified_function_claim_source_by_label(source, &verified, "f.contract")
+        .unwrap()
+        .unwrap();
+    without_implicit_auto(|| verify_c0_sources(&expanded, &sources))
+        .unwrap_or_else(|error| panic!("{}\n{expanded}", error.message()));
+}
+
+#[test]
 fn project_claim_expansion_retains_imported_resources() {
     let source = r#"
 import "cell.click";

@@ -259,6 +259,63 @@ mod tests {
         CAccessClass::Struct(CStructClass::opaque("node"))
     }
     #[test]
+    fn declared_designations_supply_type_evidence_without_changing_pointer_views() {
+        let object = Pointer {
+            block: "declared_node".into(),
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        let memory = CMemory::new().with_classed_block(object.block.clone(), Some(class()), 8);
+        let make = |designation| {
+            let CValue::Pointer(pointer) =
+                CValue::typed_pointer(Pointer::symbolic(Variable(900_010)), CType::Int32Pointer)
+            else {
+                unreachable!()
+            };
+            CValue::Pointer(pointer.with_designation(Arc::new(designation)))
+        };
+        let original = make(object.clone());
+        let mut refined = original.clone();
+        assert!(refine_object_pointer_argument(
+            &mut refined,
+            &class(),
+            &memory,
+            &PureFactContext::new(),
+        ));
+        let (CValue::Pointer(before), CValue::Pointer(after)) = (&original, &refined) else {
+            unreachable!()
+        };
+        assert!(after.supports_object_class(&class()));
+        assert_eq!(after.pointer(), before.pointer());
+        assert_eq!(after.designation(), before.designation());
+        assert_eq!(after.extent(), before.extent());
+        assert_eq!(after.extent_is_known(), before.extent_is_known());
+        assert_eq!(after.opaque_extent(), before.opaque_extent());
+
+        let other = CAccessClass::Struct(CStructClass::opaque("other"));
+        for (mut value, declared) in [
+            (original.clone(), CMemory::new()),
+            (
+                make(Pointer {
+                    offset: PointerOffsetTerm::Constant(4),
+                    ..object
+                }),
+                memory.clone(),
+            ),
+            (
+                original.with_pointer_object_class(Some(other)),
+                memory.clone(),
+            ),
+        ] {
+            assert!(!refine_object_pointer_argument(
+                &mut value,
+                &class(),
+                &declared,
+                &PureFactContext::new(),
+            ));
+        }
+    }
+
+    #[test]
     fn unrequired_formal_origins_survive_pointer_words_without_becoming_type_evidence() {
         let value =
             CValue::typed_pointer(Pointer::symbolic(Variable(900_001)), CType::Int32Pointer)

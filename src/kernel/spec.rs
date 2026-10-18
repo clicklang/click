@@ -6662,8 +6662,14 @@ pub(crate) fn refine_object_pointer_argument(
         && (assumptions
             .equality_graph
             .has_object_type(pointer.pointer(), object_class)
-            || (pointer.offset == PointerOffsetTerm::Constant(0)
-                && memory.declared_class(pointer.pointer()).as_ref() == Some(object_class)))
+            // A modular result may have a symbolic address while its checked
+            // designation already names the actual declared object.
+            || [pointer.pointer(), pointer.designation()]
+                .into_iter()
+                .any(|object| {
+                    object.offset == PointerOffsetTerm::Constant(0)
+                        && memory.declared_class(object).as_ref() == Some(object_class)
+                }))
     {
         *pointer = pointer
             .clone()

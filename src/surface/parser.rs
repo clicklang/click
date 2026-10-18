@@ -11316,7 +11316,12 @@ impl Parser {
                                 "aggregate contract segments are only supported in resource clauses",
                             ));
                         }
-                        return self.aggregate_field_segments(base, &field_name, &field);
+                        return self.aggregate_field_segments(
+                            base,
+                            surface_base,
+                            &field_name,
+                            &field,
+                        );
                     }
                     // Owning a union field covers its opaque storage in ABI byte units.
                     // It does not authorize reading or copying a typed union value.
@@ -11747,6 +11752,7 @@ impl Parser {
     fn aggregate_field_segments(
         &self,
         base: CExpression,
+        surface_base: ContractExpression,
         field_name: &str,
         field: &ResolvedField,
     ) -> Result<Vec<ContractSegment>, ClickError> {
@@ -11754,6 +11760,18 @@ impl Parser {
             return Err(self.error(format!(
                 "aggregate field `{field_name}` has no embedded struct layout"
             )));
+        };
+        // Keep the aggregate member's checked bounds while expanding its
+        // ownership into leaf slots. The C member selector needs those bounds
+        // before it can select a leaf through the enclosing aggregate.
+        let base = self.member_field_pointer(base, field);
+        let retain_surface_base = |mut segments: Vec<ContractSegment>| {
+            for segment in &mut segments {
+                if let ContractSegmentSurface::Field { base, .. } = &mut segment.surface {
+                    *base = Some(Box::new(surface_base.clone()));
+                }
+            }
+            segments
         };
         if let Some(element_width) = field.array_element_width {
             let shape = field.array_shape.as_deref().ok_or_else(|| {
@@ -11770,18 +11788,11 @@ impl Parser {
             })?;
             let mut segments = Vec::new();
             for flat_index in 0..element_count {
-                let element_offset = field
-                    .offset_bytes
-                    .checked_add(flat_index.checked_mul(element_width).ok_or_else(|| {
-                        self.error(format!(
-                            "embedded struct array field `{field_name}` offset overflows"
-                        ))
-                    })?)
-                    .ok_or_else(|| {
-                        self.error(format!(
-                            "embedded struct array field `{field_name}` offset overflows"
-                        ))
-                    })?;
+                let element_offset = flat_index.checked_mul(element_width).ok_or_else(|| {
+                    self.error(format!(
+                        "embedded struct array field `{field_name}` offset overflows"
+                    ))
+                })?;
                 let path = row_major_index_path(flat_index, shape);
                 self.append_aggregate_leaf_segments(
                     &mut segments,
@@ -11791,18 +11802,12 @@ impl Parser {
                     &format!("{field_name}{path}"),
                 )?;
             }
-            return Ok(segments);
+            return Ok(retain_surface_base(segments));
         }
 
         let mut segments = Vec::new();
-        self.append_aggregate_leaf_segments(
-            &mut segments,
-            base,
-            struct_name,
-            field.offset_bytes,
-            field_name,
-        )?;
-        Ok(segments)
+        self.append_aggregate_leaf_segments(&mut segments, base, struct_name, 0, field_name)?;
+        Ok(retain_surface_base(segments))
     }
 
     fn append_aggregate_leaf_segments(

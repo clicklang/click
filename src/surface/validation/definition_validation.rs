@@ -25,97 +25,41 @@ pub(in crate::surface) fn validate_click_definitions(file: &ClickFile) -> Result
     let resource_definitions = combined_resource_definitions(file)?;
     let theorem_definitions = combined_theorem_definitions(file)?;
 
-    let mut predicates = BTreeMap::new();
+    let mut declarations = DeclarationTable::default();
     for definition in &predicate_definitions {
         crate::surface::enter_ambient_declaration(definition.name());
         reject_held_outside_execution(
             definition.body(),
             &format!("predicate `{}`", definition.name()),
         )?;
-        if matches!(
-            definition.name(),
-            "same_object" | crate::kernel::SAME_OBJECT_PREDICATE_NAME
-        ) {
-            return Err(ClickError::new(
-                "`same_object` is a built-in proposition and cannot be redefined",
-            ));
-        }
-        if matches!(
-            definition.name(),
-            "held" | crate::kernel::MUTEX_HELD_PREDICATE_NAME
-        ) {
-            return Err(ClickError::new(
-                "`held` is a built-in proposition and cannot be redefined",
-            ));
-        }
         generics::validate_type_parameter_list(
             "predicate",
             definition.name(),
             definition.type_parameters(),
         )?;
-        refuse_builtin_call_name("predicate", definition.name())?;
-        if predicates
-            .insert(definition.name().to_string(), definition.parameters().len())
-            .is_some()
-        {
-            return Err(ClickError::new(format!(
-                "duplicate predicate definition `{}`",
-                definition.name()
-            )));
-        }
+        declarations.declare(
+            DeclarationKind::Predicate,
+            definition.name(),
+            definition.parameters().len(),
+        )?;
     }
 
     let mut contracts = BTreeMap::new();
     for definition in file.contract_definitions() {
         crate::surface::enter_ambient_declaration(definition.name());
-        if matches!(
+        // A contract proposition takes the function value, then one value
+        // per value parameter.
+        declarations.declare(
+            DeclarationKind::Contract,
             definition.name(),
-            "same_object" | crate::kernel::SAME_OBJECT_PREDICATE_NAME
-        ) {
-            return Err(ClickError::new(
-                "`same_object` is a built-in proposition and cannot be redefined",
-            ));
-        }
-        if matches!(
-            definition.name(),
-            "held" | crate::kernel::MUTEX_HELD_PREDICATE_NAME
-        ) {
-            return Err(ClickError::new(
-                "`held` is a built-in proposition and cannot be redefined",
-            ));
-        }
-        if predicates.contains_key(definition.name()) {
-            return Err(ClickError::new(format!(
-                "`{}` is defined as both a predicate and a contract",
-                definition.name()
-            )));
-        }
-        if contracts
-            .insert(
-                definition.name().to_string(),
-                definition.function_pointer_type(),
-            )
-            .is_some()
-        {
-            return Err(ClickError::new(format!(
-                "duplicate contract definition `{}`",
-                definition.name()
-            )));
-        }
-    }
-    let mut proposition_calls = predicates.clone();
-    proposition_calls.insert("same_object".to_string(), 2);
-    proposition_calls.insert("held".to_string(), 1);
-    // A contract proposition takes the function value, then one value per
-    // value parameter.
-    proposition_calls.extend(file.contract_definitions().iter().map(|definition| {
-        (
-            definition.name().to_string(),
             1 + definition.value_parameters().len(),
-        )
-    }));
+        )?;
+        contracts.insert(
+            definition.name().to_string(),
+            definition.function_pointer_type(),
+        );
+    }
 
-    let mut click_functions = BTreeMap::new();
     let mut click_function_types = BTreeMap::new();
     for definition in &click_function_definitions {
         crate::surface::enter_ambient_declaration(definition.name());
@@ -124,40 +68,11 @@ pub(in crate::surface) fn validate_click_definitions(file: &ClickFile) -> Result
             definition.name(),
             definition.type_parameters(),
         )?;
-        if contracts.contains_key(definition.name()) {
-            return Err(ClickError::new(format!(
-                "`{}` is defined as both a contract and a function",
-                definition.name()
-            )));
-        }
-        if predicates.contains_key(definition.name()) {
-            return Err(ClickError::new(format!(
-                "`{}` is defined as both a predicate and a function",
-                definition.name()
-            )));
-        }
-        if is_integer_truncation(definition.name()) {
-            return Err(ClickError::new(format!(
-                "`{}` is a built-in Integer truncation name",
-                definition.name()
-            )));
-        }
-        if is_integer_conversion(definition.name()) || definition.name() == "to_nat" {
-            return Err(ClickError::new(format!(
-                "`{}` is a built-in Integer conversion name",
-                definition.name()
-            )));
-        }
-        refuse_builtin_call_name("function", definition.name())?;
-        if click_functions
-            .insert(definition.name().to_string(), definition.parameters().len())
-            .is_some()
-        {
-            return Err(ClickError::new(format!(
-                "duplicate function definition `{}`",
-                definition.name()
-            )));
-        }
+        declarations.declare(
+            DeclarationKind::Function,
+            definition.name(),
+            definition.parameters().len(),
+        )?;
         click_function_types.insert(
             definition.name().to_string(),
             ClickFunctionType {
@@ -169,45 +84,13 @@ pub(in crate::surface) fn validate_click_definitions(file: &ClickFile) -> Result
     }
     validate_algebraic_type_uses(file, &click_function_types)?;
 
-    let mut resources = BTreeMap::new();
     for definition in &resource_definitions {
         crate::surface::enter_ambient_declaration(definition.name());
-        if matches!(definition.name(), "read" | "write") {
-            return Err(ClickError::new(format!(
-                "`{}` is a built-in resource name",
-                definition.name()
-            )));
-        }
-        if predicates.contains_key(definition.name()) {
-            return Err(ClickError::new(format!(
-                "`{}` is defined as both a predicate and a resource",
-                definition.name()
-            )));
-        }
-        if contracts.contains_key(definition.name()) {
-            return Err(ClickError::new(format!(
-                "`{}` is defined as both a contract and a resource",
-                definition.name()
-            )));
-        }
-        if click_functions.contains_key(definition.name()) {
-            return Err(ClickError::new(format!(
-                "`{}` is defined as both a function and a resource",
-                definition.name()
-            )));
-        }
-        if resources
-            .insert(
-                definition.name().to_string(),
-                definition.parameters().len() + definition.resource_parameters().len(),
-            )
-            .is_some()
-        {
-            return Err(ClickError::new(format!(
-                "duplicate resource definition `{}`",
-                definition.name()
-            )));
-        }
+        declarations.declare(
+            DeclarationKind::Resource,
+            definition.name(),
+            definition.parameters().len() + definition.resource_parameters().len(),
+        )?;
     }
 
     let recursive_resources = resource_definitions
@@ -222,7 +105,6 @@ pub(in crate::surface) fn validate_click_definitions(file: &ClickFile) -> Result
         .map(|definition| definition.name().to_string())
         .collect::<BTreeSet<_>>();
 
-    let mut theorems = BTreeMap::new();
     for definition in &theorem_definitions {
         crate::surface::enter_ambient_declaration(definition.name());
         generics::validate_type_parameter_list(
@@ -230,49 +112,25 @@ pub(in crate::surface) fn validate_click_definitions(file: &ClickFile) -> Result
             definition.name(),
             definition.type_parameters(),
         )?;
-        if predicates.contains_key(definition.name()) {
-            return Err(ClickError::new(format!(
-                "`{}` is defined as both a predicate and a theorem",
-                definition.name()
-            )));
-        }
-        if contracts.contains_key(definition.name()) {
-            return Err(ClickError::new(format!(
-                "`{}` is defined as both a contract and a theorem",
-                definition.name()
-            )));
-        }
-        if click_functions.contains_key(definition.name()) {
-            return Err(ClickError::new(format!(
-                "`{}` is defined as both a function and a theorem",
-                definition.name()
-            )));
-        }
-        if resources.contains_key(definition.name()) {
-            return Err(ClickError::new(format!(
-                "`{}` is defined as both a resource and a theorem",
-                definition.name()
-            )));
-        }
-        if matches!(
+        declarations.declare(
+            DeclarationKind::Theorem,
             definition.name(),
-            "integer_range_fold_empty" | "integer_range_fold_append"
-        ) {
-            return Err(ClickError::new(format!(
-                "`{}` names a law the kernel supplies, and a citation of it applies that law; rename the theorem",
-                definition.name()
-            )));
-        }
-        if theorems
-            .insert(definition.name().to_string(), definition.parameters().len())
-            .is_some()
-        {
-            return Err(ClickError::new(format!(
-                "duplicate theorem definition `{}`",
-                definition.name()
-            )));
-        }
+            definition.parameters().len(),
+        )?;
     }
+    let predicates = declarations.arities(DeclarationKind::Predicate);
+    let click_functions = declarations.arities(DeclarationKind::Function);
+    let resources = declarations.arities(DeclarationKind::Resource);
+    let theorems = declarations.arities(DeclarationKind::Theorem);
+    let mut proposition_calls = predicates.clone();
+    proposition_calls.insert("same_object".to_string(), 2);
+    proposition_calls.insert("held".to_string(), 1);
+    proposition_calls.extend(
+        declarations
+            .arities(DeclarationKind::Contract)
+            .iter()
+            .map(|(name, arity)| (name.clone(), *arity)),
+    );
 
     let predicate_definition_map = predicate_definitions
         .iter()
@@ -298,11 +156,11 @@ pub(in crate::surface) fn validate_click_definitions(file: &ClickFile) -> Result
         validate_resource_definition(
             definition,
             &resource_definition_map,
-            &resources,
+            resources,
             &recursive_resources,
             &proposition_calls,
             &contracts,
-            &click_functions,
+            click_functions,
             &click_function_types,
             &predicate_definition_map,
             &click_function_definition_map,
@@ -326,7 +184,7 @@ pub(in crate::surface) fn validate_click_definitions(file: &ClickFile) -> Result
         validate_predicate_calls_in_proposition(
             definition.body(),
             &proposition_calls,
-            &click_functions,
+            click_functions,
             &format!("predicate `{}`", definition.name()),
         )?;
         validate_contract_applications_in_proposition(
@@ -343,7 +201,7 @@ pub(in crate::surface) fn validate_click_definitions(file: &ClickFile) -> Result
         crate::surface::enter_ambient_declaration(definition.name());
         validate_click_function_expression(
             definition.body(),
-            &click_functions,
+            click_functions,
             &format!("function `{}`", definition.name()),
         )?;
         validate_c_valued_function_folds(definition, &click_function_types)?;
@@ -368,7 +226,7 @@ pub(in crate::surface) fn validate_click_definitions(file: &ClickFile) -> Result
             theorem,
             &proposition_calls,
             &contracts,
-            &click_functions,
+            click_functions,
             &click_function_types,
         )?;
     }
@@ -416,9 +274,9 @@ pub(in crate::surface) fn validate_click_definitions(file: &ClickFile) -> Result
             }
             validate_resource_clause(
                 parameter,
-                &resources,
+                resources,
                 &recursive_resources,
-                &click_functions,
+                click_functions,
                 &click_function_types,
                 &variables,
                 &format!("proof parameter in contract `{}`", definition.name()),
@@ -480,9 +338,9 @@ pub(in crate::surface) fn validate_click_definitions(file: &ClickFile) -> Result
         for resource in function.constructs() {
             validate_resource_clause(
                 resource,
-                &resources,
+                resources,
                 &recursive_resources,
-                &click_functions,
+                click_functions,
                 &click_function_types,
                 &ensures_type_environment,
                 &format!("constructs clause in `{}`", function.signature().name()),
@@ -525,7 +383,7 @@ pub(in crate::surface) fn validate_click_definitions(file: &ClickFile) -> Result
                 validate_predicate_calls_in_proposition(
                     proposition,
                     &proposition_calls,
-                    &click_functions,
+                    click_functions,
                     &context,
                 )?;
                 validate_contract_applications_in_proposition(
@@ -544,9 +402,9 @@ pub(in crate::surface) fn validate_click_definitions(file: &ClickFile) -> Result
             } else if let Requirement::Resource(resource) = requirement {
                 validate_resource_clause(
                     resource,
-                    &resources,
+                    resources,
                     &recursive_resources,
-                    &click_functions,
+                    click_functions,
                     &click_function_types,
                     &requires_type_environment,
                     &format!("requires clause in `{}`", function.signature().name()),
@@ -569,7 +427,7 @@ pub(in crate::surface) fn validate_click_definitions(file: &ClickFile) -> Result
                     validate_predicate_calls_in_proposition(
                         proposition,
                         &proposition_calls,
-                        &click_functions,
+                        click_functions,
                         &context,
                     )?;
                     validate_contract_applications_in_proposition(
@@ -605,9 +463,9 @@ pub(in crate::surface) fn validate_click_definitions(file: &ClickFile) -> Result
                 }
                 Ensure::Resource(resource) => validate_resource_clause(
                     resource,
-                    &resources,
+                    resources,
                     &recursive_resources,
-                    &click_functions,
+                    click_functions,
                     &click_function_types,
                     &ensures_type_environment,
                     &format!("ensures clause in `{}`", function.signature().name()),
@@ -3530,31 +3388,4 @@ mod resource_function_composition_tests {
             assert!(effects.active.is_empty());
         }
     }
-}
-
-/// The names the parser reads as a built-in form when applied, `defined(x)`
-/// or `old(e)`. A predicate or function of one could never be called: the
-/// form would be read in its place.
-const BUILTIN_CALL_FORMS: &[&str] = &[
-    "address",
-    "aligned",
-    "at",
-    "byte_offset",
-    "contains",
-    "defined",
-    "memory",
-    "object",
-    "old",
-    "separate",
-    "sizeof",
-    "viewable",
-];
-
-fn refuse_builtin_call_name(kind: &str, name: &str) -> Result<(), ClickError> {
-    if BUILTIN_CALL_FORMS.contains(&name) {
-        return Err(ClickError::new(format!(
-            "`{name}(...)` is a built-in form, so a {kind} named `{name}` could never be called; rename it"
-        )));
-    }
-    Ok(())
 }

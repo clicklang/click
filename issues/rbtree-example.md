@@ -1775,3 +1775,11 @@ separate theorem preserves the complete in-order identity sequence of the
 rotated subtree. The parent’s other child and uncle are still empty in these
 cases. General sibling/uncle subtrees, generalized double rotations,
 chains ending in a rotation, and writable erase integration remain unfinished.
+
+
+The standalone sized-subtree parent/color setter now checks a black-parent
+update while retaining arbitrary child subtrees and cached metadata. Its model
+lemma preserves counts, cached values, and the shape's reparenting relationship.
+Explicit color bounds before the store preserve the pointer representation;
+checked tagged-word certificates establish the numeric equations. This is a
+helper proof, not yet the generalized nonempty-sibling insertion rotation.

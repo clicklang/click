@@ -169,11 +169,7 @@ impl Bitvector32Term {
     /// Keep pointer-to-integer casts canonical when checked rewriting turns
     /// a symbolic pointer into null, just as C cast evaluation does.
     pub(crate) fn pointer_address(pointer: Pointer) -> Self {
-        if let PointerBlock::PureFunctionApplication(application) = &pointer.block
-            && application.name() == "$integer-address"
-            && pointer.offset == PointerOffsetTerm::Constant(0)
-            && let [PureFunctionArgument::Value(CValue::UInt64(bits))] = application.arguments()
-        {
+        if let Some(bits) = pointer.integer_address_bits() {
             return bits.clone();
         }
         if pointer == Pointer::null() {
@@ -2888,6 +2884,19 @@ impl ConditionTerm {
             || (matches!(left.c_type(), CType::FunctionPointer(_))
                 && matches!(right.c_type(), CType::FunctionPointer(_)))
         {
+            // With the complete pointer domain already identical, only the
+            // numeric coordinates remain. A logical word cast's coordinates
+            // use the same uint64 classes as its original word. Keep this
+            // reduction out of raw pointer equality, which designation checks
+            // also use: numbers alone must never supply a pointer domain.
+            if left.pointer().integer_address_bits().is_some()
+                || right.pointer().integer_address_bits().is_some()
+            {
+                return Self::uint64_equal(
+                    Bitvector32Term::pointer_address(left.pointer().clone()),
+                    Bitvector32Term::pointer_address(right.pointer().clone()),
+                );
+            }
             Self::pointer_equal(left.pointer().clone(), right.pointer().clone())
         } else {
             Self::PointerValueEqual(Box::new(left), Box::new(right))
@@ -3782,7 +3791,29 @@ impl CLValue {
     }
 }
 
+impl SharedPureApplication {
+    pub(in crate::kernel) fn integer_address_bits(&self) -> Option<&Bitvector32Term> {
+        if self.name() == "$integer-address"
+            && let [PureFunctionArgument::Value(CValue::UInt64(bits))] = self.arguments()
+        {
+            Some(bits)
+        } else {
+            None
+        }
+    }
+}
+
 impl Pointer {
+    pub(in crate::kernel) fn integer_address_bits(&self) -> Option<&Bitvector32Term> {
+        if self.offset == PointerOffsetTerm::Constant(0)
+            && let PointerBlock::PureFunctionApplication(application) = &self.block
+        {
+            application.integer_address_bits()
+        } else {
+            None
+        }
+    }
+
     /// The raw base address from which this pointer's object provenance came.
     ///
     /// External parameters share one memory block, so their leading offset is
