@@ -3592,7 +3592,7 @@ fn grouped_proof_finalization_reads_each_path_once() {
 /// from that origin: 30,000 units alone became over a million, and the
 /// arena's `arena_write` failed its budget only when `arena_init` ran first.
 #[test]
-#[ignore = "nightly: 3s in the parallel gate"]
+#[ignore = "nightly: multi-size store-history verification"]
 fn a_fixed_store_proof_costs_the_same_after_a_growing_unrelated_proof() {
     const RESOURCES: &str = "resource box_state(b: struct box*) {
     field len: int32;
@@ -3660,6 +3660,14 @@ resource holder_state(h: struct holder*) {
         assumption();
     }
     have h->start + i + 1 <= l by {
+        rewrite(h->start == s);
+        assumption();
+    }
+    have 0 <= h->start + i by {
+        rewrite(h->start == s);
+        arithmetic() using { 0 <= s; s <= s + i; };
+    }
+    have h->start + i < l by {
         rewrite(h->start == s);
         assumption();
     }
