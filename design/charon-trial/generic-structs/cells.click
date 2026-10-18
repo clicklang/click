@@ -34,3 +34,32 @@ fn generic_structs::swap<T: Copy>(pair: &mut generic_structs::Pair<T>) {
 fn generic_structs::swapped(x: u8, y: u8) -> u8 {
     ensures result == y;
 } by { execute(); simp(); }
+
+// A generic struct's methods are written once, for every type.
+impl<T: Copy> generic_structs::Cell<T> {
+    fn get(&self) -> T {
+        views self.value;
+        ensures result == self.value;
+    } by { execute(); simp(); }
+
+    fn set(&mut self, value: T) {
+        owns self.value;
+        ensures self.value == value;
+    } by { execute(); simp(); }
+}
+
+// Generic code calls generic code at its own abstract type: `read` and
+// `Cell::get` at `U` have their contracts with `T` read as `U`.
+fn generic_structs::read_twice<U: Copy>(cell: &generic_structs::Cell<U>) -> U {
+    views cell.value;
+    ensures result == cell.value;
+} by { execute(); simp(); }
+
+// The calls at `u32` use them at `Cell<u32>`.
+fn generic_structs::via_methods(x: u32) -> u32 {
+    ensures result == x;
+} by { execute(); simp(); }
+
+fn generic_structs::twice_at(x: i32) -> i32 {
+    ensures result == x;
+} by { execute(); simp(); }

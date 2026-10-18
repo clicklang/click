@@ -60,6 +60,45 @@ pub(crate) fn instance_type_arguments(instance: &str, generic: &str) -> Option<V
     (!arguments.is_empty()).then_some(arguments)
 }
 
+/// The generic struct and type arguments of `instance`, the name of an
+/// instance of generic struct method `generic`: `<impl Cell<i32>>::get` of
+/// `<impl Cell<T>>::get` is `Cell` at `[i32]`. `None` for any other pair.
+pub(crate) fn impl_instance_arguments(
+    instance: &str,
+    generic: &str,
+) -> Option<(String, Vec<String>)> {
+    // The one `_T` segment, the `impl` type, that differs; the rest agree.
+    let segment = |name: &str, at: usize| -> Option<(String, usize)> {
+        let tail = name.get(at..)?.strip_prefix("_T")?;
+        let digits = tail.bytes().take_while(u8::is_ascii_digit).count();
+        let length = tail[..digits].parse::<usize>().ok()?;
+        let text = tail[digits..].strip_prefix('_')?.get(..length)?;
+        Some((text.to_string(), at + 2 + digits + 1 + length))
+    };
+    for (at, _) in generic.match_indices("_T") {
+        if instance.get(..at) != Some(&generic[..at]) {
+            continue;
+        }
+        let (Some((generic_type, generic_end)), Some((instance_type, instance_end))) =
+            (segment(generic, at), segment(instance, at))
+        else {
+            continue;
+        };
+        if generic[generic_end..] != instance[instance_end..] {
+            continue;
+        }
+        for (split, _) in generic_type.match_indices("_A") {
+            let base = &generic_type[..split];
+            if instance_type_arguments(&generic_type, base).is_some()
+                && let Some(arguments) = instance_type_arguments(&instance_type, base)
+            {
+                return Some((base.to_string(), arguments));
+            }
+        }
+    }
+    None
+}
+
 /// The generic crate trait instance whose method's interface function
 /// `name` is, `traits::Scale<i32>::scale`: the trait's importer name and its
 /// type arguments. `None` for any other name.

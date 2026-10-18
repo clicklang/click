@@ -46,7 +46,7 @@ impl Parser {
         self.rust_trait_type_parameters.clear();
         // A generic function's instance, written out at its types,
         // `fn cells::read<i32>(...)`, is named with them.
-        let instance_arguments = self.rust_instance_arguments();
+        let instance_arguments = self.rust_instance_arguments(written_instance);
         if !instance_arguments.is_empty() && !written_instance {
             return Err(self.error(
                 "a generic function's instance has its generic function's contract at its \
@@ -266,23 +266,27 @@ impl Parser {
         &mut self,
         function_blocks: &mut Vec<FunctionBlock>,
     ) -> Result<(), ClickError> {
+        let written = self.rust_written_instances.contains(&self.position);
         self.expect_ident_spelling("impl")?;
         // A generic implementation, `impl<T> traits::Keep<T> for Echo`, is
         // verified once for every type: its type parameters are abstract
         // types in the block.
-        let generic = self.parse_rust_type_arguments()?;
+        let generic = self.parse_rust_impl_parameters()?;
         let previous_abstract = std::mem::replace(
             &mut self.rust_abstract_type_parameters,
             generic.iter().cloned().collect(),
         );
-        let result = self.parse_rust_impl_block_after_generics(function_blocks);
+        let result = self.parse_rust_impl_block_after_generics(function_blocks, written);
         self.rust_abstract_type_parameters = previous_abstract;
         result
     }
 
+    /// `written` when the block is a generic struct's instance the token pass
+    /// wrote out: its methods are `extern fn`s.
     fn parse_rust_impl_block_after_generics(
         &mut self,
         function_blocks: &mut Vec<FunctionBlock>,
+        written: bool,
     ) -> Result<(), ClickError> {
         let mut impl_path = self.expect_rust_path("type name")?;
         // A crate trait's instance, `traits::Scale<i32>`, is named with its
@@ -304,12 +308,40 @@ impl Parser {
             }
             impl_path = self.expect_rust_path("type name")?;
             inherent = false;
-        } else if suffix.is_some() || !instance.is_empty() {
+        } else if suffix.is_some() {
             return Err(self.error("a trait with a type argument is implemented `for` a type"));
+        } else if !instance.is_empty()
+            && !written
+            && !instance
+                .iter()
+                .all(|argument| self.rust_abstract_type_parameters.contains(argument))
+        {
+            return Err(self.error(
+                "a generic struct's methods are written once, `impl<T> crate_name::Cell<T>`; \
+                 an instance's methods have their contracts at its types",
+            ));
+        }
+        // A written instance at abstract types, from generic code, reads
+        // them as abstract types.
+        if written {
+            self.rust_abstract_type_parameters.extend(
+                instance
+                    .iter()
+                    .filter(|argument| {
+                        !rust_generic_traits::INSTANCE_SCALARS.contains(&argument.as_str())
+                    })
+                    .cloned(),
+            );
         }
         self.expect(Token::LBrace)?;
         let segments: Vec<&str> = impl_path.iter().map(String::as_str).collect();
-        let impl_type = crate::languages::rust::names::path_name(&segments);
+        // A generic struct's `impl` type is the instance it names,
+        // `Cell<T>` or `Cell<i32>`.
+        let impl_type = if inherent {
+            trait_instance_name(&impl_path, &instance)
+        } else {
+            crate::languages::rust::names::path_name(&segments)
+        };
         // An inherent block is taken to be in its type's module.
         let impl_module = (inherent && segments.len() > 1).then(|| {
             segments[..segments.len() - 1]
@@ -340,16 +372,17 @@ impl Parser {
         let previous_module = std::mem::replace(&mut self.rust_impl_module, impl_module);
         let mut result = Ok(());
         while self.peek() != Some(&Token::RBrace) {
-            if self.peek_ident() != Some("fn") {
+            let external = written && self.peek_ident() == Some("extern");
+            if self.peek_ident() != Some("fn") && !external {
                 result = Err(self.error("an `impl` block holds `fn` contracts"));
                 break;
             }
             // The method's own name, which names its interface in the trait.
-            let method = match self.tokens.get(self.position + 1) {
+            let method = match self.tokens.get(self.position + 1 + usize::from(external)) {
                 Some(Token::Ident(method)) => Some(method.clone()),
                 _ => None,
             };
-            match self.parse_function_block(false) {
+            match self.parse_function_block(external) {
                 Ok(block) => {
                     if let (Some(trait_name), Some(method)) = (&self.rust_impl_trait, method)
                         && !self.rust_object_traits.contains(trait_name)
@@ -469,6 +502,43 @@ impl Parser {
         result?;
         self.expect(Token::RBrace)?;
         Ok(())
+    }
+
+    /// A generic `impl` block's type parameters, `<T>` or `<T: Copy +
+    /// Clone>`, by name; none when no `<` follows. A parameter's bounds are
+    /// `Copy` and `Clone`, which a proof does not read.
+    fn parse_rust_impl_parameters(&mut self) -> Result<Vec<String>, ClickError> {
+        let mut parameters = Vec::new();
+        if self.peek() != Some(&Token::LessThan) {
+            return Ok(parameters);
+        }
+        self.position += 1;
+        loop {
+            parameters.push(self.expect_ident("type parameter")?);
+            if self.peek() == Some(&Token::Colon) {
+                self.position += 1;
+                loop {
+                    match self.peek_ident() {
+                        Some("Copy" | "Clone") => self.position += 1,
+                        _ => {
+                            return Err(self.error(
+                                "an abstract type parameter's bounds are `Copy` and `Clone`",
+                            ));
+                        }
+                    }
+                    if self.peek() != Some(&Token::Plus) {
+                        break;
+                    }
+                    self.position += 1;
+                }
+            }
+            match self.peek() {
+                Some(Token::Comma) => self.position += 1,
+                _ => break,
+            }
+        }
+        self.expect(Token::GreaterThan)?;
+        Ok(parameters)
     }
 
     /// A generic crate trait's or a path's type arguments, `<i32>` or `<T,
@@ -601,7 +671,11 @@ impl Parser {
     /// The scalar type arguments after a function's name, `<i32>`, that
     /// name a generic function's instance, with the list consumed; none,
     /// with nothing consumed, otherwise.
-    fn rust_instance_arguments(&mut self) -> Vec<String> {
+    ///
+    /// A `written` instance may be at abstract types too, `fn
+    /// cells::read<T>(...)` called from generic code: those are abstract
+    /// type parameters in its signature.
+    fn rust_instance_arguments(&mut self, written: bool) -> Vec<String> {
         if self.peek() != Some(&Token::LessThan) {
             return Vec::new();
         }
@@ -610,7 +684,8 @@ impl Parser {
         loop {
             match self.tokens.get(index) {
                 Some(Token::Ident(argument))
-                    if rust_generic_traits::INSTANCE_SCALARS.contains(&argument.as_str()) =>
+                    if written
+                        || rust_generic_traits::INSTANCE_SCALARS.contains(&argument.as_str()) =>
                 {
                     arguments.push(argument.clone());
                 }
@@ -623,6 +698,11 @@ impl Parser {
             }
         }
         self.position = index + 2;
+        for argument in &arguments {
+            if !rust_generic_traits::INSTANCE_SCALARS.contains(&argument.as_str()) {
+                self.rust_abstract_type_parameters.insert(argument.clone());
+            }
+        }
         arguments
     }
 

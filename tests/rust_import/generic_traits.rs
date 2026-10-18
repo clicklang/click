@@ -168,9 +168,9 @@ fn charon_generic_implementations_are_verified_once_for_every_type() {
 const STRUCT_SIDECAR: &str = include_str!("../../design/charon-trial/generic-structs/cells.click");
 
 // A generic struct's fields of `T` are values of `T` in memory: generic
-// functions over `&Cell<T>` and `&mut Pair<T>` are verified once with `T`
-// abstract, and calls at `i32` and `u8` use their contracts at the
-// instances' own layouts.
+// functions over `&Cell<T>` and `&mut Pair<T>`, and the struct's own
+// methods, are verified once with `T` abstract, and calls at `i32`, `u8` and
+// `u32` use their contracts at the instances' own layouts.
 #[test]
 fn charon_generic_struct_fields_are_verified_once_for_every_type() {
     let p = Project::from_fixture("design/charon-trial/generic-structs");
@@ -179,28 +179,36 @@ fn charon_generic_struct_fields_are_verified_once_for_every_type() {
     C0VerificationSession::new_program_prepared(STRUCT_SIDECAR, &prepared)
         .unwrap_or_else(|error| panic!("{error:?}"));
     for (before, after, expected) in [
-        // A stored value of `T` reads back as itself, and only as itself.
-        (
-            "    ensures result == cell.value;",
-            "    ensures result != cell.value;",
-            "generic_structs::read.ensures_0",
-        ),
         // Two fields of `T` are two values.
         (
             "    ensures pair.first == old(pair.second);",
             "    ensures pair.first == old(pair.first);",
             "generic_structs::swap.ensures_0",
         ),
-        // Callers at `i32` and `u8` know the instances' contracts and no more.
-        (
-            "    ensures result == x;",
-            "    ensures result == 0;",
-            "generic_structs::round_trip.ensures_0",
-        ),
+        // A caller at `u8` knows the instance's contract and no more.
         (
             "    ensures result == y;",
             "    ensures result == x;",
             "generic_structs::swapped.ensures_0",
+        ),
+        // A stored value of `T` reads back as itself, and only as itself:
+        // a generic struct's method is verified once.
+        (
+            "        ensures result == self.value;",
+            "        ensures result != self.value;",
+            "generic_structs::Cell<T>::get.ensures_0",
+        ),
+        // Generic code's calls of generic code at its own `U` have their
+        // contracts at `U`.
+        (
+            "        ensures result == self.value;\n    } by { execute(); simp(); }\n\n    fn set",
+            "        ensures true;\n    } by { execute(); simp(); }\n\n    fn set",
+            "generic_structs::read_twice.ensures_0",
+        ),
+        (
+            "fn generic_structs::via_methods(x: u32) -> u32 {\n    ensures result == x;",
+            "fn generic_structs::via_methods(x: u32) -> u32 {\n    ensures result == 0;",
+            "generic_structs::via_methods.ensures_0",
         ),
     ] {
         assert!(STRUCT_SIDECAR.contains(before), "{before}");

@@ -4541,6 +4541,10 @@ fn a_rust_sidecar_states_its_signature_in_rust_syntax() {
             "verifying \"add.rs\"; fn pick<i32>(a: i32) -> i32 { ensures result == a; } by { execute(); simp(); }",
             "write the contract once, on the generic function",
         ),
+        (
+            "verifying \"cells.rs\"; impl cells::Cell<i32> { fn get(&self) -> i32 { ensures result == 0; } }",
+            "a generic struct's methods are written once",
+        ),
     ] {
         let error = parser::parse(source).expect_err("the signature is refused");
         assert!(error.message.contains(expected), "{source}: {error:?}");

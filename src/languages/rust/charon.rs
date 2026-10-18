@@ -308,12 +308,16 @@ impl Adapter<'_> {
             .zip(pointer.generics.types.iter())
             .map(|(parameter, argument)| match parameter {
                 Some(Type::Parameter { .. }) => match self.ty(argument)? {
+                    // A call from generic code at its own type parameter,
+                    // `read::<T>(cell)`, calls the instance at that abstract
+                    // type.
                     scalar @ (Type::I32
                     | Type::U8
                     | Type::U16
                     | Type::U32
                     | Type::Usize
-                    | Type::Bool) => Ok(Some(scalar)),
+                    | Type::Bool
+                    | Type::Parameter { .. }) => Ok(Some(scalar)),
                     _ => Err(unsupported(
                         "type parameter instantiated at a type other than a scalar",
                     )),
@@ -354,6 +358,23 @@ impl Adapter<'_> {
         callee: &a::FunDecl,
         types: &[Option<Type>],
     ) -> Result<String, String> {
+        // The instance at the callee's own type parameters, a call from
+        // generic code whose parameters share their names, is the generic
+        // function itself.
+        if callee.generics.types.len() == types.len()
+            && callee
+                .generics
+                .types
+                .iter()
+                .zip(types)
+                .all(|(parameter, ty)| match ty {
+                    Some(Type::Parameter { name }) => *name == parameter.name,
+                    _ => ty.is_none(),
+                })
+            && let Some(name) = self.functions.get(&id)
+        {
+            return Ok(name.clone());
+        }
         let name = match &callee.src {
             a::FunSource::TraitImpl {
                 trait_ref,
@@ -372,6 +393,17 @@ impl Adapter<'_> {
                 *self.callable_parameters.borrow_mut() = current;
                 names?.0
             }
+            // A generic struct's method is named at the instance's `impl`
+            // type, `<impl Cell<i32>>::get`.
+            _ if callee.item_meta.name.name.iter().any(|part| {
+                matches!(part, a::PathElem::Impl(a::ImplElem::Ty(binder)) if !binder.params.is_empty())
+            }) =>
+            {
+                if !self.functions.contains_key(&id) {
+                    return Err(unsupported("unmodeled external call"));
+                }
+                self.qualified_function_name_at(&callee.item_meta.name, Some(types))?
+            }
             _ => {
                 let mut name = self
                     .functions
@@ -379,16 +411,9 @@ impl Adapter<'_> {
                     .ok_or_else(|| unsupported("unmodeled external call"))?
                     .clone();
                 for ty in types.iter().flatten() {
-                    let spelling = match ty {
-                        Type::I32 => "i32",
-                        Type::U8 => "u8",
-                        Type::U16 => "u16",
-                        Type::U32 => "u32",
-                        Type::Usize => "usize",
-                        Type::Bool => "bool",
-                        _ => continue,
-                    };
-                    super::names::push_type_argument(&mut name, spelling);
+                    if let Some(spelling) = record_argument_spelling(ty) {
+                        super::names::push_type_argument(&mut name, &spelling);
+                    }
                 }
                 name
             }
@@ -400,6 +425,17 @@ impl Adapter<'_> {
     }
 
     fn qualified_function_name(&self, name: &a::Name) -> Result<String, String> {
+        self.qualified_function_name_at(name, None)
+    }
+
+    /// The importer name of the function at `name`, with the `impl` type of
+    /// a generic struct's method at `arguments`, `<impl Cell<i32>>::get`, or
+    /// at its own parameters when there are none, `<impl Cell<T>>::get`.
+    fn qualified_function_name_at(
+        &self,
+        name: &a::Name,
+        arguments: Option<&[Option<Type>]>,
+    ) -> Result<String, String> {
         let Some(a::PathElem::Ident(root, d)) = name.name.first() else {
             return Err(unsupported("qualified function root"));
         };
@@ -415,6 +451,37 @@ impl Adapter<'_> {
                 a::PathElem::Impl(a::ImplElem::Ty(binder)) if binder.params.is_empty() => {
                     let id = self.record_id(&binder.skip_binder)?;
                     super::names::push_impl_type(&mut encoded, &self.records[&id]);
+                }
+                // A generic struct's own `impl<T> Cell<T>`: the type is the
+                // instance at the block's parameters, or at `arguments`.
+                a::PathElem::Impl(a::ImplElem::Ty(binder))
+                    if binder.params.const_generics.is_empty()
+                        && let a::TyKind::Adt(r) = binder.skip_binder.kind()
+                        && let Some(base) = self.generic_records.get(&r.id) =>
+                {
+                    let mut record = base.clone();
+                    for argument in r.generics.types.iter() {
+                        let a::TyKind::TypeVar(a::DeBruijnVar::Bound(_, var)) = argument.kind()
+                        else {
+                            return Err(unsupported("generic struct `impl` at other types"));
+                        };
+                        let spelling = match arguments {
+                            None => binder
+                                .params
+                                .types
+                                .get(*var)
+                                .map(|parameter| parameter.name.clone()),
+                            Some(arguments) => arguments
+                                .get(var.index())
+                                .cloned()
+                                .flatten()
+                                .as_ref()
+                                .and_then(record_argument_spelling),
+                        }
+                        .ok_or_else(|| unsupported("generic struct `impl` at other types"))?;
+                        super::names::push_type_argument(&mut record, &spelling);
+                    }
+                    super::names::push_impl_type(&mut encoded, &record);
                 }
                 a::PathElem::Builtin(a::BuiltinPathElem::Closure, d) => {
                     super::names::push_path_segment(
