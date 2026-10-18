@@ -5605,9 +5605,6 @@ pub(super) struct EvaluatedMemorySegment {
     pub(super) end: Bitvector32Term,
     pub(super) element_width: u32,
     pub(super) kind: RangeIndexKind,
-    /// The opaque extents the clause's pointer makes claims about
-    /// ([`CPointerValue::designations`]).
-    pub(super) base_designations: [Option<Variable>; 2],
     pub(super) formation_coverage: std::sync::Arc<[Proposition]>,
 }
 
@@ -5615,7 +5612,6 @@ impl EvaluatedMemorySegment {
     /// The range this segment denotes, in its own index kind.
     pub(super) fn into_range(self) -> CMemoryRange {
         let designation = self.designation;
-        let designations = self.base_designations;
         let range = match self.kind {
             RangeIndexKind::Int32 => CMemoryRange::new_with_element_width(
                 self.base,
@@ -5633,7 +5629,6 @@ impl EvaluatedMemorySegment {
             .with_designation(designation)
             .with_opaque_extent(self.opaque_extent, self.extent_known)
             .with_typed_carrier()
-            .with_designations(designations)
     }
 }
 
@@ -7502,7 +7497,6 @@ pub(super) fn collect_loop_effect_check_obligations(
                             end: range.bound_terms().1.clone(),
                             element_width: range.element_width,
                             kind: range.kind(),
-                            base_designations: [None, None],
                             formation_coverage: range.formation_coverage.clone(),
                         })
                         .collect()
@@ -7683,13 +7677,10 @@ pub(super) fn evaluate_loop_effect_segment_with_facts(
             end,
             element_width: segment.element_width,
             kind: RangeIndexKind::UInt64,
-            base_designations: base_value.designations(),
             formation_coverage: Default::default(),
         };
         let context = assumptions_with_path_context(assumptions, &facts, &[]);
-        if let Some(refusal) =
-            segment_extent_refusal(&base_value, &evaluated, &context, state.resources())
-        {
+        if let Some(refusal) = segment_extent_refusal(&base_value, &evaluated, &context) {
             return Ok(Err(refusal.into()));
         }
         return Ok(Ok((evaluated, facts.into())));
@@ -7730,13 +7721,10 @@ pub(super) fn evaluate_loop_effect_segment_with_facts(
         end,
         element_width,
         kind: RangeIndexKind::Int32,
-        base_designations: base_value.designations(),
         formation_coverage: Default::default(),
     };
     let context = assumptions_with_path_context(assumptions, &facts, &[]);
-    if let Some(refusal) =
-        segment_extent_refusal(&base_value, &evaluated, &context, state.resources())
-    {
+    if let Some(refusal) = segment_extent_refusal(&base_value, &evaluated, &context) {
         return Ok(Err(refusal.into()));
     }
     Ok(Ok((evaluated, facts.into())))
@@ -9046,7 +9034,6 @@ fn segment_extent_refusal(
     base: &CPointerValue,
     segment: &EvaluatedMemorySegment,
     assumptions: &PureFactContext,
-    resources: &ResourceContext,
 ) -> Option<String> {
     range_extent_refusal(
         base,
@@ -9055,7 +9042,6 @@ fn segment_extent_refusal(
         segment.element_width,
         segment.kind,
         assumptions,
-        Some(resources),
     )
 }
 
@@ -9077,70 +9063,7 @@ pub(crate) fn memory_range_extent_refusal(
         range.element_width(),
         range.kind(),
         assumptions,
-        None,
     )
-}
-
-/// [`range_extent_refusal`] through a pointer of unseen formation. A
-/// contract entry's own clause states what the extent covers
-/// ([`PureFactContext::assume_entry_clause_extents`]); any other clause, such
-/// as a call's requirement, must lie inside one range a coverage fact names.
-fn opaque_range_extent_refusal(
-    base: &CPointerValue,
-    extent: &SubobjectExtent,
-    start: &Bitvector32Term,
-    end: &Bitvector32Term,
-    element_width: u32,
-    kind: RangeIndexKind,
-    assumptions: &PureFactContext,
-    resources: Option<&ResourceContext>,
-) -> Option<String> {
-    if assumptions.should_assume_entry_clause_extents() {
-        return None;
-    }
-    let refusal = Some(format!(
-        "the clause's range of {element_width}-byte elements is not known to lie inside the object its pointer designates"
-    ));
-    if kind != RangeIndexKind::Int32 {
-        return refusal;
-    }
-    if assumptions.decide(&ConditionTerm::signed_less_equal(
-        end.clone(),
-        start.clone(),
-    )) == Some(true)
-    {
-        return None;
-    }
-    let from = base
-        .pointer()
-        .offset_by_elements(start.clone(), element_width);
-    let to = base
-        .pointer()
-        .offset_by_elements(end.clone(), element_width);
-    let spans = |range: &CMemoryRange| {
-        [&from, &to]
-            .into_iter()
-            .all(|position| assumptions.pointer_access_in_held_range(position, 0, range))
-    };
-    if let Some(resources) = resources {
-        // A range the context holds no authority for at all is left to the
-        // resource transfer, which names the missing resource; only a range
-        // it could otherwise supply is refused for its designation.
-        let authorized = resources.facts().iter().any(|fact| {
-            crate::instrumentation::record_deterministic_work(1);
-            fact.memory_view_range()
-                .or_else(|| fact.memory_own_range())
-                .is_some_and(spans)
-        });
-        if !authorized {
-            return None;
-        }
-    }
-    let held = resources
-        .is_some_and(|resources| resources.designated_range_covers(extent, assumptions, spans));
-    (!held && !assumptions.opaque_extent_covers_span(extent, &from, &to))
-        .then_some(refusal)
-        .flatten()
 }
 
 fn range_extent_refusal(
@@ -9150,21 +9073,8 @@ fn range_extent_refusal(
     element_width: u32,
     kind: RangeIndexKind,
     assumptions: &PureFactContext,
-    resources: Option<&ResourceContext>,
 ) -> Option<String> {
     let extent = base.extent()?;
-    if extent.is_opaque() {
-        return opaque_range_extent_refusal(
-            base,
-            extent,
-            start,
-            end,
-            element_width,
-            kind,
-            assumptions,
-            resources,
-        );
-    }
     let refusal = || {
         Some(match extent.constant_width() {
             Some(width) => format!(

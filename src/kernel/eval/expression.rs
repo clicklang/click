@@ -2588,7 +2588,6 @@ fn read_c_lvalue_paths_without_ranges(
                         &facts,
                         &obligations,
                         assumptions,
-                        state.resources(),
                     )
                 {
                     return Ok(vec![CExpressionPath {
@@ -2745,7 +2744,6 @@ fn read_c_lvalue_paths_without_ranges(
                     &facts,
                     &obligations,
                     assumptions,
-                    state.resources(),
                 )
                 .or_else(|| {
                     (!SpecificationAccessScope::is_active())
