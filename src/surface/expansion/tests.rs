@@ -1,6 +1,37 @@
 use super::*;
 
 #[test]
+fn callback_refinement_preserves_generated_address_obligations() {
+    let path = std::path::Path::new("rb_augment_callbacks_const_suite.md");
+    let fixture = crate::cli::parse_mdtest(
+        path,
+        include_str!("../../../mdtests/rb_augment_callbacks_const_suite.md"),
+    )
+    .unwrap();
+    let source = fixture.click_source.as_deref().unwrap();
+    let sources = fixture
+        .c_sources
+        .iter()
+        .map(|(name, source)| (name.as_str(), source.as_str()))
+        .collect::<Vec<_>>();
+    verify_c0_sources(source, &sources).unwrap_or_else(|error| panic!("{}", error.message()));
+    let incompatible = source.replacen(
+        "ensures node->left == old(node->left);",
+        "ensures node->left != old(node->left);",
+        1,
+    );
+    let error = verify_c0_sources(&incompatible, &sources)
+        .expect_err("a no-op callback cannot refine the incompatible named guarantee");
+    assert!(
+        error
+            .message()
+            .contains("dummy_propagate_contract.ensures_0"),
+        "{}",
+        error.message()
+    );
+}
+
+#[test]
 fn aggregate_leaf_resources_retain_enclosing_subobject_bounds() {
     let path = std::path::Path::new("struct_aggregate_resources.md");
     let fixture = crate::cli::parse_mdtest(

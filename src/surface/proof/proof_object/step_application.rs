@@ -3160,6 +3160,7 @@ impl<'a> Proof<'a> {
                     introduced_antecedents,
                     both_children: None,
                     witness_refinement_kernel: current.witness_refinement_kernel.clone(),
+                    generated_surface: current.generated_surface,
                 }
             })
             .map_err(|error| match error {
