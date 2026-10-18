@@ -662,21 +662,25 @@ fn project_and_examples_directories_profile_every_sidecar() {
     assert!(
         targets
             .iter()
-            .all(|target| target.project_root() == Some(examples.as_path())),
-        "an examples directory is the import root of each project: {targets:?}"
+            .all(|target| target.project_root() == Some(target.path())),
+        "each project is the import root of its own sidecars: {targets:?}"
     );
     assert_report_names_claims(&report, "jsonc-numeric", "2 files", &numeric_claims);
     assert_report_names_claims(&report, "jsonc-refcount", "3 files", &refcount_claims);
 
-    let rbtree_insert = profile_targets(&manifest.join("examples"))
+    let rbtree = profile_targets(&manifest.join("examples"))
         .expect("the examples directory should select projects")
         .into_iter()
-        .find(|target| target.path().ends_with("rbtree-insert"))
-        .expect("the examples directory selects rbtree-insert");
+        .find(|target| target.path().ends_with("rbtree"))
+        .expect("the examples directory selects the rbtree project");
     assert_eq!(
-        rbtree_insert.project_root(),
-        Some(manifest.join("examples").as_path()),
-        "rbtree-insert imports a sibling project's model, as under `click verify`"
+        rbtree.project_root(),
+        Some(
+            fs::canonicalize(manifest.join("examples/rbtree"))
+                .unwrap()
+                .as_path()
+        ),
+        "the rbtree project holds the model its insert sidecar imports, as under `click verify`"
     );
 }
 

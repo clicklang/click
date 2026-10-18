@@ -173,7 +173,7 @@ section walks through its loop proof.
 ### Red-black tree model
 
 ```text
-examples/rbtree-model/
+examples/rbtree/rbtree-model/
 ```
 
 This fixture is pure: no C file and no `verifying` line. It is the Linux rbtree
@@ -185,7 +185,7 @@ zipper half adds `plug`, a context-level red-black predicate `ctx_rb` from
 which `is_rb_root` of the whole plug follows, its insert-fixup weakening
 `ctx_almost_rb_insert`, and each fixup case restated as one step of the fixup
 loop. The proofs about verbatim Linux C that use this model live in
-`examples/rbtree-insert` and `examples/rbtree-erase`; this project is the
+`examples/rbtree/rbtree-insert` and `examples/rbtree/rbtree-erase`; this project is the
 library they cite.
 
 ### Recursive zero list

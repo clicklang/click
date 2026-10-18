@@ -1,7 +1,7 @@
 # Checked C/Rust Adler-32 correspondence
 
 The unchanged pinned zlib C implementation and adler2 Rust implementation
-satisfy [one mathematical specification](../adler32-spec.click).
+satisfy [one mathematical specification](adler32-spec.click).
 [correspondence.click](adler2/correspondence.click) derives native return-word
 equality from their checked postconditions, matching initial state, length,
 and entry bytes. This is a composition of separately checked programs;
@@ -76,13 +76,13 @@ correspondence using ordinary bounds:
 
 ```sh
 cd /tmp/click-adler32-demo
-click verify design/charon-trial/zlib/canonical-demo.click
-click verify design/charon-trial/zlib/incremental-demo.click
-click verify design/charon-trial/zlib/reset-demo.click
-click verify design/charon-trial/adler2/public-demo.click
-click verify design/charon-trial/adler2/incremental-demo.click
-click verify design/charon-trial/adler2/resumed-demo.click
-click verify design/charon-trial/adler2/correspondence.click
+click verify design/adler32/zlib/canonical-demo.click
+click verify design/adler32/zlib/incremental-demo.click
+click verify design/adler32/zlib/reset-demo.click
+click verify design/adler32/adler2/public-demo.click
+click verify design/adler32/adler2/incremental-demo.click
+click verify design/adler32/adler2/resumed-demo.click
+click verify design/adler32/adler2/correspondence.click
 ```
 
 Verification uses the committed locks offline; it needs neither GCC, Charon,
@@ -130,4 +130,4 @@ under these contracts, together with termination and byte preservation.
 Lengths beyond the common signed-index limit, noncanonical update state,
 allocation lifetime and an FFI calling convention are outside this claim.
 Compiler import and library trust boundaries remain those documented by the
-[Rust trial](README.md) and [C fixture](zlib/README.md).
+[Rust trial](../charon-trial/README.md) and [C fixture](zlib/README.md).

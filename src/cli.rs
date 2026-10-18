@@ -6,7 +6,7 @@
 //! durations, structured tactic budgets, project discovery, and a bounded
 //! worker pool.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
@@ -99,9 +99,7 @@ use crate::languages::PreparedProgram;
 use crate::languages::c::compiler_import::PreparedCImport;
 use crate::languages::c::source as c_source;
 use crate::surface::verifying_source_paths;
-use crate::surface::{
-    CProjectProfile, ClickModuleSource, ClickProject, SourceContainer, click_import_sites,
-};
+use crate::surface::{CProjectProfile, ClickModuleSource, ClickProject, SourceContainer};
 
 /// Parses a one-based `PATH:LINE:COLUMN` source location.
 ///
@@ -864,7 +862,7 @@ pub fn read_lone_sidecar_inputs(
     sidecar: &Path,
     click_source: &str,
 ) -> Result<(ClickProject, CInput), String> {
-    let project = read_lone_sidecar_project(sidecar, click_source)?;
+    let project = read_click_project(sidecar, click_source)?;
     let inputs = read_c_inputs_for_project(sidecar, click_source, &project)?;
     Ok((project, inputs))
 }
@@ -1018,18 +1016,6 @@ fn read_c_project_profile(
     Ok(Some(CProjectProfile { target, runtime }))
 }
 
-/// The profile of the nearest `click.project.json` strictly above
-/// `directory`: a project file at a project's root applies to sidecars in its
-/// subdirectories.
-fn ancestor_project_profile(directory: &Path) -> Result<Option<CProjectProfile>, String> {
-    for candidate in directory.ancestors().skip(1) {
-        if fs::symlink_metadata(candidate.join(crate::project::FILE_NAME)).is_ok() {
-            return read_c_project_profile(candidate, candidate);
-        }
-    }
-    Ok(None)
-}
-
 /// The diagnostic for the retired migration setting, in a project config or
 /// on an mdtest's ```click fence.
 fn retired_resource_semantics_setting(location: &str) -> String {
@@ -1038,24 +1024,10 @@ fn retired_resource_semantics_setting(location: &str) -> String {
     )
 }
 
-/// Loads the entry sidecar and its transitive local Click imports once, using
-/// the sidecar's directory as the default project root.
-///
-/// Callers that intentionally load a multi-directory project should use
-/// [`read_click_project_at_root`] and pass that project's explicit root.
+/// Loads the entry sidecar and its transitive local Click imports once, within
+/// the sidecar's project root ([`sidecar_project_root`]).
 pub fn read_click_project(sidecar: &Path, click_source: &str) -> Result<ClickProject, String> {
-    let root = containing_directory(sidecar);
-    read_click_project_at_root(sidecar, click_source, root)
-}
-
-/// Loads a lone sidecar under the project root `click verify` selects for it
-/// ([`lone_sidecar_project_root`]), so an entry that imports a sibling
-/// project's model loads the same way in every command.
-pub fn read_lone_sidecar_project(
-    sidecar: &Path,
-    click_source: &str,
-) -> Result<ClickProject, String> {
-    read_click_project_at_root(sidecar, click_source, &lone_sidecar_project_root(sidecar)?)
+    read_click_project_at_root(sidecar, click_source, &sidecar_project_root(sidecar)?)
 }
 
 /// Loads an entry sidecar and its transitive local Click imports within an
@@ -1134,23 +1106,12 @@ fn read_click_project_at_root_with_offset(
     }
     modules.sort_by(|left, right| left.identity().cmp(right.identity()));
     let project = ClickProject::new(identity(&entry)?, modules);
+    // The project file is the nearest one at or above the sidecar: the
+    // sidecar's project root.
     let directory = entry.parent().expect("a canonical sidecar has a parent");
-    let local_profile = read_c_project_profile(directory, &root)?;
-    let root_profile = if directory != root {
-        read_c_project_profile(&root, &root)?
-    } else {
-        None
-    };
-    let profile = match (local_profile, root_profile) {
-        (Some(_), Some(_)) => {
-            return Err(format!(
-                "Click project has `click.project.json` in both `{}` and `{}`; select one project-level config",
-                directory.display(),
-                root.display()
-            ));
-        }
-        (Some(profile), None) | (None, Some(profile)) => Some(profile),
-        (None, None) => ancestor_project_profile(directory)?,
+    let profile = match crate::project::Project::root_of(directory)? {
+        Some(project_root) => read_c_project_profile(&project_root, &project_root)?,
+        None => None,
     };
     Ok(match profile {
         Some(profile) => project.with_c_profile(profile),
@@ -1231,7 +1192,7 @@ fn load_click_module(
         })?;
         if !imported.starts_with(root) {
             return Err(format!(
-                "{}:{}:{}: import `{}` resolves outside project root `{}`",
+                "{}:{}:{}: import `{}` resolves outside project root `{}`; a sidecar imports only modules of its own project",
                 path.display(),
                 site.position.line,
                 site.position.column,
@@ -1311,53 +1272,22 @@ fn directory_entries(directory: &Path) -> Result<Vec<fs::DirEntry>, String> {
         .collect()
 }
 
-/// Finds example projects under `path`: either `path` itself when it directly
-/// contains a `.click` sidecar, or its immediate subdirectories that do.
-/// Returned paths are canonicalized and sorted.
-pub fn find_projects(path: &Path) -> Result<Vec<PathBuf>, String> {
-    if !path.is_dir() {
-        return Err(format!("`{}` is not a directory", path.display()));
-    }
-    if contains_click_file(path)? {
-        return Ok(vec![fs::canonicalize(path).map_err(|error| {
-            format!("failed to resolve `{}`: {error}", path.display())
-        })?]);
-    }
-    let mut projects = Vec::new();
-    for entry in directory_entries(path)? {
-        let candidate = entry.path();
-        if candidate.is_dir() && contains_click_file(&candidate)? {
-            projects.push(fs::canonicalize(&candidate).map_err(|error| {
-                format!("failed to resolve `{}`: {error}", candidate.display())
-            })?);
-        }
-    }
-    projects.sort();
-    if projects.is_empty() {
-        return Err(format!(
-            "`{}` contains no projects with Click sidecars",
-            path.display()
-        ));
-    }
-    Ok(projects)
-}
-
-/// One example project selected by a CLI target, with its sidecars in order.
+/// One project selected by a CLI target, with its sidecars in order.
 ///
-/// For a direct sidecar target, `path` is that sidecar and it is the only
-/// member of `sidecars`.
+/// `root` is the project root its sidecars' imports resolve within. `path`
+/// is the root, or the selected directory or sidecar when the target names
+/// only part of the project.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SelectedProject {
     pub path: PathBuf,
+    pub root: PathBuf,
     pub sidecars: Vec<PathBuf>,
 }
 
 /// The Click sidecars a `verify`, `profile`, or `audit` target names, grouped
-/// by example project, together with the root their local imports resolve
-/// within.
+/// by project.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SidecarSelection {
-    pub project_root: PathBuf,
     pub projects: Vec<SelectedProject>,
 }
 
@@ -1372,101 +1302,58 @@ impl SidecarSelection {
 
 /// Selects the sidecars behind a target the way `click verify` does.
 ///
-/// A file is one sidecar whose imports resolve within its own directory. A
-/// directory that directly contains a sidecar is one example project; any
-/// other directory selects its immediate subdirectories that do. Directory
-/// projects resolve imports within the enclosing examples directory, so one
-/// example may import another's model.
+/// A file is one sidecar. A directory selects every sidecar under it, grouped
+/// by the project each belongs to ([`sidecar_project_root`]).
 pub fn select_sidecars(path: &Path) -> Result<SidecarSelection, String> {
     if !path.is_dir() {
-        let parent = lone_sidecar_project_root(path)?;
         return Ok(SidecarSelection {
-            project_root: parent,
             projects: vec![SelectedProject {
                 path: path.to_path_buf(),
+                root: sidecar_project_root(path)?,
                 sidecars: vec![path.to_path_buf()],
             }],
         });
     }
-    let project_paths = find_projects(path)?;
-    let project_root = if contains_click_file(path)? {
-        containing_directory(path)
-    } else {
-        path
-    };
-    let mut projects = Vec::with_capacity(project_paths.len());
-    for project in project_paths {
-        let sidecars = project_sidecars(&project)?;
-        projects.push(SelectedProject {
-            path: project,
-            sidecars,
-        });
+    let selected = fs::canonicalize(path)
+        .map_err(|error| format!("failed to resolve `{}`: {error}", path.display()))?;
+    let mut groups = BTreeMap::<PathBuf, Vec<PathBuf>>::new();
+    for sidecar in sidecars_under(&selected)? {
+        groups
+            .entry(sidecar_project_root(&sidecar)?)
+            .or_default()
+            .push(sidecar);
     }
-    let selection = SidecarSelection {
-        project_root: project_root.to_path_buf(),
-        projects,
-    };
-    if selection.sidecars().next().is_none() {
+    let projects = groups
+        .into_iter()
+        .map(|(root, sidecars)| SelectedProject {
+            path: if root.starts_with(&selected) {
+                root.clone()
+            } else {
+                selected.clone()
+            },
+            root,
+            sidecars,
+        })
+        .collect::<Vec<_>>();
+    if projects.is_empty() {
         return Err(format!(
             "`{}` contains no Click sidecars to verify",
             path.display()
         ));
     }
-    Ok(selection)
+    Ok(SidecarSelection { projects })
 }
 
-/// The project root a lone sidecar selects: its own directory, widened to
-/// the nearest directory that also holds every module it transitively
-/// imports. A sidecar whose imports all lie beside or below it keeps its
-/// directory, as before; one that imports a sibling project (the rbtree
-/// insert frontier importing `../rbtree-model/rbtree_model.click`) selects
-/// their common parent, which is the root the directory form of the same
-/// command would use. Only the import graph is read here; the sources are
-/// loaded again, under the root, by the ordinary project reader, so an
-/// import that fails to resolve is reported there rather than guessed at.
-pub fn lone_sidecar_project_root(sidecar: &Path) -> Result<PathBuf, String> {
-    let default = containing_directory(sidecar).to_path_buf();
-    let Ok(entry) = fs::canonicalize(sidecar) else {
-        return Ok(default);
-    };
-    let mut root = containing_directory(&entry).to_path_buf();
-    let mut visited = BTreeSet::new();
-    let mut pending = vec![entry];
-    while let Some(module) = pending.pop() {
-        if !visited.insert(module.clone()) {
-            continue;
-        }
-        if visited.len() > 256 {
-            return Err(format!(
-                "Click import chain exceeds 256 modules while selecting the project root of `{}`",
-                sidecar.display()
-            ));
-        }
-        let Ok(source) = fs::read_to_string(&module) else {
-            continue;
-        };
-        let Ok(sites) = click_import_sites(&source) else {
-            continue;
-        };
-        let parent = containing_directory(&module);
-        for site in sites {
-            let Ok(imported) = fs::canonicalize(parent.join(&site.path)) else {
-                continue;
-            };
-            let directory = containing_directory(&imported).to_path_buf();
-            while !directory.starts_with(&root) {
-                let Some(above) = root.parent() else {
-                    break;
-                };
-                root = above.to_path_buf();
-            }
-            pending.push(imported);
-        }
+/// The project root a sidecar's imports resolve within: the nearest
+/// directory, from the sidecar's own upward, holding a `click.project.json`.
+/// A sidecar with no project file above it is a project of its own, rooted
+/// at its directory.
+pub fn sidecar_project_root(sidecar: &Path) -> Result<PathBuf, String> {
+    let directory = containing_directory(sidecar);
+    if let Some(root) = crate::project::Project::root_of(directory)? {
+        return Ok(root);
     }
-    if visited.len() == 1 {
-        return Ok(default);
-    }
-    Ok(root)
+    Ok(fs::canonicalize(directory).unwrap_or_else(|_| directory.to_path_buf()))
 }
 
 /// What a `profile` or `audit` target selects: markdown tests, or sidecars
@@ -1531,18 +1418,17 @@ pub fn directory_contains_mdtests(path: &Path) -> Result<bool, String> {
 /// Reads a sidecar, its transitive local Click imports within
 /// `project_root`, and the C inputs its selected target declares.
 ///
-/// `None` uses the sidecar's own directory as the project root.
+/// `None` uses the sidecar's project root ([`sidecar_project_root`]).
 pub fn load_sidecar_inputs(
     click_path: &Path,
     project_root: Option<&Path>,
 ) -> Result<(String, ClickProject, CInput), String> {
     let click_source = fs::read_to_string(click_path)
         .map_err(|error| format!("failed to read `{}`: {error}", click_path.display()))?;
-    let project = read_click_project_at_root(
-        click_path,
-        &click_source,
-        project_root.unwrap_or_else(|| containing_directory(click_path)),
-    )?;
+    let project = match project_root {
+        Some(root) => read_click_project_at_root(click_path, &click_source, root)?,
+        None => read_click_project(click_path, &click_source)?,
+    };
     let inputs = read_c_inputs_for_project(click_path, &click_source, &project)?;
     Ok((click_source, project, inputs))
 }
@@ -1600,32 +1486,42 @@ pub fn load_target_inputs(
     })
 }
 
-/// Returns true when the directory directly contains a `.click` sidecar.
-pub fn contains_click_file(path: &Path) -> Result<bool, String> {
-    Ok(directory_entries(path)?.into_iter().any(|entry| {
-        entry
-            .path()
-            .extension()
-            .is_some_and(|extension| extension == "click")
-    }))
-}
-
-/// The sidecars a project directory verifies: its `.click` files, sorted,
-/// less the declaration modules
-/// ([`crate::surface::click_source_is_declaration_module`]). A module that
-/// only declares resources, types, predicates, and pure functions for its
-/// importers owns no claim, and it names struct layouts only its importers'
-/// `verifying` sources supply, so it is checked where it is imported rather
-/// than as an entry of its own.
-pub fn project_sidecars(project: &Path) -> Result<Vec<PathBuf>, String> {
+/// Every sidecar under `directory`, recursively and sorted, less the
+/// declaration modules ([`crate::surface::click_source_is_declaration_module`]).
+/// A module that only declares resources, types, predicates, and pure
+/// functions for its importers owns no claim, and it names struct layouts
+/// only its importers' `verifying` sources supply, so it is checked where it
+/// is imported rather than as an entry of its own. Hidden directories (`.click` artifacts, `.git`) and
+/// `target` are skipped, and symbolic links are not followed.
+fn sidecars_under(directory: &Path) -> Result<Vec<PathBuf>, String> {
     let mut sidecars = Vec::new();
-    for path in files_with_extension(project, "click")? {
-        let source = fs::read_to_string(&path)
-            .map_err(|error| format!("failed to read `{}`: {error}", path.display()))?;
-        if !crate::surface::click_source_is_declaration_module(&source) {
-            sidecars.push(path);
+    let mut pending = vec![directory.to_path_buf()];
+    while let Some(directory) = pending.pop() {
+        for entry in directory_entries(&directory)? {
+            let path = entry.path();
+            let kind = entry
+                .file_type()
+                .map_err(|error| format!("failed to inspect `{}`: {error}", path.display()))?;
+            let name = entry.file_name();
+            let name = name.to_string_lossy();
+            if kind.is_dir() {
+                if !name.starts_with('.') && name != "target" {
+                    pending.push(path);
+                }
+            } else if kind.is_file()
+                && path
+                    .extension()
+                    .is_some_and(|extension| extension == "click")
+            {
+                let source = fs::read_to_string(&path)
+                    .map_err(|error| format!("failed to read `{}`: {error}", path.display()))?;
+                if !crate::surface::click_source_is_declaration_module(&source) {
+                    sidecars.push(path);
+                }
+            }
         }
     }
+    sidecars.sort();
     Ok(sidecars)
 }
 
@@ -2222,59 +2118,79 @@ mod tests {
         );
         assert_eq!(containing_directory(Path::new("/")), Path::new("."));
         let selection = select_sidecars(Path::new("a.click")).unwrap();
-        assert_eq!(selection.project_root, Path::new("."));
+        assert_eq!(selection.projects[0].path, Path::new("a.click"));
     }
 
-    /// A lone sidecar that imports a sibling project selects their common
-    /// parent as its project root, the root the directory form would use;
-    /// one whose imports lie beside or below it keeps its own directory.
+    /// A sidecar's imports resolve within its project: the nearest directory
+    /// holding a project file, or the sidecar's own directory when none does.
+    /// An import that leaves the project is refused, however the sidecar is
+    /// selected, and a directory selects every sidecar under it, grouped by
+    /// project.
     #[test]
-    fn a_lone_sidecar_root_covers_its_imports() {
+    fn imports_resolve_within_the_sidecars_project() {
         let root = std::env::temp_dir().join(format!(
-            "click-lone-sidecar-root-{}-{}",
+            "click-project-imports-{}-{}",
             std::process::id(),
             std::thread::current().name().unwrap_or("test")
         ));
         let _ = fs::remove_dir_all(&root);
-        fs::create_dir_all(root.join("model")).unwrap();
-        fs::create_dir_all(root.join("insert/local")).unwrap();
-        fs::write(root.join("model/model.click"), "spec enum Color { Red }\n").unwrap();
+        fs::create_dir_all(root.join("tree/model")).unwrap();
+        fs::create_dir_all(root.join("tree/insert")).unwrap();
+        fs::create_dir_all(root.join("alone")).unwrap();
+        fs::write(root.join("tree").join(crate::project::FILE_NAME), "{}\n").unwrap();
         fs::write(
-            root.join("insert/local/helpers.click"),
-            "import \"../../model/model.click\";\n",
+            root.join("tree/model/model.click"),
+            "spec enum Color { Red }\n",
         )
         .unwrap();
+        let entry = "import \"../model/model.click\";\ntheorem red() { ensures true; }\n";
+        fs::write(root.join("tree/insert/entry.click"), entry).unwrap();
         fs::write(
-            root.join("insert/entry.click"),
-            "import \"local/helpers.click\";\n",
+            root.join("alone/escape.click"),
+            "import \"../tree/model/model.click\";\ntheorem red() { ensures true; }\n",
         )
         .unwrap();
-        fs::write(
-            root.join("insert/alone.click"),
-            "import \"local/helpers.click\";\n",
-        )
-        .unwrap();
-        fs::write(root.join("insert/local/helpers.click"), "").unwrap();
         let canonical = fs::canonicalize(&root).unwrap();
         assert_eq!(
-            fs::canonicalize(lone_sidecar_project_root(&root.join("insert/alone.click")).unwrap())
-                .unwrap(),
-            canonical.join("insert")
-        );
-        fs::write(
-            root.join("insert/local/helpers.click"),
-            "import \"../../model/model.click\";\n",
-        )
-        .unwrap();
-        assert_eq!(
-            fs::canonicalize(lone_sidecar_project_root(&root.join("insert/entry.click")).unwrap())
-                .unwrap(),
-            canonical
+            sidecar_project_root(&root.join("tree/insert/entry.click")).unwrap(),
+            canonical.join("tree")
         );
         assert_eq!(
-            lone_sidecar_project_root(Path::new("missing/nowhere.click")).unwrap(),
+            sidecar_project_root(&root.join("alone/escape.click")).unwrap(),
+            canonical.join("alone")
+        );
+        assert_eq!(
+            sidecar_project_root(Path::new("missing/nowhere.click")).unwrap(),
             PathBuf::from("missing")
         );
+        read_click_project(&root.join("tree/insert/entry.click"), entry).unwrap();
+        let escape = fs::read_to_string(root.join("alone/escape.click")).unwrap();
+        let error = read_click_project(&root.join("alone/escape.click"), &escape).unwrap_err();
+        assert!(error.contains("resolves outside project root"), "{error}");
+        assert!(error.contains("its own project"), "{error}");
+
+        let selection = select_sidecars(&root).unwrap();
+        let projects = selection
+            .projects
+            .iter()
+            .map(|project| (project.root.clone(), project.sidecars.clone()))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            projects,
+            [
+                (
+                    canonical.join("alone"),
+                    vec![canonical.join("alone/escape.click")]
+                ),
+                (
+                    canonical.join("tree"),
+                    vec![canonical.join("tree/insert/entry.click")]
+                ),
+            ]
+        );
+        let part = select_sidecars(&root.join("tree/insert")).unwrap();
+        assert_eq!(part.projects[0].root, canonical.join("tree"));
+        assert_eq!(part.projects[0].path, canonical.join("tree/insert"));
         let _ = fs::remove_dir_all(&root);
     }
 
@@ -2503,7 +2419,7 @@ mod tests {
     }
 
     #[test]
-    fn explicit_project_root_supplies_one_profile_to_nested_sidecars() {
+    fn a_project_file_supplies_its_profile_to_sidecars_in_subdirectories() {
         let root = std::env::temp_dir().join(format!(
             "click-project-root-profile-{}-{}",
             std::process::id(),
@@ -2524,21 +2440,23 @@ mod tests {
             "#include <pthread.h>\nint answer(void) { return 1; }\n",
         )
         .unwrap();
-        let project = read_click_project_at_root(&path, click, &root).unwrap();
+        let project = read_click_project(&path, click).unwrap();
         let CInput::Bundle(sources) = read_c_inputs_for_project(&path, click, &project).unwrap()
         else {
             panic!("nested sidecar should use the root-configured bundle");
         };
         crate::surface::verify_c0_project(&project, &source_refs(&sources)).unwrap();
-        fs::write(
-            nested.join("click.project.json"),
-            r#"{"target":"x86_64-unknown-linux-gnu","runtime":"modeled-pthread"}"#,
-        )
-        .unwrap();
-        assert!(
-            read_click_project_at_root(&path, click, &root)
-                .unwrap_err()
-                .contains("both")
+        // A project file in the subdirectory makes it a project of its own:
+        // the nearest file wins.
+        fs::write(nested.join("click.project.json"), r#"{"mode":"kernel"}"#).unwrap();
+        assert_eq!(
+            sidecar_project_root(&path).unwrap(),
+            fs::canonicalize(&nested).unwrap()
+        );
+        let project = read_click_project(&path, click).unwrap();
+        assert_eq!(
+            project.c_profile().and_then(|profile| profile.target),
+            Some(crate::languages::c::target::CTarget::X86_64LinuxKernel)
         );
         fs::remove_dir_all(root).unwrap();
     }

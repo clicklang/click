@@ -7,7 +7,7 @@ Soundness: not soundness. The remaining work is features and tooling.
 changed import cannot leave a stale verdict marked current.
 
 P2: the former P1/MVR import slice is complete. The rbtree insert fixture now
-uses `examples/rbtree-model` as its shared source of truth, and imports no
+uses `examples/rbtree/rbtree-model` as its shared source of truth, and imports no
 longer recursively run library proofs. The remaining work—imported named
 contracts and external C specifications, and precise incremental
 selection—is useful after launch but does not block the current rbtree plan.
@@ -36,7 +36,7 @@ verifying "rbtree.c";
 
 - Resolve a path relative to the importing file, within an explicit project
   root. The root must support sibling example directories, including
-  `examples/rbtree-insert` importing `examples/rbtree-model`; do not assume
+  `examples/rbtree/rbtree-insert` importing `examples/rbtree/rbtree-model`; do not assume
   every entry file's containing directory is the entire project root.
 - Use canonical file identities, deterministic loading, and original source
   locations. Load a module once per verification session even when several
@@ -169,8 +169,8 @@ selection creates unconditional theorem authority for an unproved assumption.
 3. Carry the same module inputs, source identities, and selection through all
    proof tools. Make existing incremental handling safe; a conservative rebuild
    of the selected scope is acceptable initially.
-4. Convert the copied insert fixture into `examples/rbtree-insert` importing
-   `examples/rbtree-model/rbtree_model.click`, coordinated with
+4. Convert the copied insert fixture into `examples/rbtree/rbtree-insert` importing
+   `examples/rbtree/rbtree-model/rbtree_model.click`, coordinated with
    [rbtree-example.md](rbtree-example.md), package I1. Preserve the unchanged C
    and the honest current proof frontier; this issue does not require finishing
    the insert proof or turning an unfinished proof into an accepted claim.
@@ -247,9 +247,9 @@ marker reused. It never treats an imported proof as selected. Precise
 dependency-level invalidation remains follow-up work.
 
 The former copied `mdtests/rb_insert_color.md` fixture is now
-`examples/rbtree-insert`. Its unchanged C and the finished `__rb_insert` proof
+`examples/rbtree/rbtree-insert`. Its unchanged C and the finished `__rb_insert` proof
 are in `rb_insert_color.c` and `rbtree_insert.click`, which imports the single
-shared `examples/rbtree-model/rbtree_model.click`.
+shared `examples/rbtree/rbtree-model/rbtree_model.click`.
 
 Regressions cover transitive generic algebraic/function/theorem/predicate/
 resource imports, imported-theorem and callee-contract assumptions, explicit

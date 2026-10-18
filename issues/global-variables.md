@@ -107,7 +107,7 @@ also verifies and is no longer quarantined.
 Linked pointer initializers resolve in their defining translation unit
 (`mdtests/a_linked_pointer_initializer_names_a_private_object_of_its_defining_file.md`).
 The unchanged upstream PCG wrappers and a separate client of them verify in
-`examples/pcg-basic/` and `examples/pcg-client/`.
+`examples/pcg/pcg-basic/` and `examples/pcg/pcg-client/`.
 
 ## Deferred language coverage
 

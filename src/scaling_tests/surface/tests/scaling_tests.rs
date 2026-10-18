@@ -4459,7 +4459,7 @@ fn call_requirement_checking_is_linear_in_the_requirement_count() {
 /// 16 unrelated owned objects. Every object a pointer parameter reaches
 /// shares one block, so the composition-law route used to ask every owned
 /// member of that block whether it held each side. The null-guarded shape
-/// of `examples/rbtree-augmented`'s `sized_rotate`, `p == 0 or
+/// of `examples/rbtree/rbtree-augmented`'s `sized_rotate`, `p == 0 or
 /// separate(memory(p), memory(p->f))` with `p == 0` known, also asked its
 /// right disjunct, a separation nothing can establish, which every route
 /// then refused only after visiting the whole frame. Measured on
@@ -6250,7 +6250,7 @@ fn sequential_interface_joins_project(count: usize) -> (String, String) {
 /// This fixture's arms cache one read each, under the spelling the store
 /// uses, so it holds the line on the ordinary case. It did not reproduce the
 /// cost the `__rb_insert` port met, where an arm's statements reach cells
-/// through pointers loaded from memory; `examples/rbtree-insert` is the
+/// through pointers loaded from memory; `examples/rbtree/rbtree-insert` is the
 /// evidence for that one.
 #[test]
 #[ignore = "nightly: 4s in the parallel gate"]
@@ -8761,7 +8761,7 @@ fn pointer_field_call_branch_join_scales_with_unrelated_caller_facts() {
 /// Each arm used to copy the branch's facts into a list and lower the
 /// condition against a context rebuilt from that whole list, so every split
 /// assumed every earlier fact again: the loop body of
-/// `examples/rbtree-erase/rbtree_erase_color_flips_red_all.click` paid about
+/// `examples/rbtree/rbtree-erase/rbtree_erase_color_flips_red_all.click` paid about
 /// 185,000 control units for it. The test holds one loop-body split fixed
 /// beside 1 to 8 earlier `have` facts and pins the context entries the split
 /// adds

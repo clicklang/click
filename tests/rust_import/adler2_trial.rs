@@ -16,11 +16,11 @@ fn charon_adler2_crate_trial_rejects_unlocked_module_closure() {
     for (name, bytes) in [
         (
             "lib.rs",
-            include_bytes!("../../design/charon-trial/adler2/src/lib.rs").as_slice(),
+            include_bytes!("../../design/adler32/adler2/src/lib.rs").as_slice(),
         ),
         (
             "algo.rs",
-            include_bytes!("../../design/charon-trial/adler2/src/algo.rs").as_slice(),
+            include_bytes!("../../design/adler32/adler2/src/algo.rs").as_slice(),
         ),
     ] {
         let file = pin["files"]

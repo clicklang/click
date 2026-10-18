@@ -1,4 +1,4 @@
-import "../../adler32-spec.click";
+import "../adler32-spec.click";
 import click::integer;
 
 // Widen the Rust result into the LP64 C return type without losing bits.

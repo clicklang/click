@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Copy the locked C/Rust Adler-32 demonstration and assemble its proof fragments.
+"""Copy the locked C/Rust Adler-32 project and assemble its proof fragments.
 
 This runs no compiler or verifier. Generated sidecars contain the same complete
 proof bodies as the existing checksum regressions, for ordinary `click verify`.
@@ -15,11 +15,9 @@ def prepare(destination):
     root = pathlib.Path(__file__).resolve().parent.parent
     if destination.exists():
         raise ValueError("destination already exists; choose a new directory")
-    trial = destination / "design/charon-trial"
-    trial.mkdir(parents=True)
-    for name in ["adler2", "zlib"]:
-        shutil.copytree(root / "design/charon-trial" / name, trial / name)
-    shutil.copy2(root / "design/adler32-spec.click", destination / "design/adler32-spec.click")
+    trial = destination / "design/adler32"
+    trial.parent.mkdir(parents=True)
+    shutil.copytree(root / "design/adler32", trial)
     rust = trial / "adler2"
 
     def read(name):
@@ -27,7 +25,7 @@ def prepare(destination):
 
     helpers = read("helpers")
     parts = [helpers.split("// Empty-input boundary", 1)[0],
-             (destination / "design/adler32-spec.click").read_text()]
+             (trial / "adler32-spec.click").read_text()]
     # Match the general-compute verification unit used by the Rust regressions:
     # every referenced lemma, actual helper, constant getter and computation body.
     for name in ["lane-state", "vector-prefix", "batch-prefix",

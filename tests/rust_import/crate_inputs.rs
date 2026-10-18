@@ -153,11 +153,11 @@ fn charon_adler2_locked_crate_imports_compute_and_proves_constants() {
     for (name, bytes) in [
         (
             "lib.rs",
-            include_bytes!("../../design/charon-trial/adler2/src/lib.rs").as_slice(),
+            include_bytes!("../../design/adler32/adler2/src/lib.rs").as_slice(),
         ),
         (
             "algo.rs",
-            include_bytes!("../../design/charon-trial/adler2/src/algo.rs").as_slice(),
+            include_bytes!("../../design/adler32/adler2/src/algo.rs").as_slice(),
         ),
     ] {
         fs::write(p.root.join(name), bytes).unwrap();
@@ -293,12 +293,12 @@ fn charon_adler2_unchanged_constructor_returns_initialized_state() {
     let p = Project::isolated("");
     fs::write(
         p.root.join("lib.rs"),
-        include_bytes!("../../design/charon-trial/adler2/src/lib.rs"),
+        include_bytes!("../../design/adler32/adler2/src/lib.rs"),
     )
     .unwrap();
     fs::write(
         p.root.join("algo.rs"),
-        include_bytes!("../../design/charon-trial/adler2/src/algo.rs"),
+        include_bytes!("../../design/adler32/adler2/src/algo.rs"),
     )
     .unwrap();
     fs::write(p.config(), serde_json::to_vec(&serde_json::json!({

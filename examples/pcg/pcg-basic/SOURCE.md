@@ -26,6 +26,6 @@ verifying. The code is Apache-2.0 licensed (`LICENSE.txt`).
 `pcg32_boundedrand_r` and `pcg32_boundedrand` are imported but not specified:
 their retry loop terminates only with probability one.
 
-`examples/pcg-client/` verifies a separate client that seeds with
+`examples/pcg/pcg-client/` verifies a separate client that seeds with
 `pcg32_srandom(42, 54)`, checks the first two outputs (`0xa15c02b7`,
 `0x7b47f409`) and that reseeding repeats them.

@@ -23,7 +23,7 @@ does not imply support for an entire project or build.
   of it stops today. It makes no verification claim.
 
 The Linux rbtree work is not yet an upstream integration: its
-[model](../examples/rbtree-model/README.md) is verified, but the
-[insert example](../examples/rbtree-insert/README.md) explicitly keeps the
+[model](../examples/rbtree/rbtree-model/README.md) is verified, but the
+[insert example](../examples/rbtree/rbtree-insert/README.md) explicitly keeps the
 unfinished proof as a frontier. A pinned upstream rbtree integration belongs
 here when its stated source-level claim is proved and reproducible.

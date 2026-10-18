@@ -6,7 +6,7 @@ former `mdtests/rb_insert_color.md` fixture; `tests/examples.rs` pins both
 files by SHA-256. The function bodies in `rb_insert_color.c` are copied from
 Linux v6.8.12, but `rbtree.h` is a hand-written stand-in for the kernel
 headers that differs from them; see
-[Current rbtree status](../../docs/internals/roadmap.md#current-rbtree-status).
+[Current rbtree status](../../../docs/internals/roadmap.md#current-rbtree-status).
 
 `rbtree_insert.click` proves the Linux insert fixup, `__rb_insert`, end to end.
 It takes the context and the red subtree at the inserted node
@@ -50,8 +50,8 @@ root case skips `rb_set_parent_color(node, NULL, RB_BLACK)`.
 Run it with:
 
 ```sh
-click verify examples/rbtree-model
-click verify examples/rbtree-insert
+click verify examples/rbtree/rbtree-model
+click verify examples/rbtree/rbtree-insert
 ```
 
 The sidecar imports the model from the sibling project, so its project root is
@@ -59,5 +59,5 @@ The sidecar imports the model from the sibling project, so its project root is
 tactics inside the fixup's proof `match` arms and its `preserve` body:
 
 ```sh
-click verify --trace-proof __rb_insert --trace-to LINE examples/rbtree-insert/rbtree_insert.click
+click verify --trace-proof __rb_insert --trace-to LINE examples/rbtree/rbtree-insert/rbtree_insert.click
 ```

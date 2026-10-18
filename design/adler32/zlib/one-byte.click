@@ -2,7 +2,7 @@ import click::integer;
 
 target "x86_64-unknown-linux-gnu";
 verifying "adler32.c";
-import "../../adler32-spec.click";
+import "../adler32-spec.click";
 theorem zlib_pack_order(value: Integer) {
  ensures value + 65536 * value == 65536 * value + value by { arithmetic() using {}; }
 }

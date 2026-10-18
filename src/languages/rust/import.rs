@@ -659,7 +659,7 @@ mod unit_tests {
                 std::process::id(),
                 NEXT.fetch_add(1, Ordering::Relaxed)
             ));
-        let trial = Path::new(env!("CARGO_MANIFEST_DIR")).join("design/charon-trial/adler2");
+        let trial = Path::new(env!("CARGO_MANIFEST_DIR")).join("design/adler32/adler2");
         let crate_root = root.join("vendor/adler2-2.0.1");
         let proofs = root.join("proofs");
         fs::create_dir_all(crate_root.join("src")).unwrap();
@@ -667,7 +667,7 @@ mod unit_tests {
         for file in ["src/lib.rs", "src/algo.rs"] {
             fs::copy(trial.join(file), crate_root.join(file)).unwrap();
         }
-        let artifact = fs::read(trial.join(".click/adler2/src/lib.rs.ullbc")).unwrap();
+        let artifact = fs::read(trial.join("../.click/adler2/src/lib.rs.ullbc")).unwrap();
         fs::write(proofs.join(".click/adler2/src/lib.rs.ullbc"), &artifact).unwrap();
         let proof = fs::read_to_string(trial.join("restoration.click"))
             .unwrap()
@@ -739,7 +739,7 @@ mod unit_tests {
             program.logical_source(),
             "../vendor/adler2-2.0.1/src/lib.rs"
         );
-        let click_project = crate::cli::read_lone_sidecar_project(&sidecar, &proof).unwrap();
+        let click_project = crate::cli::read_click_project(&sidecar, &proof).unwrap();
         let verified =
             crate::surface::verify_program_prepared_project(&click_project, &program).unwrap();
         assert!(!verified.is_empty());

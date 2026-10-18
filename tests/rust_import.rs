@@ -18,7 +18,11 @@ const SOURCE: &str = include_str!("../examples/basic-rust/borrow.rs");
 const FIELD_BORROW_GUARD_SOURCE: &str = include_str!("../examples/rust-field-borrow/guard.rs");
 const SIDECAR: &str = include_str!("../examples/basic-rust/borrow.click");
 struct Project {
+    /// Where the test's sidecars live.
     root: PathBuf,
+    /// The project root, holding the project file, lock and artifacts: `root`
+    /// itself, or its ancestor for a fixture that is part of a larger project.
+    project: PathBuf,
 }
 impl Project {
     fn isolated(source: &str) -> Self {
@@ -31,7 +35,10 @@ impl Project {
         fs::create_dir(&root).unwrap();
         fs::write(root.join("borrow.rs"), source).unwrap();
         fs::write(root.join("borrow.click"), SIDECAR).unwrap();
-        Self { root }
+        Self {
+            project: root.clone(),
+            root,
+        }
     }
     /// A single-file Rust project: `borrow.rs` as the one source of unit
     /// `borrow`.
@@ -100,10 +107,20 @@ impl Project {
             &PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(directory),
             &root,
         );
-        Self { root }
+        Self {
+            project: root.clone(),
+            root,
+        }
+    }
+    /// A copy of a committed project, working in its directory `part`: the
+    /// adler2 crate of the Adler-32 project.
+    fn from_fixture_part(directory: &str, part: &str) -> Self {
+        let mut copy = Self::from_fixture(directory);
+        copy.root = copy.project.join(part);
+        copy
     }
     fn project_file(&self) -> PathBuf {
-        self.root.join("click.project.json")
+        self.project.join("click.project.json")
     }
     /// The prepared import `borrow.click` selects: through the project's
     /// units when the project has a project file, otherwise through the
@@ -151,7 +168,7 @@ impl Project {
         click::project::Project::load(&self.project_file())?.lock()
     }
     fn lock_file(&self) -> PathBuf {
-        self.root.join(click::project::LOCK_NAME)
+        self.project.join(click::project::LOCK_NAME)
     }
     /// The prepared artifact of the Rust source `source`.
     fn artifact(&self, source: &str) -> PathBuf {
@@ -163,7 +180,7 @@ impl Project {
             .iter()
             .find(|(_, unit)| unit["sources"].get(source).is_some())
             .expect("a unit lists the source");
-        self.root
+        self.project
             .join(".click")
             .join(unit)
             .join(format!("{source}.ullbc"))
@@ -208,7 +225,7 @@ fn copy_tree(from: &std::path::Path, to: &std::path::Path) {
 }
 impl Drop for Project {
     fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.root);
+        let _ = fs::remove_dir_all(&self.project);
     }
 }
 
@@ -4595,7 +4612,7 @@ fn rust_arm_local_borrows_close_without_escaping_before_the_join() {
 #[test]
 #[ignore = "requires the separately built pinned Charon/compiler"]
 fn charon_project_crate_unit_serves_every_sidecar_of_the_crate() {
-    let trial = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("design/charon-trial/adler2");
+    let trial = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("design/adler32/adler2");
     let root = std::env::temp_dir().join(format!("click-rust-project-unit-{}", std::process::id()));
     let crate_root = root.join("vendor/adler2-2.0.1");
     fs::create_dir_all(crate_root.join("src")).unwrap();

@@ -67,10 +67,10 @@ Click verifies function bodies copied byte for byte from Linux v6.8.12 (commit
 `integrations/linux-rbtree/provenance.json`), not the pinned translation unit:
 
 - `__rb_insert` and `rb_insert_color`, with one general contract
-  (`examples/rbtree-insert`).
+  (`examples/rbtree/rbtree-insert`).
 - `____rb_erase_color` and `__rb_erase_color`, with one general contract over a
-  context missing one black level (`examples/rbtree-erase`,
-  `examples/rbtree-augmented`).
+  context missing one black level (`examples/rbtree/rbtree-erase`,
+  `examples/rbtree/rbtree-augmented`).
 - `rb_erase` with `__rb_erase_augmented`, through 11 per-case contracts: leaf,
   one-child, immediate-successor, and deeper-successor deletion at any position.
   There is no single general `rb_erase` contract and no theorem that the 11
@@ -82,7 +82,7 @@ Click verifies function bodies copied byte for byte from Linux v6.8.12 (commit
   nothing, and `rb_erase_augmented` for leaf deletion only.
 - Concrete `sized_node` metadata copy, bounded recomputation, both rotation
   directions, and arbitrary-length ancestor propagation restore a recursive
-  `sized_at` size invariant (`examples/rbtree-augmented`). Checked callback-table
+  `sized_at` size invariant (`examples/rbtree/rbtree-augmented`). Checked callback-table
   dispatch connects the copy, rotation and propagation interfaces to the
   generated size callbacks.
 - Sized insertion covers the no-parent root case, the immediate black-parent
@@ -96,7 +96,7 @@ termination, red-black validity with a black root, parent-pointer consistency,
 and preservation of the in-order sequence of node identities (the tree has no
 keys or comparator), with an exact model for erase.
 
-They run under `examples/rbtree-insert/rbtree.h`, a hand-written header that
+They run under `examples/rbtree/rbtree-insert/rbtree.h`, a hand-written header that
 stands in for `include/linux/rbtree.h`, `rbtree_types.h`, and
 `rbtree_augmented.h`. It is trusted, and it differs from upstream:
 

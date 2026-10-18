@@ -27,10 +27,10 @@ examples/owned-split-buffer
 examples/owned-string
 examples/owned-vector
 examples/perpetual-service
-examples/rbtree-augmented
-examples/rbtree-erase
-examples/rbtree-insert
-examples/rbtree-model
+examples/rbtree/rbtree-augmented
+examples/rbtree/rbtree-erase
+examples/rbtree/rbtree-insert
+examples/rbtree/rbtree-model
 examples/recursive-zero-list
 examples/refcount
 examples/ring-buffer

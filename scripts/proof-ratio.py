@@ -9,10 +9,13 @@ much longer than a line of C: a proof that crams its steps onto long lines
 meets a line target it would miss by tokens. A token is an identifier or
 number, or one punctuation character.
 
-Comments and blank lines are not counted on either side. Proof is counted
-over an example's tracked `.click` files; code over the sources those files
-name in `verifying "...";`, counted once per example even when several
-sidecars verify the same file. Headers the sources include are not counted.
+Comments and blank lines are not counted on either side. An example is a
+directory under `examples/` that directly holds tracked `.click` files, as the
+example gate schedules them, so each part of a project in several directories
+(`rbtree/rbtree-insert`) is measured on its own. Proof is counted over those
+files; code over the sources they name in `verifying "...";`, counted once per
+example even when several sidecars verify the same file. Headers the sources
+include are not counted.
 
 The report never fails the gate. `--over` lists only the examples over the
 target.
@@ -36,24 +39,30 @@ def measure(text):
     return lines, len(TOKEN.findall(code))
 
 
-def tracked_sidecars(directory):
+def tracked_sidecars(examples):
+    """Every tracked `.click` file under `examples`, grouped by directory."""
     listed = subprocess.run(
         ["git", "ls-files", "-z", "--", "*.click"],
-        cwd=directory,
+        cwd=examples,
         capture_output=True,
         check=True,
     ).stdout.decode()
-    return sorted(directory / name for name in listed.split("\0") if name)
+    groups = {}
+    for name in listed.split("\0"):
+        if name:
+            path = examples / name
+            groups.setdefault(path.parent, []).append(path)
+    return {directory: sorted(paths) for directory, paths in groups.items()}
 
 
 def read(path):
     return path.read_text(encoding="utf-8", errors="replace")
 
 
-def example_size(directory):
+def example_size(sidecars):
     proof_lines = proof_tokens = 0
     sources = set()
-    for sidecar in tracked_sidecars(directory):
+    for sidecar in sidecars:
         text = read(sidecar)
         lines, tokens = measure(text)
         proof_lines += lines
@@ -70,14 +79,14 @@ def main():
     only_over = "--over" in sys.argv[1:]
     examples = pathlib.Path(__file__).resolve().parent.parent / "examples"
     rows = []
-    for directory in sorted(path for path in examples.iterdir() if path.is_dir()):
-        proof_lines, proof_tokens, code_lines, code_tokens = example_size(directory)
+    for directory, sidecars in sorted(tracked_sidecars(examples).items()):
+        proof_lines, proof_tokens, code_lines, code_tokens = example_size(sidecars)
         if code_lines:
             rows.append(
                 (
                     proof_lines / code_lines,
                     proof_tokens / code_tokens,
-                    directory.name,
+                    directory.relative_to(examples).as_posix(),
                     proof_lines,
                     code_lines,
                 )

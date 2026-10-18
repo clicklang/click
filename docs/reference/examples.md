@@ -548,11 +548,11 @@ sequence:
   worked example of [Verify a function in your own project](../concepts/own-project.md).
   One sidecar and one compiler import cover both files with the build's `-I`
   and `-D` flags, and `<string.h>` resolves to Click's modeled header.
-- `examples/pcg-basic/`: byte-preserved upstream pcg-c-basic source with a
+- `examples/pcg/pcg-basic/`: byte-preserved upstream pcg-c-basic source with a
   checked SHA-256 manifest. Proves the PCG32 generator step and output, the
   reentrant seeding helper, and the public wrappers that pass the file's
   private `pcg32_global` to them.
-- `examples/pcg-client/`: a separate client of `examples/pcg-basic/` that
+- `examples/pcg/pcg-client/`: a separate client of `examples/pcg/pcg-basic/` that
   imports its contracts, seeds with `pcg32_srandom(42, 54)`, checks the first
   two outputs against the reference values `0xa15c02b7` and `0x7b47f409`, and
   checks that reseeding restarts the sequence. The client's proof names the
@@ -609,7 +609,7 @@ sequence:
   on a focused subtree out to the whole tree, and is the induction that
   instantiates its hypothesis at every parameter rather than the inducted one
   alone.
-- `examples/rbtree-model/`: the pure red-black library, with no C and no
+- `examples/rbtree/rbtree-model/`: the pure red-black library, with no C and no
   `verifying` line. `RbTree` carries each node's `struct rb_node*` identity,
   its parent, color, and both submodels, the node-keyed shape the rbtree
   fixtures use; `rb_inorder`, `rb_member`, `black_height`, `is_rb`,
@@ -639,7 +639,7 @@ sequence:
   `ctx_insert_root_exit` theorems restate every fixup branch as a step of that
   loop. The project has no C of its own; the proofs about verbatim Linux bodies
   that use this model are the `rb_*` mdtests below.
-- `examples/rbtree-erase/`: the unchanged Linux `__rb_erase_augmented` for
+- `examples/rbtree/rbtree-erase/`: the unchanged Linux `__rb_erase_augmented` for
   zero/one-child deletion and every immediate-successor exit, at the root and
   on either non-root parent link. No-deficit cases return exact models,
   whole-tree balance, parent consistency, in-order contents, and null fixup.
@@ -671,7 +671,7 @@ clear, and cast back is a checked rewrite on the word's address form.
 
 Until a pinned import lands, the rbtree proofs are mdtests whose C is the
 unchanged function body from the Linux source with its headers. They share one
-model, the node-keyed `RbTree` of `examples/rbtree-model/`, with `rb_at(p)` for
+model, the node-keyed `RbTree` of `examples/rbtree/rbtree-model/`, with `rb_at(p)` for
 a subtree and `ctx_at(child, root)` for the frame above it.
 
 - `mdtests/rb_parent_family.md`: the packed parent word, with the unchanged

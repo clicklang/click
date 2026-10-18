@@ -2,7 +2,7 @@ import click::integer;
 
 // Pure observation of the source counter, not a generated program local.
 import "../adler2/count-bridge.click";
-import "../../adler32-spec.click";
+import "../adler32-spec.click";
 function zlib_prefix_count(total: uint64, remaining: uint64) -> int32 {
  (int32)(uint32)(total - remaining)
 }

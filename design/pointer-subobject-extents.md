@@ -359,7 +359,7 @@ in the retained session.
   - Recommended: accept for now and track it as a follow-up. Narrowing on
     struct-to-first-member conversion is possible, but layout-dependent.
 - **D4. Character and `void` casts widen to `Root`.**
-  - This keeps the Linux `container_of` in `examples/rbtree-augmented` and
+  - This keeps the Linux `container_of` in `examples/rbtree/rbtree-augmented` and
     `mdtests/c_container_of.md` (`(void*)member - offsetof(...)`, then a cast to
     the enclosing type). It also keeps `memcpy` byte views
     (`examples/byte-representation`).

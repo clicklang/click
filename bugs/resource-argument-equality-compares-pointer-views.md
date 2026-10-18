@@ -71,7 +71,7 @@ pass
 On master the call is refused with `equality of resource argument 1 was not
 established`. Spelling the caller's resource as
 `size_metadata((struct rb_node*)(void*)rb_old)` makes it verify. The same
-refusal stops `examples/rbtree-augmented/rbtree_size_rotate.click`,
+refusal stops `examples/rbtree/rbtree-augmented/rbtree_size_rotate.click`,
 `rbtree_size_propagate.click` and `rbtree_size_propagate_tree.click`
 (`compute_size(old, 0)` against a held `size_metadata(ptr<int32*>(rb_old))`).
 
