@@ -205,3 +205,67 @@ fn connected_condition_selection_scales_linearly_in_chain_and_context() {
         }
     }
 }
+
+#[test]
+fn solver_candidates_omit_registered_read_definitions() {
+    let mut samples = Vec::new();
+    for size in [4, 16, 64] {
+        let memory = intern_c_memory(CMemory::new().with_block("buffer", 4096));
+        let mut context = PureFactContext::new();
+        let mut reads = Vec::new();
+        for index in 0..size {
+            let read = Bitvector32Term::MemoryLoad(
+                memory.clone(),
+                Box::new(Pointer {
+                    block: "buffer".into(),
+                    offset: PointerOffsetTerm::Constant(index * 4),
+                }),
+                LoadKind::Bits32,
+            );
+            let (variable, load) = load_variable_for_term(&read).unwrap();
+            context = context.assume_condition(
+                ConditionTerm::Bitvector32Equal(
+                    Box::new(Bitvector32Term::Variable(variable)),
+                    Box::new(load.clone()),
+                ),
+                true,
+            );
+            reads.push((variable, load));
+        }
+        // An equation between different reads is useful, even when its left
+        // operand is a reserved load name. It must remain a candidate.
+        let alias = Proposition::ConditionIs(
+            ConditionTerm::Bitvector32Equal(
+                Box::new(Bitvector32Term::Variable(reads[0].0)),
+                Box::new(reads[1].1.clone()),
+            ),
+            true,
+        );
+        context = context.assume_proposition(alias.clone());
+        let sum = reads.iter().fold(0.into(), |sum, (variable, _)| {
+            Bitvector32Term::Add(
+                Box::new(sum),
+                Box::new(Bitvector32Term::Variable(*variable)),
+            )
+        });
+        let goal = Proposition::ConditionIs(
+            ConditionTerm::Bitvector32Equal(Box::new(sum), Box::new(7.into())),
+            true,
+        );
+        let ((equalities, premises), work) =
+            crate::instrumentation::measure_deterministic_work(|| {
+                (
+                    solver_connected_equalities(&context, &goal).unwrap(),
+                    solver_connected_premises(&context, &goal).unwrap(),
+                )
+            });
+        assert_eq!(equalities, vec![alias.clone()]);
+        assert_eq!(premises, vec![alias]);
+        samples.push(work);
+    }
+    assert!(
+        samples.windows(2).all(|pair| pair[1] <= 5 * pair[0]),
+        "{samples:?}"
+    );
+    eprintln!("registered read candidate work: {samples:?}");
+}

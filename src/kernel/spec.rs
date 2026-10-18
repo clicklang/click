@@ -2215,7 +2215,7 @@ fn evaluate_spec_integer_expression_paths_in(
 /// registered snapshot and pointer for the reserved variable. Comparing
 /// interned snapshots uses their O(1) identity equality; arbitrary memory
 /// contents are never traversed here.
-fn is_verified_load_variable_defining_fact(proposition: &Proposition) -> bool {
+pub(crate) fn is_verified_load_variable_defining_fact(proposition: &Proposition) -> bool {
     let Proposition::ConditionIs(ConditionTerm::Bitvector32Equal(left, right), true) = proposition
     else {
         return false;

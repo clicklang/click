@@ -1741,6 +1741,11 @@ pub(crate) fn solver_connected_equalities(
     let mut equalities = Vec::new();
     for (condition, value) in conditions {
         let fact = Proposition::ConditionIs(condition, value);
+        // A registered read's defining equation is kernel metadata, not a
+        // source equality. It cannot supply a new rewrite or source spelling.
+        if crate::kernel::is_verified_load_variable_defining_fact(&fact) {
+            continue;
+        }
         if matches!(
             fact,
             Proposition::ConditionIs(
@@ -1780,6 +1785,7 @@ pub(crate) fn solver_connected_premises(
         conditions
             .into_iter()
             .map(|(condition, value)| Proposition::ConditionIs(condition, value))
+            .filter(|fact| !crate::kernel::is_verified_load_variable_defining_fact(fact))
             .collect(),
     )
 }
