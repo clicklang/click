@@ -377,6 +377,7 @@ pub(super) fn parse_file_items_for_module(
     imported_function_names: &BTreeSet<String>,
     imported_callees: &[ImportedCallee<'_>],
     imported_resources: &[&ResourceDefinition],
+    imported_declarations: &names::ImportedDeclarationNames,
     layouts: ProgramLayouts,
 ) -> Result<ClickFile, ClickError> {
     let mut parser = Parser::with_program_layouts(
@@ -384,6 +385,7 @@ pub(super) fn parse_file_items_for_module(
         layouts,
         Some(&crate::source::SourceContainer::new(identity, line_offset)),
     )?;
+    parser.symbols.import_declarations(imported_declarations)?;
     parser
         .pure_function_names
         .extend(imported_function_names.iter().cloned());
