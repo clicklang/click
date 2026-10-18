@@ -1,4 +1,7 @@
-# Execution-level cases requires a focused proposition goal
+# `cases` after execution is not yet a case split
+
+At an execution frontier `cases` splits the proof; after execution it is not
+yet supported as a split, and the refusal says where to write it instead.
 ```c filename=cases.c
 int32 f(int32 n) { return n; }
 ```
@@ -19,5 +22,5 @@ execute();
 }
 ```
 ```expect
-fail: `cases` requires a focused proposition goal
+fail: `cases` after execution is not supported yet
 ```

@@ -48,6 +48,7 @@ fn next_checked_post_execution_tactic<'a>(
         let (selector, value, arm, child_depth) = match &deferred.tactic {
             PostExecutionTactic::If {
                 condition,
+                disjunction,
                 execution_route,
                 then_tactics,
                 else_tactics,
@@ -65,7 +66,11 @@ fn next_checked_post_execution_tactic<'a>(
                         error.with_context(format!("post-execution path {path_index}"))
                     })?;
                 (
-                    SurfacePathSelector::Proposition(condition.clone()),
+                    if *disjunction {
+                        SurfacePathSelector::Disjunction(condition.clone())
+                    } else {
+                        SurfacePathSelector::Proposition(condition.clone())
+                    },
                     value,
                     if value { then_tactics } else { else_tactics },
                     call_depth,
@@ -248,14 +253,6 @@ fn unsupported_proof_shape(
             .join(", ");
         format!("these {} contract claims: {labels}", claim_labels.len())
     };
-    if let Some(index) = tactics
-        .iter()
-        .position(|tactic| matches!(tactic, ProofTactic::Cases(_)))
-    {
-        return ClickError::new(format!(
-            "`{proof_label}`: tactic {index} uses `cases` while checking {claim_description}, but `cases` requires a focused proposition goal. Put this case split inside `have P by {{ cases {{ ... }} }}`; use proof `if P {{ ... }} else {{ ... }}` to split execution and rejoin its arms."
-        ));
-    }
     let shape = proof_shape_hint(tactics).map_or_else(
         || "the supplied tactic sequence".to_string(),
         |(index, shape)| format!("tactic {index} ({shape})"),

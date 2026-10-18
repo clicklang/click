@@ -3112,6 +3112,23 @@ pub(crate) struct CheckedProofCaseArm {
     facts: ProofFacts,
 }
 
+/// Whether two logical cases cover every state `root_facts` admits: they
+/// are complementary, as a proof `if` splits, or their disjunction is an
+/// exact available fact, as `cases` splits.
+pub(crate) fn proof_cases_are_exhaustive(
+    root_facts: &ProofFacts,
+    then_fact: &Proposition,
+    else_fact: &Proposition,
+) -> bool {
+    let negated_then = Proposition::Not(Box::new(then_fact.clone()));
+    *else_fact == negated_then
+        || super::fact_reasoning::condition_polarity_forms(&negated_then).contains(else_fact)
+        || root_facts.contains(&Proposition::Or(
+            Box::new(then_fact.clone()),
+            Box::new(else_fact.clone()),
+        ))
+}
+
 impl CheckedProofCasePartition {
     pub(crate) fn excluding_constructor_case(
         &self,
@@ -3182,10 +3199,7 @@ impl CheckedProofCasePartition {
         then_fact: Proposition,
         else_fact: Proposition,
     ) -> Option<Arc<Self>> {
-        let negated_then = Proposition::Not(Box::new(then_fact.clone()));
-        if else_fact != negated_then
-            && !super::fact_reasoning::condition_polarity_forms(&negated_then).contains(&else_fact)
-        {
+        if !proof_cases_are_exhaustive(root_facts, &then_fact, &else_fact) {
             return None;
         }
         let arm_contexts: Vec<_> = [&then_fact, &else_fact]

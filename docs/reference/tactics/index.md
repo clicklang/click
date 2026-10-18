@@ -100,7 +100,7 @@ when the default misses or when a proof must not search.
 - **Case splits: `if`, `cases`, `match`, `branch`.** `if P` splits on any
   proposition; `cases` uses a disjunction that is already a fact; `match`
   splits on constructors; `branch` follows a C `if`. Tactics written after a
-  proof `if` or `match` are checked once, never once per arm: the arms rejoin,
+  proof `if`, `cases` or `match` are checked once, never once per arm: the arms rejoin,
   keeping the facts every arm proved, or the split is refused. An arm that
   reaches function exit is a finished path, like each `return` of the C: the
   closer that ends the proof, the implicit `auto` or a written `auto();`,
@@ -1835,17 +1835,23 @@ recurses into smart descendants, and profiling reports them.
 
 **Specialized.** Write it to use a disjunction that is already a fact, when its
 arms are not `P` and `not P`; otherwise use `if`. Eliminate an exact available
-disjunction, proving the same goal once under each arm's disjunct. Use `if P` to
-split on a proposition you choose, which needs no premise because `P or not P`
-always holds, and whose arms rejoin; use `cases` to use a disjunction already
-proved while proving a focused proposition.
+disjunction: each arm receives exactly its own disjunct. Use `if P` to split on
+a proposition you choose, which needs no premise because `P or not P` always
+holds.
 
 There is one arm per disjunct, any number from two, and the disjunction of the
 arms grouped left to right as `or` parses (`A or B or C` is `(A or B) or C`)
-must be available. Every arm proves the same focused proposition; `cases`
-does not split C execution. In a contract proof, put the case split inside
-`have P by { cases { ... } }`. Use proof `if P { ... } else { ... }` to split
-execution and rejoin its arms.
+must be available. Proving a focused proposition, every arm proves it. At an
+execution frontier `cases` is a case split like a proof `if`, and follows the
+same rule: with tactics written after it, its arms rejoin with the facts every
+arm proved, or the `cases` is refused
+(`mdtests/cases_arms_rejoin_with_the_facts_every_arm_proved.md`,
+`mdtests/cases_arms_that_do_not_rejoin_are_refused.md`); an arm that reaches
+function exit finishes its own path
+(`mdtests/cases_at_a_frontier_finishes_each_arm.md`). In a loop's `preserve`
+proof its arms must rejoin. After execution `cases` is not yet a case split:
+write it before execution reaches the function exit, or inside
+`have P by { cases { ... } }`.
 
 **Failure, checking, and tools:**
 
@@ -1853,7 +1859,7 @@ An unavailable disjunction or unfinished arm fails; this never substitutes `not
 A` for `B` or implicitly branches C. Click checks both proof branches, expansion
 recurses, and profiling reports descendants.
 
-**Checked examples:** [`logical_tactics.rs`](https://github.com/clicklang/click/blob/master/src/surface/tests/tactic_tests/logical_tactics.rs), [`cases_in_have_before_and_after_execute.md`](https://github.com/clicklang/click/blob/master/mdtests/cases_in_have_before_and_after_execute.md), [`cases_before_execute_requires_proposition_goal.md`](https://github.com/clicklang/click/blob/master/mdtests/cases_before_execute_requires_proposition_goal.md), [`cases_after_execute_requires_proposition_goal.md`](https://github.com/clicklang/click/blob/master/mdtests/cases_after_execute_requires_proposition_goal.md)
+**Checked examples:** [`logical_tactics.rs`](https://github.com/clicklang/click/blob/master/src/surface/tests/tactic_tests/logical_tactics.rs), [`cases_in_have_before_and_after_execute.md`](https://github.com/clicklang/click/blob/master/mdtests/cases_in_have_before_and_after_execute.md), [`cases_at_a_frontier_finishes_each_arm.md`](https://github.com/clicklang/click/blob/master/mdtests/cases_at_a_frontier_finishes_each_arm.md), [`cases_arms_rejoin_with_the_facts_every_arm_proved.md`](https://github.com/clicklang/click/blob/master/mdtests/cases_arms_rejoin_with_the_facts_every_arm_proved.md), [`cases_at_a_frontier_requires_its_disjunction.md`](https://github.com/clicklang/click/blob/master/mdtests/cases_at_a_frontier_requires_its_disjunction.md), [`cases_after_execution_is_not_yet_a_case_split.md`](https://github.com/clicklang/click/blob/master/mdtests/cases_after_execution_is_not_yet_a_case_split.md)
 
 ### Scoped resource opening
 

@@ -1311,7 +1311,12 @@ impl<'a> Proof<'a> {
             &None,
             record.execution_start_state.clone(),
             None,
-            Some(record.surface_condition.clone()),
+            Some(match &record.case_condition {
+                ProofCaseCondition::If(condition) => condition.clone(),
+                ProofCaseCondition::Cases(_) => {
+                    return Err(self.step_error("`cases` has no `ensuring` join interface"));
+                }
+            }),
             assertions,
             [then_view, else_view],
         )?;
@@ -1440,7 +1445,7 @@ impl<'a> Proof<'a> {
         parent_execution: &ExecutionProofState,
         statement_index: usize,
         execution_start_state: CState,
-        proof_case_condition: Option<ClickProposition>,
+        proof_case_condition: Option<ProofCaseCondition>,
         call_outcomes: bool,
         arms: [CheckedExecutionJoinArm<'_>; 2],
     ) -> Result<CheckedExecutionJoinParts, ClickError> {
@@ -1474,8 +1479,8 @@ impl<'a> Proof<'a> {
                 },
                 [false, false],
             )
-        } else if let Some(condition) = proof_case_condition {
-            (condition, [false, false])
+        } else if let Some(condition) = &proof_case_condition {
+            (condition.proposition().clone(), [false, false])
         } else {
             let (_, current_state, statement, _) = next_top_level_statement_from_frontier_position(
                 parent_execution.view(context),
@@ -1510,6 +1515,11 @@ impl<'a> Proof<'a> {
                 ],
             )
         };
+        // A C branch and a proof `if` write their arms as an `if`; `cases`
+        // writes its own.
+        let split_condition = proof_case_condition
+            .clone()
+            .unwrap_or_else(|| ProofCaseCondition::If(surface_condition.clone()));
         for (name, expected, arm) in [("then", true, &arms[0]), ("else", false, &arms[1])] {
             if !arm.execution.core.frontier.is_at_function_exit() {
                 return Err(self.step_error(format!(
@@ -1891,12 +1901,10 @@ impl<'a> Proof<'a> {
                             threw_tactics: Vec::new(),
                         })]
                     } else {
-                        vec![ProofTactic::If(ProofIf {
-                            condition: surface_condition.clone(),
-                            ensuring: None,
-                            then_tactics: capture.branch_skeleton.as_ref().clone(),
-                            else_tactics: Vec::new(),
-                        })]
+                        vec![
+                            split_condition
+                                .tactic(capture.branch_skeleton.as_ref().clone(), Vec::new()),
+                        ]
                     });
                     Some(capture)
                 }
@@ -1908,12 +1916,10 @@ impl<'a> Proof<'a> {
                             threw_tactics: capture.branch_skeleton.as_ref().clone(),
                         })]
                     } else {
-                        vec![ProofTactic::If(ProofIf {
-                            condition: surface_condition.clone(),
-                            ensuring: None,
-                            then_tactics: Vec::new(),
-                            else_tactics: capture.branch_skeleton.as_ref().clone(),
-                        })]
+                        vec![
+                            split_condition
+                                .tactic(Vec::new(), capture.branch_skeleton.as_ref().clone()),
+                        ]
                     });
                     Some(capture)
                 }
@@ -1976,12 +1982,7 @@ impl<'a> Proof<'a> {
                         threw_tactics: second,
                     })]
                 } else {
-                    vec![ProofTactic::If(ProofIf {
-                        condition: surface_condition.clone(),
-                        ensuring: None,
-                        then_tactics: first,
-                        else_tactics: second,
-                    })]
+                    vec![split_condition.tactic(first, second)]
                 });
                 batch.insert(*index, captured);
             }
@@ -2030,6 +2031,7 @@ impl<'a> Proof<'a> {
                 } else {
                     PostExecutionTactic::If {
                         condition: surface_condition.clone(),
+                        disjunction: split_condition.is_cases(),
                         execution_route: terminal_route,
                         then_tactics: then_post_execution,
                         else_tactics: else_post_execution,
@@ -2084,12 +2086,7 @@ impl<'a> Proof<'a> {
                 threw_proof: Box::new(else_proof),
             }
         } else {
-            ProofStep::If {
-                condition: surface_condition,
-                ensuring: None,
-                then_proof: Box::new(then_proof),
-                else_proof: Box::new(else_proof),
-            }
+            split_condition.step(None, then_proof, else_proof)
         };
         Ok(CheckedExecutionJoinParts {
             execution,
@@ -2455,7 +2452,7 @@ impl<'a> Proof<'a> {
             &record.parent_execution,
             record.parent_execution.core.frontier.next_statement_index,
             record.execution_start_state.clone(),
-            Some(record.surface_condition.clone()),
+            Some(record.case_condition.clone()),
             false,
             [then_view, else_view],
         )?;
@@ -2503,7 +2500,7 @@ impl<'a> Proof<'a> {
             &record.common_facts,
             &record.parent_unfolds,
             &record.parent_execution,
-            record.surface_condition.clone(),
+            record.case_condition.clone(),
             [then_view, else_view],
         )?
         else {
@@ -2528,7 +2525,7 @@ impl<'a> Proof<'a> {
         parent_facts: &ProofFacts,
         parent_unfolds: &PersistentOrderedSet<String>,
         parent_execution: &ExecutionProofState,
-        surface_condition: ClickProposition,
+        case_condition: ProofCaseCondition,
         arms: [CheckedExecutionJoinArm<'_>; 2],
     ) -> Result<Option<CheckedExecutionJoinParts>, ClickError> {
         let ProofContext::Execution(context) = self.context.as_ref() else {
@@ -2662,12 +2659,7 @@ impl<'a> Proof<'a> {
             facts,
             common_added_facts,
             unfolded_predicates,
-            step: ProofStep::If {
-                condition: surface_condition,
-                ensuring: None,
-                then_proof: Box::new(then_arm.certificate),
-                else_proof: Box::new(else_arm.certificate),
-            },
+            step: case_condition.step(None, then_arm.certificate, else_arm.certificate),
         }))
     }
 
