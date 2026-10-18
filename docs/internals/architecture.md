@@ -63,7 +63,11 @@ captured.
 `ProofCertificate` is the current structured form for a surface-expressible
 explicit proof. In the intended architecture it is serialization: expansion
 extracts attributed operations from checked `Proof` provenance only when proof
-text or an inspection result is requested.
+text or an inspection result is requested. Scalar return expressions can
+produce distinct outcomes without a written C branch; certificate synthesis
+separates their different endings with a guard each outcome decides. Guards
+from conditional result claims retain their written field places when used as
+normalization premises.
 
 ### Contracts and callbacks
 
