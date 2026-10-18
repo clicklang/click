@@ -1047,6 +1047,31 @@ fn simple_unrelated_functions_have_a_deterministic_scaling_control() {
     assert_near_linear_scaling("unrelated simple functions", &samples);
 }
 
+/// One function's tactics do not do more work beside more earlier
+/// functions, and beside the most of them a selected run names its inputs
+/// as the whole-file run does. The names still shift with the earlier
+/// functions' inputs, and the order the closers search in follows them, so
+/// the totals can vary by a few percent; see
+/// `bugs/tactic-work-depends-on-input-name-numbers.md`.
+#[test]
+#[ignore = "nightly: 1.0s alone, 1.3s in the parallel gate"]
+fn a_functions_tactic_work_does_not_grow_with_earlier_unrelated_functions() {
+    let mut totals = Vec::new();
+    let mut names = None;
+    for earlier in [1, 2, 4, 8] {
+        let (whole_names, work) = super::project_tests::combine_names_and_work(earlier, false);
+        totals.push(work.iter().map(|(_, work)| work).sum::<usize>());
+        names = Some(whole_names);
+    }
+    let (selected_names, work) = super::project_tests::combine_names_and_work(8, true);
+    assert_eq!(Some(selected_names), names);
+    totals.push(work.iter().map(|(_, work)| work).sum::<usize>());
+    let least = *totals.iter().min().unwrap();
+    let most = *totals.iter().max().unwrap();
+    assert!(least > 0);
+    assert!(most <= least + least / 5, "{totals:?}");
+}
+
 #[test]
 fn targeted_simple_verification_does_not_verify_unrelated_theorems() {
     let c_source = "int32 scaling_target(int32 x) { return x; }\n";

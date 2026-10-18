@@ -78,9 +78,11 @@ excluded): three of 53 examples are over the 20-lines-per-line-of-C target in
 - `rbtree-insert`: 35x by lines, 71x by tokens.
 
 `arena` was 21x and is 19.6x after its hand-written `have` proofs that
-`auto` closes within 10% of each claim's work were shortened; the edits
-inside one `have` of `arena_pipeline` are held back by
-`bugs/whole-file-verify-multiplies-a-control-tactics-work.md`. Both Rust
+`auto` closes within 10% of each claim's work were shortened. The edits
+inside one `have` of `arena_pipeline` were held back because selected and
+whole-file runs disagreed; they now agree, but whether the edit fits its
+budget depends on its inputs' name numbers
+(`bugs/tactic-work-depends-on-input-name-numbers.md`). Both Rust
 iterator sums were 33x and are 18.1x: `have` proofs `auto` closes are
 `by auto()`, and `have` steps the proof does not need are gone, each within
 10% of the claim's original work.

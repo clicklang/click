@@ -78,6 +78,64 @@ pub(in crate::surface) fn input_scope(name: &str) -> u64 {
     })
 }
 
+/// Starts the input namespace afresh with the kernel's session tables.
+///
+/// The names are numbered in allocation order, so a table kept from earlier
+/// verifications on this thread would number the same function's inputs
+/// differently in every run. Load names and snapshot content hashes are
+/// derived from these numbers, and the order of the facts and snapshots a
+/// proof searches follows those, so a tactic's work would depend on what
+/// was verified before it. The kernel's own tables are cleared at the same
+/// point, so no metadata about an old name survives the reset.
+pub(in crate::surface) fn reset_input_identities() {
+    INPUT_SCOPES.with(|scopes| scopes.borrow_mut().clear());
+    INPUT_POINTER_PLACES.with(|places| places.borrow_mut().clear());
+    INPUT_VARIABLES.with(|variables| variables.borrow_mut().clear());
+}
+
+/// Names the inputs of `function`, exactly those its entry state names and
+/// in the same order, before any proof runs.
+///
+/// A whole-file run verifies its functions one after another and a
+/// selected-unit run only some of them. Naming a function's inputs when its
+/// proof starts numbers them by how many inputs the functions verified
+/// before it in the same run had, so the two runs name one function's
+/// inputs differently. Reserving every verified function's inputs from the
+/// file, in the whole-file order, gives each function the same names
+/// whichever of them a command checks. Names already reserved keep their
+/// numbers. A parameter that cannot be named is left to the function's own
+/// entry lowering, which reports it.
+pub(in crate::surface) fn reserve_input_identities(function: &syntax::C0Function) {
+    let scope = input_scope(function.kernel_name());
+    if input_arguments(scope, function.parameters()).is_ok() && function.returns_by_construction() {
+        let _ = input_pointer_variable(scope, function.parameters().len());
+    }
+}
+
+/// The input names this thread holds for the function `name`, by parameter
+/// index.
+#[cfg(test)]
+pub(in crate::surface) fn input_identities_of(name: &str) -> Vec<(usize, Variable)> {
+    let scopes = INPUT_SCOPES.with(|scopes| {
+        scopes
+            .borrow()
+            .iter()
+            .filter(|(_, known)| known.as_str() == name)
+            .map(|(scope, _)| *scope)
+            .collect::<Vec<_>>()
+    });
+    let mut identities = INPUT_VARIABLES.with(|variables| {
+        variables
+            .borrow()
+            .iter()
+            .filter(|((scope, _), _)| scopes.contains(scope))
+            .map(|((_, index), variable)| (*index, *variable))
+            .collect::<Vec<_>>()
+    });
+    identities.sort();
+    identities
+}
+
 fn input_pointer_variable(scope: u64, index: usize) -> Result<Variable, ClickError> {
     INPUT_VARIABLES.with(|variables| {
         let mut variables = variables.borrow_mut();
@@ -125,30 +183,13 @@ fn input_pointer_identity(pointer: &crate::kernel::CPointerValue) -> Option<Vari
     }
 }
 
-pub(in crate::surface) fn initial_call_state(
-    requires: &[Requirement],
+/// The symbolic argument each parameter receives at function entry, naming
+/// the inputs that need a scoped identity.
+fn input_arguments(
+    scope: u64,
     parameters: &[syntax::C0Parameter],
-    function: &CFunction,
-    composite_definitions: &[CCompositeResourceDefinition],
-) -> Result<(CState, Vec<CExpression>), ClickError> {
-    if parameters.len() as u64 >= POINTER_ARGUMENT_VARIABLE_BASE {
-        return Err(ClickError::new(
-            "function parameter variable namespace exhausted",
-        ));
-    }
-    let aggregate_parameters = parameters
-        .iter()
-        .filter(|parameter| parameter.is_struct_value())
-        .map(|parameter| parameter.name())
-        .collect::<BTreeSet<_>>();
-    for requirement in requires {
-        if let Requirement::Resource(resource) = requirement {
-            reject_aggregate_parameter_storage_resource(resource, &aggregate_parameters)?;
-        }
-    }
+) -> Result<Vec<CExpression>, ClickError> {
     let mut arguments = Vec::new();
-    let scope = input_scope(function.name());
-
     for (index, parameter) in parameters.iter().enumerate() {
         if parameter.is_struct_value() {
             arguments.push(c_typed_pointer_value(
@@ -371,6 +412,32 @@ pub(in crate::surface) fn initial_call_state(
             }
         }
     }
+    Ok(arguments)
+}
+
+pub(in crate::surface) fn initial_call_state(
+    requires: &[Requirement],
+    parameters: &[syntax::C0Parameter],
+    function: &CFunction,
+    composite_definitions: &[CCompositeResourceDefinition],
+) -> Result<(CState, Vec<CExpression>), ClickError> {
+    if parameters.len() as u64 >= POINTER_ARGUMENT_VARIABLE_BASE {
+        return Err(ClickError::new(
+            "function parameter variable namespace exhausted",
+        ));
+    }
+    let aggregate_parameters = parameters
+        .iter()
+        .filter(|parameter| parameter.is_struct_value())
+        .map(|parameter| parameter.name())
+        .collect::<BTreeSet<_>>();
+    for requirement in requires {
+        if let Requirement::Resource(resource) = requirement {
+            reject_aggregate_parameter_storage_resource(resource, &aggregate_parameters)?;
+        }
+    }
+    let scope = input_scope(function.name());
+    let mut arguments = input_arguments(scope, parameters)?;
 
     // Install ordinary function storage before adding symbolic loadable
     // cells. Otherwise a loadable clause can create a block first and leave
