@@ -939,6 +939,20 @@ impl Project {
         cpp_description::artifact(&self.config())
     }
 
+    /// The size of the artifact as loading decodes it: the stored artifact
+    /// names the fixture's roots by their labels, and loading replaces each
+    /// label by the root's location.
+    fn loaded_artifact_bytes(&self) -> usize {
+        let root = fs::canonicalize(&self.directory).unwrap();
+        let root = root.to_str().unwrap();
+        fs::read_to_string(self.artifact())
+            .unwrap()
+            .replace("\"$unit", &format!("\"{root}"))
+            .replace("\"$project", &format!("\"{root}"))
+            .replace("\"$clang-resource", "\"/click-pinned-clang-resource")
+            .len()
+    }
+
     fn lock(&self) -> PathBuf {
         self.directory.join(click::project::LOCK_NAME)
     }
@@ -6720,6 +6734,85 @@ const INCREMENT_ARGS: &[&str] = &[
     "-nostdinc++",
 ];
 
+/// Copies the regular files under `from` to `to`, keeping relative paths.
+fn copy_tree(from: &Path, to: &Path) {
+    for entry in fs::read_dir(from).unwrap() {
+        let entry = entry.unwrap();
+        let target = to.join(entry.file_name());
+        if entry.file_type().unwrap().is_dir() {
+            fs::create_dir_all(&target).unwrap();
+            copy_tree(&entry.path(), &target);
+        } else {
+            fs::copy(entry.path(), &target).unwrap();
+        }
+    }
+}
+
+/// A fresh scratch directory for one copy of a project.
+fn scratch_copy(name: &str) -> PathBuf {
+    static NEXT: AtomicUsize = AtomicUsize::new(0);
+    let directory = std::env::temp_dir().join(format!(
+        "click-cpp-portable-{name}-{}-{}",
+        std::process::id(),
+        NEXT.fetch_add(1, Ordering::Relaxed)
+    ));
+    let _ = fs::remove_dir_all(&directory);
+    fs::create_dir_all(&directory).unwrap();
+    directory
+}
+
+/// A C++ project lock names the project's own files by their root's label,
+/// so it reads the same from every checkout: the committed `basic-cpp` lock
+/// verifies from a copy at another path, and preparing the project at two
+/// paths writes the same lock and artifacts.
+#[test]
+#[ignore = "nightly: 4.4s in the parallel gate"]
+fn cpp_project_locks_are_portable() {
+    let example = Path::new(env!("CARGO_MANIFEST_DIR")).join("examples/basic-cpp");
+    let committed = fs::read_to_string(example.join(click::project::LOCK_NAME)).unwrap();
+    assert!(
+        !committed.contains("\"/"),
+        "the committed lock names an absolute path"
+    );
+    let copy = scratch_copy("verify");
+    copy_tree(&example, &copy);
+    for sidecar in [
+        "increment.click",
+        "with_restore.click",
+        "with_restore_caller.click",
+    ] {
+        let output = Command::new(env!("CARGO_BIN_EXE_click"))
+            .args(["verify", copy.join(sidecar).to_str().unwrap()])
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{sidecar} from a copy: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+    let exporter = PathBuf::from(
+        std::env::var_os("CLICK_CPP_EXPORTER")
+            .expect("scripts/check.sh supplies the pinned C++ exporter"),
+    );
+    let prepared = ["first", "second"].map(|name| {
+        let copy = scratch_copy(name);
+        copy_tree(&example, &copy);
+        click::project::Project::load(&copy.join(click::project::FILE_NAME))
+            .and_then(|project| project.lock_with_cpp_exporter(Some(&exporter)))
+            .expect("prepare the copy");
+        let lock = fs::read_to_string(copy.join(click::project::LOCK_NAME)).unwrap();
+        assert!(!lock.contains(copy.to_str().unwrap()), "{lock}");
+        let artifact =
+            fs::read_to_string(copy.join(".click/basic/increment.cpp.click-cpp.json")).unwrap();
+        assert!(!artifact.contains(copy.to_str().unwrap()), "{artifact}");
+        let _ = fs::remove_dir_all(&copy);
+        (lock, artifact)
+    });
+    assert_eq!(prepared[0], prepared[1]);
+    let _ = fs::remove_dir_all(&copy);
+}
+
 #[test]
 fn cpp_unit_arguments_follow_the_flag_policy() {
     for (argument, expected) in [
@@ -10384,7 +10477,7 @@ fn check_growing_lifetime_inventory(mode: &str) {
         );
         let project = Project::with_fixture("guards.cpp", "many", &cpp);
         refresh_import(&project.config()).unwrap();
-        let bytes = fs::metadata(project.artifact()).unwrap().len() as usize;
+        let bytes = project.loaded_artifact_bytes();
         let (import, validation_work) =
             click::instrumentation::measure_deterministic_work(|| load_import(&project.config()));
         let import = import.unwrap();
@@ -10567,7 +10660,7 @@ fn compiler_assumptions_cover_total_predicates_and_scale_with_statements() {
         let cpp = format!("int guarded(int n) noexcept {{ {body} return n; }}");
         let project = Project::with_fixture("assume.cpp", "guarded", &cpp);
         refresh_import(&project.config()).unwrap();
-        let bytes = fs::metadata(project.artifact()).unwrap().len() as usize;
+        let bytes = project.loaded_artifact_bytes();
         let (import, work) =
             click::instrumentation::measure_deterministic_work(|| load_import(&project.config()));
         let import = import.unwrap();
@@ -10817,7 +10910,7 @@ fn field_sibling_normalization_work_scales_with_argument_arity() {
         );
         let project = Project::with_fixture("fields.cpp", "relay", &cpp);
         refresh_import(&project.config()).unwrap();
-        let bytes = fs::metadata(project.artifact()).unwrap().len() as usize;
+        let bytes = project.loaded_artifact_bytes();
         let (import, work) =
             click::instrumentation::measure_deterministic_work(|| load_import(&project.config()));
         let import = import.unwrap();
@@ -12250,7 +12343,7 @@ fn assumed_library_assertions_scale_with_explicit_statement_count() {
             format!("#include \"gate.h\"\nint guarded(int n) noexcept {{ {body} return n; }}");
         let project = library_assertion_fixture(LIBRARY_ASSERTION_HEADER, &cpp);
         refresh_import(&project.config()).unwrap();
-        let bytes = fs::metadata(project.artifact()).unwrap().len() as usize;
+        let bytes = project.loaded_artifact_bytes();
         let (import, work) =
             click::instrumentation::measure_deterministic_work(|| load_import(&project.config()));
         let import = import.unwrap();
@@ -12527,7 +12620,7 @@ fn consteval_library_metadata_scales_with_explicit_statement_count() {
             format!("#include \"gate.h\"\nint guarded(int n) noexcept {{ {body} return n; }}");
         let project = consteval_library_fixture(CONSTEVAL_LIBRARY_HEADER, &cpp);
         refresh_import(&project.config()).unwrap();
-        let bytes = fs::metadata(project.artifact()).unwrap().len() as usize;
+        let bytes = project.loaded_artifact_bytes();
         let (import, work) =
             click::instrumentation::measure_deterministic_work(|| load_import(&project.config()));
         let import = import.unwrap();
@@ -12773,7 +12866,7 @@ fn literal_library_metadata_scales_with_explicit_statement_count() {
         );
         let project = literal_library_fixture(LITERAL_TEXT_HEADER, LITERAL_LIBRARY_HEADER, &cpp);
         refresh_import(&project.config()).unwrap();
-        let bytes = fs::metadata(project.artifact()).unwrap().len() as usize;
+        let bytes = project.loaded_artifact_bytes();
         let (import, work) =
             click::instrumentation::measure_deterministic_work(|| load_import(&project.config()));
         let import = import.unwrap();

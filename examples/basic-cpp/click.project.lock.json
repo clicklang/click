@@ -5,21 +5,21 @@
       "language": "c++",
       "lock": {
         "increment.cpp": {
-          "artifact_bytes": 5947,
-          "artifact_sha256": "fd3fb2ffe02f6d2ae1eca73034062d3c6d038b6626e0f6c3c51036388bdca5b5",
-          "compilation_database_sha256": "da31b03f358305b673522c4cf380ff126a1f828f1570a20a6ed2147678560eb0",
+          "artifact_bytes": 5851,
+          "artifact_sha256": "94c3ff432ee583669073fe4ef6a9c9b7a4789a9d25230ec5411669d9b26c4235",
+          "compilation_database_sha256": "31aeb743da85e7b44d01109f40e2f60bf8ab5bd4c60397a8b21b8bd6f3d05d1a",
           "config_sha256": "243958aefb3fd4234f49a77ffce67ec0c768de525023e69be1e6ae96b7037396",
           "dependencies": {},
-          "exporter_sha256": "764175b8bacf30eec7dbff581ef2ad77718f662b11699b24e743a6a628758d19",
-          "identity": "48f34a365cda1af19ba04d0c4e92642fa971c275f7ffb4f6982746adea773731",
+          "exporter_sha256": "8b40892d69c2b04045c67d955b67c228d1215e84ae9bc972411ac05ceb5ed302",
+          "identity": "4dda5d4bdf2fc38025a64106384b25fea719567a5971ba33bcda7036d5d0014e",
           "logical_source_sha256": "98f954b0fe5b5f723d353f51314736438160db69728a6ad6fa9b1019530e7332",
           "prepared_roots": [
-            "/home/user/click-b/examples/basic-cpp",
-            "/home/user/click-b/examples/basic-cpp"
+            "$unit",
+            "$project"
           ],
           "preprocessor_files": {
-            "/home/user/click-b/examples/basic-cpp/increment.cpp": {
-              "canonical_path": "/home/user/click-b/examples/basic-cpp/increment.cpp",
+            "$unit/increment.cpp": {
+              "canonical_path": "$unit/increment.cpp",
               "sha256": "98f954b0fe5b5f723d353f51314736438160db69728a6ad6fa9b1019530e7332"
             }
           },
@@ -43,7 +43,7 @@
               "-o",
               "increment.cpp.o"
             ],
-            "compilation_directory": "/home/user/click-b/examples/basic-cpp",
+            "compilation_directory": "$unit",
             "compilation_file": "increment.cpp",
             "exceptions": false,
             "frontend": "clang",
@@ -56,21 +56,21 @@
           "source_sha256": "98f954b0fe5b5f723d353f51314736438160db69728a6ad6fa9b1019530e7332"
         },
         "with_restore.cpp": {
-          "artifact_bytes": 26198,
-          "artifact_sha256": "b065ba5735809ee6e18d27710cd04a6b8efe2977ec82de65d465e63a644615dc",
-          "compilation_database_sha256": "1b125cc9be79550d25a1181eb5853c10778f37825b80e0c8840d5b28061e2a6f",
+          "artifact_bytes": 26102,
+          "artifact_sha256": "4140f3984cd2d96be55342b0e38224d57a9c8cfe1dbf791f6db3c1eb361ffaaa",
+          "compilation_database_sha256": "b0942fea9f52f750739c047c5c85ec9533ea69b69a8db168067c94ddb4f78e6d",
           "config_sha256": "243958aefb3fd4234f49a77ffce67ec0c768de525023e69be1e6ae96b7037396",
           "dependencies": {},
-          "exporter_sha256": "764175b8bacf30eec7dbff581ef2ad77718f662b11699b24e743a6a628758d19",
-          "identity": "61477df6bd0bd1dc5c610c55c441440921b1cc59f297b49279ee4e9b86e16b05",
+          "exporter_sha256": "8b40892d69c2b04045c67d955b67c228d1215e84ae9bc972411ac05ceb5ed302",
+          "identity": "1e90ae93c8aca6a036b747d9e2c41d9ee1bff17b911add7577e7a601983ed784",
           "logical_source_sha256": "bf81009da5251597c4b7983a4383fc65aa4ea30fd27f873149578290dcc2cfc2",
           "prepared_roots": [
-            "/home/user/click-b/examples/basic-cpp",
-            "/home/user/click-b/examples/basic-cpp"
+            "$unit",
+            "$project"
           ],
           "preprocessor_files": {
-            "/home/user/click-b/examples/basic-cpp/with_restore.cpp": {
-              "canonical_path": "/home/user/click-b/examples/basic-cpp/with_restore.cpp",
+            "$unit/with_restore.cpp": {
+              "canonical_path": "$unit/with_restore.cpp",
               "sha256": "bf81009da5251597c4b7983a4383fc65aa4ea30fd27f873149578290dcc2cfc2"
             }
           },
@@ -95,7 +95,7 @@
               "-o",
               "with_restore.cpp.o"
             ],
-            "compilation_directory": "/home/user/click-b/examples/basic-cpp",
+            "compilation_directory": "$unit",
             "compilation_file": "with_restore.cpp",
             "exceptions": false,
             "frontend": "clang",
@@ -108,21 +108,21 @@
           "source_sha256": "bf81009da5251597c4b7983a4383fc65aa4ea30fd27f873149578290dcc2cfc2"
         },
         "with_restore_caller.cpp": {
-          "artifact_bytes": 32622,
-          "artifact_sha256": "d2bdd31ffdc40fcc811e913d2552d119242b6b8dc562fd8ca36100a99594d5a7",
-          "compilation_database_sha256": "071c8ebab67c055f67b02387447f48ddf2b04f104a78c220d46f92d49f89e18d",
+          "artifact_bytes": 32526,
+          "artifact_sha256": "60808b3f02aa909d03de9d76658939bd7ad05aaaf2474b639b7a0d982fd63961",
+          "compilation_database_sha256": "62be18462b5a40fca142a6ea46b26b5a0168cc072bfbea2679630b53bb542f49",
           "config_sha256": "243958aefb3fd4234f49a77ffce67ec0c768de525023e69be1e6ae96b7037396",
           "dependencies": {},
-          "exporter_sha256": "764175b8bacf30eec7dbff581ef2ad77718f662b11699b24e743a6a628758d19",
-          "identity": "419d0449832b771475ad2edb2456be6bab1df88c2d95542c84fb8ce8c1fc5a3a",
+          "exporter_sha256": "8b40892d69c2b04045c67d955b67c228d1215e84ae9bc972411ac05ceb5ed302",
+          "identity": "1427b8332cc5f6a459ceb47c7daf2583a37406f6f31f7f893da9720ab3b3402b",
           "logical_source_sha256": "0c332fb5f11166337ff19553521f2726060274a63acdfd217f4818d3f1d48c3f",
           "prepared_roots": [
-            "/home/user/click-b/examples/basic-cpp",
-            "/home/user/click-b/examples/basic-cpp"
+            "$unit",
+            "$project"
           ],
           "preprocessor_files": {
-            "/home/user/click-b/examples/basic-cpp/with_restore_caller.cpp": {
-              "canonical_path": "/home/user/click-b/examples/basic-cpp/with_restore_caller.cpp",
+            "$unit/with_restore_caller.cpp": {
+              "canonical_path": "$unit/with_restore_caller.cpp",
               "sha256": "0c332fb5f11166337ff19553521f2726060274a63acdfd217f4818d3f1d48c3f"
             }
           },
@@ -147,7 +147,7 @@
               "-o",
               "with_restore_caller.cpp.o"
             ],
-            "compilation_directory": "/home/user/click-b/examples/basic-cpp",
+            "compilation_directory": "$unit",
             "compilation_file": "with_restore_caller.cpp",
             "exceptions": false,
             "frontend": "clang",
