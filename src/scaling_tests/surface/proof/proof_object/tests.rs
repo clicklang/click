@@ -1488,3 +1488,154 @@ fn completed_goal_retention_validates_current_source_after_stale_recording() {
         "retention walked unrelated locals: {work:?}"
     );
 }
+
+#[test]
+fn indexed_rewrite_does_not_spell_registered_read_definitions() {
+    let predicates = PredicateEnvironment::new(&[]);
+    let functions = ClickFunctionEnvironment::new(&[]);
+    let theorems = TheoremEnvironment::new(&[]);
+    let parsed = crate::surface::parse(
+        "theorem alias(first: int32, second: int32) { requires first == second; ensures true; }",
+    )
+    .unwrap();
+    let alias_surface = parsed.theorem_definitions()[0].requires[0]
+        .proposition()
+        .unwrap()
+        .clone();
+    let mut samples = Vec::new();
+    for size in [4usize, 16, 64] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let memory = crate::kernel::intern_c_memory(
+            crate::kernel::CMemory::new().with_block("rewrite_reads", 4096),
+        );
+        let mut facts = Vec::new();
+        let mut reads = Vec::new();
+        for index in 0..size {
+            let load = Bitvector32Term::MemoryLoad(
+                memory.clone(),
+                Box::new(Pointer {
+                    block: "rewrite_reads".into(),
+                    offset: PointerOffsetTerm::Constant(index as i64 * 4),
+                }),
+                crate::kernel::LoadKind::Bits32,
+            );
+            let (variable, registered) = crate::kernel::load_variable_for_term(&load).unwrap();
+            let fact = Proposition::ConditionIs(
+                ConditionTerm::Bitvector32Equal(
+                    Box::new(Bitvector32Term::Variable(variable)),
+                    Box::new(registered),
+                ),
+                true,
+            );
+            assert!(crate::kernel::is_verified_load_variable_defining_fact(
+                &fact
+            ));
+            facts.push(fact);
+            reads.push(Bitvector32Term::Variable(variable));
+        }
+        let state = CState::new()
+            .with_memory(memory.memory().clone())
+            .with_local("first", CValue::Int32(reads[0].clone()))
+            .with_local("second", CValue::Int32(reads[1].clone()));
+        let mut snapshots = RecordedSnapshots::new();
+        for index in 0..8 {
+            snapshots.insert(
+                ProgramPointRef {
+                    region: CodeRegionRef::Statement(index),
+                    kind: ProgramPointKind::Entry,
+                },
+                CState::new(),
+            );
+        }
+        let anchor = ProgramPointRef {
+            region: CodeRegionRef::Statement(7),
+            kind: ProgramPointKind::Entry,
+        };
+        let surfaces = SurfacePropositionMap::default();
+        let sum = reads
+            .iter()
+            .cloned()
+            .fold(Bitvector32Term::Constant(0), |sum, read| {
+                Bitvector32Term::Add(Box::new(sum), Box::new(read))
+            });
+        let goal = Proposition::ConditionIs(
+            ConditionTerm::Bitvector32Equal(Box::new(sum), Box::new(Bitvector32Term::Constant(7))),
+            true,
+        );
+        let root = Proof::for_fixed_state_goal_with_requirements(
+            "registered read rewrite candidates",
+            0,
+            &facts,
+            goal,
+            ParameterBinding::default(),
+            FixedStateFrame::new(&state, &state, None, &snapshots),
+            Some(&anchor),
+            &surfaces,
+            SpecDefinitions::new(&predicates, &functions),
+            &theorems,
+            &[],
+            &[],
+            &[],
+        );
+        let ((closed, work), events) = crate::instrumentation::collect(|| {
+            crate::instrumentation::measure_deterministic_work(|| {
+                root.try_indexed_goal_equality_rewrite_closure()
+            })
+        });
+        assert!(
+            closed.is_none(),
+            "definitions do not establish the false sum"
+        );
+        let history_queries = events
+            .iter()
+            .filter(|event| {
+                matches!(event,
+            crate::instrumentation::VerificationEvent::OperationFinished { name, .. }
+                if *name == "simp premise surface at recorded snapshots")
+            })
+            .count();
+        assert_eq!(
+            history_queries, 0,
+            "registered definitions triggered snapshot spelling at size {size}"
+        );
+        assert!(facts.iter().all(|fact| root.facts().contains(fact)));
+        let alias = Proposition::ConditionIs(
+            ConditionTerm::Bitvector32Equal(Box::new(reads[0].clone()), Box::new(reads[1].clone())),
+            true,
+        );
+        let mut alias_facts = facts.clone();
+        alias_facts.push(alias.clone());
+        let mut alias_surfaces = SurfacePropositionMap::default();
+        alias_surfaces
+            .record_lowering(&alias_surface, &alias)
+            .unwrap();
+        for (premises, expected) in [(&alias_facts, true), (&facts, false)] {
+            let proof = Proof::for_fixed_state_goal_with_requirements(
+                "different reads remain usable",
+                0,
+                premises,
+                alias.clone(),
+                ParameterBinding::default(),
+                FixedStateFrame::new(&state, &state, None, &snapshots),
+                Some(&anchor),
+                &alias_surfaces,
+                SpecDefinitions::new(&predicates, &functions),
+                &theorems,
+                &[],
+                &[],
+                &[],
+            );
+            assert_eq!(
+                proof
+                    .try_indexed_goal_equality_rewrite_closure()
+                    .is_some_and(|proof| proof.is_complete()),
+                expected
+            );
+        }
+        samples.push(work);
+    }
+    assert!(
+        samples.windows(2).all(|pair| pair[1] <= pair[0] * 5 + 64),
+        "registered definition filtering exceeded input growth: {samples:?}"
+    );
+}
