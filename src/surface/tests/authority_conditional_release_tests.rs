@@ -149,7 +149,13 @@ fn authority_conditional_release_expansion_roundtrips_every_smart_site() {
         project_smart_tactic_source_sites(&project, &ProgramInputs::Bundle(c.to_vec())).unwrap();
     assert!(!sites.is_empty());
     for site in sites {
-        let position = site.position;
+        let position = project_tactic_source_position(
+            &project,
+            &ProgramInputs::Bundle(c.to_vec()),
+            &site.claim_label,
+            site.source_index,
+        )
+        .unwrap();
         let expanded = expand_project_tactic_source_at(
             &project,
             &ProgramInputs::Bundle(c.to_vec()),

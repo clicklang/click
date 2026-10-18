@@ -16487,7 +16487,13 @@ fn authority_callback_count_refinement_expands_every_smart_site() {
             .unwrap();
     assert!(!sites.is_empty());
     for site in sites {
-        let position = site.position;
+        let position = project_tactic_source_position(
+            &project,
+            &ProgramInputs::Bundle(c_sources.to_vec()),
+            &site.claim_label,
+            site.source_index,
+        )
+        .unwrap();
         let expanded = expand_project_tactic_source_at(
             &project,
             &ProgramInputs::Bundle(c_sources.to_vec()),
@@ -18888,11 +18894,10 @@ fn modular_buffer_ranges_rejoin_in_all_proof_modes() {
     }
     for (source, sources, function) in cases {
         let sources = crate::cli::source_refs(&sources);
-        verify_c0_sources(&source, &sources)
-            .unwrap_or_else(|error| panic!("{function}: {}", error.report()));
+
         let expanded = expand_c0_claim_source(&source, &sources, function, CProofClaim::Grouped)
             .unwrap_or_else(|error| panic!("{function}: {}", error.report()));
-        verify_c0_sources(&expanded, &sources)
+        verify_expanded_function_source(&source, &expanded, &sources, function)
             .unwrap_or_else(|error| panic!("expanded {function}: {}", error.report()));
         let position = expansion::c0_tactic_source_position(
             &expanded,
@@ -18901,7 +18906,15 @@ fn modular_buffer_ranges_rejoin_in_all_proof_modes() {
             0,
         )
         .unwrap();
-        let (session, _) = C0VerificationSession::new(&source, &sources).unwrap();
+        // Construction cold-verifies the complete original source before
+        // capturing its baseline. It supplies the original positive check
+        // once; all cold expansion checks stay before this retained session.
+        let (session, original) = C0VerificationSession::new(&source, &sources).unwrap();
+        assert!(
+            original
+                .iter()
+                .any(|proof| proof.function_block.signature().name() == function)
+        );
         session
             .verify_at(&expanded, position.line, position.column)
             .unwrap_or_else(|error| panic!("retained {function}: {}", error.report()));
