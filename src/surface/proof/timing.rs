@@ -130,7 +130,7 @@ impl TacticTiming {
     /// Times the implicit `auto` proving a simple tactic's open requirement
     /// as a smart tactic of its own at that tactic's site, so its search is
     /// charged to a smart budget and profiled as `implicit auto`, not as the
-    /// simple tactic's certificate check (`issues/simplify-step.md`).
+    /// simple tactic's certificate check.
     pub(super) fn implicit_auto() -> Option<Self> {
         let enclosing = current_timing_tactic()?;
         crate::instrumentation::enabled().then(|| {

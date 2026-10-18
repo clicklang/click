@@ -1287,18 +1287,13 @@ impl<'a> Proof<'a> {
             .ok_or_else(|| self.step_error("execution-frontier proof lost its semantic state"))?;
         // Every statement step executes in the whole proof context.
         let fact_context = Some(self.facts().assumptions());
-        let checked = if matches!(prerequisite_policy, StatementPrerequisitePolicy::Contextual) {
-            check_statement_step(&mut execution, context, self.facts(), fact_context)?
-        } else {
-            check_statement_step_with_policy(
-                &mut execution,
-                context,
-                self.facts(),
-                fact_context,
-                prerequisite_policy,
-            )?
-        };
-        let mut checked = checked;
+        let mut checked = check_statement_step_with_policy(
+            &mut execution,
+            context,
+            self.facts(),
+            fact_context,
+            prerequisite_policy,
+        )?;
         // A fact the statement introduces (a callee's `ensures`, a store's
         // value) is recorded under its readable spelling at the successor
         // state, so a later premise can name it without re-lowering it against
@@ -1554,7 +1549,7 @@ impl<'a> Proof<'a> {
     /// The kernel owns the scope and retains its completed proof as bound
     /// closure evidence; finalization validates it without reproving it.
     /// Applies `step` with explicit proofs of the obligations its fast path
-    /// leaves open (`issues/simplify-step.md`). A plain `by` (`entries` is
+    /// leaves open. A plain `by` (`entries` is
     /// `None`) proves the one open obligation; `requires` entries each prove
     /// the open obligation their proposition states. `prove` checks one proof
     /// as a `have` at this pre-state, through whichever driver reads the
@@ -1706,7 +1701,7 @@ impl<'a> Proof<'a> {
         Ok(self.step_proved_successor(stepped, step, proof))
     }
 
-    /// A bare step (`issues/simplify-step.md`): the fast path, then the
+    /// A bare step: the fast path, then the
     /// implicit `auto` for each obligation it leaves open, recorded so that
     /// expansion prints the step with a `by` or `requires` entries. A step
     /// never searches the proof context: when the implicit `auto` cannot spell
@@ -3125,7 +3120,7 @@ pub(super) fn implicit_auto_disabled() -> bool {
 /// Runs `operation` with the implicit `auto` off: a step gets only its fast
 /// path and its written obligation proofs, with no search, so an obligation
 /// nothing written proves is refused with its structured requirement. This
-/// is how an expanded proof is checked cold (`issues/simplify-step.md`):
+/// is how an expanded proof is checked cold:
 /// `click expand --claim` and `click audit`'s whole-claim expansion check their
 /// output this way.
 pub fn without_implicit_auto<R>(operation: impl FnOnce() -> R) -> R {

@@ -302,7 +302,7 @@ fn simple_statement_transition_does_not_transport_facts_automatically() {
         "simple transition test",
         &mut next_opaque_call,
         &mut next_kernel_variable,
-        StatementPrerequisitePolicy::Explicit,
+        StatementPrerequisitePolicy::Fast,
         StatementFactTransportPolicy::None,
         None,
     )

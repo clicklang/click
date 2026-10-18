@@ -139,3 +139,39 @@ fn giving_one_element_is_constant_in_the_range_size() {
     }
     assert_constant_plus_log("giving one element", &samples, 4.0);
 }
+
+/// `cells_state` beside `unrelated` owned ranges, one per other block: the
+/// ambient holdings a simple step must not scan.
+fn cells_state_beside_unrelated_ranges(capacity: u32, unrelated: u32) -> CState {
+    let state = cells_state(capacity, capacity);
+    let resources = (0..unrelated).fold(state.resources().clone(), |resources, index| {
+        resources.unchecked_with_fact(CResourceFact::own_memory(range(
+            UNRELATED + 10 + u64::from(index),
+            0,
+            4,
+        )))
+    });
+    state.with_resource_context(resources)
+}
+
+#[test]
+fn taking_and_giving_one_element_is_constant_in_unrelated_owned_ranges() {
+    let mut taking = Vec::new();
+    let mut giving = Vec::new();
+    for unrelated in SIZES {
+        let state = cells_state_beside_unrelated_ranges(64, unrelated);
+        let (taken, work) = crate::instrumentation::measure_deterministic_work(|| take(&state, 32));
+        let taken = taken.expect("the middle cell is free");
+        taking.push((unrelated, work));
+        let (returned, work) =
+            crate::instrumentation::measure_deterministic_work(|| give(&taken, 32));
+        assert!(
+            held_fact(&returned.expect("the taken cell can be returned"))
+                .holes()
+                .is_empty()
+        );
+        giving.push((unrelated, work));
+    }
+    assert_constant_plus_log("taking one element beside unrelated ranges", &taking, 4.0);
+    assert_constant_plus_log("giving one element beside unrelated ranges", &giving, 4.0);
+}

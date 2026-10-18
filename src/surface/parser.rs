@@ -9656,8 +9656,7 @@ impl Parser {
     }
 
     /// What follows a `step(...)` head: `;`, `by` and the proof of its one
-    /// open obligation, or a block of `requires P by ...` entries
-    /// (`issues/simplify-step.md`).
+    /// open obligation, or a block of `requires P by ...` entries.
     #[inline(never)]
     fn parse_step_proof(&mut self, step: ProofTactic) -> Result<ProofTactic, ClickError> {
         let (tactic, call) = if matches!(step, ProofTactic::FoldResource(_)) {

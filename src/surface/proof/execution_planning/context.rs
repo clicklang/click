@@ -631,10 +631,8 @@ pub(in crate::surface::proof) fn surface_c_condition(
 #[derive(Clone, Copy)]
 pub(in crate::surface) enum StatementPrerequisitePolicy {
     Exact,
-    Explicit,
-    Contextual,
-    /// A simple step's checking, with no search over the proof context
-    /// (`issues/simplify-step.md`): an obligation no fact states and no local
+    /// A simple step's checking, with no search over the proof context: an
+    /// obligation no fact states and no local
     /// kernel decision closes is refused with its structured requirement.
     /// Supported source-backed call prerequisites are refused even when the
     /// exact proposition is present, so smart execution answers them by

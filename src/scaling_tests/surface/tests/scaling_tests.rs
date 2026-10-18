@@ -1558,62 +1558,6 @@ fn composite_definition_members_keep_separation_work_compact() {
     assert_near_linear_scaling("composite definition members", &samples);
 }
 
-/// The issue-named condition-derivation curve: one two-premise order
-/// derivation while unrelated condition facts grow. The premise search must
-/// not rerun the prover once per candidate pair.
-#[test]
-fn condition_derivation_scales_near_linearly_with_unrelated_conditions() {
-    use crate::kernel::{Bitvector32Term, ConditionTerm, Proposition, Variable};
-
-    let samples = [16, 32, 64, 128]
-        .into_iter()
-        .map(|size| {
-            let x = Bitvector32Term::Variable(Variable(430_000));
-            let y = Bitvector32Term::Variable(Variable(430_001));
-            let z = Bitvector32Term::Variable(Variable(430_002));
-            let mut available = Vec::new();
-            for index in 0..size {
-                available.push(Proposition::ConditionIs(
-                    ConditionTerm::Bitvector32SignedLessThan(
-                        Box::new(Bitvector32Term::Variable(Variable(431_000 + index as u64))),
-                        Box::new(Bitvector32Term::Constant(1_000 + index as u32)),
-                    ),
-                    true,
-                ));
-            }
-            available.push(Proposition::ConditionIs(
-                ConditionTerm::Bitvector32SignedLessThan(Box::new(x.clone()), Box::new(y.clone())),
-                true,
-            ));
-            available.push(Proposition::ConditionIs(
-                ConditionTerm::Bitvector32SignedLessThan(Box::new(y), Box::new(z.clone())),
-                true,
-            ));
-            let goal = Proposition::ConditionIs(
-                ConditionTerm::Bitvector32SignedLessThan(Box::new(x), Box::new(z)),
-                true,
-            );
-            let (derivation, work) = crate::instrumentation::measure_deterministic_work(|| {
-                search_condition_derivation(&goal, &available)
-            });
-            let derivation = derivation
-                .unwrap_or_else(|error| panic!("size {size} search failed: {}", error.message()))
-                .expect("the chained order facts derive the goal");
-            assert!(
-                !derivation.context_premises().is_empty(),
-                "the derivation should name its premises"
-            );
-            (size, work)
-        })
-        .collect::<Vec<_>>();
-    for pair in samples.windows(2) {
-        assert!(
-            pair[1].1 <= pair[0].1.saturating_mul(3),
-            "condition derivation search is superlinear: {samples:?}"
-        );
-    }
-}
-
 /// A chain of order facts stated against the context's iteration order,
 /// beside unrelated facts. Premise selection indexes the context once and
 /// then walks only the chain, so its fact visits are the context plus the
@@ -1623,7 +1567,7 @@ fn condition_derivation_scales_near_linearly_with_unrelated_conditions() {
 fn condition_premise_selection_walks_a_reversed_chain_once() {
     use crate::kernel::{Bitvector32Term, ConditionTerm, Proposition, Variable};
     use crate::surface::planning::proposition_search::{
-        condition_selection_visits, reset_condition_selection_visits,
+        PropositionSearch, condition_selection_visits, reset_condition_selection_visits,
     };
 
     let less = |left: u64, right: u64| {
@@ -1666,16 +1610,13 @@ fn condition_premise_selection_walks_a_reversed_chain_once() {
             for reversed in [false, true] {
                 let available = context(LINKS, unrelated, None, reversed);
                 reset_condition_selection_visits();
+                let assumptions = assumptions_from_propositions(&available);
                 let (derivation, units) =
                     crate::instrumentation::measure_deterministic_work(|| {
-                        search_condition_derivation(&goal, &available)
+                        assumptions.derive_atomic_proposition(&goal)
                     });
-                let derivation = derivation
-                    .unwrap_or_else(|error| panic!("search failed: {}", error.message()))
-                    .expect("the chained order facts derive the goal");
-                // The certificate cites the chain and none of the unrelated
-                // facts.
-                assert_eq!(derivation.context_premises().len(), LINKS);
+                let derivation = derivation.expect("the chained order facts derive the goal");
+                assert!(derivation.check(&assumptions));
                 visits.push(condition_selection_visits());
                 work = work.max(units);
             }
@@ -1686,8 +1627,8 @@ fn condition_premise_selection_walks_a_reversed_chain_once() {
             // A missing link leaves the goal underivable.
             let broken = context(LINKS, unrelated, Some(1), true);
             assert!(
-                search_condition_derivation(&goal, &broken)
-                    .unwrap_or_else(|error| panic!("search failed: {}", error.message()))
+                assumptions_from_propositions(&broken)
+                    .derive_atomic_proposition(&goal)
                     .is_none()
             );
             (unrelated, visits[0], work)
