@@ -368,6 +368,12 @@ black-parent update for an arbitrary owned subtree, retaining its caches and
 children. The proof records explicit color bounds before the C store and uses
 checked certificates for the packed-word arithmetic. Composing this standalone
 contract with insertion's nonempty moved child remains separate work.
+`rbtree_size_insert_middle_model.click` identifies the left-left rotation's
+before/after shapes when the moved child is a nonempty black leaf, while
+retaining arbitrary focused-node children, and proves the exact in-order
+identity sequence unchanged. This is a model theorem; the corresponding C
+composition remains unfinished at the parent-word copy across the two helper
+calls.
 
 `rbtree_size_recolor.click` supplies shared model operations for root recoloring
 and insertion color flips. Its explicit lemmas preserve cached values and
