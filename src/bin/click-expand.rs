@@ -5,8 +5,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use click::cli::{
     self, CInput, RunLimits, containing_directory, looks_like_mdtest, parse_duration,
-    parse_source_line_location, prepare_mdtest_inputs, read_c_inputs, read_lone_sidecar_inputs,
-    read_lone_sidecar_project, read_mdtest, read_mdtest_project_if_needed, source_refs,
+    parse_source_line_location, prepare_mdtest_inputs, read_c_inputs, read_click_project,
+    read_lone_sidecar_inputs, read_mdtest, read_mdtest_project_if_needed, source_refs,
 };
 use click::surface::{
     ClickProject, SmartTacticCandidate, SmartTacticSelectionError,
@@ -260,7 +260,7 @@ fn write_context_preserved(
         .map_err(|error| format!("failed to stage `{}`: {error}", staged.display()))?;
     let verification = (|| -> Result<(), String> {
         let (verified_project, verified_inputs) = read_lone_sidecar_inputs(&staged, &rebased)?;
-        let original_project = read_lone_sidecar_project(&arguments.click_path, &artifact.source)?;
+        let original_project = read_click_project(&arguments.click_path, &artifact.source)?;
         if original_project.c_profile() != verified_project.c_profile() {
             return Err("`--output` would change the Click project C configuration; place the output in the same project directory".to_string());
         }

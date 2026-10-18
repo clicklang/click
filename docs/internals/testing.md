@@ -362,7 +362,7 @@ mdtests, about 340 of the corpus's 710, to nightly. A gate run without the
 nightly fixtures is partial, as a CI partition is: the hidden prerequisite
 ratchet checks only for a rise there, and the nightly run checks both
 ratchets over the whole corpus. On 2026-10-15 the warm local gate took 11.7
-minutes on four cores, from one example: `examples/rbtree-augmented` grew
+minutes on four cores, from one example: `examples/rbtree/rbtree-augmented` grew
 from 259 to 5,467 proof lines in a day and verified in 261 seconds of the
 examples harness's 317, so it joined the other rbtree examples in nightly.
 
@@ -1080,12 +1080,13 @@ compact context, followed by the checked arithmetic certificate. Terminal
 outcomes retain their result-aware equality rewrites and source-anchoring
 routes before that arithmetic fallback.
 
-A directory verifies every sidecar in it: the directory
-itself when it holds sidecars, otherwise each immediate subdirectory that does.
-A declaration module (imports, types, predicates, pure functions, and
-resources only) is checked through its importers and is not an entry
-(`click::cli::project_sidecars`); the examples gate selects entries the same
-way.
+A directory verifies every sidecar under it, grouped by project
+(`click::cli::select_sidecars`). A declaration module (imports, types,
+predicates, pure functions, and resources only) is checked through its
+importers and is not an entry. The examples gate selects entries the same way
+and schedules each directory that directly holds a sidecar on its own, named
+by its path below `examples/` (`rbtree/rbtree-insert`), so the parts of one
+project can be run, skipped or quarantined separately.
 Every sidecar or selected proof unit has an independent deterministic
 whole-run work budget (`--work-limit`, default 50 million units) and an
 independent ten-minute crash-containment bound (`--time-limit`). Both cover

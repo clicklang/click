@@ -224,6 +224,10 @@ pub(in crate::surface) struct ProgramLayouts {
     /// by their sidecar names: without a contract of its own, it has the
     /// method's.
     pub(in crate::surface) virtual_dispatches: Vec<(String, String)>,
+    /// Each instance of a generic Rust function the import declares, with
+    /// the generic function and the instance's parameter and result types:
+    /// it has the generic function's contract at those types.
+    pub(in crate::surface) rust_generic_instances: Vec<(String, String, Vec<C0Type>, C0Type)>,
     /// The instances of each generic crate trait the import declares an
     /// interface of, by the trait's importer name.
     pub(in crate::surface) rust_trait_instances: BTreeMap<String, BTreeSet<Vec<String>>>,
@@ -803,6 +807,9 @@ struct Parser {
     /// The type parameters of the generic `trait` block being read, `T` of
     /// `trait p::Scale<T>`: a value of one is an abstract value.
     rust_abstract_type_parameters: BTreeSet<String>,
+    /// The generic Rust function instances the import declares, as the
+    /// layouts give them.
+    rust_generic_instances: Vec<(String, String, Vec<C0Type>, C0Type)>,
     /// Each crate trait method implementation read, by name, with the
     /// interface it inherits.
     rust_trait_implementations: Vec<(String, String)>,
@@ -1177,6 +1184,7 @@ impl Parser {
         parser.qualified_functions = layouts.qualified_functions;
         parser.local_struct_pointers_by_function = layouts.local_struct_pointers;
         parser.closure_captures = layouts.closure_captures;
+        parser.rust_generic_instances = layouts.rust_generic_instances;
         parser.plain_char = layouts.plain_char;
         parser.int64_t_rank = layouts.int64_t_rank.unwrap_or(LongRank::Long);
         parser.c_typedefs = layouts.c_typedefs;
@@ -1313,6 +1321,7 @@ impl Parser {
             rust_trait_interface: None,
             rust_trait_type_parameters: BTreeSet::new(),
             rust_abstract_type_parameters: BTreeSet::new(),
+            rust_generic_instances: Vec::new(),
             rust_trait_implementations: Vec::new(),
             cpp_dispatches: Vec::new(),
             cpp_receiver_calls: BTreeMap::new(),
@@ -1749,6 +1758,28 @@ impl Parser {
                         .at_declaration(&implementation)
                     })?;
             }
+        }
+        // A generic function's instance the sidecar does not state has the
+        // generic function's contract at its types.
+        for (instance, generic, parameter_types, return_type) in
+            std::mem::take(&mut self.rust_generic_instances)
+        {
+            if function_blocks
+                .iter()
+                .any(|block| block.signature().name() == instance)
+            {
+                continue;
+            }
+            let Some(block) = function_blocks
+                .iter()
+                .find(|block| !block.is_external() && block.signature().name() == generic)
+            else {
+                continue;
+            };
+            let alias = block
+                .generic_instance_alias(&instance, &parameter_types, return_type)
+                .map_err(|message| ClickError::new(message).at_declaration(&generic))?;
+            function_blocks.push(alias);
         }
         // A dispatch the sidecar does not state has the contract of the
         // method it stands for.

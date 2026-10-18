@@ -91,16 +91,17 @@ import "specification_imports_model.click";
 ```
 
 Imports are relative to the importing file, transitive, and confined to the
-project root. Paths are canonicalized to stable project-relative module
-identities; cycles, missing files, escaping paths, and ambiguous unqualified
-declarations are errors. A single-sidecar CLI input uses the sidecar's
-directory as its root, widened to the nearest directory that also holds every
-module the sidecar transitively imports, so a sidecar that imports a sibling
-project (`../rbtree-model/rbtree_model.click`) selects their common parent,
-the same root the directory form of the command uses; directory-target
-verification passes its selected Click project root explicitly. This keeps
-import boundaries independent of version control while permitting an
-intentional project to share specifications across sibling directories.
+sidecar's project. The project root is the nearest directory, from the
+sidecar's own upward, that holds a `click.project.json`; a sidecar with no
+project file above it is a project of its own, rooted at its directory. Paths
+are canonicalized to stable project-relative module identities; cycles,
+missing files, imports that leave the project, and ambiguous unqualified
+declarations are errors. Sidecars that share a specification belong to one
+project: the `examples/rbtree` project holds the shared model in
+`rbtree-model/` beside the `rbtree-insert/`, `rbtree-erase/` and
+`rbtree-augmented/` sidecars that import it as `../rbtree-model/...`. The
+boundary is a Click concern, independent of version control, and every
+command uses the same one.
 Libraries may export algebraic types, predicates, pure functions, resources,
 theorem statements, named contracts, C function specifications, and tactics.
 An imported file's `verifying` declarations select sources when that file is
@@ -257,7 +258,9 @@ There are two kinds of example material in this repository:
 - `mdtests/`: small, self-contained markdown tests. These are best for focused
   proof patterns and regression tests.
 - `examples/`: larger example projects with ordinary `.c` files and `.click`
-  sidecars. These are best for library-shaped verification examples.
+  sidecars. These are best for library-shaped verification examples. Most
+  are one directory; `examples/rbtree` and `examples/pcg` are projects whose
+  sidecars, in several directories, share one `click.project.json`.
 
 For learning Click, follow the introductory concept pages and then read the
 small mdtests listed in the examples catalog. For seeing how proofs are organized at a

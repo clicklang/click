@@ -4535,7 +4535,7 @@ fn a_rust_sidecar_states_its_signature_in_rust_syntax() {
         ),
         (
             "verifying \"add.rs\"; fn read<T>(value: &T) -> i32 { ensures result == result; } by { execute(); simp(); }",
-            "generic parameters may only be lifetimes",
+            "a reference to a value of an abstract type parameter is not supported",
         ),
     ] {
         let error = parser::parse(source).expect_err("the signature is refused");

@@ -51,6 +51,7 @@ fn export() -> r::RustExport {
             external: false,
             captures: 0,
             implements: None,
+            instance_of: None,
             span: r::Span { line: 1, column: 1 },
             mir: Some(r::MirBody {
                 locals: vec![place("child", reference_type()), place("x", Type::I32)],

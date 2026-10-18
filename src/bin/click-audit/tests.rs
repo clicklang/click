@@ -1383,18 +1383,18 @@ fn an_unfold_bound_scalar_field_audits_every_site() {
 }
 
 #[test]
-fn sidecar_importing_a_sibling_project_loads_under_the_verify_root() {
-    // `examples/rbtree-insert` imports `../rbtree-model/rbtree_model.click`.
-    // `click verify` widens a lone sidecar's project root to cover its
-    // imports; audit loaded the project at the sidecar's own directory and
-    // refused the import as outside the project root.
+fn sidecar_in_a_project_subdirectory_loads_under_the_project_root() {
+    // `examples/rbtree/rbtree-insert` imports `../rbtree-model/rbtree_model.click` from
+    // its project. Audit once loaded the project at the sidecar's own
+    // directory and refused the import as outside the project root.
     let directory =
-        std::env::temp_dir().join(format!("click-audit-sibling-import-{}", std::process::id()));
+        std::env::temp_dir().join(format!("click-audit-project-import-{}", std::process::id()));
     if directory.exists() {
         fs::remove_dir_all(&directory).unwrap();
     }
     fs::create_dir_all(directory.join("model")).unwrap();
     fs::create_dir_all(directory.join("entry")).unwrap();
+    fs::write(directory.join("click.project.json"), "{}\n").unwrap();
     fs::write(
         directory.join("model/model.click"),
         "function twice(x: int) -> int {\n    x + x\n}\n",
@@ -1424,7 +1424,7 @@ int32 double_it(int32 x) {
     )
     .unwrap();
     let sites = inventory_sites(std::slice::from_ref(&click_path))
-        .expect("the sidecar should load under the root `click verify` selects");
+        .expect("the sidecar should load under its project root");
     assert!(sites.iter().any(|site| site.tactic_name == "simp"));
     fs::remove_dir_all(directory).unwrap();
 }

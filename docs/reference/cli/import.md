@@ -53,7 +53,9 @@ system headers, or frontend toolchain.
 A project's root `click.project.json` can declare C compiler-import units, C++
 units and Rust crate units. The
 project file is found from a sidecar as the nearest ancestor directory that
-contains one, so sidecars may live in any subdirectory beneath it. A unit names
+contains one, so sidecars may live in any subdirectory beneath it; their Click
+imports stay inside the project ([imports](../../concepts/sidecars.md#local-specification-imports)).
+The units' sources need not: a unit names
 a source root, which may be the project directory or any external tree the user
 manages (a git submodule, a sibling checkout, copied files), and Click's own
 description of how its sources are built. Click reads the tree in place,
@@ -1827,7 +1829,7 @@ refresh.
 A unit that names a C library's include directories with `-isystem` puts them
 before Click's, so every header they supply is read from them, a locked input
 like any other, and the proof then assumes that library's declarations. None of
-the repository's fixtures does; `design/charon-trial/zlib/` uses Click's headers.
+the repository's fixtures does; `design/adler32/zlib/` uses Click's headers.
 
 Configured forced includes and ordered `-D` and `-U` options select additional
 preprocessing inputs. Other compiler options are rejected unless a named option

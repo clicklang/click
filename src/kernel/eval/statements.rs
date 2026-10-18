@@ -609,6 +609,17 @@ fn write_c_lvalue_paths_without_local_reference(
     let lvalue_value_type = lvalue.value_type;
     let lvalue_classes = (lvalue.access_class(), lvalue.object_class());
     match lvalue.storage {
+        // A local of an abstract type holds its value in its binding: its
+        // object has no addressable bytes to store to.
+        CLValueStorage::Local { name } if matches!(lvalue_value_type, CType::Parameter(_)) => {
+            let mut state = state.clone();
+            state.locals.set_typed(name, value, lvalue_value_type);
+            Ok(vec![CStatementExecutionPath::new(
+                CStatementOutcome::Normal(Box::new(state)),
+                facts,
+                obligations,
+            )])
+        }
         CLValueStorage::Local { name } => {
             if let Some(pointer) = state.locals.slot(&name)
                 && let Some(refusal) = subobject_access_refusal(
@@ -4763,8 +4774,9 @@ pub(in crate::kernel) fn declare_local(
     register_block_alignment(&pointer.block, c_type.abi_alignment());
     let byte_width = match c_type {
         CType::Int128 | CType::UInt128 => 16,
-        // An abstract value's object has no width to allocate yet.
-        CType::Parameter(_) => return Err(CRuntimeError::TypeMismatch),
+        // An abstract value's object has no addressable bytes: its value is
+        // held by its binding, and its address is never taken.
+        CType::Parameter(_) => 0,
         CType::Void => unreachable!("void local objects are not supported"),
         CType::Bool => 1,
         CType::VoidPointer | CType::VoidPointerPointer => C_POINTER_BYTE_WIDTH,

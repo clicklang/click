@@ -173,6 +173,10 @@ pub struct C0Function {
     /// The interface function a crate trait method's implementation
     /// implements, whose contract its own must refine.
     trait_interface: Option<String>,
+    /// The generic function this declaration is an instance of, verified
+    /// once for every type; the instance's contract is its contract at the
+    /// declaration's types.
+    generic_instance: Option<String>,
     /// The C++ virtual method a dispatch the importer names stands for.
     dispatched_method: Option<String>,
     /// A C++ function's calls of methods on a receiver that may be an object
@@ -3327,6 +3331,17 @@ impl C0Function {
         self.trait_interface.as_deref()
     }
 
+    /// An instance of the generic function `generic`.
+    pub(crate) fn with_generic_instance(mut self, generic: Option<String>) -> Self {
+        self.generic_instance = generic;
+        self
+    }
+
+    /// The generic function this declaration is an instance of.
+    pub(crate) fn generic_instance(&self) -> Option<&str> {
+        self.generic_instance.as_deref()
+    }
+
     /// This C++ function, calling methods on receivers that may be objects of
     /// derived classes.
     pub(crate) fn with_receiver_calls(mut self, calls: Vec<(String, Option<String>)>) -> Self {
@@ -3424,6 +3439,7 @@ impl C0Function {
             positional_parameters: false,
             closure_captures: 0,
             trait_interface: None,
+            generic_instance: None,
             dispatched_method: None,
             receiver_calls: Vec::new(),
             program_entry_state: None,
@@ -10241,6 +10257,7 @@ impl Parser {
             positional_parameters: false,
             closure_captures: 0,
             trait_interface: None,
+            generic_instance: None,
             dispatched_method: None,
             receiver_calls: Vec::new(),
             program_entry_state: None,

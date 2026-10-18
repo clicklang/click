@@ -21,16 +21,18 @@ Replace the following:
 - `SIDECAR`: the path to a `.click` sidecar.
 - `MDTEST`: the path to a `.md` markdown test.
 - `LINE` and `COLUMN`: one-based coordinates inside a proof unit.
-- `PROJECT_DIRECTORY`: either one project containing sidecars or a directory
-  whose immediate subdirectories contain projects.
+- `PROJECT_DIRECTORY`: a directory; every sidecar under it is selected.
 - `REVISION`: a Git revision used as the incremental baseline.
 
 ## Target selection
 
-A sidecar target verifies every proof owned by that sidecar. Its project
-root is the sidecar's directory, widened to cover every module the sidecar
-transitively imports, so a sidecar importing a sibling project's module can
-be verified on its own. A `PATH:LINE:COLUMN` target verifies only the proof
+A sidecar target verifies every proof owned by that sidecar. Its imports
+resolve within its project: the nearest directory at or above the sidecar
+holding a `click.project.json`, or the sidecar's own directory when none does
+([imports](../../concepts/sidecars.md#local-specification-imports)). A directory target
+verifies every sidecar under it, at any depth, grouped by the project each
+belongs to; hidden directories and `target` are skipped, and a project's
+declaration modules are not entries. A `PATH:LINE:COLUMN` target verifies only the proof
 unit containing that location. Imported declarations are available, but importing does not select
 their proof bodies; similarly, an unselected called C function contributes its
 well-formed contract without recursively selecting its implementation proof.
@@ -318,8 +320,8 @@ own theorem-only project, while the insert entry imports it without selecting
 it a second time.
 
 ```console
-click verify examples/rbtree-model
-click verify examples/rbtree-insert
+click verify examples/rbtree/rbtree-model
+click verify examples/rbtree/rbtree-insert
 ```
 
 Explain incremental selection from the previous commit:

@@ -208,7 +208,7 @@ int32 identity(int32 x) { ensures result == x; } by {
     );
 }
 
-/// `rb_erase`'s general wrapper (`examples/rbtree-erase`): a file-static
+/// `rb_erase`'s general wrapper (`examples/rbtree/rbtree-erase`): a file-static
 /// callbacks struct is folded and passed to a call whose outcome resource
 /// unfolds into a child named like the contract's own `produces whole`.
 /// `execute(); simp();` expands to `have whole.model == ...`, which reads

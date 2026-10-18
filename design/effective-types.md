@@ -230,7 +230,7 @@ allowed cases:
     access class, and the kernel's fallback gave it its kernel type's class:
     `((struct sized_node*)(void*)old)->size` as a resource argument read as
     `int` and was refused against the `struct rb_node` its parameter
-    designates, which stopped `examples/rbtree-augmented` wherever a contract
+    designates, which stopped `examples/rbtree/rbtree-augmented` wherever a contract
     names a node's cached count.
 - **Step 4 (project optimization level):** done, with one exception the
   maintainer approved on 2026-10-17. A project names `optimization`, `-O2` by

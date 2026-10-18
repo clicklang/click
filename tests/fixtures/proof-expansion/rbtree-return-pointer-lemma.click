@@ -1,11 +1,11 @@
 import click::integer;
 // Regression for post-return imported lemmas with struct-pointer/model arguments.
 // The links have already rotated; only the two root summaries are stale.
-verifying "../../../examples/rbtree-augmented/rbtree_size_rotate.c";
-verifying "../../../examples/rbtree-augmented/rbtree_size_compute.c";
-verifying "../../../examples/rbtree-augmented/rbtree_size_copy.c";
-import "../../../examples/rbtree-augmented/rbtree_size_rotate.click";
-import "../../../examples/rbtree-augmented/rbtree_size_recompute_model.click";
+verifying "../../../examples/rbtree/rbtree-augmented/rbtree_size_rotate.c";
+verifying "../../../examples/rbtree/rbtree-augmented/rbtree_size_compute.c";
+verifying "../../../examples/rbtree/rbtree-augmented/rbtree_size_copy.c";
+import "../../../examples/rbtree/rbtree-augmented/rbtree_size_rotate.click";
+import "../../../examples/rbtree/rbtree-augmented/rbtree_size_recompute_model.click";
 
 // Ownership of the demoted prefix and promoted metadata supplies the frame.
 tactic rotation_target_separation(node: struct sized_node*, promoted: struct rb_node*) {

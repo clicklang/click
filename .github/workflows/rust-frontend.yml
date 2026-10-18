@@ -16,9 +16,7 @@ on:
       - 'tests/support/rust_frontend.rs'
       - 'tests/support/release_assets.rs'
       - 'examples/basic-rust/**'
-      - 'design/charon-trial/adler2/**'
-      - 'design/charon-trial/zlib/**'
-      - 'design/adler32-spec.click'
+      - 'design/adler32/**'
   push:
     tags: ['v[0-9]+.[0-9]+.[0-9]+*']
   workflow_dispatch:

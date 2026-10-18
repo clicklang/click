@@ -4,7 +4,7 @@ Linux augmented rbtrees embed a `struct rb_node` in a larger node and
 recover the container from the `struct rb_node *` the core code passes.
 A contract states the cached `size` of that container as a resource
 argument, `((struct sized_node*)(void*)old)->size`, as
-`examples/rbtree-augmented/rbtree_size_change_child.click` does. A
+`examples/rbtree/rbtree-augmented/rbtree_size_change_child.click` does. A
 resource argument is a specification: it reads memory as a value, so the
 strict-aliasing check, which applies to C accesses, does not apply to it
 (`design/effective-types.md`). The argument is evaluated at the callee's

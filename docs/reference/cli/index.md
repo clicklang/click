@@ -42,8 +42,7 @@ command page:
 - a `.click` sidecar;
 - a one-based `PATH:LINE:COLUMN` source location, or a `PATH:LINE` line for
   `click expand`;
-- a project directory containing sidecars;
-- a directory whose immediate subdirectories are projects;
+- a directory, selecting every sidecar under it, grouped by project;
 - an mdtest file or mdtest directory;
 - the repository root for a combined audit.
 

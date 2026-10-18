@@ -1,0 +1,23 @@
+{
+  "units": {
+    "generic_impls": {
+      "language": "rust",
+      "sources": {
+        "shapes.rs": {}
+      },
+      "crate": {
+        "name": "generic_impls",
+        "edition": "2021",
+        "features": [],
+        "roots": [
+          "generic_impls::through",
+          "generic_impls::through_wide",
+          "generic_impls::choose"
+        ],
+        "files": [
+          "shapes.rs"
+        ]
+      }
+    }
+  }
+}

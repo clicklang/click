@@ -13,8 +13,8 @@ use std::sync::OnceLock;
 use crate::git::{git_commit_id, git_repo_root, git_show};
 use click::cli::{
     CInput, LoadedTarget, RunLimits, SelectedProject, containing_directory, load_sidecar_inputs,
-    load_target_inputs, lone_sidecar_project_root, looks_like_mdtest, looks_like_source_location,
-    parse_duration, parse_source_location, parse_work_limit, select_sidecars, source_refs,
+    load_target_inputs, looks_like_mdtest, looks_like_source_location, parse_duration,
+    parse_source_location, parse_work_limit, select_sidecars, sidecar_project_root, source_refs,
     with_run_limits,
 };
 use click::instrumentation::VerificationPhase;
@@ -146,7 +146,7 @@ fn run(arguments: Arguments) -> Result<(), String> {
     if path.is_dir() {
         verify_directory(path, arguments.limits)
     } else {
-        let project_root = lone_sidecar_project_root(path)?;
+        let project_root = sidecar_project_root(path)?;
         verify_file(
             path,
             arguments.limits,
@@ -299,20 +299,21 @@ fn resolve_trace_target(
 /// each one as it passes so a long run shows progress.
 fn verify_directory(path: &Path, limits: RunLimits) -> Result<(), String> {
     let selection = select_sidecars(path)?;
-    let sidecars = selection.sidecars().collect::<Vec<_>>();
+    let sidecars = selection.sidecars().count();
     let projects = &selection.projects;
-    let project_root = selection.project_root.as_path();
     for project in projects {
-        reconcile_project_externs(project, project_root, path, limits)?;
+        reconcile_project_externs(project, path, limits)?;
     }
-    for sidecar in &sidecars {
-        verify_file(sidecar, limits, Some(project_root), None, None)?;
-        println!("verified {}", display_path(sidecar, path));
+    for project in projects {
+        for sidecar in &project.sidecars {
+            verify_file(sidecar, limits, Some(&project.root), None, None)?;
+            println!("verified {}", display_path(sidecar, path));
+        }
     }
     println!(
         "verified {} sidecar{} in {} project{}",
-        sidecars.len(),
-        plural(sidecars.len()),
+        sidecars,
+        plural(sidecars),
         projects.len(),
         plural(projects.len())
     );
@@ -336,7 +337,6 @@ fn verify_directory(path: &Path, limits: RunLimits) -> Result<(), String> {
 /// reconcilable.
 fn reconcile_project_externs(
     project: &SelectedProject,
-    project_root: &Path,
     target: &Path,
     limits: RunLimits,
 ) -> Result<(), String> {
@@ -348,7 +348,7 @@ fn reconcile_project_externs(
         let summary = with_run_limits("click verify", limits, || {
             let (_, project, inputs) = {
                 let _phase = VerificationPhase::new("project loading");
-                load_sidecar_inputs(sidecar, Some(project_root))?
+                load_sidecar_inputs(sidecar, Some(&project.root))?
             };
             sidecar_summary(sidecar, &project, &inputs, 0)
         })?;
@@ -388,13 +388,18 @@ fn verify_changed(
         ));
     }
     let selection = select_sidecars(path)?;
-    let project_root = selection.project_root.as_path();
     for project in &selection.projects {
-        reconcile_project_externs(project, project_root, path, limits)?;
+        reconcile_project_externs(project, path, limits)?;
     }
     let mut sidecars = selection
-        .sidecars()
-        .map(Path::to_path_buf)
+        .projects
+        .iter()
+        .flat_map(|project| {
+            project
+                .sidecars
+                .iter()
+                .map(|sidecar| (sidecar.clone(), project.root.clone()))
+        })
         .collect::<Vec<_>>();
     sidecars.sort();
     let repo = git_repo_root(path)?;
@@ -402,7 +407,7 @@ fn verify_changed(
 
     let mut verified = 0usize;
     let mut skipped = 0usize;
-    for sidecar in sidecars {
+    for (sidecar, project_root) in sidecars {
         let sidecar = fs::canonicalize(&sidecar)
             .map_err(|error| format!("failed to resolve `{}`: {error}", sidecar.display()))?;
         // Loading, selection, the dependency summary, and verification of
@@ -410,7 +415,7 @@ fn verify_changed(
         let outcome = with_run_limits("click verify", limits, || {
             verify_changed_sidecar(
                 &sidecar,
-                project_root,
+                &project_root,
                 &repo,
                 &baseline_commit,
                 revision,
@@ -1569,7 +1574,7 @@ fn verify_location_within_limits(
     line: usize,
     column: usize,
 ) -> Result<(), String> {
-    let project_root = lone_sidecar_project_root(click_path)?;
+    let project_root = sidecar_project_root(click_path)?;
     let target = {
         let _phase = VerificationPhase::new("project loading");
         load_target_inputs(click_path, Some(&project_root))?
@@ -2405,7 +2410,10 @@ void walk(int32 n) { requires n == 12; ensures 0 == 0; } by {
             .expect("the project should resolve");
         assert_eq!(selection.projects.len(), 1);
         assert!(!selection.projects[0].sidecars.is_empty());
-        assert_eq!(selection.project_root, Path::new("examples"));
+        assert_eq!(
+            selection.projects[0].root,
+            fs::canonicalize("examples/input-cursor").unwrap()
+        );
     }
 
     /// Writes one sidecar project into a fresh temporary directory and
