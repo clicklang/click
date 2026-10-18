@@ -330,3 +330,26 @@ fn int32_load_congruence_connects_base_reads_to_early_and_late_zero_offsets() {
         );
     }
 }
+
+#[test]
+fn a_late_zero_index_alias_transfers_an_admitted_read_order_and_withdraws() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let memory = memory();
+    let base = address(940_085);
+    let index = var(940_086);
+    let direct = load(&memory, &base, 4);
+    let indexed = load(&memory, &base.offset_by_elements(index.clone(), 4), 4);
+    let next = load(
+        &memory,
+        &base.offset_by_elements(Bitvector32Term::add(index.clone(), 1u32.into()), 4),
+        4,
+    );
+    let known = ConditionTerm::signed_less_than(next.clone(), indexed);
+    let target = ConditionTerm::signed_less_than(next, direct);
+    let root = PureFactContext::new().assume_condition(known, true);
+    assert_eq!(root.decide(&target), None);
+    let zero = Proposition::ConditionIs(ConditionTerm::equal(index, 0u32.into()), true);
+    let equal = root.assume_proposition(zero.clone());
+    assert_eq!(equal.decide(&target), Some(true));
+    assert_eq!(equal.without_exact_fact(&zero).decide(&target), None);
+}
