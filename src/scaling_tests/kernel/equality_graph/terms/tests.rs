@@ -92,3 +92,38 @@ fn offset_graph_construction_and_fork_queries_scale_with_indexed_work() {
         );
     }
 }
+
+#[test]
+fn late_wide_zero_reindexes_only_its_existing_offsets() {
+    let mut measured = Vec::new();
+    for size in [4u64, 16, 64] {
+        let mut graph = EqualityGraph::default();
+        let scaled = |base: &Pointer, value| Pointer {
+            block: base.block.clone(),
+            offset: PointerOffsetTerm::Int64Scaled {
+                value: Box::new(Bitvector32Term::Variable(Variable(value))),
+                byte_width: 4,
+                unsigned: true,
+            },
+        };
+        for i in 0..size {
+            let base = Pointer::symbolic(Variable(896_000 + i));
+            assert!(!graph.are_equal(&scaled(&base, 897_000 + i), &base));
+        }
+        let base = Pointer::symbolic(Variable(898_000));
+        let pointer = scaled(&base, 898_001);
+        assert!(!graph.are_equal(&pointer, &base));
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            graph.add_uint64_equality(
+                &Bitvector32Term::Variable(Variable(898_001)),
+                &Bitvector32Term::UInt64Constant(0),
+            );
+        });
+        assert!(graph.are_equal(&pointer, &base));
+        measured.push(work);
+    }
+    assert!(
+        measured.iter().all(|work| *work <= measured[0] + 32),
+        "unrelated wide offsets increased selected propagation: {measured:?}"
+    );
+}
