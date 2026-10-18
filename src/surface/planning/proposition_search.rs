@@ -547,6 +547,22 @@ impl PropositionSearch for PureFactContext {
             }
         }
         let mut condition_sources = Vec::new();
+        // Speculative equality rewrites often leave an unprovable Integer
+        // comparison. Query the existing indexes before rebuilding the facts
+        // connected through its operands. A positive answer still needs the
+        // ordinary selected-premise derivation below.
+        if for_simp
+            && matches!(
+                proposition,
+                Proposition::ConditionIs(ConditionTerm::IntegerEqual(..), _)
+            )
+            && self
+                .proves_atomic_for_derivation_with_id(proposition, for_simp)
+                .0
+                .is_none()
+        {
+            return None;
+        }
         if condition_goal {
             let (selected, _, _, _) =
                 connected_atomic_premises(self, proposition, &[], false, true, exclude_exact_goal)?;

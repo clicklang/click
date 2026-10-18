@@ -1523,8 +1523,12 @@ context would keep otherwise dead adjacency versions alive. Fact-set equality,
 hashing, and the memo-table limits remain unchanged. For smart
 equality failures, the shared ambient oracle can reject a goal before another
 history walk in a restricted context. Its positive answer never issues or
-retains evidence: the selected restricted query must still succeed. The
-former all-condition candidate trials and full-context retained leaves are
+retains evidence: the selected restricted query must still succeed.
+Integer equality query runs before constructing even the condition-only
+selection, so failed speculative rewrites do not repeatedly rebuild the
+operand's connected order facts. A deterministic regression checks refusal
+beside 4, 16, 64, and 256 connected comparisons.
+The former all-condition candidate trials and full-context retained leaves are
 gone. Traversal is charged to `atomic dependency selection`; interruption returns no partial proof.
 
 Before spelling a supported typed equality, simp retains only the sources
