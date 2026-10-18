@@ -22,15 +22,13 @@ use super::system_headers::{self, HeaderKind};
 use super::target::{COptimization, CTarget};
 use crate::cli::write_file_atomically;
 use crate::languages::compiler_process::{CompilerLimits, run_compiler};
+use crate::languages::envelope::{self, Entry, SourceParts};
 use crate::languages::inputs::{
     Leaf, hex_digest, open_regular, path_identity, read_regular, read_stable,
 };
 
 const SCHEMA: u32 = 1;
 const LOCK_SCHEMA: u32 = 3;
-/// Locks written before compiler imports searched Click's system headers.
-/// Their artifacts opened none, so they still load under their own identity.
-const LEGACY_LOCK_SCHEMA: u32 = 2;
 const MAX_CONFIG_BYTES: usize = 1 << 20;
 const MAX_SOURCES: usize = 4096;
 const MAX_ARGUMENTS: usize = 4096;
@@ -231,7 +229,7 @@ struct Lock {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     option_profile: Option<String>,
     /// [`system_headers::catalog_digest`] of the Click header set the
-    /// compiler searched. Absent only from a legacy lock.
+    /// compiler searched; a lock without it is refused.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     click_header_catalog_sha256: Option<String>,
     /// A project unit's source root at preparation, when it lies outside
@@ -273,7 +271,151 @@ struct LockedSource {
     /// the SHA-256 of the text it read.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     click_headers: BTreeMap<String, String>,
-    identity: String,
+}
+
+/// A C unit's section of its project lock entry: what the envelope's common
+/// fields do not record (`crate::languages::envelope`).
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Section {
+    schema: u32,
+    target: String,
+    mode: String,
+    compiler_path: String,
+    working_directory: String,
+    config_directory: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    option_profile: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    click_header_catalog_sha256: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    unit_directory: Option<String>,
+    toolchain: ToolchainIdentity,
+    sources: Vec<SectionSource>,
+}
+
+/// One source's part of a C unit's section, in the unit's source order.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SectionSource {
+    logical_source: String,
+    path: String,
+    args: Vec<String>,
+    local_dependencies: BTreeMap<String, String>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    unit_dependencies: BTreeMap<String, String>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    click_headers: BTreeMap<String, String>,
+}
+
+const LANGUAGE: &str = "c";
+
+/// The envelope entry recording `lock`. A source's inputs are its own digest,
+/// keyed by its path, and the digests of the headers the compiler opened.
+fn lock_entry(lock: &Lock) -> Entry {
+    let sources = lock
+        .sources
+        .iter()
+        .map(|locked| {
+            let mut inputs = locked.dependencies.clone();
+            inputs.insert(locked.path.clone(), locked.source_sha256.clone());
+            (
+                locked.logical_source.clone(),
+                SourceParts {
+                    inputs,
+                    artifact: envelope::Artifact {
+                        path: locked.artifact.clone(),
+                        sha256: locked.artifact_sha256.clone(),
+                        bytes: locked.artifact_bytes,
+                    },
+                },
+            )
+        })
+        .collect();
+    let section = Section {
+        schema: lock.schema,
+        target: lock.target.clone(),
+        mode: lock.mode.clone(),
+        compiler_path: lock.compiler_path.clone(),
+        working_directory: lock.working_directory.clone(),
+        config_directory: lock.config_directory.clone(),
+        option_profile: lock.option_profile.clone(),
+        click_header_catalog_sha256: lock.click_header_catalog_sha256.clone(),
+        unit_directory: lock.unit_directory.clone(),
+        toolchain: lock.toolchain.clone(),
+        sources: lock
+            .sources
+            .iter()
+            .map(|locked| SectionSource {
+                logical_source: locked.logical_source.clone(),
+                path: locked.path.clone(),
+                args: locked.args.clone(),
+                local_dependencies: locked.local_dependencies.clone(),
+                unit_dependencies: locked.unit_dependencies.clone(),
+                click_headers: locked.click_headers.clone(),
+            })
+            .collect(),
+    };
+    Entry::new(
+        LANGUAGE,
+        lock.config_sha256.clone(),
+        envelope::Frontend {
+            name: "gcc".into(),
+            identity: lock.invocation_sha256.clone(),
+        },
+        sources,
+        serde_json::to_value(section).expect("a C lock section serializes"),
+    )
+}
+
+/// The lock `entry` records.
+fn entry_lock(entry: &Entry) -> Result<Lock, String> {
+    let section = Section::deserialize(entry.section(LANGUAGE).expect("parsed for C"))
+        .map_err(|error| format!("parse the C lock section: {error}"))?;
+    if section.sources.len() != entry.sources.len() {
+        return Err("the C lock section and the lock's sources differ".into());
+    }
+    let mut sources = Vec::with_capacity(section.sources.len());
+    for part in section.sources {
+        let recorded = entry.sources.get(&part.logical_source).ok_or_else(|| {
+            format!(
+                "the C lock section names a source `{}` the lock lacks",
+                part.logical_source
+            )
+        })?;
+        let mut dependencies = recorded.inputs.clone();
+        let source_sha256 = dependencies
+            .remove(&part.path)
+            .ok_or_else(|| format!("the lock records no digest of the source `{}`", part.path))?;
+        sources.push(LockedSource {
+            logical_source: part.logical_source,
+            path: part.path,
+            args: part.args,
+            artifact: recorded.artifact.path.clone(),
+            source_sha256,
+            artifact_sha256: recorded.artifact.sha256.clone(),
+            artifact_bytes: recorded.artifact.bytes,
+            dependencies,
+            local_dependencies: part.local_dependencies,
+            unit_dependencies: part.unit_dependencies,
+            click_headers: part.click_headers,
+        });
+    }
+    Ok(Lock {
+        schema: section.schema,
+        config_sha256: entry.unit.clone(),
+        target: section.target,
+        mode: section.mode,
+        compiler_path: section.compiler_path,
+        working_directory: section.working_directory,
+        config_directory: section.config_directory,
+        invocation_sha256: entry.frontend.identity.clone(),
+        option_profile: section.option_profile,
+        click_header_catalog_sha256: section.click_header_catalog_sha256,
+        unit_directory: section.unit_directory,
+        toolchain: section.toolchain,
+        sources,
+    })
 }
 
 #[derive(Clone, Copy)]
@@ -290,7 +432,6 @@ struct Preprocessed {
     unit_dependencies: BTreeMap<String, String>,
     click_headers: BTreeMap<String, String>,
     source_sha256: String,
-    identity: String,
 }
 
 /// Click's system headers for one target, written to a private directory
@@ -374,15 +515,16 @@ pub(crate) fn prepare_unit(
     let config = unit_config(unit, ConfigUse::Prepare).map_err(bounded_error)?;
     let (lock, artifacts) = build_lock(&config).map_err(bounded_error)?;
     let lock = portable_lock(&config, lock)?;
-    let value = serde_json::to_value(&lock).map_err(|e| format!("encode import lock: {e}"))?;
+    let value =
+        serde_json::to_value(lock_entry(&lock)).map_err(|e| format!("encode import lock: {e}"))?;
     Ok((value, artifacts))
 }
 
 /// The lock with the project and unit roots it records replaced by their
-/// labels, and the invocation and source identities that bind those paths
-/// recomputed over the labels. Loading compares the lock's identities only
-/// with its own recorded fields and resolves dependencies by stripping the
-/// recorded root, so the labelled lock loads from any checkout.
+/// labels, and the invocation digest that binds those paths recomputed over
+/// the labels. Loading compares that digest only with the lock's own
+/// recorded fields and resolves dependencies by stripping the recorded root,
+/// so the labelled lock loads from any checkout.
 fn portable_lock(config: &Config, lock: Lock) -> Result<Lock, String> {
     let project = PathBuf::from(&lock.config_directory);
     let unit = lock.unit_directory.as_ref().map(PathBuf::from);
@@ -402,22 +544,6 @@ fn portable_lock(config: &Config, lock: Lock) -> Result<Lock, String> {
         &config.environment.allow,
         &lock.toolchain,
     );
-    for (locked, source) in lock.sources.iter_mut().zip(&config.sources) {
-        locked.identity = source_identity_parts(
-            lock.schema,
-            config.target.name(),
-            &lock.invocation_sha256,
-            source,
-            &SourceDigests {
-                source_sha256: &locked.source_sha256,
-                dependencies: &locked.dependencies,
-                local_dependencies: &locked.local_dependencies,
-                click_header_catalog_sha256: lock.click_header_catalog_sha256.as_deref(),
-                click_headers: &locked.click_headers,
-                artifact_sha256: &locked.artifact_sha256,
-            },
-        );
-    }
     Ok(lock)
 }
 
@@ -427,8 +553,16 @@ pub(crate) fn load_unit(
     lock: &serde_json::Value,
 ) -> Result<Vec<PreparedCImport>, String> {
     let config = unit_config(unit, ConfigUse::Load).map_err(bounded_error)?;
-    let lock = Lock::deserialize(lock).map_err(|e| format!("parse import lock: {e}"))?;
-    load_locked(&config, &lock).map_err(bounded_error)
+    let entry = Entry::parse(LANGUAGE, &unit.unit_name, lock)?;
+    let lock = entry_lock(&entry)?;
+    let mut prepared = load_locked(&config, &lock).map_err(bounded_error)?;
+    for import in &mut prepared {
+        let identity = entry.checked_identity(LANGUAGE, &import.inner.logical_source)?;
+        Arc::get_mut(&mut import.inner)
+            .expect("a freshly loaded import is not shared")
+            .identity = identity;
+    }
+    Ok(prepared)
 }
 
 fn unit_config(unit: &UnitConfig, use_for: ConfigUse) -> Result<Config, String> {
@@ -564,7 +698,7 @@ fn load_locked(config: &Config, lock: &Lock) -> Result<Vec<PreparedCImport>, Str
                 logical_source: source.logical_source.clone(),
                 source: clean,
                 source_map: map,
-                identity: locked.identity.clone(),
+                identity: String::new(),
                 promises: if config.optimization.optimizes() {
                     PromiseAttributes::Refuse
                 } else {
@@ -603,7 +737,6 @@ fn build_lock(config: &Config) -> Result<(Lock, Vec<(PathBuf, Vec<u8>)>), String
             local_dependencies: result.local_dependencies.clone(),
             unit_dependencies: result.unit_dependencies.clone(),
             click_headers: result.click_headers.clone(),
-            identity: result.identity.clone(),
         });
     }
     let lock = Lock {
@@ -764,16 +897,14 @@ fn preprocess(context: &Context<'_>, source: &SourceConfig) -> Result<Preprocess
     let source_sha256 = file_digest(&source_path)?;
     let local_dependencies = local_dependencies(context.config, &dependencies)?;
     let unit_dependencies = unit_dependencies(context.config, &dependencies);
-    let mut result = Preprocessed {
+    let result = Preprocessed {
         artifact,
         dependencies,
         local_dependencies,
         unit_dependencies,
         click_headers,
         source_sha256,
-        identity: String::new(),
     };
-    result.identity = source_identity(context.config, context, source, &result);
     Ok(result)
 }
 
@@ -911,104 +1042,7 @@ fn validate_locked_source(
             }
         }
     }
-    let identity = source_identity_parts(
-        lock.schema,
-        config.target.name(),
-        &lock.invocation_sha256,
-        source,
-        &SourceDigests {
-            source_sha256: &locked.source_sha256,
-            dependencies: &locked.dependencies,
-            local_dependencies: &locked.local_dependencies,
-            click_header_catalog_sha256: lock.click_header_catalog_sha256.as_deref(),
-            click_headers: &locked.click_headers,
-            artifact_sha256: &locked.artifact_sha256,
-        },
-    );
-    if identity != locked.identity {
-        return Err(format!(
-            "source identity for {} differs from its import lock",
-            source.logical_source
-        ));
-    }
     Ok(())
-}
-
-fn source_identity(
-    config: &Config,
-    context: &Context<'_>,
-    source: &SourceConfig,
-    result: &Preprocessed,
-) -> String {
-    source_identity_parts(
-        LOCK_SCHEMA,
-        config.target.name(),
-        &context.invocation_sha256,
-        source,
-        &SourceDigests {
-            source_sha256: &result.source_sha256,
-            dependencies: &result.dependencies,
-            local_dependencies: &result.local_dependencies,
-            click_header_catalog_sha256: Some(&context.click_headers.catalog_sha256),
-            click_headers: &result.click_headers,
-            artifact_sha256: &hex_digest(&result.artifact),
-        },
-    )
-}
-
-/// The recorded inputs of one prepared source that its identity binds.
-struct SourceDigests<'a> {
-    source_sha256: &'a str,
-    dependencies: &'a BTreeMap<String, String>,
-    local_dependencies: &'a BTreeMap<String, String>,
-    click_header_catalog_sha256: Option<&'a str>,
-    click_headers: &'a BTreeMap<String, String>,
-    artifact_sha256: &'a str,
-}
-
-fn source_identity_parts(
-    schema: u32,
-    target: &str,
-    invocation_sha256: &str,
-    source: &SourceConfig,
-    digests: &SourceDigests<'_>,
-) -> String {
-    let data = if schema == LEGACY_LOCK_SCHEMA {
-        // The version-2 identity, unchanged, so a legacy lock still loads.
-        serde_json::to_vec(&(
-            LEGACY_LOCK_SCHEMA,
-            "c-source-projection-v2",
-            target,
-            invocation_sha256,
-            source.logical_source.as_str(),
-            source.path.as_str(),
-            &source.args,
-            source.artifact.as_str(),
-            digests.source_sha256,
-            digests.dependencies,
-            digests.local_dependencies,
-            digests.artifact_sha256,
-        ))
-    } else {
-        serde_json::to_vec(&(
-            schema,
-            "c-source-projection-v3",
-            target,
-            invocation_sha256,
-            source.logical_source.as_str(),
-            source.path.as_str(),
-            &source.args,
-            source.artifact.as_str(),
-            digests.source_sha256,
-            digests.dependencies,
-            digests.local_dependencies,
-            digests.click_header_catalog_sha256,
-            digests.click_headers,
-            digests.artifact_sha256,
-        ))
-    }
-    .expect("identity serializes");
-    hex_digest(&data)
 }
 
 /// The arguments every compilation for `target` at `optimization` carries.
@@ -2024,14 +2058,7 @@ fn validate_lock_shape(lock: &Lock, config: &Config) -> Result<(), String> {
             config.target.name()
         ));
     }
-    let current = lock.schema == LOCK_SCHEMA && lock.click_header_catalog_sha256.is_some();
-    let legacy = lock.schema == LEGACY_LOCK_SCHEMA
-        && lock.click_header_catalog_sha256.is_none()
-        && lock
-            .sources
-            .iter()
-            .all(|source| source.click_headers.is_empty());
-    if !current && !legacy {
+    if lock.schema != LOCK_SCHEMA || lock.click_header_catalog_sha256.is_none() {
         return Err("import lock schema or target does not match config".into());
     }
     if lock.sources.len() != config.sources.len() {
@@ -2220,20 +2247,6 @@ mod tests {
             local_dependencies: BTreeMap::new(),
             unit_dependencies,
             click_headers: BTreeMap::new(),
-            identity: source_identity_parts(
-                LOCK_SCHEMA,
-                config.target.name(),
-                &invocation_sha256,
-                source_config,
-                &SourceDigests {
-                    source_sha256: &hex_digest(source),
-                    dependencies: &dependencies,
-                    local_dependencies: &BTreeMap::new(),
-                    click_header_catalog_sha256: Some(&catalog),
-                    click_headers: &BTreeMap::new(),
-                    artifact_sha256: &hex_digest(artifact),
-                },
-            ),
         };
         let lock = Lock {
             schema: LOCK_SCHEMA,
@@ -2254,7 +2267,7 @@ mod tests {
             proofs.join(crate::project::LOCK_NAME),
             serde_json::to_vec(&serde_json::json!({
                 "schema": 1,
-                "units": {"up": {"language": "c", "lock": lock}}
+                "units": {"up": {"language": "c", "lock": lock_entry(&lock)}}
             }))
             .unwrap(),
         )
@@ -2306,12 +2319,13 @@ mod tests {
             let entry = &mut altered["units"]["up"]["lock"];
             match field {
                 "toolchain" => {
-                    entry["toolchain"]["driver_sha256"] = serde_json::json!(hex_digest(b"other"))
+                    entry["c"]["toolchain"]["driver_sha256"] =
+                        serde_json::json!(hex_digest(b"other"))
                 }
                 "option_profile" => {
-                    entry["option_profile"] = serde_json::json!("linux-6.8-x86_64-kbuild")
+                    entry["c"]["option_profile"] = serde_json::json!("linux-6.8-x86_64-kbuild")
                 }
-                _ => entry["sources"][0]["unit_dependencies"] = serde_json::json!({}),
+                _ => entry["c"]["sources"][0]["unit_dependencies"] = serde_json::json!({}),
             }
             fs::write(&lock_file, serde_json::to_vec(&altered).unwrap()).unwrap();
             let error = load().expect_err(field);
@@ -2319,6 +2333,16 @@ mod tests {
                 assert!(error.contains("option profile does not match"), "{error}");
             }
         }
+        // An entry in the shape before the shared envelope is refused with
+        // the command that prepares it again.
+        let mut altered: serde_json::Value = serde_json::from_slice(&original_lock).unwrap();
+        altered["units"]["up"]["lock"] = serde_json::to_value(&lock).unwrap();
+        fs::write(&lock_file, serde_json::to_vec(&altered).unwrap()).unwrap();
+        let error = load().unwrap_err();
+        assert!(
+            error.contains("is in an earlier format; run `click import lock`"),
+            "{error}"
+        );
         fs::write(&lock_file, original_lock).unwrap();
         load().unwrap();
 
@@ -2365,8 +2389,10 @@ mod tests {
         let project_lock: serde_json::Value =
             serde_json::from_slice(&fs::read(fixture.0.join(crate::project::LOCK_NAME)).unwrap())
                 .unwrap();
-        let lock: Lock =
-            serde_json::from_value(project_lock["units"]["main"]["lock"].clone()).unwrap();
+        let lock = entry_lock(
+            &Entry::parse(LANGUAGE, "main", &project_lock["units"]["main"]["lock"]).unwrap(),
+        )
+        .unwrap();
         assert_ne!(lock.config_directory, fixture.0.to_string_lossy());
         // The program's own headers are its only dependencies: a standard
         // interface such as `<limits.h>` comes from Click, not the platform.

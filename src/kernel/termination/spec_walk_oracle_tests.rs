@@ -60,6 +60,7 @@ fn old_collect_spec_algebraic_expression_c_variables(
             }
             Ok(())
         }
+        SpecAlgebraicExpressionNode::If { .. } => Err("a conditional `if` expression"),
         SpecAlgebraicExpressionNode::Match { scrutinee, arms } => {
             old_collect_spec_algebraic_expression_c_variables(scrutinee, reads)?;
             for arm in arms {

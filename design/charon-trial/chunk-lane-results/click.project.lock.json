@@ -4,21 +4,36 @@
     "quad": {
       "language": "rust",
       "lock": {
-        "artifact": "55ad03e9e411fe70bb0b927fc9e45e1653f8d45ce04a68867703ccced6509d8c",
-        "config": "ca2a2807846ba7a0fef121595821cf20e2d8f16e3c4d610d600ebbbf33428bc1",
+        "envelope": 1,
         "frontend": {
-          "click_version": "0.1.0",
-          "compiler_commit": "923c95cdf5ba65cea505aa2ea829f578e1506ed8",
-          "extractor_revision": "5d6b812e5f77dbf3d7f66c21b9b57091f0e084cb",
-          "extractor_version": "0.1.279",
-          "profile": "38b817cc5760845d2e37b8f72a333f6d36a3ccdbfbf19e8c22da436e67a79ab1"
+          "identity": "7c2e994c506684f2bc8c86d9798bf9cb35c42693c51c3dd401139ef6618ae66c",
+          "name": "charon"
         },
-        "identity": "d8d7bff7f52ba08c64582559efe26db450ebb4b9193f394776201393cd6c497f",
-        "schema": 9,
-        "source": "10923d77ca24bb221ea7dda2854a16707b5c563bdc61fbda43b56ff621545b3d",
-        "source_files": {
-          "quad.rs": "4250e10acf22afd1237bb2e5ea4760534aa3879d0b77a4961cc9735848184c9c"
-        }
+        "rust": {
+          "frontend": {
+            "click_version": "0.1.0",
+            "compiler_commit": "923c95cdf5ba65cea505aa2ea829f578e1506ed8",
+            "extractor_revision": "5d6b812e5f77dbf3d7f66c21b9b57091f0e084cb",
+            "extractor_version": "0.1.279",
+            "profile": "38b817cc5760845d2e37b8f72a333f6d36a3ccdbfbf19e8c22da436e67a79ab1"
+          },
+          "schema": 9,
+          "source": "10923d77ca24bb221ea7dda2854a16707b5c563bdc61fbda43b56ff621545b3d"
+        },
+        "sources": {
+          "quad.rs": {
+            "artifact": {
+              "bytes": 409090,
+              "path": ".click/quad/quad.rs.ullbc",
+              "sha256": "55ad03e9e411fe70bb0b927fc9e45e1653f8d45ce04a68867703ccced6509d8c"
+            },
+            "identity": "2e62f0db000340a8a19b9e1f8620b4298ddeb3fcb1e0d63257733f83a83f8b6a",
+            "inputs": {
+              "quad.rs": "4250e10acf22afd1237bb2e5ea4760534aa3879d0b77a4961cc9735848184c9c"
+            }
+          }
+        },
+        "unit": "ca2a2807846ba7a0fef121595821cf20e2d8f16e3c4d610d600ebbbf33428bc1"
       }
     }
   }

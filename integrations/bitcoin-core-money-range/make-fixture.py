@@ -68,25 +68,29 @@ def main():
         checked_bytes(args.packages / f"{name}.deb", expected)
     checked_bytes(Path("/opt/homebrew/opt/llvm@19/bin/clang++"), CLANG_SHA256)
     project_lock = json.loads(args.lock.read_text())
-    lock = project_lock["units"]["bitcoin"]["lock"]["bitcoin-src/src/consensus/amount.h"]
+    entry = project_lock["units"]["bitcoin"]["lock"]
+    logical = "bitcoin-src/src/consensus/amount.h"
+    locked = entry["sources"][logical]
+    lock = entry["c++"]["sources"][logical]
     if lock["source_sha256"] != FEERATE_SHA256 or lock["logical_source_sha256"] != AMOUNT_SHA256:
         raise ValueError("the import lock has different selected source digests")
     database_bytes = args.compilation_database.read_bytes()
     files = {}
-    for path_string, entry in lock["preprocessor_files"].items():
-        path = Path(path_string).resolve(strict=True)
+    unit = args.lock.resolve(strict=True).parent
+    for path_string, sha256 in locked["inputs"].items():
+        if path_string.startswith("$clang-resource/"):
+            # The gate supplies the exact pinned Clang release and its resource headers.
+            continue
+        path = Path(path_string.replace("$unit/", f"{unit}/", 1)).resolve(strict=True)
         if path.is_relative_to(source):
             name = "bitcoin-src/" + str(path.relative_to(source))
             git_blob = git(source, "show", f"{COMMIT}:{path.relative_to(source)}")
-            data = checked_bytes(path, entry["sha256"])
+            data = checked_bytes(path, sha256)
             if data != git_blob:
                 raise ValueError(f"{path}: differs from the pinned Git tree")
         elif path.is_relative_to(sysroot):
             name = "sysroot/" + str(path.relative_to(sysroot))
-            data = checked_bytes(path, entry["sha256"])
-        elif "/clang/19/include/" in path_string:
-            # The gate supplies the exact pinned Clang release and its resource headers.
-            continue
+            data = checked_bytes(path, sha256)
         else:
             raise ValueError(f"unexpected preprocessor file: {path}")
         files[name] = data
@@ -193,7 +197,7 @@ def main():
         "feerate_sha256": FEERATE_SHA256,
         "packages_sha256": PACKAGES,
         "original_compilation_database_sha256": digest(database_bytes),
-        "source_lock_identity": lock["identity"],
+        "source_lock_identity": locked["identity"],
         "origin_clang_sha256": CLANG_SHA256,
         "input_file_count": len(files),
         "input_closure_sha256": digest(archive_bytes),

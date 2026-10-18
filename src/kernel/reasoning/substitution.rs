@@ -3236,6 +3236,15 @@ fn collect_algebraic_bound_variables(term: &AlgebraicTerm, variables: &mut BTree
                 }
             }
         }
+        AlgebraicTermNode::If {
+            condition,
+            then_term,
+            else_term,
+        } => {
+            collect_condition_bound_variables(condition, variables);
+            collect_algebraic_bound_variables(then_term, variables);
+            collect_algebraic_bound_variables(else_term, variables);
+        }
     }
 }
 
@@ -3362,6 +3371,21 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_term(
                             .collect(),
                     }
                 }
+                AlgebraicTermNode::If {
+                    condition,
+                    then_term,
+                    else_term,
+                } => AlgebraicTermNode::If {
+                    condition: Box::new(substitute_bitvector_variable_in_condition(
+                        condition, from, to,
+                    )),
+                    then_term: Box::new(substitute_bitvector_variable_in_algebraic_term(
+                        then_term, from, to,
+                    )),
+                    else_term: Box::new(substitute_bitvector_variable_in_algebraic_term(
+                        else_term, from, to,
+                    )),
+                },
             },
         }),
         Term::CExpressionOutcome(outcome) => Term::CExpressionOutcome(
@@ -5844,6 +5868,21 @@ fn substitute_pointer_variable_in_algebraic_term_node(
                     .collect(),
             }
         }
+        AlgebraicTermNode::If {
+            condition,
+            then_term,
+            else_term,
+        } => AlgebraicTermNode::If {
+            condition: Box::new(substitute_pointer_variable_in_condition(
+                condition, from, to,
+            )),
+            then_term: Box::new(substitute_pointer_variable_in_algebraic_term(
+                then_term, from, to,
+            )),
+            else_term: Box::new(substitute_pointer_variable_in_algebraic_term(
+                else_term, from, to,
+            )),
+        },
     }
 }
 
@@ -6383,6 +6422,25 @@ fn substitute_pointer_variable_in_spec_algebraic_expression(
                     .collect(),
             }
         }
+        SpecAlgebraicExpressionNode::If {
+            condition,
+            then_branch,
+            else_branch,
+        } => SpecAlgebraicExpressionNode::If {
+            condition: Box::new(substitute_pointer_variable_in_spec_proposition(
+                condition, from, to,
+            )),
+            then_branch: Box::new(substitute_pointer_variable_in_spec_algebraic_expression(
+                then_branch,
+                from,
+                to,
+            )),
+            else_branch: Box::new(substitute_pointer_variable_in_spec_algebraic_expression(
+                else_branch,
+                from,
+                to,
+            )),
+        },
     };
     SpecAlgebraicExpression {
         algebraic_type: expression.algebraic_type.clone(),

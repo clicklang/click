@@ -217,6 +217,15 @@ impl<'a> SpecNode<'a> {
                         .iter()
                         .for_each(|argument| visit(N::Argument(argument)));
                 }
+                SpecAlgebraicExpressionNode::If {
+                    condition,
+                    then_branch,
+                    else_branch,
+                } => {
+                    visit(N::Proposition(condition));
+                    visit(N::Algebraic(then_branch));
+                    visit(N::Algebraic(else_branch));
+                }
             },
             N::AlgebraicValue(value) => match value {
                 SpecAlgebraicValue::C(expression) => visit(N::Expression(expression)),
