@@ -174,6 +174,7 @@ pub(in crate::surface) fn promoted_int32_term(value: &CValue) -> Option<Bitvecto
         | CValue::Int64(_)
         | CValue::UInt64(_)
         | CValue::Pointer(_)
+        | CValue::Parameter(_)
         | CValue::Float32(_)
         | CValue::Float64(_) => None,
     }
@@ -194,6 +195,7 @@ fn promoted_int64_term(value: &CValue) -> Option<Bitvector32Term> {
         | CValue::Void
         | CValue::UInt64(_)
         | CValue::Pointer(_)
+        | CValue::Parameter(_)
         | CValue::Float32(_)
         | CValue::Float64(_) => None,
     }
@@ -214,6 +216,7 @@ fn promoted_uint64_term(value: &CValue) -> Option<Bitvector32Term> {
         | CValue::UInt128(_)
         | CValue::Void
         | CValue::Pointer(_)
+        | CValue::Parameter(_)
         | CValue::Float32(_)
         | CValue::Float64(_) => None,
     }

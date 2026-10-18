@@ -147,7 +147,8 @@ fn integer_constant_as_sign_magnitude(value: &CValue) -> Option<(bool, u128)> {
         | CValue::Void
         | CValue::Float32(_)
         | CValue::Float64(_)
-        | CValue::Pointer(_) => None,
+        | CValue::Pointer(_)
+        | CValue::Parameter(_) => None,
     }
 }
 
@@ -274,7 +275,8 @@ fn integer_to_float_value(value: CValue, target_type: CType) -> Option<CValue> {
         | CValue::Void
         | CValue::Float32(_)
         | CValue::Float64(_)
-        | CValue::Pointer(_) => return None,
+        | CValue::Pointer(_)
+        | CValue::Parameter(_) => return None,
     };
     let target_name = match target_type {
         CType::Float32 => "float32",
@@ -610,7 +612,7 @@ pub(in crate::kernel) fn promote_c_int32_path_value(value: CValue) -> Option<Bit
         CValue::UInt8(value) => Some(value),
         CValue::UInt16(value) => Some(value),
         CValue::UInt32(_) | CValue::Int64(_) | CValue::UInt64(_) => None,
-        CValue::Pointer(_) | CValue::Float32(_) | CValue::Float64(_) => None,
+        CValue::Pointer(_) | CValue::Parameter(_) | CValue::Float32(_) | CValue::Float64(_) => None,
     }
 }
 
@@ -628,6 +630,7 @@ pub(in crate::kernel) fn promote_c_uint32_path_value(value: CValue) -> Option<Bi
         | CValue::Int64(_)
         | CValue::UInt64(_)
         | CValue::Pointer(_)
+        | CValue::Parameter(_)
         | CValue::Float32(_)
         | CValue::Float64(_) => None,
     }
@@ -649,6 +652,7 @@ pub(in crate::kernel) fn promote_c_int64_path_value(value: CValue) -> Option<Bit
         | CValue::Void
         | CValue::UInt64(_)
         | CValue::Pointer(_)
+        | CValue::Parameter(_)
         | CValue::Float32(_)
         | CValue::Float64(_) => None,
     }
@@ -671,6 +675,7 @@ pub(in crate::kernel) fn promote_c_uint64_path_value(value: CValue) -> Option<Bi
         | CValue::UInt128(_)
         | CValue::Void
         | CValue::Pointer(_)
+        | CValue::Parameter(_)
         | CValue::Float32(_)
         | CValue::Float64(_) => None,
     }
@@ -3123,6 +3128,7 @@ pub(in crate::kernel) fn c_truthiness_paths(
 ) -> Vec<CTruthinessPath> {
     match value.numeric_value().clone() {
         CValue::PointerInteger(_) => unreachable!("numeric projection"),
+        CValue::Parameter(_) => unreachable!("abstract truthiness must be rejected by the caller"),
         CValue::Void => unreachable!("void truthiness must be rejected by the caller"),
         CValue::Bool(bits) => {
             let is_zero = ConditionTerm::equal(bits, Bitvector32Term::Constant(0));

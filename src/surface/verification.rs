@@ -5719,6 +5719,23 @@ pub(in crate::surface) fn external_c0_function(
     .with_return_reference(function_block.signature().returns_reference())
 }
 
+/// An instance block's head for the generic interface `name`'s trait, at
+/// `i32`: `crate_name::Scale<i32>`.
+fn generic_instance_example(name: &str) -> String {
+    let display =
+        crate::languages::rust::names::rust_display_name(name).unwrap_or_else(|| name.to_string());
+    let trait_path = display
+        .rsplit_once("::")
+        .map_or(display.as_str(), |(path, _)| path);
+    match trait_path.split_once('<') {
+        Some((path, arguments)) => {
+            let count = arguments.trim_end_matches('>').split(',').count();
+            format!("{path}<{}>", vec!["i32"; count].join(", "))
+        }
+        None => trait_path.to_string(),
+    }
+}
+
 pub(in crate::surface) fn build_function_environment(
     parsed_sources: &BTreeMap<String, (String, syntax::C0Function)>,
     function_blocks: &[FunctionBlock],
@@ -5788,6 +5805,72 @@ pub(in crate::surface) fn build_function_environment(
             .collect::<Result<Vec<_>, _>>()?;
         environment =
             environment.with_function_contract(contract.with_proof_parameters(proof_parameters));
+    }
+    // A generic trait's interface, `trait p::Scale<T>`, holds for every
+    // type: it is lowered once with its type parameters abstract, so a
+    // clause that does not mean something at every type is refused here,
+    // whether or not the import uses an instance.
+    for function_block in function_blocks
+        .iter()
+        .filter(|block| block.is_external() && block.signature().has_abstract_types())
+    {
+        let name = function_block.signature().name();
+        let parsed_function = external_c0_function(function_block);
+        let InitialClaimContext {
+            state, arguments, ..
+        } = initial_claim_context_with_caller_owner(
+            function_block,
+            &parsed_function,
+            resource_environment,
+            spec_definitions,
+            &format!("{name}.generic interface"),
+            None,
+        )
+        .map_err(|error| {
+            error
+                .with_context(format!("could not prepare the generic interface `{name}`"))
+                .at_declaration(name)
+        })?;
+        let function = annotated_function(
+            function_block,
+            &parsed_function,
+            &state,
+            &arguments,
+            spec_definitions,
+            resource_environment,
+        )
+        .map_err(|error| {
+            error
+                .with_context(format!("could not lower the generic interface `{name}`"))
+                .at_declaration(name)
+        })?;
+        let argument_values = arguments
+            .iter()
+            .map(|argument| match argument {
+                CExpression::Value(value) => Some(value.clone()),
+                _ => None,
+            })
+            .collect::<Option<Vec<_>>>()
+            .ok_or_else(|| {
+                ClickError::new(format!(
+                    "the generic interface `{name}` has an argument that is not a value"
+                ))
+                .at_declaration(name)
+            })?;
+        crate::kernel::c_check_contract_clauses_lower(
+            &function,
+            &state,
+            &argument_values,
+            &crate::kernel::PureFactContext::new(),
+        )
+        .map_err(|reason| {
+            ClickError::new(reason).with_context(format!(
+                "the generic interface `{}` does not mean something at every type: a value of an abstract type has `==` and `!=` only, so a clause that needs more belongs in an instance's block, such as `trait {}`",
+                crate::languages::rust::names::rust_display_name(name).unwrap_or_else(|| name.to_string()),
+                generic_instance_example(name),
+            ))
+            .at_declaration(name)
+        })?;
     }
     for (source_path, function) in parsed_sources.values() {
         let closure_captures = function.closure_captures().len();

@@ -158,6 +158,7 @@ fn typed_c_replacement(value: &CValue) -> Option<TypedCReplacement> {
         | CValue::Float32(term)
         | CValue::Float64(term) => Some(TypedCReplacement::Bitvector(term.clone())),
         CValue::Pointer(pointer) => Some(TypedCReplacement::Pointer(pointer.clone())),
+        CValue::Parameter(_) => None,
         CValue::Void => None,
     }
 }
@@ -462,6 +463,7 @@ fn collect_c_value_carriers(value: &CValue, variables: &mut CarrierVariables) {
             collect_c_value_carriers(&record.numeric, variables);
             collect_c_value_carriers(&CValue::Pointer(*record.pointer.clone()), variables);
         }
+        CValue::Parameter(term) => collect_algebraic_carriers(term, variables),
         CValue::Void => {}
         CValue::Int8(term) => collect_bitvector_carriers(term, variables),
         CValue::Bool(term)
@@ -1102,6 +1104,7 @@ fn exhausted_offset() -> PointerOffsetTerm {
 fn exhausted_c_value(value: &CValue) -> CValue {
     match value.numeric_value() {
         CValue::PointerInteger(_) => unreachable!("numeric projection"),
+        CValue::Parameter(term) => CValue::Parameter(Box::new(exhausted_algebraic(term))),
         CValue::Void => CValue::Void,
         CValue::Bool(_) => CValue::Bool(Bitvector32Term::Constant(0)),
         CValue::Int8(_) => CValue::Int8(Bitvector32Term::Constant(0)),
@@ -2803,6 +2806,7 @@ impl<'a> TermRewrite<'a> {
                     pointer: Box::new(pointer),
                 })
             }
+            CValue::Parameter(term) => CValue::Parameter(Box::new(self.algebraic(term))),
             CValue::Void => CValue::Void,
             CValue::Bool(v) => CValue::Bool(self.bits(v)),
             CValue::Int8(v) => CValue::Int8(self.bits(v)),

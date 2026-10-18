@@ -1123,6 +1123,10 @@ impl DiagnosticNaming {
 fn diagnostic_value_variable(value: &CValue) -> Option<Variable> {
     match value.numeric_value() {
         CValue::PointerInteger(_) => unreachable!("numeric projection"),
+        CValue::Parameter(term) => match term.node {
+            crate::kernel::AlgebraicTermNode::Variable(variable) => Some(variable),
+            _ => None,
+        },
         crate::kernel::arithmetic_c_value!(term) => match term {
             Bitvector32Term::Variable(variable) => Some(*variable),
             _ => None,

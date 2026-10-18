@@ -1827,6 +1827,8 @@ fn alpha_c_value_key_with_bindings<const ALLOW_LOADS: bool>(
     alpha_work_checkpoint(bindings, 1)?;
     Some(match value {
         CValue::Void => AlphaCValueKey::Void,
+        // An abstract value has no scalar key; as an algebraic term does not.
+        CValue::Parameter(_) => return None,
         CValue::Pointer(pointer) => AlphaCValueKey::Pointer {
             c_type: pointer.c_type(),
             pointee_volatile: pointer.pointee_volatile(),
@@ -1887,7 +1889,7 @@ fn alpha_c_value_key_with_bindings<const ALLOW_LOADS: bool>(
                 CValue::UInt64(term) => (CType::UInt64, term),
                 CValue::Float32(term) => (CType::Float32, term),
                 CValue::Float64(term) => (CType::Float64, term),
-                CValue::Void | CValue::Pointer(_) => unreachable!(),
+                CValue::Void | CValue::Pointer(_) | CValue::Parameter(_) => unreachable!(),
             };
             AlphaCValueKey::Scalar(
                 ty,

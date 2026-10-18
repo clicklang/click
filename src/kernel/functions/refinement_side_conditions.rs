@@ -704,7 +704,8 @@ pub(super) fn spec_expression_constant(expression: &SpecExpression) -> Option<u3
         | CValue::Void
         | CValue::Float32(_)
         | CValue::Float64(_)
-        | CValue::Pointer(_) => None,
+        | CValue::Pointer(_)
+        | CValue::Parameter(_) => None,
         CValue::Bool(term) => term.as_const(),
     }
 }

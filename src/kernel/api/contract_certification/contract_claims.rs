@@ -2602,7 +2602,7 @@ fn literal_completion_key(outcome: &CFunctionOutcome) -> Option<(bool, CValue)> 
         | CValue::UInt128(term)
         | CValue::Float32(term)
         | CValue::Float64(term) => term,
-        CValue::Pointer(_) => return None,
+        CValue::Pointer(_) | CValue::Parameter(_) => return None,
     };
     match term {
         Bitvector32Term::Constant(_)

@@ -7463,6 +7463,15 @@ impl FunctionSignature {
     pub fn diverges(&self) -> bool {
         self.diverges
     }
+
+    /// Whether a parameter or the result is a value of an abstract type.
+    pub fn has_abstract_types(&self) -> bool {
+        matches!(self.return_type, C0Type::Parameter(_))
+            || self
+                .parameters
+                .iter()
+                .any(|parameter| matches!(parameter.c_type(), C0Type::Parameter(_)))
+    }
 }
 
 impl FunctionParameter {

@@ -3085,6 +3085,8 @@ impl CType {
             }
             Some(
                 match c_type {
+                    // A function pointer over an abstract type is not encoded.
+                    CType::Parameter(_) => return None,
                     CType::Void => 0,
                     CType::Bool => 19,
                     CType::VoidPointer => 20,
@@ -3188,6 +3190,7 @@ impl CType {
 
     pub(crate) fn pointer_to(self) -> Option<Self> {
         match self {
+            Self::Parameter(_) => None,
             Self::Bool => None,
             Self::Int8 => Some(Self::Int8Pointer),
             Self::Int16 => Some(Self::Int16Pointer),
@@ -3337,6 +3340,9 @@ impl CType {
                 MachineIntegerType::UInt128.accepts_wide_term(term)
             }
             (Self::Int8, CValue::Int8(_)) => true,
+            (Self::Parameter(name), CValue::Parameter(term)) => {
+                term.algebraic_type.name == name.name()
+            }
             (Self::Void, CValue::Void)
             | (Self::Bool, CValue::Bool(_))
             | (Self::Int16, CValue::Int16(_))
@@ -3378,6 +3384,9 @@ impl CType {
 
     pub fn byte_width(self) -> u32 {
         match self {
+            // An abstract value is held by its binding, with no addressable
+            // bytes: its address is never taken.
+            Self::Parameter(_) => 0,
             Self::Void => 0,
             Self::Bool => 1,
             Self::VoidPointer => C_POINTER_BYTE_WIDTH,
@@ -3582,6 +3591,9 @@ impl CValue {
     pub(crate) fn c_type(&self) -> CType {
         match self {
             Self::PointerInteger(record) => record.numeric.c_type(),
+            Self::Parameter(term) => {
+                CType::Parameter(TypeParameterName::intern(&term.algebraic_type.name))
+            }
             Self::Void => CType::Void,
             Self::Bool(_) => CType::Bool,
             Self::Int8(_) => CType::Int8,
@@ -3603,6 +3615,7 @@ impl CValue {
     pub(in crate::kernel) fn byte_width(&self) -> u32 {
         match self {
             Self::PointerInteger(_) => 8,
+            Self::Parameter(_) => 0,
             Self::Void => 0,
             Self::Bool(_) => 1,
             Self::Int8(_) => 1,

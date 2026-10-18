@@ -121,13 +121,26 @@ pub(super) fn expand_generic_traits(
         }
     }
     targets.extend(written.keys().cloned());
-    // The instance blocks take the place of the first block removed.
+    // A generic block stays, to be read once at its abstract types, unless
+    // its object carries state: an object field of an abstract type is read
+    // at each instance only. The instance blocks take the place of the first
+    // block removed, or follow the first generic block.
     let removed = generic
         .values()
+        .filter(|block| {
+            items(&source, block)
+                .iter()
+                .any(|(_, item)| is_ident(item.first(), "function"))
+        })
         .chain(written.values())
         .map(|block| block.range.clone())
         .collect::<Vec<_>>();
-    let first = removed.iter().map(|range| range.start).min().unwrap_or(0);
+    let first = removed
+        .iter()
+        .map(|range| range.start)
+        .min()
+        .or_else(|| generic.values().map(|block| block.range.end).min())
+        .unwrap_or(0);
     let mut expanded = Vec::new();
     for (trait_name, arguments) in &targets {
         let generic_block = generic.get(trait_name);
@@ -147,6 +160,7 @@ pub(super) fn expand_generic_traits(
         }
         output.push(spanned);
     }
+    output.extend(expanded.into_iter().flatten());
     let (tokens, positions) = output.into_iter().unzip();
     Ok((tokens, positions))
 }

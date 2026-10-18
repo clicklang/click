@@ -173,6 +173,7 @@ pub(super) fn c_parameter_type_spelling(parameter: &CParameter) -> String {
 /// [`c_parameter_type_spelling`] explains.
 pub(crate) fn c_type_spelling(c_type: CType) -> &'static str {
     match c_type {
+        CType::Parameter(name) => name.name(),
         CType::Void => "void",
         CType::Bool => "bool",
         CType::VoidPointer => "void*",

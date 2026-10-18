@@ -524,7 +524,7 @@ impl LoadKind {
     pub fn of_value(value: &CValue) -> Option<Self> {
         Some(match value.numeric_value() {
             CValue::PointerInteger(_) => unreachable!("numeric projection"),
-            CValue::Void => return None,
+            CValue::Void | CValue::Parameter(_) => return None,
             CValue::Bool(_) | CValue::UInt8(_) => Self::UInt8,
             CValue::Int8(_) => Self::Int8,
             CValue::Int16(_) => Self::Int16,
@@ -2240,10 +2240,15 @@ pub enum CValue {
     /// IEEE-754 binary64 payload represented in the shared checked term arena.
     Float64(Bitvector32Term),
     Pointer(CPointerValue),
+    /// A value of an abstract type parameter: the spec value of that rigid
+    /// type it is.
+    Parameter(Box<AlgebraicTerm>),
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum CType {
+    /// A value of the abstract type parameter with this interned name.
+    Parameter(TypeParameterName),
     Void,
     Bool,
     /// An opaque object pointer with provenance but no modeled pointee type.
@@ -3421,6 +3426,7 @@ impl AlgebraicTerm {
                 },
                 Node::Value(value) => match value.numeric_value() {
                     CValue::PointerInteger(_) => unreachable!("numeric projection"),
+                    CValue::Parameter(term) => pending.push(Node::Algebraic(term)),
                     CValue::Void => {}
                     CValue::Bool(v) => visit(v),
                     CValue::Pointer(v) => pending.push(Node::Offset(&v.pointer().offset)),
@@ -13192,5 +13198,33 @@ mod representation_size_tests {
         assert!(std::mem::size_of::<ExecutionPureFact>() <= 352);
         assert!(std::mem::size_of::<CStatementOutcome>() <= 144);
         assert!(std::mem::size_of::<CFunctionOutcome>() <= 144);
+    }
+}
+
+/// An abstract type parameter's name, interned so that `CType` stays `Copy`.
+/// Names are few and live for the process, so each is leaked once.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub struct TypeParameterName(u32);
+
+static TYPE_PARAMETER_NAMES: std::sync::Mutex<Vec<&'static str>> =
+    std::sync::Mutex::new(Vec::new());
+
+impl TypeParameterName {
+    pub fn intern(name: &str) -> Self {
+        let mut names = TYPE_PARAMETER_NAMES.lock().expect("type parameter names");
+        if let Some(index) = names.iter().position(|known| *known == name) {
+            return Self(index as u32);
+        }
+        names.push(Box::leak(name.to_string().into_boxed_str()));
+        Self(names.len() as u32 - 1)
+    }
+
+    pub fn name(self) -> &'static str {
+        TYPE_PARAMETER_NAMES.lock().expect("type parameter names")[self.0 as usize]
+    }
+
+    /// The rigid algebraic type a value of this parameter is.
+    pub fn algebraic_type(self) -> AlgebraicType {
+        AlgebraicType::parameter(self.name().to_string())
     }
 }

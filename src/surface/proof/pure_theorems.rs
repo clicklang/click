@@ -672,6 +672,7 @@ pub(super) fn click_type_from_algebraic_value_type(
         AlgebraicValueType::Integer => ClickType::Integer,
         AlgebraicValueType::C(c_type) | AlgebraicValueType::ObjectPointer(c_type, _) => {
             ClickType::C(match c_type {
+                CType::Parameter(name) => C0Type::Parameter(*name),
                 CType::Void => C0Type::Void,
                 CType::Bool => C0Type::Bool,
                 CType::VoidPointer => C0Type::VoidPointer,
@@ -1508,6 +1509,10 @@ pub(in crate::surface) fn pure_theorem_parameter_values(
                 C0Type::UInt128 => {
                     CValue::UInt128(Bitvector32Term::Variable(Variable(index as u64)))
                 }
+                C0Type::Parameter(name) => crate::kernel::symbolic_call_result(
+                    CType::Parameter(name),
+                    Variable(index as u64),
+                ),
                 C0Type::Void => unreachable!("pure theorem parameters cannot be void"),
                 C0Type::Bool => crate::kernel::spec_bool_value(Bitvector32Term::Variable(
                     Variable(index as u64),

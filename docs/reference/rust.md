@@ -647,8 +647,14 @@ and `trait generic_traits::Scale<i32>` adds `requires 0 <= x and x <= 1000;
 ensures x < result;` at `i32`. An implementation inherits and refines its instance's interface, labeled
 `interface_ensures_0` onward in that order, and a call through `S:
 generic_traits::Scale<i32>` or `&dyn generic_traits::Scale<i32>` assumes
-it. The generic block is read at each instance the import declares; it is
-not checked once for every type. An instance is taken at `i32`, `u8`,
+it. The generic block is also checked once for every type, whether or not
+the import uses an instance: its interface, `generic_traits::Scale<T>::scale`,
+is lowered with `T` an abstract type, whose values have `==` and `!=` and
+nothing else. A clause that needs more, `ensures x < result;`, means
+something at some types only and is refused there ("the generic interface
+... does not mean something at every type"); it belongs in an instance's
+block. A generic block whose object carries state (below) is read at each
+instance only. An instance is taken at `i32`, `u8`,
 `u16`, `u32`, `usize` or `bool`, and the importer refuses a default method
 of a generic trait
 ([`design/charon-trial/generic-traits`](https://github.com/clicklang/click/blob/master/design/charon-trial/generic-traits/shapes.click)).

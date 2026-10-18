@@ -17,8 +17,15 @@ fn charon_generic_trait_instances_refine_their_interfaces() {
         // The generic block binds every instance's implementation.
         (
             "        ensures result != x;\n    }\n}\n\n// The `i32`",
+            "        ensures result != x;\n        ensures result == x;\n    }\n}\n\n// The `i32`",
+            "the trait method interface `generic_traits::Scale<u32>::scale`",
+        ),
+        // It is checked once for every type: a value of an abstract type has
+        // equality only, so arithmetic belongs in an instance's block.
+        (
+            "        ensures result != x;\n    }\n}\n\n// The `i32`",
             "        ensures result != x;\n        ensures result == x + 1;\n    }\n}\n\n// The `i32`",
-            "`<generic_traits::Wide as generic_traits::Scale<u32>>::scale.interface_ensures_1`",
+            "the generic interface `generic_traits::Scale<T>::scale` does not mean something at every type",
         ),
         // The instance block binds only its instance's.
         (

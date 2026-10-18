@@ -398,6 +398,7 @@ pub(super) fn apply_witness_tactic(
     {
         let actual = match witness_value.numeric_value() {
             CValue::PointerInteger(_) => unreachable!("numeric projection"),
+            CValue::Parameter(_) => witness_value.c_type(),
             CValue::Void => CType::Void,
             CValue::Bool(_) => CType::Bool,
             CValue::Int8(_) => CType::Int8,
