@@ -28,7 +28,12 @@ fn integer_address_queries_ignore_unrelated_equations_and_reuse_definitions() {
         });
         samples.push((work, maps));
     }
-    assert!(samples.windows(2).all(|p| p[0].0 == p[1].0 && p[1].1 <= p[0].1 * 2), "{samples:?}");
+    assert!(
+        samples
+            .windows(2)
+            .all(|p| p[0].0 == p[1].0 && p[1].1 <= p[0].1 * 2),
+        "{samples:?}"
+    );
 }
 
 #[test]
