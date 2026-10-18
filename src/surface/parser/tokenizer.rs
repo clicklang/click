@@ -297,6 +297,9 @@ fn tokenize_impl<const SPANS: bool>(
                     tokens.push(Token::RustInteger(std::sync::Arc::new(literal)));
                     index = end;
                     positions.push(position);
+                    if SPANS {
+                        spans.push(byte_index..byte_index + candidate.len());
+                    }
                     continue;
                 }
                 while chars.get(index).is_some_and(|next| next.is_ascii_digit()) {
