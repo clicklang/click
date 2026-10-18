@@ -62,6 +62,16 @@ impl ProofSourceIndex {
         Ok(index)
     }
 
+    /// The index of a sidecar that is not part of a project, built from its
+    /// verification parse as [`Self::for_project`] builds a project's.
+    pub fn for_sidecar(click_source: &str, inputs: &ProgramInputs<'_>) -> Result<Self, ClickError> {
+        let sources = CSourceContext::of(inputs)?;
+        let file = parse_source_with_c_layouts_context(click_source, &sources)?;
+        let mut index = Self::build(click_source, Some(&file.source_spans().proof_blocks))?;
+        index.file = Some(file);
+        Ok(index)
+    }
+
     /// The index of a proof fragment with no declarations to parse, whose
     /// proof blocks are found lexically from the token before each brace.
     #[cfg(test)]
@@ -481,6 +491,16 @@ impl ProofSourceIndex {
         ))
     }
 
+    /// The written tactics that start on one-based `line`, in source order.
+    pub fn starts_on_line(&self, line: usize) -> Vec<SourcePosition> {
+        line.checked_sub(1)
+            .and_then(|index| self.starts.get(index))
+            .into_iter()
+            .flatten()
+            .map(|&offset| self.position_at(offset))
+            .collect()
+    }
+
     pub fn line_has_multiple_starts(&self, position: &SourcePosition) -> Result<bool, ClickError> {
         crate::instrumentation::record_deterministic_work(1);
         let selected = self.offset(position)?;
@@ -544,6 +564,14 @@ impl ProofSourceIndex {
         let Some((open, close)) = self.tactics.get(&start).and_then(|t| t.body) else {
             return Ok(false);
         };
-        Ok(self.tokens[open].span.start < target && target < self.tokens[close].span.end)
+        // The implicit block of `by T();` opens with a zero-width brace at
+        // `T` itself, so the tactic there is inside it.
+        let open = &self.tokens[open].span;
+        let after_open = if open.is_empty() {
+            open.start <= target
+        } else {
+            open.start < target
+        };
+        Ok(after_open && target < self.tokens[close].span.end)
     }
 }

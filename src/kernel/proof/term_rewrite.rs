@@ -186,9 +186,7 @@ fn typed_binding_variable(
         (AlgebraicValueType::Integer, AlgebraicValue::Integer(IntegerTerm::Variable(variable))) => {
             Some((BindingCarrier::Integer, *variable))
         }
-        (AlgebraicValueType::C(expected), AlgebraicValue::C(value))
-            if value.c_type() == *expected =>
-        {
+        (expected, AlgebraicValue::C(value)) if expected.accepts_c_value(value) => {
             c_value_declaration_variable(value).map(|variable| (BindingCarrier::C, variable))
         }
         (
@@ -1687,6 +1685,14 @@ impl<'a> TermRewrite<'a> {
         // A full value equality also rewrites raw addresses in loadability,
         // memory endpoints and other address-only propositions.
         rewrite.pointer_exact = Some((from.pointer(), to.pointer()));
+        // Native C arguments share a numeric block. Their base pointer is
+        // an offset subterm of a displaced copy, rather than its own block.
+        // A full equality also establishes this same-block offset equality.
+        if from.pointer().block == PointerBlock::ExternalArgument
+            && to.pointer().block == PointerBlock::ExternalArgument
+        {
+            rewrite.pointer_offset_exact = Some((&from.pointer().offset, &to.pointer().offset));
+        }
         rewrite.enforce_integer_work_limit = true;
         rewrite
     }
@@ -2769,7 +2775,24 @@ impl<'a> TermRewrite<'a> {
                     self.changed = true;
                     return CValue::Pointer(to.clone());
                 }
-                let replacement = match &v.pointer().block {
+                let shifted_source = self.pointer_value_exact.filter(|(from, to)| {
+                    !self.source_disabled
+                        && v.pointer() != from.pointer()
+                        && v.pointer().block == from.pointer().block
+                        && ((matches!(from.pointer().block, PointerBlock::Symbolic(_))
+                            && from.pointer().offset == PointerOffsetTerm::Constant(0))
+                            || (from.pointer().block == PointerBlock::ExternalArgument
+                                && to.pointer().block == PointerBlock::ExternalArgument))
+                });
+                let shifted_replacement = shifted_source.and_then(|(from, to)| {
+                    (v.designation() == from.designation()
+                        && v.extent() == from.extent()
+                        && v.extent_is_known() == from.extent_is_known()
+                        && v.opaque_extent() == from.opaque_extent())
+                    .then(|| to.clone())
+                });
+                let retain_view = shifted_source.is_some() && shifted_replacement.is_none();
+                let replacement = shifted_replacement.or_else(|| match &v.pointer().block {
                     PointerBlock::Symbolic(variable) | PointerBlock::FunctionSymbolic(variable) => {
                         (!self.scope.c.contains_key(variable))
                             .then_some(())
@@ -2792,7 +2815,7 @@ impl<'a> TermRewrite<'a> {
                     // Lexical substitution replaces a complete formal value.
                     // Address-equality rewrites use a separate constructor.
                     Some(CPointerValue::new(to.clone(), v.c_type()))
-                });
+                }));
                 let adopted = if !v.extent_is_known() {
                     replacement.as_ref().and_then(|p| p.extent().cloned())
                 } else {
@@ -2853,10 +2876,29 @@ impl<'a> TermRewrite<'a> {
                 if self.pointer_value_exact.is_some() {
                     self.resolve_registered_loads = true;
                 }
-                let mapped = v
+                let mut mapped = v
                     .map_pointers(|address| self.pointer(address))
                     .with_designation(std::sync::Arc::new(designation))
                     .with_opaque_extent(opaque_extent);
+                if retain_view && let Some((from, _)) = shifted_source {
+                    // The numeric consequence cannot identify the base's own
+                    // domain with a different view's domain. Nested reads still
+                    // substitute their arguments through the equality.
+                    if v.designation() != from.designation()
+                        && v.designation().block == from.pointer().block
+                    {
+                        mapped =
+                            mapped.with_designation(std::sync::Arc::new(v.designation().clone()));
+                    }
+                    if (from.extent_is_known() || v.opaque_extent() != from.opaque_extent())
+                        && v.opaque_extent()
+                            .is_some_and(|origin| origin.block == from.pointer().block)
+                    {
+                        mapped = mapped.with_opaque_extent(
+                            v.opaque_extent().cloned().map(std::sync::Arc::new),
+                        );
+                    }
+                }
                 self.resolve_registered_loads = previous_load_resolution;
                 CValue::Pointer(match adopted {
                     Some(extent) => mapped.with_extent(Some(extent)),
@@ -3433,7 +3475,7 @@ impl<'a> TermRewrite<'a> {
         let mut integer_replacements = BTreeMap::new();
         let mut algebraic_replacements = BTreeMap::new();
         for ((binding, field), expected) in arm.bindings.iter().zip(fields).zip(&schema.fields) {
-            if field.value_type() != *expected {
+            if !field.has_type(expected) {
                 return None;
             }
             let (carrier, variable) = typed_binding_variable(expected, binding)?;
@@ -3499,7 +3541,7 @@ impl<'a> TermRewrite<'a> {
         let mut integer_replacements = BTreeMap::new();
         let mut algebraic_replacements = BTreeMap::new();
         for ((binding, field), expected) in arm.bindings.iter().zip(fields).zip(&schema.fields) {
-            if field.value_type() != *expected {
+            if !field.has_type(expected) {
                 return None;
             }
             let (carrier, variable) = typed_binding_variable(expected, binding)?;
@@ -3565,7 +3607,7 @@ impl<'a> TermRewrite<'a> {
         let mut integer_replacements = BTreeMap::new();
         let mut algebraic_replacements = BTreeMap::new();
         for ((binding, field), expected) in arm.bindings.iter().zip(fields).zip(&schema.fields) {
-            if field.value_type() != *expected {
+            if !field.has_type(expected) {
                 return None;
             }
             let (carrier, variable) = typed_binding_variable(expected, binding)?;
@@ -4065,6 +4107,25 @@ impl<'a> TermRewrite<'a> {
                 offset: PointerOffsetTerm::add(replacement.offset.clone(), offset),
             };
         }
+        // A loop snapshot's pointer value is a symbolic base plus its
+        // displacement. Rewriting the complete base value also respells
+        // displaced addresses; the value path retains their selected bounds.
+        if let Some((from, to)) = self.pointer_value_exact
+            && !self.source_disabled
+            && matches!(from.pointer().block, PointerBlock::Symbolic(_))
+            && from.pointer().offset == PointerOffsetTerm::Constant(0)
+            && p.block == from.pointer().block
+        {
+            self.changed = true;
+            let offset = self.offset(&p.offset);
+            if self.checked_work_exhausted() {
+                return exhausted_pointer();
+            }
+            return Pointer {
+                block: to.pointer().block.clone(),
+                offset: PointerOffsetTerm::add(to.pointer().offset.clone(), offset),
+            };
+        }
         if let Some((from, to)) = self.pointer_variable
             && matches!(&p.block, PointerBlock::Symbolic(variable) | PointerBlock::FunctionSymbolic(variable) if *variable == from)
         {
@@ -4130,6 +4191,7 @@ impl<'a> TermRewrite<'a> {
     fn offset(&mut self, v: &PointerOffsetTerm) -> PointerOffsetTerm {
         if let Some((from, to)) = self.pointer_offset_exact
             && v == from
+            && (self.pointer_value_exact.is_none() || !self.source_disabled)
         {
             self.changed = true;
             return to.clone();
@@ -4208,6 +4270,23 @@ impl<'a> TermRewrite<'a> {
             result
         }
     }
+    fn cited_condition_value(&self, condition: &ConditionTerm) -> Option<bool> {
+        self.conditions
+            .and_then(|conditions| {
+                conditions
+                    .get(condition)
+                    .or_else(|| conditions.get(&condition.flipped()))
+                    .copied()
+            })
+            .or_else(|| {
+                self.cited_conditions.and_then(|graph| {
+                    [true, false]
+                        .into_iter()
+                        .find(|value| graph.knows_condition(condition, *value))
+                })
+            })
+    }
+
     pub(crate) fn condition(&mut self, v: &ConditionTerm) -> ConditionTerm {
         self.reserve_condition_variables_once(v);
         if self.checked_work_exhausted() {
@@ -4217,19 +4296,10 @@ impl<'a> TermRewrite<'a> {
         if self.checked_work_exhausted() {
             return ConditionTerm::Constant(false);
         }
-        if let Some(conditions) = self.conditions
-            && let Some(value) = conditions.get(v).or_else(|| conditions.get(&v.flipped()))
-        {
-            return ConditionTerm::Constant(*value);
-        }
         // Only the explicitly cited facts can refute a condition here. The
         // shared graph makes address-origin annotations numerically transparent.
-        if let Some(graph) = self.cited_conditions {
-            for value in [true, false] {
-                if graph.knows_condition(v, value) {
-                    return ConditionTerm::Constant(value);
-                }
-            }
+        if let Some(value) = self.cited_condition_value(v) {
+            return ConditionTerm::Constant(value);
         }
         let result = match v {
             ConditionTerm::Constant(_) | ConditionTerm::Variable(_) => v.clone(),
@@ -4242,6 +4312,27 @@ impl<'a> TermRewrite<'a> {
             }
             ConditionTerm::Float64(c) => {
                 ConditionTerm::Float64(c.map_bitvector_terms(|b| self.bits(b)))
+            }
+            ConditionTerm::Bitvector64Equal(a, b) => {
+                let left = self.bits(a);
+                let right = self.bits(b);
+                if matches!(
+                    (&left, &right),
+                    (Bitvector32Term::PointerAddress(_, _), zero)
+                        | (zero, Bitvector32Term::PointerAddress(_, _))
+                        if zero.uint64_as_const() == Some(0)
+                ) {
+                    // Rewriting can expose a null address after the original
+                    // comparison was constructed. Use the same relation as a
+                    // directly written zero-address comparison, then consume
+                    // only the selected conditions for that relation.
+                    self.changed = true;
+                    let canonical = ConditionTerm::int64_equal(left, right);
+                    self.cited_condition_value(&canonical)
+                        .map_or(canonical, ConditionTerm::Constant)
+                } else {
+                    ConditionTerm::Bitvector64Equal(Box::new(left), Box::new(right))
+                }
             }
             ConditionTerm::PointerValueEqual(a, b) => {
                 let CValue::Pointer(a) = self.value(&CValue::Pointer((**a).clone())) else {

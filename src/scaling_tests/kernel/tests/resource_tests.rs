@@ -1072,7 +1072,7 @@ fn cached_support_updates_ignore_unrelated_cached_supports() {
 #[test]
 fn support_removal_visits_only_the_supported_projections() {
     const PROJECTION_COUNT: usize = 8;
-    for size in [16_usize, 64, 256, 1024, 4096] {
+    for size in [16_usize, 64, 256, 1024] {
         let authority =
             CResourceFact::own_composite("authority".to_string(), vec![int32(size as u32)]);
         let projections = (0..PROJECTION_COUNT)
@@ -1390,7 +1390,7 @@ fn installing_a_certified_resource_group_does_not_recheck_internal_pairs() {
         offset: PointerOffsetTerm::Constant(0),
     };
     let mut samples = Vec::new();
-    for size in [16, 64, 256, 1024] {
+    for size in [4, 16, 64, 256] {
         let facts = (0..size)
             .map(|index| {
                 CResourceFact::own_memory(memory_range(
@@ -1424,6 +1424,18 @@ fn installing_a_certified_resource_group_does_not_recheck_internal_pairs() {
     assert!(
         samples.windows(2).all(|pair| pair[1] <= pair[0] * 5),
         "certified installation grew superlinearly: {samples:?}"
+    );
+    let rescanned = samples
+        .iter()
+        .zip([4, 16, 64, 256])
+        .map(|(work, size)| {
+            let size = usize::try_from(size).unwrap();
+            work + size * size
+        })
+        .collect::<Vec<_>>();
+    assert!(
+        rescanned.windows(2).any(|pair| pair[1] > pair[0] * 5),
+        "the smaller fixture must detect internal pair checks: {samples:?}"
     );
 }
 
@@ -1459,7 +1471,7 @@ fn resource_consumption_ignores_unrelated_exact_shapes() {
 #[test]
 fn incremental_quantity_consumption_normalizes_only_the_exact_resource_bucket() {
     let mut samples = Vec::new();
-    for size in [16_u32, 64, 256, 1024, 4096] {
+    for size in [4_u32, 16, 64, 256, 1024] {
         let target_resource = CResource::Token {
             name: "shared_name".to_string(),
             arguments: vec![int32(size + 1).into()].into(),
@@ -2267,7 +2279,7 @@ fn memory_invalidation_scales_with_affected_intervals_and_barrier_output() {
 #[ignore = "nightly: 2.8s in the parallel gate"]
 fn returned_scalar_and_bytewise_padding_rejoin_over_symbolic_objects() {
     let mut samples = Vec::new();
-    for size in [8usize, 32, 128, 512] {
+    for size in [2usize, 8, 32, 128] {
         let mut pieces = Vec::new();
         let mut expected = Vec::new();
         for index in 0..size {

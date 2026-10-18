@@ -1733,3 +1733,40 @@ remain symbolic. The three count obligations in each orientation close with
 explicit alias rewrites. Each sidecar verifies all three insertion claims.
 Repeated color-flip propagation through a red outer ancestor and writable erase
 integration remain unfinished.
+
+The sized subtree and ancestor resources now retain the full pointer recovered
+from each packed parent word, matching the base rbtree resource's representation
+invariant. Numeric address equality alone does not retain pointer designation
+and bounds. Both context color-flip proofs explicitly transport the unchanged
+left/right child inequalities across the recoloring writes. All six insertion
+and wrapper claims verify, and both eighteen-site expansion audits pass. The
+four context/size helper tactics and two sized-model theorems also verify.
+Repeated-flip model definitions now check with nominal model-pointer typing;
+the owned cursor and its whole-tree restoration helper are being developed
+before the general C loop proof.
+
+Pure helpers now check their declared return types at definition boundaries.
+Recursive pointer getters use those checked interfaces, with the existing
+termination checks, so `rb_min_parent` retains its model field's object class.
+All ten sidecars in the default `rbtree-model` project verify. This removes the
+getter typing blocker without adding proof steps to the affected theorem.
+
+The repeated-flip cursor and whole-tree restoration tactic now verify. The
+boundary sidecar checks both ways a chain stops: blackening the root or exiting
+beneath a black parent, in either ancestor orientation. It returns whole-tree
+ownership with the exact chain-result model, including through both augmented
+wrappers, without changing the Linux C. Applying restoration exposed a call
+boundary bug: named output arguments were evaluated before sibling produced
+memory clauses supplied their read authority. The fix constructs those primitive
+outputs once and carries the same facts into the return transition. A reduced
+regression covers user tactics and C calls, including reversed output order.
+The general chain sidecar now verifies all continuing LL/LR/RL/RR cases,
+arbitrarily repeated and mixed, followed by either stopping boundary. Both
+augmented wrappers return whole-root ownership, the exact chain-result model,
+and recursively valid cached sizes. A separate induction proves preservation
+of the complete in-order sequence. The proof uses pre-write color facts and
+explicit transport across recoloring stores. The loaded-uncle comparison now
+uses shared numeric address classes for its scoped separation evidence;
+regressions cover checked aliases, scope, withdrawal, and scalable lookup.
+General rotation subtrees, chains ending in a rotation, and writable erase
+integration remain unfinished.

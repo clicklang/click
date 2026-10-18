@@ -1716,6 +1716,40 @@ impl CLocalEnvironment {
         self.slots.get(pointer).map(String::as_str)
     }
 
+    /// The names whose slots lie in `block`, found through the slot index:
+    /// pointers order by block first, so they are one run of slot keys.
+    pub(in crate::kernel) fn names_with_slot_in(&self, block: &PointerBlock) -> Vec<&str> {
+        let mut names = Vec::new();
+        let mut at = Pointer {
+            block: block.clone(),
+            offset: PointerOffsetTerm::Constant(i64::MIN),
+        };
+        if let Some(name) = self.slots.get(&at) {
+            names.push(name.as_str());
+        }
+        while let Some((pointer, name)) = self.slots.get_greater_than(&at) {
+            if &pointer.block != block {
+                break;
+            }
+            names.push(name.as_str());
+            at = pointer.clone();
+        }
+        names
+    }
+
+    /// The names bound differently in `self` and `other`, or bound in one
+    /// only, in ascending order. Bindings the two frames share are skipped
+    /// by identity, so frames derived from one another cost their changes.
+    pub(in crate::kernel) fn differing_names<'a>(
+        &'a self,
+        other: &'a Self,
+    ) -> impl Iterator<Item = &'a str> + 'a {
+        self.bindings.diff(&other.bindings).map(|(name, _, _)| {
+            crate::instrumentation::record_deterministic_work(1);
+            name.as_str()
+        })
+    }
+
     pub(in crate::kernel) fn is_array_object(&self, name: &str) -> bool {
         matches!(self.binding(name), Some(CLocalBinding::ArrayObject { .. }))
     }
@@ -1758,10 +1792,86 @@ impl CLocalBinding {
     }
 }
 
+/// The integer term an object binding holds, as a surface spelling compares
+/// it: the numeric value of a scalar of integer or truth type.
+fn held_integer_term(binding: &CLocalBinding) -> Option<&Bitvector32Term> {
+    let CLocalBinding::Object { value, .. } = binding else {
+        return None;
+    };
+    match value.numeric_value() {
+        CValue::Bool(term)
+        | CValue::Int8(term)
+        | CValue::Int16(term)
+        | CValue::Int32(term)
+        | CValue::UInt8(term)
+        | CValue::UInt16(term)
+        | CValue::UInt32(term)
+        | CValue::Int64(term)
+        | CValue::UInt64(term)
+        | CValue::Int128(term)
+        | CValue::UInt128(term) => Some(term),
+        _ => None,
+    }
+}
+
+/// A constant-time fingerprint of a term: its root's variant and, for a
+/// variable or constant, its payload, and the same of a binary node's two
+/// operands. Equal terms share a fingerprint; a lookup compares the terms
+/// it finds, so a shared fingerprint costs only a comparison.
+fn held_term_fingerprint(term: &Bitvector32Term) -> u64 {
+    use std::hash::{Hash, Hasher};
+    fn atom(term: &Bitvector32Term, hasher: &mut impl Hasher) {
+        std::mem::discriminant(term).hash(hasher);
+        match term {
+            Bitvector32Term::Variable(variable) => variable.hash(hasher),
+            Bitvector32Term::Constant(value) => value.hash(hasher),
+            _ => {}
+        }
+    }
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    atom(term, &mut hasher);
+    if let Some((_, left, right)) = term.as_binary() {
+        atom(left, &mut hasher);
+        atom(right, &mut hasher);
+    }
+    hasher.finish()
+}
+
 impl CLocalEnvironment {
-    fn insert_binding(&mut self, name: String, binding: CLocalBinding) {
+    /// An environment of these bindings and slots, with its held-term index
+    /// built from the bindings.
+    pub(in crate::kernel) fn from_parts(
+        bindings: crate::persistent::PersistentMap<String, CLocalBinding>,
+        slots: crate::persistent::PersistentMap<Pointer, String>,
+    ) -> Self {
+        let held_terms = bindings
+            .iter()
+            .filter_map(|(name, binding)| {
+                held_integer_term(binding)
+                    .map(|term| ((held_term_fingerprint(term), name.clone()), ()))
+            })
+            .collect();
+        Self {
+            bindings,
+            slots,
+            held_terms,
+        }
+    }
+
+    pub(in crate::kernel) fn insert_binding(&mut self, name: String, binding: CLocalBinding) {
         let slot = binding.slot().clone();
-        let old_slot = self.bindings.get(&name).map(CLocalBinding::slot).cloned();
+        let old = self.bindings.get(&name);
+        let old_slot = old.map(CLocalBinding::slot).cloned();
+        let old_held = old.and_then(held_integer_term).map(held_term_fingerprint);
+        let new_held = held_integer_term(&binding).map(held_term_fingerprint);
+        if old_held != new_held {
+            if let Some(fingerprint) = old_held {
+                self.held_terms.remove(&(fingerprint, name.clone()));
+            }
+            if let Some(fingerprint) = new_held {
+                self.held_terms.insert((fingerprint, name.clone()), ());
+            }
+        }
         self.bindings.insert(name.clone(), binding);
         if let Some(old_slot) = old_slot
             && old_slot != slot
@@ -1769,6 +1879,46 @@ impl CLocalEnvironment {
             self.slots.remove(&old_slot);
         }
         self.slots.insert(slot, name);
+    }
+
+    /// The names, in name order, of the scalar objects holding exactly
+    /// `term`: the index narrows the candidates to those sharing its
+    /// fingerprint, and each is compared with `term`.
+    pub(crate) fn names_holding_integer<'a, 't>(
+        &'a self,
+        term: &'t Bitvector32Term,
+    ) -> impl Iterator<Item = &'a str> + use<'a, 't> {
+        let fingerprint = held_term_fingerprint(term);
+        let mut at = Some((fingerprint, String::new()));
+        let mut first = true;
+        std::iter::from_fn(move || {
+            loop {
+                let key = at.take()?;
+                let next = if first {
+                    first = false;
+                    match self.held_terms.get_key_value(&key) {
+                        Some((found, _)) => Some(found),
+                        None => self
+                            .held_terms
+                            .get_greater_than(&key)
+                            .map(|(found, _)| found),
+                    }
+                } else {
+                    self.held_terms
+                        .get_greater_than(&key)
+                        .map(|(found, _)| found)
+                };
+                let (found_fingerprint, name) = next?;
+                if *found_fingerprint != fingerprint {
+                    return None;
+                }
+                at = Some((fingerprint, name.clone()));
+                crate::instrumentation::record_deterministic_work(1);
+                if self.bindings.get(name).and_then(held_integer_term) == Some(term) {
+                    return Some(name.as_str());
+                }
+            }
+        })
     }
 
     /// Puts back a binding read from another environment with
@@ -1816,6 +1966,10 @@ impl CLocalEnvironment {
         let Some(binding) = self.bindings.get(name).cloned() else {
             return;
         };
+        if let Some(term) = held_integer_term(&binding) {
+            self.held_terms
+                .remove(&(held_term_fingerprint(term), name.to_string()));
+        }
         self.bindings.remove(&name.to_string());
         self.slots.remove(binding.slot());
     }
@@ -2476,6 +2630,18 @@ fn call_write_set_marker(
     marker.into()
 }
 
+/// Membership in the blocks a memory join keeps: a set, or a query a join
+/// answers from the state's own indexes without listing every block.
+pub(crate) trait BlockMembership {
+    fn contains_block(&self, block: &PointerBlock) -> bool;
+}
+
+impl BlockMembership for BTreeSet<PointerBlock> {
+    fn contains_block(&self, block: &PointerBlock) -> bool {
+        self.contains(block)
+    }
+}
+
 /// Whether a havoc that preserves loans keeps the cell at this address: the
 /// one rule, asked by the loop head and by the interface join.
 ///
@@ -2493,10 +2659,10 @@ fn call_write_set_marker(
 fn loan_preserving_havoc_keeps_cell(
     pointer: &Pointer,
     byte_width: u32,
-    preserved_blocks: &BTreeSet<PointerBlock>,
+    preserved_blocks: &dyn BlockMembership,
     ledger: Option<&crate::kernel::loans::LoanLedger>,
 ) -> bool {
-    preserved_blocks.contains(&pointer.block)
+    preserved_blocks.contains_block(&pointer.block)
         || ledger.is_some_and(|ledger| {
             byte_width != 0
                 && ledger
@@ -2518,11 +2684,11 @@ fn loan_preserving_havoc_keeps_cell(
 /// width is its value's.
 fn loan_preserving_havoc_keeps_run(
     run: &CellRun,
-    preserved_blocks: &BTreeSet<PointerBlock>,
+    preserved_blocks: &dyn BlockMembership,
     ledger: Option<&crate::kernel::loans::LoanLedger>,
 ) -> (SlotSet, crate::kernel::primitives::RuleAnswer) {
     let exact = crate::kernel::primitives::RuleAnswer::Exact;
-    if preserved_blocks.contains(&run.base().block) {
+    if preserved_blocks.contains_block(&run.base().block) {
         return (SlotSet::All, exact);
     }
     let Some(ledger) = ledger else {
@@ -2772,19 +2938,30 @@ impl CMemory {
     /// A fresh block whose object, or every element of it, has
     /// `declared_class` (`design/effective-types.md`). The class is part of
     /// the declaration, so the block-declared derivation covers it.
-    pub(in crate::kernel) fn with_classed_block(
+    pub(crate) fn with_classed_block(
         self,
         block: PointerBlock,
         declared_class: Option<crate::kernel::effective_type::CAccessClass>,
         size: u32,
     ) -> Self {
+        self.with_classed_block_or_read_only(block, declared_class, size, false)
+    }
+
+    pub(in crate::kernel) fn with_classed_block_or_read_only(
+        self,
+        block: PointerBlock,
+        declared_class: Option<crate::kernel::effective_type::CAccessClass>,
+        size: u32,
+        read_only: bool,
+    ) -> Self {
         let Some(declared_class) = declared_class else {
-            return self.with_block(block, size);
+            return self.with_block_or_read_only(block, size, read_only);
         };
         let mut memory = self;
         let base = intern_derivation_base(&mut memory);
         let mut declaration = CBlock::new(size);
         declaration.declared_class = Some(declared_class);
+        declaration.read_only = read_only;
         std::sync::Arc::make_mut(&mut memory.blocks).insert(block.clone(), declaration);
         record_c_memory_derivation(
             &mut memory,
@@ -2936,32 +3113,6 @@ impl CMemory {
         } else {
             self.with_block(block, size)
         }
-    }
-
-    /// [`Self::with_block_or_read_only`] with the object's declared class
-    /// recorded in the same declaration, as [`Self::with_classed_block`]
-    /// records it.
-    pub(in crate::kernel) fn with_classed_block_or_read_only(
-        mut self,
-        block: impl Into<PointerBlock>,
-        size: u32,
-        read_only: bool,
-        declared_class: Option<crate::kernel::effective_type::CAccessClass>,
-    ) -> Self {
-        if declared_class.is_none() {
-            return self.with_block_or_read_only(block, size, read_only);
-        }
-        let block = block.into();
-        let base = intern_derivation_base(&mut self);
-        let mut declaration = if read_only {
-            CBlock::read_only(size)
-        } else {
-            CBlock::new(size)
-        };
-        declaration.declared_class = declared_class;
-        std::sync::Arc::make_mut(&mut self.blocks).insert(block.clone(), declaration);
-        record_c_memory_derivation(&mut self, CMemoryDerivation::BlockDeclared { base, block });
-        self
     }
 
     pub(in crate::kernel) fn with_read_only_block(
@@ -3514,12 +3665,27 @@ impl CMemory {
     }
 
     pub(in crate::kernel) fn with_pending_heap_allocation(
-        mut self,
+        self,
         base: Pointer,
         bytes: Bitvector32Term,
         zeroed: bool,
     ) -> Self {
+        self.with_pending_typed_heap_allocation(base, bytes, zeroed, None)
+    }
+
+    pub(in crate::kernel) fn with_pending_typed_heap_allocation(
+        mut self,
+        base: Pointer,
+        bytes: Bitvector32Term,
+        zeroed: bool,
+        object_class: Option<crate::kernel::effective_type::CAccessClass>,
+    ) -> Self {
         let prior = Some(intern_derivation_base(&mut self));
+        if let Some(class) = object_class {
+            std::sync::Arc::make_mut(&mut self.heap)
+                .pending_object_classes
+                .insert(base.clone(), class);
+        }
         std::sync::Arc::make_mut(&mut self.heap)
             .pending_allocations
             .insert(base.clone(), bytes.clone());
@@ -3629,11 +3795,13 @@ impl CMemory {
         } else {
             Pointer::null()
         };
+        let object_class = std::sync::Arc::make_mut(&mut self.heap)
+            .pending_object_classes
+            .remove(base);
         if succeeds {
-            std::sync::Arc::make_mut(&mut self.blocks).insert(
-                resolved_base.block.clone(),
-                CBlock::with_symbolic_size(bytes.clone()),
-            );
+            let mut block = CBlock::with_symbolic_size(bytes.clone());
+            block.declared_class = object_class;
+            std::sync::Arc::make_mut(&mut self.blocks).insert(resolved_base.block.clone(), block);
             std::sync::Arc::make_mut(&mut self.heap)
                 .live_allocations
                 .insert(resolved_base.clone(), bytes.clone());
@@ -3739,7 +3907,7 @@ impl CMemory {
     pub(in crate::kernel) fn with_loop_memory_havoc_preserving_loans(
         mut self,
         variable: Variable,
-        preserved_blocks: &BTreeSet<PointerBlock>,
+        preserved_blocks: &dyn BlockMembership,
         mutable_ranges: Option<&[CMemoryRange]>,
         ledger: Option<&crate::kernel::loans::LoanLedger>,
     ) -> Self {
@@ -3794,7 +3962,7 @@ impl CMemory {
     /// The work is unchanged: one lookup per arm for each value visited.
     fn forget_loan_unprotected_values(
         &mut self,
-        preserved_blocks: &BTreeSet<PointerBlock>,
+        preserved_blocks: &dyn BlockMembership,
         ledger: Option<&crate::kernel::loans::LoanLedger>,
         agreeing: &[&CMemory],
     ) {
@@ -3881,7 +4049,7 @@ impl CMemory {
     pub(in crate::kernel) fn with_interface_memory_havoc(
         self,
         variable: Variable,
-        preserved_blocks: &BTreeSet<PointerBlock>,
+        preserved_blocks: &dyn BlockMembership,
         sibling_memories: &[&CMemory],
     ) -> Result<Self, String> {
         self.with_interface_memory_havoc_preserving_loans(
@@ -3895,7 +4063,7 @@ impl CMemory {
     pub(in crate::kernel) fn with_interface_memory_havoc_preserving_loans(
         mut self,
         variable: Variable,
-        preserved_blocks: &BTreeSet<PointerBlock>,
+        preserved_blocks: &dyn BlockMembership,
         sibling_memories: &[&CMemory],
         ledger: Option<&crate::kernel::loans::LoanLedger>,
     ) -> Result<Self, String> {
@@ -3947,6 +4115,13 @@ impl CMemory {
         {
             return Err("interface arms disagree on pending heap allocations".to_string());
         }
+        let pending_object_classes = first.heap.pending_object_classes.clone();
+        if sibling_memories
+            .iter()
+            .any(|memory| memory.heap.pending_object_classes != pending_object_classes)
+        {
+            return Err("interface arms disagree on pending heap object classes".to_string());
+        }
         let pending_reallocations = first.heap.pending_reallocations.clone();
         if sibling_memories
             .iter()
@@ -3993,13 +4168,13 @@ impl CMemory {
             let mut visited = 0usize;
             for (pointer, value) in local_block_entries(memory.cells.logical()) {
                 visited += 1;
-                if !preserved_blocks.contains(&pointer.block) {
+                if !preserved_blocks.contains_block(&pointer.block) {
                     record.record(pointer, value.byte_width());
                 }
             }
             for ((pointer, c_type), _) in local_block_entries(&memory.union_cells) {
                 visited += 1;
-                if !preserved_blocks.contains(&pointer.block) {
+                if !preserved_blocks.contains_block(&pointer.block) {
                     record.record(pointer, c_type.byte_width());
                 }
             }
@@ -4184,6 +4359,7 @@ impl CMemory {
             live_allocations,
             deallocated_allocations,
             pending_allocations,
+            pending_object_classes,
             uninitialized_allocations,
             uninitialized_objects,
             initialized,
@@ -6561,19 +6737,19 @@ impl CMemory {
     pub(in crate::kernel) fn differs_only_within(
         &self,
         other: &Self,
-        blocks: &BTreeSet<PointerBlock>,
+        blocks: &dyn BlockMembership,
     ) -> bool {
         self.forgotten == other.forgotten
             && self.heap == other.heap
             && self
                 .blocks
                 .diff(&other.blocks)
-                .all(|change| blocks.contains(change.key()))
+                .all(|change| blocks.contains_block(change.key()))
             && self.cells.differs_only_within(&other.cells, blocks)
             && self
                 .union_cells
                 .diff(&other.union_cells)
-                .all(|change| blocks.contains(&change.key().0.block))
+                .all(|change| blocks.contains_block(&change.key().0.block))
     }
 
     /// The automatic objects whose lifetimes this memory records as ended.
@@ -8719,18 +8895,26 @@ impl CState {
     /// borrows each atom, never materializing all local values or array runs.
     /// Slot order retains the same deterministic first name as local_cell_values.
     pub(crate) fn local_name_holding_bitvector_variable(&self, variable: Variable) -> Option<&str> {
-        for (pointer, name) in self.locals.slots.iter() {
+        // The candidates are the scalar locals bound to the variable, found
+        // through the held-term index; each must still hold it in current
+        // memory at its slot's start. The first such slot answers.
+        let term = Bitvector32Term::Variable(variable);
+        let mut held = None;
+        for name in self.locals.names_holding_integer(&term) {
             if crate::instrumentation::deadline_exceeded() {
                 return None;
             }
-            crate::instrumentation::record_deterministic_work(1);
+            let Some(pointer) = self.locals.slot(name) else {
+                continue;
+            };
             if pointer.offset == PointerOffsetTerm::Constant(0)
                 && self.memory.cells.bitvector_variable_at(pointer) == Some(variable)
+                && held.is_none_or(|(first, _): (&Pointer, &str)| pointer < first)
             {
-                return Some(name.as_str());
+                held = Some((pointer, name));
             }
         }
-        None
+        held.map(|(_, name)| name)
     }
 
     /// An atom's recorded load address selects one local slot directly.
@@ -9686,6 +9870,58 @@ mod local_variable_spelling_tests {
             .clone()
             .store(CMemory::local_pointer(name), value.clone());
         state.with_local(name, value).with_memory(memory)
+    }
+
+    #[test]
+    fn held_term_index_agrees_with_a_scan_of_the_bindings() {
+        let x = Bitvector32Term::Variable(Variable(971_020));
+        let y = Bitvector32Term::Variable(Variable(971_021));
+        // Terms that share a fingerprint (same root and operand roots) but
+        // differ deeper, beside equal terms held by several locals.
+        let deep = |term: Bitvector32Term| {
+            Bitvector32Term::Add(
+                Box::new(Bitvector32Term::Add(Box::new(term), Box::new(x.clone()))),
+                Box::new(Bitvector32Term::Constant(1)),
+            )
+        };
+        let terms = [
+            x.clone(),
+            y.clone(),
+            deep(x.clone()),
+            deep(y.clone()),
+            Bitvector32Term::Constant(7),
+        ];
+        let mut state = CState::new();
+        for step in 0..60usize {
+            let name = format!("v{}", step % 13);
+            if step % 7 == 6 {
+                state.locals.remove(&name);
+            } else {
+                let term = terms[step % terms.len()].clone();
+                state = state.with_local(name, CValue::Int32(term));
+            }
+        }
+        state = state.with_local("pointer", CValue::pointer(CMemory::local_pointer("v0")));
+        for term in &terms {
+            let scanned = state
+                .locals()
+                .object_values()
+                .filter(|(_, value)| held_integer_term_of(value) == Some(term))
+                .map(|(name, _)| name)
+                .collect::<Vec<_>>();
+            let indexed = state
+                .locals()
+                .names_holding_integer(term)
+                .collect::<Vec<_>>();
+            assert_eq!(indexed, scanned, "{term:?}");
+        }
+    }
+
+    fn held_integer_term_of(value: &CValue) -> Option<&Bitvector32Term> {
+        match value.numeric_value() {
+            crate::kernel::integer_c_value!(term) | CValue::Bool(term) => Some(term),
+            _ => None,
+        }
     }
 
     #[test]

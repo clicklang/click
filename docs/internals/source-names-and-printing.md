@@ -9,9 +9,21 @@ import and shadowing policy when spelling canonical library identities.
 A selective import binds the bare name. Qualified modules otherwise require
 an in-scope module path or the full `click::` path. A local theorem shadows a
 bare library theorem. A selective import that conflicts with a local declaration
-is refused. Comments and string literals introduce no bindings. Explicitly
-qualified references remain qualified in rewrites: removing one can also
-remove the implicit library dependency it contributes to a retained session.
+(a theorem, function, predicate, resource, enum or tactic) is refused. Comments
+and string literals introduce no bindings. Explicitly qualified references
+remain qualified in rewrites: removing one can also remove the implicit library
+dependency it contributes to a retained session.
+
+Only a Click reference reads these bindings. The parser resolves a selectively
+imported name where it reads a call (`parse_call_arguments`, through
+`expect_reference_name`) or an `unfold` target. A C function, a C++ member, a
+resource binder or an enum constructor of the same spelling keeps its own
+meaning. A library path is joined into the declaration it names before
+parsing, so the parser's lookahead sees one name, and `FileSymbols` keeps the
+written spelling by source position. A C or C++ declaration name, such as the
+head `int list::append(int x)` of a namespace member, reads the written
+spelling back (`expect_c_declaration_ident`). A path through a library module
+the file does not import is refused only where a Click reference reads it.
 
 The parser tokenizer supplies exact byte spans through `source_tokens`.
 Expansion and `ProofSourceIndex` use these tokens; there is no expansion

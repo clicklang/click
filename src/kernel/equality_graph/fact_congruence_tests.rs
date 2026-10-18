@@ -415,3 +415,269 @@ fn pointer_comparison_preserves_base_evidence_through_aliases_and_scopes() {
         }
     }
 }
+
+// Reduced from the expanded zlib cursor join: two symbolic loop values meet
+// a native C argument through signed prefix counts and a native length.
+fn selected_cursor_chain() -> (Proposition, Vec<Proposition>) {
+    let total = Bitvector32Term::Variable(Variable(2));
+    let remaining = Bitvector32Term::Variable(Variable(1_000_002));
+    let after = Bitvector32Term::UInt64Subtract(
+        Box::new(remaining.clone()),
+        Box::new(Bitvector32Term::UInt64Constant(5552)),
+    );
+    let prefix = |remaining: Bitvector32Term| Bitvector32Term::ClickFunctionApplication {
+        name: "prefix".into(),
+        arguments: vec![
+            PureFunctionArgument::Value(CValue::UInt64(total.clone())),
+            PureFunctionArgument::Value(CValue::UInt64(remaining)),
+        ],
+    };
+    let first = prefix(remaining);
+    let count = prefix(after.clone());
+    let sum = Bitvector32Term::Add(
+        Box::new(first.clone()),
+        Box::new(Bitvector32Term::Constant(5552)),
+    );
+    let difference = Bitvector32Term::UInt64Subtract(Box::new(total.clone()), Box::new(after));
+    let original = CPointerValue::new(
+        Pointer {
+            block: PointerBlock::ExternalArgument,
+            offset: PointerOffsetTerm::scale_int32(Bitvector32Term::Variable(Variable(100_001)), 1),
+        },
+        CType::UInt8Pointer,
+    );
+    let batch = CPointerValue::new(Pointer::symbolic(Variable(1_000_001)), CType::UInt8Pointer);
+    let cursor_base =
+        CPointerValue::new(Pointer::symbolic(Variable(1_000_005)), CType::UInt8Pointer);
+    let cursor = cursor_base
+        .clone()
+        .with_address(cursor_base.pointer().offset_by_bytes(16));
+    let at_first = original.clone().with_address(Pointer {
+        block: original.pointer().block.clone(),
+        offset: PointerOffsetTerm::add(
+            original.pointer().offset.clone(),
+            PointerOffsetTerm::scale_int32(first.clone(), 1),
+        ),
+    });
+    let at_sum = Pointer {
+        block: original.pointer().block.clone(),
+        offset: PointerOffsetTerm::add(
+            original.pointer().offset.clone(),
+            PointerOffsetTerm::scale_int32(sum.clone(), 1),
+        ),
+    };
+    let at_count = Pointer {
+        block: original.pointer().block.clone(),
+        offset: PointerOffsetTerm::add(
+            original.pointer().offset.clone(),
+            PointerOffsetTerm::scale_int32(count.clone(), 1),
+        ),
+    };
+    let target = original.clone().with_address(Pointer {
+        block: original.pointer().block.clone(),
+        offset: PointerOffsetTerm::add(
+            original.pointer().offset.clone(),
+            PointerOffsetTerm::scale_int64(difference, 1, true),
+        ),
+    });
+    let full = |left: CPointerValue, right: CPointerValue| {
+        Proposition::ConditionIs(
+            ConditionTerm::PointerValueEqual(Box::new(left), Box::new(right)),
+            true,
+        )
+    };
+    let address = |left: Pointer, right: Pointer| {
+        Proposition::ConditionIs(
+            ConditionTerm::PointerEqual(Box::new(left), Box::new(right)),
+            true,
+        )
+    };
+    let premises = vec![
+        full(
+            cursor.clone(),
+            batch
+                .clone()
+                .with_address(batch.pointer().offset_by_bytes(5552)),
+        ),
+        full(batch, at_first.clone()),
+        address(at_first.pointer().offset_by_bytes(5552), at_sum),
+        Proposition::ConditionIs(ConditionTerm::equal(count, sum), true),
+        address(target.pointer().clone(), at_count),
+    ];
+    let goal = full(cursor, target);
+    (goal, premises)
+}
+
+#[test]
+fn full_pointer_queries_refresh_late_address_aliases() {
+    use crate::kernel::proof::fact_reasoning::normalize_using_conditions;
+    let (goal, premises) = selected_cursor_chain();
+    let Proposition::ConditionIs(condition, value) = &goal else {
+        unreachable!()
+    };
+    for indices in [[0, 1, 2, 3, 4], [2, 1, 4, 0, 3], [4, 3, 2, 1, 0]] {
+        let ambient = indices.map(|index| premises[index].clone());
+        let facts = crate::kernel::proof::ProofFacts::from_ordered(&ambient);
+        assert!(
+            facts
+                .assumptions()
+                .equality_graph
+                .knows_condition(condition, *value),
+            "admission order {indices:?}"
+        );
+        normalize_using_conditions(&goal, &premises, &facts).expect("selected cursor chain");
+    }
+}
+
+#[test]
+fn selected_cursor_chain_needs_its_support_and_displacement() {
+    use crate::kernel::proof::{ProofFacts, fact_reasoning::normalize_using_conditions};
+    let (goal, premises) = selected_cursor_chain();
+    for missing in 0..premises.len() {
+        let selected: Vec<_> = premises
+            .iter()
+            .enumerate()
+            .filter(|(index, _)| *index != missing)
+            .map(|(_, p)| p.clone())
+            .collect();
+        let facts = ProofFacts::from_ordered(&selected);
+        assert!(
+            normalize_using_conditions(&goal, &selected, &facts).is_err(),
+            "missing premise {missing}"
+        );
+    }
+    let Proposition::ConditionIs(ConditionTerm::PointerValueEqual(left, right), true) = &goal
+    else {
+        unreachable!()
+    };
+    let wrong = Proposition::ConditionIs(
+        ConditionTerm::PointerValueEqual(
+            Box::new(
+                (**left)
+                    .clone()
+                    .with_address(left.pointer().offset_by_bytes(1)),
+            ),
+            right.clone(),
+        ),
+        true,
+    );
+    let facts = ProofFacts::from_ordered(&premises);
+    assert!(normalize_using_conditions(&wrong, &premises, &facts).is_err());
+}
+
+#[test]
+fn refreshed_address_aliases_do_not_establish_pointer_identity() {
+    use crate::kernel::proof::{ProofFacts, fact_reasoning::normalize_using_conditions};
+    let (goal, mut premises) = selected_cursor_chain();
+    let Proposition::ConditionIs(ConditionTerm::PointerValueEqual(left, right), true) =
+        &premises[0]
+    else {
+        unreachable!()
+    };
+    premises[0] = Proposition::ConditionIs(
+        ConditionTerm::pointer_equal(left.pointer().clone(), right.pointer().clone()),
+        true,
+    );
+    let Proposition::ConditionIs(ConditionTerm::PointerValueEqual(left, right), true) = &goal
+    else {
+        unreachable!()
+    };
+    // Establish the numeric result independently of value identity.
+    premises.push(Proposition::ConditionIs(
+        ConditionTerm::pointer_equal(left.pointer().clone(), right.pointer().clone()),
+        true,
+    ));
+    let facts = ProofFacts::from_ordered(&premises);
+    assert!(
+        facts
+            .assumptions()
+            .equality_graph
+            .are_equal(left.pointer(), right.pointer())
+    );
+    assert!(normalize_using_conditions(&goal, &premises, &facts).is_err());
+}
+
+#[test]
+fn selected_native_cursor_normalization_is_stable_across_context_orders() {
+    use crate::kernel::proof::{ProofFacts, fact_reasoning::normalize_using_conditions};
+    let original = CPointerValue::new(
+        Pointer {
+            block: PointerBlock::ExternalArgument,
+            offset: PointerOffsetTerm::scale_int32(Bitvector32Term::Variable(Variable(100_001)), 1),
+        },
+        CType::UInt8Pointer,
+    );
+    let batch = CPointerValue::new(Pointer::symbolic(Variable(1_000_001)), CType::UInt8Pointer);
+    let root = CPointerValue::new(Pointer::symbolic(Variable(1_000_005)), CType::UInt8Pointer);
+    let cursor = root
+        .clone()
+        .with_address(root.pointer().offset_by_bytes(16));
+    let first = Bitvector32Term::Variable(Variable(10));
+    let second = Bitvector32Term::Variable(Variable(11));
+    let at_first = original.clone().with_address(Pointer {
+        block: original.pointer().block.clone(),
+        offset: PointerOffsetTerm::add(
+            original.pointer().offset.clone(),
+            PointerOffsetTerm::scale_int64(first.clone(), 1, true),
+        ),
+    });
+    let at_second = batch.clone().with_address(Pointer {
+        block: batch.pointer().block.clone(),
+        offset: PointerOffsetTerm::scale_int64(second.clone(), 1, true),
+    });
+    let sequential = Pointer {
+        block: original.pointer().block.clone(),
+        offset: PointerOffsetTerm::add(
+            at_first.pointer().offset.clone(),
+            PointerOffsetTerm::scale_int64(second.clone(), 1, true),
+        ),
+    };
+    let target = original.clone().with_address(Pointer {
+        block: original.pointer().block.clone(),
+        offset: PointerOffsetTerm::add(
+            original.pointer().offset.clone(),
+            PointerOffsetTerm::scale_int64(
+                Bitvector32Term::UInt64Add(Box::new(first), Box::new(second)),
+                1,
+                true,
+            ),
+        ),
+    });
+    let full = |left: CPointerValue, right: CPointerValue| {
+        Proposition::ConditionIs(
+            ConditionTerm::PointerValueEqual(Box::new(left), Box::new(right)),
+            true,
+        )
+    };
+    let premises = [
+        full(cursor.clone(), at_second),
+        full(batch, at_first),
+        Proposition::ConditionIs(
+            ConditionTerm::pointer_equal(sequential, target.pointer().clone()),
+            true,
+        ),
+    ];
+    let goal = full(cursor, target);
+    for order in [[2, 0, 1], [0, 1, 2], [1, 2, 0]] {
+        let ambient = order.map(|index| premises[index].clone());
+        let facts = ProofFacts::from_ordered(&ambient);
+        for attempt in 0..32 {
+            normalize_using_conditions(&goal, &premises, &facts).unwrap_or_else(|error| {
+                panic!("ambient order {order:?}, attempt {attempt}: {error:?}")
+            });
+        }
+    }
+    for missing in 0..premises.len() {
+        let selected: Vec<_> = premises
+            .iter()
+            .enumerate()
+            .filter(|(index, _)| *index != missing)
+            .map(|(_, premise)| premise.clone())
+            .collect();
+        let facts = ProofFacts::from_ordered(&selected);
+        assert!(
+            normalize_using_conditions(&goal, &selected, &facts).is_err(),
+            "missing premise {missing}"
+        );
+    }
+}

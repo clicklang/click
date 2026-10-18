@@ -150,6 +150,26 @@ own `args`, `dependencies`, `library_assertions` and `exception_behavior`
 }
 ```
 
+### C++ unit arguments
+
+Click sets the standard, target, exception and RTTI modes, the project's
+[optimization level](#optimization-level), and at an optimizing level
+`-fno-strict-aliasing`, as for C. A unit's or source's `args` may not name
+them, except that, as for C, they may repeat the project's level. Each other argument must be one of these, and any other is refused with
+its position and spelling:
+
+| Arguments | Class | Reason |
+| --- | --- | --- |
+| `-D`, `-U`, `-I`, `-iquote`, `-isystem`, `-include` (joined or separate value), `--sysroot`, `-nostdinc`, `-nostdinc++` | Preprocessor input | Inventoried by the lock like every file the exporter reads. A `-D` or `-U` of `__OPTIMIZE__` is refused: the level sets it. |
+| `-funsigned-char`, `-fsigned-char` | Checked semantic setting | The exporter records each type's signedness as Clang resolves it. |
+| `-ffreestanding` | Checked semantic setting | Removes Clang's knowledge of hosted library functions; a call still needs a declaration the exporter accepts. |
+| `-g`, `-W…` (not `-Wa,`, `-Wl,`, `-Wp,`), `-w`, `-fmacro-prefix-map=…` | Diagnostics or debug information | No effect on the semantics. |
+| `-fstack-protector`, `-fstack-protector-strong`, `-fstack-protector-all`, `-fstack-clash-protection`, `-fcf-protection`, `-fcf-protection=full` | Hardening code generation | Adds checks that abort only where the program already has undefined behavior, which Click refuses to prove. |
+
+`-D_FORTIFY_SOURCE` is an ordinary define: glibc's fortified wrappers live in
+system headers, and the program reaches library functions only through the
+axiomatic boundary of the [C++ standard library](#c-standard-library).
+
 `click import lock` runs the pinned exporter named by `CLICK_CPP_EXPORTER`,
 which supplies its pinned Clang's resource directory (the builtin headers such
 as `<stddef.h>`) to a command that names none, so `args` never states a
@@ -374,6 +394,13 @@ A proof names a reference local as it names a reference parameter. For
 address, as in `have &r == &value;`. `r[0]` is refused with the spelling to
 write. Binding a reference is not an assignment, so `assignment(r, N)` is
 refused; a store through `r` is selected by its statement.
+
+A reference argument bound to a native scalar field keeps that field's selected
+extent, matching the complete pointer value of `&object.field` in a contract.
+An access beyond the member remains invalid even when a sibling field is also
+available. See the checked
+[member-reference equality](https://github.com/clicklang/click/blob/master/mdtests/cpp_a_member_reference_parameter_retains_its_member_equality.md)
+and [sibling-access refusal](https://github.com/clicklang/click/blob/master/mdtests/cpp_a_member_reference_parameter_keeps_its_subobject.md).
 
 Nothing here translates the C++ body to C. The sidecar signature is
 checked against the selected typed Clang declaration, while proof execution
@@ -1440,8 +1467,9 @@ method it overrides, as a Rust trait implementation does
 `ensures` join its own, labeled `Square::area.interface_ensures_0`, and its
 proof establishes them; an override that writes no `requires` takes the
 interface's, and written ones must follow from the interface's, each clause
-read exactly or decided as a bare comparison. It names its parameters as the
-interface does. An override whose `requires` do not follow, or that the
+read exactly or decided as a bare comparison. The inherited clauses are read
+with the override's own names for its parameters
+(`mdtests/cpp_virtual_override_renames_its_parameters.md`). An override whose `requires` do not follow, or that the
 sidecar does not state, is refused naming both methods:
 
 <!-- verified-example: mdtests/cpp_virtual_method_interface.md -->
@@ -1561,17 +1589,67 @@ cannot also be handed over in that call as a mutable reference
 (`mdtests/cpp_class_const_reference_keeps_fields.md`,
 `mdtests/cpp_class_const_reference_lends_the_object.md`).
 
+A class may derive from a defining class, and override its methods, when
+its own `class` block names that class as its base. It defines the object's
+functions on its own memory, or inherits each it does not write, read
+through its base part:
+
+<!-- verified-example: mdtests/cpp_class_subclass_override_keeps_the_interface.md -->
+```click
+class BigSquare : Square {
+    function size(this) -> int32 { this->base.side + this->extra }
+}
+int BigSquare::area(int scale) const {
+} by { execute(); simp(); }
+```
+
+Each of its overrides keeps the object class's interface read with its own
+definitions, labeled `BigSquare::area.interface_ensures_0`, and refines only
+the `contract` named for it with `_iface`, not the method it overrides
+(`mdtests/cpp_class_subclass_override_rejects_overclaim.md`). A reference to
+a class another `class` block derives from, `const Square& square`, may
+refer to an object of the derived class, so it holds the object class's
+object as a `Shape&` does, and reads `size(square)` as its field; a contract
+on it cannot read `square.side`. Where such a reference becomes a reference
+to a base, nothing is packed. A call through it, or through `this`, to a
+method that overrides one of the object class's names the dispatch
+`Square__click_dispatch__area`, whose contract is that interface on the
+object, whichever override runs; without a sidecar `class` block deriving
+from the class, the dispatch's contract is the method's own
+(`mdtests/cpp_virtual_call_through_a_derived_class_reference.md`). A qualified
+call, `square.Square::area(scale)`, and a call on a complete object, a
+local or by-value parameter, run the method named, against its own
+contract. A conversion packs with the definitions of the class of the
+complete object or reference it starts from: a `BigSquare&` passed as a
+`const Square&` is packed by `BigSquare__click_pack_const__Square`, and a
+local `Square` passed as one by `Square__click_pack_const__Square`
+(`mdtests/cpp_class_subclass_local_object_packs_itself.md`).
+
 Limits:
 - An override in a class without a defining `class` block is refused.
-- A `class` block naming a base other than the object class is refused,
-  since a further subclass would run its base's methods on an object its own
-  definitions describe.
-- Overriding a defining class's method is refused.
+- A class deriving from a defining class may inherit a method the sidecar
+  states on an ancestor's memory only where each function the object
+  class's interface for it reads is defined alike, read through the base
+  parts; otherwise it overrides the method. The inherited method runs on
+  the ancestor's part of the object, as its proof read it, and is not
+  verified again
+  (`mdtests/cpp_class_subclass_inherits_a_method_it_keeps.md`,
+  `mdtests/cpp_class_subclass_inherited_method_rejects_redefined_state.md`).
+- A method of a class another derives from holds its memory, not the
+  object, so its call through `this` to a method that may dispatch to an
+  override is refused, naming what each holds; a qualified call runs the
+  method named. A reference to such a class holds the object, so a call
+  through it of a method stated on the class's memory, one that overrides
+  none of the object class's, is refused the same way
+  (`mdtests/cpp_class_subclass_override_call_through_this_is_refused.md`,
+  `mdtests/cpp_class_subclass_memory_method_through_a_reference_is_refused.md`).
+- A class whose own fields reuse its base's tail padding is refused by the
+  layout profile.
 - A call through the interface inside a larger expression is an expression
   observer, whose contract must be read-only, so the object's call is
   written as its own statement
   (`mdtests/cpp_class_object_state_override_keeps_the_interface.md`,
-  `tests/cpp_import.rs::class_object_state_refuses_undefined_and_nested_overrides`).
+  `tests/cpp_import.rs::class_object_state_refuses_undefined_overrides_and_inherited_methods`).
 
 Discarded-result trivial copy assignment between live lvalues of the same
 nominal record lowers to shared C aggregate field copies. Clang must resolve a
@@ -1627,14 +1705,15 @@ lock records with the target and mode.
 ### Optimization level
 
 A project names one optimization level, `-O2` by default, and every C unit
-is preprocessed with it, so `__OPTIMIZE__` and the headers that test it read
-as the optimized build sees them. A unit's arguments may repeat the level but
+is preprocessed with it, and every C++ unit exported at it, so `__OPTIMIZE__`
+and the headers that test it read as the optimized build sees them. A unit's arguments may repeat the level but
 not name another. At `-O2`, GCC assumes the program never overflows signed
 arithmetic, never dereferences null, never accesses an object through an
 incompatible type, and keeps the promises of the attributes it trusts. Click
 proves the first two, checks the third
 ([undefined behavior](../language/c.md#undefined-behavior)), and refuses the
-attributes ([Optimizer promises](#optimizer-promises)), so a verified claim
+attributes ([Optimizer promises](#optimizer-promises)); C++ follows the same
+policy ([C++ unit arguments](#c-unit-arguments)), so a verified claim
 holds for the `-O2` build without `-fno-strict-overflow` or
 `-fno-delete-null-pointer-checks`. An optimizing level still adds
 `-fno-strict-aliasing`, because the check does not see the effective types a
@@ -1881,6 +1960,16 @@ does not act on them and they are accepted and ignored.
 | `cold`, `hot`, `noinline`, `warn_unused_result`, `nonstring` | Refused in every mode | Harmless to the optimizer's semantics (layout, inlining, and diagnostics only), but not supported by the frontend. |
 | `always_inline`, `gnu_inline`, `nothrow`, `weak`, `deprecated`, `unused`, `no_instrument_function` | Accepted | Inlining choice, linkage, or diagnostics; C has no exceptions for `nothrow` to promise about. |
 | `__builtin_expect` | Accepted | A branch-probability hint; its value is its first operand. |
+
+A C++ unit refuses, at an optimizing level, `nonnull` (on the function or a
+parameter), `returns_nonnull`, `const`, `pure`, `leaf`, `noreturn` (also as
+`[[noreturn]]`), `returns_twice`, `malloc`, `alloc_size`, `alloc_align` and
+`assume_aligned` on every declaration of a function it exports from the
+project; `restrict`, and statement attributes other than `likely` and
+`unlikely`, are refused in every mode. A function declared in a system
+header is an axiom whose contract Click supplies, so its attributes are not
+refused (`tests/cpp_import.rs`,
+`cpp_optimizer_promises_are_refused_at_an_optimizing_level`).
 
 The list comes from GCC 13's attribute documentation and from these
 measurements with the recorded `x86_64-linux-gnu-gcc-13`. Each lying

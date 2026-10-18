@@ -364,6 +364,9 @@ struct Adapter<'a> {
     /// Each crate struct a call passes as a crate trait's object, with the
     /// trait: the struct's pack and unpack functions are imported.
     object_coercions: std::cell::RefCell<BTreeSet<(a::TypeDeclId, a::TraitDeclId)>>,
+    /// Each generic crate trait's instances an implementation or a call
+    /// names, by importer name, with their type arguments after `Self`.
+    trait_instances: std::cell::RefCell<BTreeMap<a::TraitDeclId, BTreeMap<String, Vec<a::Ty>>>>,
 }
 impl Adapter<'_> {
     fn ty(&self, t: &a::Ty) -> Result<Type, String> {
@@ -1711,6 +1714,7 @@ pub(super) fn decode_crate(
         callable_parameters: std::cell::RefCell::new(Vec::new()),
         trait_impl_methods: BTreeMap::new(),
         object_coercions: std::cell::RefCell::new(BTreeSet::new()),
+        trait_instances: std::cell::RefCell::default(),
     };
     if crate_config.is_some() {
         adapter.record_closure_captures()?;
@@ -1784,7 +1788,7 @@ pub(super) fn decode_crate(
             a::FunSource::TraitDefault {
                 trait_ref, item_id, ..
             } if adapter.interface_trait(trait_ref.id)? => {
-                adapter.interface_name(trait_ref.id, *item_id)?
+                adapter.interface_name(trait_ref.id, *item_id, &trait_ref.generics)?
             }
             a::FunSource::TraitImpl {
                 trait_ref,
@@ -2353,10 +2357,13 @@ mod tests {
         fn shape(s: &crate::kernel::CStatement) -> (usize, usize) {
             use crate::kernel::CStatement;
             match s {
-                CStatement::Seq(a, b) => {
-                    let a = shape(a);
-                    let b = shape(b);
-                    (1 + a.0 + b.0, a.1 + b.1)
+                CStatement::Seq(statements) => {
+                    let mut total = (statements.len() - 1, 0);
+                    for statement in statements.iter() {
+                        let part = shape(statement);
+                        total = (total.0 + part.0, total.1 + part.1);
+                    }
+                    total
                 }
                 CStatement::DeclareAggregate { layout, .. } => (1, layout.fields().len()),
                 CStatement::If {
@@ -3089,9 +3096,10 @@ mod tests {
         fn visit(s: &crate::kernel::CStatement, depth: usize, loops: &mut Vec<usize>) {
             use crate::kernel::CStatement as C;
             match s {
-                C::Seq(a, b) => {
-                    visit(a, depth, loops);
-                    visit(b, depth, loops);
+                C::Seq(statements) => {
+                    for statement in statements.iter() {
+                        visit(statement, depth, loops);
+                    }
                 }
                 C::While { body, .. } => {
                     loops.push(depth);
@@ -3772,9 +3780,10 @@ mod tests {
         fn visit(statement: &crate::kernel::CStatement, guards: &mut Vec<String>) {
             use crate::kernel::CStatement as C;
             match statement {
-                C::Seq(a, b) => {
-                    visit(a, guards);
-                    visit(b, guards);
+                C::Seq(statements) => {
+                    for statement in statements.iter() {
+                        visit(statement, guards);
+                    }
                 }
                 C::While {
                     condition, body, ..

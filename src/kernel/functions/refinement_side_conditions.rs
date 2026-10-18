@@ -358,6 +358,7 @@ pub(super) fn stateful_memory_refinement_node(node: SpecNode<'_>) -> Visit<()> {
             SpecAlgebraicValue::Integer(_) => Visit::Stop(()),
         },
         SpecNode::Argument(argument) => match argument {
+            SpecPureFunctionArgument::ObjectPointer { .. } => Visit::Descend,
             SpecPureFunctionArgument::Value(_) | SpecPureFunctionArgument::Algebraic(_) => {
                 Visit::Descend
             }
@@ -853,9 +854,15 @@ pub(super) fn statement_writes_aggregate_parameter(
                 *unknown_write = true;
             }
         }
-        CStatement::Seq(first, second) => {
-            statement_writes_aggregate_parameter(first, parameter_name, writes, unknown_write);
-            statement_writes_aggregate_parameter(second, parameter_name, writes, unknown_write);
+        CStatement::Seq(statements) => {
+            for statement in statements.iter() {
+                statement_writes_aggregate_parameter(
+                    statement,
+                    parameter_name,
+                    writes,
+                    unknown_write,
+                );
+            }
         }
         CStatement::If {
             then_branch,

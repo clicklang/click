@@ -1,6 +1,78 @@
 use super::*;
 
 #[test]
+fn addressed_result_members_bind_the_builtin_and_preserve_explicit_c_names() {
+    let state = CState::new();
+    let snapshots = RecordedSnapshots::new();
+    let predicates = PredicateEnvironment::new(&[]);
+    let functions = ClickFunctionEnvironment::new(&[]);
+    let (mut lowerer, mut context) = fixed_state_elaboration(
+        BTreeMap::new(),
+        BTreeMap::new(),
+        &state,
+        BTreeMap::new(),
+        BTreeMap::new(),
+        None,
+        &snapshots,
+        SpecDefinitions::new(&predicates, &functions),
+        BTreeSet::new(),
+        BTreeMap::new(),
+    );
+    context.contract_result_in_scope = true;
+    let member = |name: &str| {
+        crate::kernel::c_typed_load(
+            CExpression::Subobject {
+                pointer: Box::new(CExpression::PointerOffsetBytes {
+                    pointer: Box::new(CExpression::Variable(name.into())),
+                    bytes: 8,
+                }),
+                width: 4,
+            },
+            CType::Int32,
+        )
+    };
+    for (base, expected, in_scope, operand_name) in [
+        (
+            ContractExpression::CFragment(CExpression::Variable("result".into())),
+            crate::kernel::C_CONTRACT_RESULT_NAME,
+            true,
+            "result",
+        ),
+        (
+            ContractExpression::CBinding("result".into()),
+            "result",
+            true,
+            "result",
+        ),
+        (
+            ContractExpression::CFragment(CExpression::Variable("bound".into())),
+            "bound",
+            false,
+            "bound",
+        ),
+    ] {
+        context.contract_result_in_scope = in_scope;
+        let place = member(operand_name);
+        let expression = ContractExpression::CUnary {
+            operand: Box::new(ContractExpression::Field {
+                base: Box::new(base),
+                field: "value".into(),
+                lowered: place.clone(),
+                offset_bytes: 8,
+            }),
+            lowered: CExpression::AddressOf(Box::new(member("result"))),
+        };
+        let lowered = lowerer
+            .lower_contract_expression_to_spec(&expression, &context)
+            .expect("the selected member address lowers in the result scope");
+        assert_eq!(
+            lowered,
+            SpecExpression::CExpression(CExpression::AddressOf(Box::new(member(expected)))),
+        );
+    }
+}
+
+#[test]
 fn struct_pointer_arithmetic_through_uint64_cast_uses_layout_width() {
     let function = crate::languages::c::syntax::parse_function(
         r#"
@@ -263,4 +335,44 @@ fn captured_fold_identity_does_not_exhaust_the_surface_quantifier_stream() {
 #[cfg(test)]
 mod scaling_tests {
     include!("../../../scaling_tests/surface/lowering/annotations/tests.rs");
+}
+
+/// One walk's loop index agrees with the per-index walk it replaces at every
+/// index, across nested, `for`, `do` and `if`-arm loops, and past the end.
+#[test]
+fn c0_loop_index_agrees_with_the_walk_at_every_loop() {
+    let function = crate::languages::c::syntax::parse_function(
+        r#"
+            int32 f(int32 n) {
+                int32 i;
+                int32 j;
+                i = 0;
+                while (i < n) {
+                    j = 0;
+                    while (j < n) { j = j + 1; }
+                    i = i + 1;
+                }
+                for (i = 0; i < n; i = i + 1) {
+                    j = 0;
+                    do { j = j + 1; } while (j < n);
+                }
+                if (n > 0) {
+                    while (i > 0) { i = i - 1; }
+                } else {
+                    do { i = i + 1; } while (i < 2);
+                }
+                return 0;
+            }
+        "#,
+    )
+    .expect("loop function should parse");
+    let index = c0_loops_by_index(function.body());
+    assert_eq!(index.len(), 6);
+    for target in 0..index.len() + 2 {
+        assert_eq!(
+            index.get(target).and_then(Option::as_ref),
+            c0_loop_by_index(function.body(), target),
+            "loop({target})"
+        );
+    }
 }

@@ -224,9 +224,13 @@ that writes `int32` for such a source already writes the source's spelling.
    `dyn` coercion; a shared reference keeps the struct's memory lent for
    the call, so its caller keeps every field; a mutable reference may
    change the state, which its `ensures` read as new and `old(...)` as at
-   entry. Remaining:
-   implementations of function-free traits that rename the interface's parameters, generic
-   traits, and C++ virtual methods. Done for default methods: the `trait`
+   entry. Done: an implementation, or a C++ override, that names the
+   interface's parameters otherwise reads its clauses with its own names.
+   Done for generic traits without object state: `trait p::Scale<T>`
+   states every instance's interface and `trait p::Scale<i32>` adds an
+   instance's clauses; implementations at scalar instances refine them.
+   Remaining: object state for generic traits, with fields of generic spec
+   types such as `List<T>`. Done for default methods: the `trait`
    block writes a default method's interface with the proof of its default
    body, verified once with calls of the trait's methods under their
    interfaces; an `impl` that overrides it refines it. Done for C++
@@ -252,8 +256,13 @@ that writes `int32` for such a source already writes the source's spelling.
    keeps every field too. A base with fields is built by its own
    constructor, named first in the derived constructor's initializer list.
    A base destructor with effects runs after the derived class's written
-   destructor, on the base subobject. Remaining for C++: overriding a
-   defining class's method.
+   destructor, on the base subobject. A class may derive from a defining
+   class, redefining its functions or inheriting them through its base
+   part, and override its methods, each keeping the object class's
+   interface read with its own definitions; a reference to a class another
+   derives from then holds the object, and a call through it is checked
+   against that interface. A class may inherit a defining class's method
+   where the functions its interface reads are defined alike.
 
 ## Intended regressions
 

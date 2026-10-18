@@ -375,6 +375,8 @@ private:
   std::optional<Json> lower_function(const clang::FunctionDecl *declaration) {
     if (is_axiom(declaration))
       return lower_axiom(declaration);
+    if (!refuse_optimizer_promises(declaration))
+      return std::nullopt;
     auto source = executable_source(declaration->getLocation());
     if (!source) {
       fail(declaration->getLocation(), "reachable C++ definitions require a selected or dependency source");
@@ -3036,6 +3038,10 @@ private:
     reference["name"] =
         method != nullptr ? method_name(method) : function_name(definition);
     reference["span"] = span(call->getCallee()->getSourceRange());
+    // A qualified call of a virtual method runs that method, whatever the
+    // receiver's dynamic type.
+    if (qualified && method != nullptr && method->isVirtual())
+      reference["qualified"] = true;
 
     Json call_span = span(call->getSourceRange());
     if (!state_.error.empty()) {
@@ -5303,6 +5309,40 @@ private:
       return Json(std::move(result));
     }
     return source_span(range, function_source_.empty() ? logical_source_ : function_source_);
+  }
+
+  // At an optimizing level Clang trusts these attributes as promises from the
+  // programmer, and Click does not check them. A system-header function is an
+  // axiom whose contract Click supplies, so only the project's own
+  // declarations are refused (`docs/reference/cli/import.md#optimizer-promises`).
+  bool refuse_optimizer_promises(const clang::FunctionDecl *declaration) {
+    if (!context_.getLangOpts().Optimize)
+      return true;
+    auto refuse = [&](const clang::Attr *attribute) {
+      if (attribute->isImplicit())
+        return false;
+      if (!llvm::isa<clang::NonNullAttr, clang::ReturnsNonNullAttr, clang::ConstAttr,
+                     clang::PureAttr, clang::LeafAttr, clang::NoReturnAttr,
+                     clang::CXX11NoReturnAttr, clang::C11NoReturnAttr,
+                     clang::ReturnsTwiceAttr, clang::RestrictAttr, clang::AllocSizeAttr,
+                     clang::AllocAlignAttr, clang::AssumeAlignedAttr>(attribute))
+        return false;
+      fail(attribute->getLocation(),
+           std::string("the `") + attribute->getSpelling() +
+               "` attribute is an optimizer promise Click does not check; at an "
+               "optimizing level Clang trusts it");
+      return true;
+    };
+    for (const clang::FunctionDecl *redeclaration : declaration->redecls()) {
+      for (const clang::Attr *attribute : redeclaration->attrs())
+        if (refuse(attribute))
+          return false;
+      for (const clang::ParmVarDecl *parameter : redeclaration->parameters())
+        for (const clang::Attr *attribute : parameter->attrs())
+          if (refuse(attribute))
+            return false;
+    }
+    return true;
   }
 
   // A function declared in a system header is an axiom: its interface is

@@ -50,11 +50,13 @@ fn check_return_claim_preparation_scaling(
             .map(|i| format!("owns marker({i});\n"))
             .collect::<String>();
         let ensures = "ensures result == x;\n".repeat(claims);
-        let closers = if closer == "normalize();" {
-            closer.to_string()
-        } else {
+        // One closer per goal, in contract order: each held resource
+        // first, then each proposition claim with the closer under test.
+        let closers = format!(
+            "{}{}",
+            "assumption();".repeat(resources),
             closer.repeat(claims)
-        };
+        );
         let source = format!(
             "resource marker(n: int32) {{ fact n == n; }}
          verifying \"echo.c\";
@@ -86,9 +88,15 @@ fn check_return_claim_preparation_scaling(
             "return views: closer={closer} resources={resources} claims={claims} work={work}"
         );
         assert!(
-            work <= 16 * resources + 32 * claims,
+            work <= 12 * resources + 32 * claims,
             "return views must cost O(resources + claims): closer={closer}, resources={resources}, claims={claims}, work={work}"
         );
+        if resources == 32 {
+            assert!(
+                work + resources * resources > 12 * resources + 32 * claims,
+                "the smaller resource fixture must reject a quadratic preparation scan"
+            );
+        }
     }
 }
 
@@ -105,10 +113,13 @@ fn return_normalization_views_scale_with_resources_and_claims() {
 #[test]
 #[ignore = "nightly: full 24-case resource/claim matrix took 10.38s beside release compilation"]
 fn exact_return_closers_share_preparation_beside_unrelated_resources() {
+    // Keep all 24 combinations, both closers, the empty-resource case,
+    // and all claim counts. A tighter resource allowance above also
+    // rejects an added quadratic scan at the smaller largest input.
     for closer in ["assumption();", "normalize();"] {
         check_return_claim_preparation_scaling(
             closer,
-            [0, 4, 16, 64]
+            [0, 4, 16, 32]
                 .into_iter()
                 .flat_map(|resources| [1, 4, 16].map(move |claims| (resources, claims))),
         );

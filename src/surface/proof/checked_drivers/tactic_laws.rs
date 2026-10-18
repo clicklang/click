@@ -8,10 +8,13 @@ fn with_next_source_operation_replaced(
     replacement: CStatement,
 ) -> CStatement {
     match statement {
-        CStatement::Seq(first, second) => CStatement::Seq(
-            Arc::new(with_next_source_operation_replaced(first, replacement)),
-            second.clone(),
-        ),
+        CStatement::Seq(statements) => CStatement::Seq(statements.with_statement(
+            0,
+            Arc::new(with_next_source_operation_replaced(
+                statements.first(),
+                replacement,
+            )),
+        )),
         _ => replacement,
     }
 }
@@ -64,15 +67,37 @@ pub(in crate::surface::proof) fn execute_frontier_local_loop(
     if execution
         .presentation
         .frontier_loop_clauses
-        .iter()
-        .any(|clause| clause.region() == &CodeRegion::Loop(loop_index))
+        .binds_loop(loop_index)
     {
         return Err(ClickError::new(format!(
             "`{claim_label}` tactic {tactic_index}: loop({loop_index}) already has a frontier-local proof on this execution path"
         )));
     }
-    let function_with_prior_loops = function_block
-        .with_bound_frontier_loop_clauses(&execution.presentation.frontier_loop_clauses.to_vec());
+    // The block with every frontier clause of this path bound. Binding is
+    // a fold in order, so when the previous loop's block bound exactly the
+    // clauses this path holds now (no nested clause of its own, and only its
+    // clause pushed since), that block is this one, already checked.
+    let function_with_prior_loops = execution
+        .presentation
+        .loop_annotation
+        .as_deref()
+        .filter(|cached| {
+            !cached.bound_nested_clauses
+                && cached.function_block == std::ptr::from_ref(function_block) as usize
+                && execution
+                    .presentation
+                    .frontier_loop_clauses
+                    .suffix_since(&cached.frontier_clauses)
+                    .is_some_and(|added| added == [cached.bound_clause.clone()])
+        })
+        .map_or_else(
+            || {
+                function_block.with_bound_frontier_loop_clauses(
+                    &execution.presentation.frontier_loop_clauses.to_vec(),
+                )
+            },
+            |cached| cached.bound_function_block.clone(),
+        );
     // The loop's clauses were written inside this frontier's proof scope: a
     // proof `match` arm's bindings, `let { ... } = unfold(...)` names, call-result
     // binders. The bound clause keeps its written spelling, which expansion
@@ -96,11 +121,20 @@ pub(in crate::surface::proof) fn execute_frontier_local_loop(
                 .bound_to_loop(loop_index + offset + 1),
         );
     }
-    let bound_function_block = function_with_prior_loops
+    let mut bound_function_block = function_with_prior_loops
         .with_frontier_loop_clause(&scoped_template, loop_index)
         .with_bound_frontier_loop_clauses(&current_loop_clauses[1..]);
     refuse_rebound_loop_labels(&bound_function_block, claim_label, tactic_index)?;
-    validate_region_proof_clauses(&bound_function_block, parsed_function)?;
+    // Each clause's check depends on it and the loop count alone, so the
+    // clauses an earlier loop's check passed are not checked again.
+    let loop_count = proof_context
+        .constants
+        .source_layout
+        .loop_region_count(|| count_loop_regions(parsed_function));
+    let function_name = bound_function_block.signature().name().to_string();
+    bound_function_block.validate_structural_clauses(loop_count, |clause| {
+        validate_region_proof_clause(&function_name, clause, loop_count)
+    })?;
 
     let initial_state = execution.core.frontier.execution_start_state(state).clone();
     // Re-annotation of a frontier-local loop must carry the proof's original
@@ -204,6 +238,7 @@ pub(in crate::surface::proof) fn execute_frontier_local_loop(
         });
     }
     let annotated = annotation.function().clone();
+    let known_current_loop = annotation.current_loop().cloned();
     execution.presentation.loop_annotation = Some(Arc::new(LoopAnnotationCache {
         function_block: std::ptr::from_ref(function_block) as usize,
         parsed_function: std::ptr::from_ref(parsed_function) as usize,
@@ -212,6 +247,8 @@ pub(in crate::surface::proof) fn execute_frontier_local_loop(
         initial_state: initial_state.clone(),
         arguments: arguments.to_vec(),
         frontier_clauses: execution.presentation.frontier_loop_clauses.clone(),
+        bound_function_block: bound_function_block.clone(),
+        bound_nested_clauses: current_loop_clauses.len() > 1,
         bound_clause: scoped_template.bound_to_loop(loop_index),
         annotation,
     }));
@@ -229,8 +266,21 @@ pub(in crate::surface::proof) fn execute_frontier_local_loop(
         *state = entry_state;
     }
     let mut found_loop_index = 0;
-    let current_loop = kernel_loop_by_index(annotated.body(), loop_index, &mut found_loop_index)
-        .cloned()
+    #[cfg(debug_assertions)]
+    if crate::surface::lowering::loop_annotation_check_enabled()
+        && let Some(known) = &known_current_loop
+    {
+        crate::instrumentation::uncharged_debug_check(|| {
+            assert!(
+                kernel_loop_by_index(annotated.body(), loop_index, &mut 0) == Some(known),
+                "loop({loop_index})'s lowered loop differs from the one its body holds"
+            );
+        });
+    }
+    let current_loop = known_current_loop
+        .or_else(|| {
+            kernel_loop_by_index(annotated.body(), loop_index, &mut found_loop_index).cloned()
+        })
         .ok_or_else(|| {
             ClickError::new(format!(
                 "`{claim_label}` tactic {tactic_index}: `loop` could not lower loop({loop_index}) at statement({statement_index})"
@@ -476,6 +526,11 @@ fn refuse_rebound_loop_labels(
     claim_label: &str,
     tactic_index: usize,
 ) -> Result<(), ClickError> {
+    // The clause list keeps the labels naming two regions: with none, the
+    // walk below finds nothing.
+    if !function_block.structural_clauses().has_rebound_label() {
+        return Ok(());
+    }
     let mut bound = BTreeMap::<&str, &CodeRegion>::new();
     for clause in function_block.structural_clauses() {
         let Some(label) = clause.label() else {

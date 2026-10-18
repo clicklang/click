@@ -30,9 +30,11 @@ pub(super) fn take_pointer_fact_merge_visits() -> usize {
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub(in crate::kernel::equality_graph) enum PointerFactKey {
+    AddressSeparation,
     Predicate(u64),
     PredicateShape(String, usize, usize, crate::kernel::CType),
     FunctionContracts,
+    ObjectType(crate::kernel::effective_type::CAccessClass),
 }
 
 /// The type-erased source handle breaks the recursive Send/Sync type path
@@ -156,6 +158,10 @@ enum Node {
     Apply(u64, u64),
     TypeName(bool, String, usize),
     TypeC(crate::kernel::CType),
+    TypeObjectPointer(
+        crate::kernel::CType,
+        crate::kernel::effective_type::CAccessClass,
+    ),
     TypeInteger,
     IntegerAtom(crate::kernel::SharedIntegerTerm),
     MachineUnary(crate::kernel::BitvectorUnaryOp, crate::kernel::CarrierWidth),
@@ -320,7 +326,7 @@ impl Clone for RootLookupCache {
 pub(super) struct TermClasses {
     scalar_witnesses: constants::ScalarWitnesses,
     scalar_conflicts: PersistentSet<u64>,
-    /// Source propositions follow address classes. Only the moved class is
+    /// Source propositions follow address and condition classes. Only the moved class is
     /// visited on union; queries select one key and never enumerate aliases.
     pointer_facts: PersistentMap<u64, PersistentMap<PointerFactKey, PointerFactBucket>>,
     // Retain the exact schema allocation used by each key, even when the
@@ -482,9 +488,6 @@ impl std::hash::Hash for Int32MergeToken {
 }
 
 impl TermClasses {
-    pub(super) fn clear_pointer_facts(&mut self) {
-        self.pointer_facts = PersistentMap::default();
-    }
     pub(super) fn pointer_facts(&self, address: u64, key: &PointerFactKey) -> PointerFactBucket {
         crate::instrumentation::record_deterministic_work(1);
         self.pointer_facts

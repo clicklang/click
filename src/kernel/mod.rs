@@ -85,6 +85,7 @@ pub(crate) use integer_truncation_laws::{
 };
 mod nat_integer;
 pub(crate) use nat_integer::{check_nat_integer_law, is_conversion_nat_type, is_nat_integer_image};
+mod object_types;
 mod primitives;
 pub(crate) mod proof;
 mod publication;
@@ -107,7 +108,7 @@ pub(crate) mod resource_tracker;
 mod spec;
 pub(crate) use spec::{
     SpecCaptureRefusal, capture_spec_algebraic_value, capture_spec_integer_value,
-    capture_spec_integer_value_with_guards,
+    capture_spec_integer_value_with_guards, refine_object_pointer_argument,
 };
 mod termination;
 // Checked internal fork/join; binding to imported pthread declarations is a
@@ -342,6 +343,7 @@ impl VerificationSession {
         if outermost {
             VERIFICATION_SESSION_GENERATION
                 .with(|generation| generation.set(generation.get().wrapping_add(1)));
+
             primitives::start_fresh_c_memory_arena();
             eval::clear_load_variable_registry();
             model_fields::clear_model_field_registry();
@@ -416,6 +418,7 @@ impl VerificationSession {
         if verification_session_generation() != state.generation {
             return false;
         }
+
         primitives::restore_c_memory_arena(&state.arena);
         eval::restore_load_variable_registry(&state.loads);
         model_fields::restore_model_field_registry(&state.model_fields);

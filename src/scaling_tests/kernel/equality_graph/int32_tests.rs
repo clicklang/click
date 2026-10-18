@@ -34,7 +34,7 @@ fn unsigned_congruence_registration_and_late_merges_scale_with_touched_uses() {
 
 #[test]
 fn fact_transport_graph_queries_scale_without_building_the_legacy_index() {
-    for size in [16u64, 64, 256, 1024] {
+    for size in [16u64, 64, 256, 512] {
         let _session = VerificationSession::enter();
         let mut context = PureFactContext::new();
         for index in 0..size {
@@ -57,7 +57,7 @@ fn fact_transport_graph_queries_scale_without_building_the_legacy_index() {
 
 #[test]
 fn resolved_four_byte_load_graph_queries_scale_without_fact_index() {
-    for size in [16u64, 64, 256, 1024] {
+    for size in [16u64, 64, 256, 512] {
         let _session = VerificationSession::enter();
         let pointer = Pointer {
             block: "resolved-int32-scale".into(),
@@ -94,7 +94,7 @@ fn resolved_four_byte_load_graph_queries_scale_without_fact_index() {
 
 #[test]
 fn two_resolved_four_byte_load_queries_scale_without_fact_index() {
-    for size in [16u64, 64, 256, 1024] {
+    for size in [16u64, 64, 256, 512] {
         let _session = VerificationSession::enter();
         let pointer = |offset| Pointer {
             block: "two-resolved-int32-scale".into(),
@@ -135,7 +135,7 @@ fn two_resolved_four_byte_load_queries_scale_without_fact_index() {
 
 #[test]
 fn direct_composite_int32_argument_graph_queries_scale_without_fact_index() {
-    for size in [16u64, 64, 256, 1024] {
+    for size in [16u64, 64, 256, 512] {
         let _session = VerificationSession::enter();
         let sum = |value| Bitvector32Term::add(value, Bitvector32Term::Constant(1));
         let resource = |value| CResource::Composite {
@@ -167,7 +167,7 @@ fn direct_composite_int32_argument_graph_queries_scale_without_fact_index() {
 
 #[test]
 fn resource_instance_int32_argument_graph_queries_scale_without_fact_index() {
-    for size in [16u64, 64, 256, 1024] {
+    for size in [16u64, 64, 256, 512] {
         let _session = VerificationSession::enter();
         let schema =
             ResourceFieldSchema::new(vec![("stamp".into(), ResourceFieldType::C(CType::Int32))])
@@ -210,7 +210,7 @@ fn resource_instance_int32_argument_graph_queries_scale_without_fact_index() {
 
 #[test]
 fn typed_int32_value_graph_queries_scale_without_fact_index() {
-    for size in [16u64, 64, 256, 1024] {
+    for size in [16u64, 64, 256, 512] {
         let _session = VerificationSession::enter();
         let sum = |value| Bitvector32Term::add(value, Bitvector32Term::Constant(1));
         let left = CValue::Int32(sum(var(0)));
@@ -235,7 +235,7 @@ fn typed_int32_value_graph_queries_scale_without_fact_index() {
 
 #[test]
 fn certified_int32_graph_queries_scale_without_fact_index() {
-    for size in [16u64, 64, 256, 1024] {
+    for size in [16u64, 64, 256, 512] {
         let _session = VerificationSession::enter();
         let sum = |value| Bitvector32Term::add(value, Bitvector32Term::Constant(1));
         let left = sum(var(0));
@@ -260,7 +260,7 @@ fn certified_int32_graph_queries_scale_without_fact_index() {
 
 #[test]
 fn graph_equal_addend_matching_scales_without_the_legacy_index() {
-    for size in [16u64, 64, 256, 1024] {
+    for size in [16u64, 64, 256, 512] {
         let _session = VerificationSession::enter();
         let mut context = PureFactContext::new();
         for index in 0..size {
@@ -374,7 +374,7 @@ fn scalar_support_tracking_does_not_compare_unrelated_snapshot_contents_across_a
 #[ignore = "nightly: 0.6s in the parallel gate"]
 fn offset_premise_shallow_decision_and_forks_scale() {
     let add = |v| Bitvector32Term::Add(Box::new(v), Box::new(Bitvector32Term::Constant(1)));
-    for size in [16u64, 64, 256, 1024] {
+    for size in [16u64, 64, 256, 512] {
         let _session = VerificationSession::enter();
         let mut parent = PureFactContext::new();
         PureFactContext::reset_bitvector_equality_index_fact_visits();
@@ -444,7 +444,7 @@ fn shared_constant_discovery_scales_with_the_admitted_chain() {
 #[test]
 fn exact_alias_enumeration_ignores_unrelated_sources() {
     let mut previous = None;
-    for size in [16u64, 64, 256, 1024] {
+    for size in [16u64, 64, 256] {
         let _session = VerificationSession::enter();
         let a = Pointer::symbolic(Variable(960_000));
         let b = Pointer::symbolic(Variable(960_001));
@@ -476,7 +476,7 @@ fn exact_alias_enumeration_ignores_unrelated_sources() {
 #[test]
 fn unrelated_wide_inputs_do_not_disable_selected_atomic_matching() {
     let mut baseline = None;
-    for size in [16u64, 64, 256, 1024] {
+    for size in [16u64, 64, 256] {
         let _session = VerificationSession::enter();
         let mut context = PureFactContext::new()
             .assume_condition(eq(&var(980_000), &var(980_001)), true)

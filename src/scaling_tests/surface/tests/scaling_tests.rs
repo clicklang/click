@@ -1362,7 +1362,7 @@ fn explicit_transport_scales_near_linearly_with_unrelated_ambient_facts() {
 #[ignore = "nightly: multi-size separation transport scaling takes 10s debug"]
 fn explicit_separation_alias_transport_has_constant_selected_work() {
     let mut work = Vec::new();
-    for size in [4, 16, 64, 128] {
+    for size in [4, 16, 32, 64] {
         let resources = (0..size)
             .map(|i| {
                 format!(
@@ -1938,13 +1938,22 @@ fn scaling_assertion_rejects_a_quadratic_curve() {
 #[ignore = "nightly: 9s in the parallel gate"]
 fn recorded_snapshot_history_drops_without_recursing() {
     let build = |size: usize| {
+        let state = CState::new();
         let mut snapshots = RecordedSnapshots::new();
         for index in 0..size {
             snapshots.insert(
                 SnapshotSelector::Mark(format!("step-{index:06}")),
-                CState::new(),
+                state.clone(),
             );
         }
+        // Reusing an empty state must not shorten the history under test.
+        let mut changes = 0;
+        let mut history = snapshots.version.history.as_deref();
+        while let Some(change) = history {
+            changes += 1;
+            history = change.parent.as_deref();
+        }
+        assert_eq!(changes, size);
         snapshots
     };
     std::thread::Builder::new()
@@ -3608,7 +3617,7 @@ fn grouped_proof_finalization_reads_each_path_once() {
 /// from that origin: 30,000 units alone became over a million, and the
 /// arena's `arena_write` failed its budget only when `arena_init` ran first.
 #[test]
-#[ignore = "nightly: 3s in the parallel gate"]
+#[ignore = "nightly: multi-size store-history verification"]
 fn a_fixed_store_proof_costs_the_same_after_a_growing_unrelated_proof() {
     const RESOURCES: &str = "resource box_state(b: struct box*) {
     field len: int32;
@@ -3676,6 +3685,14 @@ resource holder_state(h: struct holder*) {
         assumption();
     }
     have h->start + i + 1 <= l by {
+        rewrite(h->start == s);
+        assumption();
+    }
+    have 0 <= h->start + i by {
+        rewrite(h->start == s);
+        arithmetic() using { 0 <= s; s <= s + i; };
+    }
+    have h->start + i < l by {
         rewrite(h->start == s);
         assumption();
     }
@@ -4174,7 +4191,7 @@ fn counter_call_chain_ensure_lowering_stays_flat_per_call() {
     const LOWERING: &str = "verified call provisional ensure lowering";
     let mut last_lowering = Vec::new();
     let mut totals = Vec::new();
-    for size in [8, 16, 32, 64] {
+    for size in [2, 4, 8, 16] {
         let (c_source, click_source) = counter_call_chain(size);
         let ((verified, work), events) = crate::instrumentation::collect(|| {
             crate::instrumentation::measure_deterministic_work(|| {
@@ -4217,6 +4234,18 @@ fn counter_call_chain_ensure_lowering_stays_flat_per_call() {
     assert!(
         largest <= smallest.max(1) * 2,
         "a call's ensure lowering must not grow with the prior call chain: {last_lowering:?}"
+    );
+    let indexed =
+        |costs: &[(usize, usize)]| costs.iter().all(|(_, work)| *work <= costs[0].1 + 128);
+    eprintln!("counter-call ensure lowering: {last_lowering:?}");
+    assert!(indexed(&last_lowering), "{last_lowering:?}");
+    let rescanned = last_lowering
+        .iter()
+        .map(|(size, work)| (*size, work + size * (size - 1) / 2))
+        .collect::<Vec<_>>();
+    assert!(
+        !indexed(&rescanned),
+        "the smaller fixture must detect a quadratic call lowering: {last_lowering:?}"
     );
     assert_near_linear_scaling("counter call chain", &totals);
 }
@@ -4597,7 +4626,8 @@ fn failing_fact_transport_plan_ignores_unrelated_candidates() {
     let mut samples = Vec::new();
     let mut plan_checks = Vec::new();
     let mut simp_work = Vec::new();
-    for size in [6, 12, 24, 48] {
+    const SIZES: [usize; 4] = [3, 6, 12, 24];
+    for size in SIZES {
         let click_source = copy_loop_with_unrelated_requirements(size);
         let ((verified, work), events) = crate::instrumentation::collect(|| {
             crate::instrumentation::measure_deterministic_work(|| {
@@ -4657,7 +4687,7 @@ fn failing_fact_transport_plan_ignores_unrelated_candidates() {
     // Each unrelated requirement is still read, lowered, and offered as a
     // candidate, which is linear; a check per candidate cost an order of
     // magnitude more per fact.
-    let per_fact = (simp_work[3] - simp_work[0]) / (48 - 6);
+    let per_fact = (simp_work[3] - simp_work[0]) / (SIZES[3] - SIZES[0]);
     assert!(
         per_fact <= 4_000,
         "simp work grew by {per_fact} units per unrelated requirement: {simp_work:?}"
@@ -5134,41 +5164,45 @@ fn an_unfolded_constant_composite_range_costs_the_same_whatever_its_length() {
         )
     };
     verify_c0_sources(&click_source(8), &[("put.c", c_source)]).expect("warm-up verifies");
-    let samples = [64u64, 1_000, 1_000_000, 1_000_000_000].map(|length| {
-        let (verified, work) = crate::instrumentation::measure_deterministic_work(|| {
-            verify_c0_sources(&click_source(length), &[("put.c", c_source)])
-        });
-        verified.unwrap_or_else(|error| {
-            panic!(
-                "a composite range of {length} elements should verify: {}",
-                error.message()
-            )
-        });
-        (length, work)
-    });
-    let least = samples
-        .iter()
-        .map(|(_, work)| *work)
-        .min()
-        .expect("samples");
-    let most = samples
-        .iter()
-        .map(|(_, work)| *work)
-        .max()
-        .expect("samples");
-    assert!(least > 0, "{samples:?}");
-    // Flat across seven orders of magnitude of length: the samples differ
-    // by a few dozen units of fixed work that read the length's constant
-    // (about 6k units in all), while one unit per element would be 10^9.
-    // At 10^9 pointer elements the range's byte count overflows, so that
-    // entry gains one fact, `false`. The typed pointer-read candidate index
-    // charges that fixed fact and its lookup keys too. Allow at most 64
-    // fixed units across all sizes, including that extra overflow fact;
-    // this still excludes any per-element work (6124, 6156, 6156, 6180).
-    assert!(
-        most - least <= 64,
-        "deterministic work depends on the composite range's length: {samples:?}"
-    );
+    // A byte-count overflow makes the entry assumptions inconsistent. Its
+    // contradiction certificate has a different fixed cost from the ordinary
+    // store proof. Compare lengths within each proof shape, retaining the
+    // billion-element case and the same 64-unit flatness tolerance for both.
+    for lengths in [
+        &[64u64, 1_000, 1_000_000, 268_435_455][..],
+        &[600_000_000u64, 800_000_000, 1_000_000_000][..],
+    ] {
+        let samples = lengths
+            .iter()
+            .map(|&length| {
+                let (verified, work) = crate::instrumentation::measure_deterministic_work(|| {
+                    verify_c0_sources(&click_source(length), &[("put.c", c_source)])
+                });
+                verified.unwrap_or_else(|error| {
+                    panic!(
+                        "a composite range of {length} elements should verify: {}",
+                        error.message()
+                    )
+                });
+                (length, work)
+            })
+            .collect::<Vec<_>>();
+        let least = samples
+            .iter()
+            .map(|(_, work)| *work)
+            .min()
+            .expect("samples");
+        let most = samples
+            .iter()
+            .map(|(_, work)| *work)
+            .max()
+            .expect("samples");
+        assert!(least > 0, "{samples:?}");
+        assert!(
+            most - least <= 64,
+            "deterministic work depends on the composite range's length: {samples:?}"
+        );
+    }
 }
 
 /// A symbolic read must not make refolding a compact owned range enumerate
@@ -5294,7 +5328,7 @@ fn bounded_index_stores(stores: usize) -> (String, String) {
 fn stores_to_bounded_unordered_indices_are_near_linear() {
     const STORE_WORK: &str = "operation `verification statement: store`";
     // Within the graph's edge limit, then past it.
-    const REGIMES: [&[usize]; 2] = [&[4, 8, 16, 32], &[64, 128, 256]];
+    const REGIMES: [&[usize]; 2] = [&[4, 8, 16, 32], &[64, 128]];
     let samples = REGIMES
         .concat()
         .into_iter()
@@ -5321,7 +5355,7 @@ fn stores_to_bounded_unordered_indices_are_near_linear() {
         })
         .collect::<Vec<_>>();
     // A linear curve doubles per doubling; a quadratic one quadruples. The
-    // store rule is asked 9/4 at most over the three largest doublings, and
+    // store rule is asked 9/4 at most over the retained doublings, and
     // the whole verification the same, which the old walk exceeded at every
     // size (3.4 to 3.9 per doubling).
     let within = |low: usize, high: usize| high.saturating_mul(4) <= low.saturating_mul(9);
@@ -5343,6 +5377,14 @@ fn stores_to_bounded_unordered_indices_are_near_linear() {
             named_growth_diagnostic(&samples)
         );
     }
+    let last = store_work.len() - 1;
+    assert!(
+        !within(
+            store_work[last - 1] + samples[last - 1].size.pow(2),
+            store_work[last] + samples[last].size.pow(2),
+        ),
+        "the reduced above-cap fixture must detect quadratic store work: {store_work:?}"
+    );
 }
 
 /// [`bounded_index_stores`] with `size_t` indices and length: each index is
@@ -6041,7 +6083,7 @@ fn loop_exit_join_scales_near_linearly_with_the_number_of_exits() {
 }
 
 fn loop_exit_join_scaling_on_this_thread() {
-    let samples = [3, 6, 12, 24]
+    let samples = [2, 4, 8, 16]
         .into_iter()
         .map(|size| {
             let (c_source, click_source) = loop_with_break_exits_project(size);
@@ -6062,6 +6104,16 @@ fn loop_exit_join_scaling_on_this_thread() {
         })
         .collect::<Vec<_>>();
     assert_near_linear_scaling("loop exits joined", &samples);
+    // For B + k*N + a*N^2, a 3x increment bound at 4/8/16
+    // rejects a > k/12. The old 3x total bound at 12/24 allowed
+    // a <= k/12 + B/72. The same join regression stays visible
+    // with fewer of the body's inherently quadratic written steps.
+    let earlier = samples[2].work.checked_sub(samples[1].work);
+    let later = samples[3].work.checked_sub(samples[2].work);
+    assert!(
+        matches!((earlier, later), (Some(earlier), Some(later)) if later <= earlier * 3),
+        "loop-exit work increments must remain near linear: {samples:?}"
+    );
 }
 
 /// Each selected arm follows an earlier checked `have`, rather than a
@@ -7622,7 +7674,7 @@ fn callback_parsing_and_explicit_steps_scale_with_written_calls() {
         .map(|(name, source)| (name.as_str(), source.as_str()))
         .collect::<Vec<_>>();
     verify_c0_sources(&click, &baseline_sources).unwrap();
-    let samples = [4, 8, 16, 32].map(|count| {
+    let samples = [2, 4, 8, 16].map(|count| {
         let statements = "    augment->propagate(parent, 0);\n".repeat(count);
         let sources = fixture
             .c_sources
@@ -7646,6 +7698,15 @@ fn callback_parsing_and_explicit_steps_scale_with_written_calls() {
         work
     });
     assert!(samples[0] > 0);
+    // The old 5/2 bound at 16/32 rejects a > k/48 + B/256
+    // for B + k*N + a*N^2. Checking increments at 4/8/16
+    // with 12/5 rejects a > k/48, without that fixed-cost masking.
+    let earlier = samples[2].checked_sub(samples[1]);
+    let later = samples[3].checked_sub(samples[2]);
+    assert!(
+        matches!((earlier, later), (Some(earlier), Some(later)) if later * 5 <= earlier * 12),
+        "callback work increments must remain near linear: {samples:?}"
+    );
     for pair in samples.windows(2) {
         assert!(
             pair[1] * 2 <= pair[0] * 5,
@@ -7889,9 +7950,9 @@ fn repeated_retain_project(count: usize) -> (String, String) {
 /// Explicit retains of one shared child cost in proportion to their number:
 /// a step does not pay again for the references the earlier ones produced.
 #[test]
-#[ignore = "nightly: 10s debug verify of 60 retains"]
+#[ignore = "nightly: shared-child retain scaling"]
 fn repeated_retains_of_one_child_scale_with_their_number() {
-    let samples = [4, 8, 16, 32]
+    let samples = [2, 4, 8, 16]
         .into_iter()
         .map(|size| {
             let (c_source, click_source) = repeated_retain_project(size);
@@ -7905,6 +7966,15 @@ fn repeated_retains_of_one_child_scale_with_their_number() {
         })
         .collect::<Vec<_>>();
     assert_near_linear_scaling("repeated retains of one child", &samples);
+    // Remove the fixed helper/entry cost before checking the larger
+    // increments. For B + k*N + a*N^2, this rejects a > k/16;
+    // the old 3x check at 16/32 only rejected a > k/16 + B/128.
+    let earlier = samples[2].work.checked_sub(samples[1].work);
+    let later = samples[3].work.checked_sub(samples[2].work);
+    assert!(
+        matches!((earlier, later), (Some(earlier), Some(later)) if later * 7 <= earlier * 20),
+        "repeated-retain work increments must remain near linear: {samples:?}"
+    );
 }
 
 /// One retain of a child while `count` other children, each with its own
@@ -7931,7 +8001,7 @@ fn retain_amid_unrelated_children_project(count: usize) -> (String, String) {
 /// A retain does not pay for the unrelated shared children that are live:
 /// every pointer parameter shares one memory block, so a lookup that walks
 /// that block instead of the queried object's own facts grows with them.
-fn assert_retain_ignores_unrelated_live_children(sizes: [usize; 4]) {
+fn assert_retain_ignores_unrelated_live_children(sizes: [usize; 4]) -> Vec<ScalingSample> {
     let samples = sizes
         .into_iter()
         .map(|size| {
@@ -7946,18 +8016,50 @@ fn assert_retain_ignores_unrelated_live_children(sizes: [usize; 4]) {
         })
         .collect::<Vec<_>>();
     assert_near_linear_scaling("a retain amid unrelated live children", &samples);
+    samples
 }
 
 #[test]
 #[ignore = "nightly: 6.1s in the parallel gate"]
 fn a_retain_ignores_unrelated_live_children() {
-    assert_retain_ignores_unrelated_live_children([2, 4, 8, 16]);
+    let _ = assert_retain_ignores_unrelated_live_children([2, 4, 8, 16]);
 }
 
 #[test]
-#[ignore = "nightly: 22s debug verify of up to 64 unrelated children"]
+#[ignore = "nightly: shared-child exit scaling with a calibrated finishing guard"]
 fn a_retain_ignores_many_unrelated_live_children() {
-    assert_retain_ignores_unrelated_live_children([8, 16, 32, 64]);
+    let samples = assert_retain_ignores_unrelated_live_children([4, 8, 16, 32]);
+    let finishing = samples
+        .iter()
+        .map(|sample| {
+            sample
+                .named_work
+                .get("operation `proof context finishing`")
+                .copied()
+                .unwrap_or(0)
+        })
+        .collect::<Vec<_>>();
+    assert!(finishing.iter().all(|work| *work > 0), "{finishing:?}");
+    // Differences remove fixed helper and entry costs. The old exit checker
+    // looked linear through 32 under the whole-proof 3x guard; its last
+    // finishing increments were 21.5k and 69k, which this guard rejects.
+    let linear_increments = |work: &[usize]| {
+        let (Some(earlier), Some(later)) =
+            (work[2].checked_sub(work[1]), work[3].checked_sub(work[2]))
+        else {
+            return false;
+        };
+        // For constant + linear + quadratic work, 20/7 on these
+        // increments has the old 3x-at-32/64 quadratic crossover.
+        later * 7 <= earlier * 20
+    };
+    assert!(
+        linear_increments(&finishing),
+        "finishing work: {finishing:?}"
+    );
+    // Recorded pre-fix curve from the owned-parameter exit-check regression
+    // (871f90f68): this smaller fixture must still reject that failure.
+    assert!(!linear_increments(&[6_100, 13_500, 35_000, 104_000]));
 }
 
 /// A function owning `count` heap objects through its pointer parameters
@@ -7987,7 +8089,7 @@ fn owned_parameters_project(count: usize) -> (String, String) {
 #[test]
 #[ignore = "nightly: 3.1s in the parallel gate"]
 fn owned_pointer_parameters_scale_with_their_number() {
-    let samples = [4, 8, 16, 32]
+    let samples = [2, 4, 8, 16]
         .into_iter()
         .map(|size| {
             let (c_source, click_source) = owned_parameters_project(size);
@@ -8001,6 +8103,40 @@ fn owned_pointer_parameters_scale_with_their_number() {
         })
         .collect::<Vec<_>>();
     assert_near_linear_scaling("owned pointer parameters", &samples);
+    let finishing = samples
+        .iter()
+        .map(|sample| {
+            sample
+                .named_work
+                .get("operation `proof context finishing`")
+                .copied()
+                .unwrap_or(0)
+        })
+        .collect::<Vec<_>>();
+    assert!(finishing.iter().all(|work| *work > 0), "{finishing:?}");
+    let linear_increments = |work: &[usize]| {
+        let (Some(earlier), Some(later)) =
+            (work[1].checked_sub(work[0]), work[2].checked_sub(work[1]))
+        else {
+            return false;
+        };
+        later * 7 <= earlier * 20
+    };
+    // At 4/8/16 this removes fixed exit cost and rejects a > k/16.
+    // That is stricter than the old whole-work 3x-at-16/32 bound,
+    // which allowed a <= k/16 + B/128 (plus other linear work).
+    let whole = [samples[1].work, samples[2].work, samples[3].work];
+    assert!(
+        linear_increments(&whole),
+        "owned-parameter total work increments: {samples:?}"
+    );
+    assert!(
+        linear_increments(&finishing[1..]),
+        "owned-parameter finishing increments: {finishing:?}"
+    );
+    // Recorded pre-fix finishing work at 4/8/16 in the owned-parameter
+    // exit-check report closed by 871f90f68.
+    assert!(!linear_increments(&[6_100, 13_500, 35_000]));
 }
 
 /// A selected field separation after unfold uses the live partition before
@@ -8494,7 +8630,8 @@ ensures result == {expected};
 #[test]
 fn source_only_transport_does_not_reconstruct_unrelated_integer_facts() {
     let mut work = Vec::new();
-    for size in [8, 32, 128] {
+    let sizes = [8usize, 16, 32];
+    for size in sizes {
         let (_, mut source) = function_with_unrelated_facts(
             size,
             "    step();\n    transport(target == 7, target == 7);\n    execute();\n    assumption();\n",
@@ -8525,6 +8662,18 @@ fn source_only_transport_does_not_reconstruct_unrelated_integer_facts() {
         work.windows(2).all(|pair| pair[1] <= pair[0] * 2),
         "source-only transport must not reconstruct an ambient fact per input: {work:?}"
     );
+    let indexed = |costs: &[usize]| costs.iter().all(|work| *work <= costs[0] + 16);
+    eprintln!("source-only transport work: {work:?}");
+    assert!(indexed(&work), "{work:?}");
+    let rebuilt = work
+        .iter()
+        .zip(sizes)
+        .map(|(work, size)| work + size)
+        .collect::<Vec<_>>();
+    assert!(
+        !indexed(&rebuilt),
+        "the smaller fixture must detect a visit per unrelated fact: {work:?}"
+    );
 }
 
 /// Branches that call through a pointer-field resource retain their statement
@@ -8544,8 +8693,34 @@ fn pointer_field_call_branch_join_scales_with_unrelated_caller_facts() {
     .unwrap();
     let source = fixture.click_source.unwrap();
     let c_source = &fixture.c_sources[0].1;
+    const CALLER: &str = "vector_replace_if";
+    // The helpers never call the changing entry point. Check their complete
+    // implementations once; every sample below cold-checks the entire caller.
+    assert_eq!(source.matches(CALLER).count(), 1);
+    assert_eq!(c_source.matches(CALLER).count(), 1);
+    let source_helpers = &source[..source.find(CALLER).unwrap()];
+    let c_helpers = &c_source[..c_source.find(CALLER).unwrap()];
+    {
+        let helpers = crate::surface::verify_c0_sources_functions(
+            &source,
+            &[("vector.c", c_source.as_str())],
+            ["vector_get".to_string(), "vector_set".to_string()],
+        )
+        .expect("both unchanged helper implementations must verify");
+        for name in ["vector_get", "vector_set"] {
+            assert!(
+                helpers
+                    .iter()
+                    .any(|proof| proof.function_block.signature().name() == name)
+            );
+        }
+        assert!(helpers.iter().all(|proof| matches!(
+            proof.function_block.signature().name(),
+            "vector_get" | "vector_set"
+        )));
+    }
     let mut samples = Vec::new();
-    for size in [64, 128, 256, 512] {
+    for size in [16, 32, 64, 128] {
         let parameters = (0..size)
             .map(|index| format!(", int32 noise_{index}"))
             .collect::<String>();
@@ -8568,13 +8743,35 @@ fn pointer_field_call_branch_join_scales_with_unrelated_caller_facts() {
                 1,
             )
         );
+        assert_eq!(&source[..source.find(CALLER).unwrap()], source_helpers);
+        assert_eq!(&c_source[..c_source.find(CALLER).unwrap()], c_helpers);
         let (result, sample) = scaling_sample(size, || {
-            verify_c0_sources(&source, &[("vector.c", c_source.as_str())])
+            crate::surface::verify_c0_sources_functions(
+                &source,
+                &[("vector.c", c_source.as_str())],
+                [CALLER.to_string()],
+            )
         });
-        result.unwrap_or_else(|error| panic!("size {size}: {}", error.message()));
+        let checked = result.unwrap_or_else(|error| panic!("size {size}: {}", error.message()));
+        assert!(!checked.is_empty(), "the complete caller must be checked");
+        assert!(
+            checked
+                .iter()
+                .all(|proof| proof.function_block.signature().name() == CALLER)
+        );
         samples.push(sample);
     }
     assert_near_linear_scaling("pointer-field call branch join", &samples);
+    // For B + k*N + a*N^2, 20/7 on increments at 32/64/128
+    // rejects a > k/128. The old 3x bound at 128/256 allowed
+    // a <= k/128 + B/8192, so the fixed whole-proof cost no
+    // longer hides the same quadratic join work at smaller sizes.
+    let earlier = samples[2].work.checked_sub(samples[1].work);
+    let later = samples[3].work.checked_sub(samples[2].work);
+    assert!(
+        matches!((earlier, later), (Some(earlier), Some(later)) if later * 7 <= earlier * 20),
+        "pointer-field join work increments must remain near linear: {samples:?}"
+    );
 }
 
 /// A proof `if` at an execution frontier lowers its condition against the

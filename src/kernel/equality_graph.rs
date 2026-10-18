@@ -83,7 +83,12 @@ mod storage_tests;
 mod uint64_tests;
 pub(in crate::kernel) use inputs::InputKey;
 pub(crate) use inputs::{ReadEqualityCheckpoint, ReadEqualityDelta};
+#[cfg(test)]
+mod object_type_tests;
 mod pointer_facts;
+mod separation;
+#[cfg(test)]
+mod separation_tests;
 mod terms;
 pub(in crate::kernel) use terms::constants::{fold_arithmetic, load_key};
 pub(in crate::kernel) use terms::{Int32AtomClass, Int32MergeToken};
@@ -542,8 +547,11 @@ enum OffsetPart {
 
 #[derive(Clone, Default)]
 struct EqualityGraphState {
+    separation_sources: crate::persistent::PersistentSet<usize>,
     /// Exact source handles survive closure reconstruction and branch cloning.
-    pointer_predicate_inputs:
+    pointer_fact_inputs:
+        crate::persistent::PersistentMap<usize, std::sync::Arc<dyn terms::PointerFactSource>>,
+    condition_pointer_fact_inputs:
         crate::persistent::PersistentMap<usize, std::sync::Arc<dyn terms::PointerFactSource>>,
     /// Pointer definitions alone must not activate scalar constant discovery.
     has_scalar_inputs: bool,
@@ -1890,6 +1898,10 @@ impl EqualityGraph {
             ConditionTerm::PointerValueEqual(a, b) => {
                 self.register_logical_read_values(state, a.pointers().chain(b.pointers()));
                 state.register_blocks(a.pointers().chain(b.pointers()).map(|p| p.block.clone()));
+                // Late value queries need the current address-class bridges,
+                // just as raw pointer equality queries do.
+                state.register_pointer_address(a.pointer());
+                state.register_pointer_address(b.pointer());
                 state.close(Vec::new());
             }
             ConditionTerm::PointerEqual(a, b) => {

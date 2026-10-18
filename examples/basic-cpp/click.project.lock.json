@@ -5,21 +5,21 @@
       "language": "c++",
       "lock": {
         "increment.cpp": {
-          "artifact_bytes": 5898,
-          "artifact_sha256": "2000968cdb635531a868fa519edc119f7bb7f7352e2d38b481e948a5ca22e164",
-          "compilation_database_sha256": "de1cbb156d9e92646e88dcd85be8b9d9326edf451ef1479f278d0cb274f4eb57",
-          "config_sha256": "a5c4c832cd3880c020865977e904fc8d287ac7de12d2957c1706caced869761a",
+          "artifact_bytes": 5947,
+          "artifact_sha256": "fd3fb2ffe02f6d2ae1eca73034062d3c6d038b6626e0f6c3c51036388bdca5b5",
+          "compilation_database_sha256": "da31b03f358305b673522c4cf380ff126a1f828f1570a20a6ed2147678560eb0",
+          "config_sha256": "243958aefb3fd4234f49a77ffce67ec0c768de525023e69be1e6ae96b7037396",
           "dependencies": {},
-          "exporter_sha256": "69a4cfeeaf5a0a73d93a4a3be7d4f277c6b80ce0c0d72c8720db502625b26a2b",
-          "identity": "5c494ac912d842f09861b539f7d24e0853d02c109df81567e959f02208e68c1b",
+          "exporter_sha256": "764175b8bacf30eec7dbff581ef2ad77718f662b11699b24e743a6a628758d19",
+          "identity": "48f34a365cda1af19ba04d0c4e92642fa971c275f7ffb4f6982746adea773731",
           "logical_source_sha256": "98f954b0fe5b5f723d353f51314736438160db69728a6ad6fa9b1019530e7332",
           "prepared_roots": [
-            "/home/user/click/examples/basic-cpp",
-            "/home/user/click/examples/basic-cpp"
+            "/home/user/click-b/examples/basic-cpp",
+            "/home/user/click-b/examples/basic-cpp"
           ],
           "preprocessor_files": {
-            "/home/user/click/examples/basic-cpp/increment.cpp": {
-              "canonical_path": "/home/user/click/examples/basic-cpp/increment.cpp",
+            "/home/user/click-b/examples/basic-cpp/increment.cpp": {
+              "canonical_path": "/home/user/click-b/examples/basic-cpp/increment.cpp",
               "sha256": "98f954b0fe5b5f723d353f51314736438160db69728a6ad6fa9b1019530e7332"
             }
           },
@@ -32,6 +32,8 @@
               "--target=x86_64-unknown-linux-gnu",
               "-fno-exceptions",
               "-fno-rtti",
+              "-O2",
+              "-fno-strict-aliasing",
               "-funsigned-char",
               "-ffreestanding",
               "-nostdinc",
@@ -41,7 +43,7 @@
               "-o",
               "increment.cpp.o"
             ],
-            "compilation_directory": "/home/user/click/examples/basic-cpp",
+            "compilation_directory": "/home/user/click-b/examples/basic-cpp",
             "compilation_file": "increment.cpp",
             "exceptions": false,
             "frontend": "clang",
@@ -54,21 +56,21 @@
           "source_sha256": "98f954b0fe5b5f723d353f51314736438160db69728a6ad6fa9b1019530e7332"
         },
         "with_restore.cpp": {
-          "artifact_bytes": 26149,
-          "artifact_sha256": "a5c9465466e790bd3ab8a808d71b743f0f80943ef1bf46b2d1fe10775ed10e2b",
-          "compilation_database_sha256": "a2d73680f15074e44a4eb7660cc747efd9a2daf3066fe40ec6864c9f854b4dd7",
-          "config_sha256": "a5c4c832cd3880c020865977e904fc8d287ac7de12d2957c1706caced869761a",
+          "artifact_bytes": 26198,
+          "artifact_sha256": "b065ba5735809ee6e18d27710cd04a6b8efe2977ec82de65d465e63a644615dc",
+          "compilation_database_sha256": "1b125cc9be79550d25a1181eb5853c10778f37825b80e0c8840d5b28061e2a6f",
+          "config_sha256": "243958aefb3fd4234f49a77ffce67ec0c768de525023e69be1e6ae96b7037396",
           "dependencies": {},
-          "exporter_sha256": "69a4cfeeaf5a0a73d93a4a3be7d4f277c6b80ce0c0d72c8720db502625b26a2b",
-          "identity": "57b1f2da25e4eff41d8d95e85e9bdb618416b2c47f4cb7289b2a0309c240f8c1",
+          "exporter_sha256": "764175b8bacf30eec7dbff581ef2ad77718f662b11699b24e743a6a628758d19",
+          "identity": "61477df6bd0bd1dc5c610c55c441440921b1cc59f297b49279ee4e9b86e16b05",
           "logical_source_sha256": "bf81009da5251597c4b7983a4383fc65aa4ea30fd27f873149578290dcc2cfc2",
           "prepared_roots": [
-            "/home/user/click/examples/basic-cpp",
-            "/home/user/click/examples/basic-cpp"
+            "/home/user/click-b/examples/basic-cpp",
+            "/home/user/click-b/examples/basic-cpp"
           ],
           "preprocessor_files": {
-            "/home/user/click/examples/basic-cpp/with_restore.cpp": {
-              "canonical_path": "/home/user/click/examples/basic-cpp/with_restore.cpp",
+            "/home/user/click-b/examples/basic-cpp/with_restore.cpp": {
+              "canonical_path": "/home/user/click-b/examples/basic-cpp/with_restore.cpp",
               "sha256": "bf81009da5251597c4b7983a4383fc65aa4ea30fd27f873149578290dcc2cfc2"
             }
           },
@@ -81,6 +83,8 @@
               "--target=x86_64-unknown-linux-gnu",
               "-fno-exceptions",
               "-fno-rtti",
+              "-O2",
+              "-fno-strict-aliasing",
               "-funsigned-char",
               "-ffreestanding",
               "-nostdinc",
@@ -91,7 +95,7 @@
               "-o",
               "with_restore.cpp.o"
             ],
-            "compilation_directory": "/home/user/click/examples/basic-cpp",
+            "compilation_directory": "/home/user/click-b/examples/basic-cpp",
             "compilation_file": "with_restore.cpp",
             "exceptions": false,
             "frontend": "clang",
@@ -104,21 +108,21 @@
           "source_sha256": "bf81009da5251597c4b7983a4383fc65aa4ea30fd27f873149578290dcc2cfc2"
         },
         "with_restore_caller.cpp": {
-          "artifact_bytes": 32573,
-          "artifact_sha256": "fae7ae9ebd638ee4a1fa90b926f2758daf2a998c4e265f597d7bb783e2faa5c1",
-          "compilation_database_sha256": "3a70c6a6e8679b6a19eafe1f933f92738adf8591d5514945716c020b9f174bce",
-          "config_sha256": "a5c4c832cd3880c020865977e904fc8d287ac7de12d2957c1706caced869761a",
+          "artifact_bytes": 32622,
+          "artifact_sha256": "d2bdd31ffdc40fcc811e913d2552d119242b6b8dc562fd8ca36100a99594d5a7",
+          "compilation_database_sha256": "071c8ebab67c055f67b02387447f48ddf2b04f104a78c220d46f92d49f89e18d",
+          "config_sha256": "243958aefb3fd4234f49a77ffce67ec0c768de525023e69be1e6ae96b7037396",
           "dependencies": {},
-          "exporter_sha256": "69a4cfeeaf5a0a73d93a4a3be7d4f277c6b80ce0c0d72c8720db502625b26a2b",
-          "identity": "53246d6ea9bf745f0ebf81b89dafcc7089aa91eadc06621cdf699c91e331ec70",
+          "exporter_sha256": "764175b8bacf30eec7dbff581ef2ad77718f662b11699b24e743a6a628758d19",
+          "identity": "419d0449832b771475ad2edb2456be6bab1df88c2d95542c84fb8ce8c1fc5a3a",
           "logical_source_sha256": "0c332fb5f11166337ff19553521f2726060274a63acdfd217f4818d3f1d48c3f",
           "prepared_roots": [
-            "/home/user/click/examples/basic-cpp",
-            "/home/user/click/examples/basic-cpp"
+            "/home/user/click-b/examples/basic-cpp",
+            "/home/user/click-b/examples/basic-cpp"
           ],
           "preprocessor_files": {
-            "/home/user/click/examples/basic-cpp/with_restore_caller.cpp": {
-              "canonical_path": "/home/user/click/examples/basic-cpp/with_restore_caller.cpp",
+            "/home/user/click-b/examples/basic-cpp/with_restore_caller.cpp": {
+              "canonical_path": "/home/user/click-b/examples/basic-cpp/with_restore_caller.cpp",
               "sha256": "0c332fb5f11166337ff19553521f2726060274a63acdfd217f4818d3f1d48c3f"
             }
           },
@@ -131,6 +135,8 @@
               "--target=x86_64-unknown-linux-gnu",
               "-fno-exceptions",
               "-fno-rtti",
+              "-O2",
+              "-fno-strict-aliasing",
               "-funsigned-char",
               "-ffreestanding",
               "-nostdinc",
@@ -141,7 +147,7 @@
               "-o",
               "with_restore_caller.cpp.o"
             ],
-            "compilation_directory": "/home/user/click/examples/basic-cpp",
+            "compilation_directory": "/home/user/click-b/examples/basic-cpp",
             "compilation_file": "with_restore_caller.cpp",
             "exceptions": false,
             "frontend": "clang",

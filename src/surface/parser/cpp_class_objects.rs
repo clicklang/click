@@ -45,7 +45,12 @@ struct Interface {
 /// A class that defines an object class's functions on its own memory.
 struct DefiningClass {
     root: String,
+    /// The class its block names as its base: the object class, or a
+    /// defining class whose definitions it inherits through its base part.
+    base: String,
     definitions: BTreeMap<String, Vec<Spanned>>,
+    /// Where its `class` block names it.
+    position: SourcePosition,
 }
 
 /// A function contract at the top level of the sidecar.
@@ -90,6 +95,17 @@ pub(super) struct ObjectMethods {
     pub(super) interfaces: BTreeSet<String>,
     /// The defining classes' methods, which are so stated.
     pub(super) on_memory: BTreeSet<String>,
+    /// The defining classes.
+    pub(super) defining: BTreeSet<String>,
+    /// The dispatches the rewrite states on the object, by name: the class
+    /// another derives from and its method.
+    pub(super) dispatches: BTreeMap<String, (String, String)>,
+    /// For each defining class another derives from, the object class, and
+    /// a class deriving from it.
+    pub(super) derived_from: BTreeMap<String, (String, String)>,
+    /// Each function's parameters that are references to such a class, and
+    /// hold the object, by importer name: the parameter and its class.
+    pub(super) object_parameters: BTreeMap<String, BTreeMap<String, String>>,
 }
 
 /// Rewrites the class object state of a C++ sidecar, and returns the
@@ -105,6 +121,20 @@ pub(super) fn rewrite_class_objects(
         return Ok((tokens, positions, ObjectMethods::default()));
     }
     let found = heads(&source);
+    // A reference to the object class, or to a defining class another
+    // derives from, holds the object of whichever class it refers to.
+    let derived_from = defining
+        .values()
+        .filter(|definer| defining.contains_key(&definer.base))
+        .map(|definer| definer.base.clone())
+        .collect::<BTreeSet<_>>();
+    let mut references = objects
+        .keys()
+        .map(|class| (class.clone(), class.clone()))
+        .collect::<BTreeMap<_, _>>();
+    for class in &derived_from {
+        references.insert(class.clone(), defining[class].root.clone());
+    }
     for head in &found {
         if let Some(class) = &head.class
             && let Some(object) = objects.get_mut(class)
@@ -121,6 +151,103 @@ pub(super) fn rewrite_class_objects(
             );
         }
     }
+    // A class deriving from a defining class that inherits a method stated
+    // on an ancestor's memory runs it on its own object, which the method's
+    // proof reads by that ancestor's definitions: each function the object
+    // class's interface for it reads is the same here, read through the
+    // base parts.
+    let stated = found
+        .iter()
+        .filter_map(|head| Some((head.class.as_deref()?, head.method.as_str())))
+        .collect::<BTreeSet<_>>();
+    for (class, definer) in &defining {
+        let root = &objects[&definer.root];
+        for (method, interface) in &root.methods {
+            if stated.contains(&(class.as_str(), method.as_str())) {
+                continue;
+            }
+            let mut ancestor = &definer.base;
+            let mut depth = 1;
+            while let Some(parent) = defining.get(ancestor) {
+                if !stated.contains(&(ancestor.as_str(), method.as_str())) {
+                    ancestor = &parent.base;
+                    depth += 1;
+                    continue;
+                }
+                for (function, _) in &root.functions {
+                    let read = interface.clauses.iter().any(|clause| {
+                        clause.windows(2).any(|pair| {
+                            is_ident(pair.first(), function) && pair[1].0 == Token::LParen
+                        })
+                    });
+                    let inherited = (0..depth)
+                        .try_fold(parent.definitions[function].clone(), |definition, _| {
+                            through_base(&definition)
+                        });
+                    if read
+                        && !inherited.is_some_and(|inherited| {
+                            same_tokens(&inherited, &definer.definitions[function])
+                        })
+                    {
+                        return Err(error_at(
+                            &definer.position,
+                            format!(
+                                "`{class}` inherits `{ancestor}::{method}`, whose interface \
+                                 reads `{function}`, which `{class}` defines otherwise than \
+                                 `{ancestor}`: `{ancestor}::{method}` is stated on \
+                                 `{ancestor}`'s definitions, so `{class}` overrides it, \
+                                 `{class}::{method}`"
+                            ),
+                        ));
+                    }
+                }
+                break;
+            }
+        }
+    }
+    // The dispatches stated on the object, and the parameters holding the
+    // object of a class another derives from.
+    let mut dispatches = BTreeMap::new();
+    let mut object_parameters = BTreeMap::<String, BTreeMap<String, String>>::new();
+    for head in &found {
+        let own = parameters(&source[head.list_open + 1..head.list_close]);
+        if let Some(class) = head
+            .class
+            .as_ref()
+            .filter(|class| derived_from.contains(*class))
+            && objects[&defining[class].root]
+                .methods
+                .get(&head.method)
+                .is_some_and(|interface| interface.parameters.len() == own.len())
+        {
+            dispatches.insert(
+                crate::languages::cpp::names::object_dispatch_name(class, &head.method),
+                (class.clone(), head.method.clone()),
+            );
+        }
+        let function = match &head.class {
+            Some(class) => method_name(class, &head.method),
+            None => crate::languages::cpp::names::path_name(&[head.method.as_str()]),
+        };
+        for parameter in &own {
+            let class = match parameter.tokens.as_slice() {
+                [
+                    (Token::Ident(word), _),
+                    (Token::Ident(class), _),
+                    (Token::Amp, _),
+                    _,
+                ] if word == "const" => class,
+                [(Token::Ident(class), _), (Token::Amp, _), _] => class,
+                _ => continue,
+            };
+            if derived_from.contains(class) {
+                object_parameters
+                    .entry(function.clone())
+                    .or_default()
+                    .insert(parameter.name.clone(), class.clone());
+            }
+        }
+    }
     let mut output = Vec::with_capacity(source.len());
     let on_memory = found
         .iter()
@@ -131,12 +258,12 @@ pub(super) fn rewrite_class_objects(
                 .then(|| method_name(class, &head.method))
         })
         .collect();
-    let mut pending = found.into_iter().peekable();
+    let mut pending = found.iter().peekable();
     let mut index = 0;
     let mut depth = 0i32;
     while index < source.len() {
         if let Some(head) = pending.next_if(|head| head.start == index) {
-            rewrite_function(&source, &head, &objects, &defining, &mut output)?;
+            rewrite_function(&source, head, &objects, &defining, &references, &mut output)?;
             index = head.end;
             continue;
         }
@@ -149,12 +276,31 @@ pub(super) fn rewrite_class_objects(
             if let Some(object) = objects.get(class) {
                 output.extend(object_declaration(object, position));
             } else if let Some(definer) = defining.get(class) {
-                output.extend(coercion_contracts(
-                    class,
-                    definer,
-                    &objects[&definer.root],
-                    position,
-                ));
+                let object = &objects[&definer.root];
+                // The class becomes the object of the object class, and of
+                // each defining class it derives from, and of itself where a
+                // class derives from it.
+                let mut targets = vec![definer.root.clone()];
+                let mut ancestor = &definer.base;
+                while let Some(parent) = defining.get(ancestor) {
+                    targets.push(ancestor.clone());
+                    ancestor = &parent.base;
+                }
+                if derived_from.contains(class) {
+                    targets.push(class.clone());
+                    output.extend(dispatch_contracts(
+                        &source,
+                        &found,
+                        class,
+                        definer,
+                        &objects,
+                        &defining,
+                        &references,
+                    )?);
+                }
+                for target in &targets {
+                    output.extend(coercion_contracts(class, target, definer, object, position));
+                }
             }
             index = close + 1;
             continue;
@@ -183,6 +329,20 @@ pub(super) fn rewrite_class_objects(
         ObjectMethods {
             interfaces,
             on_memory,
+            defining: defining.keys().cloned().collect(),
+            dispatches,
+            derived_from: derived_from
+                .iter()
+                .map(|class| {
+                    let derived = defining
+                        .iter()
+                        .find(|(_, definer)| &definer.base == class)
+                        .map(|(derived, _)| derived.clone())
+                        .unwrap_or_default();
+                    (class.clone(), (defining[class].root.clone(), derived))
+                })
+                .collect(),
+            object_parameters,
         },
     ))
 }
@@ -296,41 +456,103 @@ fn classes(
         index += 1;
     }
     // Each class defines the functions on its own memory. Its base is the
-    // class whose object it is: a class deriving from a defining class would
-    // run that class's methods on an object its own definitions describe.
-    let mut defining = BTreeMap::new();
-    for (class, (base, definitions, position)) in &bases {
-        if !objects.contains_key(base) {
-            return Err(error_at(
-                position,
-                format!(
-                    "`class {class} : {base}` names a base whose `class` block does not declare \
-                     its object's functions; only a direct subclass of that class defines them"
-                ),
-            ));
-        }
-        let root = base.clone();
-        for (function, _) in &objects[&root].functions {
-            if !definitions.contains_key(function) {
+    // class whose object it is, or a defining class, whose definitions it
+    // inherits read through its base part unless it writes its own. A base
+    // is resolved before the classes deriving from it.
+    let mut defining: BTreeMap<String, DefiningClass> = BTreeMap::new();
+    let mut pending = bases.keys().collect::<Vec<_>>();
+    while !pending.is_empty() {
+        let before = pending.len();
+        let mut deferred = Vec::new();
+        for class in pending {
+            let (base, definitions, position) = &bases[class];
+            let (root, inherited) = if objects.contains_key(base) {
+                (base.clone(), None)
+            } else if let Some(parent) = defining.get(base) {
+                (parent.root.clone(), Some(parent))
+            } else if bases.contains_key(base) {
+                deferred.push(class);
+                continue;
+            } else {
                 return Err(error_at(
                     position,
                     format!(
-                        "`class {class}` defines `{root}`'s `function {function}` on its own \
-                         memory, where an inherited field is read through its base: \
-                         `function {function}(this) -> T {{ ... }}`"
+                        "`class {class} : {base}` names a base without a `class` block: its \
+                         base declares its object's functions, or is a class that defines them"
                     ),
                 ));
+            };
+            let mut resolved = BTreeMap::new();
+            for (function, _) in &objects[&root].functions {
+                let definition = match (definitions.get(function), inherited) {
+                    (Some(definition), _) => definition.clone(),
+                    (None, Some(parent)) => through_base(&parent.definitions[function])
+                        .ok_or_else(|| {
+                            error_at(
+                                position,
+                                format!(
+                                    "`class {class}` inherits `{base}`'s `function {function}`, \
+                                     which reads its fields through `this->`; write its \
+                                     definition: `function {function}(this) -> T {{ ... }}`"
+                                ),
+                            )
+                        })?,
+                    (None, None) => {
+                        return Err(error_at(
+                            position,
+                            format!(
+                                "`class {class}` defines `{root}`'s `function {function}` on \
+                                 its own memory, where an inherited field is read through its \
+                                 base: `function {function}(this) -> T {{ ... }}`"
+                            ),
+                        ));
+                    }
+                };
+                resolved.insert(function.clone(), definition);
             }
+            defining.insert(
+                class.clone(),
+                DefiningClass {
+                    root,
+                    base: base.clone(),
+                    definitions: resolved,
+                    position: position.clone(),
+                },
+            );
         }
-        defining.insert(
-            class.clone(),
-            DefiningClass {
-                root,
-                definitions: definitions.clone(),
-            },
-        );
+        if deferred.len() == before {
+            let (_, _, position) = &bases[deferred[0]];
+            return Err(error_at(
+                position,
+                "`class` blocks name their bases in a cycle",
+            ));
+        }
+        pending = deferred;
     }
     Ok((objects, defining))
+}
+
+/// A base's definition read on a derived class's memory: each `this->f`
+/// read as `this->base.f`. `None` when it reads `this` otherwise.
+fn through_base(definition: &[Spanned]) -> Option<Vec<Spanned>> {
+    let mut tokens = Vec::with_capacity(definition.len() + 2);
+    let mut index = 0;
+    while index < definition.len() {
+        if is_ident(definition.get(index), "this") {
+            let Some((Token::Arrow, arrow)) = definition.get(index + 1) else {
+                return None;
+            };
+            tokens.push(definition[index].clone());
+            tokens.push((Token::Arrow, arrow.clone()));
+            tokens.push((ident("base"), arrow.clone()));
+            tokens.push((Token::Dot, arrow.clone()));
+            index += 2;
+            continue;
+        }
+        tokens.push(definition[index].clone());
+        index += 1;
+    }
+    Some(tokens)
 }
 
 /// The function contracts at the top level, in order: a head whose
@@ -470,6 +692,7 @@ fn parameters(list: &[Spanned]) -> Vec<Parameter> {
 fn object_parameter<'a>(
     parameter: &Parameter,
     objects: &'a BTreeMap<String, ObjectClass>,
+    references: &BTreeMap<String, String>,
 ) -> Option<(&'a ObjectClass, bool)> {
     let (constant, class) = match parameter.tokens.as_slice() {
         [
@@ -481,7 +704,8 @@ fn object_parameter<'a>(
         [(Token::Ident(class), _), (Token::Amp, _), _] => (false, class),
         _ => return None,
     };
-    objects.get(class).map(|object| (object, constant))
+    let root = references.get(class)?;
+    objects.get(root).map(|object| (object, constant))
 }
 
 /// The handle owned for a holder's object: `__object_this:
@@ -575,6 +799,7 @@ fn rewrite_function(
     head: &Head,
     objects: &BTreeMap<String, ObjectClass>,
     defining: &BTreeMap<String, DefiningClass>,
+    references: &BTreeMap<String, String>,
     output: &mut Vec<Spanned>,
 ) -> Result<(), ClickError> {
     let own = parameters(&source[head.list_open + 1..head.list_close]);
@@ -587,7 +812,7 @@ fn rewrite_function(
         holders.push(("this".to_string(), object, head.is_const));
     }
     for parameter in &own {
-        if let Some((object, kept)) = object_parameter(parameter, objects) {
+        if let Some((object, kept)) = object_parameter(parameter, objects, references) {
             holders.push((parameter.name.clone(), object, kept));
         }
     }
@@ -788,6 +1013,102 @@ fn rewrite_function(
     Ok(())
 }
 
+/// The contracts of the dispatches the importer names for calls through a
+/// reference to `class`, which another class derives from: each method of
+/// `class` that overrides one of the object class's is called as that
+/// method's interface, holding the object, whichever override runs.
+fn dispatch_contracts(
+    source: &[Spanned],
+    found: &[Head],
+    class: &str,
+    definer: &DefiningClass,
+    objects: &BTreeMap<String, ObjectClass>,
+    defining: &BTreeMap<String, DefiningClass>,
+    references: &BTreeMap<String, String>,
+) -> Result<Vec<Spanned>, ClickError> {
+    let root = &objects[&definer.root];
+    let mut output = Vec::new();
+    for head in found {
+        if head.class.as_deref() != Some(class) {
+            continue;
+        }
+        let Some(interface) = root.methods.get(&head.method) else {
+            continue;
+        };
+        let own = parameters(&source[head.list_open + 1..head.list_close]);
+        if interface.parameters.len() != own.len() {
+            continue;
+        }
+        let renames = interface
+            .parameters
+            .iter()
+            .zip(&own)
+            .filter(|(from, to)| *from != &to.name)
+            .map(|(from, to)| (from.clone(), to.name.clone()))
+            .collect::<BTreeMap<_, _>>();
+        let position = source[head.body_open].1.clone();
+        // The interface, written as a method of the object class with this
+        // method's parameters, rewritten as such a method is.
+        let mut method = at(&position, vec![ident("extern")]);
+        method.extend(head.result.iter().cloned());
+        let name_start = method.len();
+        method.extend(at(
+            &position,
+            vec![ident(&definer.root), Token::ColonColon, ident(&head.method)],
+        ));
+        method.extend(source[head.list_open..=head.list_close].iter().cloned());
+        if head.is_const {
+            method.push((ident("const"), position.clone()));
+        }
+        method.push((Token::LBrace, position.clone()));
+        for clause in &interface.clauses {
+            method.extend(rename(clause, &renames));
+            method.push((Token::Semicolon, position.clone()));
+        }
+        method.push((Token::RBrace, position.clone()));
+        let interface_head = head_at(&method, 0, name_start + 3)
+            .expect("a dispatch's interface is a function contract");
+        let mut rewritten = Vec::new();
+        rewrite_function(
+            &method,
+            &interface_head,
+            objects,
+            defining,
+            references,
+            &mut rewritten,
+        )?;
+        // Its head names the dispatch and its receiver.
+        let mut dispatch = at(&position, vec![ident("extern")]);
+        dispatch.extend(head.result.iter().cloned());
+        dispatch.extend(at(
+            &position,
+            vec![
+                ident(&crate::languages::cpp::names::object_dispatch_name(
+                    class,
+                    &head.method,
+                )),
+                Token::LParen,
+            ],
+        ));
+        if head.is_const {
+            dispatch.push((ident("const"), position.clone()));
+        }
+        dispatch.extend(at(
+            &position,
+            vec![ident("struct"), ident(class), Token::Star, ident("this")],
+        ));
+        for parameter in &own {
+            dispatch.push((Token::Comma, position.clone()));
+            dispatch.extend(parameter.tokens.iter().cloned());
+        }
+        dispatch.extend(at(&position, vec![Token::RParen, Token::LBrace]));
+        let body = interface_head.body_open - interface_head.start + 1;
+        dispatch.extend(rewritten.into_iter().skip(body));
+        output.extend(dispatch);
+    }
+    Ok(output)
+}
+
 /// The trusted contracts of the functions the importer places where a
 /// reference to `class` becomes a reference to its object class, and back:
 /// the pack consumes the class's memory and produces the object, whose
@@ -796,6 +1117,7 @@ fn rewrite_function(
 /// reference's pair leaves the memory with the caller, viewed.
 fn coercion_contracts(
     class: &str,
+    target: &str,
     definer: &DefiningClass,
     object: &ObjectClass,
     position: &SourcePosition,
@@ -841,7 +1163,7 @@ fn coercion_contracts(
             vec![ident(verb), Token::Star, ident("object"), Token::Semicolon],
         )
     };
-    let root = &definer.root;
+    let root = target;
     let mut tokens = head(&crate::languages::cpp::names::object_pack_name(class, root));
     tokens.extend(memory("consumes"));
     tokens.extend(instance("produces"));

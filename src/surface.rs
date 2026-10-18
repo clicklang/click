@@ -103,10 +103,13 @@ mod lowering;
 mod modules;
 mod names;
 mod parser;
+mod pointer_result_types;
 pub use crate::languages::{claim_label_matches, display_source_names, source_display_name};
 pub(crate) mod planning;
 pub(crate) mod proof_diagnostics;
 mod source_registry;
+mod structural_clauses;
+pub use structural_clauses::StructuralClauses;
 mod surface_propositions;
 use integer_conversions::*;
 use integer_truncation::*;
@@ -132,12 +135,11 @@ pub use expansion::{
     expand_program_prepared_tactic_source_at, expand_project_claim_source_by_label,
     expand_project_tactic_source_at, expand_project_tactics_source_at, expand_tactics_source_at,
     expand_verified_function_claim_source_by_label, map_verifying_source_paths,
-    nested_tactic_source_position, project_select_smart_tactic, project_smart_tactic_source_sites,
-    project_tactic_source_position, project_tactic_source_positions, select_smart_tactic,
-    selected_c_target, selected_project_c_target, selected_project_thread_runtime,
-    selected_thread_runtime, smart_tactic_source_sites, tactic_arm_containing_position,
-    tactic_have_body_contains_position, tactic_line_has_multiple_starts, tactic_source_at_position,
-    tactic_source_position, tactic_starts_on_line, tidy_expansion_closers, verifying_source_paths,
+    project_select_smart_tactic, project_smart_tactic_source_sites, project_tactic_source_position,
+    project_tactic_source_positions, select_smart_tactic, selected_c_target,
+    selected_project_c_target, selected_project_thread_runtime, selected_thread_runtime,
+    smart_tactic_source_sites, tactic_source_position, tidy_expansion_closers,
+    verifying_source_paths,
 };
 use expansion::{
     ExpansionCapture, NestedTacticCapture, ProofSite, VerificationTarget, verification_target_at,
@@ -1063,6 +1065,9 @@ pub struct CallBinderBinding {
     instance: String,
     /// The caller's instance identity.
     identity: Variable,
+    /// The resource a produced instance is, from the callee's contract;
+    /// `None` for an instance the caller supplies.
+    family: Option<String>,
 }
 
 impl CallBinderBinding {
@@ -1080,6 +1085,10 @@ impl CallBinderBinding {
 
     pub(crate) fn identity(&self) -> Variable {
         self.identity
+    }
+
+    pub(crate) fn family(&self) -> Option<&str> {
+        self.family.as_deref()
     }
 }
 
@@ -1345,7 +1354,7 @@ pub struct FunctionBlock {
     /// The other members of this function's recursive C component, supplied
     /// by the source frontend; empty outside a component of two or more.
     recursion_peers: Vec<String>,
-    structural_clauses: Vec<StructuralClause>,
+    structural_clauses: StructuralClauses,
     constructs: Vec<ResourceClause>,
     ensures: Vec<EnsureClause>,
     exceptional_ensures: Vec<EnsureClause>,
@@ -3632,6 +3641,8 @@ struct SpecElaborationContext {
     /// Bare `result` names the internal contract-return binding here;
     /// explicit C bindings keep their source identifier and value.
     contract_result_in_scope: bool,
+    /// Preserve native address checks inside an explicit `defined(...)`.
+    checking_definedness: bool,
 }
 
 impl Default for SpecElaborationContext {
@@ -3648,6 +3659,7 @@ impl Default for SpecElaborationContext {
             function_contract: false,
             snapshot_state: None,
             contract_result_in_scope: false,
+            checking_definedness: false,
         }
     }
 }
@@ -3692,6 +3704,7 @@ impl SpecElaborationContext {
                 at_function_entry: true,
                 snapshot_state: None,
                 contract_result_in_scope: false,
+                checking_definedness: self.checking_definedness,
             });
         }
         let mut values = entry_values
@@ -3724,6 +3737,7 @@ impl SpecElaborationContext {
             // The return value is a logical proof binding, like `let`.
             // Historical C reads still use their own entry bindings.
             contract_result_in_scope: self.contract_result_in_scope,
+            checking_definedness: self.checking_definedness,
         })
     }
 }
@@ -5354,16 +5368,15 @@ impl CodeRegionRef {
     /// read and back-edge regions name execution targets, not regions.
     pub(in crate::surface) fn resolve(
         &self,
-        structural_clauses: &[StructuralClause],
+        structural_clauses: &StructuralClauses,
     ) -> Result<CodeRegion, CodeRegionResolutionError> {
         match self {
             CodeRegionRef::Function => Ok(CodeRegion::Function),
             CodeRegionRef::Loop(index) => Ok(CodeRegion::Loop(*index)),
             CodeRegionRef::Statement(index) => Ok(CodeRegion::Statement(*index)),
             CodeRegionRef::Label(label) => structural_clauses
-                .iter()
-                .find(|clause| clause.label() == Some(label.as_str()))
-                .map(|clause| *clause.region())
+                .labelled_region(label)
+                .copied()
                 .ok_or_else(|| CodeRegionResolutionError::UnknownLabel(label.clone())),
             CodeRegionRef::BackEdge => Err(CodeRegionResolutionError::ExecutionTargetOnly(
                 "back_edge regions are",
@@ -5591,6 +5604,10 @@ pub(crate) struct ParameterBinding<'a> {
     /// lowering that reads a few parameters then looks up only those
     /// instead of building a map over every parameter.
     pub(crate) index: Option<&'a ParameterIndex>,
+    /// Shared copies of these parameters and arguments, when the caller
+    /// built them: a diagnostic captured on every refused attempt keeps a
+    /// handle to them instead of copying both lists.
+    pub(crate) naming: Option<&'a std::sync::Arc<ParameterNaming>>,
 }
 
 impl<'a> ParameterBinding<'a> {
@@ -5599,6 +5616,7 @@ impl<'a> ParameterBinding<'a> {
             parameters,
             arguments,
             index: None,
+            naming: None,
         }
     }
 
@@ -5608,6 +5626,34 @@ impl<'a> ParameterBinding<'a> {
         Self {
             index: Some(index),
             ..self
+        }
+    }
+
+    /// This binding with `naming`, which must copy its parameters and
+    /// arguments.
+    pub(crate) fn with_naming(self, naming: &'a std::sync::Arc<ParameterNaming>) -> Self {
+        debug_assert_eq!(naming.parameters.len(), self.parameters.len());
+        debug_assert_eq!(naming.arguments.len(), self.arguments.len());
+        Self {
+            naming: Some(naming),
+            ..self
+        }
+    }
+}
+
+/// One copy of a proof's parameter declarations and argument expressions,
+/// shared by every diagnostic the proof captures.
+pub(crate) struct ParameterNaming {
+    pub(crate) parameters: std::sync::Arc<[syntax::C0Parameter]>,
+    pub(crate) arguments: std::sync::Arc<[CExpression]>,
+}
+
+impl ParameterNaming {
+    pub(crate) fn new(parameters: &[syntax::C0Parameter], arguments: &[CExpression]) -> Self {
+        crate::instrumentation::record_deterministic_work(parameters.len() + arguments.len());
+        Self {
+            parameters: parameters.into(),
+            arguments: arguments.into(),
         }
     }
 }
@@ -5756,6 +5802,8 @@ struct ClickFunctionEnvironment {
     /// Functions whose value provably cannot depend on C memory contents.
     /// See [`memory_independent_click_functions`].
     memory_independent: BTreeSet<String>,
+    pointer_results: BTreeMap<String, Option<std::sync::Arc<crate::kernel::PurePointerResult>>>,
+    pointer_type_error: Option<(String, String)>,
 }
 
 impl ClickFunctionEnvironment {
@@ -5767,6 +5815,8 @@ impl ClickFunctionEnvironment {
         definitions: &[ClickFunctionDefinition],
         algebraic_type_definitions: &[AlgebraicTypeDefinition],
     ) -> Self {
+        let (pointer_results, pointer_type_error) =
+            pointer_result_types::pointer_result_types(definitions, algebraic_type_definitions);
         Self {
             definitions: definitions
                 .iter()
@@ -5777,6 +5827,8 @@ impl ClickFunctionEnvironment {
                 .map(|definition| (definition.name().to_string(), definition.clone()))
                 .collect(),
             memory_independent: memory_independent_click_functions(definitions),
+            pointer_results,
+            pointer_type_error,
         }
     }
 
@@ -6057,8 +6109,9 @@ struct TheoremEnvironment {
     /// The name index of the library selection `standard_library` is a
     /// prefix of.
     standard_library_index: &'static BTreeMap<String, usize>,
-    /// Theorems declared after `standard_library`; a later declaration of a
-    /// name shadows an earlier one.
+    /// Theorems declared after `standard_library`, by identity. The parser
+    /// resolved every citation to one: a library theorem's is qualified, so
+    /// no file theorem shares it, and a file refuses a duplicate theorem.
     definitions: BTreeMap<String, TheoremDefinition>,
     verified_generic_instances: RefCell<BTreeSet<String>>,
     active_generic_instances: RefCell<BTreeSet<String>>,
@@ -6700,6 +6753,40 @@ impl ResourceDefinition {
 }
 
 impl CompositeResourceBody {
+    /// The named child slots of this body, its unmatched part and every
+    /// match arm, each with the resource it owns, or `None` when two arms
+    /// give one slot name different resources. A child may name another
+    /// declared resource, so a slot's resource is a property of the
+    /// definition, which the parser and declaration expansion both read.
+    pub(in crate::surface) fn child_slot_resources(&self) -> BTreeMap<String, Option<String>> {
+        let mut slots: BTreeMap<String, Option<String>> = BTreeMap::new();
+        let bodies = std::iter::once(self).chain(
+            self.matched
+                .iter()
+                .flat_map(|matched| &matched.arms)
+                .map(|arm| &arm.body),
+        );
+        for body in bodies {
+            for clause in &body.contains {
+                let ResourceClause::Named { binding, resource } = clause else {
+                    continue;
+                };
+                let ResourceClause::Declared { name, .. } = resource.as_ref() else {
+                    continue;
+                };
+                slots
+                    .entry(binding.name.clone())
+                    .and_modify(|existing| {
+                        if existing.as_deref() != Some(name.as_str()) {
+                            *existing = None;
+                        }
+                    })
+                    .or_insert_with(|| Some(name.clone()));
+            }
+        }
+        slots
+    }
+
     pub fn condition(&self) -> Option<&ClickProposition> {
         self.condition.as_ref()
     }
@@ -6876,8 +6963,8 @@ impl FunctionBlock {
     /// contract: its `ensures`, which the implementation's proof establishes
     /// with its own, each named `interface_ensures_<i>`, and its `requires`
     /// when the implementation writes none. A clause the implementation
-    /// already states is not repeated. The implementation names its
-    /// parameters as the interface does, so the clauses read the same.
+    /// already states is not repeated. The interface's clauses are read with
+    /// the implementation's names for its parameters.
     pub(in crate::surface) fn inherit_interface(
         &mut self,
         interface: &FunctionBlock,
@@ -6891,13 +6978,36 @@ impl FunctionBlock {
                 .map(|parameter| parameter.name().to_string())
                 .collect::<Vec<_>>()
         };
-        if names(self) != names(interface) {
+        let (own, theirs) = (names(self), names(interface));
+        if own.len() != theirs.len() {
             return Err(format!(
-                "an implementation names its parameters as {source} does, ({}), \
-                 so the interface's clauses read the same in it",
-                names(interface).join(", ")
+                "an implementation takes the parameters {source} does, ({})",
+                theirs.join(", ")
             ));
         }
+        let renames = theirs
+            .iter()
+            .zip(&own)
+            .filter(|(from, to)| from != to)
+            .map(|(from, to)| {
+                (
+                    from.clone(),
+                    ContractExpression::CFragment(crate::kernel::c_variable(to.clone())),
+                )
+            })
+            .collect::<BTreeMap<_, _>>();
+        let renamed;
+        let interface = if renames.is_empty() {
+            interface
+        } else {
+            renamed = interface.renamed(&renames).map_err(|message| {
+                format!(
+                    "{source}'s clauses cannot be read with the implementation's parameter \
+                     names: {message}"
+                )
+            })?;
+            &renamed
+        };
         if self.requires.is_empty() {
             self.requires = interface.requires.clone();
             self.requirement_source_clauses = interface.requirement_source_clauses.clone();
@@ -6929,6 +7039,58 @@ impl FunctionBlock {
             self.ensures.push(inherited);
         }
         Ok(())
+    }
+
+    /// This contract, without its proof, as the contract of `name`: a C++
+    /// dispatch that stands for this block's virtual method.
+    pub(in crate::surface) fn dispatch_alias(&self, name: &str) -> FunctionBlock {
+        let mut alias = self.clone();
+        alias.signature.name = name.to_string();
+        alias.signature.c_source = None;
+        alias.external = true;
+        alias.grouped_proof = None;
+        alias
+    }
+
+    /// This contract's clauses with each parameter in `renames` read as the
+    /// expression it maps to.
+    fn renamed(&self, renames: &BTreeMap<String, ContractExpression>) -> Result<Self, String> {
+        let mut renamed = self.clone();
+        renamed.requires = self
+            .requires
+            .iter()
+            .map(|requirement| {
+                Ok(match requirement {
+                    Requirement::Proposition(proposition) => Requirement::Proposition(
+                        lowering::substitute_click_proposition(proposition, renames)?,
+                    ),
+                    Requirement::Resource(resource) => Requirement::Resource(
+                        verification::substitute_resource_clause_for_summary(resource, renames)?,
+                    ),
+                    Requirement::LoadableSegment { segment } => Requirement::LoadableSegment {
+                        segment: verification::substitute_contract_segment(
+                            segment,
+                            &renames.into(),
+                        )?,
+                    },
+                })
+            })
+            .collect::<Result<_, String>>()?;
+        for clause in &mut renamed.ensures {
+            clause.ensure = match &clause.ensure {
+                Ensure::Proposition(proposition) => Ensure::Proposition(
+                    lowering::substitute_click_proposition(proposition, renames)?,
+                ),
+                Ensure::Resource(resource) => Ensure::Resource(
+                    verification::substitute_resource_clause_for_summary(resource, renames)?,
+                ),
+            };
+            if let Some(condition) = &clause.condition {
+                clause.condition =
+                    Some(lowering::substitute_click_proposition(condition, renames)?);
+            }
+        }
+        Ok(renamed)
     }
 
     pub fn parameter_struct_casts(&self) -> &BTreeMap<String, String> {
@@ -7072,7 +7234,7 @@ impl FunctionBlock {
         &self.recursion_peers
     }
 
-    pub fn structural_clauses(&self) -> &[StructuralClause] {
+    pub fn structural_clauses(&self) -> &StructuralClauses {
         &self.structural_clauses
     }
 
@@ -7137,23 +7299,21 @@ impl FunctionBlock {
     /// separate declarations.
     fn with_bound_frontier_loop_clauses(&self, clauses: &[StructuralClause]) -> Self {
         let mut function = self.clone();
-        let mut positions = BTreeMap::new();
-        let mut bound = Vec::with_capacity(function.structural_clauses.len() + clauses.len());
-        for clause in std::mem::take(&mut function.structural_clauses)
-            .into_iter()
-            .chain(clauses.iter().cloned())
-        {
-            if let CodeRegion::Loop(index) = clause.region() {
-                if let Some(position) = positions.get(index) {
-                    bound[*position] = clause;
-                    continue;
-                }
-                positions.insert(*index, bound.len());
-            }
-            bound.push(clause);
+        for clause in clauses {
+            function.structural_clauses.bind(clause.clone());
         }
-        function.structural_clauses = bound;
         function
+    }
+
+    /// Check this block's structural clauses with `check` against
+    /// `loop_count`, skipping those an earlier check of this list already
+    /// passed ([`StructuralClauses::validate`]).
+    pub(in crate::surface) fn validate_structural_clauses<E>(
+        &mut self,
+        loop_count: usize,
+        check: impl FnMut(&StructuralClause) -> Result<(), E>,
+    ) -> Result<(), E> {
+        self.structural_clauses.validate(loop_count, check)
     }
 
     /// This block with every structural clause resolved through its own
@@ -7162,11 +7322,7 @@ impl FunctionBlock {
     pub(in crate::surface) fn with_resolved_structural_clauses(
         &self,
     ) -> Result<std::borrow::Cow<'_, Self>, String> {
-        if self
-            .structural_clauses
-            .iter()
-            .all(|clause| clause.scope.is_empty())
-        {
+        if !self.structural_clauses.any_scoped() {
             return Ok(std::borrow::Cow::Borrowed(self));
         }
         let mut function = self.clone();
@@ -7174,7 +7330,8 @@ impl FunctionBlock {
             .structural_clauses
             .iter()
             .map(StructuralClause::resolved)
-            .collect::<Result<Vec<_>, String>>()?;
+            .collect::<Result<Vec<_>, String>>()?
+            .into();
         Ok(std::borrow::Cow::Owned(function))
     }
 }

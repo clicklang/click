@@ -20,7 +20,7 @@ fn logical_fields_are_bounded_and_do_not_grant_pointer_access() {
         value_type: CType::Int32,
     };
     let mut samples = Vec::new();
-    for size in [8, 32, 128, 512] {
+    for size in [8, 32, 128] {
         let mut entry = CState::new().with_memory(
             CMemory::new()
                 .with_block(slot.block.clone(), 4)

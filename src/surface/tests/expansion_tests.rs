@@ -1,22 +1,31 @@
 use super::*;
 
+fn check_member_pointer_address_expansion(fixture: &str, function: &str) {
+    let (source, sources) = mdtest_sources(&format!("mdtests/{fixture}.md"));
+    let sources = sources
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    // Expansion already verifies the input; independently check its output.
+    let expanded =
+        expand_c0_claim_source(&source, &sources, function, CProofClaim::Grouped).unwrap();
+    without_implicit_auto(|| verify_c0_sources(&expanded, &sources)).unwrap();
+}
+
 #[test]
 fn member_pointer_addresses_retain_subobject_extents_through_expansion() {
-    for (fixture, function) in [
-        ("egraph_resource_pointer_load_alias", "check"),
-        ("egraph_resource_pointer_load_same_address", "check"),
-        ("model_pointer_alias_nonzero_field_load", "probe"),
-    ] {
-        let (source, sources) = mdtest_sources(&format!("mdtests/{fixture}.md"));
-        let sources = sources
-            .iter()
-            .map(|(name, text)| (name.as_str(), text.as_str()))
-            .collect::<Vec<_>>();
-        verify_c0_sources(&source, &sources).unwrap();
-        let expanded =
-            expand_c0_claim_source(&source, &sources, function, CProofClaim::Grouped).unwrap();
-        without_implicit_auto(|| verify_c0_sources(&expanded, &sources)).unwrap();
-    }
+    check_member_pointer_address_expansion("egraph_resource_pointer_load_alias", "check");
+}
+
+#[test]
+fn member_pointer_addresses_with_equal_numeric_addresses_expand() {
+    check_member_pointer_address_expansion("egraph_resource_pointer_load_same_address", "check");
+}
+
+#[test]
+#[ignore = "nightly: 0.63s after reducing duplicate verification"]
+fn nonzero_member_pointer_addresses_retain_subobject_extents_through_expansion() {
+    check_member_pointer_address_expansion("model_pointer_alias_nonzero_field_load", "probe");
 }
 
 #[test]
@@ -2200,7 +2209,7 @@ theorem force_bad_machine_body(n: int32) {
     }
 }
 "#,
-            "mathematical Integer expressions cannot be compared with C values",
+            "function `bad_machine_body` returns Integer, but its body can produce `k` of type int32",
         ),
         (
             r#"
@@ -2244,7 +2253,7 @@ theorem force_bad_c_body(x: int32, z: Integer) {
     }
 }
 "#,
-            "expected a specification-side Integer expression",
+            "function `bad_c_body` returns Integer, but its body can produce `x` of type int32",
         ),
     ] {
         let error = verify_c0_sources(source, &[])
@@ -3291,6 +3300,27 @@ fn serialized_loop_premises_reject_a_changed_snapshot_or_polarity() {
 }
 
 #[test]
+#[ignore = "nightly: 5.3s in the parallel gate"]
+fn machine_population_count_rewrites_keep_their_type_in_integer_files() {
+    let (source, sources) =
+        mdtest_sources("mdtests/a_consumed_member_bound_on_an_entry_count_is_cited.md");
+    let source_refs = sources
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    verify_c0_sources(&source, &source_refs).unwrap();
+    let expanded = expand_claim_by_label(
+        None,
+        &source,
+        &ProgramInputs::Bundle(source_refs.clone()),
+        "pool_checkout.contract",
+        None,
+    )
+    .unwrap();
+    without_implicit_auto(|| verify_c0_sources(&expanded.source, &source_refs)).unwrap();
+}
+
+#[test]
 #[ignore = "nightly: 5s in the parallel gate"]
 fn return_population_proofs_expand_without_effect_clauses() {
     for (fixture_name, functions) in [
@@ -4240,6 +4270,7 @@ fn grouped_post_execution_simp_publishes_checked_obligations_through_proof() {
         } by {
             execute();
             simp();
+            simp();
         }
     "#;
 
@@ -4257,7 +4288,8 @@ fn grouped_post_execution_simp_publishes_checked_obligations_through_proof() {
         position.column,
     )
     .expect("the retained grouped simp certificate should expand");
-    assert_eq!(expanded.matches("have result == result by {").count(), 2);
+    // The first `simp` acts on the first open goal; the second keeps its own.
+    assert_eq!(expanded.matches("have result == result by {").count(), 1);
     assert!(expanded.contains("normalize();"), "{expanded}");
     assert!(expanded.contains("assumption();"), "{expanded}");
     verify_c0_sources(&expanded, &[("identity.c", c_source)])
@@ -14532,6 +14564,7 @@ fn outcome_predecessor_bound_simp_expands_to_the_named_rule() {
             } by {
                 unfold(ordered_pair);
                 execute();
+                assumption();
                 simp();
             }
         "#;
@@ -15198,6 +15231,7 @@ fn grouped_leaf_implications_preserve_constant_false_premises() {
 }
 
 #[test]
+#[ignore = "nightly: 0.56s after reducing duplicate verification"]
 fn grouped_closer_over_four_paths_places_each_leafs_own_expansion() {
     // Every path but the first reported no surface branch path, because the
     // retained branch decisions were consumed innermost-first while the
@@ -15205,9 +15239,6 @@ fn grouped_closer_over_four_paths_places_each_leafs_own_expansion() {
     // then stitched onto every leaf, and the one path needing a different
     // closer conflicted with the leaves the others had already filled.
     let sources = [("contains3.c", FOUR_RETURN_C)];
-    verify_c0_sources(FOUR_RETURN_CLICK, &sources)
-        .expect("the four-return membership proof should verify");
-
     let closer = FOUR_RETURN_CLICK
         .rfind("simp();")
         .expect("proof should contain the grouped closer");
@@ -15251,7 +15282,10 @@ struct node* unpack(struct node* node) {
     unfold(packed(node));
     execute();
     fold(packed(node));
-    simp();
+    arithmetic() using {
+        aligned(result, 8);
+        node->word == address(result) + (node->word & 1);
+    };
 }
 "#;
 
@@ -15263,7 +15297,7 @@ fn expansion_names_a_resource_witness_through_the_checked_return_pointer() {
         .expect("the witness fold/unfold proof should verify");
 
     let closer = WITNESS_RESOURCE_CLICK
-        .rfind("simp();")
+        .rfind("arithmetic() using {")
         .expect("proof should contain the closer");
     let position = expansion::position_at_offset(WITNESS_RESOURCE_CLICK, closer);
     let expanded = expand_c0_tactic_source_at(
@@ -18802,13 +18836,51 @@ fn branch_arm_source_selection_and_batch_expansion_follow_the_interface_rule() {
 }
 
 #[test]
-fn tidied_expansion_closers_prove_normalized_claims_with_one_normalize() {
+fn address_only_model_constructor_cast_expands_and_checks() {
+    let (source, c) = mdtest_sources("mdtests/model_pointer_address_constructor_preserves_cast.md");
+    let c = c
+        .iter()
+        .map(|(name, source)| (name.as_str(), source.as_str()))
+        .collect::<Vec<_>>();
+    let expanded = expand_c0_claim_source(&source, &c, "caller", CProofClaim::Grouped)
+        .unwrap_or_else(|error| panic!("{}", error.message()));
+    verify_c0_sources(&expanded, &c).unwrap_or_else(|error| panic!("{}", error.message()));
+}
+
+#[test]
+fn address_only_model_implicit_view_expands_and_checks() {
+    let (source, c) =
+        mdtest_sources("mdtests/model_pointer_address_constructor_preserves_implicit_view.md");
+    let c = c
+        .iter()
+        .map(|(name, source)| (name.as_str(), source.as_str()))
+        .collect::<Vec<_>>();
+    let expanded = expand_c0_claim_source(&source, &c, "caller", CProofClaim::Grouped)
+        .unwrap_or_else(|error| panic!("{}", error.message()));
+    verify_c0_sources(&expanded, &c).unwrap_or_else(|error| panic!("{}", error.message()));
+}
+
+#[test]
+fn void_pointer_helper_selected_view_expands_and_checks() {
+    let (source, c) =
+        mdtest_sources("mdtests/model_pointer_void_helper_preserves_selected_view.md");
+    let c = c
+        .iter()
+        .map(|(name, source)| (name.as_str(), source.as_str()))
+        .collect::<Vec<_>>();
+    let expanded = expand_c0_claim_source(&source, &c, "keep", CProofClaim::Grouped)
+        .unwrap_or_else(|error| panic!("{}", error.message()));
+    verify_c0_sources(&expanded, &c).unwrap_or_else(|error| panic!("{}", error.message()));
+}
+
+#[test]
+fn tidied_expansion_closers_prove_normalized_claims_in_goal_order() {
     let original = "int32 f() {\n    ensures result == 0;\n} by {\n    step();\n}\n";
     let expanded = "int32 f() {\n    ensures result == 0;\n} by {\n    step();\n    have result == 0 by {\n        normalize();\n    }\n    have p == q by {\n        assumption();\n    }\n    have r == s by {\n        normalize();\n    }\n    assumption();\n    assumption();\n    assumption();\n    assumption();\n}\n";
     assert_eq!(
         tidy_expansion_closers(original, expanded).as_deref(),
         Some(
-            "int32 f() {\n    ensures result == 0;\n} by {\n    step();\n    have p == q by {\n        assumption();\n    }\n    normalize();\n    assumption();\n    assumption();\n}\n"
+            "int32 f() {\n    ensures result == 0;\n} by {\n    step();\n    have p == q by {\n        assumption();\n    }\n    assumption();\n    normalize();\n    assumption();\n    normalize();\n}\n"
         )
     );
 }
@@ -18816,7 +18888,7 @@ fn tidied_expansion_closers_prove_normalized_claims_with_one_normalize() {
 #[test]
 fn tidied_expansion_closers_leave_other_closers_alone() {
     let original = "f by {\n    step();\n}\n";
-    // More normalized claims than closers.
+    // Fewer closers than claims.
     let short = "f by {\n    have a by {\n        normalize();\n    }\n    have b by {\n        normalize();\n    }\n    assumption();\n}\n";
     // A closer run that does not end its block.
     let continued =

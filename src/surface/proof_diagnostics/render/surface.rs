@@ -558,6 +558,7 @@ impl Printer<'_> {
             Sort::Bitvector64 | Sort::CInt64 => "int64".into(),
             Sort::Integer => "Integer".into(),
             Sort::CMachineInteger(ty) => machine_type_spelling(*ty).into(),
+            Sort::CObjectPointer(_, class) => format!("{}*", class.spelling()),
             Sort::CPointer(ty) => crate::kernel::c_type_spelling(*ty).into(),
             Sort::Algebraic(ty) => algebraic_type_spelling(&ty.name, &ty.arguments),
             other => format!("{other:?}").to_ascii_lowercase(),
@@ -1223,6 +1224,16 @@ impl Printer<'_> {
                 }
                 if let Some(field) = crate::kernel::model_fields::model_field_spelling(*variable) {
                     return Some(atom(field));
+                }
+                if let Some(count) =
+                    crate::kernel::model_fields::registered_population_entry_count(*variable)
+                    && let Some(anchor) = self.pointer(&count.anchor, depth + 1)
+                {
+                    let wildcards = ", _".repeat(count.wildcards);
+                    return Some(atom(format!(
+                        "old(count({}({}{wildcards})))",
+                        count.family, anchor.text
+                    )));
                 }
                 return self.placeholder(|printer| printer.unnamed_variable(*variable));
             }
@@ -2346,6 +2357,7 @@ fn algebraic_type_spelling(name: &str, arguments: &[AlgebraicValueType]) -> Stri
         .iter()
         .map(|argument| match argument {
             AlgebraicValueType::Parameter(name) => name.clone(),
+            AlgebraicValueType::ObjectPointer(_, class) => format!("{}*", class.spelling()),
             AlgebraicValueType::C(ty) => crate::kernel::c_type_spelling(*ty).to_owned(),
             AlgebraicValueType::Integer => "Integer".to_owned(),
             AlgebraicValueType::Algebraic { name, arguments } => {

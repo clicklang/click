@@ -82,7 +82,7 @@ int32 seven() { ensures result == 7; } by { execute(); simp(); }
 int32 read(const int32& value) { views value; ensures result == value; } by { execute(); simp(); }
 int32 probe() { ensures result == 11; } by { execute(); simp(); }
 "#;
-    check_arithmetic_sidecar(&project, &import, proof);
+    check_arithmetic_sidecar_with_tools(&project, &import, proof, tools);
     if tools {
         let parsed =
             read_click_project(&project.directory.join("arithmetic.click"), proof).unwrap();
@@ -192,7 +192,7 @@ int32 probe(struct View& input) {
  ensures input.data[0] == 9;
 } by { execute(); simp(); }
 "#;
-    check_arithmetic_sidecar(&project, &import, proof);
+    check_arithmetic_sidecar_with_tools(&project, &import, proof, tools);
     if tools {
         let parsed =
             read_click_project(&project.directory.join("arithmetic.click"), proof).unwrap();
@@ -979,11 +979,14 @@ impl Project {
         .collect()
     }
 
-    /// The command Click synthesizes for the unit: the fixture's command,
-    /// writing the object beside the translation unit.
+    /// The command Click synthesizes for the unit: the fixture's command at
+    /// `-O0`, the level of a description whose command names none, writing
+    /// the object beside the translation unit.
     fn synthesized_arguments(&self) -> Vec<String> {
         let mut arguments = self.compilation_arguments();
         *arguments.last_mut().unwrap() = format!("{}.o", self.source_name);
+        let after_rtti = arguments.iter().position(|a| a == "-fno-rtti").unwrap() + 1;
+        arguments.insert(after_rtti, "-O0".to_string());
         arguments
     }
 
@@ -1921,6 +1924,8 @@ fn unit_arguments_are_locked_and_change_the_identity() {
     let refreshed = load_import(&project.config()).unwrap();
     assert_ne!(refreshed.identity(), first_identity);
     *changed.last_mut().unwrap() = format!("{}.o", project.source_name);
+    let after_rtti = changed.iter().position(|a| a == "-fno-rtti").unwrap() + 1;
+    changed.insert(after_rtti, "-O0".to_string());
     assert_eq!(refreshed.export().profile.compilation_command, changed);
 
     // Arguments whose inputs the lock cannot inventory are refused.
@@ -1931,7 +1936,8 @@ fn unit_arguments_are_locked_and_change_the_identity() {
         project.write_compilation_database_commands(&[command]);
         let error = refresh_import(&project.config()).unwrap_err();
         assert!(
-            error.contains("untracked preprocessor input mode"),
+            error.contains("untracked preprocessor input mode")
+                || error.contains(&format!("unsupported C++ argument 1 `{untracked}`")),
             "{error}"
         );
         assert!(!project.artifact().exists());
@@ -2628,9 +2634,10 @@ fn scalar_int32_profile_emits_function_scope_cleanup_edges_for_escaping_throws()
                 collect_unwind_edges(try_body, edges);
                 collect_unwind_edges(handler, edges);
             }
-            CStatement::Seq(first, second) => {
-                collect_unwind_edges(first, edges);
-                collect_unwind_edges(second, edges);
+            CStatement::Seq(statements) => {
+                for statement in statements.iter() {
+                    collect_unwind_edges(statement, edges);
+                }
             }
             CStatement::If {
                 then_branch,
@@ -2659,9 +2666,9 @@ fn scalar_int32_profile_emits_function_scope_cleanup_edges_for_escaping_throws()
     );
     for (_, handler) in &edges {
         assert!(
-            matches!(handler, CStatement::Seq(cleanup, rethrow)
-                if contains_call(cleanup, "Restore::~Restore")
-                    && matches!(rethrow.as_ref(), CStatement::Throw(_))),
+            matches!(handler, CStatement::Seq(sequence)
+                if { let (cleanup, rethrow) = (sequence.first(), &sequence.rest()); contains_call(cleanup, "Restore::~Restore")
+                    && matches!(rethrow.as_ref(), CStatement::Throw(_)) }),
             "each escaping edge must run the live destructor before rethrowing"
         );
     }
@@ -2671,9 +2678,9 @@ fn scalar_int32_profile_emits_function_scope_cleanup_edges_for_escaping_throws()
             .any(|(try_body, _)| matches!(try_body, CStatement::Throw(_)))
     );
     assert!(edges.iter().any(|(try_body, _)| {
-        matches!(try_body, CStatement::Seq(declare, call)
-            if matches!(declare.as_ref(), CStatement::Declare { name, .. } if name == "ignored")
-                && matches!(call.as_ref(), CStatement::CallAssign { function_name, .. } if function_name == "helper"))
+        matches!(try_body, CStatement::Seq(sequence)
+            if { let (declare, call) = (sequence.first(), &sequence.rest()); matches!(declare.as_ref(), CStatement::Declare { name, .. } if name == "ignored")
+                && matches!(call.as_ref(), CStatement::CallAssign { function_name, .. } if function_name == "helper") })
     }));
 }
 
@@ -3678,7 +3685,7 @@ fn const_reference_preserves_qualification_and_may_alias_a_mutable_reference() {
 fn contains_if(statement: &CStatement) -> bool {
     match statement {
         CStatement::If { .. } => true,
-        CStatement::Seq(first, second) => contains_if(first) || contains_if(second),
+        CStatement::Seq(statements) => statements.iter().any(|statement| contains_if(statement)),
         _ => false,
     }
 }
@@ -3689,9 +3696,9 @@ fn contains_call(statement: &CStatement, expected: &str) -> bool {
             function_name == expected
                 || click::surface::source_display_name(function_name).as_deref() == Some(expected)
         }
-        CStatement::Seq(first, second) => {
-            contains_call(first, expected) || contains_call(second, expected)
-        }
+        CStatement::Seq(statements) => statements
+            .iter()
+            .any(|statement| contains_call(statement, expected)),
         CStatement::If {
             then_branch,
             else_branch,
@@ -3709,9 +3716,10 @@ fn call_order(statement: &CStatement) -> Vec<String> {
                 click::surface::source_display_name(function_name)
                     .unwrap_or_else(|| function_name.clone()),
             ),
-            CStatement::Seq(first, second) => {
-                visit(first, calls);
-                visit(second, calls);
+            CStatement::Seq(statements) => {
+                for statement in statements.iter() {
+                    visit(statement, calls);
+                }
             }
             CStatement::If {
                 then_branch,
@@ -3745,9 +3753,10 @@ fn destructor_object_order<'a>(statement: &'a CStatement, destructor: &str) -> V
                     objects.push(name);
                 }
             }
-            CStatement::Seq(first, second) => {
-                visit(first, destructor, objects);
-                visit(second, destructor, objects);
+            CStatement::Seq(statements) => {
+                for statement in statements.iter() {
+                    visit(statement, destructor, objects);
+                }
             }
             CStatement::If {
                 then_branch,
@@ -3772,10 +3781,9 @@ fn contains_raw_aggregate_destination(statement: &CStatement, expected: &str) ->
             kind: click::kernel::CAggregateDeclarationKind::ConstructionDestination,
             ..
         } => name == expected,
-        CStatement::Seq(first, second) => {
-            contains_raw_aggregate_destination(first, expected)
-                || contains_raw_aggregate_destination(second, expected)
-        }
+        CStatement::Seq(statements) => statements
+            .iter()
+            .any(|statement| contains_raw_aggregate_destination(statement, expected)),
         CStatement::If {
             then_branch,
             else_branch,
@@ -3819,9 +3827,10 @@ fn contains_scalar_local_pipeline(
                 ..
             } if name == value_local => found[2] = true,
             CStatement::Assign { name, .. } if name == value_local => found[3] = true,
-            CStatement::Seq(first, second) => {
-                visit(first, call_local, value_local, callee, found);
-                visit(second, call_local, value_local, callee, found);
+            CStatement::Seq(statements) => {
+                for statement in statements.iter() {
+                    visit(statement, call_local, value_local, callee, found);
+                }
             }
             CStatement::If {
                 then_branch,
@@ -3868,9 +3877,10 @@ fn contains_local_aggregate_pipeline(statement: &CStatement, local: &str) -> [bo
                     }
                 }
             }
-            CStatement::Seq(first, second) => {
-                visit(first, local, found);
-                visit(second, local, found);
+            CStatement::Seq(statements) => {
+                for statement in statements.iter() {
+                    visit(statement, local, found);
+                }
             }
             CStatement::If {
                 then_branch,
@@ -4666,16 +4676,16 @@ fn terminal_return_captures_value_before_checked_destructor_cleanup() {
     );
     assert!(matches!(
         lowered.kernel_function().body(),
-        CStatement::Seq(_, returned)
-            if matches!(
+        CStatement::Seq(sequence)
+            if { let (_, returned) = (sequence.first(), &sequence.rest()); matches!(
                 returned.as_ref(),
-                CStatement::Seq(_, returned)
-                    if matches!(
+                CStatement::Seq(sequence)
+                    if { let (_, returned) = (sequence.first(), &sequence.rest()); matches!(
                         returned.as_ref(),
                         CStatement::Return(CExpression::Variable(name))
                             if name.starts_with("__click_cpp_return_value")
-                    )
-            )
+                    ) }
+            ) }
     ));
 
     let click_source = fs::read_to_string(&sidecar).unwrap();
@@ -6076,8 +6086,8 @@ fn locked_cpp_artifact_lowers_directly_and_executes_reference_semantics() {
     assert_eq!(function.parameters()[0].c_type(), CType::Int32Pointer);
     assert!(matches!(
         function.body(),
-        CStatement::Seq(store, returned)
-            if matches!(
+        CStatement::Seq(sequence)
+            if { let (store, returned) = (sequence.first(), &sequence.rest()); matches!(
                 store.as_ref(),
                 CStatement::TypedStore {
                     pointer: CExpression::Variable(pointer),
@@ -6106,7 +6116,7 @@ fn locked_cpp_artifact_lowers_directly_and_executes_reference_semantics() {
                     volatile: false,
                     ..
                 }) if matches!(pointer.as_ref(), CExpression::Variable(name) if name == "&value")
-            )
+            ) }
     ));
 
     let pointer = Pointer {
@@ -6657,7 +6667,7 @@ fn cpp_direct_calls_reject_missing_throwing_and_recursive_definitions() {
 #[test]
 fn cpp_unit_arguments_cannot_leave_the_pinned_slice() {
     // Arguments that override the pinned standard, target or exception mode
-    // make the observed Clang profile disagree with the unit.
+    // are Click's to set, and are refused before the export runs.
     for (argument, exceptions) in [
         ("-std=gnu++20", false),
         ("--target=aarch64-unknown-linux-gnu", false),
@@ -6680,10 +6690,149 @@ fn cpp_unit_arguments_cannot_leave_the_pinned_slice() {
             .and_then(|unit| unit.lock_with_cpp_exporter(Some(&project.exporter)))
             .unwrap_err();
         assert!(
-            error.contains("profile must match the configured") || error.contains("Clang c++20"),
+            error.contains(&format!("`{argument}` is set by Click for every C++ unit")),
             "{argument}: {error}"
         );
         assert!(!project.directory.join(click::project::LOCK_NAME).exists());
+    }
+}
+
+/// Writes a project with one C++ unit exporting `increment` from the
+/// fixture's source, with `args` and the project fields `extra`.
+fn write_increment_project(project: &Project, args: &[&str], extra: serde_json::Value) -> PathBuf {
+    let mut root = serde_json::json!({"units": {"demo": {
+        "language": "c++",
+        "args": args,
+        "sources": {"increment.cpp": {"functions": ["increment"]}},
+    }}});
+    for (key, value) in extra.as_object().unwrap() {
+        root[key] = value.clone();
+    }
+    let project_file = project.directory.join(click::project::FILE_NAME);
+    fs::write(&project_file, serde_json::to_vec(&root).unwrap()).unwrap();
+    project_file
+}
+
+const INCREMENT_ARGS: &[&str] = &[
+    "-funsigned-char",
+    "-ffreestanding",
+    "-nostdinc",
+    "-nostdinc++",
+];
+
+#[test]
+fn cpp_unit_arguments_follow_the_flag_policy() {
+    for (argument, expected) in [
+        (
+            "-O3",
+            "names an optimization level; the project verifies its units at `-O2`",
+        ),
+        ("-O0", "names an optimization level"),
+        ("-fno-strict-aliasing", "is set by Click for every C++ unit"),
+        ("-fwrapv", "unsupported C++ argument 5 `-fwrapv`"),
+        ("-Xclang", "unsupported C++ argument 5 `-Xclang`"),
+        ("-Wl,-z,now", "unsupported C++ argument 5 `-Wl,-z,now`"),
+        ("-D__OPTIMIZE__=1", "defines `__OPTIMIZE__`"),
+        ("-I", "missing value after argument 5 `-I`"),
+    ] {
+        let project = Project::new();
+        let mut args = INCREMENT_ARGS.to_vec();
+        args.push(argument);
+        let project_file = write_increment_project(&project, &args, serde_json::json!({}));
+        let error = click::project::Project::load(&project_file)
+            .and_then(|unit| unit.lock_with_cpp_exporter(Some(&project.exporter)))
+            .unwrap_err();
+        assert!(error.contains(expected), "{argument}: {error}");
+        assert!(!project.directory.join(click::project::LOCK_NAME).exists());
+    }
+    // Preprocessor inputs and options affecting only code generation or
+    // diagnostics are accepted, and the project's level reaches the command.
+    let project = Project::new();
+    let mut args = INCREMENT_ARGS.to_vec();
+    args.extend([
+        "-O0",
+        "-DNAME=1",
+        "-U",
+        "OTHER",
+        "-I.",
+        "-g",
+        "-Wall",
+        "-Wno-unused-parameter",
+        "-fstack-protector-all",
+        "-fcf-protection=full",
+        "-fstack-clash-protection",
+        "-fmacro-prefix-map=a=b",
+        "-D_FORTIFY_SOURCE=3",
+    ]);
+    let project_file =
+        write_increment_project(&project, &args, serde_json::json!({"optimization": "-O0"}));
+    click::project::Project::load(&project_file)
+        .and_then(|unit| unit.lock_with_cpp_exporter(Some(&project.exporter)))
+        .expect("accepted arguments lock");
+    let lock: serde_json::Value = serde_json::from_slice(
+        &fs::read(project.directory.join(click::project::LOCK_NAME)).unwrap(),
+    )
+    .unwrap();
+    let command = &lock["units"]["demo"]["lock"]["increment.cpp"]["profile"]["compilation_command"];
+    assert!(
+        command
+            .as_array()
+            .unwrap()
+            .contains(&serde_json::json!("-O0")),
+        "{command}"
+    );
+    assert!(
+        !command
+            .as_array()
+            .unwrap()
+            .contains(&serde_json::json!("-fno-strict-aliasing")),
+        "{command}"
+    );
+}
+
+#[test]
+fn cpp_optimizer_promises_are_refused_at_an_optimizing_level() {
+    for attribute in [
+        "__attribute__((nonnull))",
+        "__attribute__((returns_nonnull))",
+        "__attribute__((const))",
+        "__attribute__((pure))",
+        "__attribute__((leaf))",
+        "__attribute__((returns_twice))",
+        "__attribute__((malloc))",
+        "__attribute__((assume_aligned(16)))",
+        "[[noreturn]]",
+        "[[gnu::nonnull]]",
+    ] {
+        for (optimization, refused) in [("-O2", true), ("-O0", false)] {
+            let source = format!(
+                "{attribute} int* promised(int* p) noexcept;\n\
+                 int* promised(int* p) noexcept {{ return p; }}\n\
+                 int increment(int& value) noexcept {{ return *promised(&value); }}\n"
+            );
+            let project = Project::with_fixture("increment.cpp", "increment", &source);
+            let project_file = write_increment_project(
+                &project,
+                INCREMENT_ARGS,
+                serde_json::json!({"optimization": optimization}),
+            );
+            let result = click::project::Project::load(&project_file)
+                .and_then(|unit| unit.lock_with_cpp_exporter(Some(&project.exporter)));
+            if refused {
+                let error = result.unwrap_err();
+                assert!(
+                    error.contains("is an optimizer promise Click does not check"),
+                    "{attribute}: {error}"
+                );
+            } else if attribute == "[[noreturn]]" {
+                // At `-O0` Clang does not act on it, but warns that this
+                // `noreturn` function returns.
+                let error = result.unwrap_err();
+                assert!(error.contains("should not return"), "{error}");
+            } else {
+                result.unwrap_or_else(|error| panic!("{attribute} at -O0: {error}"));
+            }
+        }
     }
 }
 
@@ -6824,6 +6973,17 @@ fn check_arithmetic_sidecar(
     check_sidecar_tactic(project, import, source, None);
 }
 
+// The paired tool test exercises expansion and retained checking on the same
+// complete fixture; its ordinary counterpart needs only direct verification.
+fn check_arithmetic_sidecar_with_tools(
+    project: &Project,
+    import: &click::languages::cpp::PreparedCppImport,
+    source: &str,
+    tools: bool,
+) {
+    check_sidecar_tactic_with_tools(project, import, source, None, tools);
+}
+
 fn check_return_call_sidecar(
     project: &Project,
     import: &click::languages::cpp::PreparedCppImport,
@@ -6842,6 +7002,16 @@ fn check_sidecar_tactic(
     source: &str,
     claim_prefix: Option<&str>,
 ) {
+    check_sidecar_tactic_with_tools(project, import, source, claim_prefix, true);
+}
+
+fn check_sidecar_tactic_with_tools(
+    project: &Project,
+    import: &click::languages::cpp::PreparedCppImport,
+    source: &str,
+    claim_prefix: Option<&str>,
+    tools: bool,
+) {
     let sidecar = project.directory.join("arithmetic.click");
     let source = source.replace(
         "-9223372036854775808i64",
@@ -6851,6 +7021,9 @@ fn check_sidecar_tactic(
     let parsed = read_click_project(&sidecar, &source).unwrap();
     verify_program_prepared_project(&parsed, import)
         .unwrap_or_else(|error| panic!("{}\n{source}", error.message()));
+    if !tools {
+        return;
+    }
     let sites =
         project_smart_tactic_source_sites(&parsed, &ProgramInputs::program(import)).unwrap();
     let first = match claim_prefix {
@@ -8883,11 +9056,11 @@ fn direct_return_calls_keep_guarded_try_returns_unsupported_and_emit_uncaught_cl
                 cleanup_unwind: true,
                 ..
             } => {
-                matches!(handler.as_ref(), CStatement::Seq(cleanup, rethrow) if contains_call(cleanup, "Restore::~Restore") && matches!(rethrow.as_ref(), CStatement::Throw(_)))
+                matches!(handler.as_ref(), CStatement::Seq(sequence) if { let (cleanup, rethrow) = (sequence.first(), &sequence.rest()); contains_call(cleanup, "Restore::~Restore") && matches!(rethrow.as_ref(), CStatement::Throw(_)) })
             }
-            CStatement::Seq(first, second) => {
-                has_unwind_cleanup(first) || has_unwind_cleanup(second)
-            }
+            CStatement::Seq(statements) => statements
+                .iter()
+                .any(|statement| has_unwind_cleanup(statement)),
             _ => false,
         }
     }
@@ -14313,7 +14486,9 @@ int choose(int* slot, bool fail) { Guard guard(slot); if (predicate(fail)) { *sl
     let lowered = lower_import(&load_import(&project.config()).unwrap()).unwrap();
     fn guarded_condition(statement: &CStatement) -> bool {
         match statement {
-            CStatement::Seq(first, second) => guarded_condition(first) || guarded_condition(second),
+            CStatement::Seq(statements) => statements
+                .iter()
+                .any(|statement| guarded_condition(statement)),
             CStatement::TryCatchInt32 {
                 try_body,
                 handler,
@@ -14321,7 +14496,7 @@ int choose(int* slot, bool fail) { Guard guard(slot); if (predicate(fail)) { *sl
                 ..
             } => {
                 contains_call(try_body, "predicate")
-                    && matches!(handler.as_ref(), CStatement::Seq(cleanup, rethrow) if contains_call(cleanup, "Guard::~Guard") && matches!(rethrow.as_ref(), CStatement::Throw(_)))
+                    && matches!(handler.as_ref(), CStatement::Seq(sequence) if { let (cleanup, rethrow) = (sequence.first(), &sequence.rest()); contains_call(cleanup, "Guard::~Guard") && matches!(rethrow.as_ref(), CStatement::Throw(_)) })
             }
             _ => false,
         }
@@ -15010,7 +15185,9 @@ fn converted_call_initializers_emit_active_guard_cleanup_before_rethrow() {
     let lowered = lower_import(&load_import(&project.config()).unwrap()).unwrap();
     fn has_cleanup(statement: &CStatement) -> bool {
         match statement {
-            CStatement::Seq(first, second) => has_cleanup(first) || has_cleanup(second),
+            CStatement::Seq(statements) => {
+                statements.iter().any(|statement| has_cleanup(statement))
+            }
             CStatement::TryCatchInt32 {
                 try_body,
                 handler,
@@ -15018,8 +15195,8 @@ fn converted_call_initializers_emit_active_guard_cleanup_before_rethrow() {
                 ..
             } => {
                 contains_call(try_body, "helper")
-                    && matches!(handler.as_ref(), CStatement::Seq(cleanup, rethrow)
-                    if contains_call(cleanup, "Guard::~Guard") && matches!(rethrow.as_ref(), CStatement::Throw(_)))
+                    && matches!(handler.as_ref(), CStatement::Seq(sequence)
+                    if { let (cleanup, rethrow) = (sequence.first(), &sequence.rest()); contains_call(cleanup, "Guard::~Guard") && matches!(rethrow.as_ref(), CStatement::Throw(_)) })
             }
             _ => false,
         }
@@ -15459,7 +15636,9 @@ fn converted_return_calls_emit_active_object_cleanup_on_exception() {
     let lowered = lower_import(&load_import(&project.config()).unwrap()).unwrap();
     fn has_cleanup(statement: &CStatement) -> bool {
         match statement {
-            CStatement::Seq(first, second) => has_cleanup(first) || has_cleanup(second),
+            CStatement::Seq(statements) => {
+                statements.iter().any(|statement| has_cleanup(statement))
+            }
             CStatement::TryCatchInt32 {
                 try_body,
                 handler,
@@ -15467,8 +15646,8 @@ fn converted_return_calls_emit_active_object_cleanup_on_exception() {
                 ..
             } => {
                 contains_call(try_body, "helper")
-                    && matches!(handler.as_ref(), CStatement::Seq(cleanup, rethrow)
-                    if contains_call(cleanup, "Guard::~Guard") && matches!(rethrow.as_ref(), CStatement::Throw(_)))
+                    && matches!(handler.as_ref(), CStatement::Seq(sequence)
+                    if { let (cleanup, rethrow) = (sequence.first(), &sequence.rest()); contains_call(cleanup, "Guard::~Guard") && matches!(rethrow.as_ref(), CStatement::Throw(_)) })
             }
             _ => false,
         }
@@ -18532,14 +18711,16 @@ int total(const Shape& shape, int scale) {
     );
 }
 
-// An override of a method of a class whose object carries state is stated on
-// its own class's memory, so its class defines that state; and a defining
-// class's method, stated on that class's memory, is not overridden.
+// An override of a method of a class whose object carries state, or of a
+// defining class's method, is stated on its own class's memory, so its class
+// defines that state; and a class deriving from a defining class overrides
+// each of its methods stated on that class's memory.
 #[test]
-fn class_object_state_refuses_undefined_and_nested_overrides() {
+fn class_object_state_refuses_undefined_overrides_and_inherited_methods() {
     let source = "struct Shape { virtual int area(int scale) const noexcept = 0; };
 struct Square : Shape {
     int side;
+    int color;
     int area(int scale) const noexcept override { return side + scale; }
 };
 struct Tile : Square {
@@ -18576,12 +18757,18 @@ int total(const Shape& shape, int scale) {
         (
             "",
             "",
-            "`Tile::area` overrides `Square::area`, which is stated on its class's memory",
+            "`Tile::area` overrides `Square::area`, a method of a class that defines its \
+             object's state",
         ),
         (
             "class Square : Shape {\n    function size(this) -> int32 { this->side }\n}\n",
             "",
             "`Square::area` overrides `Shape::area`, whose class's object carries state",
+        ),
+        (
+            "int Tile::area(int scale) const {\n} by { execute(); simp(); }\n",
+            "class Tile : Square {\n}\n",
+            "`Tile::area` overrides the virtual method `Square::area` but has no contract",
         ),
     ] {
         let sidecar = sidecar.replacen(from, to, 1);

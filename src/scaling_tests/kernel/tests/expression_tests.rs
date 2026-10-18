@@ -125,7 +125,7 @@ fn exact_signed_mirror_normalization_ignores_unrelated_facts() {
         true,
     );
     let mut samples = Vec::new();
-    for size in [64, 256, 1024] {
+    for size in [16, 64, 256] {
         let mut premises = vec![premise.clone()];
         for index in 0..size {
             premises.push(Proposition::ConditionIs(
@@ -151,6 +151,20 @@ fn exact_signed_mirror_normalization_ignores_unrelated_facts() {
         samples[2] <= samples[0].saturating_mul(2) + 10,
         "{samples:?}"
     );
+    {
+        let costs = samples.clone();
+        let indexed = |costs: &[usize]| costs.iter().all(|work| *work <= costs[0] + 16);
+        assert!(indexed(&costs), "indexed work: {costs:?}");
+        let scanned = costs
+            .iter()
+            .zip([16, 64, 256])
+            .map(|(work, size)| work + usize::try_from(size).unwrap())
+            .collect::<Vec<_>>();
+        assert!(
+            !indexed(&scanned),
+            "the smaller fixture must detect a visit per unrelated item: {costs:?}"
+        );
+    }
 }
 
 #[test]
@@ -196,7 +210,7 @@ fn resource_object_provenance_does_not_scan_same_raw_block() {
 
 #[test]
 fn stored_pointer_bounds_ignore_unrelated_numeric_classes() {
-    for size in [16u64, 64, 256, 1024] {
+    for size in [8u64, 32, 128, 512] {
         let _session = crate::kernel::VerificationSession::enter();
         let field = Pointer::symbolic(Variable(96_311));
         let stored = subobject_pointer(0, 0, 4);

@@ -8,7 +8,7 @@ use super::*;
 fn pointer_rewrite_integer_reads_preserves_snapshot_kind_and_scales() {
     for same_block in [false, true] {
         let mut samples = Vec::new();
-        for size in [16u64, 64, 256, 1024] {
+        for size in [4u64, 16, 64, 256] {
             let _session = VerificationSession::enter();
             let mut p = Pointer::symbolic(Variable(241_000));
             let mut q = Pointer::symbolic(Variable(241_001)).offset_by_bytes(3);
@@ -562,7 +562,7 @@ fn pointer_view_rewrite_preserves_snapshot_extent_and_ambient_scaling() {
             .is_err()
     );
     let mut costs = Vec::new();
-    for size in [0, 16, 64, 256, 1024] {
+    for size in [0, 4, 16, 64, 256] {
         let mut facts = ProofFacts::from_ordered(std::slice::from_ref(&cited));
         for index in 0..size {
             facts = facts.with_fact(equality(
@@ -815,7 +815,7 @@ fn checked_integer_rewrite_is_exact_and_ignores_unrelated_facts() {
             .is_err()
     );
     let mut costs = Vec::new();
-    for size in [16u64, 64, 256, 1024] {
+    for size in [4u64, 16, 64, 256] {
         let mut facts = ProofFacts::default();
         for index in 0..size {
             facts = facts.with_fact(eq(

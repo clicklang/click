@@ -7,7 +7,7 @@ use super::*;
 #[test]
 fn projection_skips_unrelated_disjunctions_and_scalar_facts() {
     let mut costs = Vec::new();
-    for size in [16u64, 64, 256, 1024] {
+    for size in [4u64, 16, 64, 256] {
         let mut facts = ProofFacts::from_ordered(&[]);
         for index in 0..size {
             facts = facts.with_fact(or(value(100 + index * 2, 0), value(101 + index * 2, 1)));

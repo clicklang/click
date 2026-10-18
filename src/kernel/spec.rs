@@ -86,6 +86,9 @@ impl<'a> SpecScope<'a> {
 struct SpecEvaluation<'a> {
     budget: &'a mut ExecutionBudget,
     checked_reads: bool,
+    /// Only the selected body of an already held resource may introduce its
+    /// well-formed logical calls' nominal argument requirements.
+    recover_resource_call_types: bool,
     pointer_cast_operand: bool,
     integer_bindings: BTreeMap<Variable, IntegerTerm>,
 }
@@ -95,6 +98,7 @@ impl<'a> SpecEvaluation<'a> {
         Self {
             budget,
             checked_reads: false,
+            recover_resource_call_types: false,
             pointer_cast_operand: false,
             integer_bindings: BTreeMap::new(),
         }
@@ -103,6 +107,7 @@ impl<'a> SpecEvaluation<'a> {
         Self {
             budget,
             checked_reads: true,
+            recover_resource_call_types: false,
             pointer_cast_operand: false,
             integer_bindings: BTreeMap::new(),
         }
@@ -249,6 +254,27 @@ pub(in crate::kernel) fn lower_spec_proposition_at_state_with_algebraic_bindings
         proposition,
         assumptions,
         &mut SpecEvaluation::logical(budget),
+    )
+}
+
+/// Open the logical facts of an active, selected resource body. Holding the
+/// resource justifies the nominal domains of the calls written in that body;
+/// folding uses ordinary lowering and must establish those domains itself.
+/// Receipts stay with each evaluation path, never with interned call arguments.
+pub(in crate::kernel) fn lower_held_resource_body_clause(
+    state: &CState,
+    proposition: &SpecProposition,
+    assumptions: &PureFactContext,
+    algebraic_bindings: &BTreeMap<String, AlgebraicTerm>,
+    budget: &mut ExecutionBudget,
+) -> ExecutionResult<Vec<SpecPropositionPath>> {
+    let mut evaluation = SpecEvaluation::logical(budget);
+    evaluation.recover_resource_call_types = true;
+    lower_spec_proposition_at_state_with_algebraic_bindings_in(
+        SpecScope::new(state, None, algebraic_bindings),
+        proposition,
+        assumptions,
+        &mut evaluation,
     )
 }
 
@@ -1922,30 +1948,7 @@ fn evaluate_spec_integer_expression_paths_in(
                     let ty = MachineIntegerType::from_c_type(path.value.c_type())
                         .ok_or(ExecutionLimit::Paths)?;
                     let bits = c_value_bitvector_term(&path.value).ok_or(ExecutionLimit::Paths)?;
-                    // Only a population count is read exactly: its sum is
-                    // the kernel's own composition, while a written
-                    // `to_integer(a + b)` keeps its observation so that
-                    // `int32_add_to_integer` and its relatives state what
-                    // they say.
-                    let value = if ty == MachineIntegerType::Int32
-                        && matches!(
-                            machine.as_ref(),
-                            SpecExpression::CountedResourceCount { .. }
-                        )
-                        && matches!(
-                            bits,
-                            Bitvector32Term::Add(..) | Bitvector32Term::Subtract(..)
-                        ) {
-                        let path_assumptions = assumptions_with_path_context(
-                            assumptions,
-                            &path.facts,
-                            &path.obligations,
-                        );
-                        exact_signed_observation(&bits, &path_assumptions, &path.obligations)
-                    } else {
-                        IntegerTerm::from_machine(ty, bits)
-                    }
-                    .ok_or(ExecutionLimit::Paths)?;
+                    let value = IntegerTerm::from_machine(ty, bits).ok_or(ExecutionLimit::Paths)?;
                     let mut obligations = path.obligations;
                     retain_required_integer_obligation(
                         &mut obligations,
@@ -3327,7 +3330,7 @@ fn algebraic_match_reconstructs(
                             SpecAlgebraicValue::C(SpecExpression::CExpression(
                                 CExpression::Variable(name),
                             )),
-                            AlgebraicValueType::C(_),
+                            AlgebraicValueType::C(_) | AlgebraicValueType::ObjectPointer(_, _),
                         ) => name == binding,
                         (
                             SpecAlgebraicValue::Algebraic(SpecAlgebraicExpression {
@@ -3514,14 +3517,10 @@ fn evaluate_spec_algebraic_at_state_with_bindings_in(
                     let Some(arm) = arms.iter().find(|arm| arm.variant == case.variant) else {
                         return Err(ExecutionLimit::Paths);
                     };
-                    if arm.bindings.len() != case.fields.len()
-                        || arm.binding_types
-                            != case
-                                .fields
-                                .iter()
-                                .map(AlgebraicValue::value_type)
-                                .collect::<Vec<_>>()
-                    {
+                    // Arms were checked against the scrutinee schema above;
+                    // case construction supplies fields of those exact types.
+                    // Re-inferring their carrier erases nominal pointer types.
+                    if arm.bindings.len() != case.fields.len() {
                         return Err(ExecutionLimit::Paths);
                     }
                     let mut body_state = state.clone();
@@ -3601,17 +3600,45 @@ fn evaluate_spec_algebraic_at_state_with_bindings_in(
                 return Err(ExecutionLimit::Paths);
             }
             let mut paths = vec![(Vec::new(), ExecutionFacts::new(), Vec::new())];
-            for field in fields {
+            for (field, expected) in fields.iter().zip(&schema.fields) {
                 let mut next = Vec::new();
                 for (values, facts, obligations) in paths {
                     let path_assumptions =
                         assumptions_with_path_context(assumptions, &facts, &obligations);
-                    for field_path in evaluate_spec_algebraic_value_at_state_in(
+                    for mut field_path in evaluate_spec_algebraic_value_at_state_in(
                         scope,
                         field,
                         &path_assumptions,
                         budget,
                     )? {
+                        if !field_path.value.has_type(expected) {
+                            // The same original-class check governs model
+                            // fields and calls. It also handles known null
+                            // aliases and a declared object's block class.
+                            let (
+                                AlgebraicValueType::ObjectPointer(ty, class),
+                                AlgebraicValue::C(value),
+                            ) = (expected, &mut field_path.value)
+                            else {
+                                continue;
+                            };
+                            if value.c_type() != *ty {
+                                continue;
+                            }
+                            let context = assumptions_with_path_context(
+                                &path_assumptions,
+                                &field_path.facts,
+                                &field_path.obligations,
+                            );
+                            if !refine_object_pointer_argument(
+                                value,
+                                class,
+                                scope.state.memory(),
+                                &context,
+                            ) {
+                                continue;
+                            }
+                        }
                         let Some((merged_facts, merged_obligations)) =
                             merge_execution_pure_facts_and_obligations_under(
                                 &facts,
@@ -3633,12 +3660,6 @@ fn evaluate_spec_algebraic_at_state_with_bindings_in(
             }
             let paths = paths
                 .into_iter()
-                .filter(|(fields, _, _)| {
-                    fields
-                        .iter()
-                        .map(AlgebraicValue::value_type)
-                        .eq(schema.fields.iter().cloned())
-                })
                 .map(|(fields, facts, obligations)| SpecAlgebraicPath {
                     value: AlgebraicTerm {
                         algebraic_type: expression.algebraic_type.clone(),
@@ -3776,9 +3797,13 @@ fn symbolic_algebraic_fields(
         .map(|(index, value_type)| {
             let variable = allocate()?;
             match value_type {
-                AlgebraicValueType::C(c_type) => Ok(AlgebraicValue::C(
-                    algebraic_type.symbolic_c_field_value(&variant.name, index, *c_type, variable),
-                )),
+                AlgebraicValueType::C(c_type) | AlgebraicValueType::ObjectPointer(c_type, _) => {
+                    Ok(AlgebraicValue::C(
+                        algebraic_type
+                            .symbolic_c_field_value(&variant.name, index, *c_type, variable)
+                            .with_pointer_object_class(value_type.object_class()),
+                    ))
+                }
                 AlgebraicValueType::Integer => {
                     Ok(AlgebraicValue::Integer(IntegerTerm::var(variable)))
                 }
@@ -5960,14 +5985,10 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                     let Some(arm) = arms.iter().find(|arm| arm.variant == case.variant) else {
                         return Err(ExecutionLimit::Paths);
                     };
-                    if arm.bindings.len() != case.fields.len()
-                        || arm.binding_types
-                            != case
-                                .fields
-                                .iter()
-                                .map(AlgebraicValue::value_type)
-                                .collect::<Vec<_>>()
-                    {
+                    // Arms were checked against the scrutinee schema above;
+                    // case construction supplies fields of those exact types.
+                    // Re-inferring their carrier erases nominal pointer types.
+                    if arm.bindings.len() != case.fields.len() {
                         return Err(ExecutionLimit::Paths);
                     }
                     let mut body_state = state.clone();
@@ -6192,7 +6213,11 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                 budget,
                 |value, facts, obligations| {
                     let outcome = match value {
-                        CValue::Pointer(pointer) if target_type.is_pointer() => {
+                        CValue::Pointer(pointer)
+                            if target_type.is_pointer()
+                                && (*target_type != CType::VoidPointer
+                                    || pointer.c_type().is_object_pointer()) =>
+                        {
                             CExpressionOutcome::Value(CValue::Pointer(
                                 pointer.with_type(*target_type),
                             ))
@@ -6322,12 +6347,14 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
             name,
             arguments,
             result_type,
+            pointer_result,
             result_object_class,
         } => evaluate_spec_pure_function_application_paths_in(
             SpecScope::new(state, loop_entry_state, algebraic_bindings),
             name,
             arguments,
             *result_type,
+            pointer_result.as_deref(),
             result_object_class.as_ref(),
             assumptions,
             budget,
@@ -6463,6 +6490,7 @@ fn evaluate_spec_pure_function_application_paths_in(
     name: &str,
     arguments: &[SpecPureFunctionArgument],
     result_type: CType,
+    pointer_result: Option<&PurePointerResult>,
     result_object_class: Option<&crate::kernel::effective_type::CAccessClass>,
     assumptions: &PureFactContext,
     budget: &mut SpecEvaluation<'_>,
@@ -6499,17 +6527,24 @@ fn evaluate_spec_pure_function_application_paths_in(
     let mut results = Vec::new();
     for (arguments, facts, obligations) in paths {
         let value = if result_type.is_pointer() {
-            CValue::typed_pointer(
-                Pointer {
-                    block: PointerBlock::PureFunctionApplication(SharedPureApplication::intern(
-                        name.to_string(),
-                        arguments,
-                    )),
-                    offset: PointerOffsetTerm::Constant(0),
-                },
-                result_type,
+            let (all_null, object_class) = pure_pointer_result_class(pointer_result, &arguments);
+            CValue::Pointer(
+                CPointerValue::new(
+                    if all_null {
+                        Pointer::null()
+                    } else {
+                        Pointer {
+                            block: PointerBlock::PureFunctionApplication(
+                                SharedPureApplication::intern(name.to_string(), arguments),
+                            ),
+                            offset: PointerOffsetTerm::Constant(0),
+                        }
+                    },
+                    result_type,
+                )
+                .with_declared_object_class(result_object_class.cloned())
+                .with_object_type_evidence(object_class),
             )
-            .with_pointer_object_class(result_object_class.cloned())
         } else if result_type == CType::Bool {
             // An opaque `bool` application is read through C's conversion to
             // `bool`, so its value is exactly `0` or `1` by construction,
@@ -6538,6 +6573,98 @@ fn evaluate_spec_pure_function_application_paths_in(
     Ok(results)
 }
 
+/// Instantiate the body's pointer origins with this call's actual values.
+/// A missing or conflicting origin keeps the result opaque and unclassified.
+pub(super) fn pure_pointer_result_class(
+    result: Option<&PurePointerResult>,
+    arguments: &[PureFunctionArgument],
+) -> (bool, Option<ObjectTypeEvidence>) {
+    let Some(result) = result else {
+        return (false, None);
+    };
+    if result.classes.len() > 1 {
+        return (false, None);
+    }
+    let mut class = result
+        .classes
+        .first()
+        .cloned()
+        .map(ObjectTypeEvidence::from);
+    let mut all_null = class.is_none();
+    for index in &result.arguments {
+        let Some(
+            PureFunctionArgument::Value(CValue::Pointer(pointer))
+            | PureFunctionArgument::ArrayRef {
+                pointer: CValue::Pointer(pointer),
+                ..
+            },
+        ) = arguments.get(*index)
+        else {
+            return (false, None);
+        };
+        if pointer.is_null() {
+            continue;
+        }
+        all_null = false;
+        let Some(argument_class) = pointer.object_origin_evidence().cloned() else {
+            return (false, None);
+        };
+        if class
+            .as_ref()
+            .is_some_and(|class| class.class != argument_class.class)
+        {
+            return (false, None);
+        }
+        class = Some(match class {
+            Some(class) => class.merge(&argument_class),
+            None => argument_class,
+        });
+    }
+    (all_null, class)
+}
+
+/// Retain original-class evidence, recover it at an exact declared block
+/// base, or prove null. Incompatible evidence is replaced only for null;
+/// a destination cast supplies no class.
+pub(crate) fn refine_object_pointer_argument(
+    value: &mut CValue,
+    object_class: &crate::kernel::effective_type::CAccessClass,
+    memory: &CMemory,
+    assumptions: &PureFactContext,
+) -> bool {
+    let CValue::Pointer(pointer) = value else {
+        return false;
+    };
+    if pointer.is_null()
+        || pointer
+            .object_type_evidence()
+            .is_some_and(|evidence| evidence.has_class(object_class))
+    {
+        return true;
+    }
+    if pointer.object_type_evidence().is_none()
+        && (assumptions
+            .equality_graph
+            .has_object_type(pointer.pointer(), object_class)
+            || (pointer.offset == PointerOffsetTerm::Constant(0)
+                && memory.declared_class(pointer.pointer()).as_ref() == Some(object_class)))
+    {
+        *pointer = pointer
+            .clone()
+            .with_object_class(Some(object_class.clone()));
+        return true;
+    }
+    if assumptions.decide(&ConditionTerm::pointer_equal(
+        pointer.pointer().clone(),
+        Pointer::null(),
+    )) != Some(true)
+    {
+        return false;
+    }
+    pointer.replace_pointer(Pointer::null());
+    true
+}
+
 fn evaluate_spec_pure_function_argument_paths_in(
     scope: SpecScope<'_>,
     argument: &SpecPureFunctionArgument,
@@ -6547,6 +6674,57 @@ fn evaluate_spec_pure_function_argument_paths_in(
     let state = scope.state;
     let loop_entry_state = scope.loop_entry_state;
     match argument {
+        SpecPureFunctionArgument::ObjectPointer {
+            argument,
+            object_class,
+        } => {
+            let paths = evaluate_spec_pure_function_argument_paths_in(
+                scope,
+                argument,
+                assumptions,
+                budget,
+            )?;
+            Ok(paths
+                .into_iter()
+                .filter_map(|mut path| {
+                    let value = match &mut path.value {
+                        PureFunctionArgument::Value(value)
+                        | PureFunctionArgument::ArrayRef { pointer: value, .. } => value,
+                        _ => return None,
+                    };
+                    let context =
+                        assumptions_with_path_context(assumptions, &path.facts, &path.obligations);
+                    if !refine_object_pointer_argument(
+                        value,
+                        object_class,
+                        scope.state.memory(),
+                        &context,
+                    ) {
+                        if !budget.recover_resource_call_types
+                            || !matches!(value, CValue::Pointer(pointer)
+                                if pointer.object_type_evidence().is_none())
+                        {
+                            return None;
+                        }
+                        // Only a held resource's selected body can introduce
+                        // this domain. Existing incompatible evidence is never
+                        // retyped, and a C cast never selects this mode.
+                        *value = value
+                            .clone()
+                            .with_pointer_object_class(Some(object_class.clone()));
+                    }
+                    if budget.recover_resource_call_types {
+                        path.facts.push(ExecutionPureFact::certified(
+                            crate::kernel::object_types::checked_call_type_fact(
+                                value,
+                                object_class,
+                            ),
+                        ));
+                    }
+                    Some(path)
+                })
+                .collect())
+        }
         SpecPureFunctionArgument::Integer(expression) => Ok(
             evaluate_spec_integer_expression_paths_in(scope, expression, assumptions, budget)?
                 .into_iter()
@@ -6737,11 +6915,12 @@ fn evaluate_spec_pointer_offset_paths_in(
             &element_assumptions,
             budget,
         )? {
-            let (elements, unsigned, wide) = match element_path.value {
-                CValue::Int32(elements) => (elements, false, false),
-                CValue::Int64(elements) => (elements, false, true),
-                CValue::UInt64(elements) => (elements, true, true),
-                _ => continue,
+            let Some((elements, unsigned, wide)) = crate::kernel::eval::pointer_index_term(
+                element_path.value,
+                &element_path.facts,
+                &element_assumptions,
+            ) else {
+                continue;
             };
             let Some((mut facts, obligations)) = merge_execution_pure_facts_and_obligations_under(
                 &pointer_path.facts,
@@ -7918,50 +8097,8 @@ mod integer_truncation_tests;
 #[cfg(test)]
 mod compound_conditional_tests;
 
-/// The exact Integer value of the signed `int32` term `bits`. A sum or
-/// difference whose signed overflow is ruled out on this path, decided
-/// false by `assumptions` or required not to happen by one of
-/// `obligations`, is the Integer sum or difference of its operands'
-/// values: a population count `entry + quantity` then reads
-/// `to_integer(entry) + to_integer(quantity)`, which Integer reasoning can
-/// combine with other facts. Any other term is its plain observation.
-fn exact_signed_observation(
-    bits: &Bitvector32Term,
-    assumptions: &PureFactContext,
-    obligations: &[ProofObligation],
-) -> Option<IntegerTerm> {
-    let ruled_out = |overflow: ConditionTerm| {
-        assumptions.decide(&overflow) == Some(false)
-            || obligations.iter().any(|obligation| {
-                obligation.proposition() == &Proposition::ConditionIs(overflow.clone(), false)
-            })
-    };
-    match bits {
-        Bitvector32Term::Add(left, right)
-            if ruled_out(ConditionTerm::signed_add_overflows(
-                left.as_ref().clone(),
-                right.as_ref().clone(),
-            )) =>
-        {
-            Some(IntegerTerm::add(
-                exact_signed_observation(left, assumptions, obligations)?,
-                exact_signed_observation(right, assumptions, obligations)?,
-            ))
-        }
-        Bitvector32Term::Subtract(left, right)
-            if ruled_out(ConditionTerm::signed_subtract_overflows(
-                left.as_ref().clone(),
-                right.as_ref().clone(),
-            )) =>
-        {
-            Some(IntegerTerm::subtract(
-                exact_signed_observation(left, assumptions, obligations)?,
-                exact_signed_observation(right, assumptions, obligations)?,
-            ))
-        }
-        _ => IntegerTerm::from_machine(MachineIntegerType::Int32, bits.clone()),
-    }
-}
+#[cfg(test)]
+mod resource_call_type_tests;
 
 #[cfg(test)]
 mod pointer_integer_observation_tests {

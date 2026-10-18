@@ -84,9 +84,8 @@ fn leaves(body: &CStatement) -> Vec<CStatement> {
     let mut pending = vec![body];
     while let Some(statement) = pending.pop() {
         match statement {
-            CStatement::Seq(first, second) => {
-                pending.push(second);
-                pending.push(first);
+            CStatement::Seq(statements) => {
+                pending.extend(statements.iter().rev().map(|statement| statement.as_ref()))
             }
             _ => leaves.push(statement.clone()),
         }
@@ -757,8 +756,7 @@ fn source_scalar_lease_branches_keep_identical_live_ledger_until_common_end() {
             .collect::<std::collections::BTreeMap<_, _>>();
         common.retain(|name, value| right.locals().get(name) == Some(value));
         let joined =
-            abstract_c_state_for_interface_join_across(&left, &[&left, &right], &common, 0)
-                .unwrap();
+            abstract_c_state_for_interface_join_across(&left, &[&left, &right], 0).unwrap();
         assert_eq!(joined.state.loan_ledger(), active.loan_ledger());
         let endings = ends(&program);
         assert_eq!(endings.len(), depth);

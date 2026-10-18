@@ -59,9 +59,9 @@ pub(super) fn initialize_c_function_globals_owned(
         if !state.memory.has_block(&slot.block) {
             state.set_memory(state.memory.clone().with_classed_block_or_read_only(
                 slot.block.clone(),
+                global.declared_class(),
                 global.c_type().byte_width(),
                 global.is_constant(),
-                global.declared_class(),
             ));
             if initialize_missing_storage || global.is_constant() {
                 state.set_memory(
@@ -125,9 +125,9 @@ pub(super) fn initialize_c_function_globals_owned(
         if !state.memory.has_block(&slot.block) {
             state.set_memory(state.memory.clone().with_classed_block_or_read_only(
                 slot.block.clone(),
+                global_array.declared_class(),
                 bytes,
                 global_array.is_constant(),
-                global_array.declared_class(),
             ));
             if initialize_missing_storage || global_array.is_constant() {
                 state.set_memory(store_array_contents(
@@ -170,9 +170,9 @@ pub(super) fn initialize_c_function_globals_owned(
         if !state.memory.has_block(&slot.block) {
             state.set_memory(state.memory.clone().with_classed_block_or_read_only(
                 slot.block.clone(),
+                global_aggregate.declared_class.clone(),
                 global_aggregate.layout().size_bytes(),
                 global_aggregate.is_constant(),
-                global_aggregate.declared_class(),
             ));
             if initialize_missing_storage || global_aggregate.is_constant() {
                 state.set_memory(zero_aggregate_fields(
@@ -223,9 +223,9 @@ pub(super) fn initialize_c_function_globals_owned(
         if !state.memory.has_block(&slot.block) {
             state.set_memory(state.memory.clone().with_classed_block_or_read_only(
                 slot.block.clone(),
+                global_aggregate_array.declared_class.clone(),
                 bytes,
                 global_aggregate_array.is_constant(),
-                global_aggregate_array.declared_class(),
             ));
             if initialize_missing_storage || global_aggregate_array.is_constant() {
                 state.set_memory(zero_aggregate_array_fields(

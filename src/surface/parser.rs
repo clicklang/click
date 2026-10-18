@@ -21,6 +21,8 @@ use tokenizer::tokenize;
 pub(in crate::surface) struct SourceToken {
     pub text: String,
     pub span: std::ops::Range<usize>,
+    /// Where the token starts, as the parser numbers source positions.
+    pub start: SourcePosition,
 }
 
 pub(in crate::surface) fn source_tokens(source: &str) -> Result<Vec<SourceToken>, ClickError> {
@@ -31,13 +33,15 @@ pub(in crate::surface) fn source_tokens_in_container(
     source: &str,
     container: Option<&crate::source::SourceContainer>,
 ) -> Result<Vec<SourceToken>, ClickError> {
-    let (_, _, spans) = tokenizer::tokenize_with_spans(source, container)
+    let (_, positions, spans) = tokenizer::tokenize_with_spans(source, container)
         .map_err(|error| error.with_kind(ClickErrorKind::Syntax))?;
     Ok(spans
         .into_iter()
-        .map(|span| SourceToken {
+        .zip(positions)
+        .map(|(span, start)| SourceToken {
             text: source[span.clone()].to_string(),
             span,
+            start,
         })
         .collect())
 }
@@ -214,6 +218,18 @@ pub(in crate::surface) struct ProgramLayouts {
     /// Each C++ override with the virtual method it overrides, by their
     /// sidecar names: the override inherits that method's interface.
     pub(in crate::surface) virtual_overrides: Vec<(String, String)>,
+    /// Each dispatch a C++ importer names for a call through a reference to
+    /// a class another derives from, with the virtual method it stands for,
+    /// by their sidecar names: without a contract of its own, it has the
+    /// method's.
+    pub(in crate::surface) virtual_dispatches: Vec<(String, String)>,
+    /// The instances of each generic crate trait the import declares an
+    /// interface of, by the trait's importer name.
+    pub(in crate::surface) rust_trait_instances: BTreeMap<String, BTreeSet<Vec<String>>>,
+    /// Each C++ function's calls of methods on a receiver that may be an
+    /// object of a derived class, by sidecar names: the function called, and
+    /// the reference parameter the receiver is, or `None` for `this`.
+    pub(in crate::surface) receiver_calls: BTreeMap<String, Vec<(String, Option<String>)>>,
     /// The layout name of each C++ record a head spells otherwise, by that
     /// spelling: `Stored<long long>` is `Stored__long_long`.
     pub(in crate::surface) record_spellings: BTreeMap<String, String>,
@@ -423,10 +439,9 @@ pub(super) fn parse_file_items_for_module(
     parser.in_contract_definition = false;
     for definition in imported_resources {
         if let Some(body) = definition.composite_body() {
-            parser.declared_resource_child_slots.insert(
-                definition.name().to_string(),
-                composite_body_child_slots(body),
-            );
+            parser
+                .declared_resource_child_slots
+                .insert(definition.name().to_string(), body.child_slot_resources());
         }
     }
     for definition in imported_algebraic_types {
@@ -738,9 +753,11 @@ struct Parser {
     /// The fields of each resource declared so far, hidden ones included.
     declared_resource_fields: BTreeMap<String, Vec<ResourceFieldDefinition>>,
     /// The named child slots of each resource declared so far, across its
-    /// unmatched body and every match arm. A `fold` may leave out a slot
-    /// whose child is the in-scope resource of the same name.
-    declared_resource_child_slots: BTreeMap<String, BTreeSet<String>>,
+    /// unmatched body and every match arm, with the resource each owns when
+    /// the arms agree ([`CompositeResourceBody::child_slot_resources`]). A
+    /// `fold` may leave out a slot whose child is the in-scope resource of
+    /// the same name.
+    declared_resource_child_slots: BTreeMap<String, BTreeMap<String, Option<String>>>,
     /// In a resource that declares no fields and names a child: the hidden
     /// parent field that holds each `child.field`.
     hidden_child_fields: BTreeMap<(String, String), ResourceFieldAccess>,
@@ -780,9 +797,23 @@ struct Parser {
     /// trait bounds, `T` of `<T: traits::Shape>`: a reference to one is a
     /// reference to a value of a type the function does not know.
     rust_trait_type_parameters: BTreeSet<String>,
+    /// Each generic crate trait's block, `trait traits::Scale<T> { ... }`,
+    /// by the trait's importer name: its type parameters and its tokens.
+    rust_generic_traits: BTreeMap<String, (Vec<String>, std::ops::Range<usize>)>,
+    /// Each instance block of a generic crate trait, `trait
+    /// traits::Scale<i32> { ... }`, by the trait's importer name and its type
+    /// arguments: its tokens.
+    rust_instance_traits: BTreeMap<(String, Vec<String>), std::ops::Range<usize>>,
+    /// The instances of each generic crate trait the import uses, by the
+    /// trait's importer name.
+    rust_trait_instances: BTreeMap<String, BTreeSet<Vec<String>>>,
+    /// Whether the trait block being read is an instance the parser built.
+    rust_instantiating: bool,
     /// Each crate trait method implementation read, by name, with the
     /// interface it inherits.
     rust_trait_implementations: Vec<(String, String)>,
+    cpp_dispatches: Vec<(String, String)>,
+    cpp_receiver_calls: BTreeMap<String, Vec<(String, Option<String>)>>,
     /// The crate traits whose objects carry state, by importer name: the
     /// token rewrite already gave their implementations their interfaces.
     rust_object_traits: BTreeSet<String>,
@@ -833,6 +864,9 @@ struct Parser {
     /// its `name: &[T]` parameters. A call passes such a parameter a slice,
     /// which stands for its pointer and its length.
     pure_function_slices: BTreeMap<String, (usize, Vec<usize>)>,
+    /// Pure functions declared `-> Integer`, whose calls are Integer operands
+    /// for `arithmetic "integer";`.
+    integer_function_names: BTreeSet<String>,
     /// The slice parameters of the pure function whose parameter list is
     /// being parsed; `None` in any other parameter list, where a slice is
     /// not a parameter type.
@@ -1147,6 +1181,7 @@ impl Parser {
         parser.qualified_functions = layouts.qualified_functions;
         parser.local_struct_pointers_by_function = layouts.local_struct_pointers;
         parser.closure_captures = layouts.closure_captures;
+        parser.rust_trait_instances = layouts.rust_trait_instances;
         parser.plain_char = layouts.plain_char;
         parser.int64_t_rank = layouts.int64_t_rank.unwrap_or(LongRank::Long);
         parser.c_typedefs = layouts.c_typedefs;
@@ -1168,6 +1203,8 @@ impl Parser {
             }
             parser.language = SourceLanguage::Cpp;
             parser.rust_trait_implementations = layouts.virtual_overrides;
+            parser.cpp_dispatches = layouts.virtual_dispatches;
+            parser.cpp_receiver_calls = layouts.receiver_calls;
             parser.record_spellings = layouts.record_spellings;
         }
         Ok(parser)
@@ -1273,7 +1310,13 @@ impl Parser {
             rust_impl_trait: None,
             rust_trait_interface: None,
             rust_trait_type_parameters: BTreeSet::new(),
+            rust_generic_traits: BTreeMap::new(),
+            rust_instance_traits: BTreeMap::new(),
+            rust_trait_instances: BTreeMap::new(),
+            rust_instantiating: false,
             rust_trait_implementations: Vec::new(),
+            cpp_dispatches: Vec::new(),
+            cpp_receiver_calls: BTreeMap::new(),
             tokens,
             positions,
             matching_parentheses,
@@ -1299,6 +1342,7 @@ impl Parser {
             names: NameTable::default(),
             pure_function_names: BTreeSet::new(),
             pure_function_slices: BTreeMap::new(),
+            integer_function_names: BTreeSet::new(),
             pending_slice_params: None,
             bool_value_context: false,
             algebraic_variant_fields: BTreeMap::new(),
@@ -1389,6 +1433,9 @@ impl Parser {
                 && let Some(Token::Ident(name)) = self.peek_next().cloned()
             {
                 self.pure_function_names.insert(name.clone());
+                if self.declares_integer_result(self.position + 2) {
+                    self.integer_function_names.insert(name.clone());
+                }
                 if let Some(slices) = self.written_slice_parameters(self.position + 2) {
                     self.pure_function_slices.insert(name.clone(), slices);
                 }
@@ -1638,30 +1685,38 @@ impl Parser {
                 )));
             }
         }
+        if self.language == SourceLanguage::Rust {
+            self.instantiate_rust_generic_traits(&mut function_blocks)?;
+        }
         // A crate trait method's implementation, or a C++ override, inherits
         // its interface, which the sidecar may declare before or after it: a
         // trait's method, external or a default method with its proof, or the
         // virtual method overridden, whose contract a call through it assumes.
         let cpp = self.language == SourceLanguage::Cpp;
         for (implementation, interface) in std::mem::take(&mut self.rust_trait_implementations) {
-            // A defining class's method is stated on that class's memory, which
-            // an override's class lays out differently.
-            if cpp && self.cpp_object_methods.on_memory.contains(&interface) {
-                return Err(ClickError::new(format!(
-                    "`{implementation}` overrides `{interface}`, which is stated on its class's \
-                     memory by that class's definitions of its object's state; overriding it \
-                     remains unsupported"
-                ))
-                .at_declaration(&implementation));
-            }
-            // An override of a method of a class whose object carries state is
-            // stated on its own memory, by its class's definitions.
-            if cpp && self.cpp_object_methods.interfaces.contains(&interface) {
-                if !self.cpp_object_methods.on_memory.contains(&implementation) {
+            // An override of a method of a class whose object carries state, or
+            // of a defining class's method, is stated on its own memory, by its
+            // class's definitions.
+            if cpp
+                && (self.cpp_object_methods.interfaces.contains(&interface)
+                    || self.cpp_object_methods.on_memory.contains(&interface))
+            {
+                // A defining class's override the sidecar does not state has
+                // no contract, which verification refuses.
+                let class = crate::languages::cpp::names::cpp_display_name(&implementation)
+                    .and_then(|path| Some(path.rsplit_once("::")?.0.to_string()));
+                if !self.cpp_object_methods.on_memory.contains(&implementation)
+                    && !class.is_some_and(|class| self.cpp_object_methods.defining.contains(&class))
+                {
+                    let overridden = if self.cpp_object_methods.on_memory.contains(&interface) {
+                        "a method of a class that defines its object's state"
+                    } else {
+                        "whose class's object carries state"
+                    };
                     return Err(ClickError::new(format!(
-                        "`{implementation}` overrides `{interface}`, whose class's object \
-                         carries state: its class defines that state on its own memory, \
-                         `class Derived : Base {{ function f(this) -> T {{ ... }} }}`"
+                        "`{implementation}` overrides `{interface}`, {overridden}: its class \
+                         defines that state on its own memory, `class Derived : Base {{ \
+                         function f(this) -> T {{ ... }} }}`"
                     ))
                     .at_declaration(&implementation));
                 }
@@ -1697,6 +1752,76 @@ impl Parser {
                         ))
                         .at_declaration(&implementation)
                     })?;
+            }
+        }
+        // A dispatch the sidecar does not state has the contract of the
+        // method it stands for.
+        for (dispatch, method) in std::mem::take(&mut self.cpp_dispatches) {
+            if function_blocks
+                .iter()
+                .any(|block| block.signature().name() == dispatch)
+            {
+                continue;
+            }
+            if let Some(block) = function_blocks
+                .iter()
+                .find(|block| block.signature().name() == method)
+            {
+                let alias = block.dispatch_alias(&dispatch);
+                function_blocks.push(alias);
+            }
+        }
+        // A method of a class another derives from holds its memory, and a
+        // reference to it holds the object class's object: a call that needs
+        // the other is refused here, naming what each holds.
+        let methods = &self.cpp_object_methods;
+        for (caller, calls) in &self.cpp_receiver_calls {
+            let caller_class = crate::languages::cpp::names::cpp_display_name(caller)
+                .and_then(|path| Some(path.rsplit_once("::")?.0.to_string()));
+            for (callee, holder) in calls {
+                let message = match holder {
+                    None => {
+                        let (Some((class, method)), Some((_, (root, derived)))) = (
+                            methods.dispatches.get(callee),
+                            caller_class
+                                .as_ref()
+                                .and_then(|class| methods.derived_from.get_key_value(class)),
+                        ) else {
+                            continue;
+                        };
+                        format!(
+                            "`{caller}` calls `{class}::{method}` through `this`, which may be \
+                             an object of a class deriving from its class, such as `{derived}`: \
+                             the call runs whichever override the object's class selects, which \
+                             needs `{root}`'s object, and `{caller}`, stated on its class's \
+                             memory, does not hold that object; a qualified call, \
+                             `this->{class}::{method}(...)`, runs `{class}::{method}` itself"
+                        )
+                    }
+                    Some(parameter) => {
+                        let Some(class) = methods
+                            .object_parameters
+                            .get(caller)
+                            .and_then(|parameters| parameters.get(parameter))
+                        else {
+                            continue;
+                        };
+                        if !methods.on_memory.contains(callee) {
+                            continue;
+                        }
+                        let (root, derived) = &methods.derived_from[class];
+                        format!(
+                            "`{caller}` calls `{callee}` on `{parameter}`, a reference to \
+                             `{class}`, which may be an object of a class deriving from it, such \
+                             as `{derived}`: `{parameter}` holds `{root}`'s object, not \
+                             `{class}`'s memory, on which `{callee}` is stated"
+                        )
+                    }
+                };
+                return Err(ClickError::new(
+                    crate::languages::display_source_names(&message).into_owned(),
+                )
+                .at_declaration(&crate::languages::display_source_names(caller)));
             }
         }
         let end = self.position;
@@ -2226,6 +2351,14 @@ impl Parser {
     }
 
     fn is_qualified_c_name(&self) -> bool {
+        if let Some(written) = self
+            .here()
+            .and_then(|position| self.symbols.written_path(&position))
+        {
+            return written
+                .split_once("::")
+                .is_some_and(|(alias, _)| self.source_aliases.contains_key(alias));
+        }
         self.peek_next() == Some(&Token::ColonColon)
             && self
                 .peek_ident()
@@ -2233,9 +2366,14 @@ impl Parser {
     }
 
     fn parse_qualified_c_name(&mut self) -> Result<(String, CExpression), ClickError> {
-        let alias = self.expect_ident("C source alias")?;
-        self.expect(Token::ColonColon)?;
-        let mut name = self.expect_ident("C declaration name")?;
+        let written = self.expect_c_declaration_ident("C source alias")?;
+        let (alias, mut name) = match written.split_once("::") {
+            Some((alias, name)) => (alias.to_string(), name.to_string()),
+            None => {
+                self.expect(Token::ColonColon)?;
+                (written, self.expect_ident("C declaration name")?)
+            }
+        };
         if self.peek() == Some(&Token::ColonColon) {
             self.expect(Token::ColonColon)?;
             let local = self.expect_ident("function-local static name")?;
@@ -2529,7 +2667,7 @@ impl Parser {
             self.declared_resource_fields
                 .insert(name.clone(), body.fields.clone());
             self.declared_resource_child_slots
-                .insert(name.clone(), composite_body_child_slots(body));
+                .insert(name.clone(), body.child_slot_resources());
         }
         self.names.struct_params = previous_struct_params;
         self.names
@@ -4293,7 +4431,7 @@ impl Parser {
             requires,
             requirement_source_clauses,
             decreases,
-            structural_clauses: Vec::new(),
+            structural_clauses: StructuralClauses::default(),
             constructs,
             ensures,
             exceptional_ensures,
@@ -4447,9 +4585,15 @@ impl Parser {
             }
             (declarator.name, declarator.receiver)
         } else {
-            let alias = self.expect_ident("function name")?;
+            let alias = self.expect_c_declaration_ident("function name")?;
             let name =
-                if self.peek() == Some(&Token::ColonColon) {
+                if let Some((alias, name)) = alias.split_once("::") {
+                    c_source =
+                        Some(self.source_aliases.get(alias).cloned().ok_or_else(|| {
+                            self.error(format!("unknown C source alias `{alias}`"))
+                        })?);
+                    format!("{alias}::{name}")
+                } else if self.peek() == Some(&Token::ColonColon) {
                     self.position += 1;
                     let name = self.expect_ident("C function name")?;
                     c_source =
@@ -5834,6 +5978,7 @@ impl Parser {
                 binder_identity: declaration.identity,
                 instance,
                 identity,
+                family: None,
             });
             if self.peek() != Some(&Token::Comma) {
                 break;
@@ -6081,6 +6226,7 @@ impl Parser {
             binder_identity: declaration.identity,
             instance: name.to_string(),
             identity,
+            family: Some(family.clone()),
         })
     }
 
@@ -7418,7 +7564,7 @@ impl Parser {
         &mut self,
         expected_name: &str,
     ) -> Result<(String, Vec<ContractExpression>), ClickError> {
-        let name = self.expect_ident(expected_name)?;
+        let name = self.expect_reference_name(expected_name)?;
         self.expect(Token::LParen)?;
         let mut arguments = Vec::new();
         if self.peek() != Some(&Token::RParen) {
@@ -7519,6 +7665,7 @@ impl Parser {
             ContractExpression::Call { name, .. } => {
                 name == "to_integer"
                     || crate::surface::integer_truncation::is_integer_truncation(name)
+                    || self.integer_function_names.contains(name)
             }
             ContractExpression::Binding(name)
             | ContractExpression::CBinding(name)
@@ -7527,6 +7674,20 @@ impl Parser {
             }
             _ => false,
         }
+    }
+
+    /// Whether the function header whose parameter list opens at `start`
+    /// declares `-> Integer`: the parenthesis is matched, then the result
+    /// type follows the arrow.
+    fn declares_integer_result(&self, start: usize) -> bool {
+        if self.tokens.get(start) != Some(&Token::LParen) {
+            return false;
+        }
+        let Some(close) = self.matching_parentheses.get(start).copied().flatten() else {
+            return false;
+        };
+        self.tokens.get(close + 1) == Some(&Token::Arrow)
+            && matches!(self.tokens.get(close + 2), Some(Token::Ident(name)) if name == "Integer")
     }
 
     /// Whether an arithmetic operand of `expression` is a pointer parameter.
@@ -7583,7 +7744,9 @@ impl Parser {
                 }
             }
             ContractExpression::IntegerLiteral(value) => ContractExpression::IntegerLiteral(value),
-            leaf if self.integer_leaf(&leaf) => leaf,
+            // An Integer operand, including one under `old` or `at`, is
+            // already exact.
+            leaf if self.integer_operand(&leaf) => leaf,
             leaf => ContractExpression::Call {
                 name: "to_integer".to_string(),
                 arguments: vec![leaf],
@@ -7793,18 +7956,23 @@ impl Parser {
             self.position += 1;
         }
         self.expect(Token::RBrace)?;
-        self.bind_resource_child_names(parent, bindings, introduce)
+        self.bind_resource_child_names(parent, None, bindings, introduce)
     }
 
+    /// Binds the names of an unfold or fold pattern over `parent`, whose
+    /// resource is `family` when the instance recorded one other than its
+    /// clause's.
     fn bind_resource_child_names(
         &mut self,
         parent: &ResourceClause,
+        family: Option<&str>,
         bindings: Vec<(String, String)>,
         introduce: bool,
     ) -> Result<Vec<(String, String, Variable)>, ClickError> {
-        let ResourceClause::Declared { name: family, .. } = parent else {
+        let ResourceClause::Declared { name: written, .. } = parent else {
             return Err(self.error("child bindings require a declared resource family"));
         };
+        let family = &family.map_or_else(|| written.clone(), str::to_string);
         let mut result = Vec::new();
         let mut slots = BTreeSet::new();
         let mut names = BTreeSet::new();
@@ -7855,9 +8023,20 @@ impl Parser {
                 // whole: ...` that the unfold's child becomes, keeps the
                 // resource it was declared with: its fields are that
                 // resource's, not the parent's, when a later `have` reads
-                // `whole.model`. Only a new binder records the parent, which
-                // declaration expansion replaces with the slot's resource.
-                let recorded = existing.map_or_else(|| family.clone(), |(_, family)| family);
+                // `whole.model`. A new binder takes the slot's resource when
+                // every arm of the parent's declaration agrees on it, so an
+                // unfold of the child reads the child's own fields and
+                // slots. Otherwise it records the parent, which declaration
+                // expansion replaces with the slot's resource.
+                let recorded = existing.map_or_else(
+                    || {
+                        self.declared_resource_child_slots
+                            .get(family)
+                            .and_then(|slots| slots.get(&slot).cloned().flatten())
+                            .unwrap_or_else(|| family.clone())
+                    },
+                    |(_, family)| family,
+                );
                 self.names
                     .resource_bindings
                     .insert(name.clone(), (identity, recorded));
@@ -8018,8 +8197,16 @@ impl Parser {
                 return Err(self.error("resource unfold outputs require a named resource"));
             };
             self.expect(Token::RParen)?;
+            // A child an earlier unfold introduced keeps its parent's clause
+            // as its target, since the parser cannot instantiate the slot's
+            // arguments; the resource it recorded is the slot's.
+            let family = self
+                .names
+                .resource_bindings
+                .get(&binding.name)
+                .map(|(_, family)| family.clone());
             binding.child_bindings = Some(
-                self.bind_resource_child_names(&resource, bindings, true)?
+                self.bind_resource_child_names(&resource, family.as_deref(), bindings, true)?
                     .into(),
             );
             self.expect(Token::Semicolon)?;
@@ -8165,7 +8352,7 @@ impl Parser {
             return Vec::new();
         };
         slots
-            .iter()
+            .keys()
             .filter(|slot| {
                 slot.as_str() != result
                     && !explicit
@@ -9001,7 +9188,7 @@ impl Parser {
                         "resource instance `{name}` is not available as an unfold target"
                     )));
                 } else {
-                    let predicate = self.expect_ident("predicate name")?;
+                    let predicate = self.expect_reference_name("predicate name")?;
                     ProofTactic::UnfoldPredicate(predicate)
                 };
                 self.expect(Token::RParen)?;
@@ -14102,6 +14289,33 @@ impl Parser {
         }
     }
 
+    /// The Click declaration a written name refers to: a selectively
+    /// imported name reads as its library declaration here, and only here,
+    /// since only a reference reads the import. A C function, a binder or a
+    /// declaration of the same spelling keeps its own meaning.
+    fn expect_reference_name(&mut self, expected: &str) -> Result<String, ClickError> {
+        let at = self.error_context();
+        let name = self.expect_ident(expected)?;
+        let Some(position) = at.clone() else {
+            return Ok(name);
+        };
+        self.symbols
+            .reference(name, &position)
+            .map_err(|refusal| self.error_at(at, refusal))
+    }
+
+    /// A C or C++ declaration name as written. A library path such as
+    /// `list::append` is joined before parsing into the library declaration
+    /// it names; a C++ namespace member of that spelling reads it back.
+    fn expect_c_declaration_ident(&mut self, expected: &str) -> Result<String, ClickError> {
+        let written = self
+            .here()
+            .and_then(|position| self.symbols.written_path(&position))
+            .map(str::to_string);
+        let name = self.expect_ident(expected)?;
+        Ok(written.unwrap_or(name))
+    }
+
     fn expect_ident(&mut self, expected: &str) -> Result<String, ClickError> {
         let at = self.error_context();
         match self.next() {
@@ -15082,22 +15296,6 @@ fn struct_byte_base(base: CExpression) -> CExpression {
 
 /// Every named child slot of a composite resource body: its unmatched
 /// body's and each match arm's, whichever resource each one owns.
-fn composite_body_child_slots(body: &CompositeResourceBody) -> BTreeSet<String> {
-    std::iter::once(body)
-        .chain(
-            body.matched
-                .iter()
-                .flat_map(|matched| &matched.arms)
-                .map(|arm| &arm.body),
-        )
-        .flat_map(|body| &body.contains)
-        .filter_map(|clause| match clause {
-            ResourceClause::Named { binding, .. } => Some(binding.name.clone()),
-            _ => None,
-        })
-        .collect()
-}
-
 /// Whether `expression` or an operand of its arithmetic is a population
 /// count, looking through `old`.
 fn has_count_operand(expression: &ContractExpression) -> bool {

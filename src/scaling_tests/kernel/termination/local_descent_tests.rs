@@ -27,7 +27,7 @@ fn a_recursion_check_is_linear_in_sequential_branches() {
             [only] => only.clone(),
             _ => {
                 let (left, right) = statements.split_at(statements.len() / 2);
-                CStatement::Seq(Arc::new(sequence(left)), Arc::new(sequence(right)))
+                CStatement::seq(Arc::new(sequence(left)), Arc::new(sequence(right)))
             }
         }
     }
@@ -48,8 +48,9 @@ fn a_recursion_check_is_linear_in_sequential_branches() {
         } else {
             n()
         };
-        body = CStatement::Seq(Arc::new(body), Arc::new(guarded_call(argument)));
+        body = CStatement::seq(Arc::new(body), Arc::new(guarded_call(argument)));
         [CVerifiedFunctionRule {
+            pointer_result: None,
             loop_semantics: CLoopSemantics::ApplyVerifiedRules,
             checked_callees: None,
             applied_tactics: Default::default(),

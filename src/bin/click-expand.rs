@@ -925,7 +925,7 @@ int32 identity(int32 x) {
     }
 
     #[test]
-    fn claim_expansion_proves_its_normalized_claims_with_one_normalize() {
+    fn claim_expansion_proves_its_normalized_claims_in_goal_order() {
         let sequence = TEMP_SEQUENCE.fetch_add(1, Ordering::Relaxed);
         let directory = env::temp_dir().join(format!(
             "click-expand-closers-{}-{sequence}",
@@ -954,7 +954,9 @@ int32 identity(int32 x) {
         let _ = fs::remove_dir_all(&directory);
 
         assert!(
-            expanded.ends_with("    step();\n    normalize();\n    assumption();\n}\n"),
+            expanded.ends_with(
+                "    step();\n    assumption();\n    normalize();\n    normalize();\n    normalize();\n    normalize();\n    normalize();\n}\n"
+            ),
             "{expanded}"
         );
         assert!(!expanded.contains("have result =="), "{expanded}");

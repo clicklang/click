@@ -301,12 +301,15 @@ an accepted clause.
 - Done: steps 1, 3 and 4. `&`, `object(p)` and a range on a scalar field are
   refused with the spelling to write, and every proof in the repository uses
   the new forms.
-- Done: step 2 for the facts users meet most. A missing or held fact inside
-  a struct a parameter points at prints as `p->field`, `p->inner.field` or
-  `*p`; elements behind a pointer field as `p->data[lo..hi]`; one element of
-  a scalar pointer as `q[i]`; a named object's own storage as its name. A
-  range that is none of these still prints cells, and so do the bounds in a
-  "covers only when" note.
+- Done: step 2. A missing or held fact inside a struct a parameter points
+  at prints as `p->field`, `p->inner.field` or `*p`; elements behind a
+  pointer field as `p->data[lo..hi]`; one element of a scalar pointer as
+  `q[i]`; a named object's own storage as its name; an element or sub-range
+  of an array field as `p->a[i]` or `p->a[0..4]`; memory reached through a
+  chain of pointer fields as `h->in->a[i]` or `o->b->data[i]`. A "covers
+  only when" note inside an array field compares indices of that field. A
+  range spanning several fields of a struct has no single place and keeps
+  byte offsets from its pointer.
 - Done: step 5. A range on a struct pointer counts structs, and the sites
   that counted cells name the struct (`*p`), its fields, or a struct count.
   The parser scales the bounds to cells. A constant count works; a symbolic
@@ -315,7 +318,8 @@ an accepted clause.
 - Done: step 6 for C++ reference parameters, as designed under "Reference
   parameters". Rust contracts use `fn` signatures and `impl` blocks,
   with fields through references written `p.f`. Struct reference locals
-  in C++ remain.
+  in C++ remain, with the C++ importer's admission of them
+  (`issues/cpp-support.md`, "Remaining coverage").
 - `views *p` and `views p->inner` are accepted in a contract. They were
   refused outside a resource definition for no recorded reason.
 

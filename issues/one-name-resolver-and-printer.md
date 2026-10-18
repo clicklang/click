@@ -53,7 +53,42 @@ tactic in it. `click-verify` builds its `ProofSourceIndex` from the blocks the
 entry module's verification parse recorded, instead of guessing from the
 token before each brace. The guess also took resource `match` arms, `if`
 expression branches in pure functions and the bodies of C functions named
-`open` for proofs. Expansion still finds proof blocks from tokens.
+`open` for proofs. Expansion reads each block's tactics from those records
+too. Only the end of a one-tactic proof, `by T();`, is still found from tokens
+(`tactic_end_token`), in expansion and in `ProofSourceIndex`.
+
+Selectively imported names resolve in the parser, where it reads a Click call
+or an `unfold` target, instead of in a pre-parse rewrite that guessed a
+reference from the next token. A library path is still joined before parsing,
+but keeps its written spelling for C and C++ declaration names. Before, a C
+function, a C++ namespace member or class member, a resource binder, an enum
+constructor or a tactic with a library spelling was renamed to the library
+declaration
+(`mdtests/a_selectively_imported_name_keeps_c_and_binder_meanings.md`,
+`mdtests/a_cpp_namespace_may_share_a_library_module_name.md`,
+`mdtests/a_selective_import_cannot_clash_with_a_tactic.md`).
+
+Resource instance families are still decided twice: the parser binds a child
+an `unfold` introduces under its parent's resource, and declaration expansion
+repairs it from the slot, by identity, for the whole declaration. A call's
+produced instance now records its resource there as an explicit fold does.
+Before, a name that had held a child kept the child's resource after `step`
+bound it to another instance, so `x.v` read the wrong field and a false claim
+verified
+(`mdtests/a_produced_instance_reusing_a_child_name_does_not_read_the_child_resource.md`).
+What expansion has fixed about an instance is now kept per proof path: each
+arm of an `if`, `match`, `cases`, `branch` or induction starts from the state
+before the arms, and afterwards an instance the arms gave different resources
+is refused where it is used
+(`mdtests/one_name_may_bind_children_of_different_resources_in_two_arms.md`).
+A resource's child slots and the resource each owns are one definition,
+`CompositeResourceBody::child_slot_resources`, read by both the parser and
+declaration expansion. The parser records a new child under its slot's
+resource when the parent's arms agree on it, so an `unfold` of the child
+reads the child's own fields and slots
+(`mdtests/an_unfold_of_a_child_reads_the_child_resource_slots.md`). A slot
+whose resource differs between the parent's arms still fixes no resource for
+its child.
 
 The complete scoped table for parameters, fields, binders, constructors,
 resources, program points and project modules remains open. Proof inventories

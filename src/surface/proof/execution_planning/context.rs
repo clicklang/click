@@ -12,61 +12,6 @@ pub(in crate::surface::proof) fn explicit_loop_preservation_tactics(
     .then_some(tactics)
 }
 
-pub(in crate::surface::proof) fn kernel_loop_by_index<'a>(
-    statement: &'a CStatement,
-    target: usize,
-    next_loop_index: &mut usize,
-) -> Option<&'a CStatement> {
-    match statement {
-        CStatement::While { body, .. } => {
-            let loop_index = *next_loop_index;
-            *next_loop_index += 1;
-            if loop_index == target {
-                Some(statement)
-            } else {
-                kernel_loop_by_index(body, target, next_loop_index)
-            }
-        }
-        CStatement::Seq(first, second) => kernel_loop_by_index(first, target, next_loop_index)
-            .or_else(|| kernel_loop_by_index(second, target, next_loop_index)),
-        CStatement::If {
-            then_branch,
-            else_branch,
-            ..
-        } => kernel_loop_by_index(then_branch, target, next_loop_index)
-            .or_else(|| kernel_loop_by_index(else_branch, target, next_loop_index)),
-        CStatement::TryCatchInt32 {
-            try_body, handler, ..
-        } => kernel_loop_by_index(try_body, target, next_loop_index)
-            .or_else(|| kernel_loop_by_index(handler, target, next_loop_index)),
-        CStatement::Switch { cases, .. } => cases
-            .iter()
-            .find_map(|case| kernel_loop_by_index(&case.body, target, next_loop_index)),
-        CStatement::Skip
-        | CStatement::EndScalarReference(_)
-        | CStatement::ScalarReferenceScope(_)
-        | CStatement::Break
-        | CStatement::Continue
-        | CStatement::Goto { .. }
-        | CStatement::Declare { .. }
-        | CStatement::DeclareAggregate { .. }
-        | CStatement::Assign { .. }
-        | CStatement::CallAssign { .. }
-        | CStatement::Call { .. }
-        | CStatement::HeapAllocate { .. }
-        | CStatement::HeapFree { .. }
-        | CStatement::Throw(_)
-        | CStatement::Return(_)
-        | CStatement::Store { .. }
-        | CStatement::TypedStore { .. }
-        | CStatement::CopyAggregate { .. }
-        | CStatement::InitializeScalarArray { .. }
-        | CStatement::Update { .. }
-        | CStatement::Assert { .. } => None,
-        CStatement::ForStep { .. } | CStatement::EndAutomaticLifetimes { .. } => None,
-    }
-}
-
 pub(in crate::surface::proof) struct ExecutionProofEnvironment<'a> {
     pub(in crate::surface::proof) initial_state: &'a CState,
     pub(in crate::surface::proof) function_block: &'a FunctionBlock,

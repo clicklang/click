@@ -345,7 +345,7 @@ fn volatile_parameter_accesses_emit_ordered_facts() {
         CType::Int32,
         "volatile_read",
         vec![c_parameter("value", CType::Int32).with_volatile(true)],
-        CStatement::Seq(
+        CStatement::seq(
             std::sync::Arc::new(CStatement::Assign {
                 source: Default::default(),
                 name: "value".to_string(),
@@ -2522,7 +2522,6 @@ fn a_post_join_allocation_never_reuses_a_join_abstracted_variable() {
         .with_local("picked", int32(1));
     let else_state = then_state.clone().with_local("picked", int32(2));
     let siblings = [&then_state, &else_state];
-    let stable = BTreeMap::from([("kept".to_string(), int32(7))]);
 
     // The arms have issued nothing of their own, which is the case the old
     // code shared a starting point with.
@@ -2530,7 +2529,6 @@ fn a_post_join_allocation_never_reuses_a_join_abstracted_variable() {
     let abstraction = abstract_c_state_for_interface_join_across(
         &then_state,
         &siblings,
-        &stable,
         arms_next_kernel_variable,
     )
     .expect("the arms have one deterministic abstraction");
@@ -2582,13 +2580,11 @@ fn a_join_successor_cannot_continue_from_a_rewound_counter() {
         .with_local("picked", int32(1));
     let else_state = then_state.clone().with_local("picked", int32(2));
     let siblings = [&then_state, &else_state];
-    let stable = BTreeMap::from([("kept".to_string(), int32(7))]);
 
     let arms_next_kernel_variable = 0;
     let abstraction = abstract_c_state_for_interface_join_across(
         &then_state,
         &siblings,
-        &stable,
         arms_next_kernel_variable,
     )
     .expect("the arms have one deterministic abstraction");
@@ -3238,6 +3234,7 @@ fn statement_reservations_cover_integer_arguments_of_machine_applications() {
             SpecIntegerExpression::Term(IntegerTerm::var(held)),
         )],
         result_type: CType::Int32,
+        pointer_result: None,
         result_object_class: None,
     };
     assert_statement_reserves_application_integer_argument(

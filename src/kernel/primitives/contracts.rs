@@ -833,6 +833,8 @@ impl CFunctionContractInterface {
             return_type,
             return_pointee_constant: false,
             return_pointee_class: None,
+            object_type_requirements: Default::default(),
+            return_object_type_guarantee: None,
             return_aggregate_layout: None,
             aggregate_return_mode: CAggregateReturnMode::Copy,
             construction_parameter: None,
@@ -860,6 +862,16 @@ impl CFunctionContractInterface {
             recursion_peers: Vec::new(),
             recursion_binder: None,
         }
+    }
+
+    fn refresh_object_types(&mut self) {
+        self.object_type_requirements = crate::kernel::object_types::declared_requirements(self);
+        self.return_object_type_guarantee =
+            crate::kernel::object_types::declared_return_class(self);
+    }
+
+    pub(crate) fn object_type_requirements(&self) -> &ObjectTypeRequirements {
+        &self.object_type_requirements
     }
 
     pub fn return_type(&self) -> CType {
@@ -916,6 +928,7 @@ impl CFunctionContractInterface {
     pub(crate) fn with_trailing_value_parameters(mut self, count: usize) -> Option<Self> {
         let call_count = self.parameters.len().checked_sub(count)?;
         self.value_parameters = self.parameters.split_off(call_count);
+        self.refresh_object_types();
         Some(self)
     }
 
@@ -925,6 +938,7 @@ impl CFunctionContractInterface {
         }
         let call_parameters = self.parameters.split_off(count);
         self.value_parameters = std::mem::replace(&mut self.parameters, call_parameters);
+        self.refresh_object_types();
         Some(self)
     }
 
@@ -1346,6 +1360,7 @@ impl CFunction {
     /// exceptional-result binding.
     pub(crate) fn with_exceptional_ensures(mut self, ensures: Vec<SpecProposition>) -> Self {
         Arc::make_mut(&mut self.contract_interface).exceptional_ensures = ensures;
+        Arc::make_mut(&mut self.contract_interface).refresh_object_types();
         self
     }
 
@@ -1368,6 +1383,7 @@ impl CFunction {
         Arc::make_mut(&mut self.contract_interface).resource_derived_mutable_frame = false;
         Arc::make_mut(&mut self.contract_interface).contract_claims = claims;
         Arc::make_mut(&mut self.contract_interface).opaque_contract_supported = opaque_supported;
+        Arc::make_mut(&mut self.contract_interface).refresh_object_types();
         self
     }
 
@@ -3494,9 +3510,9 @@ fn statement_contains_internal_throw(statement: &CStatement) -> bool {
     match statement {
         CStatement::Throw(_) => true,
         CStatement::ForStep { step, .. } => statement_contains_internal_throw(step),
-        CStatement::Seq(first, second) => {
-            statement_contains_internal_throw(first) || statement_contains_internal_throw(second)
-        }
+        CStatement::Seq(statements) => statements
+            .iter()
+            .any(|statement| statement_contains_internal_throw(statement)),
         CStatement::TryCatchInt32 {
             try_body, handler, ..
         } => {

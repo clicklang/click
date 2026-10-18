@@ -169,7 +169,7 @@ fn reassociated_signed_add_domain_requires_each_guard_and_scales() {
 #[test]
 fn automatic_scalar_ownership_work_is_independent_of_unrelated_storage() {
     let mut measurements = Vec::new();
-    for count in [0u32, 64, 256, 1024] {
+    for count in [0u32, 16, 64, 256] {
         let mut memory = CMemory::new();
         let mut resources = ResourceContext::new();
         for index in 0..count {
@@ -215,4 +215,18 @@ fn automatic_scalar_ownership_work_is_independent_of_unrelated_storage() {
             .all(|work| *work <= measurements[0].max(1) * 4 + 32),
         "unrelated storage changed scalar allocation/access work: {measurements:?}"
     );
+    {
+        let costs = measurements.clone();
+        let indexed = |costs: &[usize]| costs.iter().all(|work| *work <= costs[0] + 64);
+        assert!(indexed(&costs), "indexed work: {costs:?}");
+        let scanned = costs
+            .iter()
+            .zip([0u32, 16, 64, 256])
+            .map(|(work, size)| work + usize::try_from(size).unwrap())
+            .collect::<Vec<_>>();
+        assert!(
+            !indexed(&scanned),
+            "the smaller fixture must detect a visit per unrelated item: {costs:?}"
+        );
+    }
 }

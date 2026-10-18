@@ -188,6 +188,7 @@ fn conditional_owner(name: &str) -> (CFunction, CExecutionEnvironment) {
 
 fn environment(function: &CFunction) -> CExecutionEnvironment {
     CExecutionEnvironment::new().with_verified_function_rule(CVerifiedFunctionRule {
+        pointer_result: None,
         function: function.clone(),
         loop_semantics: CLoopSemantics::Verify,
         checked_callees: None,
@@ -772,6 +773,7 @@ fn produced_composite_over_a_viewed_owner_is_refused() {
     let function = view_and_produce_reader("view_and_produce");
     let environment =
         CExecutionEnvironment::new().with_verified_function_rule(CVerifiedFunctionRule {
+            pointer_result: None,
             function: function.clone(),
             loop_semantics: CLoopSemantics::Verify,
             checked_callees: None,
@@ -991,9 +993,9 @@ fn candidate_nested_body_call_retains_inner_and_outer_evidence() {
         CType::Int32,
         "candidate_nested_outer",
         vec![c_parameter("p", CType::Int32Pointer)],
-        CStatement::Seq(
+        CStatement::seq(
             Arc::new(c_declare("result", CType::Int32)),
-            Arc::new(CStatement::Seq(
+            Arc::new(CStatement::seq(
                 Arc::new(c_call_assign("result", inner.name(), vec![c_variable("p")])),
                 Arc::new(c_return(c_variable("result"))),
             )),
@@ -1524,6 +1526,7 @@ fn candidate_nested_reader_body_call_reborrows_and_recovers_owner() {
     let environment = CExecutionEnvironment::new()
         .with_function(inner.clone())
         .with_verified_function_rule(CVerifiedFunctionRule {
+            pointer_result: None,
             function: inner,
             loop_semantics: CLoopSemantics::Verify,
             checked_callees: None,

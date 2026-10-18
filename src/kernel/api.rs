@@ -1468,9 +1468,8 @@ pub fn abstract_c_state_for_join_across(
     abstract_c_state_for_join_across_with_policy(
         state,
         sibling_states,
-        stable_entry_locals,
+        JoinLocals::Stable(stable_entry_locals),
         next_kernel_variable,
-        false,
     )
 }
 
@@ -1479,28 +1478,65 @@ pub fn abstract_c_state_for_join_across(
 /// forgetting an already-established immutable frame merely because scalar
 /// locals differ across the branch. Any disagreement uses the ordinary
 /// conservative memory havoc.
+///
+/// A local keeps its value exactly when every arm holds it alike. Only the
+/// locals on which the arms differ are visited, found from the structure the
+/// arms' frames share, so a join costs the arms' changes rather than every
+/// local and parameter in scope.
 pub fn abstract_c_state_for_interface_join_across(
     state: &CState,
     sibling_states: &[&CState],
-    stable_entry_locals: &BTreeMap<String, CValue>,
     next_kernel_variable: u64,
 ) -> Result<CStateJoinAbstraction, String> {
     abstract_c_state_for_join_across_with_policy(
         state,
         sibling_states,
-        stable_entry_locals,
+        JoinLocals::ArmsAgree,
         next_kernel_variable,
-        true,
     )
+}
+
+/// Which locals a join abstraction keeps: those still holding a given stable
+/// value, or, at an interface join, those every arm holds alike.
+#[derive(Clone, Copy)]
+enum JoinLocals<'a> {
+    Stable(&'a BTreeMap<String, CValue>),
+    ArmsAgree,
+}
+
+/// The blocks an interface join keeps: the slots of the locals it visited
+/// and kept, and the slot of any object local the arms hold alike, which it
+/// keeps without visiting. The second is read from the slot index.
+struct InterfacePreservedBlocks<'a> {
+    locals: &'a CLocalEnvironment,
+    differing: &'a BTreeSet<&'a str>,
+    visited: &'a BTreeSet<PointerBlock>,
+}
+
+impl crate::kernel::primitives::BlockMembership for InterfacePreservedBlocks<'_> {
+    fn contains_block(&self, block: &PointerBlock) -> bool {
+        self.visited.contains(block)
+            || self
+                .locals
+                .names_with_slot_in(block)
+                .into_iter()
+                .any(|name| {
+                    !self.differing.contains(name)
+                        && matches!(
+                            self.locals.bindings.get(name),
+                            Some(CLocalBinding::Object { .. })
+                        )
+                })
+    }
 }
 
 fn abstract_c_state_for_join_across_with_policy(
     state: &CState,
     sibling_states: &[&CState],
-    stable_entry_locals: &BTreeMap<String, CValue>,
+    join_locals: JoinLocals<'_>,
     next_kernel_variable: u64,
-    preserve_exact_common_memory: bool,
 ) -> Result<CStateJoinAbstraction, String> {
+    let preserve_exact_common_memory = matches!(join_locals, JoinLocals::ArmsAgree);
     // A join may retain one exact persistent ledger root, but it cannot pick
     // one arm's loan history when siblings have advanced independently. The
     // ledger equality is an opaque state-identity comparison; no loan map or
@@ -1552,9 +1588,11 @@ fn abstract_c_state_for_join_across_with_policy(
             // blocks' identities itself; the join no longer harvests block names.
             collect_c_state_bitvector_variables(sibling, &mut existing_variables);
         }
-        for value in stable_entry_locals.values() {
-            crate::instrumentation::record_deterministic_work(1);
-            collect_c_value_bitvector_variables(value, &mut existing_variables);
+        if let JoinLocals::Stable(stable_entry_locals) = join_locals {
+            for value in stable_entry_locals.values() {
+                crate::instrumentation::record_deterministic_work(1);
+                collect_c_value_bitvector_variables(value, &mut existing_variables);
+            }
         }
     }
     // The interface join takes that rule on trust. Debug builds, which
@@ -1570,8 +1608,10 @@ fn abstract_c_state_for_join_across_with_policy(
             for sibling in sibling_states {
                 collect_c_state_bitvector_variables(sibling, &mut held);
             }
-            for value in stable_entry_locals.values() {
-                collect_c_value_bitvector_variables(value, &mut held);
+            if let JoinLocals::Stable(stable_entry_locals) = join_locals {
+                for value in stable_entry_locals.values() {
+                    collect_c_value_bitvector_variables(value, &mut held);
+                }
             }
             let mark = ExecutionBudget::KERNEL_VARIABLE_BASE + next_kernel_variable;
             let stale = held
@@ -1642,20 +1682,49 @@ fn abstract_c_state_for_join_across_with_policy(
     // a value, so reading it afterwards is as undefined as it was there. An
     // arm that did initialize it must not keep a value for it, or the two
     // arms' abstractions differ and the arms cannot be joined at all.
+    //
+    // At an interface join the locals visited are those some arm binds
+    // differently. A local every arm binds alike keeps its binding and its
+    // slot unvisited: it is stable, and no arm left it uninitialized unless
+    // this one did too.
+    let differing = match join_locals {
+        JoinLocals::Stable(_) => BTreeSet::new(),
+        JoinLocals::ArmsAgree => {
+            let mut differing = BTreeSet::new();
+            if let Some(first) = sibling_states.first() {
+                differing.extend(state.locals.differing_names(&first.locals));
+                for sibling in &sibling_states[1..] {
+                    differing.extend(first.locals.differing_names(&sibling.locals));
+                }
+            }
+            differing
+        }
+    };
     let mut uninitialized_in_an_arm = BTreeSet::new();
     if preserve_exact_common_memory {
-        for sibling in sibling_states {
-            for (name, binding) in sibling.locals.bindings.iter() {
-                crate::instrumentation::record_deterministic_work(1);
-                if matches!(binding, CLocalBinding::UninitializedObject { .. }) {
-                    uninitialized_in_an_arm.insert(name.as_str());
-                }
+        for name in &differing {
+            crate::instrumentation::record_deterministic_work(1);
+            if sibling_states.iter().any(|sibling| {
+                matches!(
+                    sibling.locals.bindings.get(*name),
+                    Some(CLocalBinding::UninitializedObject { .. })
+                )
+            }) {
+                uninitialized_in_an_arm.insert(*name);
             }
         }
     }
     let mut left_uninitialized = Vec::new();
 
-    for (name, binding) in state.locals.bindings.iter() {
+    let visited: Box<dyn Iterator<Item = (&String, &CLocalBinding)>> = match join_locals {
+        JoinLocals::Stable(_) => Box::new(state.locals.bindings.iter()),
+        JoinLocals::ArmsAgree => Box::new(
+            differing
+                .iter()
+                .filter_map(|name| state.locals.bindings.get_key_value(*name)),
+        ),
+    };
+    for (name, binding) in visited {
         crate::instrumentation::record_deterministic_work(1);
         if let CLocalBinding::Object {
             c_type,
@@ -1690,7 +1759,13 @@ fn abstract_c_state_for_join_across_with_policy(
         else {
             continue;
         };
-        let abstract_value = if stable_entry_locals.get(name) == Some(value) {
+        let stable = match join_locals {
+            JoinLocals::Stable(stable_entry_locals) => stable_entry_locals.get(name) == Some(value),
+            JoinLocals::ArmsAgree => sibling_states
+                .iter()
+                .all(|sibling| sibling.locals.get(name) == Some(value)),
+        };
+        let abstract_value = if stable {
             value.clone()
         } else {
             match c_type {
@@ -1770,16 +1845,24 @@ fn abstract_c_state_for_join_across_with_policy(
         abstract_objects.push((name.clone(), abstract_value, *c_type));
     }
 
+    let interface_preserved = InterfacePreservedBlocks {
+        locals: &state.locals,
+        differing: &differing,
+        visited: &preserved_blocks,
+    };
+    let preserved: &dyn crate::kernel::primitives::BlockMembership = match join_locals {
+        JoinLocals::Stable(_) => &preserved_blocks,
+        JoinLocals::ArmsAgree => &interface_preserved,
+    };
+
     // The arms' memories are one memory when they differ only inside the
     // blocks the join preserves anyway. The differences are read off the
     // structure the snapshots share, so equal memories cost nothing and
     // unequal ones cost what differs.
     let common_memory = preserve_exact_common_memory
-        && sibling_states.iter().all(|sibling| {
-            state
-                .memory
-                .differs_only_within(&sibling.memory, &preserved_blocks)
-        });
+        && sibling_states
+            .iter()
+            .all(|sibling| state.memory.differs_only_within(&sibling.memory, preserved));
     if !common_memory {
         if let Some(ledger) = abstract_state.loan_ledger() {
             for sibling in sibling_states {
@@ -1803,7 +1886,7 @@ fn abstract_c_state_for_join_across_with_policy(
                 .clone()
                 .with_interface_memory_havoc_preserving_loans(
                     join_variable(&mut variables, &mut budget)?,
-                    &preserved_blocks,
+                    preserved,
                     &sibling_memories,
                     abstract_state.loan_ledger(),
                 )?;
@@ -1814,7 +1897,7 @@ fn abstract_c_state_for_join_across_with_policy(
                 .clone()
                 .with_loop_memory_havoc_preserving_loans(
                     join_variable(&mut variables, &mut budget)?,
-                    &preserved_blocks,
+                    preserved,
                     None,
                     abstract_state.loan_ledger(),
                 );
@@ -2395,6 +2478,7 @@ pub fn c_heap_allocate_sized_with_zeroed(
         target: target.into(),
         bytes,
         zeroed,
+        object_type: None,
     }
 }
 
@@ -2607,7 +2691,7 @@ pub fn c_labeled_assert(condition: CExpression, label: impl Into<String>) -> CSt
 }
 
 pub fn c_seq(first: CStatement, second: CStatement) -> CStatement {
-    CStatement::Seq(Arc::new(first), Arc::new(second))
+    CStatement::seq(Arc::new(first), Arc::new(second))
 }
 
 pub fn c_skip() -> CStatement {
@@ -2761,6 +2845,11 @@ pub fn c_while_with_invariant_and_effect_checks(
 }
 
 impl CStatement {
+    /// The pair `Seq(first, second)`: `first`, then `second`.
+    pub fn seq(first: Arc<CStatement>, second: Arc<CStatement>) -> Self {
+        Self::Seq(CStatementSequence::pair(first, second))
+    }
+
     /// Declares the resources a loop holds for itself.
     ///
     /// An empty declaration leaves the loop inheriting the enclosing resource
@@ -2879,9 +2968,8 @@ pub fn c_for_body_with_step(body: CStatement, step: CStatement) -> CStatement {
                 exited_locals: scopes.clone(),
                 continue_after: true,
             },
-            CStatement::Seq(first, second) => c_seq(
-                rewrite((*first).clone(), step, scopes),
-                rewrite((*second).clone(), step, scopes),
+            CStatement::Seq(statements) => CStatement::Seq(
+                statements.map(|statement| Arc::new(rewrite((**statement).clone(), step, scopes))),
             ),
             CStatement::If {
                 condition,
@@ -2917,9 +3005,10 @@ pub fn c_for_body_with_step(body: CStatement, step: CStatement) -> CStatement {
     }
     fn first_step(step: CStatement, names: Vec<String>) -> CStatement {
         match step {
-            CStatement::Seq(first, rest) => {
-                c_seq(first_step((*first).clone(), names), (*rest).clone())
-            }
+            CStatement::Seq(statements) => CStatement::Seq(statements.with_statement(
+                0,
+                Arc::new(first_step((**statements.first()).clone(), names)),
+            )),
             step => CStatement::ForStep {
                 step: Box::new(step),
                 exited_locals: names,
@@ -6351,7 +6440,7 @@ mod loan_authorization_tests {
     }
 }
 
-fn path_function_outcome(path: &SymbolicCExecutionPath) -> Option<&CFunctionOutcome> {
+pub(super) fn path_function_outcome(path: &SymbolicCExecutionPath) -> Option<&CFunctionOutcome> {
     let mut proposition = path.theorem.proposition();
     while let Proposition::Implies(_, body) = proposition {
         proposition = body;
@@ -6874,6 +6963,7 @@ pub fn prove_c_function_contract_execution_paths_with_checked_artifacts_and_pure
         applied_tactics.extend(artifact.applied_tactics.iter().cloned());
     }
     CFunctionContractExecution {
+        pointer_result: super::object_types::execution_pointer_result(&cases),
         cases,
         reuse_diagnostic,
         reuse_unauthorized_premise,
@@ -7918,11 +8008,16 @@ pub fn c_function_contract_refinement_context(
             .get_external_function_rule(target_name)?
             .function
     };
-    prepare_function_contract_refinement_context(
+    let mut context = prepare_function_contract_refinement_context(
         &contract,
         function,
         &mut ExecutionBudget::for_new_execution(),
-    )
+    )?;
+    context.object_type_requirements = function
+        .contract_interface()
+        .object_type_requirements()
+        .clone();
+    Some(context)
 }
 
 /// Whether `function`'s contract refines the named contract `contract_name`,
@@ -7941,6 +8036,7 @@ pub fn c_function_refines_named_contract(
     super::functions::function_refines_named_contract(
         contract,
         function,
+        function.contract_interface().object_type_requirements(),
         &mut ExecutionBudget::for_new_execution(),
     )
     .map_err(ExecutionLimit::describe)
@@ -7950,6 +8046,7 @@ pub fn c_function_refines_named_contract(
 /// verified against, as an override's must refine the virtual method's it
 /// overrides: the same judgment as a named contract's.
 pub fn c_function_refines_function_contract(
+    _environment: &CExecutionEnvironment,
     interface: &CFunction,
     function: &CFunction,
 ) -> Result<bool, String> {
@@ -7959,6 +8056,7 @@ pub fn c_function_refines_function_contract(
     super::functions::function_refines_named_contract(
         &contract,
         function,
+        function.contract_interface().object_type_requirements(),
         &mut ExecutionBudget::for_new_execution(),
     )
     .map_err(ExecutionLimit::describe)
@@ -8168,7 +8266,7 @@ pub(crate) fn prove_executed_contract_refinement(
             arguments,
         }
     } else {
-        CStatement::Seq(
+        CStatement::seq(
             Arc::new(CStatement::CallAssign {
                 target: "result".into(),
                 function_name: callback.name().to_string(),
@@ -8364,7 +8462,7 @@ pub(crate) fn prove_executed_concrete_contract_refinement(
             arguments,
         }
     } else {
-        CStatement::Seq(
+        CStatement::seq(
             Arc::new(CStatement::CallAssign {
                 target: "result".into(),
                 function_name: callee_name.to_string(),

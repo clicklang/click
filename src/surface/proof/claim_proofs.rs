@@ -248,6 +248,14 @@ fn unsupported_proof_shape(
             .join(", ");
         format!("these {} contract claims: {labels}", claim_labels.len())
     };
+    if let Some(index) = tactics
+        .iter()
+        .position(|tactic| matches!(tactic, ProofTactic::Cases(_)))
+    {
+        return ClickError::new(format!(
+            "`{proof_label}`: tactic {index} uses `cases` while checking {claim_description}, but `cases` requires a focused proposition goal. Put this case split inside `have P by {{ cases {{ ... }} }}`; use proof `if P {{ ... }} else {{ ... }}` to split execution and rejoin its arms."
+        ));
+    }
     let shape = proof_shape_hint(tactics).map_or_else(
         || "the supplied tactic sequence".to_string(),
         |(index, shape)| format!("tactic {index} ({shape})"),
@@ -438,10 +446,7 @@ fn prove_claims_by_checked_tactics(
     )?;
     let state = canonical_claim_caller_state(
         state,
-        function_block
-            .structural_clauses()
-            .iter()
-            .any(|clause| matches!(clause.region(), CodeRegion::Loop(_))),
+        function_block.structural_clauses().any_loop(),
         &function,
         &arguments,
         &pure_facts,
@@ -496,6 +501,14 @@ fn prove_claims_by_checked_tactics(
             parsed_function.parameters().as_ptr() as usize,
             Arc::new(crate::surface::ParameterIndex::new(
                 parsed_function.parameters(),
+            )),
+        )),
+        parameter_naming: Some((
+            parsed_function.parameters().as_ptr() as usize,
+            arguments.as_ptr() as usize,
+            Arc::new(crate::surface::ParameterNaming::new(
+                parsed_function.parameters(),
+                &arguments,
             )),
         )),
         entry_context: Some(entry_context),
@@ -1626,6 +1639,18 @@ fn continue_claim_existence_proof<'a>(
 
 /// Whether a post-execution leaf refines one claim's goal and so runs on that
 /// claim's existence proof rather than on the path's outcome proof.
+/// The main goal a written closer acts on after execution: the first open
+/// claim, in contract order. A resource claim (`owns`, `produces`) is a goal
+/// like a proposition claim; `assumption` closes it when the instance is held.
+fn main_goal_claim(closures: &[ClaimClosure]) -> Option<usize> {
+    closures.iter().position(|closure| !closure.is_closed())
+}
+
+/// A closer written when every proposition claim on the path is closed.
+fn no_open_goal(closer: &str) -> String {
+    format!("`{closer}` has no goal to close: every claim on this path is already closed")
+}
+
 fn opens_outcome_existence_proof(tactic: &ProofTactic) -> bool {
     matches!(
         tactic,
@@ -2581,8 +2606,12 @@ pub(super) fn finish_ordered_proof<'a>(
                                     // application advances this path's
                                     // evolving outcome proof.
                                     let before = evolving.checkpoint();
-                                    let applied =
-                                        evolving.apply_theorem_application(application)?;
+                                    // The same written `apply` the execution
+                                    // frontier runs, with its refusal.
+                                    let applied = super::checked_drivers::apply_written_theorem(
+                                        &evolving,
+                                        application,
+                                    )?;
                                     let certificate = applied.certificate_since(&before)?;
                                     outcome_proof = Some(applied);
                                     certificate
@@ -2935,8 +2964,9 @@ pub(super) fn finish_ordered_proof<'a>(
                                 };
                                 let mut retained_certificate = None;
                                 let mut failed_assumption = None;
+                                let main_claim = main_goal_claim(&closures);
                                 for (claim_index, claim) in claims.iter().enumerate() {
-                                    if closures[claim_index].is_closed() {
+                                    if Some(claim_index) != main_claim {
                                         continue;
                                     }
                                     let ensure_clause = claim.clause();
@@ -3102,23 +3132,17 @@ pub(super) fn finish_ordered_proof<'a>(
                                     }
                                 }
                                 if !closed_any {
-                                    let open = claims
-                                        .iter()
-                                        .enumerate()
-                                        .filter(|(index, _)| !closures[*index].is_closed())
-                                        .take(crate::surface::diagnostics::diagnostic_item_limit())
-                                        .map(|(_, claim)| {
-                                            format!(
-                                                "`{}`",
-                                                crate::surface::diagnostics::describe_ensure_clause(
-                                                    claim.clause()
-                                                )
+                                    let reason = match main_claim {
+                                        Some(index) => format!(
+                                            "`assumption` found no available fact or held instance for the current goal `{}`",
+                                            crate::surface::diagnostics::describe_ensure_clause(
+                                                claims[index].clause()
                                             )
-                                        })
-                                        .collect::<Vec<_>>()
-                                        .join(", ");
+                                        ),
+                                        None => no_open_goal("assumption"),
+                                    };
                                     let error = ClickError::new(format!(
-                                        "`{proof_label}` path {path_index}, tactic {tactic_index}: `assumption` found no available fact or held instance for any open claim: {open}"
+                                        "`{proof_label}` path {path_index}, tactic {tactic_index}: {reason}"
                                     ));
                                     return Err(
                                         match failed_assumption
@@ -3229,8 +3253,9 @@ pub(super) fn finish_ordered_proof<'a>(
                                 // refusal is the reader's, so the summary
                                 // below stands.
                                 let mut both_errors = Vec::new();
+                                let main_claim = main_goal_claim(&closures);
                                 for (claim_index, claim) in claims.iter().enumerate() {
-                                    if closures[claim_index].is_closed() {
+                                    if Some(claim_index) != main_claim {
                                         continue;
                                     }
                                     let ensure_clause = claim.clause();
@@ -3514,8 +3539,17 @@ pub(super) fn finish_ordered_proof<'a>(
                                     {
                                         return Err(error);
                                     }
+                                    let reason = match main_claim {
+                                        Some(index) => format!(
+                                            "`{closer_name}` did not prove the current goal `{}`",
+                                            crate::surface::diagnostics::describe_ensure_clause(
+                                                claims[index].clause()
+                                            )
+                                        ),
+                                        None => no_open_goal(closer_name),
+                                    };
                                     return Err(ClickError::new(format!(
-                                        "`{proof_label}` path {path_index}, tactic {tactic_index}: `{closer_name}` did not prove any current proposition goal"
+                                        "`{proof_label}` path {path_index}, tactic {tactic_index}: {reason}"
                                     )));
                                 }
                                 let tactics = retained_certificate
@@ -3717,6 +3751,13 @@ pub(super) fn finish_ordered_proof<'a>(
                                 {
                                     continue;
                                 }
+                                // `simp` acts on the first open goal;
+                                // `auto` is the catch-all that closes every
+                                // goal still open.
+                                let main_claim = main_goal_claim(&closures);
+                                let acts_on = |claim_index: usize| {
+                                    auto_closer || Some(claim_index) == main_claim
+                                };
                                 let capturing_this_tactic = path_capture
                                     .is_some_and(|capture| capture.tactic_index == *tactic_index);
                                 // Read the outcome's resources through the
@@ -3840,7 +3881,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                         ))
                                     })?;
                                     for (claim_index, closure) in closures.iter_mut().enumerate() {
-                                        if closure.is_closed() {
+                                        if closure.is_closed() || !acts_on(claim_index) {
                                             continue;
                                         }
                                         *closure = ClaimClosure::vacuous(
@@ -3885,7 +3926,9 @@ pub(super) fn finish_ordered_proof<'a>(
                                     let mut direct_resource_claims = Vec::new();
                                     let mut direct_resource_evidence = BTreeMap::new();
                                     for (claim_index, claim) in claims.iter().enumerate() {
-                                        if closures[claim_index].is_closed() {
+                                        if closures[claim_index].is_closed()
+                                            || !acts_on(claim_index)
+                                        {
                                             continue;
                                         }
                                         {
@@ -4336,7 +4379,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                 }
                                 let mut reasons = Vec::new();
                                 for (claim_index, claim) in claims.iter().enumerate() {
-                                    if closures[claim_index].is_closed() {
+                                    if closures[claim_index].is_closed() || !acts_on(claim_index) {
                                         continue;
                                     }
                                     let Some(root) = outcome_proof.as_ref() else {

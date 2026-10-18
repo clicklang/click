@@ -5377,6 +5377,40 @@ impl parser::ProgramLayouts {
                     .virtual_overrides
                     .push((function.source_name().to_string(), interface.to_string()));
             }
+            if !function.receiver_calls().is_empty() {
+                tables.receiver_calls.insert(
+                    function.source_name().to_string(),
+                    function
+                        .receiver_calls()
+                        .iter()
+                        .map(|(callee, holder)| {
+                            (
+                                source_names
+                                    .get(callee.as_str())
+                                    .map_or(callee.as_str(), |name| name)
+                                    .to_string(),
+                                holder.clone(),
+                            )
+                        })
+                        .collect(),
+                );
+            }
+            if let Some((trait_name, arguments)) =
+                crate::languages::rust::names::interface_instance(function.name())
+            {
+                tables
+                    .rust_trait_instances
+                    .entry(trait_name)
+                    .or_default()
+                    .insert(arguments);
+            }
+            if let Some(method) = function.dispatched_method()
+                && let Some(method) = source_names.get(method)
+            {
+                tables
+                    .virtual_dispatches
+                    .push((function.source_name().to_string(), method.to_string()));
+            }
             tables.local_struct_pointers.insert(
                 function.source_name().to_string(),
                 parser::FunctionLocals {
@@ -6019,20 +6053,16 @@ fn check_trait_method_implementations(
         let interface_name = interface_source;
         // A trait or class whose object carries state states each
         // implementation's interface on that implementation's own memory. A
-        // C++ override of a method that is itself stated so also refines that
-        // method's own contract: a call through it may reach the override.
+        // C++ override of a defining class's method refines only that: a call
+        // through a reference to a class another derives from is checked
+        // against the object class's interface, never the method's own
+        // contract.
         let iface = crate::surface::parser::implementation_interface_contract(function.name());
         let on_memory = environment.get_function_contract(&iface).is_some();
-        let overridden_on_memory = environment
-            .get_function_contract(&crate::surface::parser::implementation_interface_contract(
-                interface,
-            ))
-            .is_some();
         let mut contracts = Vec::new();
         if on_memory {
             contracts.push(Some(iface.as_str()));
-        }
-        if !on_memory || (!rust && overridden_on_memory) {
+        } else {
             contracts.push(verified_interface.is_none().then_some(interface));
         }
         // An implementation without its own contract is never verified, so
@@ -6062,9 +6092,11 @@ fn check_trait_method_implementations(
         let mut refines = true;
         for contract in contracts {
             refines &= match (contract, verified_interface) {
-                (None, Some(interface)) => {
-                    crate::kernel::c_function_refines_function_contract(interface, implementation)
-                }
+                (None, Some(interface)) => crate::kernel::c_function_refines_function_contract(
+                    environment,
+                    interface,
+                    implementation,
+                ),
                 (contract, _) => crate::kernel::c_function_refines_named_contract(
                     environment,
                     contract.unwrap_or(interface),
@@ -6689,7 +6721,7 @@ pub(in crate::surface) fn composite_resource_definitions(
             .with_fact_source_spellings(
                 body.facts()
                     .iter()
-                    .map(crate::surface::printing::source_click_proposition)
+                    .map(crate::surface::printing::authored_click_proposition)
                     .collect(),
             )
             .with_liveness_facts(facts_claim_liveness)
@@ -7593,30 +7625,43 @@ pub(in crate::surface) fn validate_region_proof_clauses(
 ) -> Result<(), ClickError> {
     let loop_count = count_loop_regions(parsed_function);
     for region_proof_clause in function_block.structural_clauses() {
-        match region_proof_clause.region() {
-            CodeRegion::Function => {
-                return Err(ClickError::new(
-                    "`for function` region proof blocks are not supported",
-                ));
-            }
-            CodeRegion::Loop(index) if *index >= loop_count => {
-                return Err(ClickError::new(format!(
-                    "`{}` has no `loop({index})` code region; it contains {loop_count} loop(s)",
-                    function_block.signature().name()
-                )));
-            }
-            CodeRegion::Statement(_) => {
-                return Err(ClickError::new(
-                    "internal frontier-loop proof was bound to a statement region",
-                ));
-            }
-            CodeRegion::Loop(_) => {}
-        }
-
-        validate_loop_phase_proof("initialize", region_proof_clause.initialize_proof())?;
-        validate_loop_phase_proof("preserve", region_proof_clause.preserve_proof())?;
+        validate_region_proof_clause(
+            function_block.signature().name(),
+            region_proof_clause,
+            loop_count,
+        )?;
     }
     Ok(())
+}
+
+/// One structural clause's check for [`validate_region_proof_clauses`]: it
+/// depends only on the clause and the function's loop count.
+pub(in crate::surface) fn validate_region_proof_clause(
+    function_name: &str,
+    region_proof_clause: &StructuralClause,
+    loop_count: usize,
+) -> Result<(), ClickError> {
+    match region_proof_clause.region() {
+        CodeRegion::Function => {
+            return Err(ClickError::new(
+                "`for function` region proof blocks are not supported",
+            ));
+        }
+        CodeRegion::Loop(index) if *index >= loop_count => {
+            return Err(ClickError::new(format!(
+                "`{function_name}` has no `loop({index})` code region; it contains {loop_count} loop(s)"
+            )));
+        }
+        CodeRegion::Statement(_) => {
+            return Err(ClickError::new(
+                "internal frontier-loop proof was bound to a statement region",
+            ));
+        }
+        CodeRegion::Loop(_) => {}
+    }
+
+    validate_loop_phase_proof("initialize", region_proof_clause.initialize_proof())?;
+    validate_loop_phase_proof("preserve", region_proof_clause.preserve_proof())
 }
 
 pub(in crate::surface) fn validate_loop_phase_proof(

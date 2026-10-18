@@ -1267,7 +1267,20 @@ fn refused_parameter_separation_ignores_unrelated_owned_objects() {
     let mut samples = Vec::new();
     for size in PARAMETER_SIZES {
         let _session = crate::kernel::VerificationSession::enter();
-        let (_, assumptions) = parameter_frame(size);
+        let (frame, mut assumptions) = parameter_frame(size);
+        // Real contract entries retain subobject bounds beside their owners.
+        // Bounds select no alias, so they must not open the entire block's
+        // candidate set when a requested field is missing.
+        for fact in frame.facts() {
+            let Some(range) = fact.memory_own_range() else {
+                continue;
+            };
+            let extent = SubobjectExtent {
+                start: range.base().clone(),
+                width: 8u32.into(),
+            };
+            assumptions = assumptions.assume_proposition(extent.coverage_fact(range));
+        }
         let range = |id| {
             CResource::Memory(CMemoryRange::new_with_element_width(
                 parameter_base(id),
@@ -2068,7 +2081,7 @@ fn observable_projection_shares_first_projection_across_cold_forks() {
 #[test]
 fn observable_projection_reuses_local_edits_across_sibling_paths() {
     let mut samples = Vec::new();
-    for size in [16usize, 64, 256, 1024] {
+    for size in [4usize, 16, 64, 256] {
         let _session = crate::kernel::VerificationSession::enter();
         crate::kernel::set_never_address_taken_locals(
             (0..size).map(|i| format!("hidden_{i}")).collect(),
@@ -2377,6 +2390,7 @@ fn a_view_lending_call_and_its_observation_ignore_unrelated_allocations() {
     let environment = CExecutionEnvironment::new()
         .with_function(helper.clone())
         .with_verified_function_rule(CVerifiedFunctionRule {
+            pointer_result: None,
             function: helper,
             loop_semantics: CLoopSemantics::Verify,
             checked_callees: None,

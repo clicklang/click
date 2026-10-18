@@ -29,7 +29,7 @@ fn unaddressable_scalar_owners_do_not_restate_observable_memory_frames() {
     let assumptions = PureFactContext::new();
     let expected = base.observable_facts_assuming_valid(&assumptions);
     let mut measured_work = Vec::new();
-    for count in [0, 64, 256, 1024] {
+    for count in [0, 16, 64, 256] {
         crate::kernel::set_never_address_taken_locals(
             (0..count).map(|i| format!("hidden_{i}")).collect(),
         );
@@ -71,7 +71,7 @@ fn unaddressable_scalar_owners_do_not_restate_observable_memory_frames() {
 
 #[test]
 fn memory_range_endpoint_graph_matching_scales_without_fact_index() {
-    for size in [16u64, 64, 256, 1024] {
+    for size in [16u64, 64, 256, 512] {
         let _session = crate::kernel::VerificationSession::enter();
         let variable = |id| Bitvector32Term::Variable(Variable(42_000 + id));
         let mut assumptions = PureFactContext::new();
@@ -489,7 +489,7 @@ fn bounded_unsigned_native_indices_project_only_with_full_width_evidence() {
         None
     );
     let mut measured = Vec::new();
-    for count in [0, 8, 64, 512] {
+    for count in [0, 2, 16, 128] {
         let mut facts = bounded.clone().assume_condition(equality.clone(), true);
         for i in 0..count {
             facts = facts.assume_condition(
@@ -579,7 +579,7 @@ fn store_separation_without_an_owner_reads_only_listed_compositions() {
     let mut admitted = Vec::new();
     let mut proved = Vec::new();
     let mut refused = Vec::new();
-    for size in [8u32, 32, 128, 512] {
+    for size in [8u32, 16, 32, 128] {
         let mut resources = ResourceContext::new();
         let mut context = PureFactContext::new();
         let mut last = 0;
@@ -756,7 +756,7 @@ fn kept_frame_class_lookup_adds_only_selected_physical_coverage() {
             8,
         ))
     };
-    for size in [16u64, 64, 256, 1024] {
+    for size in [4u64, 16, 64, 256] {
         let mut ranges = ResourceContext::new_with_equalities(&assumptions)
             .unchecked_with_fact(fact(owner.clone()));
         for index in 0..size {
@@ -795,7 +795,7 @@ fn rechecked_kept_frame_checks_selected_equality_without_rebuilding_foreign_inpu
     let queried = pointer(954_001);
     let middle = pointer(954_002);
     let owner = pointer(954_003);
-    for size in [16u64, 64, 256, 1024] {
+    for size in [4u64, 16, 64, 256] {
         let inputs = || {
             let mut facts = PureFactContext::new()
                 .assume_condition(

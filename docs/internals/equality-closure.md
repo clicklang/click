@@ -54,6 +54,44 @@ or the required pointer alias removes the conclusion. The
 `pointer_comparison_evidence_work_ignores_unrelated_facts` regressions cover
 registration order, early queries, premise withdrawal, and ambient scaling.
 
+A full pointer-value query also registers its two numeric addresses against
+the current affine block representatives before checking value congruence.
+Earlier address nodes may predate a block alias; without these bridges, the
+query can miss an established equality depending on premise admission order.
+Designation and retained extent remain separate value operands: refreshing
+addresses does not establish either identity. The cursor-chain regressions in
+`src/kernel/equality_graph/fact_congruence_tests.rs` combine symbolic loop
+values, a native argument, signed prefix counts and native lengths, with
+missing-premise, displacement and address-only controls. Its scaling test
+keeps query work bounded while unrelated conditions grow.
+
+Conditional normalization admits cited conditions and their mirrored forms in
+source order while retaining an indexed map for condition lookup. Bounded
+pointer closure can retain different coordinates after a block merge; a hash
+table's iteration order must not choose whether an emitted certificate checks.
+
+## Checked object-type evidence
+
+Admitted equations, predicates, and true model-equality conditions retain the
+checked object classes on direct pointer values and constructor payloads. The graph indexes those
+sources under `(address class, object class)`, using the same supported-fact
+buckets as pointer predicates and callback witnesses. A late address merge
+moves the support with the class; type lookup reads one selected bucket.
+Matching a typed model identity and proving `p == identity` therefore lets a
+model constructor or typed helper use `p` without repeating a type argument.
+This supplies no ownership or read permission.
+
+Query registration does not admit type evidence. Opaque call arguments can
+retain annotations from another interning context and are never used as type
+support. Alternative arms, binder bodies, snapshots, weak C declaration
+metadata, and destination casts do not
+supply positive support. Branches fork the persistent index. Removing a source
+removes its support, while removing an equality rebuilds the classes from the
+remaining inputs. Condition and proposition sources have separate indexes so
+clearing one partition does not scan the other. The regressions live in
+`src/kernel/equality_graph/object_type_tests.rs`, with deterministic scaling
+controls beside the other graph scaling tests.
+
 ## Typed algebraic model values
 
 Checked equalities of algebraic model values enter the same persistent term
@@ -932,8 +970,16 @@ Fold consumption uses this paired address/span index instead of enumerating
 pointer spellings. A selected candidate can express the requirement in its
 own block coordinates using the graph's affine relation; this visits no other
 class members. Existing local range matching remains responsible for
-same-block containment and endpoint reasoning. Specification reads also use
-the paired index for concrete affine addresses in classes whose memory entries
+same-block containment and endpoint reasoning.
+
+Logical model reads retain the selected supplier's full base expression when
+choosing its address coordinates. A loaded pointer can have a variable offset
+within its storage block; only the displacement from that complete base needs
+to be constant. Dropping the offset would give an unrelated read identity for
+an unchanged field after a helper call. Address selection grants neither read
+permission nor equality between different snapshots.
+
+Specification reads also use the paired index for concrete affine addresses in classes whose memory entries
 all have positive concrete read cores. A persistent AVL interval tree stores
 each occurrence's byte start/end and each subtree's maximum end. It lazily
 selects ranges covering the access's candidate footprint, including mixed extents and overlapping
@@ -1750,3 +1796,26 @@ ranges add no anchor evidence. C condition decisions and proof-side known-fact
 lookup (including `assumption()`) share this indexed rule. The latter also
 handles negated pointer equality and retains the exact separation premise;
 it performs no owned-composition scan, alias search, or unfolding.
+
+### Resource logical call domains
+
+Opening an active selected resource body retains the nominal pointer domains of
+its logical calls as explicit `object_type[CLASS](pointer)` facts. These facts
+use the existing supported pointer-type buckets and their ordinary scope and
+withdrawal rules. They are produced along the selected lowering path, rather
+than recovered from annotations in opaque interned call arguments. An inactive
+body exports none. Folding uses ordinary lowering: it must establish every
+nominal call domain before the proposed resource can be constructed. Merely
+naming a struct pointer parameter in an empty resource supplies no evidence.
+
+The executable controls are `model_pointer_resource_call_domains.md`,
+`model_pointer_resource_fold_requires_call_domains.md`,
+`model_pointer_empty_resource_does_not_type_parameter.md`, and
+`model_pointer_resource_inactive_call_domains.md` in `mdtests/`.
+
+Complete C pointer-to-integer copies retain nominal type receipts in the
+`PointerInteger` representation record. A numeric `PointerAddress` observation
+retains access-class annotation only: its annotation is excluded from numeric
+identity and cannot establish nominal type evidence. Recovering a typed pointer
+from those coordinates still needs the current scope's checked type facts.
+This does not recover a designation, bounds, or memory permission from numbers.

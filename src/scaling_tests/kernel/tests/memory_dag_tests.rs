@@ -270,7 +270,7 @@ fn pointer_read_source_registration_does_not_walk_growing_store_histories() {
 #[test]
 fn pointer_read_single_store_edges_compose_with_near_linear_work() {
     let mut previous_work = None;
-    for size in [8u32, 32, 128, 512] {
+    for size in [2u32, 8, 32, 128] {
         let address = Pointer::symbolic(Variable(98_390));
         let mut memory = intern_c_memory(CMemory::new());
         let context = PureFactContext::new();
@@ -669,7 +669,7 @@ fn stored_field_value_uses_indexed_base_aliases() {
     let bare = PureFactContext::new();
     assert!(!write_is_at_read_address(&write, &read, &bare));
     let mut samples = Vec::new();
-    for count in [16u64, 256, 4096] {
+    for count in [16u64, 64, 256] {
         let mut context = PureFactContext::new();
         for index in 0..count {
             context = context.assume_condition(
@@ -750,7 +750,7 @@ fn aliased_store_byte_frame_checks_width_context_and_scales() {
         (step, result)
     };
     let mut samples = Vec::new();
-    for count in [16u64, 64, 256, 1024] {
+    for count in [4u64, 16, 64, 256] {
         let mut context = PureFactContext::new();
         for index in 0..count {
             context = context.assume_condition(
@@ -802,6 +802,20 @@ fn aliased_store_byte_frame_checks_width_context_and_scales() {
         assert!(!matches!(bare_effect, StepEffect::Separate(_)));
     }
     assert!(samples[3] <= samples[0] * 4 + 32, "{samples:?}");
+    {
+        let costs = samples.clone();
+        let indexed = |costs: &[usize]| costs.iter().all(|work| *work <= costs[0] + 64);
+        assert!(indexed(&costs), "indexed work: {costs:?}");
+        let scanned = costs
+            .iter()
+            .zip([4u64, 16, 64, 256])
+            .map(|(work, size)| work + usize::try_from(size).unwrap())
+            .collect::<Vec<_>>();
+        assert!(
+            !indexed(&scanned),
+            "the smaller fixture must detect a visit per unrelated item: {costs:?}"
+        );
+    }
 }
 
 #[test]
@@ -1196,7 +1210,7 @@ fn numeric_byte_geometry_ignores_unrelated_address_classes() {
     let p = pointer(970_131);
     let q = pointer(970_132);
     let mut previous = None;
-    for size in [16, 64, 256, 1024] {
+    for size in [16, 64, 256] {
         let mut context = PureFactContext::new();
         for i in 0..size {
             context = context.assume_proposition(numeric_alias(

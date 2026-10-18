@@ -15,6 +15,13 @@ pub(in crate::kernel) fn charge_termination_work(units: usize) {
     crate::instrumentation::record_deterministic_work(units);
 }
 
+/// Charges a walk that visits a sequence's statements in turn for the pair
+/// nodes beyond the first that the pair tree it stands for held, so the walk
+/// costs what it cost on that tree.
+fn charge_seq_spine(statements: &CStatementSequence) {
+    charge_termination_work(statements.len() - 2);
+}
+
 /// The one library call the execution model implements itself instead of
 /// looking up a function; see `c0_statement_calls`.
 const MODELED_REALLOC: &str = "realloc";
@@ -1260,9 +1267,11 @@ fn collect_address_taken_locals(statement: &CStatement, names: &mut BTreeSet<Str
             escapes(target);
             escapes(operand);
         }
-        CStatement::Seq(first, second) => {
-            collect_address_taken_locals(first, names);
-            collect_address_taken_locals(second, names);
+        CStatement::Seq(statements) => {
+            charge_seq_spine(statements);
+            for statement in statements.iter() {
+                collect_address_taken_locals(statement, names);
+            }
         }
         CStatement::TryCatchInt32 {
             try_body, handler, ..
@@ -1550,9 +1559,11 @@ fn statement_calls_visiting(
         CStatement::CallAssign { function_name, .. } | CStatement::Call { function_name, .. } => {
             calls.insert(function_name.clone());
         }
-        CStatement::Seq(first, second) => {
-            statement_calls_visiting(first, calls, visit);
-            statement_calls_visiting(second, calls, visit);
+        CStatement::Seq(statements) => {
+            charge_seq_spine(statements);
+            for statement in statements.iter() {
+                statement_calls_visiting(statement, calls, visit);
+            }
         }
         CStatement::TryCatchInt32 {
             try_body, handler, ..
@@ -1612,9 +1623,11 @@ fn statement_declared_variables(statement: &CStatement, names: &mut BTreeSet<Str
         | CStatement::HeapAllocate { target: name, .. } => {
             names.insert(name.clone());
         }
-        CStatement::Seq(first, second) => {
-            statement_declared_variables(first, names);
-            statement_declared_variables(second, names);
+        CStatement::Seq(statements) => {
+            charge_seq_spine(statements);
+            for statement in statements.iter() {
+                statement_declared_variables(statement, names);
+            }
         }
         CStatement::TryCatchInt32 {
             try_body,
@@ -1791,9 +1804,9 @@ fn walk_termination_paths<W: TerminationWalk>(
             continuing: Vec::new(),
             broken: paths,
         }),
-        CStatement::Seq(first, second) => {
-            let first = descend(first, paths)?;
-            let mut second = descend(second, first.continuing)?;
+        CStatement::Seq(statements) => {
+            let first = descend(statements.first(), paths)?;
+            let mut second = descend(&statements.rest(), first.continuing)?;
             second.broken.extend(first.broken);
             Ok(second)
         }
@@ -3206,9 +3219,11 @@ fn collect_loops_in_order<'a>(statement: &'a CStatement, loops: &mut Vec<&'a CSt
             loops.push(statement);
             collect_loops_in_order(body, loops);
         }
-        CStatement::Seq(first, second) => {
-            collect_loops_in_order(first, loops);
-            collect_loops_in_order(second, loops);
+        CStatement::Seq(statements) => {
+            charge_seq_spine(statements);
+            for statement in statements.iter() {
+                collect_loops_in_order(statement, loops);
+            }
         }
         CStatement::If {
             then_branch,
@@ -3264,9 +3279,9 @@ fn collect_loops_in_order<'a>(statement: &'a CStatement, loops: &mut Vec<&'a CSt
 /// must still be the exact loop shape from the source body.
 fn same_statement_shape(left: &CStatement, right: &CStatement) -> bool {
     match (left, right) {
-        (CStatement::Seq(left_first, left_second), CStatement::Seq(right_first, right_second)) => {
-            same_statement_shape(left_first, right_first)
-                && same_statement_shape(left_second, right_second)
+        (CStatement::Seq(left), CStatement::Seq(right)) => {
+            same_statement_shape(left.first(), right.first())
+                && same_statement_shape(&left.rest(), &right.rest())
         }
         (
             CStatement::If {
@@ -3520,9 +3535,11 @@ fn collect_loops<'a>(statement: &'a CStatement, loops: &mut Vec<&'a CStatement>)
             loops.push(statement);
             collect_loops(body, loops);
         }
-        CStatement::Seq(first, second) => {
-            collect_loops(first, loops);
-            collect_loops(second, loops);
+        CStatement::Seq(statements) => {
+            charge_seq_spine(statements);
+            for statement in statements.iter() {
+                collect_loops(statement, loops);
+            }
         }
         CStatement::If {
             then_branch,
@@ -3656,9 +3673,9 @@ fn contains_natural_control_loop(statement: &CStatement) -> bool {
             backedge_target: Some(_),
             ..
         } => true,
-        CStatement::Seq(first, second) => {
-            contains_natural_control_loop(first) || contains_natural_control_loop(second)
-        }
+        CStatement::Seq(statements) => statements
+            .iter()
+            .any(|statement| contains_natural_control_loop(statement)),
         CStatement::If {
             then_branch,
             else_branch,
@@ -3697,9 +3714,9 @@ fn check_loops(
 ) -> Result<(), CTerminationError> {
     charge_termination_work(1);
     match statement {
-        CStatement::Seq(first, second) => {
+        CStatement::Seq(statements) => {
             check_loops(
-                first,
+                statements.first(),
                 supplied,
                 certified,
                 function_name,
@@ -3707,7 +3724,7 @@ fn check_loops(
                 unranked,
             )?;
             check_loops(
-                second,
+                &statements.rest(),
                 supplied,
                 certified,
                 function_name,
@@ -4075,9 +4092,11 @@ fn statement_function_addresses(statement: &CStatement, taken: &mut BTreeSet<Str
             visit(operand);
         }
         CStatement::ForStep { step, .. } => statement_function_addresses(step, taken),
-        CStatement::Seq(first, second) => {
-            statement_function_addresses(first, taken);
-            statement_function_addresses(second, taken);
+        CStatement::Seq(statements) => {
+            charge_seq_spine(statements);
+            for statement in statements.iter() {
+                statement_function_addresses(statement, taken);
+            }
         }
         CStatement::TryCatchInt32 {
             try_body, handler, ..
@@ -4410,7 +4429,7 @@ pub(super) fn statement_calls_function(statement: &CStatement, callee: &str) -> 
             function_name == callee
         }
         CStatement::While { body, .. } => statement_calls_function(body, callee),
-        CStatement::Seq(left, right) => both(left, right),
+        CStatement::Seq(statements) => both(statements.first(), &statements.rest()),
         CStatement::If {
             then_branch,
             else_branch,
@@ -4480,9 +4499,11 @@ fn self_call_loop_indices(
             self_call_loop_indices(body, callee, next_index, enclosing, found);
             enclosing.pop();
         }
-        CStatement::Seq(first, second) => {
-            descend(first, next_index);
-            descend(second, next_index);
+        CStatement::Seq(statements) => {
+            charge_seq_spine(statements);
+            for statement in statements.iter() {
+                descend(statement, next_index);
+            }
         }
         CStatement::If {
             then_branch,
@@ -5273,7 +5294,7 @@ mod address_escape_tests {
             pointer: variable("p"),
             value: variable("q"),
         };
-        let body = CStatement::Seq(Arc::new(escape), Arc::new(store));
+        let body = CStatement::seq(Arc::new(escape), Arc::new(store));
         assert!(address_taken_locals(&body).contains("i"));
         assert!(!address_taken_locals(&body).contains("q"));
         assert!(reject_address_escaped_measure("spin", "i", &address_taken_locals(&body)).is_err());
@@ -5972,15 +5993,16 @@ mod local_descent_tests {
     fn rule(name: &str, callees: &[&str], loops: usize) -> CVerifiedFunctionRule {
         let mut body = CStatement::Skip;
         for callee in callees {
-            body = CStatement::Seq(
+            body = CStatement::seq(
                 Arc::new(body),
                 Arc::new(crate::kernel::c_call(*callee, Vec::new())),
             );
         }
         for _ in 0..loops {
-            body = CStatement::Seq(Arc::new(body), Arc::new(summarized_loop(1)));
+            body = CStatement::seq(Arc::new(body), Arc::new(summarized_loop(1)));
         }
         CVerifiedFunctionRule {
+            pointer_result: None,
             function: CFunction::new(CType::Void, name, Vec::new(), body),
             loop_semantics: CLoopSemantics::ApplyVerifiedRules,
             checked_callees: None,
@@ -6171,9 +6193,10 @@ mod local_descent_tests {
                 CStatement::Skip,
             );
             for _ in 0..loops {
-                body = CStatement::Seq(Arc::new(body), Arc::new(summarized_loop(1)));
+                body = CStatement::seq(Arc::new(body), Arc::new(summarized_loop(1)));
             }
             CVerifiedFunctionRule {
+                pointer_result: None,
                 loop_semantics: CLoopSemantics::ApplyVerifiedRules,
                 checked_callees: None,
                 applied_tactics: Default::default(),
@@ -6217,7 +6240,7 @@ mod local_descent_tests {
             Vec::new(),
             CStatement::Skip,
         );
-        let body = CStatement::Seq(Arc::new(source_loop.clone()), Arc::new(source_loop));
+        let body = CStatement::seq(Arc::new(source_loop.clone()), Arc::new(source_loop));
         let ranking = |value| {
             CLoopTerminationMeasure::Ranking(vec![CRankingMeasureKey::CExpression(
                 crate::kernel::c_int32_literal(value),
@@ -6255,7 +6278,7 @@ mod local_descent_tests {
                 CStatement::Skip,
             )
         };
-        let body = CStatement::Seq(
+        let body = CStatement::seq(
             Arc::new(CStatement::TryCatchInt32 {
                 try_body: Box::new(spin(1)),
                 binding: "code".to_string(),
@@ -6301,13 +6324,13 @@ mod local_descent_tests {
     ) -> CVerifiedFunctionRule {
         let mut body = CStatement::Skip;
         for callee in callees {
-            body = CStatement::Seq(
+            body = CStatement::seq(
                 Arc::new(body),
                 Arc::new(crate::kernel::c_call(*callee, Vec::new())),
             );
         }
         for taken in takes {
-            body = CStatement::Seq(
+            body = CStatement::seq(
                 Arc::new(body),
                 Arc::new(CStatement::Assign {
                     source: Default::default(),
@@ -6318,7 +6341,7 @@ mod local_descent_tests {
         }
         let parameters = match through {
             Some(object) => {
-                body = CStatement::Seq(
+                body = CStatement::seq(
                     Arc::new(body),
                     Arc::new(crate::kernel::c_call(object, Vec::new())),
                 );
@@ -6330,6 +6353,7 @@ mod local_descent_tests {
             None => Vec::new(),
         };
         CVerifiedFunctionRule {
+            pointer_result: None,
             function: CFunction::new(CType::Void, name, parameters, body),
             loop_semantics: CLoopSemantics::ApplyVerifiedRules,
             checked_callees: None,
@@ -6519,6 +6543,7 @@ mod local_descent_tests {
     #[test]
     fn a_loop_certification_executed_to_its_exit_owes_no_measure() {
         let bare = |name: &str| CVerifiedFunctionRule {
+            pointer_result: None,
             loop_semantics: CLoopSemantics::ApplyVerifiedRules,
             checked_callees: None,
             applied_tactics: Default::default(),
@@ -6745,7 +6770,7 @@ mod local_descent_tests {
             } else {
                 call
             };
-            body = CStatement::Seq(Arc::new(body), Arc::new(call));
+            body = CStatement::seq(Arc::new(body), Arc::new(call));
         }
         let mut function = CFunction::new(CType::Void, name, Vec::new(), body);
         if measure {
@@ -6758,6 +6783,7 @@ mod local_descent_tests {
             function = function.with_inline_body();
         }
         CVerifiedFunctionRule {
+            pointer_result: None,
             function,
             loop_semantics: CLoopSemantics::ApplyVerifiedRules,
             checked_callees: None,
@@ -6791,6 +6817,7 @@ mod local_descent_tests {
             }]);
         }
         CVerifiedFunctionRule {
+            pointer_result: None,
             function,
             loop_semantics: CLoopSemantics::ApplyVerifiedRules,
             checked_callees: None,
@@ -6954,7 +6981,7 @@ mod local_descent_tests {
     /// ranked by the same component. `loop_measures` is the plan side of that
     /// ranking, so the two agree and the loop is not refused as unranked.
     fn self_call_in_loop_rule(name: &str) -> CVerifiedFunctionRule {
-        let body = CStatement::Seq(
+        let body = CStatement::seq(
             Arc::new(CStatement::Skip),
             Arc::new(CStatement::While {
                 condition: crate::kernel::c_int32_literal(1),
@@ -6974,6 +7001,7 @@ mod local_descent_tests {
             }),
         );
         CVerifiedFunctionRule {
+            pointer_result: None,
             function: CFunction::new(CType::Void, name, Vec::new(), body)
                 .with_recursion_measure(vec![declared_component()]),
             loop_semantics: CLoopSemantics::ApplyVerifiedRules,
@@ -7000,12 +7028,12 @@ mod local_descent_tests {
     /// paths were produced in; the struct is assembled directly here because
     /// this test is inside the kernel.
     fn loop_rule_for(function: &CFunction, anchor: Option<CRecursionAnchor>) -> CVerifiedLoopRule {
-        let CStatement::Seq(_, loop_statement) = &function.source_body else {
+        let CStatement::Seq(statements) = &function.source_body else {
             unreachable!("`self_call_in_loop_rule` builds a sequence");
         };
         CVerifiedLoopRule {
             symbolic_entry_state: CState::default(),
-            loop_statement: loop_statement.as_ref().clone(),
+            loop_statement: statements.rest().as_ref().clone(),
             loop_index: Some(0),
             required_assumptions: PureFactContext::new(),
             paths: Vec::new(),
@@ -7175,7 +7203,7 @@ mod termination_scaling_tests {
             [only] => crate::kernel::c_call(only.clone(), Vec::new()),
             _ => {
                 let (left, right) = callees.split_at(callees.len() / 2);
-                CStatement::Seq(Arc::new(calls_body(left)), Arc::new(calls_body(right)))
+                CStatement::seq(Arc::new(calls_body(left)), Arc::new(calls_body(right)))
             }
         }
     }
@@ -7185,6 +7213,7 @@ mod termination_scaling_tests {
     /// measures.
     fn rule(name: &str, callees: &[String]) -> CVerifiedFunctionRule {
         CVerifiedFunctionRule {
+            pointer_result: None,
             function: CFunction::new(CType::Void, name, Vec::new(), calls_body(callees)),
             loop_semantics: CLoopSemantics::ApplyVerifiedRules,
             checked_callees: None,
@@ -7283,6 +7312,7 @@ mod checked_callee_certification_tests {
     #[test]
     fn checked_callee_graph_distinguishes_missing_and_empty_evidence() {
         let rule = |checked_callees| CVerifiedFunctionRule {
+            pointer_result: None,
             function: CFunction::new(
                 CType::Void,
                 "caller",

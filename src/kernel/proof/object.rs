@@ -191,6 +191,7 @@ pub(crate) enum PropositionIntroduction {
     Universal {
         variable: crate::kernel::Variable,
         pointer: Option<crate::kernel::CType>,
+        object_class: Option<crate::kernel::effective_type::CAccessClass>,
         algebraic: Option<crate::kernel::AlgebraicType>,
     },
     Negation,
@@ -833,6 +834,7 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
                     | Sort::CInt64
                     | Sort::CMachineInteger(_)
                     | Sort::CPointer(_)
+                    | Sort::CObjectPointer(_, _)
                     | Sort::Algebraic(_)
             ) {
                 return Err(PropositionCloseError::IntegerChoiceWrongSort);
@@ -854,7 +856,7 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
                         crate::kernel::Bitvector32Term::Variable(chosen),
                     )
                 }
-                Sort::CPointer(c_type) => {
+                Sort::CPointer(c_type) | Sort::CObjectPointer(c_type, _) => {
                     let pointer = if matches!(c_type, crate::kernel::CType::FunctionPointer(_)) {
                         crate::kernel::Pointer::symbolic_function(chosen)
                     } else {
@@ -924,7 +926,14 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
                 }
                 _ => false,
             };
-            if !facts.listed_premise_available(premise, &[], false) && !native() {
+            // A signed definedness fact holds exactly when both Integer
+            // bounds of its exact result do, so that listed fact also
+            // supplies each bound.
+            let definedness = || {
+                crate::kernel::assumptions::definedness_of_integer_bound(premise)
+                    .is_some_and(|fact| facts.listed_premise_available(&fact, &[], false))
+            };
+            if !facts.listed_premise_available(premise, &[], false) && !native() && !definedness() {
                 return Err(PropositionCloseError::IntegerArithmeticPremiseUnavailable(
                     index,
                 ));
@@ -999,7 +1008,7 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
             ),
             Proposition::ForAll { var, sort, body } => {
                 let (variable, body, pointer, algebraic) = match sort {
-                    Sort::CPointer(c_type) => {
+                    Sort::CPointer(c_type) | Sort::CObjectPointer(c_type, _) => {
                         let (variable, body) = facts
                             .freshen_pointer_forall_body(*var, *c_type, body)
                             .ok_or(PropositionCloseError::UniversalWitnessFresheningExhausted)?;
@@ -1030,6 +1039,7 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
                     PropositionIntroduction::Universal {
                         variable,
                         pointer,
+                        object_class: sort.pointer_object_class(),
                         algebraic,
                     },
                 )

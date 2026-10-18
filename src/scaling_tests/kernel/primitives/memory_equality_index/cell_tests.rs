@@ -12,7 +12,7 @@ fn checked_attachment_is_flat_beside_unrelated_equality_history() {
             Pointer::symbolic(Variable(867_000)),
             Pointer::symbolic(Variable(867_001)),
         );
-        for size in [16u64, 64, 256, 1024] {
+        for size in [8u64, 32, 128, 512] {
             let initial = PureFactContext::new();
             let mut facts = initial.clone();
             for i in 0..size {
@@ -72,12 +72,15 @@ fn checked_attachment_is_flat_beside_unrelated_equality_history() {
             });
             samples.push((size, work, map_work));
         }
+        eprintln!("selected attachment work: {samples:?}");
         assert!(
-            samples[3].1 <= samples[0].1 * 2 + 64,
+            samples
+                .iter()
+                .all(|(_, work, _)| *work <= samples[0].1 + 64),
             "attachment walked equality history: {samples:?}"
         );
         assert!(
-            samples[3].2 <= samples[0].2 * 4 + 512,
+            samples.windows(2).all(|pair| pair[1].2 <= pair[0].2 + 256),
             "attachment rebuilt graph state: {samples:?}"
         );
     }
@@ -551,7 +554,7 @@ fn scratch_queries_do_not_force_input_registration_at_the_next_boundary() {
 #[test]
 fn cell_footprint_merges_and_queries_do_not_scan_other_sizes() {
     let mut samples = Vec::new();
-    for size in [16u32, 64, 256, 1024] {
+    for size in [8u32, 32, 128, 512] {
         let at = |id: u64| Pointer {
             block: PointerBlock::ExternalArgument,
             offset: PointerOffsetTerm::Variable(Variable(859_000 + id)),
@@ -578,12 +581,13 @@ fn cell_footprint_merges_and_queries_do_not_scan_other_sizes() {
         });
         samples.push((size, work, map_work));
     }
+    eprintln!("selected footprint work: {samples:?}");
     assert!(
         samples[3].1 <= samples[0].1 * 2 + 32,
         "merge/query scanned other footprints: {samples:?}"
     );
     assert!(
-        samples[3].2 <= samples[0].2 * 3 + 128,
+        samples.windows(2).all(|pair| pair[1].2 <= pair[0].2 + 64),
         "merge/query rebuilt the larger footprint payload: {samples:?}"
     );
 }
@@ -640,7 +644,7 @@ fn write_permission_does_not_enumerate_covering_views() {
     let base = Pointer::symbolic(Variable(960_200));
     let facts = PureFactContext::new();
     let mut samples = Vec::new();
-    for size in [16u32, 64, 256, 1024] {
+    for size in [4u32, 16, 64, 256] {
         let mut resources = ResourceContext::new_with_equalities(&facts);
         for i in 0..size {
             resources = resources.unchecked_with_fact(view(&base, 0, 8 + i));
@@ -672,6 +676,36 @@ fn write_permission_does_not_enumerate_covering_views() {
             .all(|(_, _, work)| *work <= samples[0].2 * 3 + 128),
         "write candidate selection visited covering views: {samples:?}"
     );
+    {
+        let costs = samples.iter().map(|x| x.1).collect::<Vec<_>>();
+        let indexed = |costs: &[usize]| costs.iter().all(|work| *work <= costs[0] + 64);
+        assert!(indexed(&costs), "indexed work: {costs:?}");
+        let scanned = costs
+            .iter()
+            .zip([4u32, 16, 64, 256])
+            .map(|(work, size)| work + usize::try_from(size).unwrap())
+            .collect::<Vec<_>>();
+        assert!(
+            !indexed(&scanned),
+            "the smaller fixture must detect a visit per unrelated item: {costs:?}"
+        );
+    }
+    {
+        // The first query also registers the selected pointer. Keep its
+        // original bound, and calibrate indexed lookup on the three warm sizes.
+        let costs = samples[1..].iter().map(|x| x.2).collect::<Vec<_>>();
+        let indexed = |costs: &[usize]| costs.iter().all(|work| *work <= costs[0] + 128);
+        assert!(indexed(&costs), "indexed work: {costs:?}");
+        let scanned = costs
+            .iter()
+            .zip([16u32, 64, 256])
+            .map(|(work, size)| work + usize::try_from(size).unwrap())
+            .collect::<Vec<_>>();
+        assert!(
+            !indexed(&scanned),
+            "the smaller fixture must detect a visit per unrelated item: {costs:?}"
+        );
+    }
 }
 
 #[test]
@@ -1457,7 +1491,7 @@ fn a_cold_small_memory_index_skips_unrelated_pointer_merge_history() {
 #[test]
 fn framed_pointer_fragments_rejoin_through_their_checked_read_endpoint() {
     let mut work_samples = Vec::new();
-    for size in [16u64, 64, 256, 1024] {
+    for size in [4u64, 16, 64, 256] {
         let _session = crate::kernel::VerificationSession::enter();
         let field = Pointer {
             block: PointerBlock::ExternalArgument,
@@ -1564,6 +1598,20 @@ fn framed_pointer_fragments_rejoin_through_their_checked_read_endpoint() {
             .all(|work| *work <= work_samples[0] + 128),
         "unrelated owners changed selected two-fragment work: {work_samples:?}"
     );
+    {
+        let costs = work_samples.clone();
+        let indexed = |costs: &[usize]| costs.iter().all(|work| *work <= costs[0] + 128);
+        assert!(indexed(&costs), "indexed work: {costs:?}");
+        let scanned = costs
+            .iter()
+            .zip([4u64, 16, 64, 256])
+            .map(|(work, size)| work + usize::try_from(size).unwrap())
+            .collect::<Vec<_>>();
+        assert!(
+            !indexed(&scanned),
+            "the smaller fixture must detect a visit per unrelated item: {costs:?}"
+        );
+    }
 }
 
 #[test]
@@ -1669,7 +1717,7 @@ fn framed_pointer_read_selects_interior_writes_under_live_authority() {
 fn cold_read_queries_ignore_unrelated_classes_and_resource_ranges() {
     let pointer = |id| Pointer::symbolic(Variable(id));
     let mut samples = Vec::new();
-    for size in [16u64, 64, 256, 1024] {
+    for size in [4u64, 16, 64, 256] {
         let mut context = PureFactContext::new();
         let mut resources = ResourceContext::new();
         for index in 0..size {

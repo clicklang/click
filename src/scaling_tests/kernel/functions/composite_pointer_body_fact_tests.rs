@@ -58,7 +58,7 @@ fn fold_copied_wide_word_preserves_scope_width_and_scales() {
         &packed(&copied),
     ));
     let mut previous = None;
-    for count in [16_u64, 64, 256, 1024] {
+    for count in [4_u64, 16, 64, 256] {
         let mut padded = context.clone();
         for index in 0..count {
             padded = padded.assume_proposition(Proposition::ConditionIs(

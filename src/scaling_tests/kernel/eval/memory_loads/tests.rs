@@ -13,7 +13,7 @@ fn logical_cached_pointer_read_carries_its_current_cell_equation() {
     let alias = Pointer::symbolic(Variable(955_902));
     let model = Pointer::symbolic(Variable(955_903));
     let mut samples = Vec::new();
-    for size in [16u64, 64, 256, 1024] {
+    for size in [4u64, 16, 64, 256] {
         let mut memory = base.clone();
         let mut context = empty.clone().assume_condition(
             ConditionTerm::pointer_equal(address.clone(), alias.clone()),
@@ -127,6 +127,34 @@ fn logical_cached_pointer_read_carries_its_current_cell_equation() {
     }
     assert!(samples[3].0 <= samples[0].0 * 3 + 128, "{samples:?}");
     assert!(samples[3].1 <= samples[0].1 * 6 + 512, "{samples:?}");
+    {
+        let costs = samples.iter().map(|x| x.0).collect::<Vec<_>>();
+        let indexed = |costs: &[usize]| costs.iter().all(|work| *work <= costs[0] + 64);
+        assert!(indexed(&costs), "indexed work: {costs:?}");
+        let scanned = costs
+            .iter()
+            .zip([4u64, 16, 64, 256])
+            .map(|(work, size)| work + usize::try_from(size).unwrap())
+            .collect::<Vec<_>>();
+        assert!(
+            !indexed(&scanned),
+            "the smaller fixture must detect a visit per unrelated item: {costs:?}"
+        );
+    }
+    {
+        let costs = samples.iter().map(|x| x.1).collect::<Vec<_>>();
+        let indexed = |costs: &[usize]| costs.iter().all(|work| *work <= costs[0] + 128);
+        assert!(indexed(&costs), "indexed work: {costs:?}");
+        let scanned = costs
+            .iter()
+            .zip([4u64, 16, 64, 256])
+            .map(|(work, size)| work + usize::try_from(size).unwrap())
+            .collect::<Vec<_>>();
+        assert!(
+            !indexed(&scanned),
+            "the smaller fixture must detect a visit per unrelated item: {costs:?}"
+        );
+    }
 }
 
 /// Naming a load after a call whose kept memory shares the load's block
@@ -451,7 +479,7 @@ fn logical_reads_of_a_returned_field_share_checked_alias_identity() {
             .all(|proof| !proof.checks(&PureFactContext::new()))
     );
     let mut work = Vec::new();
-    for count in [16, 64, 256, 1024] {
+    for count in [4, 16, 64, 256] {
         let mut context = facts.clone();
         for index in 0..count {
             context = context.assume_condition(
@@ -480,6 +508,20 @@ fn logical_reads_of_a_returned_field_share_checked_alias_identity() {
         direct[0].outcome, unrelated[0].outcome,
         "a missing alias premise cannot join reads"
     );
+    {
+        let costs = work.clone();
+        let indexed = |costs: &[usize]| costs.iter().all(|work| *work <= costs[0] + 64);
+        assert!(indexed(&costs), "indexed work: {costs:?}");
+        let scanned = costs
+            .iter()
+            .zip([4, 16, 64, 256])
+            .map(|(work, size)| work + usize::try_from(size).unwrap())
+            .collect::<Vec<_>>();
+        assert!(
+            !indexed(&scanned),
+            "the smaller fixture must detect a visit per unrelated item: {costs:?}"
+        );
+    }
 }
 
 #[test]
@@ -850,7 +892,7 @@ fn cached_pointer_value_keeps_its_defining_coordinates_and_scales() {
     let bits = canonical_form_of_load(snapshot, address.clone(), LoadKind::Bits32);
     let cached = CValue::Int32(bits);
     let mut samples = Vec::new();
-    for count in [16u64, 64, 256, 1024] {
+    for count in [4u64, 16, 64, 256] {
         let mut context = PureFactContext::new().assume_condition(
             ConditionTerm::pointer_equal(owner.clone(), cursor.clone()),
             true,
@@ -910,6 +952,20 @@ fn cached_pointer_value_keeps_its_defining_coordinates_and_scales() {
         samples.iter().all(|sample| sample.1 <= samples[0].1 + 128),
         "{samples:?}"
     );
+    {
+        let costs = samples.iter().map(|x| x.1).collect::<Vec<_>>();
+        let indexed = |costs: &[usize]| costs.iter().all(|work| *work <= costs[0] + 128);
+        assert!(indexed(&costs), "indexed work: {costs:?}");
+        let scanned = costs
+            .iter()
+            .zip([4u64, 16, 64, 256])
+            .map(|(work, size)| work + usize::try_from(size).unwrap())
+            .collect::<Vec<_>>();
+        assert!(
+            !indexed(&scanned),
+            "the smaller fixture must detect a visit per unrelated item: {costs:?}"
+        );
+    }
 }
 
 #[test]
@@ -1409,7 +1465,7 @@ fn opaque_word_call_frame(size: u32) -> (CMemory, PureFactContext, Pointer) {
 
 #[test]
 fn normalizing_an_opaque_word_pointer_does_not_search_unrelated_call_resources() {
-    let costs = [16u32, 64, 256, 1024].map(|size| {
+    let costs = [4u32, 16, 64, 256].map(|size| {
         let _session = crate::kernel::VerificationSession::enter();
         let (memory, context, word) = opaque_word_call_frame(size);
         // The load producer's final step creates this opaque word. Avoid
@@ -1462,7 +1518,7 @@ fn normalizing_an_opaque_word_pointer_does_not_search_unrelated_call_resources()
 
 #[test]
 fn a_call_frame_step_queries_its_kept_range_once() {
-    for size in [16u32, 64, 256, 1024] {
+    for size in [4u32, 16, 64, 256] {
         let _session = crate::kernel::VerificationSession::enter();
         let (memory, context, word) = opaque_word_call_frame(size);
         let source = intern_c_memory_ref(&memory);
@@ -1478,6 +1534,14 @@ fn a_call_frame_step_queries_its_kept_range_once() {
             kept.range_holding(&context, None, &word, 8)
         });
         assert!(range.is_none());
+        if size == 256 {
+            // Keep the fixture large enough that a second range lookup
+            // exceeds the step's fixed overhead allowance below.
+            assert!(
+                lookup_work > 512,
+                "duplicated lookup must be detectable: {lookup_work}"
+            );
+        }
         let (effect, step_work) = crate::instrumentation::measure_deterministic_work(|| {
             crate::kernel::resource_tracker::step_effect::affects(
                 &derivation,

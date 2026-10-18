@@ -226,6 +226,18 @@ line can meet the line target while its token ratio stays far over it. On
 2026-10-16, six examples were over the line target. `rbtree-erase` was 36
 times its C by lines and 119 times by tokens.
 
+Three examples stay over the target by decision (maintainer, 2026-10-17):
+on 2026-10-17, `rbtree-augmented` is 40 times its C by lines (9,673 proof
+lines for 244 lines of C), `rbtree-erase` 38 times (7,271 for 194) and
+`rbtree-insert` 36 times (2,910 for 82). Each proves a Linux red-black tree
+operation against a full model of the tree: parent pointers packed with the
+color bit, the red-black and black-height invariants, the in-order contents
+and, for `rbtree-augmented`, a subtree size kept by callbacks. The rotations
+and recolorings come in mirrored left and right arms that the C writes out
+separately, and the proofs follow the C rather than refactoring it. A proof
+that complex being large is acceptable. The report keeps listing them, and
+an example that newly crosses the target still needs its own reason.
+
 ## Simple means locally checkable
 
 A simple tactic checks one selected proof operation deterministically, without
@@ -645,6 +657,13 @@ The complexity contract implies several design constraints:
   lowering and planning clone a context and extend it by a fact at every
   path, and a shared copy-on-write set made each extension copy every stated
   proposition.
+  A kernel statement sequence (`CStatement::Seq`) holds its statements
+  as a persistent indexed sequence (`CStatementSequence`, an
+  `imbl::Vector`): replacing one statement is logarithmic and shares the
+  rest, and the statements after the first are a constant-time suffix
+  view. It stands for exactly the pair tree `Seq(first, rest)` it
+  replaced, so its equality, hashing, ordering and printed form are that
+  tree's.
   A resource context's facts are also kept as a canonical multiset
   (`CanonicalFactSet`): a hash-consed treap whose shape depends on its
   contents alone, so two contexts holding the same facts share one root and
@@ -886,6 +905,11 @@ explicit:
   Exact pointer-operand buckets precede shared-base variable buckets. Literal
   values do not nominate rewrite candidates; an old iterator's `k_old == 4`
   cannot help rewrite a distinct `k` merely because its goal contains `4`.
+  Full pointer-value substitution walks the selected displacement, including
+  C argument bases represented as offsets and symbolic loop-snapshot bases.
+  It preserves already narrowed bounds. The regression
+  `displaced_full_pointer_rewrite_scales_with_the_selected_offset` checks
+  linear work at 8, 32 and 128 offset terms for both representations.
 - **Decide an overlap before searching for a separation.** A walk across a
   call asks whether each cell it names is separate from the callee's write
   set. A cell the write set contains, such as a field of an object that a
@@ -1266,25 +1290,64 @@ annotates. Each is kept so that the clause pays for its own loop:
 - The frontier replaces its next source operation with the annotated loop,
   keeping the statements after it, and a loop clause's contents are shared
   by every copy of the function block.
+- A function block's structural clauses are a persistent
+  `StructuralClauses`: clauses in binding order, indexed by loop and by
+  label, with the labels that name two regions, the count of clauses with
+  proof scopes or resources, and which clauses have been checked against
+  the function's loop count. Binding a clause, finding a loop's clause or a
+  label's region, and the rebound-label and region checks
+  (`refuse_rebound_loop_labels`, `validate_region_proof_clause`) cost the
+  clause, not the list. The previous `loop`'s bound and checked block is
+  reused when this path bound only its clause since
+  (`LoopAnnotationCache::bound_function_block`). The path's frontier
+  clauses index the loops they bind (`FrontierLoopClauses`), and the source
+  layout counts the function's loops once.
+- Lowering one loop alone finds its C0 node through an index of the
+  function's loops built once per claim (`LoopAnnotationShape::c0_loop`),
+  and returns its lowered kernel loop, so the `loop` tactic does not search
+  the annotated body for it.
+- Putting the lowered loop in place follows the loop's path from the
+  body's root (`KernelLoopPaths`), read once per claim and kept while each
+  replacement holds as many loops as the loop it replaces. A kernel
+  sequence's statements are a persistent indexed sequence
+  (`CStatementSequence`), so each sequence on the path replaces its one
+  statement in logarithmic time and shares the others; the path is as long
+  as the loop's nesting in the body's pairs of statements, which for a C
+  block, lowered as a balanced tree of pairs, is logarithmic in the block.
+  The walk this replaces numbered the loops of every statement before the
+  loop to find it.
+- A fact set walks an interned snapshot's bound variables once, and a
+  snapshot derived from one it walked only for the entries that differ
+  (`collect_memory_bound_variables`, uncharged as the whole walk was).
 
 `sequential_loops_build_the_same_context_entries_each` counts, at 3, 6 and
 12 loops, the context entries, flat fact copies, fact index entries,
 transport-candidacy tests, reservation collections, reserved fact
-variables and annotation walks each further loop costs, and requires the
-same count per loop at both steps and one annotation walk per claim; the
-debug-build cross-checks `CLICK_DEBUG_CHECK_FACT_LISTS=1`,
+variables, annotation walks, structural clauses read and loop-lookup
+statements each further loop costs, and requires the same count per loop
+at both steps and one annotation walk per claim; the debug-build
+cross-checks `CLICK_DEBUG_CHECK_FACT_LISTS=1`,
 `CLICK_DEBUG_CHECK_LAZY_RESERVATIONS=1` and
 `CLICK_DEBUG_CHECK_LOOP_ANNOTATIONS=1` compare each indexed answer with the
-copy, collection or walk it replaces. Measured with callgrind on the
-`loops` hunt shape, the marginal cost of one more loop is about 40 million
-instructions near 40 loops, 42 million near 120 and 44 million near 248,
-where it was 52 and 200 million; at 192 loops the last clause takes about
-21 ms against 16 ms for the second, where it took 47 ms. The remaining
+copy, collection or walk it replaces, and unit tests hold the clause index
+and the C0 loop index to the walks they replace. Measured with callgrind on
+the `loops` hunt shape, one more loop costs about 41.0 million instructions
+between 64 and 128 loops and 42.1 million between 128 and 192, where it cost
+41.4 and 42.6 million before the clause list was indexed (41.6 and 42.7
+million on a later release build, against 41.6 and 42.8 before the
+statement sequence below). The remaining
 growth is logarithmic: persistent-map depths in the fact context and proof
-facts. A few pointer walks stay linear in the earlier loops with a small
-constant: binding the frontier's clauses into the function block, the
-label and scope checks over its clauses, and finding the loop's node in
-the source and kernel bodies.
+facts, the memory history the snapshot reservations follow, at most 64
+derivation steps, and the depth of the loop in the body's pairs of
+statements. Putting a lowered loop in place, which numbered the loops of
+every statement before it, cost about 6,100 instructions plus 260 per
+earlier loop (about 56,000 at the last of 192 loops, 6.0 million in all at
+192); it now costs about 7,500 at every loop, 1.4 million in all, after a
+path index of 135,000 once per claim.
+`putting_a_lowered_loop_in_place_reads_its_path_not_the_loops_before_it`
+holds the statements it visits to the body's depth at 16 to 1,024 loops,
+and `sequential_loops_build_the_same_context_entries_each` counts them per
+loop beside the other counts.
 
 ## Regression policy
 

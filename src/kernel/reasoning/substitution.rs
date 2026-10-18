@@ -820,7 +820,7 @@ fn walk_c_state<S: VariableSubstitution + ?Sized>(state: &CState, s: &S) -> CSta
         .map(|(pointer, name)| (s.local_slot(pointer), name.clone()))
         .collect();
     CState {
-        locals: CLocalEnvironment { bindings, slots },
+        locals: CLocalEnvironment::from_parts(bindings, slots),
         aggregate_destination: state.aggregate_destination.as_ref().map(|destination| {
             std::sync::Arc::new(CAggregateDestination {
                 pointer: s.pointer(&destination.pointer),
@@ -931,10 +931,12 @@ fn walk_c_statement<S: VariableSubstitution + ?Sized>(statement: &CStatement, s:
             target,
             bytes,
             zeroed,
+            object_type,
         } => CStatement::HeapAllocate {
             target: target.clone(),
             bytes: s.c_expression(bytes),
             zeroed: *zeroed,
+            object_type: object_type.clone(),
         },
         CStatement::HeapFree { pointer } => CStatement::HeapFree {
             pointer: s.c_expression(pointer),
@@ -943,9 +945,9 @@ fn walk_c_statement<S: VariableSubstitution + ?Sized>(statement: &CStatement, s:
             condition: s.c_expression(condition),
             label: label.clone(),
         },
-        CStatement::Seq(first, second) => {
-            c_seq(walk_c_statement(first, s), walk_c_statement(second, s))
-        }
+        CStatement::Seq(statements) => CStatement::Seq(
+            statements.map(|statement| std::sync::Arc::new(walk_c_statement(statement, s))),
+        ),
         CStatement::Return(expression) => CStatement::Return(s.c_expression(expression)),
         CStatement::Throw(expression) => CStatement::Throw(s.c_expression(expression)),
         CStatement::TryCatchInt32 {
@@ -2558,9 +2560,10 @@ pub(in crate::kernel) fn collect_c_statement_bound_variables(
         CStatement::HeapFree { pointer } => {
             collect_c_expression_bound_variables(pointer, variables)
         }
-        CStatement::Seq(first, second) => {
-            collect_c_statement_bound_variables(first, variables);
-            collect_c_statement_bound_variables(second, variables);
+        CStatement::Seq(statements) => {
+            for statement in statements.iter() {
+                collect_c_statement_bound_variables(statement, variables);
+            }
         }
         CStatement::TryCatchInt32 {
             try_body, handler, ..
@@ -2897,7 +2900,48 @@ fn collect_pointer_bound_variables(pointer: &Pointer, variables: &mut BTreeSet<V
     collect_pointer_offset_bound_variables(&pointer.offset, variables);
 }
 
+#[cfg(test)]
+thread_local! {
+    static MEMORY_BOUND_CELL_VISITS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+/// A debug cross-check's own whole collection is not counted.
+#[cfg(test)]
+fn count_memory_bound_cell_visit() {
+    if !crate::instrumentation::in_uncharged_debug_check() {
+        MEMORY_BOUND_CELL_VISITS.with(|count| count.set(count.get() + 1));
+    }
+}
+
+/// The memory cells bound-variable collection visited on this thread so far.
+#[cfg(test)]
+pub(crate) fn memory_bound_cell_visits() -> usize {
+    MEMORY_BOUND_CELL_VISITS.with(std::cell::Cell::get)
+}
+
 fn collect_memory_bound_variables(memory: &CMemory, variables: &mut BTreeSet<Variable>) {
+    // While a fact set reserves a fact's variables, an interned snapshot's
+    // bound variables are walked once: they depend on the snapshot alone,
+    // and the set already reserves those of every snapshot walked before.
+    // A snapshot derived from one already walked adds only the bound
+    // variables of the entries it changed since.
+    if let Some(shared) = crate::kernel::primitives::interned_storage_of(memory) {
+        if crate::kernel::reasoning::variable_collection::bound_snapshot_already_reserved(
+            shared.arena_id(),
+        ) {
+            return;
+        }
+        if let Some(base) =
+            crate::kernel::reasoning::variable_collection::bound_reserved_base(&shared)
+        {
+            // The whole walk this replaces charged nothing; the diffs it
+            // reads charge per change, so they run uncharged.
+            crate::instrumentation::without_charging(|| {
+                collect_memory_bound_variables_entering(base.memory(), memory, variables);
+            });
+            return;
+        }
+    }
     for pointer in memory
         .heap
         .uninitialized_objects
@@ -2910,6 +2954,8 @@ fn collect_memory_bound_variables(memory: &CMemory, variables: &mut BTreeSet<Var
         collect_bitvector_bound_variables(contents.size(), variables);
     }
     for (pointer, value) in memory.cells.concrete().iter() {
+        #[cfg(test)]
+        count_memory_bound_cell_visit();
         collect_pointer_bound_variables(pointer, variables);
         collect_c_value_bound_variables(value, variables);
     }
@@ -2918,6 +2964,58 @@ fn collect_memory_bound_variables(memory: &CMemory, variables: &mut BTreeSet<Var
     // variables as their shape's representative (a slot's own load variable
     // is never a binder); otherwise every slot is visited.
     for run in memory.cells.runs() {
+        let slots = crate::kernel::reasoning::memory_resolution::run_shape_representatives(run)
+            .unwrap_or_else(|| run.live_indexes().collect());
+        for index in slots {
+            collect_pointer_bound_variables(&run.slot_pointer(index), variables);
+            collect_c_value_bound_variables(&run.value(index), variables);
+        }
+    }
+}
+
+/// [`collect_memory_bound_variables`] over only the entries `memory` holds
+/// differently from `base`: with `base`'s bound variables these include
+/// all of `memory`'s, and each is one of `memory`'s.
+fn collect_memory_bound_variables_entering(
+    base: &CMemory,
+    memory: &CMemory,
+    variables: &mut BTreeSet<Variable>,
+) {
+    for (before, after) in [
+        (
+            &base.heap.uninitialized_objects,
+            &memory.heap.uninitialized_objects,
+        ),
+        (
+            base.heap.initialized.as_map(),
+            memory.heap.initialized.as_map(),
+        ),
+    ] {
+        for change in before.diff(after) {
+            let pointer = change.key();
+            if after.contains_key(pointer) {
+                collect_pointer_bound_variables(pointer, variables);
+            }
+        }
+    }
+    for change in base.blocks.diff(&memory.blocks) {
+        if let Some(contents) = memory.blocks.get(change.key()) {
+            collect_bitvector_bound_variables(contents.size(), variables);
+        }
+    }
+    for change in base.cells.concrete().diff(memory.cells.concrete()) {
+        let pointer = change.key();
+        if let Some(value) = memory.cells.concrete().get(pointer) {
+            #[cfg(test)]
+            count_memory_bound_cell_visit();
+            collect_pointer_bound_variables(pointer, variables);
+            collect_c_value_bound_variables(value, variables);
+        }
+    }
+    for (_, after) in base.cells.run_diff(&memory.cells) {
+        let Some(run) = after else {
+            continue;
+        };
         let slots = crate::kernel::reasoning::memory_resolution::run_shape_representatives(run)
             .unwrap_or_else(|| run.live_indexes().collect());
         for index in slots {
@@ -3579,6 +3677,7 @@ fn validate_integer_pure_proposition(
                     | Sort::CInt64
                     | Sort::CMachineInteger(_)
                     | Sort::CPointer(_)
+                    | Sort::CObjectPointer(_, _)
             ) {
                 return Err(IntegerPureSubstitutionError::UnsupportedSort);
             }
@@ -3595,6 +3694,7 @@ fn validate_integer_pure_proposition(
                     | Sort::CInt64
                     | Sort::CMachineInteger(_)
                     | Sort::CPointer(_)
+                    | Sort::CObjectPointer(_, _)
             ) {
                 return Err(IntegerPureSubstitutionError::UnsupportedSort);
             }
@@ -3910,7 +4010,11 @@ fn queue_integer_quantifier_rewrite<'a>(
     let is_integer = *sort == Sort::Integer;
     let is_c = matches!(
         sort,
-        Sort::CInt32 | Sort::CInt64 | Sort::CMachineInteger(_) | Sort::CPointer(_)
+        Sort::CInt32
+            | Sort::CInt64
+            | Sort::CMachineInteger(_)
+            | Sort::CPointer(_)
+            | Sort::CObjectPointer(_, _)
     );
     if !is_integer && !is_c {
         return Err(IntegerPureSubstitutionError::UnsupportedSort);
@@ -5470,6 +5574,17 @@ fn substitute_bitvector_variable_in_memory_contents(
                     )
                 })
                 .collect(),
+            pending_object_classes: memory
+                .heap
+                .pending_object_classes
+                .iter()
+                .map(|(base, class)| {
+                    (
+                        substitute_bitvector_variable_in_pointer(base, from, to),
+                        class.clone(),
+                    )
+                })
+                .collect(),
             pending_allocations: memory
                 .heap
                 .pending_allocations
@@ -5626,7 +5741,9 @@ fn pointer_capture_avoiding_quantifier_body(
 ) -> (Proposition, Variable) {
     let mut replacement_variables = BTreeSet::new();
     collect_pointer_bound_variables(replacement, &mut replacement_variables);
-    if !replacement_variables.contains(&binder) || !matches!(sort, Sort::CPointer(_)) {
+    if !replacement_variables.contains(&binder)
+        || !matches!(sort, Sort::CPointer(_) | Sort::CObjectPointer(_, _))
+    {
         return (body.clone(), binder);
     }
     let mut reserved = crate::kernel::proposition_variables(body);
@@ -5636,7 +5753,7 @@ fn pointer_capture_avoiding_quantifier_body(
     let fresh = KernelVariableGenerator::fresh_for(0, reserved).next();
     let pointer = match sort {
         Sort::CPointer(CType::FunctionPointer(_)) => Pointer::symbolic_function(fresh),
-        Sort::CPointer(_) => Pointer::symbolic(fresh),
+        Sort::CPointer(_) | Sort::CObjectPointer(_, _) => Pointer::symbolic(fresh),
         _ => unreachable!("pointer capture avoidance only handles pointer binders"),
     };
     (
@@ -6045,6 +6162,17 @@ pub(crate) fn substitute_pointer_variable_in_memory(
                     )
                 })
                 .collect(),
+            pending_object_classes: memory
+                .heap
+                .pending_object_classes
+                .iter()
+                .map(|(base, class)| {
+                    (
+                        substitute_pointer_variable_in_pointer(base, from, to),
+                        class.clone(),
+                    )
+                })
+                .collect(),
             pending_allocations: memory
                 .heap
                 .pending_allocations
@@ -6401,6 +6529,7 @@ fn substitute_pointer_variable_in_spec_expression(
             name,
             arguments,
             result_type,
+            pointer_result,
             result_object_class,
         } => SpecExpression::PureFunctionApplication {
             name: name.clone(),
@@ -6411,6 +6540,7 @@ fn substitute_pointer_variable_in_spec_expression(
                 })
                 .collect(),
             result_type: *result_type,
+            pointer_result: pointer_result.clone(),
             result_object_class: result_object_class.clone(),
         },
         SpecExpression::LoopEntrySnapshot(expression) => {
@@ -6468,6 +6598,15 @@ fn substitute_pointer_variable_in_spec_function_argument(
     to: &Pointer,
 ) -> SpecPureFunctionArgument {
     match argument {
+        SpecPureFunctionArgument::ObjectPointer {
+            argument,
+            object_class,
+        } => SpecPureFunctionArgument::ObjectPointer {
+            argument: Box::new(substitute_pointer_variable_in_spec_function_argument(
+                argument, from, to,
+            )),
+            object_class: object_class.clone(),
+        },
         SpecPureFunctionArgument::Integer(value) => SpecPureFunctionArgument::Integer(
             substitute_pointer_variable_in_spec_integer(value, from, to),
         ),

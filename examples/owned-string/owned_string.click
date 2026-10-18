@@ -133,6 +133,7 @@ int32 owned_string_init(
         };
     }
     fold(owned_string(owner));
+    assumption();
     normalize();
     assumption();
 }

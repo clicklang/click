@@ -14,7 +14,6 @@ pub(super) fn apply_branch_interface_with_proof_facts(
     execution: &mut ExecutionProofState,
     proof_context: &ExecutionProofContext<'_>,
     available_pure_facts: &mut ProofFacts,
-    stable_join_locals: &BTreeMap<String, CValue>,
     sibling_join_states: Option<&[&CState]>,
     // `join_next_kernel_variable` is the counter every sibling arm abstracts
     // from: the highest of the arms' own. The arms' abstractions are compared
@@ -28,8 +27,7 @@ pub(super) fn apply_branch_interface_with_proof_facts(
     assert_eq!(assertions.len(), written_assertions.len());
     let tactic_index = proof_context.tactic_index;
     let parameters = proof_context.parsed_function.parameters();
-    let arguments = proof_context.arguments;
-    let parameter_binding = ParameterBinding::new(parameters, arguments);
+    let parameter_binding = proof_context.parameter_binding();
     let predicate_environment = proof_context.spec_definitions.predicates;
     let click_function_environment = proof_context.spec_definitions.functions;
     let resource_environment = proof_context.resource_environment;
@@ -127,13 +125,10 @@ pub(super) fn apply_branch_interface_with_proof_facts(
         .old_reference_state(&execution.core.frontier, state)
         .clone();
     let abstraction = match sibling_join_states {
-        Some(states) => abstract_c_state_for_interface_join_across(
-            state,
-            states,
-            stable_join_locals,
-            join_next_kernel_variable,
-        ),
-        None => abstract_c_state_for_join(state, stable_join_locals, join_next_kernel_variable),
+        Some(states) => {
+            abstract_c_state_for_interface_join_across(state, states, join_next_kernel_variable)
+        }
+        None => abstract_c_state_for_join(state, &BTreeMap::new(), join_next_kernel_variable),
     };
     let abstraction = abstraction.map_err(|message| {
         ClickError::new(format!(
@@ -484,9 +479,8 @@ pub(super) fn execute_branch_step_from_frontier_position(
 ) -> Result<bool, ClickError> {
     let function_block = proof_context.function_block;
     let function = proof_context.function;
-    let parameters = proof_context.parsed_function.parameters();
     let arguments = proof_context.arguments;
-    let parameter_binding = ParameterBinding::new(parameters, arguments);
+    let parameter_binding = proof_context.parameter_binding();
     let claim_label = proof_context.claim_label;
     let tactic_index = proof_context.tactic_index;
 
@@ -757,9 +751,8 @@ fn execute_concrete_loop_head_step(
 ) -> Result<(), ClickError> {
     let function_block = proof_context.function_block;
     let function = proof_context.function;
-    let parameters = proof_context.parsed_function.parameters();
     let arguments = proof_context.arguments;
-    let parameter_binding = ParameterBinding::new(parameters, arguments);
+    let parameter_binding = proof_context.parameter_binding();
     let claim_label = proof_context.claim_label;
     let tactic_index = proof_context.tactic_index;
 
@@ -1172,8 +1165,8 @@ pub(super) fn record_code_region_program_snapshot_state(
         CodeRegion::Loop(index) => {
             for label in function_block
                 .structural_clauses()
-                .iter()
-                .filter(|clause| clause.region() == &region)
+                .for_loop(index)
+                .into_iter()
                 .filter_map(StructuralClause::label)
             {
                 recorded_snapshots.label_loop(index, label);
@@ -1770,7 +1763,7 @@ pub(super) fn prepare_call_outcome_split(
     prepared.core.frontier.execution_start_state = Some(execution_start_state.clone());
     prepared.core.frontier.position = FrontierPosition::StatementEntry {
         remaining: match remaining.clone() {
-            Some(tail) => Arc::new(CStatement::Seq(Arc::new(statement.clone()), Arc::new(tail))),
+            Some(tail) => Arc::new(CStatement::seq(Arc::new(statement.clone()), Arc::new(tail))),
             None => Arc::new(statement.clone()),
         },
     };
@@ -2097,9 +2090,8 @@ fn execute_step_from_frontier_position_selecting_path(
 ) -> Result<Vec<Proposition>, ClickError> {
     let function_block = proof_context.function_block;
     let function = proof_context.function;
-    let parameters = proof_context.parsed_function.parameters();
     let arguments = proof_context.arguments;
-    let parameter_binding = ParameterBinding::new(parameters, arguments);
+    let parameter_binding = proof_context.parameter_binding();
     let function_environment = proof_context.function_environment;
     let claim_label = proof_context.claim_label;
     let tactic_index = proof_context.tactic_index;
@@ -2292,10 +2284,11 @@ fn execute_step_from_frontier_position_selecting_path(
                 execution.core.frontier.position,
                 FrontierPosition::FunctionEntry
             )
-            && let CStatement::Seq(call, tail) = &step_statement
-            && matches!(tail.as_ref(), CStatement::Return(_))
+            && let CStatement::Seq(statements) = &step_statement
+            && statements.len() == 2
+            && matches!(statements.rest().as_ref(), CStatement::Return(_))
         {
-            call.as_ref()
+            statements.first().as_ref()
         } else {
             &step_statement
         };
@@ -2943,10 +2936,7 @@ fn execute_step_from_frontier_position_selecting_path(
     if matches!(loop_step_policy, LoopStepPolicy::ApplyVerifiedRule)
         && let Some(loop_index) = loop_index
         && matches!(transition.outcome, CStatementOutcome::Normal(_))
-        && let Some(loop_clause) = function_block
-            .structural_clauses()
-            .iter()
-            .find(|clause| clause.region() == &CodeRegion::Loop(loop_index))
+        && let Some(loop_clause) = function_block.structural_clauses().for_loop(loop_index)
     {
         record_loop_exit_invariants(
             &mut execution.presentation.surface_propositions,
@@ -3773,11 +3763,14 @@ pub(super) fn split_next_source_operation(
     statement: &CStatement,
 ) -> Result<(CStatement, Option<CStatement>), String> {
     match statement {
-        CStatement::Seq(first, second) => {
-            let (source_statement, first_remaining) = split_next_source_operation(first)?;
+        CStatement::Seq(statements) => {
+            let (source_statement, first_remaining) =
+                split_next_source_operation(statements.first())?;
             let remaining = match first_remaining {
-                Some(first_remaining) => c_seq(first_remaining, second.as_ref().clone()),
-                None => second.as_ref().clone(),
+                Some(first_remaining) => {
+                    CStatement::Seq(statements.with_statement(0, Arc::new(first_remaining)))
+                }
+                None => statements.rest().as_ref().clone(),
             };
             Ok((source_statement, Some(remaining)))
         }
@@ -3917,7 +3910,7 @@ fn describe_call_bindings(statement: &CStatement, environment: &CExecutionEnviro
 /// condition, a body by its operation.
 pub(super) fn describe_statement_head(statement: &CStatement) -> String {
     match statement {
-        CStatement::Seq(first, _) => describe_statement_head(first),
+        CStatement::Seq(statements) => describe_statement_head(statements.first()),
         CStatement::EndScalarReference(_) => "borrow end".to_string(),
         CStatement::ScalarReferenceScope(_) => "borrow scope".to_string(),
         CStatement::Skip => "skip".to_string(),
@@ -3978,6 +3971,7 @@ pub(super) fn describe_statement_head(statement: &CStatement) -> String {
             target,
             bytes,
             zeroed,
+            ..
         } => {
             let function = if *zeroed { "calloc" } else { "malloc" };
             format!("{target} = {function}({})", describe_c_expression(bytes))

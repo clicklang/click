@@ -1839,6 +1839,8 @@ int32 f() { ensures result == 2; } by { step(); simp(); }
         [ClickModuleSource::new("entry.click", source, [])],
     );
     let c = [("f.c", "int f(void) { return 1; }")];
+    let index =
+        ProofSourceIndex::for_project(&project, &ProgramInputs::Bundle(c.to_vec())).unwrap();
     let locate = |claim: &str, path: &[usize]| {
         let outer = project_tactic_source_position(
             &project,
@@ -1850,15 +1852,13 @@ int32 f() { ensures result == 2; } by { step(); simp(); }
         let position = if path.len() == 1 {
             outer
         } else {
-            nested_tactic_source_position(source, &outer, &path[1..]).ok()?
+            index.nested_position(&outer, &path[1..]).ok()?
         };
         Some((format!("tactic@{}", position.line), position))
     };
     let arm = |claim: &str, path: &[usize], target: &SourcePosition| {
         let (_, branch) = locate(claim, path)?;
-        tactic_arm_containing_position(source, &branch, target)
-            .ok()
-            .flatten()
+        index.arm_containing(&branch, target).ok().flatten()
     };
     with_proof_trace("good", || {
         verify_project_theorem(&project, &ProgramInputs::Bundle(c.to_vec()), "good").unwrap();
@@ -2401,13 +2401,16 @@ void run(int32 total) {{ requires 0 <= total; requires total <= 1000; ensures 0 
 #[test]
 #[ignore = "nightly: 14s whole wide loop expansion and negative recheck"]
 fn wide_loop_invariant_bundle_expands_without_dropping_members() {
-    let (source, proof) = wide_loop_invariant_fixture(40);
+    // Stay above both the parser limit and the short-bundle cutoff of 24.
+    let members = (crate::surface::parser::STRUCTURAL_NESTING_LIMIT + 1).max(25);
+    let (source, proof) = wide_loop_invariant_fixture(members);
     let sources = [("bundle.c", source.as_str())];
     verify_c0_sources(&proof, &sources).unwrap();
     let expanded =
         crate::surface::expand_c0_claim_source_by_label(&proof, &sources, "run.contract").unwrap();
     verify_c0_sources(&expanded, &sources).unwrap();
-    let invalid = expanded.replacen("invariant total <= 1039;", "invariant total <= -1;", 1);
+    let last = format!("invariant total <= {};", 1000 + members - 1);
+    let invalid = expanded.replacen(&last, "invariant total <= -1;", 1);
     assert_ne!(invalid, expanded);
     assert!(verify_c0_sources(&invalid, &sources).is_err());
 }
@@ -2722,9 +2725,12 @@ fn memory_history_diagnostic_names_the_store_and_limits_its_claim() {
 /// Long checked paths retain their beginning, late target, and added facts.
 /// Multiple sizes exercise both former aggregate caps without timing thresholds.
 #[test]
-#[ignore = "nightly: complete 4096-tactic traces and deterministic lineage scaling take 10s locally"]
+#[ignore = "nightly: complete traces above the former step/text caps and lineage scaling"]
 fn long_theorem_traces_retain_every_step_and_reach_late_targets() {
-    for size in [512, 2048, 4096] {
+    // Keep a complete path above the former 2048-step and 64-KiB caps.
+    // Even the smallest size exceeds the lineage guard's 20x allowance,
+    // so walking the full earlier path per step still fails that guard.
+    for size in [128, 512, 2049] {
         let mut source = String::from(
             "theorem long_trace(x: int32) {\n requires x == 0;\n ensures x == 0 by {\n",
         );
@@ -3712,6 +3718,58 @@ fn budget_stopped_transport_retains_its_checked_loop_prefix() {
             .expect("attach the checked predecessor even on a budget error");
         assert!(trace.contains("steps through: *p = 9"), "{trace}");
     });
+}
+
+#[test]
+fn callback_refinement_hint_with_produced_resource_is_a_checked_proof() {
+    let source = r#"verifying "callback.c";
+        spec enum Ref { At(struct node*), }
+        resource token() { field model: Ref; }
+        contract void Callback(struct node* p) {
+            produces held: token(); ensures held.model == Ref::At(p);
+        }
+        void wrapped(struct node* p) {
+            produces held: token(); ensures held.model == Ref::At(p);
+        } by { execute(); let held = fold(token(), { model: Ref::At(p) }); }
+        /* REFINEMENT */
+        int32 accept(void (*f)(struct node*)) {
+            requires Callback(f); ensures result == 0;
+        } by { execute(); normalize(); }
+        int32 caller() { ensures result == 0; } by { /* APPLY */ execute(); }
+    "#;
+    let c = [(
+        "callback.c",
+        "struct node { uint64 word; }; void wrapped(struct node* p) {} int32 accept(void (*f)(struct node*)) { return 0; } int32 caller() { return accept(&wrapped); }",
+    )];
+    let error = verify_c0_sources(source, &c).unwrap_err();
+    let report = error.concise_report();
+    let suggestion = report
+        .split_once("prove it explicitly:\n")
+        .expect(&report)
+        .1;
+    let start = suggestion.find("theorem ").expect(&report);
+    let mut depth = 0;
+    let end = suggestion[start..]
+        .char_indices()
+        .find_map(|(offset, character)| {
+            match character {
+                '{' => depth += 1,
+                '}' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        return Some(offset + 1);
+                    }
+                }
+                _ => {}
+            }
+            None
+        })
+        .expect(&report);
+    let theorem = &suggestion[start..start + end];
+    let corrected = source
+        .replace("/* REFINEMENT */", theorem)
+        .replace("/* APPLY */", "apply(wrapped_is_callback());");
+    verify_c0_sources(&corrected, &c).unwrap();
 }
 
 #[test]

@@ -70,6 +70,46 @@ pub(in crate::surface) fn contract_environment_at_state(
     (values, state_array_refs)
 }
 
+/// [`contract_environment_at_state`] restricted to `names`: the same entry for
+/// each named parameter or local, read by indexed lookups, so building it
+/// costs the names a proposition mentions rather than every parameter and
+/// local in scope. Without a parameter index, every parameter is read.
+pub(in crate::surface) fn contract_environment_for_names(
+    parameter_binding: ParameterBinding<'_>,
+    names: &BTreeSet<String>,
+    state: &CState,
+) -> Result<(BTreeMap<String, CValue>, ClickArrayRefs), ClickError> {
+    let mut values = parameter_values_named(parameter_binding, names)?;
+    let mut array_refs = array_refs_for_values(parameter_binding, &values, state.memory());
+    for name in names {
+        crate::instrumentation::record_deterministic_work(1);
+        if let Some(value) = state.locals().get(name) {
+            // As in `contract_environment_at_state`, a parameter's array
+            // reference follows the variable's current pointer.
+            if let CValue::Pointer(pointer) = value
+                && let Some(array_ref) = array_refs.get_mut(name)
+            {
+                array_ref.pointer = pointer.pointer().clone();
+            }
+            values.insert(name.clone(), value.clone());
+        } else if let Some((value, element_type)) = state.locals().array_object_value(name) {
+            let CValue::Pointer(pointer) = &value else {
+                unreachable!("local array values are pointers")
+            };
+            array_refs.insert(
+                name.clone(),
+                ClickArrayRef {
+                    memory: state.memory().clone(),
+                    pointer: pointer.pointer().clone(),
+                    element_type,
+                },
+            );
+            values.insert(name.clone(), value);
+        }
+    }
+    Ok((values, array_refs))
+}
+
 pub(in crate::surface) fn selected_snapshot_state<'a>(
     selector: &SnapshotSelector,
     function_entry_state: &'a CState,

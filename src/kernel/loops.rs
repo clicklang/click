@@ -3715,7 +3715,25 @@ fn abstract_loop_exit_locals(
         // So do exits that agree on the class of the object it designates.
         let fresh = match held.iter().map(c_value_object_class).collect::<Vec<_>>() {
             classes if classes[1..].iter().all(|class| *class == classes[0]) => {
+                let mut evidence = None::<ObjectTypeEvidence>;
+                let mut complete = true;
+                for value in &held {
+                    if let CValue::Pointer(pointer) = value
+                        && !pointer.is_null()
+                    {
+                        match pointer.object_type_evidence() {
+                            Some(next) => {
+                                evidence = Some(match evidence {
+                                    Some(previous) => previous.merge(next),
+                                    None => next.clone(),
+                                })
+                            }
+                            None => complete = false,
+                        }
+                    }
+                }
                 with_retained_object_class(fresh, held.first())
+                    .with_pointer_object_type_evidence(complete.then_some(evidence).flatten())
             }
             _ => fresh,
         };
@@ -6143,12 +6161,16 @@ pub(super) fn prepare_loop_top_state(
         }
     }
 
-    framed_memory.record_diagnostic_transform(
-        "retain checked loop frame",
-        vec![top_state.memory().clone(), entry_state.memory().clone()],
-        Vec::new(),
-    );
     if framed_memory != *top_state.memory() {
+        // Restoring checked stable cells observes the abstract head's bytes;
+        // it does not write them. Retain that edge so a complete pointer read
+        // can follow the loop's checked footprint back to its entry origin.
+        record_c_memory_derivation(
+            &mut framed_memory,
+            CMemoryDerivation::CellObserved {
+                base: intern_c_memory_ref(top_state.memory()),
+            },
+        );
         top_state = top_state.with_memory(framed_memory);
         summaries = collect_whole_loop_effect_summaries(entry_state, &top_state, &effect_ranges);
     }
@@ -8580,9 +8602,9 @@ pub(super) fn statement_may_write_memory(state: &CState, statement: &CStatement)
         | CStatement::CopyAggregate { .. }
         | CStatement::InitializeScalarArray { .. }
         | CStatement::Update { .. } => true,
-        CStatement::Seq(first, second) => {
-            statement_may_write_memory(state, first) || statement_may_write_memory(state, second)
-        }
+        CStatement::Seq(statements) => statements
+            .iter()
+            .any(|statement| statement_may_write_memory(state, statement)),
         CStatement::TryCatchInt32 {
             try_body, handler, ..
         } => {
@@ -8653,9 +8675,10 @@ pub(super) fn collect_loop_modified_locals(statement: &CStatement, names: &mut B
             names.insert(target.clone());
         }
         CStatement::HeapFree { .. } => {}
-        CStatement::Seq(first, second) => {
-            collect_loop_modified_locals(first, names);
-            collect_loop_modified_locals(second, names);
+        CStatement::Seq(statements) => {
+            for statement in statements.iter() {
+                collect_loop_modified_locals(statement, names);
+            }
         }
         CStatement::TryCatchInt32 {
             try_body,
@@ -8845,9 +8868,10 @@ pub(crate) fn collect_address_taken_locals(statement: &CStatement, names: &mut B
             collect_address_taken_in_expression(target, names);
             collect_address_taken_in_expression(operand, names);
         }
-        CStatement::Seq(first, second) => {
-            collect_address_taken_locals(first, names);
-            collect_address_taken_locals(second, names);
+        CStatement::Seq(statements) => {
+            for statement in statements.iter() {
+                collect_address_taken_locals(statement, names);
+            }
         }
         CStatement::TryCatchInt32 {
             try_body, handler, ..
@@ -8989,7 +9013,9 @@ fn c_value_object_class(value: &CValue) -> Option<crate::kernel::effective_type:
 /// `fresh` with the class of the object the pointer value it abstracts
 /// designates.
 fn with_retained_object_class(fresh: CValue, previous: Option<&CValue>) -> CValue {
-    fresh.with_pointer_object_class(previous.and_then(c_value_object_class))
+    // A fresh loop-head value retains C access typing, not a premise about
+    // the original object of the previous value.
+    fresh.with_pointer_declared_object_class(previous.and_then(c_value_object_class))
 }
 
 /// `fresh` with the subobject extent of the pointer value it abstracts.
@@ -9149,8 +9175,25 @@ fn range_extent_refusal(
             ),
         })
     };
-    let Some(offset) =
-        crate::kernel::reasoning::pointer_byte_offset_from_base(base.pointer(), &extent.start)
+    // A pointer can carry an extent it adopted through a proven pointer
+    // equality, whose start is spelled through the other pointer: another
+    // block, or another parameter of the same one. Respell the pointer at
+    // that start before measuring its offset, as an access through it is
+    // decided; the spellings' own difference names two unrelated variables.
+    let respelled = assumptions
+        .pointer_at_known_base(base.pointer(), &extent.start)
+        .filter(|respelled| {
+            respelled != base.pointer()
+                && assumptions.pointers_known_equal(base.pointer(), respelled)
+        });
+    let Some(offset) = respelled
+        .as_ref()
+        .and_then(|respelled| {
+            crate::kernel::reasoning::pointer_byte_offset_from_base(respelled, &extent.start)
+        })
+        .or_else(|| {
+            crate::kernel::reasoning::pointer_byte_offset_from_base(base.pointer(), &extent.start)
+        })
     else {
         return refusal();
     };

@@ -10,6 +10,9 @@ the second payload of the result is the argument — is what closes. Nothing in
 the sidecar spells the rename; it is internal to substitution, and the arm's
 own name is still `parent` in the source.
 
+The logical pointer annotations below use `void*` for address identities;
+object access remains governed by the unchanged C types and resource ownership.
+
 ```c filename=rename.c
 struct rb_node {
     unsigned long __rb_parent_color;
@@ -29,10 +32,10 @@ spec enum Color { Red, Black }
 
 spec enum RbTree {
     Empty,
-    Node(struct rb_node*, struct rb_node*, Color, RbTree, RbTree),
+    Node(void*, void*, Color, RbTree, RbTree),
 }
 
-function reparent(tree: RbTree, fresh: struct rb_node*) -> RbTree {
+function reparent(tree: RbTree, fresh: void*) -> RbTree {
     match tree {
         RbTree::Empty => RbTree::Empty,
         RbTree::Node(identity, parent, color, left, right) =>

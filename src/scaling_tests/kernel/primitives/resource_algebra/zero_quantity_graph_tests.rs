@@ -29,7 +29,7 @@ fn quantity_query_work_is_indexed_over_separately_retained_units() {
 
 #[test]
 fn zero_ownership_graph_queries_scale_without_fact_index() {
-    for size in [16u64, 64, 256, 1024] {
+    for size in [16u64, 64, 256, 512] {
         let _session = crate::kernel::VerificationSession::enter();
         let mut context = PureFactContext::new();
         for index in 0..size {

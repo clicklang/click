@@ -479,11 +479,10 @@ fn synthesize_snapshot_local(term: &Bitvector32Term) -> Option<ContractExpressio
     SYNTHESIS_SNAPSHOT_STATE.with(|slot| {
         let slot = slot.borrow();
         let (state, selector) = slot.as_ref()?;
-        let (name, _) = state.locals().object_values().find(|(_, value)| {
+        let name = state.locals().names_holding_integer(term).find(|name| {
             matches!(
-                value,
-                crate::kernel::integer_c_value!(local)
-                    if local == term
+                state.locals().get(name),
+                Some(crate::kernel::integer_c_value!(local)) if local == term
             )
         })?;
         Some(ContractExpression::At {
@@ -2771,24 +2770,9 @@ fn synthesize_surface_bitvector(
             CValue::Int32(term.clone()),
         )));
     }
-    if let Some((name, _)) = state.locals().object_values().find(|(_, value)| {
-        if matches!(value, CValue::Bool(_)) {
-            crate::instrumentation::record_deterministic_work(1);
-        }
-        matches!(
-            value.numeric_value(),
-            CValue::Bool(local) | CValue::Int8(local) | CValue::Int16(local)
-                | CValue::Int32(local)
-                | CValue::UInt8(local)
-                | CValue::UInt16(local)
-                | CValue::UInt32(local)
-                | CValue::Int64(local)
-                | CValue::UInt64(local)
-                | CValue::Int128(local)
-                | CValue::UInt128(local)
-                if local == term
-        )
-    }) {
+    // The locals' held-term index finds the first local, in name order,
+    // holding exactly this term, without comparing it with every local.
+    if let Some(name) = state.locals().names_holding_integer(term).next() {
         return Some(if name == crate::kernel::C_CONTRACT_RESULT_NAME {
             ContractExpression::CFragment(CExpression::Variable("result".to_string()))
         } else if name == "result" {
@@ -2808,10 +2792,7 @@ fn synthesize_surface_bitvector(
     // to a different proposition, and `both` then refused to split a bundle
     // whose text did not match its goal.
     if let Some(name) = describe_parameter_bitvector(term, parameter_binding) {
-        let reassigned = state
-            .locals()
-            .object_values()
-            .any(|(local, _)| *local == name);
+        let reassigned = state.locals().get(&name).is_some();
         return Some(if reassigned {
             ContractExpression::At {
                 selector: SnapshotSelector::ProgramPoint(ProgramPointRef {
@@ -4286,6 +4267,33 @@ fn synthesize_surface_algebraic(
                         )
                         .or_else(|| {
                             synthesize_loaded_pointer_value(pointer, parameter_binding, state)
+                        })
+                        .map(|expression| {
+                            // Constructors implicitly retag object pointers
+                            // without widening their views. An explicit cast
+                            // is needed only for a checked root view; adding
+                            // it to a saved narrow view would change the value.
+                            if pointer.c_type() == CType::VoidPointer
+                                && pointer.extent_is_known()
+                                && pointer.extent().is_none()
+                            {
+                                ContractExpression::CUnary {
+                                    lowered: CExpression::Cast {
+                                        expression: Box::new(CExpression::Value(CValue::Pointer(
+                                            pointer.clone(),
+                                        ))),
+                                        target_type: CType::VoidPointer,
+                                        integer_mode: crate::kernel::CIntegerCastMode::Standard,
+                                        pointee_struct: None,
+                                        pointee_volatile: false,
+                                        pointee_constant: false,
+                                        explicit_qualification: false,
+                                    },
+                                    operand: Box::new(expression),
+                                }
+                            } else {
+                                expression
+                            }
                         })
                     }
                     crate::kernel::AlgebraicValue::C(CValue::Int32(value)) => {

@@ -1,4 +1,4 @@
-//! Shared pointer-class lookup for predicate facts and callback witnesses.
+//! Shared pointer-class lookup for predicates, callback witnesses and checked object types.
 //! Exact source handles are payloads, never class keys or inferred premises.
 use super::*;
 
@@ -8,11 +8,93 @@ impl EqualityGraph {
         terms::take_pointer_fact_merge_visits()
     }
 
-    pub(in crate::kernel) fn clear_pointer_predicates(&self) {
-        let mut state = self.state.lock().expect("equality graph");
-        state.pointer_predicate_inputs = Default::default();
-        state.terms.clear_pointer_facts();
+    pub(in crate::kernel) fn clear_proposition_pointer_facts(&self) {
+        self.clear_pointer_fact_sources(false);
     }
+
+    pub(in crate::kernel) fn clear_condition_pointer_facts(&self) {
+        self.clear_pointer_fact_sources(true);
+    }
+
+    fn clear_pointer_fact_sources(&self, conditions: bool) {
+        let sources = {
+            let state = self.state.lock().expect("equality graph");
+            if conditions {
+                state.condition_pointer_fact_inputs.clone()
+            } else {
+                state.pointer_fact_inputs.clone()
+            }
+        };
+        for (_, source) in sources.iter() {
+            crate::instrumentation::record_deterministic_work(1);
+            self.adjust_pointer_fact_source(source, false);
+        }
+    }
+
+    /// Checked values retained directly by an admitted, unconditional atom.
+    /// Opaque call arguments may carry annotations from another interning
+    /// context; they are not evidence here. Binders and snapshots stay opaque.
+    fn object_type_keys(proposition: &Proposition) -> BTreeSet<(Pointer, terms::PointerFactKey)> {
+        enum Work<'a> {
+            Term(&'a Term),
+            Model(&'a AlgebraicTerm),
+            Value(&'a CValue),
+            Pointer(&'a CPointerValue),
+        }
+        let mut pending = match proposition {
+            Proposition::Equal(a, b) => vec![Work::Term(a), Work::Term(b)],
+            Proposition::Predicate { arguments, .. } => arguments.iter().map(Work::Term).collect(),
+            Proposition::ConditionIs(ConditionTerm::PointerValueEqual(a, b), true) => {
+                vec![Work::Pointer(a), Work::Pointer(b)]
+            }
+            Proposition::ConditionIs(ConditionTerm::AlgebraicEqual(a, b), true) => {
+                vec![Work::Model(a), Work::Model(b)]
+            }
+            _ => return BTreeSet::new(),
+        };
+        let mut keys = BTreeSet::new();
+        while let Some(work) = pending.pop() {
+            crate::instrumentation::record_deterministic_work(1);
+            match work {
+                Work::Term(Term::CValue(value)) => pending.push(Work::Value(value)),
+                Work::Term(Term::Algebraic(model)) => pending.push(Work::Model(model)),
+                Work::Model(AlgebraicTerm {
+                    node: AlgebraicTermNode::Constructor { fields, .. },
+                    ..
+                }) => {
+                    for field in fields {
+                        match field {
+                            AlgebraicValue::C(value) => pending.push(Work::Value(value)),
+                            AlgebraicValue::Algebraic(model) => pending.push(Work::Model(model)),
+                            AlgebraicValue::Integer(_) => {}
+                        }
+                    }
+                }
+                Work::Value(CValue::Pointer(pointer)) => pending.push(Work::Pointer(pointer)),
+                Work::Pointer(pointer) => {
+                    if let Some(evidence) = pointer.object_type_evidence() {
+                        keys.insert((
+                            pointer.pointer().clone(),
+                            terms::PointerFactKey::ObjectType(evidence.class.clone()),
+                        ));
+                    }
+                }
+                _ => {}
+            }
+        }
+        keys
+    }
+
+    pub(in crate::kernel) fn has_object_type(
+        &self,
+        pointer: &Pointer,
+        class: &crate::kernel::effective_type::CAccessClass,
+    ) -> bool {
+        self.pointer_fact_candidates(pointer, &terms::PointerFactKey::ObjectType(class.clone()))
+            .get(&String::new())
+            .is_some_and(|sources| !sources.is_empty())
+    }
+
     fn pointer_predicate_key(
         proposition: &crate::kernel::Proposition,
     ) -> Option<(Pointer, terms::PointerFactKey)> {
@@ -59,39 +141,52 @@ impl EqualityGraph {
 
     /// Retain an exact source proposition in the selected pointer's checked
     /// class. This adds no equality, read permission, or snapshot transport.
-    pub(in crate::kernel) fn adjust_pointer_predicate(
+    pub(in crate::kernel) fn adjust_pointer_fact(
         &self,
         source: &std::sync::Arc<crate::kernel::ExecutionPureFact>,
         insert: bool,
     ) {
         let source = source.clone() as std::sync::Arc<dyn terms::PointerFactSource>;
-        self.adjust_pointer_predicate_source(&source, insert);
+        self.adjust_pointer_fact_source(&source, insert);
     }
 
-    pub(super) fn adjust_pointer_predicate_source(
+    pub(super) fn adjust_pointer_fact_source(
         &self,
         source: &std::sync::Arc<dyn terms::PointerFactSource>,
         insert: bool,
     ) {
         use crate::kernel::{CFunctionContract, CValue, Proposition, Term};
         let proposition = source.proposition();
-        let Some((pointer, key)) = Self::pointer_predicate_key(proposition) else {
+        if self.adjust_address_separation_source(source, insert) {
             return;
-        };
-        self.address_class(&pointer);
+        }
+        let mut keys = Self::object_type_keys(proposition);
+        let predicate = Self::pointer_predicate_key(proposition);
+        keys.extend(predicate.iter().cloned());
+        if keys.is_empty() {
+            return;
+        }
+        for (pointer, _) in &keys {
+            self.address_class(pointer);
+        }
         let mut state = self.state.lock().expect("equality graph");
         let identity = std::sync::Arc::as_ptr(source) as *const () as usize;
-        if insert {
-            state
-                .pointer_predicate_inputs
-                .insert(identity, source.clone());
+        let inputs = if matches!(proposition, Proposition::ConditionIs(..)) {
+            &mut state.condition_pointer_fact_inputs
         } else {
-            state.pointer_predicate_inputs.remove(&identity);
+            &mut state.pointer_fact_inputs
+        };
+        if insert {
+            inputs.insert(identity, source.clone());
+        } else {
+            inputs.remove(&identity);
         }
-        let address = state.register_pointer_address(&pointer);
-        state
-            .terms
-            .adjust_pointer_fact(address, key, source, insert);
+        for (pointer, key) in keys {
+            let address = state.register_pointer_address(&pointer);
+            state
+                .terms
+                .adjust_pointer_fact(address, key, source, insert);
+        }
         // A contract fact names its function value first; the values after
         // it fix the contract's value parameters.
         if let Proposition::Predicate { name, arguments } = proposition
@@ -102,6 +197,7 @@ impl EqualityGraph {
                     if values.iter().all(|value| matches!(value, Term::CValue(_)))
             )
         {
+            let address = state.register_pointer_address(&predicate.expect("contract pointer").0);
             state.terms.adjust_pointer_fact(
                 address,
                 terms::PointerFactKey::FunctionContracts,

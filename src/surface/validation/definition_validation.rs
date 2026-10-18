@@ -346,6 +346,11 @@ pub(in crate::surface) fn validate_click_definitions(file: &ClickFile) -> Result
         &combined_algebraic_type_definitions(file)?,
     )?;
 
+    if let Some((name, error)) = &click_function_environment.pointer_type_error {
+        crate::surface::enter_ambient_declaration(name);
+        return Err(ClickError::new(error.clone()));
+    }
+
     for theorem in &theorem_definitions {
         crate::surface::enter_ambient_declaration(theorem.name());
         validate_theorem_definition(

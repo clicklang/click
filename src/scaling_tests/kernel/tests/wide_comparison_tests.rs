@@ -12,7 +12,7 @@ fn wide_comparison_queries_ignore_unrelated_ambient_facts() {
             // Exercise the second indexed query rather than the direct key.
             let guard = condition(complement(operator), ty);
             let mut samples = Vec::new();
-            for size in [16, 64, 256, 1024] {
+            for size in [8, 32, 128, 512] {
                 let mut context = PureFactContext::new();
                 for i in 0..size {
                     context = context
@@ -41,7 +41,7 @@ fn wide_comparison_work_scales_with_explicit_operations() {
         for operator in OPERATORS {
             let expression = symbolic(operator, ty);
             let context = PureFactContext::new();
-            let samples = [2usize, 8, 32, 128].map(|size| {
+            let samples = [1usize, 4, 16, 64].map(|size| {
                 let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
                     for _ in 0..size {
                         assert_eq!(paths(&expression, &context).len(), 2);

@@ -1286,6 +1286,7 @@ pub(super) fn execute_c_heap_allocate_paths(
     target: &str,
     bytes_expression: &CExpression,
     zeroed: bool,
+    object_type: Option<&(crate::kernel::effective_type::CAccessClass, u32, u32)>,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Vec<CStatementExecutionPath>> {
@@ -1391,19 +1392,29 @@ pub(super) fn execute_c_heap_allocate_paths(
                 break Pointer::symbolic(identity);
             }
         };
+        let object_class = object_type.and_then(|(class, size, alignment)| {
+            let enough_space =
+                ConditionTerm::unsigned_less_equal(Bitvector32Term::Constant(*size), bytes.clone());
+            (*alignment as u64 <= crate::kernel::primitives::HEAP_ALLOCATION_ALIGNMENT
+                && effective_assumptions.decide(&enough_space) == Some(true))
+            .then(|| class.clone())
+        });
         let mut success_state =
             state
                 .clone()
-                .with_memory(state.memory.clone().with_pending_heap_allocation(
+                .with_memory(state.memory.clone().with_pending_typed_heap_allocation(
                     pointer.clone(),
                     bytes,
                     zeroed,
+                    object_class.clone(),
                 ));
         success_state.record_pending_population_storage_creation(pointer.block.clone());
         let assigned = execute_c_lvalue_assignment_paths(
             &success_state,
             &c_variable(target.to_string()),
-            &CExpression::Value(CValue::typed_pointer(pointer, target_type)),
+            &CExpression::Value(
+                CValue::typed_pointer(pointer, target_type).with_pointer_object_class(object_class),
+            ),
             &effective_assumptions,
             budget,
         )?;
@@ -1712,6 +1723,7 @@ pub(crate) fn execute_c_realloc_assign_paths(
                 target,
                 size_expression,
                 false,
+                None,
                 &effective_assumptions,
                 budget,
             )? {
@@ -2450,7 +2462,7 @@ pub(crate) fn resolve_pending_heap_allocations(
                 })
                 .collect::<Vec<_>>();
             for (name, binding) in rebound {
-                state.locals.bindings.insert(name, binding);
+                state.locals.insert_binding(name, binding);
             }
             if !is_null {
                 let old_allocation = CResourceFact::own_allocation(
@@ -2523,7 +2535,7 @@ pub(crate) fn resolve_pending_heap_allocations(
             })
             .collect::<Vec<_>>();
         for (name, binding) in rebound {
-            state.locals.bindings.insert(name, binding);
+            state.locals.insert_binding(name, binding);
         }
         if !is_null {
             let (element_count, range_width) = heap_range_element_count(&bytes, element_width);
@@ -2643,7 +2655,10 @@ fn execute_c_return_expression_paths(
                         CStatementOutcome::RuntimeError(CRuntimeError::UnresolvedAllocationOutcome)
                     } else {
                         CStatementOutcome::Return {
-                            value: CValue::typed_pointer(resolved_pointer, pointer.c_type()),
+                            value: CValue::typed_pointer(resolved_pointer, pointer.c_type())
+                                .with_pointer_object_type_evidence(
+                                    pointer.object_type_evidence().cloned(),
+                                ),
                             state: Box::new(resolved_state),
                         }
                     };
@@ -2753,9 +2768,10 @@ fn collect_scope_declared_names(statement: &CStatement, names: &mut Vec<String>)
         CStatement::Declare { name, .. } | CStatement::DeclareAggregate { name, .. } => {
             names.push(name.clone());
         }
-        CStatement::Seq(first, second) => {
-            collect_scope_declared_names(first, names);
-            collect_scope_declared_names(second, names);
+        CStatement::Seq(statements) => {
+            for statement in statements.iter() {
+                collect_scope_declared_names(statement, names);
+            }
         }
         // Nested scopes retire their own declarations.
         CStatement::If { .. }
@@ -2967,11 +2983,12 @@ pub(in crate::kernel) fn execute_statement_paths(
 ) -> ExecutionResult<Vec<CStatementExecutionPath>> {
     // Keep a source block's sequence spine out of the large leaf-operation
     // frame. Adding a fact index must not multiply stack use per statement.
-    if let CStatement::Seq(first, second) = statement {
+    if let CStatement::Seq(statements) = statement {
+        let second = statements.rest();
         let mut paths = Vec::new();
         for first_path in execute_statement_paths(
             state,
-            first,
+            statements.first(),
             assumptions,
             execution_context,
             budget,
@@ -2988,7 +3005,7 @@ pub(in crate::kernel) fn execute_statement_paths(
                 CStatementOutcome::Normal(state) => {
                     paths.extend(execute_statement_paths_with_prefix(
                         &state,
-                        second,
+                        &second,
                         assumptions,
                         execution_context,
                         &facts,
@@ -3152,7 +3169,7 @@ fn verification_operation_name(statement: &CStatement) -> &'static str {
         CStatement::While { .. } => "verification statement: while",
         CStatement::Switch { .. } => "verification statement: switch",
         CStatement::If { .. } => "verification statement: if",
-        CStatement::Seq(_, _) => "verification statement: sequence",
+        CStatement::Seq(_) => "verification statement: sequence",
     }
 }
 
@@ -3265,7 +3282,7 @@ fn execute_c_statement_leaf_paths(
                 return Ok(paths);
             }
             CStatement::TypedStore { .. } if pending.has_local_handle_slot(state) => {}
-            CStatement::Skip | CStatement::Seq(_, _) => {}
+            CStatement::Skip | CStatement::Seq(_) => {}
             CStatement::If { condition, .. }
                 if super::super::functions::c_expression_is_state_independent(condition) => {}
             _ => {
@@ -3284,7 +3301,7 @@ fn execute_c_statement_leaf_paths(
     // `Seq` is the tree representation of a source block, not an executed C
     // statement. Charging it made the statement budget depend on tree shape
     // and counted every straight-line source statement twice.
-    if !matches!(statement, CStatement::Seq(_, _)) {
+    if !matches!(statement, CStatement::Seq(_)) {
         budget.consume_statement_step()?;
     }
     // The private scalar lease adapter supports direct scalar execution only.
@@ -3680,14 +3697,23 @@ fn execute_c_statement_leaf_paths(
             target,
             bytes,
             zeroed,
-        } => execute_c_heap_allocate_paths(state, target, bytes, *zeroed, assumptions, budget)?,
+            object_type,
+        } => execute_c_heap_allocate_paths(
+            state,
+            target,
+            bytes,
+            *zeroed,
+            object_type.as_ref(),
+            assumptions,
+            budget,
+        )?,
         CStatement::HeapFree { pointer } => {
             execute_c_heap_free_paths(state, pointer, assumptions, budget)?
         }
         CStatement::Assert { condition, label } => {
             execute_c_assert_paths(state, condition, label.as_deref(), assumptions, budget)?
         }
-        CStatement::Seq(_, _) => unreachable!("sequences dispatch before leaf execution"),
+        CStatement::Seq(_) => unreachable!("sequences dispatch before leaf execution"),
         CStatement::Return(CExpression::Value(CValue::Void)) => {
             let outcome = if let Some(refusal) = return_authority_refusal(state) {
                 refusal

@@ -585,7 +585,7 @@ pub(in crate::surface) fn register_kernel_fold_read_definitions(
         let entry_state = CState::new().with_population_creation_tracking();
         let mut lowerer = AnnotationLowerer {
             capture_referenced_names: None,
-            structural_clauses: &[],
+            structural_clauses: StructuralClauses::empty(),
             implicit_contract_mutable_segments: &[],
             loop_resources: BTreeMap::new(),
             inherits_resource_derived_frame: false,
@@ -641,7 +641,7 @@ fn lower_kernel_pure_function_definition(
     let entry_state = CState::new().with_population_creation_tracking();
     let mut lowerer = AnnotationLowerer {
         capture_referenced_names: None,
-        structural_clauses: &[],
+        structural_clauses: StructuralClauses::empty(),
         implicit_contract_mutable_segments: &[],
         loop_resources: BTreeMap::new(),
         inherits_resource_derived_frame: false,
@@ -706,6 +706,10 @@ fn lower_kernel_pure_function_definition(
     let body = lowerer
         .lower_contract_expression_to_spec(definition.body(), &context)
         .ok()?;
+    let body = match pure_function_result_scalar_type(definition) {
+        Some(target) => SpecExpression::Cast(Box::new(body), target),
+        None => body,
+    };
     Some(crate::kernel::CPureFunctionDefinition::new(
         definition.name(),
         parameters,
@@ -728,7 +732,7 @@ pub(in crate::surface) fn lower_composite_resource_condition(
     let entry_state = CState::new().with_population_creation_tracking();
     let mut lowerer = AnnotationLowerer {
         capture_referenced_names: None,
-        structural_clauses: &[],
+        structural_clauses: StructuralClauses::empty(),
         implicit_contract_mutable_segments: &[],
         loop_resources: BTreeMap::new(),
         inherits_resource_derived_frame: false,
@@ -815,7 +819,7 @@ pub(in crate::surface) fn lower_composite_resource_body_with_bindings(
     let entry_state = CState::new().with_population_creation_tracking();
     let mut lowerer = AnnotationLowerer {
         capture_referenced_names: None,
-        structural_clauses: &[],
+        structural_clauses: StructuralClauses::empty(),
         implicit_contract_mutable_segments: &[],
         loop_resources: BTreeMap::new(),
         inherits_resource_derived_frame: false,
@@ -1009,6 +1013,165 @@ pub(in crate::surface) struct LoopAnnotation {
     quantifiers_after: u64,
     bindings_empty_after: bool,
     shape: std::sync::Arc<LoopAnnotationShape>,
+    /// The annotated loop as `kernel_loop_by_index` finds it in `function`,
+    /// when lowering it alone already holds it.
+    current_loop: Option<CStatement>,
+    /// Where each loop of `function`'s body sits, once a later annotation
+    /// asked ([`KernelLoopPaths`]).
+    kernel_loop_paths: std::sync::OnceLock<std::sync::Arc<KernelLoopPaths>>,
+}
+
+/// One step of the path from a kernel body's root to a loop: the statement
+/// of a sequence at an index, or an arm of an `if`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum KernelLoopStep {
+    Statement(usize),
+    Then,
+    Else,
+}
+
+/// For each loop index `kernel_loop_by_index` numbers in a body, the path to
+/// that loop when [`kernel_loop_replaced`] can put a lowered loop in its place
+/// (it is reached through sequences and `if` arms alone), from one walk of
+/// the body. Putting a loop in place then follows the path: its length is
+/// the nesting depth, and each sequence on it replaces one statement in
+/// logarithmic time, so the statements before the loop are not walked or
+/// rebuilt.
+///
+/// The paths stay those of a body in which a loop at one of them was
+/// replaced by a statement with the same number of loops: every other
+/// statement keeps its place and every loop its number.
+struct KernelLoopPaths {
+    paths: Vec<Option<Vec<KernelLoopStep>>>,
+}
+
+impl KernelLoopPaths {
+    fn of(body: &CStatement) -> Self {
+        fn walk(
+            statement: &CStatement,
+            path: &mut Vec<KernelLoopStep>,
+            paths: &mut Vec<Option<Vec<KernelLoopStep>>>,
+        ) {
+            match statement {
+                CStatement::While { body, .. } => {
+                    paths.push(Some(path.clone()));
+                    // A loop inside another is not one a walk lowers alone.
+                    paths.extend(std::iter::repeat_n(None, count_kernel_loops(body)));
+                }
+                CStatement::Seq(statements) => {
+                    for (index, statement) in statements.iter().enumerate() {
+                        path.push(KernelLoopStep::Statement(index));
+                        walk(statement, path, paths);
+                        path.pop();
+                    }
+                }
+                CStatement::If {
+                    then_branch,
+                    else_branch,
+                    ..
+                } => {
+                    path.push(KernelLoopStep::Then);
+                    walk(then_branch, path, paths);
+                    path.pop();
+                    path.push(KernelLoopStep::Else);
+                    walk(else_branch, path, paths);
+                    path.pop();
+                }
+                // A loop under any other statement is not one a walk lowers
+                // alone.
+                statement => {
+                    paths.extend(std::iter::repeat_n(None, count_kernel_loops(statement)));
+                }
+            }
+        }
+        let mut paths = Vec::new();
+        walk(body, &mut Vec::new(), &mut paths);
+        Self { paths }
+    }
+
+    /// `body`, the body these paths were read from, with the loop numbered
+    /// `target` replaced by `replacement`: what [`kernel_loop_replaced`]
+    /// returns, without walking the statements before the loop.
+    fn replaced(
+        &self,
+        body: &CStatement,
+        target: usize,
+        replacement: &CStatement,
+    ) -> Option<CStatement> {
+        fn at(
+            statement: &CStatement,
+            path: &[KernelLoopStep],
+            replacement: &CStatement,
+        ) -> Option<CStatement> {
+            #[cfg(test)]
+            KERNEL_LOOP_REPLACEMENT_STEPS.with(|count| count.set(count.get() + 1));
+            let Some((step, path)) = path.split_first() else {
+                return matches!(statement, CStatement::While { .. }).then(|| replacement.clone());
+            };
+            match (step, statement) {
+                (KernelLoopStep::Statement(index), CStatement::Seq(statements)) => {
+                    let replaced = at(statements.get(*index)?, path, replacement)?;
+                    Some(CStatement::Seq(
+                        statements.with_statement(*index, std::sync::Arc::new(replaced)),
+                    ))
+                }
+                (
+                    KernelLoopStep::Then,
+                    CStatement::If {
+                        condition,
+                        then_branch,
+                        else_branch,
+                    },
+                ) => Some(CStatement::If {
+                    condition: condition.clone(),
+                    then_branch: Box::new(at(then_branch, path, replacement)?),
+                    else_branch: else_branch.clone(),
+                }),
+                (
+                    KernelLoopStep::Else,
+                    CStatement::If {
+                        condition,
+                        then_branch,
+                        else_branch,
+                    },
+                ) => Some(CStatement::If {
+                    condition: condition.clone(),
+                    then_branch: then_branch.clone(),
+                    else_branch: Box::new(at(else_branch, path, replacement)?),
+                }),
+                _ => None,
+            }
+        }
+        at(body, self.paths.get(target)?.as_ref()?, replacement)
+    }
+
+    /// The loop at `target`'s path in `body`, when there is one.
+    fn loop_at<'a>(&self, body: &'a CStatement, target: usize) -> Option<&'a CStatement> {
+        let mut statement = body;
+        for step in self.paths.get(target)?.as_ref()? {
+            statement = match (step, statement) {
+                (KernelLoopStep::Statement(index), CStatement::Seq(statements)) => {
+                    statements.get(*index)?
+                }
+                (KernelLoopStep::Then, CStatement::If { then_branch, .. }) => then_branch,
+                (KernelLoopStep::Else, CStatement::If { else_branch, .. }) => else_branch,
+                _ => return None,
+            };
+        }
+        matches!(statement, CStatement::While { .. }).then_some(statement)
+    }
+}
+
+#[cfg(test)]
+thread_local! {
+    static KERNEL_LOOP_REPLACEMENT_STEPS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+/// The statements putting lowered loops in place (`KernelLoopPaths::replaced`)
+/// visited on this thread so far.
+#[cfg(test)]
+pub(in crate::surface) fn kernel_loop_replacement_steps() -> usize {
+    KERNEL_LOOP_REPLACEMENT_STEPS.with(std::cell::Cell::get)
 }
 
 /// The parts of a whole-function annotation that do not depend on its loop
@@ -1023,11 +1186,32 @@ struct LoopAnnotationShape {
     /// no loop declares resources (which are lowered for every loop before
     /// the body) or wraps the whole body as a natural control loop.
     loops_lower_alone: bool,
+    /// What [`c0_loop_by_index`] finds at each loop index of the function's
+    /// body, from one walk, so lowering one loop alone does not walk the
+    /// statements before it.
+    c0_loops: std::sync::OnceLock<Vec<Option<syntax::C0Statement>>>,
+}
+
+impl LoopAnnotationShape {
+    /// [`c0_loop_by_index`] of `body` at `target`. `body` is the body of the
+    /// function this shape was recorded from: every call passes it.
+    fn c0_loop(&self, body: &syntax::C0Statement, target: usize) -> Option<&syntax::C0Statement> {
+        self.c0_loops
+            .get_or_init(|| c0_loops_by_index(body))
+            .get(target)?
+            .as_ref()
+    }
 }
 
 impl LoopAnnotation {
     pub(in crate::surface) fn function(&self) -> &CFunction {
         &self.function
+    }
+
+    /// What `kernel_loop_by_index` finds at this annotation's loop in
+    /// `function`, if it is already known.
+    pub(in crate::surface) fn current_loop(&self) -> Option<&CStatement> {
+        self.current_loop.as_ref()
     }
 }
 
@@ -1065,6 +1249,8 @@ pub(in crate::surface) fn annotated_loop_function(
         quantifiers_after: record.map_or(0, |record| record.quantifiers_after),
         bindings_empty_after: record.is_some_and(|record| record.bindings_empty_after),
         shape: std::sync::Arc::new(shape),
+        current_loop: None,
+        kernel_loop_paths: std::sync::OnceLock::new(),
     })
 }
 
@@ -1110,14 +1296,13 @@ pub(in crate::surface) fn annotated_loop_function_extending(
         || !previous.bindings_empty_after
         || function_block
             .structural_clauses()
-            .iter()
-            .any(|clause| !clause.scope.is_empty() || !clause.resources().is_empty())
+            .any_scoped_or_resourced()
     {
         return Ok(None);
     }
     let parsed_function =
         &*crate::surface::verification::witnessed_function(parsed_function, function_block);
-    let Some(loop_statement) = c0_loop_by_index(parsed_function.body(), loop_index) else {
+    let Some(loop_statement) = shape.c0_loop(parsed_function.body(), loop_index) else {
         return Ok(None);
     };
     let implicit_contract_mutable_segments = if shape.resource_derived_mutable_frame {
@@ -1243,21 +1428,45 @@ pub(in crate::surface) fn annotated_loop_function_extending(
     } else {
         lowered
     };
-    let mut next_loop_index = 0;
-    let Some(body) = kernel_loop_replaced(
-        previous.function.body(),
-        loop_index,
-        &mut next_loop_index,
-        &lowered,
-    ) else {
+    let paths = previous
+        .kernel_loop_paths
+        .get_or_init(|| std::sync::Arc::new(KernelLoopPaths::of(previous.function.body())));
+    let Some(body) = paths.replaced(previous.function.body(), loop_index, &lowered) else {
         return Ok(None);
     };
+    #[cfg(debug_assertions)]
+    if loop_annotation_check_enabled() {
+        crate::instrumentation::uncharged_debug_check(|| {
+            assert!(
+                kernel_loop_replaced(previous.function.body(), loop_index, &mut 0, &lowered)
+                    .as_ref()
+                    == Some(&body),
+                "loop({loop_index}) was put in place where the walk would not put it"
+            );
+        });
+    }
+    // The paths still hold for `body` when the lowered loop holds as many
+    // loops as the one it replaced.
+    let kernel_loop_paths = std::sync::OnceLock::new();
+    if paths
+        .loop_at(previous.function.body(), loop_index)
+        .is_some_and(|replaced| count_kernel_loops(replaced) == count_kernel_loops(&lowered))
+    {
+        let _ = kernel_loop_paths.set(paths.clone());
+    }
+    // `body` numbers every loop before `lowered` as `previous.function`
+    // does, so a walk of `body` reaches `lowered` with `loop_index` loops
+    // counted and finds this loop inside it.
+    let mut next_loop_index = loop_index;
+    let current_loop = kernel_loop_by_index(&lowered, loop_index, &mut next_loop_index).cloned();
     Ok(Some(LoopAnnotation {
         function: previous.function.clone().with_body(body),
         loop_index,
         quantifiers_after,
         bindings_empty_after,
         shape: previous.shape.clone(),
+        current_loop,
+        kernel_loop_paths,
     }))
 }
 
@@ -1265,6 +1474,9 @@ pub(in crate::surface) fn annotated_loop_function_extending(
 /// in that walk's order: `while`, `do` and `for` loops number themselves
 /// before their bodies, and only sequences, loops and `if` arms are
 /// descended, as `AnnotationLowerer::lower_statement` descends them.
+/// [`c0_loops_by_index`] answers every index from one walk; this is its
+/// reference.
+#[cfg(test)]
 fn c0_loop_by_index(
     statement: &syntax::C0Statement,
     target: usize,
@@ -1306,9 +1518,119 @@ fn c0_loop_by_index(
     .then_some(found)
 }
 
+/// The kernel loop numbered `target` in `statement`, numbering each
+/// `while` before its body, from `*next_loop_index`.
+pub(in crate::surface) fn kernel_loop_by_index<'a>(
+    statement: &'a CStatement,
+    target: usize,
+    next_loop_index: &mut usize,
+) -> Option<&'a CStatement> {
+    #[cfg(test)]
+    LOOP_LOOKUP_NODES.with(|count| count.set(count.get() + 1));
+    match statement {
+        CStatement::While { body, .. } => {
+            let loop_index = *next_loop_index;
+            *next_loop_index += 1;
+            if loop_index == target {
+                Some(statement)
+            } else {
+                kernel_loop_by_index(body, target, next_loop_index)
+            }
+        }
+        CStatement::Seq(statements) => statements
+            .iter()
+            .find_map(|statement| kernel_loop_by_index(statement, target, next_loop_index)),
+        CStatement::If {
+            then_branch,
+            else_branch,
+            ..
+        } => kernel_loop_by_index(then_branch, target, next_loop_index)
+            .or_else(|| kernel_loop_by_index(else_branch, target, next_loop_index)),
+        CStatement::TryCatchInt32 {
+            try_body, handler, ..
+        } => kernel_loop_by_index(try_body, target, next_loop_index)
+            .or_else(|| kernel_loop_by_index(handler, target, next_loop_index)),
+        CStatement::Switch { cases, .. } => cases
+            .iter()
+            .find_map(|case| kernel_loop_by_index(&case.body, target, next_loop_index)),
+        CStatement::Skip
+        | CStatement::EndScalarReference(_)
+        | CStatement::ScalarReferenceScope(_)
+        | CStatement::Break
+        | CStatement::Continue
+        | CStatement::Goto { .. }
+        | CStatement::Declare { .. }
+        | CStatement::DeclareAggregate { .. }
+        | CStatement::Assign { .. }
+        | CStatement::CallAssign { .. }
+        | CStatement::Call { .. }
+        | CStatement::HeapAllocate { .. }
+        | CStatement::HeapFree { .. }
+        | CStatement::Throw(_)
+        | CStatement::Return(_)
+        | CStatement::Store { .. }
+        | CStatement::TypedStore { .. }
+        | CStatement::CopyAggregate { .. }
+        | CStatement::InitializeScalarArray { .. }
+        | CStatement::Update { .. }
+        | CStatement::Assert { .. } => None,
+        CStatement::ForStep { .. } | CStatement::EndAutomaticLifetimes { .. } => None,
+    }
+}
+
+#[cfg(test)]
+thread_local! {
+    static LOOP_LOOKUP_NODES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+/// The statements loop lookups (`kernel_loop_by_index`, and the C0 loop
+/// index) visited on this thread so far.
+#[cfg(test)]
+pub(in crate::surface) fn loop_lookup_nodes() -> usize {
+    LOOP_LOOKUP_NODES.with(std::cell::Cell::get)
+}
+
+/// Every loop index's [`c0_loop_by_index`] answer for `statement`, from
+/// one walk in the same order.
+fn c0_loops_by_index(statement: &syntax::C0Statement) -> Vec<Option<syntax::C0Statement>> {
+    fn walk(statement: &syntax::C0Statement, found: &mut Vec<Option<syntax::C0Statement>>) {
+        #[cfg(test)]
+        LOOP_LOOKUP_NODES.with(|count| count.set(count.get() + 1));
+        match statement {
+            syntax::C0Statement::Seq(first, second) => {
+                walk(first, found);
+                walk(second, found);
+            }
+            syntax::C0Statement::While { body, .. } | syntax::C0Statement::DoWhile { body, .. } => {
+                found.push(Some(statement.clone()));
+                walk(body, found);
+            }
+            syntax::C0Statement::For { body, .. } => {
+                found.push(None);
+                walk(body, found);
+            }
+            syntax::C0Statement::If {
+                then_branch,
+                else_branch,
+                ..
+            } => {
+                walk(then_branch, found);
+                walk(else_branch, found);
+            }
+            _ => {}
+        }
+    }
+    let mut found = Vec::new();
+    walk(statement, &mut found);
+    found
+}
+
 /// `statement` with the loop `kernel_loop_by_index` finds at `target`
 /// replaced by `replacement`: the statements on the way to it are rebuilt,
-/// every other part is shared.
+/// every other part is shared. It walks every statement before the loop;
+/// [`KernelLoopPaths::replaced`] answers the same without, and this is its
+/// reference.
+#[cfg(any(test, debug_assertions))]
 fn kernel_loop_replaced(
     statement: &CStatement,
     target: usize,
@@ -1326,12 +1648,15 @@ fn kernel_loop_replaced(
             *next += count_kernel_loops(body);
             None
         }
-        CStatement::Seq(first, second) => {
-            if let Some(first) = kernel_loop_replaced(first, target, next, replacement) {
-                return Some(CStatement::Seq(std::sync::Arc::new(first), second.clone()));
+        CStatement::Seq(statements) => {
+            for (index, statement) in statements.iter().enumerate() {
+                if let Some(replaced) = kernel_loop_replaced(statement, target, next, replacement) {
+                    return Some(CStatement::Seq(
+                        statements.with_statement(index, std::sync::Arc::new(replaced)),
+                    ));
+                }
             }
-            let second = kernel_loop_replaced(second, target, next, replacement)?;
-            Some(CStatement::Seq(first.clone(), std::sync::Arc::new(second)))
+            None
         }
         CStatement::If {
             condition,
@@ -1365,7 +1690,10 @@ fn kernel_loop_replaced(
 fn count_kernel_loops(statement: &CStatement) -> usize {
     match statement {
         CStatement::While { body, .. } => 1 + count_kernel_loops(body),
-        CStatement::Seq(first, second) => count_kernel_loops(first) + count_kernel_loops(second),
+        CStatement::Seq(statements) => statements
+            .iter()
+            .map(|statement| count_kernel_loops(statement))
+            .sum(),
         CStatement::If {
             then_branch,
             else_branch,
@@ -1537,10 +1865,7 @@ fn annotate_function(
     let natural_control_loop = parsed_function.natural_control_loop().is_some();
     let body = if let Some((backedge_target, natural_exit_target, _)) =
         parsed_function.natural_control_loop()
-        && function_block
-            .structural_clauses()
-            .iter()
-            .any(|clause| clause.region() == &CodeRegion::Loop(0))
+        && function_block.structural_clauses().for_loop(0).is_some()
     {
         let invariant_checks = lowerer.loop_invariant_checks(0)?;
         let effect_checks = lowerer.loop_frame_checks(0)?;
@@ -1738,6 +2063,7 @@ fn annotate_function(
         records,
         contract_mutable,
         resource_derived_mutable_frame,
+        c0_loops: std::sync::OnceLock::new(),
     });
     Ok((function, shape))
 }
@@ -1759,7 +2085,7 @@ pub(in crate::surface) fn lower_branch_interface_fact(
 ) -> Result<SpecProposition, ClickError> {
     let mut lowerer = AnnotationLowerer {
         capture_referenced_names: None,
-        structural_clauses: &[],
+        structural_clauses: StructuralClauses::empty(),
         implicit_contract_mutable_segments: &[],
         loop_resources: BTreeMap::new(),
         inherits_resource_derived_frame: false,
@@ -1840,7 +2166,7 @@ fn fixed_state_elaboration<'a>(
 ) -> (AnnotationLowerer<'a>, SpecElaborationContext) {
     let lowerer = AnnotationLowerer {
         capture_referenced_names: None,
-        structural_clauses: &[],
+        structural_clauses: StructuralClauses::empty(),
         spec_definitions,
         entry_state,
         result_type: result.map(CValue::c_type).unwrap_or(CType::Int32),
@@ -1976,6 +2302,7 @@ pub(in crate::surface) fn elaborate_fixed_state_algebraic_expression(
         pointer_element_widths,
     );
     context.algebraic_values = algebraic_values.into_iter().collect();
+    lowerer.capture_referenced_names = Some(contract_expression_referenced_names(expression));
     lowerer.lower_contract_algebraic_to_spec(expression, &context)
 }
 
@@ -2193,9 +2520,9 @@ pub(in crate::surface) fn elaborate_fixed_state_expression_with_algebraic_and_in
             }
         }
     }
-    if !context.integer_values.is_empty() {
-        lowerer.capture_referenced_names = Some(names);
-    }
+    // A snapshot the expression enters reads only these names, as for a
+    // proposition, rather than every local the snapshot's state binds.
+    lowerer.capture_referenced_names = Some(names);
     lowerer.lower_contract_expression_to_spec(expression, &context)
 }
 
@@ -2234,7 +2561,7 @@ pub(in crate::surface) fn elaborate_requirement_proposition(
     };
     let mut lowerer = AnnotationLowerer {
         capture_referenced_names: None,
-        structural_clauses: &[],
+        structural_clauses: StructuralClauses::empty(),
         implicit_contract_mutable_segments: &[],
         loop_resources: BTreeMap::new(),
         inherits_resource_derived_frame: false,
@@ -2650,7 +2977,11 @@ fn collect_local_pointer_element_types(body: &CStatement, types: &mut BTreeMap<S
                     types.insert(name.clone(), element);
                 }
             }
-            CStatement::Seq(first, second) => pending.extend([first.as_ref(), second.as_ref()]),
+            CStatement::Seq(statements) => {
+                // The pair nodes beyond the first the tree held.
+                crate::instrumentation::record_deterministic_work(statements.len() - 2);
+                pending.extend(statements.iter().map(|statement| statement.as_ref()))
+            }
             CStatement::If {
                 then_branch,
                 else_branch,
@@ -2786,7 +3117,7 @@ struct LoopResourceDeclaration {
 
 struct AnnotationLowerer<'a> {
     capture_referenced_names: Option<BTreeSet<String>>,
-    structural_clauses: &'a [StructuralClause],
+    structural_clauses: &'a StructuralClauses,
     implicit_contract_mutable_segments: &'a [CMemorySegment],
     /// Resources declared by each loop, keyed by loop index. A loop with a
     /// declaration has the shape of a callee contract: its body executes
@@ -2874,6 +3205,22 @@ struct LoopLoweringRecord {
     /// Whether the walk's scoped bindings were empty once the loop was
     /// lowered, so the next loop starts from none.
     bindings_empty_after: bool,
+}
+
+/// [`parameter_pointer_element_widths`] for the parameters among `names`,
+/// found through the binding's index when it has one.
+pub(in crate::surface) fn parameter_pointer_element_widths_named(
+    parameter_binding: ParameterBinding<'_>,
+    names: &BTreeSet<String>,
+) -> BTreeMap<String, u32> {
+    let Some(index) = parameter_binding.index else {
+        return parameter_pointer_element_widths(parameter_binding.parameters);
+    };
+    parameter_pointer_element_widths(
+        names
+            .iter()
+            .filter_map(|name| Some(&parameter_binding.parameters[index.position(name)?])),
+    )
 }
 
 pub(in crate::surface) fn parameter_pointer_element_widths<'a>(
@@ -3147,10 +3494,10 @@ impl AnnotationLowerer<'_> {
     /// Attach the same checked loop clauses to compiler-lowered statements.
     fn lower_kernel_statement(&mut self, statement: &CStatement) -> Result<CStatement, ClickError> {
         Ok(match statement {
-            CStatement::Seq(a, b) => c_seq(
-                self.lower_kernel_statement(a)?,
-                self.lower_kernel_statement(b)?,
-            ),
+            CStatement::Seq(statements) => CStatement::Seq(statements.try_map(|statement| {
+                self.lower_kernel_statement(statement)
+                    .map(std::sync::Arc::new)
+            })?),
             CStatement::If {
                 condition,
                 then_branch,
@@ -3396,8 +3743,8 @@ impl AnnotationLowerer<'_> {
         let mut measures: Option<LoopMeasureClauses> = None;
         let clauses = self
             .structural_clauses
-            .iter()
-            .filter(|clause| clause.region() == &CodeRegion::Loop(loop_index))
+            .for_loop(loop_index)
+            .into_iter()
             .cloned()
             .collect::<Vec<_>>();
         for clause in &clauses {
@@ -3674,8 +4021,8 @@ impl AnnotationLowerer<'_> {
     ) -> Result<Vec<CLoopInvariantCheck>, ClickError> {
         let unfolded_predicates = self
             .structural_clauses
-            .iter()
-            .filter(|clause| clause.region() == &CodeRegion::Loop(loop_index))
+            .for_loop(loop_index)
+            .into_iter()
             .flat_map(|clause| {
                 clause
                     .initialize_proof()
@@ -3687,8 +4034,8 @@ impl AnnotationLowerer<'_> {
             .into_iter()
             .collect::<Vec<_>>();
         self.structural_clauses
-            .iter()
-            .filter(|clause| clause.region() == &CodeRegion::Loop(loop_index))
+            .for_loop(loop_index)
+            .into_iter()
             .flat_map(StructuralClause::items)
             .enumerate()
             .map(|(item_index, item)| {
@@ -4604,9 +4951,13 @@ impl AnnotationLowerer<'_> {
                         .contract_segment_element_width(segment, &segment_environment),
                 })
             }
-            ClickProposition::Defined { expression } => Ok(SpecProposition::Defined(
-                self.lower_contract_expression_to_spec(expression, environment)?,
-            )),
+            ClickProposition::Defined { expression } => {
+                let mut checked_environment = environment.clone();
+                checked_environment.checking_definedness = true;
+                Ok(SpecProposition::Defined(
+                    self.lower_contract_expression_to_spec(expression, &checked_environment)?,
+                ))
+            }
             _ => unreachable!("non-atomic proposition dispatched to leaf lowering"),
         }
     }
@@ -5063,7 +5414,7 @@ impl AnnotationLowerer<'_> {
                 let mut body_environment = environment.clone();
                 for (binding, binding_type) in arm.bindings.iter().zip(&variant.fields) {
                     match binding_type {
-                        AlgebraicValueType::C(_) => {
+                        AlgebraicValueType::C(_) | AlgebraicValueType::ObjectPointer(_, _) => {
                             body_environment.integer_values.remove(binding);
                             body_environment.algebraic_values.remove(binding);
                             body_environment.values.insert(
@@ -5582,7 +5933,30 @@ impl AnnotationLowerer<'_> {
                         value_type: self.contract_array_element_type(operand, environment),
                     }),
                     CExpression::AddressOf(_) | CExpression::CheckedObjectAddress(_) => {
-                        Ok(SpecExpression::CExpression(lowered.clone()))
+                        // Rebuild from the authoritative surface operand,
+                        // including values already bound into a postcondition.
+                        // Keep the address operation and selected member extent.
+                        let values = if environment.contract_result_in_scope {
+                            BTreeMap::from([(
+                                "result".to_string(),
+                                ContractExpression::CFragment(CExpression::Variable(
+                                    crate::kernel::C_CONTRACT_RESULT_NAME.to_string(),
+                                )),
+                            )])
+                        } else {
+                            BTreeMap::new()
+                        };
+                        let rebound = substitute_contract_expression_in(
+                            expression,
+                            &ContractSubstitutions::for_contract_result(&values),
+                        )?;
+                        let lowered = contract_expression_as_c_fragment(&rebound)
+                            .ok_or("address operand is not a C expression")?;
+                        // Substitution has resolved the built-in result while
+                        // retaining explicit C bindings such as `c(result)`.
+                        let mut rebound_environment = environment.clone();
+                        rebound_environment.contract_result_in_scope = false;
+                        self.lower_c_fragment_to_spec(&lowered, &rebound_environment)
                     }
                     _ => Err("invalid C unary operation".to_string()),
                 }
@@ -5691,7 +6065,8 @@ impl AnnotationLowerer<'_> {
                         let mut body_environment = environment.clone();
                         for (binding, binding_type) in arm.bindings.iter().zip(&variant.fields) {
                             match binding_type {
-                                AlgebraicValueType::C(_) => {
+                                AlgebraicValueType::C(_)
+                                | AlgebraicValueType::ObjectPointer(_, _) => {
                                     body_environment.values.remove(binding);
                                     body_environment.algebraic_values.remove(binding);
                                 }
@@ -6291,6 +6666,7 @@ impl AnnotationLowerer<'_> {
                         // field's declared type the literal lowers as an
                         // `int32` zero and the constructor denotes no value.
                         AlgebraicValueType::C(c_type)
+                        | AlgebraicValueType::ObjectPointer(c_type, _)
                             if c_type.is_pointer()
                                 && matches!(
                                     argument,
@@ -6304,9 +6680,16 @@ impl AnnotationLowerer<'_> {
                                 ),
                             )))
                         }
-                        AlgebraicValueType::C(_) => self
-                            .lower_contract_expression_to_spec(argument, environment)
-                            .map(SpecAlgebraicValue::C),
+                        AlgebraicValueType::C(c_type)
+                        | AlgebraicValueType::ObjectPointer(c_type, _) => {
+                            let value =
+                                self.lower_contract_expression_to_spec(argument, environment)?;
+                            Ok(SpecAlgebraicValue::C(if *c_type == CType::VoidPointer {
+                                SpecExpression::PointerCoercion(Box::new(value), *c_type)
+                            } else {
+                                value
+                            }))
+                        }
                         AlgebraicValueType::Integer => self
                             .lower_contract_integer_to_spec(argument, environment)
                             .map(SpecAlgebraicValue::Integer),
@@ -6373,7 +6756,7 @@ impl AnnotationLowerer<'_> {
                     let mut body_environment = environment.clone();
                     for (binding, binding_type) in arm.bindings.iter().zip(&variant.fields) {
                         match binding_type {
-                            AlgebraicValueType::C(_) => {
+                            AlgebraicValueType::C(_) | AlgebraicValueType::ObjectPointer(_, _) => {
                                 body_environment.values.remove(binding);
                                 body_environment.algebraic_values.remove(binding);
                             }
@@ -6599,76 +6982,91 @@ impl AnnotationLowerer<'_> {
             .parameters()
             .iter()
             .zip(arguments)
-            .map(|(parameter, argument)| match parameter.click_type() {
-                ClickType::Parameter(name) => Err(format!(
-                    "function `{}` has unresolved type parameter `{name}`",
-                    definition.name()
-                )),
-                ClickType::Integer => self
-                    .lower_contract_integer_to_spec(argument, environment)
-                    .map(crate::kernel::SpecPureFunctionArgument::Integer),
-                ClickType::Algebraic(_) => self
-                    .lower_contract_algebraic_to_spec(argument, environment)
-                    .map(crate::kernel::SpecPureFunctionArgument::Algebraic),
-                // The C null pointer constant stands at a pointer-typed pure
-                // parameter and lowers to that pointer type's null value, not
-                // to an `int32` zero, so `rb_parent_is(sub, 0)` compares the
-                // model's parent payload with a pointer.
-                ClickType::C(c_type)
-                    if crate::surface::lowering::argument_is_null_pointer_constant(
-                        argument, *c_type,
-                    ) =>
-                {
-                    let pointer = SpecExpression::Value(CValue::typed_pointer(
-                        crate::kernel::Pointer::null(),
-                        c_type.to_kernel_type(),
-                    ));
-                    Ok(match click_array_element_type(*c_type) {
-                        Some(element_type) => crate::kernel::SpecPureFunctionArgument::ArrayRef {
+            .map(|(parameter, argument)| {
+                let lowered = match parameter.click_type() {
+                    ClickType::Parameter(name) => Err(format!(
+                        "function `{}` has unresolved type parameter `{name}`",
+                        definition.name()
+                    )),
+                    ClickType::Integer => self
+                        .lower_contract_integer_to_spec(argument, environment)
+                        .map(crate::kernel::SpecPureFunctionArgument::Integer),
+                    ClickType::Algebraic(_) => self
+                        .lower_contract_algebraic_to_spec(argument, environment)
+                        .map(crate::kernel::SpecPureFunctionArgument::Algebraic),
+                    // The C null pointer constant stands at a pointer-typed pure
+                    // parameter and lowers to that pointer type's null value, not
+                    // to an `int32` zero, so `rb_parent_is(sub, 0)` compares the
+                    // model's parent payload with a pointer.
+                    ClickType::C(c_type)
+                        if crate::surface::lowering::argument_is_null_pointer_constant(
+                            argument, *c_type,
+                        ) =>
+                    {
+                        let pointer = SpecExpression::Value(CValue::typed_pointer(
+                            crate::kernel::Pointer::null(),
+                            c_type.to_kernel_type(),
+                        ));
+                        Ok(match click_array_element_type(*c_type) {
+                            Some(element_type) => {
+                                crate::kernel::SpecPureFunctionArgument::ArrayRef {
+                                    memory: if memory_independent {
+                                        crate::kernel::SpecMemory::Fixed(
+                                            crate::kernel::value_independent_click_memory(),
+                                        )
+                                    } else {
+                                        environment.current_memory.clone()
+                                    },
+                                    pointer,
+                                    element_type,
+                                }
+                            }
+                            None => crate::kernel::SpecPureFunctionArgument::Value(pointer),
+                        })
+                    }
+                    ClickType::C(_) if parameter_is_click_array_ref(parameter) => {
+                        let array_ref = self.lower_array_ref_to_spec(argument, environment)?;
+                        Ok(crate::kernel::SpecPureFunctionArgument::ArrayRef {
+                            // A function that reads no memory is a function of
+                            // its argument values, so its pointer arguments are
+                            // anchored to one canonical snapshot instead of the
+                            // ambient one. Without this the same proposition is a
+                            // different term on either side of a C write, and a
+                            // `fold` cannot discharge a body fact that applies a
+                            // pure predicate to a pointer (gap 42).
                             memory: if memory_independent {
                                 crate::kernel::SpecMemory::Fixed(
                                     crate::kernel::value_independent_click_memory(),
                                 )
                             } else {
-                                environment.current_memory.clone()
+                                array_ref.memory
                             },
-                            pointer,
-                            element_type,
-                        },
-                        None => crate::kernel::SpecPureFunctionArgument::Value(pointer),
-                    })
-                }
-                ClickType::C(_) if parameter_is_click_array_ref(parameter) => {
-                    let array_ref = self.lower_array_ref_to_spec(argument, environment)?;
-                    Ok(crate::kernel::SpecPureFunctionArgument::ArrayRef {
-                        // A function that reads no memory is a function of
-                        // its argument values, so its pointer arguments are
-                        // anchored to one canonical snapshot instead of the
-                        // ambient one. Without this the same proposition is a
-                        // different term on either side of a C write, and a
-                        // `fold` cannot discharge a body fact that applies a
-                        // pure predicate to a pointer (gap 42).
-                        memory: if memory_independent {
-                            crate::kernel::SpecMemory::Fixed(
-                                crate::kernel::value_independent_click_memory(),
-                            )
-                        } else {
-                            array_ref.memory
-                        },
-                        pointer: array_ref.pointer,
-                        element_type: array_ref.element_type,
-                    })
-                }
-                ClickType::C(_) => {
-                    // Lower the borrowed argument once; wrapping its surface
-                    // tree first would clone every nested call's subtree.
-                    let value = self.lower_contract_expression_to_spec(argument, environment)?;
-                    let value = match pure_function_parameter_scalar_type(parameter) {
-                        Some(target) => SpecExpression::Cast(Box::new(value), target),
-                        None => value,
-                    };
-                    Ok(crate::kernel::SpecPureFunctionArgument::Value(value))
-                }
+                            pointer: array_ref.pointer,
+                            element_type: array_ref.element_type,
+                        })
+                    }
+                    ClickType::C(_) => {
+                        // Lower the borrowed argument once; wrapping its surface
+                        // tree first would clone every nested call's subtree.
+                        let value =
+                            self.lower_contract_expression_to_spec(argument, environment)?;
+                        let value = match pure_function_parameter_conversion(parameter) {
+                            Some((target, crate::kernel::CIntegerCastMode::PointerCoercion)) => {
+                                SpecExpression::PointerCoercion(Box::new(value), target)
+                            }
+                            Some((target, _)) => SpecExpression::Cast(Box::new(value), target),
+                            None => value,
+                        };
+                        Ok(crate::kernel::SpecPureFunctionArgument::Value(value))
+                    }
+                }?;
+                Ok(match parameter.pointer_object_class() {
+                    Some(object_class) => crate::kernel::SpecPureFunctionArgument::ObjectPointer {
+                        argument: Box::new(lowered),
+                        object_class,
+                    },
+                    None => lowered,
+                })
             })
             .collect()
     }
@@ -7024,6 +7422,7 @@ impl AnnotationLowerer<'_> {
             at_function_entry: false,
             snapshot_state: Some(state.clone()),
             contract_result_in_scope: environment.contract_result_in_scope,
+            checking_definedness: environment.checking_definedness,
         }))
     }
 
@@ -7220,6 +7619,37 @@ impl AnnotationLowerer<'_> {
         expression: &CExpression,
         environment: &SpecElaborationContext,
     ) -> Result<SpecExpression, String> {
+        if !environment.checking_definedness
+            && let CExpression::AddressOf(target) | CExpression::CheckedObjectAddress(target) =
+                expression
+            && let CExpression::Index(base, index) = target.as_ref()
+            && matches!(
+                base.as_ref(),
+                CExpression::TypedLoad {
+                    value_type: CType::Int32Array(_)
+                        | CType::UInt32Array(_)
+                        | CType::UInt8Array(_)
+                        | CType::Int128Array(_)
+                        | CType::Int64Array(_)
+                        | CType::UInt128Array(_)
+                        | CType::UInt64Array(_),
+                    ..
+                }
+            )
+            && let Some(element_type) = self.c_expression_array_element_type(base, environment)
+            && let Some(pointer_type) = element_type.pointer_to()
+        {
+            // An inline array decays to its logical address without reading
+            // its elements. Preserve that rule when taking an element's address.
+            return Ok(SpecExpression::PointerOffset {
+                pointer: Box::new(SpecExpression::PointerCoercion(
+                    Box::new(self.lower_c_fragment_to_spec(base, environment)?),
+                    pointer_type,
+                )),
+                elements: Box::new(self.lower_c_fragment_to_spec(index, environment)?),
+                byte_width: element_type.byte_width(),
+            });
+        }
         match expression {
             CExpression::Value(value) => Ok(SpecExpression::Value(value.clone())),
             CExpression::Variable(name) => self.lower_c_binding_to_spec(
@@ -7470,6 +7900,13 @@ impl AnnotationLowerer<'_> {
                 environment,
             )?,
             result_type: result_type.to_kernel_type(),
+            pointer_result: self
+                .spec_definitions
+                .functions
+                .pointer_results
+                .get(generic_instance_source_name(definition.name()))
+                .cloned()
+                .flatten(),
             result_object_class: definition.return_object_class().cloned(),
         })
     }
@@ -8166,7 +8603,10 @@ fn instantiate_algebraic_kernel_field_type(
 ) -> Result<AlgebraicValueType, String> {
     match field {
         AlgebraicFieldType::Integer => Ok(AlgebraicValueType::Integer),
-        AlgebraicFieldType::C { c_type, .. } => Ok(AlgebraicValueType::C(c_type.to_kernel_type())),
+        AlgebraicFieldType::C { c_type, .. } => Ok(match field.pointer_object_class() {
+            Some(class) => AlgebraicValueType::ObjectPointer(c_type.to_kernel_type(), class),
+            None => AlgebraicValueType::C(c_type.to_kernel_type()),
+        }),
         AlgebraicFieldType::Parameter(name) => definition
             .type_parameters()
             .iter()

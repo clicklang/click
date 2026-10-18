@@ -1952,7 +1952,7 @@ fn compared_pointer_holders_composition(
     left: &Pointer,
     right: &Pointer,
     assumptions: &PureFactContext,
-) -> Option<ResourceContext> {
+) -> Option<(ResourceContext, Proposition)> {
     let resources = state.resources();
     let holder = |pointer: &Pointer| {
         assumptions
@@ -1973,14 +1973,19 @@ fn compared_pointer_holders_composition(
     if left_member == right_member {
         return None;
     }
-    ResourceContext::new()
+    let separation = Proposition::CResourceSeparate {
+        left: Box::new(CResource::Memory(left_member.clone())),
+        right: Box::new(CResource::Memory(right_member.clone())),
+    };
+    let composition = ResourceContext::new()
         .try_compose_with_facts_delaying_normalization(
             [left_member, right_member]
                 .into_iter()
                 .map(CResourceFact::own_memory),
             assumptions,
         )
-        .ok()
+        .ok()?;
+    Some((composition, separation))
 }
 
 fn apply_c_comparison(
@@ -2310,7 +2315,7 @@ struct PointerFormationGuard {
     value: bool,
 }
 
-fn pointer_index_term(
+pub(in crate::kernel) fn pointer_index_term(
     value: CValue,
     facts: &(impl ExecutionFactSource + ?Sized),
     assumptions: &PureFactContext,
@@ -2387,8 +2392,15 @@ fn pointer_offset_by_elements_paths(
         },
         true,
     );
+    // A C machine index needs scalar equality evidence, not alpha matching
+    // against logical requirements. The latter forces the deferred identity
+    // index for every ambient fact even when this zero test misses.
+    let zero = crate::kernel::canonical_condition_fact(&zero);
     let zero_is_known = |context: &PureFactContext| {
-        crate::kernel::reasoning::path_facts::call_input_fact_is_already_known(context, &zero)
+        context.proves_exact(&zero)
+            || context.contains_known(&zero)
+            || matches!(&zero, Proposition::ConditionIs(condition, value)
+                if PureFactContext::decide_intrinsically(condition) == Some(*value))
             || (wide && context.wide_constant_from_equalities(&offset) == Some(0))
     };
     let displaces = !(zero_is_known(assumptions)
@@ -4633,12 +4645,16 @@ fn apply_c_equality(
             } else {
                 let (left, right) = (left.into_pointer(), right.into_pointer());
                 let mut facts = facts;
-                if let Some(holders) =
+                if let Some((holders, separation)) =
                     compared_pointer_holders_composition(state, &left, &right, assumptions)
                 {
                     facts.push(ExecutionPureFact::new(Proposition::CResourceComposition(
                         holders,
                     )));
+                    // This is the separation projection of the selected owned
+                    // pair, constructed with its composition. Publish it once
+                    // for the shared address-class lookup, not for all owners.
+                    facts.push(ExecutionPureFact::new(separation));
                 }
                 let (compared_left, compared_right) = (left.clone(), right.clone());
                 apply_pointer_adjacency_guard(

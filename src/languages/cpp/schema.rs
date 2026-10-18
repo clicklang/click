@@ -678,6 +678,10 @@ pub struct CppFunctionReference {
     /// whichever one it holds.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub through_pointer: bool,
+    /// A qualified call of a virtual method, `shape.Square::area()`: it runs
+    /// that method and does not dispatch.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub qualified: bool,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -6858,6 +6862,7 @@ mod tests {
         CppStatement::ReturnCall {
             callee: CppFunctionReference {
                 through_pointer: false,
+                qualified: false,
                 declaration_id: "callee".into(),
                 name: "callee".into(),
                 span: cleanup_span(),
@@ -7237,6 +7242,7 @@ mod tests {
         arguments.push(CppCallArgument::Call {
             callee: CppFunctionReference {
                 through_pointer: false,
+                qualified: false,
                 declaration_id: "inner".into(),
                 name: "inner".into(),
                 span: cleanup_span(),
@@ -7320,6 +7326,7 @@ mod tests {
         };
         let callee = CppFunctionReference {
             through_pointer: false,
+            qualified: false,
             declaration_id: "inner".into(),
             name: "inner".into(),
             span: cleanup_span(),
@@ -7389,6 +7396,7 @@ mod tests {
         let nested = CppCallArgument::Call {
             callee: CppFunctionReference {
                 through_pointer: false,
+                qualified: false,
                 declaration_id: "inner".into(),
                 name: "inner".into(),
                 span: cleanup_span(),
@@ -7500,6 +7508,7 @@ mod tests {
     fn nested_call_graph_validation_is_shared_by_initializers_and_discarded_calls() {
         let reference = |name: &str| CppFunctionReference {
             through_pointer: false,
+            qualified: false,
             declaration_id: name.into(),
             name: name.into(),
             span: cleanup_span(),

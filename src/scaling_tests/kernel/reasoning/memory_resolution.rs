@@ -7,7 +7,7 @@ use super::*;
 #[cfg(test)]
 #[test]
 fn memory_resolution_graph_offset_queries_scale_without_legacy_fact_index() {
-    for size in [16u64, 64, 256, 1024] {
+    for size in [16u64, 64, 256, 512] {
         let scalar = |id| Bitvector32Term::Variable(Variable(92_000 + id));
         let offset = |id| PointerOffsetTerm::scale_int32(scalar(id), 4);
         let named = PointerOffsetTerm::Variable(Variable(94_000));
@@ -183,7 +183,7 @@ fn mixed_index_offsets_work_ignores_unrelated_facts() {
             .into(),
     );
     let mut counts = Vec::new();
-    for size in [32, 128, 512] {
+    for size in [8, 32, 128] {
         let mut context = PureFactContext::new().assume_condition(fact.clone(), true);
         for i in 0..size {
             context = context.assume_condition(

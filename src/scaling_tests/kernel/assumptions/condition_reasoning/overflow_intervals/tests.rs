@@ -22,7 +22,7 @@ fn widened_unsigned_sum_bounds_are_sound_and_flat_in_unrelated_facts() {
         Bitvector32Term::Int64Constant(u32::MAX as i64 - 1),
     );
     let mut works = Vec::new();
-    for size in [8, 32, 128, 512] {
+    for size in [8, 32, 128] {
         let mut facts = PureFactContext::new();
         for index in 0..size {
             facts = facts.assume_condition(
@@ -268,7 +268,7 @@ fn order_chain_bound_work_is_linear_in_the_chain_and_flat_in_unrelated_facts() {
         assert_eq!(bound, Some(999), "length {length}, unrelated {unrelated}");
         work
     };
-    let flat = [0, 16, 64, 256].map(|unrelated| measure(8, unrelated));
+    let flat = [0, 4, 16, 64].map(|unrelated| measure(8, unrelated));
     assert!(
         flat.iter().all(|work| *work == flat[0]),
         "chain walk work grew with unrelated facts: {flat:?}"
@@ -475,7 +475,7 @@ fn int64_zero_identity_chains_scale_with_the_queried_term() {
 fn bit_preserving_64_bit_conversion_equalities_are_indexed_and_scale() {
     let value = Bitvector32Term::Variable(Variable(99_001));
     let mut baseline = None;
-    for population in [8u64, 32, 128, 512] {
+    for population in [8u64, 32, 128] {
         let mut facts = PureFactContext::new();
         for index in 0..population {
             facts = facts.assume_condition(

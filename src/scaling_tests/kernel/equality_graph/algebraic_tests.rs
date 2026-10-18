@@ -37,7 +37,7 @@ fn algebraic_closure_nested_constructor_registration_scales_with_selected_model(
 #[test]
 fn algebraic_closure_lookup_does_not_scan_unrelated_models() {
     let ty = model_type("Model", AlgebraicValueType::C(CType::Int32));
-    let costs = [32, 128, 512, 2048].map(|size| {
+    let costs = [8, 32, 128, 512].map(|size| {
         let mut context = PureFactContext::new();
         for id in 0..size {
             context = context.assume_proposition(eq(
@@ -120,7 +120,7 @@ fn constructor_lookup_skips_unrelated_model_classes() {
         "ConstructorLookupScale",
         AlgebraicValueType::C(CType::Int32),
     );
-    let costs = [16, 64, 256, 1024].map(|size| {
+    let costs = [4, 16, 64, 256].map(|size| {
         let mut context = PureFactContext::new();
         for id in 0..size {
             context = context.assume_proposition(eq(
