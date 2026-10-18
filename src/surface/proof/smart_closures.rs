@@ -5501,6 +5501,26 @@ impl<'a> Proof<'a> {
         if crate::instrumentation::deadline_exceeded() {
             return None;
         }
+        // Store records bind a read to the value already held in its
+        // certified memory snapshot. They stay in the kernel context. Use
+        // a retained source when one exists; do not reconstruct an internal
+        // store record by speculatively searching unrelated execution history.
+        if matches!(kernel, Proposition::ConditionIs(condition, value)
+            if crate::kernel::is_store_fact(condition, *value))
+            && surface_facts.surfaces(kernel).next().is_none()
+            && self.local_surface_facts().surfaces(kernel).next().is_none()
+            && surface_facts
+                .kernels_containing_conjunct(kernel)
+                .next()
+                .is_none()
+            && self
+                .local_surface_facts()
+                .kernels_containing_conjunct(kernel)
+                .next()
+                .is_none()
+        {
+            return None;
+        }
         let _qualified_sources =
             super::surface_synthesis::QualifiedSynthesisScope::enter(surface_facts);
         // A refold moves a constructor equation: a proof `match` arm's case

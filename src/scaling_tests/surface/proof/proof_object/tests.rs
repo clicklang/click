@@ -1819,3 +1819,244 @@ fn mixed_entry_and_current_premise_spelling_ignores_unrelated_snapshots() {
         "mixed premise spelling searched unrelated history: {samples:?}"
     );
 }
+
+#[test]
+fn indexed_rewrite_does_not_search_history_for_unrecorded_store_facts() {
+    let predicates = PredicateEnvironment::new(&[]);
+    let functions = ClickFunctionEnvironment::new(&[]);
+    let theorems = TheoremEnvironment::new(&[]);
+    let parsed = crate::surface::parse(
+        "theorem alias(first: int32, second: int32) { requires first == second; ensures true; }",
+    )
+    .unwrap();
+    let alias_surface = parsed.theorem_definitions()[0].requires[0]
+        .proposition()
+        .unwrap()
+        .clone();
+    let mut samples = Vec::new();
+    for size in [4usize, 16, 64] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let mut memory = crate::kernel::CMemory::new().with_block("rewrite_reads", 4096);
+        let mut facts = Vec::new();
+        let mut reads = Vec::new();
+        for index in 0..size {
+            let pointer = Pointer {
+                block: "rewrite_reads".into(),
+                offset: PointerOffsetTerm::Constant(index as i64 * 4),
+            };
+            let stored = Bitvector32Term::UnsignedRemainder(
+                Box::new(Bitvector32Term::Variable(Variable(
+                    8_179_600 + index as u64,
+                ))),
+                Box::new(Bitvector32Term::Constant(7)),
+            );
+            memory = memory.store(pointer.clone(), CValue::UInt32(stored.clone()));
+            let load = Bitvector32Term::MemoryLoad(
+                crate::kernel::intern_c_memory_ref(&memory),
+                Box::new(pointer),
+                crate::kernel::LoadKind::Bits32,
+            );
+            facts.push(Proposition::ConditionIs(
+                ConditionTerm::Bitvector32Equal(Box::new(load.clone()), Box::new(stored)),
+                true,
+            ));
+            reads.push(load);
+        }
+        let Proposition::ConditionIs(ConditionTerm::Bitvector32Equal(left, right), true) =
+            &facts[0]
+        else {
+            unreachable!()
+        };
+        assert!(crate::kernel::is_store_fact(
+            &ConditionTerm::Bitvector32Equal(left.clone(), right.clone()),
+            true
+        ));
+        assert!(!crate::kernel::is_store_fact(
+            &ConditionTerm::Bitvector32Equal(left.clone(), right.clone()),
+            false
+        ));
+        assert!(!crate::kernel::is_store_fact(
+            &ConditionTerm::Bitvector32Equal(
+                left.clone(),
+                Box::new(Bitvector32Term::Add(
+                    right.clone(),
+                    Box::new(Bitvector32Term::Constant(1))
+                ))
+            ),
+            true
+        ));
+        let Bitvector32Term::MemoryLoad(memory_for_control, pointer_for_control, _) = left.as_ref()
+        else {
+            unreachable!()
+        };
+        assert!(!crate::kernel::is_store_fact(
+            &ConditionTerm::Bitvector32Equal(
+                Box::new(Bitvector32Term::MemoryLoad(
+                    memory_for_control.clone(),
+                    pointer_for_control.clone(),
+                    crate::kernel::LoadKind::Bits64
+                )),
+                right.clone()
+            ),
+            true
+        ));
+        let state = CState::new()
+            .with_memory(memory.clone())
+            .with_local("first", CValue::Int32(reads[0].clone()))
+            .with_local("second", CValue::Int32(reads[1].clone()));
+        let mut snapshots = RecordedSnapshots::new();
+        for index in 0..8 {
+            snapshots.insert(
+                ProgramPointRef {
+                    region: CodeRegionRef::Statement(index),
+                    kind: ProgramPointKind::Entry,
+                },
+                CState::new(),
+            );
+        }
+        let anchor = ProgramPointRef {
+            region: CodeRegionRef::Statement(7),
+            kind: ProgramPointKind::Entry,
+        };
+        let surfaces = SurfacePropositionMap::default();
+        let sum = reads
+            .iter()
+            .cloned()
+            .fold(Bitvector32Term::Constant(0), |sum, read| {
+                Bitvector32Term::Add(Box::new(sum), Box::new(read))
+            });
+        let goal = Proposition::ConditionIs(
+            ConditionTerm::Bitvector32Equal(Box::new(sum), Box::new(Bitvector32Term::Constant(7))),
+            true,
+        );
+        let root = Proof::for_fixed_state_goal_with_requirements(
+            "stored read rewrite candidates",
+            0,
+            &facts,
+            goal,
+            ParameterBinding::default(),
+            FixedStateFrame::new(&state, &state, None, &snapshots),
+            Some(&anchor),
+            &surfaces,
+            SpecDefinitions::new(&predicates, &functions),
+            &theorems,
+            &[],
+            &[],
+            &[],
+        );
+        let ((closed, work), events) = crate::instrumentation::collect(|| {
+            crate::instrumentation::measure_deterministic_work(|| {
+                root.try_indexed_goal_equality_rewrite_closure()
+            })
+        });
+        assert!(
+            closed.is_none(),
+            "store records do not establish the false sum"
+        );
+        let history_queries = events
+            .iter()
+            .filter(|event| {
+                matches!(event,
+            crate::instrumentation::VerificationEvent::OperationFinished { name, .. }
+                if *name == "simp premise surface at recorded snapshots")
+            })
+            .count();
+        assert_eq!(
+            history_queries, 0,
+            "unrecorded store facts triggered snapshot spelling at size {size}"
+        );
+        assert!(facts.iter().all(|fact| root.facts().contains(fact)));
+        let (spelled, direct_events) = crate::instrumentation::collect(|| {
+            root.available_surface_fact(&surfaces, Some(&anchor), &facts[0])
+        });
+        assert!(
+            spelled.is_none(),
+            "the internal store record has no retained source"
+        );
+        assert!(
+            direct_events.iter().all(|event| !matches!(event,
+                crate::instrumentation::VerificationEvent::OperationFinished { name, .. }
+                    if *name == "simp premise surface at recorded snapshots"
+                        || *name == "simp premise surface across recorded snapshots"
+            )),
+            "direct premise resolution searched unrelated history"
+        );
+        // An explicitly retained store equality remains a source rewrite.
+        let Proposition::ConditionIs(ConditionTerm::Bitvector32Equal(_, stored), true) = &facts[0]
+        else {
+            unreachable!()
+        };
+        let recorded_state = state
+            .clone()
+            .with_local("second", CValue::Int32(stored.as_ref().clone()));
+        let mut recorded_surfaces = SurfacePropositionMap::default();
+        recorded_surfaces
+            .record_lowering(&alias_surface, &facts[0])
+            .unwrap();
+        let recorded = Proof::for_fixed_state_goal_with_requirements(
+            "retained store source",
+            0,
+            &facts,
+            facts[0].clone(),
+            ParameterBinding::default(),
+            FixedStateFrame::new(&recorded_state, &recorded_state, None, &snapshots),
+            Some(&anchor),
+            &recorded_surfaces,
+            SpecDefinitions::new(&predicates, &functions),
+            &theorems,
+            &[],
+            &[],
+            &[],
+        );
+        assert_eq!(
+            recorded
+                .lower_surface_proposition_direct(&alias_surface, "retained store source control")
+                .unwrap(),
+            facts[0]
+        );
+        assert!(
+            recorded
+                .try_indexed_goal_equality_rewrite_closure()
+                .is_some_and(|proof| proof.is_complete()),
+            "a retained store source must remain usable"
+        );
+        let alias = Proposition::ConditionIs(
+            ConditionTerm::Bitvector32Equal(Box::new(reads[0].clone()), Box::new(reads[1].clone())),
+            true,
+        );
+        let mut alias_facts = facts.clone();
+        alias_facts.push(alias.clone());
+        let mut alias_surfaces = SurfacePropositionMap::default();
+        alias_surfaces
+            .record_lowering(&alias_surface, &alias)
+            .unwrap();
+        for (premises, expected) in [(&alias_facts, true), (&facts, false)] {
+            let proof = Proof::for_fixed_state_goal_with_requirements(
+                "different reads remain usable",
+                0,
+                premises,
+                alias.clone(),
+                ParameterBinding::default(),
+                FixedStateFrame::new(&state, &state, None, &snapshots),
+                Some(&anchor),
+                &alias_surfaces,
+                SpecDefinitions::new(&predicates, &functions),
+                &theorems,
+                &[],
+                &[],
+                &[],
+            );
+            assert_eq!(
+                proof
+                    .try_indexed_goal_equality_rewrite_closure()
+                    .is_some_and(|proof| proof.is_complete()),
+                expected
+            );
+        }
+        samples.push(work);
+    }
+    assert!(
+        samples.windows(2).all(|pair| pair[1] <= pair[0] * 5 + 64),
+        "store fact filtering exceeded input growth: {samples:?}"
+    );
+}
