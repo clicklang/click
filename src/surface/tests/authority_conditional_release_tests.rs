@@ -202,13 +202,7 @@ fn authority_borrowed_member_handoff_expands_every_smart_site() {
         project_smart_tactic_source_sites(&project, &ProgramInputs::Bundle(c.to_vec())).unwrap();
     assert!(!sites.is_empty());
     for site in sites {
-        let position = project_tactic_source_position(
-            &project,
-            &ProgramInputs::Bundle(c.to_vec()),
-            &site.claim_label,
-            site.source_index,
-        )
-        .unwrap();
+        let position = site.position;
         let expanded = expand_project_tactic_source_at(
             &project,
             &ProgramInputs::Bundle(c.to_vec()),
@@ -218,13 +212,21 @@ fn authority_borrowed_member_handoff_expands_every_smart_site() {
         .unwrap();
         let expanded_project = ClickProject::new(
             "handoff.click",
-            [ClickModuleSource::new("handoff.click", expanded, [])],
+            [ClickModuleSource::new("handoff.click", &expanded, [])],
         )
         .with_c_profile(CProjectProfile {
             target: None,
             runtime: None,
         });
-        verify_c0_project(&expanded_project, &c).unwrap_or_else(|error| {
+        let owner = site.claim_label.rsplit_once('.').unwrap().0;
+        super::expansion_tests::verify_expanded_project_function_source(
+            source,
+            &expanded,
+            &expanded_project,
+            &c,
+            owner,
+        )
+        .unwrap_or_else(|error| {
             panic!(
                 "{} site {} ({}) lost the checked entry borrow: {}",
                 site.claim_label,
@@ -398,7 +400,13 @@ fn authority_parent_entry_alias_expansion_preserves_later_resource_proof() {
         let expanded =
             expand_project_tactic_source_at(&project, &ProgramInputs::Bundle(c.to_vec()), line, 13)
                 .unwrap();
-        verify_c0_project(&project_for(&expanded), &c)
-            .expect("expanding the entry alias keeps later resource proofs equivalent");
+        super::expansion_tests::verify_expanded_project_function_source(
+            source,
+            &expanded,
+            &project_for(&expanded),
+            &c,
+            "parent_detach",
+        )
+        .expect("expanding the entry alias keeps later resource proofs equivalent");
     });
 }
