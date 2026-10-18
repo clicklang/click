@@ -5952,7 +5952,11 @@ impl AnnotationLowerer<'_> {
                         )?;
                         let lowered = contract_expression_as_c_fragment(&rebound)
                             .ok_or("address operand is not a C expression")?;
-                        self.lower_c_fragment_to_spec(&lowered, environment)
+                        // Substitution has resolved the built-in result while
+                        // retaining explicit C bindings such as `c(result)`.
+                        let mut rebound_environment = environment.clone();
+                        rebound_environment.contract_result_in_scope = false;
+                        self.lower_c_fragment_to_spec(&lowered, &rebound_environment)
                     }
                     _ => Err("invalid C unary operation".to_string()),
                 }
