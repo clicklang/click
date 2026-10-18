@@ -105,3 +105,47 @@ fn charon_function_pointer_tools_recheck_expanded_certificates() {
     }
     assert_cli(&p, &["verify"]);
 }
+
+// A crate function that meets a named contract only by an explicit proof gets
+// a suggested refinement theorem in Rust spelling, `Doubling(crate::twice)`,
+// which verifies as suggested; a function that does not meet the contract is
+// refused by the same theorem.
+#[test]
+fn charon_refinement_theorems_name_crate_functions_as_values() {
+    let p = function_pointer_project();
+    let prepared = p.prepared().unwrap();
+    let twice = "fn function_pointers::twice(x: i32) -> i32 {\n    requires 0 <= x and x <= 1000;";
+    let equivalent = SIDECAR.replacen(
+        twice,
+        "fn function_pointers::twice(x: i32) -> i32 {\n    requires 0 <= x and x <= 2000 and x <= 1000;",
+        1,
+    );
+    let error = C0VerificationSession::new_program_prepared(&equivalent, &prepared)
+        .err()
+        .expect("an inexact contract needs an explicit refinement proof");
+    let theorem = "theorem twice_is_doubling() {\n    ensures Doubling(function_pointers::twice) by {\n        unfold(Doubling);\n        simp();\n    }\n}";
+    let shown = click::languages::rust::names::display_rust_names(error.message()).into_owned();
+    assert!(shown.contains(theorem), "{shown}");
+    let applied = |sidecar: &str| {
+        let mut sidecar = sidecar.to_string();
+        for caller in ["caller", "forward"] {
+            let head = format!(
+                "fn function_pointers::{caller}(x: i32) -> i32 {{\n    requires 0 <= x and x <= 1000;\n    ensures result == x + x;\n}} by {{ "
+            );
+            assert!(sidecar.contains(&head), "{caller}");
+            sidecar = sidecar.replacen(&head, &format!("{head}apply(twice_is_doubling()); "), 1);
+        }
+        format!("{sidecar}\n{theorem}\n")
+    };
+    C0VerificationSession::new_program_prepared(&applied(&equivalent), &prepared)
+        .unwrap_or_else(|error| panic!("{error:?}"));
+    let weaker = SIDECAR.replacen(twice, &format!("{twice}\n    requires x != 7;"), 1);
+    let error = C0VerificationSession::new_program_prepared(&applied(&weaker), &prepared)
+        .err()
+        .expect("a function that does not meet the contract is refused");
+    assert!(
+        error.message().contains("twice_is_doubling"),
+        "{}",
+        error.message()
+    );
+}

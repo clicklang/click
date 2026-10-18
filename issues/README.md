@@ -47,7 +47,7 @@ reproduced. To move a file off `unsound`, the reproduction must stop
 verifying. Narrowing the documented claim does not count. Re-check the label
 whenever the file's reproduction or scope changes.
 
-## P1: before launch (6)
+## P1: before launch (7)
 
 The launch strategy is to complete P1, deliver the minimum viable rbtree
 (MVR), and launch publicly with rbtree as the key demo. MVR is the smallest
@@ -94,6 +94,7 @@ Program import and execution:
 
 - [Project configuration: one root file for units, targets, toolchains and locks](project-config.md)
 - [A well-designed C++ front end](cpp-support.md)
+- [A generic stack, verified once for every type, in Rust and C++](generic-stack.md)
 
 The completed [basic C++ example](../examples/basic-cpp/README.md) verifies
 references, checked scoped cleanup, and a modular caller. Unchanged Bitcoin
@@ -130,7 +131,7 @@ Architecture:
 - [One source-tactic interpreter for every proof context](one-tactic-interpreter.md)
 - [One name resolver and one printer for surface syntax](one-name-resolver-and-printer.md)
 
-## P2: after launch (14)
+## P2: after launch (13)
 
 Worth doing, not worth blocking the rbtree claim on. Promote one to P1 when
 it turns out to block that claim: if P1 work exposes one of the tooling
@@ -157,5 +158,4 @@ Proof language and tooling:
 - [Extend modules and imports beyond the delivered rbtree slice](specification-imports.md)
 - [Reduce repeated work in deeply nested `Integer` quantifiers](deep-quantifier-scaling.md)
 - [Complete general-purpose algebraic data type support](algebraic-data-types.md)
-- [One contract declaration syntax, native in C, C++ and Rust](contract-declaration-syntax.md)
 - [Design a consistent standard library](standard-library.md)

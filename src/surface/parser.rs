@@ -1222,6 +1222,15 @@ impl Parser {
         // An instance is only ever written out: one the sidecar writes is
         // refused, whatever the import declares.
         if parser.language == SourceLanguage::Rust {
+            // A crate function named as a value, `Doubling(crate_name::f)`, is
+            // its address, as C writes `&f`.
+            let (tokens, positions) = rust_syntax::rewrite_function_values(
+                std::mem::take(&mut parser.tokens),
+                std::mem::take(&mut parser.positions),
+                &parser.local_struct_pointers_by_function,
+            );
+            parser.tokens = tokens;
+            parser.positions = positions;
             let (tokens, positions, written) = rust_generic_functions::expand_generic_functions(
                 std::mem::take(&mut parser.tokens),
                 std::mem::take(&mut parser.positions),
