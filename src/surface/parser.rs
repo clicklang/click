@@ -7385,6 +7385,10 @@ impl Parser {
             integer_was_bound: bool,
             integer_let_was_bound: bool,
             c_was_bound: bool,
+            /// Where the log of the bindings this binder hides starts.
+            hidden: usize,
+            /// The bare field of the enclosing resource body it hides.
+            hidden_field: Option<ResourceFieldAccess>,
         }
 
         let mut scopes = Vec::new();
@@ -7457,6 +7461,13 @@ impl Parser {
                         let integer_let_was_bound =
                             self.names.contains(NameKind::IntegerLet, &name);
                         let c_was_bound = self.names.contains(NameKind::ContractBinding, &name);
+                        // Like a proof binder, the quantified variable hides
+                        // the value binder, fact and resource instance of
+                        // its name, and the field a resource body reads by
+                        // it, until its body ends.
+                        let hidden = self.names.fact_name_restores.len();
+                        self.names.hide_for_proof_binder(&name, false);
+                        let hidden_field = self.names.resource_fields.remove(&name);
                         match &click_type {
                             ClickType::Integer => {
                                 self.names.remove(NameKind::ContractBinding, &name);
@@ -7491,6 +7502,8 @@ impl Parser {
                             integer_was_bound,
                             integer_let_was_bound,
                             c_was_bound,
+                            hidden,
+                            hidden_field,
                         });
                         operators.push(Operator::Scope);
                         group_len += 1;
@@ -7554,6 +7567,10 @@ impl Parser {
                     }
                     let scope = scopes.pop().expect("quantifier scope marker has a scope");
                     self.quantifier_binders.pop();
+                    self.names.restore_fact_names(scope.hidden);
+                    if let Some(field) = scope.hidden_field {
+                        self.names.resource_fields.insert(scope.name.clone(), field);
+                    }
                     self.integer_literal_context = scope.previous_integer_context;
                     if scope.integer_was_bound {
                         self.names
