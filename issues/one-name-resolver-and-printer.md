@@ -110,6 +110,15 @@ Declaration expansion follows a script's goal: an `intro()` variable, under
 its written or `intro() as` name, and an `obtain` witness have their types
 for constructor inference in the tactics after them
 (`mdtests/a_proof_binder_has_its_type_for_constructor_inference.md`).
+Constructor inference still fixes a constructor's type arguments from its own
+arguments before the type its position expects, so
+`function wrap(x: int32) -> List<int64> { List::Cons(x, List::Nil) }` is
+refused while the explicit `List<int64>::Cons(...)` is accepted.
+
+The kernel-term printer names a bound variable `k`, `k1`, ... and skips any
+name a free source variable has, so a goal over a free `k` no longer prints
+as `forall (k: int32) { k == k }`
+(`mdtests/a_printed_binder_does_not_capture_a_free_name.md`).
 
 The complete scoped table for parameters, fields, binders, constructors,
 resources, program points and project modules remains open. Proof inventories
