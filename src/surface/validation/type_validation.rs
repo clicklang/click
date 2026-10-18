@@ -2488,6 +2488,7 @@ fn describe_callback_signature(signature: crate::kernel::CallbackSignature) -> S
 pub(in crate::surface) fn describe_c0_type(c_type: C0Type) -> String {
     match c_type {
         C0Type::Parameter(name) => name.name().to_string(),
+        C0Type::ParameterPointer(name) => format!("{}*", name.name()),
         C0Type::Int128 => "int128".to_string(),
         C0Type::UInt128 => "uint128".to_string(),
 
@@ -3130,6 +3131,7 @@ pub(in crate::surface) fn infer_c_expression_type(
             ..
         } => match target_type {
             CType::Parameter(name) => Some(C0Type::Parameter(*name)),
+            CType::ParameterPointer(name) => Some(C0Type::ParameterPointer(*name)),
             CType::Int128 => Some(C0Type::Int128),
             CType::UInt128 => Some(C0Type::UInt128),
 
@@ -3250,6 +3252,7 @@ pub(in crate::surface) fn infer_c_expression_type(
         }
         CExpression::TypedLoad { value_type, .. } => Some(match value_type {
             CType::Parameter(name) => C0Type::Parameter(*name),
+            CType::ParameterPointer(name) => C0Type::ParameterPointer(*name),
             CType::Void => return None,
             CType::Bool => C0Type::Bool,
             CType::VoidPointer => C0Type::VoidPointer,

@@ -4534,10 +4534,6 @@ fn a_rust_sidecar_states_its_signature_in_rust_syntax() {
             "an array or slice passed by value in a `fn` signature is not supported",
         ),
         (
-            "verifying \"add.rs\"; fn read<T>(value: &T) -> i32 { ensures result == result; } by { execute(); simp(); }",
-            "a reference to a value of an abstract type parameter is not supported",
-        ),
-        (
             "verifying \"add.rs\"; fn pick<i32>(a: i32) -> i32 { ensures result == a; } by { execute(); simp(); }",
             "write the contract once, on the generic function",
         ),

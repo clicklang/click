@@ -340,7 +340,8 @@ fn input_arguments(
             | C0Type::Float32Pointer
             | C0Type::Float64Pointer
             | C0Type::Float32PointerPointer
-            | C0Type::Float64PointerPointer => {
+            | C0Type::Float64PointerPointer
+            | C0Type::ParameterPointer(_) => {
                 let c_type = parameter.c_type();
                 // Struct array parameters are lowered to byte pointers in the
                 // kernel, so their symbolic external argument address uses

@@ -644,9 +644,19 @@ impl Adapter<'_> {
                 if matches!(pointee.kind(), a::TyKind::TypeVar(_)) =>
             {
                 match self.ty(pointee)? {
-                    Type::Parameter { .. } => {
-                        return Err(unsupported("reference to a value of a type parameter"));
-                    }
+                    // `&T` of an abstract type parameter, or of the scalar a
+                    // generic callee's instance takes for it: a reference to
+                    // one value.
+                    value @ (Type::Parameter { .. }
+                    | Type::I32
+                    | Type::U8
+                    | Type::U16
+                    | Type::U32
+                    | Type::Usize
+                    | Type::Bool) => Type::Reference {
+                        mutable: false,
+                        pointee: Box::new(value),
+                    },
                     callable => callable,
                 }
             }

@@ -1435,6 +1435,10 @@ pub(in crate::surface) fn pure_theorem_parameter_values(
                     CType::Parameter(name),
                     Variable(index as u64),
                 ),
+                C0Type::ParameterPointer(name) => crate::kernel::symbolic_call_result(
+                    CType::ParameterPointer(name),
+                    Variable(index as u64),
+                ),
                 C0Type::Void => unreachable!("pure theorem parameters cannot be void"),
                 C0Type::Bool => crate::kernel::spec_bool_value(Bitvector32Term::Variable(
                     Variable(index as u64),

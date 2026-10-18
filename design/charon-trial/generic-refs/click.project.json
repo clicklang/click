@@ -1,0 +1,21 @@
+{
+  "units": {
+    "generic_refs": {
+      "language": "rust",
+      "sources": {
+        "refs.rs": {}
+      },
+      "crate": {
+        "name": "generic_refs",
+        "edition": "2021",
+        "features": [],
+        "roots": [
+          "generic_refs::use_refs"
+        ],
+        "files": [
+          "refs.rs"
+        ]
+      }
+    }
+  }
+}

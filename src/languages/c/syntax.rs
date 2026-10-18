@@ -2325,6 +2325,9 @@ pub enum C0Type {
     /// A value of an abstract type parameter, as in a generic Rust trait's
     /// interface; its kernel type is `CType::Parameter`.
     Parameter(crate::kernel::TypeParameterName),
+    /// A pointer to one, a Rust `&T`; its kernel type is
+    /// `CType::ParameterPointer`.
+    ParameterPointer(crate::kernel::TypeParameterName),
     Void,
     Bool,
     /// An opaque pointer to an object of unknown type. It preserves pointer
@@ -2432,6 +2435,7 @@ impl CAbi {
     fn size_and_alignment(self, c_type: C0Type) -> (u32, u32) {
         match (self, c_type) {
             (_, C0Type::Parameter(_)) => unreachable!("an abstract type has no layout"),
+            (Self::Lp64, C0Type::ParameterPointer(_)) => (8, 8),
             (Self::Lp64, C0Type::Int128 | C0Type::UInt128) => (16, 16),
             (Self::Lp64, C0Type::Int128Array(length) | C0Type::UInt128Array(length)) => {
                 (length.saturating_mul(16), 16)
@@ -5018,7 +5022,7 @@ impl C0Type {
         let pointer = |base, depth| Some(CAccessClass::Pointer { base, depth });
         let scalar = |class| Some(CAccessClass::Scalar(class));
         match self {
-            Self::Parameter(_) => None,
+            Self::Parameter(_) | Self::ParameterPointer(_) => None,
             Self::Char(_) | Self::CharArray(..) | Self::Int8 | Self::UInt8 => {
                 scalar(CScalarClass::Char)
             }
@@ -5176,6 +5180,7 @@ impl C0Type {
     pub fn pointee_type(self) -> Option<Self> {
         match self {
             Self::Parameter(_) => None,
+            Self::ParameterPointer(parameter) => Some(Self::Parameter(parameter)),
             Self::Int128 | Self::UInt128 => None,
             Self::CharPointer(plain) | Self::CharArray(plain, _) => Some(Self::Char(plain)),
             Self::Int8Pointer | Self::Int8Array(_) => Some(Self::Int8),
@@ -5225,7 +5230,8 @@ impl C0Type {
 
     pub(crate) fn pointer_type(self) -> Option<Self> {
         Some(match self {
-            Self::Parameter(_) => return None,
+            Self::Parameter(parameter) => Self::ParameterPointer(parameter),
+            Self::ParameterPointer(_) => return None,
             Self::Int8 => Self::Int8Pointer,
             Self::Int16 => Self::Int16Pointer,
             Self::Int32 => Self::Int32Pointer,
@@ -5300,6 +5306,7 @@ impl C0Type {
     pub fn to_kernel_type(self) -> crate::kernel::CType {
         match self {
             Self::Parameter(name) => crate::kernel::CType::Parameter(name),
+            Self::ParameterPointer(name) => crate::kernel::CType::ParameterPointer(name),
             Self::Void => crate::kernel::CType::Void,
             Self::Bool => crate::kernel::CType::Bool,
             Self::VoidPointer => crate::kernel::CType::VoidPointer,
@@ -11303,7 +11310,7 @@ impl Parser {
             self.position += 1;
             volatile_levels <<= 1;
             c_type = match c_type {
-                C0Type::Parameter(_) => {
+                C0Type::Parameter(_) | C0Type::ParameterPointer(_) => {
                     return Err(
                         self.error_at_previous("pointers to an abstract type are not supported")
                     );

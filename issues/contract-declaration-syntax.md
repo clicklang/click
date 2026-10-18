@@ -239,9 +239,9 @@ that writes `int32` for such a source already writes the source's spelling.
    memory, as a generic struct's fields, `struct Cell<T>`, for generic
    free functions over the struct and its own methods, `impl<T> Cell<T>`,
    verified once with each instance's contract read at its own layout.
-   Done: a generic call from generic code, at the caller's abstract types.
-   Remaining: a generic block whose object carries state is read at each
-   instance only; and a reference to a value of `T`. Done for default methods: the `trait`
+   Done: a generic call from generic code, at the caller's abstract types,
+   and a reference to a value of `T`, `&T` and `&mut T`. Remaining: a
+   generic block whose object carries state is read at each instance only. Done for default methods: the `trait`
    block writes a default method's interface with the proof of its default
    body, verified once with calls of the trait's methods under their
    interfaces; an `impl` that overrides it refines it. Done for C++

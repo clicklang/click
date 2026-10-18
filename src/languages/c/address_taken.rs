@@ -102,7 +102,7 @@ fn declare(summary: &mut AddressTakenSummary, name: &str, c_type: C0Type) {
 /// lands in the `false` arm, which refuses the name.
 fn scalar_or_pointer(c_type: C0Type) -> bool {
     match c_type {
-        C0Type::Parameter(_) => false,
+        C0Type::Parameter(_) | C0Type::ParameterPointer(_) => false,
         C0Type::Int128 | C0Type::UInt128 => false,
         C0Type::Int8 | C0Type::Int8Pointer | C0Type::Int8PointerPointer => true,
         C0Type::Char(_)

@@ -4927,7 +4927,7 @@ pub(super) fn diagnostic_parameter_element_width(parameter: &syntax::C0Parameter
         C0Type::Parameter(_) => 0,
         C0Type::Void => 0,
         C0Type::Bool => 1,
-        C0Type::VoidPointer | C0Type::VoidPointerPointer => 8,
+        C0Type::VoidPointer | C0Type::VoidPointerPointer | C0Type::ParameterPointer(_) => 8,
         C0Type::CharPointer(_)
         | C0Type::CharArray(_, _)
         | C0Type::UInt8Pointer
@@ -5406,6 +5406,7 @@ pub(super) fn describe_c_expression(expression: &CExpression) -> String {
                 CType::Int128 => "load_int128",
                 CType::UInt128 => "load_uint128",
                 CType::Parameter(_) => "load_parameter",
+                CType::ParameterPointer(_) => "load_parameter_pointer",
                 CType::Void => "load_void",
                 CType::Bool => "load_bool",
                 CType::VoidPointer => "load_void_pointer",

@@ -56,6 +56,9 @@ fn scalar_type(t: &Type) -> Result<C0Type, String> {
             Type::U8 => Ok(C0Type::UInt8Pointer),
             Type::U16 => Ok(C0Type::UInt16Pointer),
             Type::U32 => Ok(C0Type::UInt32Pointer),
+            Type::Parameter { name } => Ok(C0Type::ParameterPointer(
+                crate::kernel::TypeParameterName::intern(name),
+            )),
             Type::Array { element, .. } => match element.as_ref() {
                 Type::I32 => Ok(C0Type::Int32Pointer),
                 Type::U8 => Ok(C0Type::UInt8Pointer),
