@@ -301,6 +301,17 @@ impl SourceExecutionLayout {
             exited_if_index: usize,
             continuation_node: usize,
         ) {
+            // A statement already redirected for this `if` was redirected,
+            // with everything it ends, by an earlier visit: an arm can be
+            // reached again through each nested `if` it closes, and
+            // revisiting it doubled the walk at every level of nesting.
+            if layout
+                .exited_branch_regions
+                .get(&last_statement_index)
+                .is_some_and(|exited| exited.contains(&exited_if_index))
+            {
+                return;
+            }
             let Some(region) = layout.statements.get_mut(&last_statement_index) else {
                 return;
             };
@@ -745,6 +756,17 @@ impl SourceExecutionLayout {
             exited_if_index: usize,
             continuation_node: usize,
         ) {
+            // A statement already redirected for this `if` was redirected,
+            // with everything it ends, by an earlier visit: an arm can be
+            // reached again through each nested `if` it closes, and
+            // revisiting it doubled the walk at every level of nesting.
+            if layout
+                .exited_branch_regions
+                .get(&last_statement_index)
+                .is_some_and(|exited| exited.contains(&exited_if_index))
+            {
+                return;
+            }
             let Some(region) = layout.statements.get_mut(&last_statement_index) else {
                 return;
             };
@@ -1340,6 +1362,41 @@ mod source_execution_layout_tests {
                     .values()
                     .all(|names| !names.iter().any(|name| name == "root"))
             );
+        }
+    }
+
+    /// An `if` nested as the last statement of another's arm is reached
+    /// again through every `if` it closes; each statement must still list
+    /// each `if` it completes once, or the lists double with every level.
+    #[test]
+    fn nested_branch_exits_list_each_enclosing_if_once() {
+        let depth = 16;
+        let mut source = String::from("int32 f(int32 a) {int32 s; s=0;");
+        for _ in 0..depth {
+            source.push_str("if(a>0) {");
+        }
+        source.push_str("s=1;");
+        for _ in 0..depth {
+            source.push('}');
+        }
+        source.push_str("return s;}");
+        let function = syntax::parse_function(&source).unwrap();
+        let typed = function
+            .clone()
+            .with_prelowered_kernel_function(function.to_kernel_function());
+        for function in [&function, &typed] {
+            let layout = SourceExecutionLayout::for_function(function).unwrap();
+            let lists = &layout.data.exited_branch_regions;
+            for (statement, exited) in lists {
+                let distinct = exited.iter().collect::<BTreeSet<_>>();
+                assert_eq!(
+                    distinct.len(),
+                    exited.len(),
+                    "statement {statement}: {exited:?}"
+                );
+            }
+            let deepest = lists.values().map(Vec::len).max();
+            assert_eq!(deepest, Some(depth));
         }
     }
 
