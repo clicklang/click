@@ -1623,6 +1623,15 @@ impl<'a> Proof<'a> {
         let Some(order) = MachineOrder::of(goal) else {
             return Ok(None);
         };
+        // Plain 32-bit equality already has the indexed native-reading
+        // solver route. Re-entering full auto on its Integer reading repeats
+        // equality-by-bounds and snapshot search for the same comparison.
+        if matches!(
+            goal,
+            Proposition::ConditionIs(ConditionTerm::Bitvector32Equal(..), true)
+        ) {
+            return Ok(None);
+        }
         if (order == MachineOrder::Equal64) != wide_equality {
             return Ok(None);
         }

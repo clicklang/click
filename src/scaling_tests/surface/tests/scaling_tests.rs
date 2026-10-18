@@ -8913,3 +8913,66 @@ fn mixed_width_owned_entry_work_is_independent_of_segment_length() {
         );
     }
 }
+
+#[test]
+fn native_read_equality_refusal_does_not_restart_snapshot_search_as_integer() {
+    let c = "int32 read_after_store(int32 *a, int32 k) { a[3] = 5; return a[k]; }";
+    verify_c0_sources(
+        "verifying \"read.c\"; int32 read_after_store(int32 *a, int32 k) {
+            owns a[0..16]; requires 0 <= k; requires k < 16;
+            ensures result == a[k]; } by { execute(); simp(); }",
+        &[("read.c", c)],
+    )
+    .expect("warm-up verifies");
+    // Integer arithmetic must still establish native equality for each
+    // signed and unsigned 32-bit carrier, without a native equality input.
+    for ty in ["int32", "uint32"] {
+        let c = format!("{ty} pick({ty} x, {ty} y) {{ return x; }}");
+        let source = format!(
+            "import click::integer; verifying \"integer_input.c\";
+             {ty} pick({ty} x, {ty} y) {{
+               requires to_integer(x) + 1 == to_integer(y) + 1;
+               ensures result == y;
+             }} by {{ execute(); simp(); }}"
+        );
+        verify_c0_sources(&source, &[("integer_input.c", c.as_str())]).unwrap_or_else(|error| {
+            panic!(
+                "{ty} Integer-to-native equality control: {}",
+                error.message()
+            )
+        });
+    }
+    for length in [4usize, 16, 64] {
+        let source = format!(
+            "verifying \"read.c\";
+             resource block(p: int32*) {{ owns p[0..{length}]; }}
+             int32 read_after_store(int32 *a, int32 k) {{
+               owns block(a); requires 0 <= k; requires k < {length};
+               ensures result == old(a[k]);
+             }} by {{ unfold(block(a)); execute(); fold(block(a)); simp(); }}"
+        );
+        let (result, events) =
+            crate::instrumentation::collect(|| verify_c0_sources(&source, &[("read.c", c)]));
+        let error = result.expect_err("the read may alias the changed cell");
+        assert!(
+            error
+                .message()
+                .contains("the store to `a[3]` may have written"),
+            "{}",
+            error.message()
+        );
+        let frame_searches = events
+            .iter()
+            .filter(|event| {
+                matches!(event,
+                    crate::instrumentation::VerificationEvent::OperationFinished { name, .. }
+                        if *name == "simp closure: snapshot transport"
+                )
+            })
+            .count();
+        assert!(
+            frame_searches <= 1,
+            "size {length}: the native refusal restarted frame search {frame_searches} times through Integer goals"
+        );
+    }
+}
