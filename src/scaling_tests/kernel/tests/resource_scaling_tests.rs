@@ -1267,7 +1267,20 @@ fn refused_parameter_separation_ignores_unrelated_owned_objects() {
     let mut samples = Vec::new();
     for size in PARAMETER_SIZES {
         let _session = crate::kernel::VerificationSession::enter();
-        let (_, assumptions) = parameter_frame(size);
+        let (frame, mut assumptions) = parameter_frame(size);
+        // Real contract entries retain subobject bounds beside their owners.
+        // Bounds select no alias, so they must not open the entire block's
+        // candidate set when a requested field is missing.
+        for fact in frame.facts() {
+            let Some(range) = fact.memory_own_range() else {
+                continue;
+            };
+            let extent = SubobjectExtent {
+                start: range.base().clone(),
+                width: 8u32.into(),
+            };
+            assumptions = assumptions.assume_proposition(extent.coverage_fact(range));
+        }
         let range = |id| {
             CResource::Memory(CMemoryRange::new_with_element_width(
                 parameter_base(id),
