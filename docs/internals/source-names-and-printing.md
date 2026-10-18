@@ -46,6 +46,18 @@ presentation-only `(unsigned)` text into generated source. Expression, place
 and snapshot formatters are shared with diagnostics; those formatters preserve
 source syntax rather than inheriting refusal mode.
 
+Source text has one printer. Expansion writes a proposition through
+`print_proposition` and a tactic through `format_proof_tactics`; a kernel fact
+it writes as source is looked up as the Click proposition it was lowered
+from (`SurfacePropositionMap::surface`) and printed there. The kernel-fact printer,
+`render_proposition` (`proof_diagnostics/render.rs` with `render/surface.rs`),
+is the diagnostic extension of it, for facts a person reads in a refusal or a
+`--trace-proof` trace. It prints a kernel `Proposition` directly, so it can
+show what a Click proposition cannot: a read's width, snapshot and address,
+report-local snapshot labels, and the kernel spelling of a fact with no Click
+form. Its modes are explicit (`Mode::Source`, `Exact`, `ExactIdentity`), and
+no expansion path calls it, so its output never reaches generated source.
+
 Predicate diagnostics retain each array argument's memory snapshot. An array
 read at entry prints as `old(src)`, a recorded state as `at(copied, src)`, and
 the current state as `src`. Only the predicate's implicit logical resource
@@ -82,6 +94,17 @@ carry data (resource instances, C parameter types and objects, struct and
 aggregate parameters, arm binder types, facts). Cross-kind questions,
 `is_bound` and `is_c_variable`, and the hiding and restoring of bindings are
 methods of the table.
+
+Top-level declarations go through one declaration table,
+`DeclarationTable` (`src/surface/validation/declaration_table.rs`).
+`validate_click_definitions` declares each predicate, contract, function,
+resource and theorem of the file and its library there, in that order, and
+`declare` is the only place that decides whether a name may be declared:
+it refuses a second declaration of a name, as the same kind or another, and a
+name the language reserves for the kind (`same_object` and `held` for
+propositions, Integer conversions for functions, `read` and `write` for
+resources, kernel laws for theorems, built-in forms such as `old(...)` for
+anything called). Validation reads each kind's arities from the table.
 
 This is the first consolidation boundary for
 [`one-name-resolver-and-printer.md`](https://github.com/clicklang/click/blob/master/issues/one-name-resolver-and-printer.md),

@@ -133,6 +133,17 @@ import of an imported name is refused
 (`mdtests/an_imported_theorem_shadows_a_bare_library_theorem.md`,
 `mdtests/a_selective_import_cannot_clash_with_an_imported_declaration.md`).
 
+The duplicate, cross-kind and reserved-name rules for top-level
+declarations, which were repeated in each kind's validation loop, are one
+`DeclarationTable`; each predicate, contract, function, resource and theorem
+is declared there once, and validation reads its arities from it.
+
+Source output has one printer, `print_proposition` with
+`format_proof_tactics`: expansion prints a kernel fact as the Click proposition
+it was lowered from, and no expansion path calls the kernel-fact printer.
+`docs/internals/source-names-and-printing.md` documents that printer as the
+diagnostic extension, with its own explicit modes.
+
 The complete scoped table for parameters, fields, binders, constructors,
 resources, program points and project modules remains open. Proof inventories
 still interpret shared parser tokens; parser-produced AST spans and integration
