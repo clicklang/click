@@ -3531,6 +3531,28 @@ impl C0Function {
         self.prelowered_kernel_function.as_ref()
     }
 
+    /// The name and construction-return mode of the kernel function
+    /// [`Self::to_kernel_function`] builds, without lowering its body.
+    pub(crate) fn kernel_name(&self) -> &str {
+        self.prelowered_kernel_function
+            .as_ref()
+            .map_or(&self.name, |function| function.name())
+    }
+
+    pub(crate) fn returns_by_construction(&self) -> bool {
+        match &self.prelowered_kernel_function {
+            Some(function) => {
+                function.contract_interface().aggregate_return_mode()
+                    == crate::kernel::CAggregateReturnMode::Construction
+            }
+            None => {
+                self.return_struct_name.is_some()
+                    && self.aggregate_return_mode
+                        == crate::kernel::CAggregateReturnMode::Construction
+            }
+        }
+    }
+
     pub fn structs(&self) -> &DeclarationMap<C0StructLayout> {
         &self.structs
     }

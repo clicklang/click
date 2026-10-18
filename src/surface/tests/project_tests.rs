@@ -1983,6 +1983,118 @@ fn verifications_on_one_thread_are_independent() {
     }
 }
 
+/// `earlier` unrelated functions with pointer parameters, then `combine`,
+/// which copies a field between two struct pointers. Returns the sidecar and the C
+/// source.
+pub(super) fn earlier_units_then_combine(earlier: usize) -> (String, String) {
+    let mut c_source = String::from("struct region { int32 start; int32 end; };\n");
+    let mut click_source = String::from("verifying \"pipe.c\";\n");
+    for index in 0..earlier {
+        c_source.push_str(&format!(
+            "int32 mark_{index}(int32* cells) {{ return {index}; }}\n"
+        ));
+        click_source.push_str(&format!(
+            "int32 mark_{index}(int32* cells) {{\n    ensures result == {index};\n}} by {{\n    execute();\n    simp();\n}}\n"
+        ));
+    }
+    c_source.push_str(
+        "void combine(struct region* first, struct region* combined) {\n\
+         combined->start = first->start;\n}\n",
+    );
+    click_source.push_str(
+        "void combine(struct region* first, struct region* combined) {
+    owns first->start;
+    owns combined->start;
+    ensures combined->start == old(first->start);
+} by {
+    execute();
+    simp();
+}
+",
+    );
+    (click_source, c_source)
+}
+
+/// Verifies `earlier_units_then_combine(earlier)` on a fresh thread, the
+/// whole file or only `combine`, and returns the names `combine`'s inputs
+/// received and the work of each of its tactics. A fresh thread starts
+/// with no input names, as a `click verify` process does.
+pub(super) fn combine_names_and_work(
+    earlier: usize,
+    selected: bool,
+) -> (Vec<(usize, crate::kernel::Variable)>, Vec<(String, usize)>) {
+    let (click_source, c_source) = earlier_units_then_combine(earlier);
+    std::thread::Builder::new()
+        .stack_size(64 << 20)
+        .spawn(move || {
+            let sources = [("pipe.c", c_source.as_str())];
+            let (result, samples) = crate::instrumentation::collect_tactic_work(|| {
+                if selected {
+                    verify_c0_sources_functions(&click_source, &sources, ["combine".to_string()])
+                } else {
+                    verify_c0_sources(&click_source, &sources)
+                }
+            });
+            result.unwrap_or_else(|error| {
+                panic!("{earlier} earlier units, selected {selected}: {error:?}")
+            });
+            let work = samples
+                .into_iter()
+                .filter(|sample| sample.tactic.claim.starts_with("combine."))
+                .map(|sample| {
+                    (
+                        format!(
+                            "{} {} {}",
+                            sample.tactic.tactic_index,
+                            sample.tactic.tactic_name,
+                            sample.tactic.class
+                        ),
+                        sample.work,
+                    )
+                })
+                .collect();
+            (
+                crate::surface::lowering::input_identities_of("combine"),
+                work,
+            )
+        })
+        .unwrap()
+        .join()
+        .unwrap()
+}
+
+/// A selected unit and the same unit in a whole-file run name its inputs
+/// alike, so its tactics search in the same order and do comparable work.
+/// Input names were numbered as each proof started, so a whole-file run
+/// named `combine`'s inputs after every input of the functions verified
+/// before it. Load names and snapshot content hashes derive from those
+/// numbers, and the order a closer tries facts and recorded snapshots in
+/// follows them: `arena_pipeline`'s control `have` took 375,000 units
+/// selected and exhausted its 2,500,000-unit budget in the whole file.
+#[test]
+fn a_selected_unit_names_its_inputs_as_the_whole_file_run_does() {
+    let (whole_names, whole_work) = combine_names_and_work(1, false);
+    let (selected_names, selected_work) = combine_names_and_work(1, true);
+    assert_eq!(selected_names.len(), 2, "{selected_names:?}");
+    assert_eq!(selected_names, whole_names);
+    assert_eq!(
+        selected_work
+            .iter()
+            .map(|(tactic, _)| tactic)
+            .collect::<Vec<_>>(),
+        whole_work
+            .iter()
+            .map(|(tactic, _)| tactic)
+            .collect::<Vec<_>>()
+    );
+    for ((tactic, selected), (_, whole)) in selected_work.iter().zip(&whole_work) {
+        assert!(
+            *whole <= 2 * selected && *selected <= 2 * whole,
+            "{tactic}: selected {selected}, whole file {whole}"
+        );
+    }
+}
+
 #[test]
 fn execute_until_assignment_checks_real_stores_and_rejects_bad_frontiers() {
     let source = "int32 f() {int32 x;int32 other;other=9;x=3;other=8;x=4;return x;}";

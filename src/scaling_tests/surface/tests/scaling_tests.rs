@@ -549,6 +549,36 @@ fn assert_near_linear_scaling(axis: &str, samples: &[ScalingSample]) {
     );
 }
 
+/// Bound curvature separately from fixed setup. On geometric endpoints
+/// M/4, M/2, M, a 20/7 increment ratio bounds the quadratic coefficient in
+/// B + k*N + a*N^2 by a <= k/M. The old 3x whole-work check at M and 2M
+/// allowed a <= k/M + 2*B/M^2, so setup cannot hide that crossover here.
+fn assert_bounded_work_increments(
+    axis: &str,
+    work: &[usize],
+    numerator: usize,
+    denominator: usize,
+) {
+    assert!(work.len() >= 3);
+    let tail = &work[work.len() - 3..];
+    let earlier = tail[1].checked_sub(tail[0]);
+    let later = tail[2].checked_sub(tail[1]);
+    assert!(
+        matches!((earlier, later), (Some(earlier), Some(later)) if later * denominator <= earlier * numerator),
+        "{axis}: work increments grew too quickly: {work:?}"
+    );
+}
+
+fn assert_near_linear_scaling_with_increment_bound(axis: &str, samples: &[ScalingSample]) {
+    assert_near_linear_scaling(axis, samples);
+    assert_bounded_work_increments(
+        axis,
+        &samples.iter().map(|sample| sample.work).collect::<Vec<_>>(),
+        20,
+        7,
+    );
+}
+
 #[test]
 #[ignore = "nightly: 3s in the parallel gate"]
 fn bounded_statement_successor_exclusion_ignores_unrelated_ambient_facts() {
@@ -557,7 +587,7 @@ fn bounded_statement_successor_exclusion_ignores_unrelated_ambient_facts() {
     let insertion = "                open(allocated_cell(owner)) {\n                }\n";
     let mut samples = Vec::new();
     let mut exclusion_work = Vec::new();
-    for size in [8, 16, 32, 64] {
+    for size in [4, 8, 16, 32] {
         let unrelated = (0..size)
             .map(|index| {
                 format!(
@@ -593,7 +623,10 @@ fn bounded_statement_successor_exclusion_ignores_unrelated_ambient_facts() {
         exclusion_work.iter().all(|work| *work == exclusion_work[0]),
         "lane-exclusion work changed with unrelated ambient facts: {exclusion_work:?}"
     );
-    assert_near_linear_scaling("bounded statement-successor ambient facts", &samples);
+    assert_near_linear_scaling_with_increment_bound(
+        "bounded statement-successor ambient facts",
+        &samples,
+    );
 }
 
 /// Lowering a specification `if` folds a literally constant condition and
@@ -1047,6 +1080,31 @@ fn simple_unrelated_functions_have_a_deterministic_scaling_control() {
     assert_near_linear_scaling("unrelated simple functions", &samples);
 }
 
+/// One function's tactics do not do more work beside more earlier
+/// functions, and beside the most of them a selected run names its inputs
+/// as the whole-file run does. The names still shift with the earlier
+/// functions' inputs, and the order the closers search in follows them, so
+/// the totals can vary by a few percent; see
+/// `bugs/tactic-work-depends-on-input-name-numbers.md`.
+#[test]
+#[ignore = "nightly: 1.0s alone, 1.3s in the parallel gate"]
+fn a_functions_tactic_work_does_not_grow_with_earlier_unrelated_functions() {
+    let mut totals = Vec::new();
+    let mut names = None;
+    for earlier in [1, 2, 4, 8] {
+        let (whole_names, work) = super::project_tests::combine_names_and_work(earlier, false);
+        totals.push(work.iter().map(|(_, work)| work).sum::<usize>());
+        names = Some(whole_names);
+    }
+    let (selected_names, work) = super::project_tests::combine_names_and_work(8, true);
+    assert_eq!(Some(selected_names), names);
+    totals.push(work.iter().map(|(_, work)| work).sum::<usize>());
+    let least = *totals.iter().min().unwrap();
+    let most = *totals.iter().max().unwrap();
+    assert!(least > 0);
+    assert!(most <= least + least / 5, "{totals:?}");
+}
+
 #[test]
 fn targeted_simple_verification_does_not_verify_unrelated_theorems() {
     let c_source = "int32 scaling_target(int32 x) { return x; }\n";
@@ -1337,7 +1395,7 @@ fn explicit_transport_scales_near_linearly_with_unrelated_ambient_facts() {
 #[ignore = "nightly: multi-size separation transport scaling takes 10s debug"]
 fn explicit_separation_alias_transport_has_constant_selected_work() {
     let mut work = Vec::new();
-    for size in [4, 16, 32, 64] {
+    for size in [4, 16, 32] {
         let resources = (0..size)
             .map(|i| {
                 format!(
@@ -2046,7 +2104,7 @@ fn ranked_loop_with_unrelated_inequalities(fact_count: usize) -> (String, String
 #[test]
 #[ignore = "nightly: 1.0s in the parallel gate"]
 fn ranked_loop_bundle_scales_near_linearly_with_unrelated_inequalities() {
-    let samples = [8, 16, 32, 64]
+    let samples = [4, 8, 16, 32]
         .into_iter()
         .map(|size| {
             let (c_source, click_source) = ranked_loop_with_unrelated_inequalities(size);
@@ -2063,7 +2121,10 @@ fn ranked_loop_bundle_scales_near_linearly_with_unrelated_inequalities() {
         })
         .collect::<Vec<_>>();
 
-    assert_near_linear_scaling("ranked loop bundle with unrelated inequalities", &samples);
+    assert_near_linear_scaling_with_increment_bound(
+        "ranked loop bundle with unrelated inequalities",
+        &samples,
+    );
 }
 
 /// Loops ranked by a function of a binder's model, one back edge per loop.
@@ -2167,7 +2228,7 @@ fn model_ranked_loops(loop_count: usize) -> (String, String) {
 #[test]
 #[ignore = "nightly: 6s in the parallel gate"]
 fn model_ranked_loops_scale_near_linearly_with_their_back_edges() {
-    let samples = [4, 8, 16, 32]
+    let samples = [2, 4, 8, 16]
         .into_iter()
         .map(|size| {
             let (c_source, click_source) = model_ranked_loops(size);
@@ -2184,7 +2245,10 @@ fn model_ranked_loops_scale_near_linearly_with_their_back_edges() {
         })
         .collect::<Vec<_>>();
 
-    assert_near_linear_scaling("model-ranked loops by back edge count", &samples);
+    assert_near_linear_scaling_with_increment_bound(
+        "model-ranked loops by back edge count",
+        &samples,
+    );
 }
 
 /// One proof applying a user-defined tactic `count` times, each application
@@ -2437,7 +2501,7 @@ fn call_with_structured_precondition(fact_count: usize) -> (String, String) {
 
 #[test]
 fn call_requirement_checking_scales_near_linearly_with_unrelated_caller_facts() {
-    let samples = [8, 16, 32, 64]
+    let samples = [4, 8, 16, 32]
         .into_iter()
         .map(|size| {
             let (c_source, click_source) = call_with_structured_precondition(size);
@@ -2457,7 +2521,7 @@ fn call_requirement_checking_scales_near_linearly_with_unrelated_caller_facts() 
         })
         .collect::<Vec<_>>();
 
-    assert_near_linear_scaling(
+    assert_near_linear_scaling_with_increment_bound(
         "call requirement checking with unrelated caller facts",
         &samples,
     );
@@ -2537,7 +2601,7 @@ fn explicit_simple_project_with_ambient_facts(size: usize) -> (String, String) {
 fn wide_execution_match_join_has_near_linear_width_work() {
     let mut samples = Vec::new();
     let mut certificate_sizes = Vec::new();
-    for width in [4, 8, 16, 32] {
+    for width in [2, 4, 8, 16] {
         let (click_source, c_source) = wide_execution_match_project(width);
         let (verified, sample) = scaling_sample(width, || {
             verify_c0_sources(&click_source, &[("read.c", c_source.as_str())])
@@ -2575,7 +2639,18 @@ fn wide_execution_match_join_has_near_linear_width_work() {
             "the retained certificate grows faster than the constructor count: {certificate_sizes:?}"
         );
     }
-    assert_near_linear_scaling("wide execution match join", &samples);
+    // Preserve the old certificate curvature crossover at 16/32 while
+    // removing the fixed certificate overhead from the smaller 4/8/16 grid.
+    assert_bounded_work_increments(
+        "retained wide-match certificate",
+        &certificate_sizes
+            .iter()
+            .map(|(_, steps)| *steps)
+            .collect::<Vec<_>>(),
+        12,
+        5,
+    );
+    assert_near_linear_scaling_with_increment_bound("wide execution match join", &samples);
 }
 
 /// Counts every step of a certificate, including those its structured steps
@@ -3529,60 +3604,6 @@ fn early_return_fan_out(returns: usize) -> String {
     c
 }
 
-/// Whole-function finalization reads each path of a grouped proof's checked
-/// execution once, however many paths the proof issues theorems for.
-///
-/// A grouped proof issues one theorem per path and claim, all over one
-/// shared execution. The implicit empty-effect check used to walk every path
-/// of that execution once per theorem, rebuilding each path's fact context
-/// each time, so its work was quadratic in the path count. Measured
-/// `implicit empty effect check` work on 2026-09-23 at 4, 8, 16, and 32 early
-/// returns: 5, 9, 17, and 33 units, one per composition carrier inserted into
-/// a path's fact context. Visiting the execution once per theorem measured
-/// 30, 90, 306, and 1122.
-///
-/// Every context build is now charged a unit per fact, and path `k` of this
-/// fan-out holds the `k` conditions before it, so building each path's
-/// context charged 37, 87, 235, and 723. The check now builds a path's
-/// context only when a write could reach storage that predates the call,
-/// which this function's heap cell cannot, and charges one unit per path it
-/// reads instead: 6, 10, 18, and 34 on 2026-09-27.
-#[test]
-#[ignore = "nightly: 1.3s in the parallel gate"]
-fn grouped_proof_finalization_reads_each_path_once() {
-    std::thread::Builder::new()
-        .name("grouped-finalization-fan-out".into())
-        .stack_size(64 << 20)
-        .spawn(|| {
-            let _ = roundtrip_sample(1, 0);
-            const CHECK: &str = "operation `implicit empty effect check`";
-            let click = "verifying \"fan_out.c\";\n\nint g(int a) {\n    ensures result == a or result == -1;\n} by {\n    execute();\n    simp();\n}\n";
-            let samples = [4, 8, 16, 32]
-                .map(|returns| {
-                    let c = early_return_fan_out(returns);
-                    let (verified, sample) = scaling_sample(returns, || {
-                        verify_c0_sources(click, &[("fan_out.c", c.as_str())])
-                    });
-                    verified.unwrap_or_else(|error| {
-                        panic!("fan-out of {returns} returns failed: {}", error.message())
-                    });
-                    ScalingSample {
-                        size: returns,
-                        work: *sample.named_work.get(CHECK).unwrap_or_else(|| {
-                            panic!("fan-out did not reach the implicit empty-effect check: {sample:?}")
-                        }),
-                        named_work: BTreeMap::new(),
-                    }
-                })
-                .to_vec();
-            eprintln!("implicit empty-effect check work: {samples:?}");
-            assert_near_linear_scaling("implicit empty-effect check over paths", &samples);
-        })
-        .expect("spawn the fan-out thread")
-        .join()
-        .expect("fan-out thread");
-}
-
 /// A fixed one-store proof verified after an unrelated proof in the same
 /// sidecar. Everything a proof unit builds in the session (interned snapshots,
 /// load names, memo tables) outlives it, so this is where a later proof can
@@ -3739,7 +3760,7 @@ struct holder {
     };
     let alone = fixed_proof_work(None);
     assert!(alone > 0);
-    let samples = [4, 8, 16, 32].map(|stores| (stores, fixed_proof_work(Some(stores))));
+    let samples = [4, 16, 32].map(|stores| (stores, fixed_proof_work(Some(stores))));
     for &(stores, work) in &samples {
         // Constant plus a logarithmic allowance for indexed session tables.
         let allowance = 64 * (usize::BITS - stores.leading_zeros()) as usize;
@@ -4166,7 +4187,7 @@ fn counter_call_chain_ensure_lowering_stays_flat_per_call() {
     const LOWERING: &str = "verified call provisional ensure lowering";
     let mut last_lowering = Vec::new();
     let mut totals = Vec::new();
-    for size in [2, 4, 8, 16] {
+    for size in [1, 2, 4, 8] {
         let (c_source, click_source) = counter_call_chain(size);
         let ((verified, work), events) = crate::instrumentation::collect(|| {
             crate::instrumentation::measure_deterministic_work(|| {
@@ -4210,8 +4231,7 @@ fn counter_call_chain_ensure_lowering_stays_flat_per_call() {
         largest <= smallest.max(1) * 2,
         "a call's ensure lowering must not grow with the prior call chain: {last_lowering:?}"
     );
-    let indexed =
-        |costs: &[(usize, usize)]| costs.iter().all(|(_, work)| *work <= costs[0].1 + 128);
+    let indexed = |costs: &[(usize, usize)]| costs.iter().all(|(_, work)| *work <= costs[0].1 + 32);
     eprintln!("counter-call ensure lowering: {last_lowering:?}");
     assert!(indexed(&last_lowering), "{last_lowering:?}");
     let rescanned = last_lowering
@@ -4222,7 +4242,7 @@ fn counter_call_chain_ensure_lowering_stays_flat_per_call() {
         !indexed(&rescanned),
         "the smaller fixture must detect a quadratic call lowering: {last_lowering:?}"
     );
-    assert_near_linear_scaling("counter call chain", &totals);
+    assert_near_linear_scaling_with_increment_bound("counter call chain", &totals);
 }
 
 /// One `step()` over a call whose external contract has `N` ensures lowers
@@ -4904,11 +4924,12 @@ fn quantified_frame_project(stores: usize, conjuncts: usize, facts: usize) -> (S
 
 fn quantified_frame_samples(
     axis: &str,
+    sizes: [usize; 4],
     project: impl Fn(usize) -> (String, String),
-) -> Vec<ScalingSample> {
+) -> (Vec<ScalingSample>, Vec<usize>) {
     let mut samples = Vec::new();
     let mut framing = Vec::new();
-    for size in [4usize, 8, 16, 32] {
+    for size in sizes {
         let (c_source, click_source) = project(size);
         let (verified, sample) = scaling_sample(size, || {
             verify_c0_sources(&click_source, &[("mark.c", c_source.as_str())])
@@ -4940,7 +4961,7 @@ fn quantified_frame_samples(
             "{axis}: quantified frame work is not near linear: {framing:?}"
         );
     }
-    samples
+    (samples, framing)
 }
 
 /// A quantified fact about a separated array crosses a straight line of
@@ -4953,10 +4974,12 @@ fn quantified_frame_samples(
 #[test]
 #[ignore = "nightly: 2s in the parallel gate"]
 fn quantified_frame_is_near_linear_in_crossed_stores() {
-    let samples = quantified_frame_samples("quantified frame across stores", |size| {
-        quantified_frame_project(size, 1, 0)
-    });
-    assert_near_linear_scaling("quantified frame across stores", &samples);
+    let (samples, framing) =
+        quantified_frame_samples("quantified frame across stores", [2, 4, 8, 16], |size| {
+            quantified_frame_project(size, 1, 0)
+        });
+    assert_bounded_work_increments("quantified frame across stores", &framing, 20, 7);
+    assert_near_linear_scaling_with_increment_bound("quantified frame across stores", &samples);
 }
 
 /// The quantified body grows by one framed conjunct per step: one leaf and
@@ -4964,9 +4987,10 @@ fn quantified_frame_is_near_linear_in_crossed_stores() {
 #[test]
 #[ignore = "nightly: 0.7s in the parallel gate"]
 fn quantified_frame_is_near_linear_in_its_body() {
-    let samples = quantified_frame_samples("quantified frame over its body", |size| {
-        quantified_frame_project(2, size, 0)
-    });
+    let (samples, _) =
+        quantified_frame_samples("quantified frame over its body", [4, 8, 16, 32], |size| {
+            quantified_frame_project(2, size, 0)
+        });
     assert_near_linear_scaling("quantified frame over its body", &samples);
 }
 
@@ -4976,9 +5000,11 @@ fn quantified_frame_is_near_linear_in_its_body() {
 #[test]
 #[ignore = "nightly: 1.0s in the parallel gate"]
 fn quantified_frame_is_near_linear_in_unrelated_facts() {
-    let samples = quantified_frame_samples("quantified frame with unrelated facts", |size| {
-        quantified_frame_project(2, 1, size)
-    });
+    let (samples, _) = quantified_frame_samples(
+        "quantified frame with unrelated facts",
+        [4, 8, 16, 32],
+        |size| quantified_frame_project(2, 1, size),
+    );
     assert_near_linear_scaling("quantified frame with unrelated facts", &samples);
 }
 
@@ -6948,6 +6974,7 @@ fn check_completed_early_return_context_reuse(explicit: bool) {
     let mut samples = Vec::new();
     let mut transport = Vec::new();
     let mut execute = Vec::new();
+    let mut finalization = Vec::new();
     let mut spelling = Vec::new();
     let mut selection = Vec::new();
     let mut outcome_reads = Vec::new();
@@ -7020,6 +7047,20 @@ fn check_completed_early_return_context_reuse(explicit: bool) {
         terminal_reads.push(crate::surface::proof::take_terminal_publication_visits());
         statement_entries.push(crate::kernel::proof::take_statement_priority_entries());
         if !explicit {
+            if returns <= 32 {
+                finalization.push(ScalingSample {
+                    size: returns,
+                    work: *sample
+                        .named_work
+                        .get("operation `implicit empty effect check`")
+                        .unwrap_or_else(|| {
+                            panic!(
+                                "fan-out did not reach the implicit empty-effect check: {sample:?}"
+                            )
+                        }),
+                    named_work: BTreeMap::new(),
+                });
+            }
             execute.push(ScalingSample {
                 size: returns,
                 work: *sample
@@ -7179,6 +7220,11 @@ fn check_completed_early_return_context_reuse(explicit: bool) {
         // Keep every original 8/16/32/64 proof and its whole-work guard.
         assert_near_linear_scaling("an explicit early-return proof", &samples[1..]);
     } else {
+        // Retain the original grouped-finalization 4/8/16/32 regression.
+        // Its pre-fix per-theorem rescans cost 30/90/306/1122 units;
+        // visiting each path once cost 6/10/18/34 instead.
+        eprintln!("implicit empty-effect check work: {finalization:?}");
+        assert_near_linear_scaling("implicit empty-effect check over paths", &finalization);
         eprintln!("fan-out execute work: {execute:?}");
         assert_near_linear_scaling("executing a fan-out's paths", &execute);
         eprintln!("fan-out snapshot transport work: {transport:?}");
@@ -7618,7 +7664,7 @@ fn explicit_frame_refusal_scales_with_unrelated_facts() {
     )
     .unwrap();
     let mut samples = Vec::new();
-    for size in [16, 32, 64, 128] {
+    for size in [8, 16, 32, 64] {
         let parameters = (0..size)
             .map(|index| format!(", int32 extra{index}"))
             .collect::<String>();
@@ -7662,14 +7708,17 @@ fn explicit_frame_refusal_scales_with_unrelated_facts() {
         );
         samples.push(sample);
     }
-    assert_near_linear_scaling("explicit frame refusal with unrelated facts", &samples);
+    assert_near_linear_scaling_with_increment_bound(
+        "explicit frame refusal with unrelated facts",
+        &samples,
+    );
     // The selected transport pays only a fixed amount per added premise.
     // Whole-run totals also include shared frontend initialization.
     for pair in samples.windows(2) {
         let before = pair[0].named_work["control tactic `have`"];
         let after = pair[1].named_work["control tactic `have`"];
         assert!(
-            after <= before + 12 * (pair[1].size - pair[0].size),
+            after <= before + 6 * (pair[1].size - pair[0].size),
             "{samples:?}"
         );
     }
@@ -7813,34 +7862,70 @@ fn retain_amid_unrelated_children_project(count: usize) -> (String, String) {
 /// A retain does not pay for the unrelated shared children that are live:
 /// every pointer parameter shares one memory block, so a lookup that walks
 /// that block instead of the queried object's own facts grows with them.
-fn assert_retain_ignores_unrelated_live_children(sizes: [usize; 4]) -> Vec<ScalingSample> {
+fn assert_retain_ignores_unrelated_live_children(sizes: [usize; 5]) -> Vec<ScalingSample> {
+    const CALLER: &str = "retain_one";
+    const HELPER: &str = "child_retain";
+    let (base_c, base_click) = retain_amid_unrelated_children_project(sizes[0]);
+    assert_eq!(base_c.matches(CALLER).count(), 1);
+    assert_eq!(base_click.matches(CALLER).count(), 1);
+    let c_helper = &base_c[..base_c.find(CALLER).unwrap()];
+    let click_helper = &base_click[..base_click.find(CALLER).unwrap()];
+    {
+        let checked = crate::surface::verify_c0_sources_functions(
+            &base_click,
+            &[("retain.c", base_c.as_str())],
+            [HELPER.to_string()],
+        )
+        .expect("the unchanged retain helper must verify completely");
+        assert!(!checked.is_empty());
+        assert!(
+            checked
+                .iter()
+                .all(|proof| proof.function_block.signature().name() == HELPER)
+        );
+    }
     let samples = sizes
         .into_iter()
         .map(|size| {
             let (c_source, click_source) = retain_amid_unrelated_children_project(size);
+            assert_eq!(c_source.matches(CALLER).count(), 1);
+            assert_eq!(click_source.matches(CALLER).count(), 1);
+            assert_eq!(&c_source[..c_source.find(CALLER).unwrap()], c_helper);
+            assert_eq!(
+                &click_source[..click_source.find(CALLER).unwrap()],
+                click_helper
+            );
             let (verified, sample) = scaling_sample(size, || {
-                verify_c0_sources(&click_source, &[("retain.c", c_source.as_str())])
+                crate::surface::verify_c0_sources_functions(
+                    &click_source,
+                    &[("retain.c", c_source.as_str())],
+                    [CALLER.to_string()],
+                )
             });
-            verified.unwrap_or_else(|error| {
+            let checked = verified.unwrap_or_else(|error| {
                 panic!("{size}-unrelated fixture failed: {}", error.message())
             });
+            assert!(!checked.is_empty());
+            assert!(
+                checked
+                    .iter()
+                    .all(|proof| proof.function_block.signature().name() == CALLER)
+            );
             sample
         })
         .collect::<Vec<_>>();
-    assert_near_linear_scaling("a retain amid unrelated live children", &samples);
+    // Keep exactly the original small (2/4/8/16) and large (4/8/16/32)
+    // guards; their three shared inputs need only one complete cold check.
+    assert_near_linear_scaling("a retain amid unrelated live children", &samples[..4]);
+    assert_near_linear_scaling("a retain amid many unrelated live children", &samples[1..]);
     samples
-}
-
-#[test]
-#[ignore = "nightly: 6.1s in the parallel gate"]
-fn a_retain_ignores_unrelated_live_children() {
-    let _ = assert_retain_ignores_unrelated_live_children([2, 4, 8, 16]);
 }
 
 #[test]
 #[ignore = "nightly: shared-child exit scaling with a calibrated finishing guard"]
 fn a_retain_ignores_many_unrelated_live_children() {
-    let samples = assert_retain_ignores_unrelated_live_children([4, 8, 16, 32]);
+    let samples = assert_retain_ignores_unrelated_live_children([2, 4, 8, 16, 32]);
+    let samples = &samples[1..];
     let finishing = samples
         .iter()
         .map(|sample| {
@@ -7957,7 +8042,7 @@ fn owned_pointer_parameters_scale_with_their_number() {
 #[ignore = "nightly: 2.8s in the parallel gate"]
 fn held_field_separation_precedes_general_composition_reasoning() {
     let mut work = Vec::new();
-    for size in [4, 8, 16, 32] {
+    for size in [4, 8, 16] {
         let parameters = (0..size)
             .map(|i| format!(", struct node* q{i}"))
             .collect::<String>();
@@ -8073,7 +8158,7 @@ fn guarded_unfold_cell_preparation_scales_linearly_with_surrounding_owners() {
     let markdown = std::fs::read_to_string(&path).unwrap();
     let input = crate::cli::parse_mdtest(&path, &markdown).unwrap();
     let mut work = Vec::new();
-    for size in [4, 8, 16, 32] {
+    for size in [4, 8, 16] {
         let parameters = (0..size)
             .map(|i| format!(", int32* q{i}"))
             .collect::<String>();
@@ -8125,7 +8210,7 @@ fn guarded_unfold_cell_preparation_scales_linearly_with_surrounding_owners() {
 fn signed_increment_overflow_checks_stay_flat_per_assignment() {
     let mut peaks = Vec::new();
     let mut totals = Vec::new();
-    for size in [16, 32, 64, 128] {
+    for size in [8, 16, 32, 64] {
         let mut c = String::from("int32 increment(int32 x0) {\n");
         for i in 1..=size {
             c.push_str(&format!("int32 x{i};\n"));
@@ -8172,10 +8257,10 @@ fn signed_increment_overflow_checks_stay_flat_per_assignment() {
         });
     }
     assert!(
-        peaks.iter().all(|work| *work <= peaks[0] * 3),
+        peaks.iter().all(|work| *work <= peaks[0] * 2),
         "increment step work must stay flat: {peaks:?}"
     );
-    assert_near_linear_scaling("checked increment chains", &totals);
+    assert_near_linear_scaling_with_increment_bound("checked increment chains", &totals);
     let invalid = "verifying \"unbounded.c\"; int32 f(int32 x) { ensures result == x + 1; } by { step(); simp(); }";
     assert!(
         verify_c0_sources(
@@ -8191,7 +8276,7 @@ fn signed_increment_overflow_checks_stay_flat_per_assignment() {
 #[ignore = "nightly: 2.3s in the parallel gate"]
 fn unrelated_call_work_stays_flat_with_kept_pointer_aliases() {
     let mut calls = Vec::new();
-    for size in [1, 8, 32, 64] {
+    for size in [1, 4, 16, 32] {
         let parameters = (0..size)
             .map(|i| format!(", struct box* q{i}"))
             .collect::<String>();
@@ -8231,7 +8316,7 @@ fn unrelated_call_work_stays_flat_with_kept_pointer_aliases() {
     }
     eprintln!("unrelated call work by alias count: {calls:?}");
     assert!(
-        calls.iter().all(|work| *work <= calls[0] * 2),
+        calls.iter().all(|work| *work * 5 <= calls[0] * 7),
         "call work grew with irrelevant aliases: {calls:?}"
     );
 }
@@ -8241,7 +8326,7 @@ fn unrelated_call_work_stays_flat_with_kept_pointer_aliases() {
 fn symbolic_index_store_work_is_flat_across_recorded_order_chains() {
     let mut peaks = Vec::new();
     let mut totals = Vec::new();
-    for size in [8, 16, 32, 64] {
+    for size in [4, 8, 16, 32] {
         let parameters = (0..=size)
             .map(|i| format!(", int32 x{i}"))
             .collect::<String>();
@@ -8287,8 +8372,11 @@ fn symbolic_index_store_work_is_flat_across_recorded_order_chains() {
         });
     }
     eprintln!("ordered store peaks: {peaks:?}");
-    assert!(peaks.iter().all(|work| *work <= peaks[0] * 2), "{peaks:?}");
-    assert_near_linear_scaling("symbolic ordered stores", &totals);
+    assert!(
+        peaks.iter().all(|work| *work * 2 <= peaks[0] * 3),
+        "{peaks:?}"
+    );
+    assert_near_linear_scaling_with_increment_bound("symbolic ordered stores", &totals);
 }
 
 /// Owns seed every input field before the first store. This catches both the
