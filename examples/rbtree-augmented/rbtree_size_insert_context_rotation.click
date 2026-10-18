@@ -213,11 +213,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                         parent == p;
                         at(before_link_writes, g->rb_left) == parent;
                     };
-                    have p->rb_right == g by {
-                        rewrite(p == parent);
-                        rewrite(g == gparent);
-                        assumption();
-                    }
+                    have p->rb_right == g by { assumption(); }
                     have parent == p by { assumption(); }
                     have p->__rb_parent_color == at(before_parent_update, g->__rb_parent_color) by { simp(); }
                     have p->__rb_parent_color == address(above) + (p->__rb_parent_color & 1) by {

@@ -8644,20 +8644,37 @@ fn restricted_simp_rewrites_pointer_aliases_inside_memory_loads() {
         .map(|relative| expanded_have_start + relative)
         .unwrap();
     let expanded_have = &expanded[expanded_have_start..expanded_have_end];
-    assert!(
-        expanded_have.contains("rewrite(alias == original);"),
-        "{expanded_have}"
-    );
-    assert!(
-        expanded_have.contains("rewrite(index == 0);"),
-        "{expanded_have}"
-    );
-    // The checked read bridge can use the cited equality directly. Require
-    // an explicit certificate, not a particular orientation or final closer.
+    // Indexed read congruence constructs a normalization certificate from
+    // the selected premises without spelling intermediate rewrites.
+    for selected in [
+        "normalize() using {",
+        "original[0] == value;",
+        "alias == original;",
+        "index == 0;",
+    ] {
+        assert!(expanded_have.contains(selected), "{expanded_have}");
+    }
     assert!(!expanded_have.contains("simp() using"), "{expanded_have}");
     assert!(!expanded_have.contains("derive using"), "{expanded_have}");
     verify_c0_sources(&expanded, &sources)
         .expect("expanded pointer-alias certificate should check");
+    // Normalization may query the maintained graph, so withdraw each
+    // relation from the context as well as its explicit citation.
+    for (clause, premise) in [
+        ("fact data[0] == value;", "original[0] == value;"),
+        ("requires alias == original;", "alias == original;"),
+        ("requires index == 0;", "index == 0;"),
+    ] {
+        assert!(expanded.contains(clause));
+        let missing_premise = expanded_have.replacen(premise, "", 1);
+        let incomplete = expanded
+            .replacen(expanded_have, &missing_premise, 1)
+            .replacen(clause, "", 1);
+        assert!(
+            verify_c0_sources(&incomplete, &sources).is_err(),
+            "the read-alias certificate must reject a context without `{clause}`"
+        );
+    }
 }
 
 #[test]
@@ -8961,6 +8978,36 @@ fn execution_bare_apply_selects_and_retains_its_step_through_proof() {
     .expect("the checked execution apply should expand into source");
     verify_c0_sources(&expanded, &[("keep.c", c_source)])
         .expect("the retained execution theorem step should independently reverify");
+}
+
+#[test]
+fn post_return_resource_exchange_accepts_a_preceding_pure_have() {
+    let c_source = "int32 identity(int32 x) { return x; }";
+    // A macro refold may change only the logical presentation. The second
+    // unfold must use that current goal rather than an older C-body event.
+    let click_source = r#"
+        resource marker(x: int32) { fact x == x; }
+        verifying "identity.c";
+        int32 identity(int32 x) {
+            owns marker(x);
+            ensures result == x;
+        } by {
+            execute();
+            have 1000 == 1000 by { normalize(); }
+            unfold(marker(x));
+            fold(marker(x));
+            unfold(marker(x));
+            fold(marker(x));
+            simp();
+        }
+    "#;
+    let sources = [("identity.c", c_source)];
+    verify_c0_sources(click_source, &sources)
+        .expect("a pure have must preserve the return resource presentation");
+    let expanded = expand_c0_claim_source(click_source, &sources, "identity", CProofClaim::Grouped)
+        .expect("the return resource exchange should expand");
+    verify_c0_sources(&expanded, &sources)
+        .expect("the expanded return resource exchange should check independently");
 }
 
 #[test]

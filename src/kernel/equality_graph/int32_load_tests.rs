@@ -304,3 +304,61 @@ fn native_pointer_aliases_reach_named_nested_pointer_reads() {
     let forged_stride = Pointer::loaded(field.block.clone(), load(&memory, &field, 8), 8);
     assert!(!graph.are_equal(&forged_stride, &arena));
 }
+
+#[test]
+fn int32_load_congruence_connects_base_reads_to_early_and_late_zero_offsets() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let memory = memory();
+    let base = address(940_081);
+    let offset = var(940_082);
+    let direct = load(&memory, &base, 4);
+    let indexed = load(&memory, &base.offset_by_elements(offset.clone(), 4), 4);
+    for early in [false, true] {
+        let mut graph = EqualityGraph::default();
+        if early {
+            graph.add_int32_equality(&offset, &Bitvector32Term::Constant(0));
+        }
+        graph.add_int32_equality(&direct, &var(940_083));
+        graph.add_int32_equality(&indexed, &var(940_084));
+        if !early {
+            assert!(!graph.are_int32_equal(&var(940_083), &var(940_084)));
+            graph.add_int32_equality(&offset, &Bitvector32Term::Constant(0));
+        }
+        assert!(
+            graph.are_int32_equal(&var(940_083), &var(940_084)),
+            "early={early}"
+        );
+    }
+}
+
+#[test]
+fn a_late_zero_index_alias_transfers_an_admitted_read_order_and_withdraws() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let memory = memory();
+    let base = address(940_085);
+    let index = var(940_086);
+    let direct = load(&memory, &base, 4);
+    let indexed = load(&memory, &base.offset_by_elements(index.clone(), 4), 4);
+    let next = load(
+        &memory,
+        &base.offset_by_elements(Bitvector32Term::add(index.clone(), 1u32.into()), 4),
+        4,
+    );
+    let known = ConditionTerm::signed_less_than(next.clone(), indexed);
+    let target = ConditionTerm::signed_less_than(next, direct);
+    let root = PureFactContext::new().assume_condition(known, true);
+    assert_eq!(root.decide(&target), None);
+    let zero = Proposition::ConditionIs(ConditionTerm::equal(index, 0u32.into()), true);
+    let equal = root.assume_proposition(zero.clone());
+    assert_eq!(equal.decide(&target), Some(true));
+    assert_eq!(
+        crate::kernel::reasoning::decide_with_facts(&equal, &ExecutionFacts::new(), &target),
+        Some(true),
+    );
+    let withdrawn = equal.without_exact_fact(&zero);
+    assert_eq!(withdrawn.decide(&target), None);
+    assert_eq!(
+        crate::kernel::reasoning::decide_with_facts(&withdrawn, &ExecutionFacts::new(), &target),
+        None,
+    );
+}

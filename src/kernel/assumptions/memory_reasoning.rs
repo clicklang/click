@@ -326,7 +326,10 @@ impl PureFactContext {
         );
         matches!(paths.as_slice(), [path]
             if matches!(path.outcome, CExpressionOutcome::Value(_))
-                && path.facts.iter().all(|fact| self.proves_exact(fact.proposition())
+                // Read equations are certified results of this evaluation,
+                // not additional premises the caller must already know.
+                && path.facts.iter().all(|fact| fact.is_logical_read_equation()
+                    || self.proves_exact(fact.proposition())
                     || crate::kernel::is_load_variable_defining_fact(fact.proposition()))
                 && path.obligations.iter().all(|obligation|
                     self.proves_exact(obligation.proposition())
