@@ -46,15 +46,17 @@ pub(in crate::surface) struct ConcreteMemoryRangeSeed {
 }
 
 // Input addresses from different function proofs must not share load/type
-// metadata. A context-local parameter index alone names unrelated universal
-// inputs with the same term, e.g. an eight-byte `self->slot` and a four-byte
-// caller `value[0]`. Keep content-based names collision-checked and outside
-// the scalar-load and ordinary lexical-variable namespaces. Inputs occupy
-// `100_000 .. 1_000_000`, below execution and load names so ordinary inputs
-// remain preferred canonical address representatives.
+// metadata. Derive their identities from the function and parameter, so adding
+// unrelated functions cannot change proof search order. This range lies above
+// frontend/termination/callback names and below scalar loads: input addresses
+// remain preferred canonical representatives. Hash collisions are reported,
+// never resolved by allocation order or by aliasing two inputs.
+const INPUT_VARIABLE_BASE: u64 = 1 << 34;
+const INPUT_VARIABLE_CEILING: u64 = 1 << 40;
 thread_local! {
     static INPUT_SCOPES: std::cell::RefCell<std::collections::HashMap<u64, String>> = Default::default();
     static INPUT_POINTER_PLACES: std::cell::RefCell<std::collections::HashMap<Variable, (u64, usize, crate::kernel::CPointerValue)>> = Default::default();
+    static INPUT_VARIABLE_OWNERS: std::cell::RefCell<std::collections::HashMap<Variable, (u64, usize)>> = Default::default();
     static INPUT_VARIABLES: std::cell::RefCell<std::collections::HashMap<(u64, usize), Variable>> = Default::default();
 }
 
@@ -78,33 +80,18 @@ pub(in crate::surface) fn input_scope(name: &str) -> u64 {
     })
 }
 
-/// Starts the input namespace afresh with the kernel's session tables.
-///
-/// The names are numbered in allocation order, so a table kept from earlier
-/// verifications on this thread would number the same function's inputs
-/// differently in every run. Load names and snapshot content hashes are
-/// derived from these numbers, and the order of the facts and snapshots a
-/// proof searches follows those, so a tactic's work would depend on what
-/// was verified before it. The kernel's own tables are cleared at the same
-/// point, so no metadata about an old name survives the reset.
+/// Clears input metadata with the kernel's session tables. Content-based names
+/// survive session resets; metadata about previous proofs does not.
 pub(in crate::surface) fn reset_input_identities() {
     INPUT_SCOPES.with(|scopes| scopes.borrow_mut().clear());
     INPUT_POINTER_PLACES.with(|places| places.borrow_mut().clear());
     INPUT_VARIABLES.with(|variables| variables.borrow_mut().clear());
+    INPUT_VARIABLE_OWNERS.with(|owners| owners.borrow_mut().clear());
 }
 
-/// Names the inputs of `function`, exactly those its entry state names and
-/// in the same order, before any proof runs.
-///
-/// A whole-file run verifies its functions one after another and a
-/// selected-unit run only some of them. Naming a function's inputs when its
-/// proof starts numbers them by how many inputs the functions verified
-/// before it in the same run had, so the two runs name one function's
-/// inputs differently. Reserving every verified function's inputs from the
-/// file, in the whole-file order, gives each function the same names
-/// whichever of them a command checks. Names already reserved keep their
-/// numbers. A parameter that cannot be named is left to the function's own
-/// entry lowering, which reports it.
+/// Prepares input metadata for all functions before any proof runs, including
+/// selected-unit verification. Names depend only on the function and parameter;
+/// failures remain the responsibility of the function's entry lowering.
 pub(in crate::surface) fn reserve_input_identities(function: &syntax::C0Function) {
     let scope = input_scope(function.kernel_name());
     if input_arguments(scope, function.parameters(), |_| None).is_ok()
@@ -144,13 +131,27 @@ fn input_pointer_variable(scope: u64, index: usize) -> Result<Variable, ClickErr
         if let Some(variable) = variables.get(&(scope, index)) {
             return Ok(*variable);
         }
-        let name = POINTER_ARGUMENT_VARIABLE_BASE + variables.len() as u64;
-        if name >= 1_000_000 {
-            return Err(ClickError::new(
-                "pointer input variable namespace exhausted",
-            ));
-        }
-        let variable = Variable(name);
+        use std::hash::{Hash, Hasher};
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        (scope, index as u64).hash(&mut hasher);
+        let variable = Variable(
+            INPUT_VARIABLE_BASE + hasher.finish() % (INPUT_VARIABLE_CEILING - INPUT_VARIABLE_BASE),
+        );
+        INPUT_VARIABLE_OWNERS.with(|owners| {
+            let mut owners = owners.borrow_mut();
+            match owners.entry(variable) {
+                std::collections::hash_map::Entry::Vacant(entry) => {
+                    entry.insert((scope, index));
+                    Ok(())
+                }
+                std::collections::hash_map::Entry::Occupied(entry)
+                    if *entry.get() == (scope, index) =>
+                {
+                    Ok(())
+                }
+                _ => Err(ClickError::new("pointer input variable identity collision")),
+            }
+        })?;
         variables.insert((scope, index), variable);
         Ok(variable)
     })
@@ -3894,12 +3895,62 @@ mod input_identity_tests {
             input_pointer_variable(first, 0).unwrap(),
             input_pointer_variable(first, 1).unwrap()
         );
-        assert!(
-            input_pointer_variable(first, 0).unwrap() < input_pointer_variable(first, 1).unwrap()
-        );
         assert_ne!(
             input_pointer_variable(first, 0).unwrap(),
             input_pointer_variable(second, 0).unwrap()
+        );
+    }
+
+    #[test]
+    fn input_names_ignore_allocation_history_and_cover_large_parameter_lists() {
+        let expected = (0..130)
+            .map(|index| input_pointer_variable(input_scope("stable-target"), index).unwrap())
+            .collect::<Vec<_>>();
+        for order in [vec![0, 1, 2, 3], vec![3, 1, 0, 2]] {
+            reset_input_identities();
+            for function in order {
+                for index in 0..130 {
+                    input_pointer_variable(input_scope(&format!("unrelated-{function}")), index)
+                        .unwrap();
+                }
+            }
+            let actual = (0..130)
+                .map(|index| input_pointer_variable(input_scope("stable-target"), index).unwrap())
+                .collect::<Vec<_>>();
+            assert_eq!(actual, expected);
+            assert_eq!(
+                actual
+                    .iter()
+                    .collect::<std::collections::HashSet<_>>()
+                    .len(),
+                130
+            );
+            assert!(
+                actual
+                    .iter()
+                    .all(|v| (INPUT_VARIABLE_BASE..INPUT_VARIABLE_CEILING).contains(&v.0))
+            );
+        }
+    }
+
+    #[test]
+    fn input_identity_collisions_fail_without_aliasing_or_renumbering() {
+        reset_input_identities();
+        let scope = input_scope("collision-target");
+        let variable = input_pointer_variable(scope, 0).unwrap();
+        INPUT_VARIABLES.with(|variables| variables.borrow_mut().clear());
+        INPUT_VARIABLE_OWNERS.with(|owners| owners.borrow_mut().insert(variable, (scope, 1)));
+        assert!(
+            input_pointer_variable(scope, 0)
+                .unwrap_err()
+                .message()
+                .contains("identity collision")
+        );
+        assert!(INPUT_VARIABLES.with(|variables| variables.borrow().is_empty()));
+        reset_input_identities();
+        assert_eq!(
+            input_pointer_variable(input_scope("collision-target"), 0).unwrap(),
+            variable
         );
     }
 
