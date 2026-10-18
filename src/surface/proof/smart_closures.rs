@@ -6016,18 +6016,16 @@ impl<'a> Proof<'a> {
                 context.parameter_binding.parameters,
                 context.parameter_binding.arguments,
                 context.fixed_state.state,
-                context.fixed_state.recorded_snapshots,
             )),
             ProofContext::Execution(_) => self.premise_fixed_state_view().map(|view| {
                 (
                     view.parameter_binding.parameters,
                     view.parameter_binding.arguments,
                     view.fixed_state.state,
-                    view.fixed_state.recorded_snapshots,
                 )
             }),
         };
-        let (parameters, arguments, state, recorded_snapshots) = synthesis_context?;
+        let (parameters, arguments, state) = synthesis_context?;
         let bound_variable_names = self
             .proposition_obligation()
             .into_iter()
@@ -6048,27 +6046,10 @@ impl<'a> Proof<'a> {
         {
             return Some(surface);
         }
-        // A certified statement fact may relate two execution snapshots (a
-        // callee postcondition names a cell after the call and its value
-        // before it), so no single snapshot denotes both operands. Spell each
-        // operand at the nearest recorded statement entry that denotes it,
-        // walking back from the selected premise anchor; the candidate is
-        // accepted only when ordinary lowering recovers this exact fact.
-        let premise_anchor = premise_anchor?;
-        crate::instrumentation::measure_operation(
-            "surface",
-            "simp premise",
-            "simp premise surface at recorded snapshots",
-            || {
-                synthesize_surface_at_recorded_snapshots(
-                    kernel,
-                    ParameterBinding::new(parameters, arguments),
-                    recorded_snapshots,
-                    premise_anchor,
-                )
-                .find(|surface| matches_kernel(surface, true).is_some())
-            },
-        )
+        // The same recorded snapshots and matcher already completed their
+        // search above. The intervening presentation candidates do not change
+        // this proof's state, so repeating that miss cannot find a new source.
+        None
     }
 
     /// Tries equalities attached to terms occurring in the current goal.

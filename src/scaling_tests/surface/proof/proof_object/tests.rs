@@ -4,6 +4,82 @@
 
 use super::*;
 
+#[test]
+fn a_missing_premise_spelling_walks_recorded_history_only_once() {
+    let predicates = PredicateEnvironment::new(&[]);
+    let functions = ClickFunctionEnvironment::new(&[]);
+    let theorems = TheoremEnvironment::new(&[]);
+    let visible = Bitvector32Term::Variable(Variable(8_179_800));
+    let state = CState::new().with_local("visible", CValue::Int32(visible.clone()));
+    let equal_zero = |term| {
+        Proposition::ConditionIs(
+            ConditionTerm::Bitvector32Equal(Box::new(term), Box::new(Bitvector32Term::Constant(0))),
+            true,
+        )
+    };
+    let missing = equal_zero(Bitvector32Term::Variable(Variable(8_179_801)));
+    let named = equal_zero(visible);
+    let facts = [missing.clone(), named.clone()];
+    let surfaces = SurfacePropositionMap::default();
+    for size in [4usize, 16, 64] {
+        let mut snapshots = RecordedSnapshots::new();
+        for index in 0..size {
+            snapshots.insert(
+                ProgramPointRef {
+                    region: CodeRegionRef::Statement(index),
+                    kind: ProgramPointKind::Entry,
+                },
+                state.clone(),
+            );
+        }
+        let anchor = ProgramPointRef {
+            region: CodeRegionRef::Statement(size - 1),
+            kind: ProgramPointKind::Entry,
+        };
+        let root = Proof::for_fixed_state_goal_with_requirements(
+            "missing premise spelling",
+            0,
+            &facts,
+            Proposition::ConditionIs(ConditionTerm::Constant(true), true),
+            ParameterBinding::default(),
+            FixedStateFrame::new(&state, &state, None, &snapshots),
+            Some(&anchor),
+            &surfaces,
+            SpecDefinitions::new(&predicates, &functions),
+            &theorems,
+            &[],
+            &[],
+            &[],
+        );
+        let (spelled, events) = crate::instrumentation::collect(|| {
+            root.available_surface_fact(&surfaces, Some(&anchor), &missing)
+        });
+        assert!(spelled.is_none(), "no state names the missing variable");
+        let walks = events
+            .iter()
+            .filter(|event| {
+                matches!(event,
+                    crate::instrumentation::VerificationEvent::OperationFinished { name, .. }
+                        if name == "simp premise surface at recorded snapshots"
+                )
+            })
+            .count();
+        assert!(
+            walks <= 1,
+            "size {size}: a completed history miss must not restart ({walks} walks)"
+        );
+        let spelled = root
+            .available_surface_fact(&surfaces, Some(&anchor), &named)
+            .expect("a named current value remains available");
+        assert_eq!(
+            root.lower_surface_proposition_direct(&spelled, "named control")
+                .unwrap(),
+            named
+        );
+        assert!(root.facts().contains(&missing));
+    }
+}
+
 fn same_block_offset_rewrite_work(
     pointer_history: usize,
     snapshot_count: usize,
