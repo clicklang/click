@@ -17286,8 +17286,8 @@ fn check_counted_pthread_whole_claim_expansion(fixture: &str, claim: &str) {
             "expanded create branches must not invoke planning"
         );
         let forged = expanded.replacen(
-            "have count(ticket(p)) == 1",
-            "have count(ticket(p)) == 0",
+            "have ((int32)count(ticket(p))) == 1",
+            "have ((int32)count(ticket(p))) == 0",
             1,
         );
         assert_ne!(forged, expanded);

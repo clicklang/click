@@ -1498,7 +1498,12 @@ fn expand_declared_resource_ensure_clause(
             resource_definitions,
         )?),
     };
-    clause.proof = expand_declared_resource_proof(clause.proof, resource_definitions)?;
+    let goal = match &clause.ensure {
+        Ensure::Proposition(proposition) => Some(proposition.clone()),
+        _ => None,
+    };
+    clause.proof =
+        expand_declared_resource_proof_of(clause.proof, goal.as_ref(), resource_definitions)?;
     Ok(clause)
 }
 
@@ -1560,16 +1565,67 @@ fn expand_declared_resource_proof(
     proof: SourceProof,
     resource_definitions: &DeclaredResourceScope,
 ) -> Result<SourceProof, ClickError> {
-    match proof {
-        SourceProof::Default => Ok(proof),
-        SourceProof::Tactic(_) => Ok(proof),
-        SourceProof::Script(tactics) => Ok(SourceProof::Script(
-            tactics
-                .into_iter()
-                .map(|tactic| expand_declared_resource_tactic(tactic, resource_definitions))
-                .collect::<Result<Vec<_>, _>>()?,
-        )),
+    expand_declared_resource_proof_of(proof, None, resource_definitions)
+}
+
+/// Expands a proof of `goal`. A name the script binds, an `intro()`
+/// variable or an `obtain` witness, has its type for constructor inference
+/// in the tactics after it, as a match arm's binder has in its arm.
+fn expand_declared_resource_proof_of(
+    proof: SourceProof,
+    goal: Option<&ClickProposition>,
+    resource_definitions: &DeclaredResourceScope,
+) -> Result<SourceProof, ClickError> {
+    let SourceProof::Script(tactics) = proof else {
+        return Ok(proof);
+    };
+    let constructors = &resource_definitions.constructors;
+    let mut goal = goal.cloned();
+    let mut bound = Vec::new();
+    let mut expanded = Vec::with_capacity(tactics.len());
+    let mut result = Ok(());
+    for tactic in tactics {
+        if let ProofTactic::LetSatisfy(obtain) = &tactic {
+            for (name, click_type) in &obtain.bindings {
+                bound.push((
+                    name.clone(),
+                    constructors.bind(name, Some(click_type.clone())),
+                ));
+            }
+        }
+        let introduced = match &tactic {
+            ProofTactic::Intro => Some(None),
+            ProofTactic::IntroAs(name) => Some(Some(name.clone())),
+            _ => None,
+        };
+        match expand_declared_resource_tactic(tactic, resource_definitions) {
+            Ok(tactic) => expanded.push(tactic),
+            Err(error) => {
+                result = Err(error);
+                break;
+            }
+        }
+        if let Some(rename) = introduced {
+            goal = match goal.take() {
+                Some(ClickProposition::ForAll {
+                    click_type,
+                    name,
+                    written_name,
+                    body,
+                }) => {
+                    let name = rename.unwrap_or_else(|| written_name.unwrap_or(name));
+                    bound.push((name.clone(), constructors.bind(&name, Some(click_type))));
+                    Some(*body)
+                }
+                Some(ClickProposition::Implies(_, consequent)) => Some(*consequent),
+                _ => None,
+            };
+        }
     }
+    for (name, previous) in bound.into_iter().rev() {
+        constructors.restore(&name, previous);
+    }
+    result.map(|()| SourceProof::Script(expanded))
 }
 
 /// Expands declared resources in the assertions of a join's `ensuring`
@@ -2382,13 +2438,16 @@ fn expand_declared_resource_tactic_with_nested_proofs(
     resource_definitions: &DeclaredResourceScope,
 ) -> Result<ProofTactic, ClickError> {
     match tactic {
-        ProofTactic::Have(have) => Ok(ProofTactic::Have(ProofHave {
-            proposition: expand_declared_resource_proposition(
-                have.proposition,
+        ProofTactic::Have(have) => {
+            let proposition =
+                expand_declared_resource_proposition(have.proposition, resource_definitions)?;
+            let proof = expand_declared_resource_proof_of(
+                have.proof,
+                Some(&proposition),
                 resource_definitions,
-            )?,
-            proof: expand_declared_resource_proof(have.proof, resource_definitions)?,
-        })),
+            )?;
+            Ok(ProofTactic::Have(ProofHave { proposition, proof }))
+        }
         ProofTactic::Open(open) => Ok(ProofTactic::Open(ProofOpen {
             resource: expand_declared_resource_clause(open.resource, resource_definitions)?,
             tactics: open

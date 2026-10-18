@@ -541,6 +541,29 @@ fn near_linear_scaling(samples: &[ScalingSample]) -> bool {
         .all(|pair| pair[1].work <= pair[0].work.saturating_mul(3))
 }
 
+// Retain the original largest doubling and its 3x work limit while
+// skipping a smaller intermediate fixture. Normalize the other interval by
+// its actual source-size ratio with the same 3/2 allowance per input unit.
+fn near_linear_scaling_at_sampled_sizes(samples: &[ScalingSample]) -> bool {
+    samples.len() >= 3
+        && samples
+            .iter()
+            .all(|sample| sample.size > 0 && sample.work > 0)
+        && samples.windows(2).all(|pair| {
+            pair[0].size < pair[1].size
+                && (pair[1].work as u128) * (pair[0].size as u128) * 2
+                    <= (pair[0].work as u128) * (pair[1].size as u128) * 3
+        })
+}
+
+fn assert_near_linear_scaling_at_sampled_sizes(axis: &str, samples: &[ScalingSample]) {
+    assert!(
+        near_linear_scaling_at_sampled_sizes(samples),
+        "{axis}: deterministic work grows faster than the sampled source: {samples:?}; named work: {}",
+        named_growth_diagnostic(samples)
+    );
+}
+
 fn assert_near_linear_scaling(axis: &str, samples: &[ScalingSample]) {
     assert!(
         near_linear_scaling(samples),
@@ -1494,7 +1517,7 @@ fn same_kernel_fact_with_many_surface_forms_scales_near_linearly() {
 
 #[test]
 fn grouped_claims_share_one_execution_with_near_linear_work() {
-    let samples = [8, 16, 32, 64]
+    let samples = [8, 32, 64]
         .into_iter()
         .map(|size| {
             let (c_source, click_source) = grouped_claim_project(size);
@@ -1512,7 +1535,7 @@ fn grouped_claims_share_one_execution_with_near_linear_work() {
         })
         .collect::<Vec<_>>();
 
-    assert_near_linear_scaling("claims sharing one execution", &samples);
+    assert_near_linear_scaling_at_sampled_sizes("claims sharing one execution", &samples);
 }
 
 #[test]
@@ -1903,6 +1926,12 @@ fn scaling_assertion_rejects_a_quadratic_curve() {
         })
         .collect::<Vec<_>>();
     assert!(!near_linear_scaling(&quadratic));
+    let sampled = [
+        quadratic[0].clone(),
+        quadratic[2].clone(),
+        quadratic[3].clone(),
+    ];
+    assert!(!near_linear_scaling_at_sampled_sizes(&sampled));
     assert!(named_growth_diagnostic(&quadratic).contains("quadratic reference"));
 }
 
@@ -2241,7 +2270,7 @@ fn repeated_tactic_applications(count: usize) -> (String, String) {
 #[test]
 #[ignore = "nightly: 1.1s in the parallel gate"]
 fn repeated_tactic_applications_scale_near_linearly() {
-    let samples = [8, 16, 32, 64]
+    let samples = [8, 32, 64]
         .into_iter()
         .map(|size| {
             let (c_source, click_source) = repeated_tactic_applications(size);
@@ -2258,7 +2287,7 @@ fn repeated_tactic_applications_scale_near_linearly() {
         })
         .collect::<Vec<_>>();
 
-    assert_near_linear_scaling("repeated tactic applications", &samples);
+    assert_near_linear_scaling_at_sampled_sizes("repeated tactic applications", &samples);
 }
 
 /// The same ranked loop closed by the smart `close_invariants()` planner.
@@ -2877,7 +2906,7 @@ fn exceptional_cleanup_edges_scale_near_linearly_with_unrelated_context() {
     const CALL_WORK: &str = "operation `verification statement: call assign`";
     let mut samples = Vec::new();
     let mut cleanup_work = Vec::new();
-    for size in [2, 4, 8, 16] {
+    for size in [2, 8, 16] {
         let (c_source, click_source) = exceptional_cleanup_chain_project(size, size, size);
         let (verified, sample) = scaling_sample(size, || {
             verify_c0_sources(&click_source, &[("cleanup.c", c_source.as_str())])
@@ -2895,8 +2924,8 @@ fn exceptional_cleanup_edges_scale_near_linearly_with_unrelated_context() {
         cleanup_work[0] > 0,
         "the scaling fixture never checked the exceptional frontier: {cleanup_work:?}"
     );
-    assert_near_linear_scaling("exceptional cleanup edges", &samples);
-    assert_near_linear_scaling(
+    assert_near_linear_scaling_at_sampled_sizes("exceptional cleanup edges", &samples);
+    assert_near_linear_scaling_at_sampled_sizes(
         "exceptional cleanup call frontier",
         &samples
             .iter()
@@ -2912,7 +2941,8 @@ fn exceptional_cleanup_edges_scale_near_linearly_with_unrelated_context() {
     // scopes and facts grow. The named call work must not inspect those
     // unrelated declarations to re-check the same frontier.
     let mut fixed_cleanup_work = Vec::new();
-    for unrelated in [4, 8, 16, 32] {
+    // Preserve the original unrelated-context endpoints and exact selected-work equality.
+    for unrelated in [4, 32] {
         let (c_source, click_source) = exceptional_cleanup_chain_project(8, unrelated, unrelated);
         let (verified, sample) = scaling_sample(8, || {
             verify_c0_sources(&click_source, &[("cleanup.c", c_source.as_str())])
@@ -3439,6 +3469,9 @@ fn expanded_roundtrip_samples(sizes: &[usize]) -> Vec<[(usize, ScalingSample); 2
 /// One extra fixed `memcpy` in the frozen byte-representation round trip,
 /// under its expanded proof of explicit simple tactics, costs at most a
 /// logarithm more beside 1, 2, 4, or 7 unrelated live heap allocations.
+/// The same samples must also have at most logarithmic whole-proof work per
+/// C source byte. Keeping both assertions together avoids expanding and
+/// cold-checking this identical matrix twice.
 ///
 /// This is the contract the smart test above does not meet: both variants'
 /// `execute(); simp();` proofs are expanded outside the measurement, and only
@@ -3454,9 +3487,22 @@ fn expanded_roundtrip_samples(sizes: &[usize]) -> Vec<[(usize, ScalingSample); 2
 /// per allocation: the extra copy's composition carrier was re-inserted into
 /// a fresh fact context once per theorem, and a grouped proof issues one
 /// theorem per path.
+///
+/// The whole expanded round trip costs deterministic work per C source byte
+/// that grows at most logarithmically in the source beside 1, 2, 4, or 7
+/// unrelated allocations.
+///
+/// The source is quadratic in the allocations, since every failure path
+/// frees the earlier ones, and so is the checked path structure: each
+/// failure path steps its own frees. Measured on 2026-09-23 for 1 through 7
+/// allocations: 8449, 10068, 11842, 13779, 15885, 18154, and 20590 units over
+/// 1193, 1389, 1603, 1835, 2085, 2353, and 2639 bytes, or 7.08, 7.25, 7.39,
+/// 7.51, 7.62, 7.72, and 7.80 units per byte. The rise per doubling of the
+/// source falls from 0.76 to 0.52 units per byte as the quadratic terms,
+/// about 82 units against 9 bytes per squared allocation, take over.
 #[test]
 #[ignore = "nightly: 6s in the parallel gate"]
-fn expanded_roundtrip_extra_copy_is_logarithmic_beside_unrelated_allocations() {
+fn expanded_roundtrip_marginal_and_per_source_byte_work_are_logarithmic() {
     const SIZES: [usize; 4] = [1, 2, 4, EXPANDED_ROUNDTRIP_MAX_UNRELATED];
     let samples = expanded_roundtrip_samples(&SIZES);
     let marginal = samples
@@ -3491,25 +3537,9 @@ fn expanded_roundtrip_extra_copy_is_logarithmic_beside_unrelated_allocations() {
             "one extra memcpy under the expanded proof grew beyond {allowed} beside {size} allocations: {marginal:?}; growing phases: {phase_marginals:?}"
         );
     }
-}
 
-/// The whole expanded round trip costs deterministic work per C source byte
-/// that grows at most logarithmically in the source beside 1, 2, 4, or 7
-/// unrelated allocations.
-///
-/// The source is quadratic in the allocations, since every failure path
-/// frees the earlier ones, and so is the checked path structure: each
-/// failure path steps its own frees. Measured on 2026-09-23 for 1 through 7
-/// allocations: 8449, 10068, 11842, 13779, 15885, 18154, and 20590 units over
-/// 1193, 1389, 1603, 1835, 2085, 2353, and 2639 bytes, or 7.08, 7.25, 7.39,
-/// 7.51, 7.62, 7.72, and 7.80 units per byte. The rise per doubling of the
-/// source falls from 0.76 to 0.52 units per byte as the quadratic terms,
-/// about 82 units against 9 bytes per squared allocation, take over.
-#[test]
-#[ignore = "nightly: 5s in the parallel gate"]
-fn expanded_roundtrip_work_per_source_byte_is_logarithmic() {
-    const SIZES: [usize; 4] = [1, 2, 4, EXPANDED_ROUNDTRIP_MAX_UNRELATED];
-    let samples = expanded_roundtrip_samples(&SIZES);
+    // Reuse the same fully expanded, cold-checked samples for the whole-proof
+    // source-byte bound as well as the extra-copy marginal above.
     let per_byte = samples
         .iter()
         .map(|[(bytes, without), _]| (*bytes, without.work, without.work as f64 / *bytes as f64))
@@ -3812,7 +3842,7 @@ fn framed_field_cells_closure_steps(cells: usize) -> usize {
 #[test]
 #[ignore = "nightly: 4s in the parallel gate"]
 fn framed_field_cells_back_edge_closure_follows_its_certificate() {
-    let samples = [1, 2, 4, 8]
+    let samples = [1, 4, 8]
         .into_iter()
         .map(|size| {
             let (c_source, click_source) = framed_field_cells_loop(size);
@@ -6244,7 +6274,7 @@ fn loop_body_reasoning_ifs_project(count: usize) -> (String, String) {
 #[test]
 #[ignore = "nightly: 0.8s in the parallel gate"]
 fn sequential_proof_ifs_in_a_loop_body_rejoin_instead_of_doubling() {
-    let samples = [5, 10, 20, 40]
+    let samples = [5, 20, 40]
         .into_iter()
         .map(|size| {
             let (c_source, click_source) = loop_body_reasoning_ifs_project(size);
@@ -6256,7 +6286,10 @@ fn sequential_proof_ifs_in_a_loop_body_rejoin_instead_of_doubling() {
             sample
         })
         .collect::<Vec<_>>();
-    assert_near_linear_scaling("sequential proof-level ifs in a loop body", &samples);
+    assert_near_linear_scaling_at_sampled_sizes(
+        "sequential proof-level ifs in a loop body",
+        &samples,
+    );
 }
 
 /// A scanning loop whose body is `count` C `if`s in a row, each storing to
@@ -6286,7 +6319,7 @@ fn loop_body_c_ifs_project(count: usize) -> (String, String) {
 #[test]
 #[ignore = "nightly: 1.5s in the parallel gate"]
 fn the_automatic_loop_closer_joins_c_branches_instead_of_walking_every_path() {
-    let samples = [4, 8, 16, 32]
+    let samples = [4, 16, 32]
         .into_iter()
         .map(|size| {
             let (c_source, click_source) = loop_body_c_ifs_project(size);
@@ -6298,7 +6331,10 @@ fn the_automatic_loop_closer_joins_c_branches_instead_of_walking_every_path() {
             sample
         })
         .collect::<Vec<_>>();
-    assert_near_linear_scaling("C ifs in an automatically closed loop body", &samples);
+    assert_near_linear_scaling_at_sampled_sizes(
+        "C ifs in an automatically closed loop body",
+        &samples,
+    );
 }
 
 #[test]

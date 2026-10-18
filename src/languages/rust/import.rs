@@ -1,9 +1,8 @@
 //! Refresh runs the pinned exporter; ordinary loading only checks locked inputs.
 use super::schema::RustExport;
+use crate::languages::inputs::{Leaf, hex_digest};
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
 use std::fs;
-use std::io::Read;
 use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
 
@@ -127,9 +126,6 @@ struct Lock {
     #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
     source_files: std::collections::BTreeMap<String, String>,
 }
-fn digest(bytes: &[u8]) -> String {
-    format!("{:x}", Sha256::digest(bytes))
-}
 #[cfg(test)]
 fn import_identity(
     config: &str,
@@ -157,7 +153,7 @@ fn import_identity_for(
     driver: &str,
 ) -> String {
     let profile = super::profile::get();
-    digest(
+    hex_digest(
         format!(
             "{}\n{config}\n{source}\n{exporter}\n{artifact}\n{driver}\n{}",
             profile_identity,
@@ -176,7 +172,7 @@ fn release_identity(
     artifact: &str,
     frontend: &super::profile::FrontendIdentity,
 ) -> String {
-    digest(
+    hex_digest(
         format!(
             "click-rust-lock-v9\n{config}\n{source}\n{artifact}\n{}",
             serde_json::to_string(frontend).unwrap()
@@ -218,29 +214,9 @@ impl Lock {
     }
 }
 
+/// Reads a Rust input or artifact, which must itself be a regular file.
 fn read(path: &Path, limit: usize) -> Result<Vec<u8>, String> {
-    if !fs::symlink_metadata(path)
-        .map_err(|e| format!("read `{}`: {e}", path.display()))?
-        .file_type()
-        .is_file()
-    {
-        return Err(format!("`{}` must be a regular file", path.display()));
-    }
-    let f = fs::File::open(path).map_err(|e| e.to_string())?;
-    if !f.metadata().map_err(|e| e.to_string())?.is_file() {
-        return Err("Rust input changed file type".into());
-    }
-    let mut bytes = Vec::new();
-    f.take(limit as u64 + 1)
-        .read_to_end(&mut bytes)
-        .map_err(|e| e.to_string())?;
-    if bytes.len() > limit {
-        return Err(format!(
-            "`{}` exceeds its {limit}-byte limit",
-            path.display()
-        ));
-    }
-    Ok(bytes)
+    crate::languages::inputs::read_regular(path, limit, "Rust input", Leaf::Refuse)
 }
 fn local_file(root: &Path, name: &str) -> Result<PathBuf, String> {
     let path = Path::new(name);
@@ -275,13 +251,13 @@ fn sources(c: &Config, root: &Path) -> Result<super::crate_inputs::SourceFiles, 
 }
 fn source_digest(c: &Config, files: &super::crate_inputs::SourceFiles) -> String {
     if c.crate_config.is_none() {
-        return digest(&files[&c.source]);
+        return hex_digest(&files[&c.source]);
     }
     let hashes: Vec<_> = files
         .iter()
-        .map(|(name, bytes)| (name, digest(bytes)))
+        .map(|(name, bytes)| (name, hex_digest(bytes)))
         .collect();
-    digest(
+    hex_digest(
         format!(
             "{}\n{}",
             super::crate_inputs::PROFILE_ID,
@@ -317,7 +293,7 @@ struct Inputs<'a> {
     /// The directory crate files are relative to.
     root: &'a Path,
     source: &'a Path,
-    /// The artifact and lock outputs, which the exporter must not be.
+    /// The artifact and lock outputs, which no input may be.
     outputs: [PathBuf; 2],
 }
 
@@ -333,11 +309,29 @@ fn extract(
     let root = inputs.root;
     let exporter = &runtime.executable;
     let source_files = sources(c, root)?;
-    let exporter_bytes = read(exporter, 128 << 20)?;
     let driver = &runtime.driver;
-    if inputs.outputs.contains(driver) {
-        return Err("Charon driver must differ from artifact/lock outputs".into());
-    }
+    let crate_files = source_files
+        .keys()
+        .map(|name| root.join(name))
+        .collect::<Vec<_>>();
+    crate::languages::inputs::reject_output_collisions(
+        &[
+            ("Rust artifact", &inputs.outputs[0]),
+            ("Rust lock", &inputs.outputs[1]),
+        ],
+        [
+            ("exporter", exporter.as_path()),
+            ("Charon driver", driver.as_path()),
+            ("source", inputs.source),
+        ]
+        .into_iter()
+        .chain(
+            crate_files
+                .iter()
+                .map(|path| ("crate file", path.as_path())),
+        ),
+    )?;
+    let exporter_bytes = read(exporter, 128 << 20)?;
     let driver_bytes = read(driver, 128 << 20)?;
     let output_bytes = super::charon::extract_crate(
         runtime,
@@ -358,7 +352,7 @@ fn extract(
     }
     let config_hash = inputs.config_digest.clone();
     let source_hash = source_digest(c, &source_files);
-    let artifact_hash = digest(&output_bytes);
+    let artifact_hash = hex_digest(&output_bytes);
     let frontend = super::profile::FrontendIdentity::current();
     let lock = Lock {
         schema: RELEASE_LOCK_SCHEMA,
@@ -385,8 +379,12 @@ fn load_locked(
     let source_files = sources(c, root)?;
     if lock.source != source_digest(c, &source_files)
         && let Some(name) = lock.source_files.iter().find_map(|(name, expected)| {
-            (source_files.get(name).map(|bytes| digest(bytes)).as_ref() != Some(expected))
-                .then_some(name)
+            (source_files
+                .get(name)
+                .map(|bytes| hex_digest(bytes))
+                .as_ref()
+                != Some(expected))
+            .then_some(name)
         })
     {
         return Err(format!(
@@ -397,7 +395,7 @@ fn load_locked(
     if !lock.identity_matches()
         || lock.config != config_digest
         || lock.source != source_digest(c, &source_files)
-        || lock.artifact != digest(&artifact)
+        || lock.artifact != hex_digest(&artifact)
     {
         return Err("Rust import lock differs from its inputs; refresh it".into());
     }
@@ -478,10 +476,6 @@ pub(crate) fn prepare_unit(
 ) -> Result<(serde_json::Value, Vec<(PathBuf, Vec<u8>)>), String> {
     let (config, root, source) = unit.config()?;
     let runtime = super::runtime::resolve(None)?;
-    let exporter = &runtime.executable;
-    if exporter == &source || exporter == &unit.artifact || exporter == &unit.lock_path {
-        return Err("Rust exporter must differ from source/artifact/lock".into());
-    }
     let inputs = Inputs {
         config: &config,
         config_digest: unit.unit_digest.clone(),
@@ -496,7 +490,7 @@ pub(crate) fn prepare_unit(
     })?;
     lock.source_files = sources(&config, &root)?
         .iter()
-        .map(|(name, bytes)| (name.clone(), digest(bytes)))
+        .map(|(name, bytes)| (name.clone(), hex_digest(bytes)))
         .collect();
     let value = serde_json::to_value(&lock).map_err(|e| e.to_string())?;
     Ok((value, vec![(unit.artifact.clone(), artifact)]))
@@ -566,7 +560,7 @@ mod unit_tests {
         );
         // The alias changes only the profile name: the input binding remains exact.
         lock.identity = old;
-        lock.exporter = digest(b"different exporter");
+        lock.exporter = hex_digest(b"different exporter");
         assert!(
             load_unit(&unit, &serde_json::to_value(&lock).unwrap())
                 .unwrap_err()
@@ -662,8 +656,11 @@ mod unit_tests {
         let (config, unit_root, _) = unit.config().unwrap();
         let files = sources(&config, &unit_root).unwrap();
         let source = source_digest(&config, &files);
-        let (exporter, driver, artifact_hash) =
-            (digest(b"charon"), digest(b"driver"), digest(&artifact));
+        let (exporter, driver, artifact_hash) = (
+            hex_digest(b"charon"),
+            hex_digest(b"driver"),
+            hex_digest(&artifact),
+        );
         let lock = Lock {
             schema: LEGACY_LOCK_SCHEMA,
             frontend: None,
@@ -681,7 +678,7 @@ mod unit_tests {
             charon_driver: Some(driver),
             source_files: files
                 .iter()
-                .map(|(name, bytes)| (name.clone(), digest(bytes)))
+                .map(|(name, bytes)| (name.clone(), hex_digest(bytes)))
                 .collect(),
         };
         fs::write(
