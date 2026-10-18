@@ -114,6 +114,47 @@ pub(in crate::surface) fn resolve_click_project_with_layouts(
             .filter_map(|imported| locals.get(imported))
             .flat_map(|file| file.resource_definitions().iter())
             .collect::<Vec<_>>();
+        let mut imported_declarations = crate::surface::names::ImportedDeclarationNames::default();
+        for file in imported_ids
+            .iter()
+            .filter_map(|imported| locals.get(imported))
+        {
+            imported_declarations.theorems.extend(
+                file.theorem_definitions()
+                    .iter()
+                    .map(|theorem| theorem.name().to_string()),
+            );
+            imported_declarations.others.extend(
+                file.click_function_definitions()
+                    .iter()
+                    .map(|function| function.name().to_string())
+                    .chain(
+                        file.predicate_definitions()
+                            .iter()
+                            .map(|predicate| predicate.name().to_string()),
+                    )
+                    .chain(
+                        file.resource_definitions()
+                            .iter()
+                            .map(|resource| resource.name().to_string()),
+                    )
+                    .chain(
+                        file.algebraic_type_definitions()
+                            .iter()
+                            .map(|enumeration| enumeration.name().to_string()),
+                    )
+                    .chain(
+                        file.tactic_definitions()
+                            .iter()
+                            .map(|tactic| tactic.name().to_string()),
+                    )
+                    .chain(
+                        file.contract_definitions()
+                            .iter()
+                            .map(|contract| contract.name().to_string()),
+                    ),
+            );
+        }
         // The entry module is parsed with the frontend's library contracts
         // after its own text, so its positions are unchanged.
         let entry_source;
@@ -132,6 +173,7 @@ pub(in crate::surface) fn resolve_click_project_with_layouts(
             &imported_function_names,
             &imported_callees,
             &imported_resources,
+            &imported_declarations,
             layouts.clone(),
         )?;
         if local.imports().len() != module.imports().len() {

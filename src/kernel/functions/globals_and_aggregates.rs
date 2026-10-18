@@ -1168,7 +1168,6 @@ pub(super) fn aggregate_argument_read_refusal(
             &ExecutionFacts::new(),
             &[],
             assumptions,
-            state.resources(),
         ) {
             return Some(CFunctionOutcome::UndefinedBehavior(refusal));
         }
