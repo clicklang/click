@@ -515,8 +515,13 @@ requires ...; ensures result == x + x; }`, and `requires Doubling(f);` gives
 a call through `f` that contract, and a function passing its own `f` on
 needs the contract too. Passing a function item, `apply(twice, x)`,
 reifies it as a pointer; the caller's proof needs `twice` to meet the
-contract, which Click checks at the call from `twice`'s own contract, or an
-`executes` theorem shows. The importer reads Charon's `CastKind::FnPtr` of a
+contract, which Click checks at the call from `twice`'s own contract. When
+the two contracts agree only by a proof, a refinement theorem shows it,
+naming the crate function as a value by its path, as Rust passes it:
+`theorem twice_is_doubling() { ensures Doubling(function_pointers::twice) by
+{ unfold(Doubling); simp(); } }`, and the caller's proof applies it,
+`apply(twice_is_doubling());`. The diagnostic that refuses the call suggests
+that theorem. The importer reads Charon's `CastKind::FnPtr` of a
 crate function item and its `FnOperand::Dynamic` call through a local, and
 refuses unsafe or foreign function pointers and pointers of non-scalar
 parameters

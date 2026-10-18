@@ -1,7 +1,8 @@
 # Click language reference
 
 This page is the complete reference for Surface Click, the language of `.click`
-sidecar files. Click files are sidecar specifications for C sources.
+sidecar files. Click files are sidecar specifications for C, C++ and Rust
+sources.
 
 They may begin with local specification imports such as
 `import "../models/common.click";`, and Click library imports such as
@@ -44,6 +45,93 @@ this page covers each form's full rules and edge cases.
 | `theorem t() { requires P; ensures Q; }` | A pure theorem | [Pure theorems](#pure-theorems) |
 | `extern int32 g(int32 x) { ... }` | A contract for a C function outside the verified sources | [External function contracts](c.md#external-function-contracts) |
 | `tactic name(...) { ... }` | A user-defined tactic | [User-defined tactics](#user-defined-tactics) |
+
+## Contract declarations
+
+A contract is a function declaration written as the verified source's language
+writes it, followed by a clause block. A prefix says what it declares:
+
+| Prefix | Declares | Proof |
+| --- | --- | --- |
+| none | a function in the verified sources | `by ...`, default `auto` |
+| `extern` | a function outside the verified sources, trusted | none allowed |
+| `contract` | a named function type, an interface, not a function | none allowed |
+
+The head has exactly the declaration's types, checked against the source
+(`long` is not `long long`); the clauses use Click's types and names in every
+language. A `contract` names the type a callback parameter's contract has,
+`requires Doubling(f);`, and a function value meets it from its own contract
+or by a refinement theorem. In C, the head is a C declaration:
+
+<!-- verified-example: mdtests/c_named_function_contract_refinement_theorem.md -->
+```click
+contract void MakePositive(int32 active, int32* cell) {
+    owns optional_cell(active, cell);
+    ensures active != 0 implies cell[0] > 0;
+}
+```
+
+In C++, the head is a C++ declaration, with qualified members, implicit
+`this` and references:
+
+<!-- verified-example: mdtests/cpp_lambda_named_contract.md -->
+```click
+contract int Doubling(int x) {
+    requires 0 <= x and x <= 1000;
+    ensures result == x + x;
+}
+int apply(int (*f)(int), int x) {
+    requires Doubling(f);
+    requires 0 <= x and x <= 1000;
+    ensures result == x + x;
+} by { execute(); simp(); }
+```
+
+In Rust, it is a Rust item, with module paths and `impl` blocks. A
+refinement theorem names a crate function as a value by its path, as Rust
+passes it, where C writes `&f`:
+
+<!-- verified-example: tests/fixtures/rust-verification/contract_declarations.click -->
+```click
+verifying "callback.rs";
+
+contract fn Doubling(x: i32) -> i32 {
+    requires 0 <= x and x <= 1000;
+    ensures result == x + x;
+}
+
+fn function_pointers::twice(x: i32) -> i32 {
+    requires 0 <= x and x <= 1000;
+    ensures result == x + x;
+} by { execute(); simp(); }
+
+fn function_pointers::apply(f: fn(i32) -> i32, x: i32) -> i32 {
+    requires Doubling(f);
+    requires 0 <= x and x <= 1000;
+    ensures result == x + x;
+} by { execute(); simp(); }
+
+theorem twice_is_doubling() {
+    ensures Doubling(function_pointers::twice) by {
+        unfold(Doubling);
+        simp();
+    }
+}
+
+fn function_pointers::caller(x: i32) -> i32 {
+    requires 0 <= x and x <= 1000;
+    ensures result == x + x;
+} by { apply(twice_is_doubling()); execute(); simp(); }
+```
+
+An `extern` head is written the same way in each language:
+`extern int32 g(int32 x)` in C (`mdtests/external_function_contract_call.md`),
+`extern int ministd::Box::get() const` in C++
+(`tests/cpp_import.rs::axiomatic_member_function_extern_heads_are_cpp_declarations`),
+and `extern fn extern_functions::clamp_reading(raw: i32) -> i32` in Rust
+([`design/charon-trial/extern-functions`](https://github.com/clicklang/click/blob/master/design/charon-trial/extern-functions/ffi.click)).
+The Rust spellings are in [the Rust reference](../rust.md), the C ones in
+[C](c.md).
 
 ## File shape
 

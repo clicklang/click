@@ -16,6 +16,57 @@ fn trait_instance_name(path: &[String], arguments: &[String]) -> String {
     name
 }
 
+/// A Rust sidecar's crate functions named as values, `Doubling(f)` with `f`
+/// written `crate_name::twice`, as the address of the function the importer
+/// names: `&` and the importer name, which reads as C's `&twice`. A path
+/// names a function value only where it is no call, `step` callee or item
+/// head (none followed by `(`), no type (none followed by `<`) and no
+/// prefix of a longer path; and only when the import has the function.
+pub(super) fn rewrite_function_values<V>(
+    tokens: Vec<Token>,
+    positions: Vec<SourcePosition>,
+    functions: &BTreeMap<String, V>,
+) -> (Vec<Token>, Vec<SourcePosition>) {
+    let mut out_tokens = Vec::with_capacity(tokens.len());
+    let mut out_positions = Vec::with_capacity(positions.len());
+    let mut index = 0;
+    while index < tokens.len() {
+        if let Some(Token::Ident(first)) = tokens.get(index)
+            && tokens.get(index + 1) == Some(&Token::ColonColon)
+            && !matches!(
+                index.checked_sub(1).map(|at| &tokens[at]),
+                Some(Token::ColonColon)
+            )
+        {
+            let mut segments = vec![first.as_str()];
+            let mut end = index + 1;
+            while tokens.get(end) == Some(&Token::ColonColon)
+                && let Some(Token::Ident(segment)) = tokens.get(end + 1)
+            {
+                segments.push(segment);
+                end += 2;
+            }
+            let name = crate::languages::rust::names::path_name(&segments);
+            if !matches!(
+                tokens.get(end),
+                Some(Token::LParen | Token::LessThan | Token::ColonColon)
+            ) && functions.contains_key(&name)
+            {
+                out_tokens.push(Token::Amp);
+                out_positions.push(positions[index].clone());
+                out_tokens.push(Token::Ident(name));
+                out_positions.push(positions[index].clone());
+                index = end;
+                continue;
+            }
+        }
+        out_tokens.push(tokens[index].clone());
+        out_positions.push(positions[index].clone());
+        index += 1;
+    }
+    (out_tokens, out_positions)
+}
+
 impl Parser {
     /// A Rust sidecar states its signature as Rust does:
     /// `fn name(a: T, b: U) -> R`, with references, slices, and methods in

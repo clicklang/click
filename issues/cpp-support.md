@@ -407,10 +407,9 @@ them. Concurrency belongs to
 [concurrency-and-atomics.md](concurrency-and-atomics.md). These are deferred
 until a selected proof needs a precise slice of them:
 
-- virtual dispatch beyond the reference-only slice of
-  [contract-declaration-syntax.md](contract-declaration-syntax.md), step 4:
-  mutable object state, nested overrides, polymorphic construction and
-  destruction;
+- virtual dispatch beyond the delivered method interfaces in
+  [coverage.md](../docs/reference/coverage.md); generic object state is in
+  [generic-stack.md](generic-stack.md);
 - general inheritance and subobject identity;
 - RTTI;
 - arbitrary standard-library verification;

@@ -2422,6 +2422,19 @@ fn rust_unsigned_arithmetic_and_expansion_verify() {
 }
 
 /// A method's contract sits in an `impl` block and its receiver is `self`.
+/// The language reference's Rust contract declarations: a `contract fn`, a
+/// crate function meeting it by a refinement theorem that names the function
+/// as a value, and a callback under it.
+#[test]
+fn rust_sidecar_contract_declarations_verify() {
+    let p = Project::from_fixture("design/charon-trial/function-pointers");
+    let sidecar = include_str!("fixtures/rust-verification/contract_declarations.click");
+    fs::write(p.root.join("borrow.click"), sidecar).unwrap();
+    let prepared = p.prepared().unwrap();
+    C0VerificationSession::new_program_prepared(sidecar, &prepared)
+        .unwrap_or_else(|error| panic!("{error:?}"));
+}
+
 /// This is the contract `examples/rust-field-borrow` states for the free
 /// function `Guard_drop(struct Guard* self)`.
 #[test]

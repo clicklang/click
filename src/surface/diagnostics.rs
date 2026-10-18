@@ -600,6 +600,17 @@ pub(super) fn describe_pure_fact_with_environment(
     ) else {
         return description;
     };
+    // A Rust sidecar names a crate function as a value by its path, and the
+    // theorem by the function's own name.
+    let skeleton = match crate::languages::rust::names::rust_display_name(target) {
+        Some(path) => {
+            let own = path.rsplit("::").next().unwrap_or(&path).to_string();
+            skeleton
+                .replace(&format!("&{target}"), &path)
+                .replace(&format!("{target}_is_"), &format!("{own}_is_"))
+        }
+        None => skeleton,
+    };
     format!(
         "function `{target}` does not satisfy named contract `{contract}` automatically;\nprove it explicitly:\n{skeleton}"
     )
