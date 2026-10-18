@@ -281,8 +281,13 @@ impl Gen {
             SpecAlgebraicExpressionNode::ResourceField(self.projection())
         } else {
             let d = depth - 1;
-            match self.pick(6) {
+            match self.pick(7) {
                 0 => SpecAlgebraicExpressionNode::Variable(Variable(900_010)),
+                6 => SpecAlgebraicExpressionNode::If {
+                    condition: Box::new(self.prop(d)),
+                    then_branch: Box::new(self.alg(d)),
+                    else_branch: Box::new(self.alg(d)),
+                },
                 1 => SpecAlgebraicExpressionNode::Constructor {
                     variant: "One".into(),
                     fields: vec![match self.pick(3) {

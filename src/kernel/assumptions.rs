@@ -2296,6 +2296,15 @@ fn collect_algebraic_memory_loads(
             let _ = (arguments, current_memory, loads, seen_integers);
             Err("opaque algebraic function may hide a current memory load".into())
         }
+        AlgebraicTermNode::If {
+            condition,
+            then_term,
+            else_term,
+        } => {
+            collect_condition_memory_loads(condition, current_memory, loads, seen_integers)?;
+            collect_algebraic_memory_loads(then_term, current_memory, loads, seen_integers)?;
+            collect_algebraic_memory_loads(else_term, current_memory, loads, seen_integers)
+        }
     }
 }
 
