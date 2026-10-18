@@ -4506,9 +4506,8 @@ impl<'a> Proof<'a> {
             {
                 return Ok(Some(proof));
             }
-            match self.search_fixed_state_fact_transport(&source, surface_goal, std::iter::empty())
-            {
-                Ok(proof) if proof.is_complete() => return Ok(Some(proof)),
+            match self.try_fixed_state_fact_transport(&source, surface_goal, std::iter::empty()) {
+                Ok(Some(proof)) if proof.is_complete() => return Ok(Some(proof)),
                 Ok(_) => {}
                 Err(_) => {
                     check_verification_deadline()?;
@@ -4551,12 +4550,12 @@ impl<'a> Proof<'a> {
                 selector,
                 proposition: Box::new(surface_goal.clone()),
             };
-            match self.search_fixed_state_fact_transport(
+            match self.try_fixed_state_fact_transport(
                 &source,
                 surface_goal,
                 std::iter::once(source.clone()),
             ) {
-                Ok(proof) if proof.is_complete() => return Ok(Some(proof)),
+                Ok(Some(proof)) if proof.is_complete() => return Ok(Some(proof)),
                 Ok(_) => {}
                 Err(_) => {
                     check_verification_deadline()?;
@@ -4601,12 +4600,12 @@ impl<'a> Proof<'a> {
         else {
             return Ok(None);
         };
-        match self.search_fixed_state_fact_transport(
+        match self.try_fixed_state_fact_transport(
             &full_surface,
             surface_goal,
             std::iter::once(full_surface.clone()),
         ) {
-            Ok(proof) if proof.is_complete() => Ok(Some(proof)),
+            Ok(Some(proof)) if proof.is_complete() => Ok(Some(proof)),
             Ok(_) => Ok(None),
             Err(_) => {
                 check_verification_deadline()?;
@@ -4683,9 +4682,8 @@ impl<'a> Proof<'a> {
                 selector,
                 proposition: Box::new(reflexive.clone()),
             };
-            match self.search_fixed_state_fact_transport(&source, surface_goal, std::iter::empty())
-            {
-                Ok(proof) if proof.is_complete() => return Ok(Some(proof)),
+            match self.try_fixed_state_fact_transport(&source, surface_goal, std::iter::empty()) {
+                Ok(Some(proof)) if proof.is_complete() => return Ok(Some(proof)),
                 Ok(_) => {}
                 Err(_) => check_verification_deadline()?,
             }
@@ -4778,12 +4776,12 @@ impl<'a> Proof<'a> {
                 && let Some(surface_goal) = introduced.surface_goal()
                 && let Some(source) = old_reflexive_transport_source(surface_goal)
             {
-                match introduced.search_fixed_state_fact_transport(
+                match introduced.try_fixed_state_fact_transport(
                     &source,
                     surface_goal,
                     conjuncts.iter().cloned(),
                 ) {
-                    Ok(transported) if transported.is_complete() => {
+                    Ok(Some(transported)) if transported.is_complete() => {
                         return Ok(Some(transported));
                     }
                     Ok(_) => {}
@@ -7798,13 +7796,12 @@ impl<'a> Proof<'a> {
                     }
                     transport_surfaces.insert(0, source.clone());
                     let target = self.surface_goal()?.clone();
-                    match instantiated_proof.search_fact_transport_from_candidates(
+                    match instantiated_proof.try_fact_transport_from_candidates(
                         &source,
                         &target,
                         transport_surfaces,
-                        "indexed universal conclusion transport",
                     ) {
-                        Ok(transported) if transported.focused_discharged() => {
+                        Ok(Some(transported)) if transported.focused_discharged() => {
                             return Some(transported);
                         }
                         Ok(_) | Err(_) => {}
@@ -7986,14 +7983,10 @@ impl<'a> Proof<'a> {
             return None;
         };
         let candidates = std::iter::once(anchored_candidate.clone()).chain(guard_surfaces);
-        let transported =
-            match proof.search_fixed_state_fact_transport(&source, &target, candidates) {
-                Ok(transported) => transported,
-                Err(error) => {
-                    let _ = error;
-                    return None;
-                }
-            };
+        let transported = match proof.try_fixed_state_fact_transport(&source, &target, candidates) {
+            Ok(Some(transported)) => transported,
+            Ok(None) | Err(_) => return None,
+        };
         if transported.is_complete() {
             return Some(transported);
         }
