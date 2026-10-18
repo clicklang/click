@@ -7688,9 +7688,11 @@ impl Parser {
             | ContractExpression::Multiply(left, right) => {
                 self.has_pointer_operand(left) || self.has_pointer_operand(right)
             }
-            ContractExpression::Negate(inner) | ContractExpression::Old(inner) => {
-                self.has_pointer_operand(inner)
-            }
+            ContractExpression::Negate(inner)
+            | ContractExpression::Old(inner)
+            | ContractExpression::At {
+                expression: inner, ..
+            } => self.has_pointer_operand(inner),
             ContractExpression::CBinding(name)
             | ContractExpression::CFragment(CExpression::Variable(name)) => self
                 .names

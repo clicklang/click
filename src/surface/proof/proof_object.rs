@@ -1165,14 +1165,25 @@ pub(in crate::surface::proof) fn register_recorded_snapshot_names(
 }
 
 /// The most recent recorded snapshots an `at(...)` can cite, oldest first,
-/// with the point each one is spelled by. Bounded by
-/// `NAMED_SNAPSHOT_LIMIT`; each state shares its persistent storage.
+/// then the proof's older marks, with the point each one is spelled by.
+/// Each part is bounded by `NAMED_SNAPSHOT_LIMIT`; each state shares its
+/// persistent storage.
 fn citable_snapshots(snapshots: &crate::surface::RecordedSnapshots) -> Vec<(String, CState)> {
     use crate::surface::{CodeRegionRef, ProgramPointRef, SnapshotSelector};
-    snapshots
-        .recent(NAMED_SNAPSHOT_LIMIT)
+    let recent = snapshots.recent(NAMED_SNAPSHOT_LIMIT);
+    // The proof's own marks stay citable however many statements ran since:
+    // a long loop body pushes `mark iteration` out of the recent window, and
+    // the iteration-entry values only it names would print as `<unnamed>`.
+    // They come last, so a name the recent window gives still wins.
+    let marks = snapshots
+        .marks(NAMED_SNAPSHOT_LIMIT)
+        .into_iter()
+        .filter(|(selector, _)| !recent.iter().any(|(known, _)| known == selector))
+        .collect::<Vec<_>>();
+    recent
         .into_iter()
         .rev()
+        .chain(marks)
         // Only points `at(...)` resolves from recorded snapshots.
         .filter(|(selector, _)| match selector {
             SnapshotSelector::Mark(_) => true,
@@ -1210,7 +1221,9 @@ fn register_snapshot_names(
             {
                 continue;
             }
-            match value {
+            // A `usize` or `uintptr_t` local is a pointer integer; its
+            // numeric value is the scalar the local held.
+            match value.numeric_value() {
                 crate::kernel::arithmetic_c_value!(Bitvector32Term::Variable(variable)) => {
                     // A read of a memory a recorded point names is spelled as
                     // that read, `old(g[0])`, which says where the value came
