@@ -2453,6 +2453,7 @@ fn describe_callback_signature(signature: crate::kernel::CallbackSignature) -> S
 
 pub(in crate::surface) fn describe_c0_type(c_type: C0Type) -> String {
     match c_type {
+        C0Type::Parameter(name) => name.name().to_string(),
         C0Type::Int128 => "int128".to_string(),
         C0Type::UInt128 => "uint128".to_string(),
 
@@ -3072,6 +3073,9 @@ pub(in crate::surface) fn infer_c_expression_type(
         CExpression::Value(CValue::UInt64(_)) => Some(C0Type::UInt64(LongRank::Long)),
         CExpression::Value(CValue::Float32(_)) => Some(C0Type::Float32),
         CExpression::Value(CValue::Float64(_)) => Some(C0Type::Float64),
+        CExpression::Value(CValue::Parameter(term)) => Some(C0Type::Parameter(
+            crate::kernel::TypeParameterName::intern(&term.algebraic_type.name),
+        )),
         CExpression::Value(CValue::Pointer(_)) => None,
         CExpression::Variable(name) => variables.get(name).copied(),
         CExpression::Cast {
@@ -3079,6 +3083,7 @@ pub(in crate::surface) fn infer_c_expression_type(
             target_type,
             ..
         } => match target_type {
+            CType::Parameter(name) => Some(C0Type::Parameter(*name)),
             CType::Int128 => Some(C0Type::Int128),
             CType::UInt128 => Some(C0Type::UInt128),
 
@@ -3198,6 +3203,7 @@ pub(in crate::surface) fn infer_c_expression_type(
             infer_c_expression_type(pointer, variables).and_then(pointer_element_type)
         }
         CExpression::TypedLoad { value_type, .. } => Some(match value_type {
+            CType::Parameter(name) => C0Type::Parameter(*name),
             CType::Void => return None,
             CType::Bool => C0Type::Bool,
             CType::VoidPointer => C0Type::VoidPointer,

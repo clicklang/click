@@ -268,7 +268,11 @@ impl PureFactContext {
             | CValue::UInt64(value)
             | CValue::Int128(value)
             | CValue::UInt128(value) => value,
-            CValue::Void | CValue::Pointer(_) | CValue::Float32(_) | CValue::Float64(_) => {
+            CValue::Void
+            | CValue::Pointer(_)
+            | CValue::Parameter(_)
+            | CValue::Float32(_)
+            | CValue::Float64(_) => {
                 return None;
             }
         };

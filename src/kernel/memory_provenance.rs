@@ -509,6 +509,7 @@ fn canonical_c_memory_deep_uncached(memory: &CMemory) -> CMemory {
                     }),
                     pointer: Box::new(record.pointer.map_addresses(canonicalize_pointer_loads)),
                 }),
+                CValue::Parameter(term) => CValue::Parameter(term.clone()),
                 CValue::Void => CValue::Void,
                 CValue::Bool(term) => CValue::Bool(canonicalize_atomic_loads(term)),
                 CValue::Int8(term) => CValue::Int8(canonicalize_atomic_loads(term)),
@@ -576,6 +577,7 @@ fn canonical_c_memory_deep_uncached(memory: &CMemory) -> CMemory {
                 }),
                 pointer: Box::new(record.pointer.map_addresses(canonicalize_pointer_loads)),
             }),
+            CValue::Parameter(term) => CValue::Parameter(term.clone()),
             CValue::Void => CValue::Void,
             CValue::Bool(term) => CValue::Bool(canonicalize_atomic_loads(term)),
             CValue::Int8(term) => CValue::Int8(canonicalize_atomic_loads(term)),
@@ -5609,7 +5611,11 @@ pub(crate) fn certified_store_equations(
                 | CValue::UInt64(term)
                 | CValue::Int128(term)
                 | CValue::UInt128(term) => term.clone(),
-                CValue::Void | CValue::Pointer(_) | CValue::Float32(_) | CValue::Float64(_) => {
+                CValue::Void
+                | CValue::Pointer(_)
+                | CValue::Parameter(_)
+                | CValue::Float32(_)
+                | CValue::Float64(_) => {
                     return None;
                 }
             };

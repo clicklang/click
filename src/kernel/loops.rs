@@ -3223,7 +3223,7 @@ fn scalar_bitvector(value: &CValue) -> Option<&Bitvector32Term> {
         | CValue::UInt128(term)
         | CValue::Float32(term)
         | CValue::Float64(term) => Some(term),
-        CValue::Void | CValue::Pointer(_) => None,
+        CValue::Void | CValue::Pointer(_) | CValue::Parameter(_) => None,
     }
 }
 

@@ -237,6 +237,12 @@ fn input_arguments(
             continue;
         }
         match parameter.c_type() {
+            C0Type::Parameter(name) => {
+                arguments.push(CExpression::Value(crate::kernel::symbolic_call_result(
+                    crate::kernel::CType::Parameter(name),
+                    Variable(arguments.len() as u64),
+                )));
+            }
             C0Type::Int128 => {
                 arguments.push(CExpression::Value(CValue::Int128(
                     Bitvector32Term::Variable(Variable(arguments.len() as u64)),

@@ -2269,6 +2269,7 @@ impl Renderer<'_> {
     fn cvalue(&mut self, value: &crate::kernel::CValue) {
         match value.numeric_value() {
             crate::kernel::CValue::PointerInteger(_) => unreachable!("numeric projection"),
+            crate::kernel::CValue::Parameter(term) => self.algebraic(term),
             crate::kernel::CValue::Void => self.push("void"),
             crate::kernel::CValue::Bool(v) => {
                 self.push("bool(");

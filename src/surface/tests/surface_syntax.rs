@@ -5312,6 +5312,25 @@ trait shapes::Scale<i32> { fn scale(&self, x: i32) -> i32 { requires 0 <= x; ens
     assert!(wide.requires().is_empty());
     assert_eq!(wide.ensures().len(), 1);
     assert_eq!(wide.ensures()[0].ensure(), narrow.ensures()[0].ensure());
+    // The generic block is also read once, its type parameter an abstract
+    // type, so it is checked for every type whether or not an instance is
+    // used.
+    let generic = interface("shapes::Scale<T>::scale");
+    assert!(generic.signature().has_abstract_types());
+    assert_eq!(
+        generic.signature().return_type(),
+        syntax::C0Type::Parameter(crate::kernel::TypeParameterName::intern("T"))
+    );
+    let unused = parser::parse(
+        "verifying \"shapes.rs\"; trait shapes::Scale<T> { fn scale(&self, x: T) -> T { ensures result != x; } }",
+    )
+    .expect("a generic block with no instance parses");
+    assert!(
+        unused
+            .function_blocks()
+            .iter()
+            .any(|block| block.signature().has_abstract_types())
+    );
     for (block, expected) in [
         (
             "trait shapes::Scale<T, i32> { }",

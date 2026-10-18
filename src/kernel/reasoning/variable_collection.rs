@@ -983,6 +983,9 @@ fn collect_c_value_bound_identities(
                 _integer_seen,
             );
         }
+        CValue::Parameter(term) => {
+            collect_algebraic_term_bound_identities(term, variables, _integer_seen)
+        }
         CValue::Void => {}
         CValue::Pointer(pointer) => {
             for address in pointer.pointers() {
@@ -2349,7 +2352,7 @@ fn collect_c_value_integer_variables(
         | CValue::Float64(value) => {
             collect_bitvector_integer_variables_seen(value, variables, seen)
         }
-        CValue::Pointer(_) => {}
+        CValue::Pointer(_) | CValue::Parameter(_) => {}
     }
 }
 
@@ -2960,6 +2963,9 @@ fn collect_capture_variables_in_c_value(
                 variables,
                 integer_seen,
             );
+        }
+        CValue::Parameter(term) => {
+            collect_capture_variables_in_algebraic_term(term, variables, integer_seen)
         }
         CValue::Void => {}
         CValue::Int8(bits) => {
@@ -3661,6 +3667,7 @@ fn collect_c_value_scope_summary(
             ));
             summary
         }
+        CValue::Parameter(term) => collect_algebraic_scope_summary(term, summaries),
         CValue::Void => IntegerScopeSummary::default(),
         CValue::Int8(term) => collect_bitvector_scope_summary(term, summaries),
         CValue::Bool(term)
@@ -4364,6 +4371,12 @@ fn collect_binder_variables_in_c_value(
                 integer_seen,
             );
         }
+        CValue::Parameter(term) => collect_binder_variables_in_algebraic_term(
+            term,
+            integer_variables,
+            bitvector_variables,
+            integer_seen,
+        ),
         CValue::Void => {}
         CValue::Int8(bits) => collect_bitvector_binder_variables_seen(
             bits,
@@ -5622,6 +5635,7 @@ pub(crate) fn collect_c_value_bitvector_variables(
                 variables,
             );
         }
+        CValue::Parameter(term) => collect_algebraic_term_bitvector_variables(term, variables),
         CValue::Void => {}
         CValue::Int8(bits) => collect_bitvector_variables(bits, variables),
         CValue::Bool(bits)

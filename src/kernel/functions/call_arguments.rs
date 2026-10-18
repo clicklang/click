@@ -388,6 +388,10 @@ pub(super) fn symbolic_contract_result(
 
 pub(crate) fn symbolic_call_result(c_type: CType, variable: Variable) -> CValue {
     match c_type {
+        CType::Parameter(name) => CValue::Parameter(Box::new(AlgebraicTerm {
+            algebraic_type: name.algebraic_type(),
+            node: AlgebraicTermNode::Variable(variable),
+        })),
         CType::Void => CValue::Void,
         CType::Bool => crate::kernel::bool_value(Bitvector32Term::Variable(variable)),
         CType::VoidPointer | CType::VoidPointerPointer => {

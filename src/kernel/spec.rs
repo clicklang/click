@@ -2512,6 +2512,7 @@ fn integer_carrier_in_c_value(value: &CValue, variable: Variable) -> bool {
     match value.numeric_value() {
         CValue::PointerInteger(_) => unreachable!("numeric projection"),
         CValue::Pointer(pointer) => integer_carrier_in_pointer(pointer, variable),
+        CValue::Parameter(term) => integer_carrier_in_algebraic(term, variable),
         CValue::Void => false,
         CValue::Int8(term) => integer_carrier_in_bitvector(term, variable),
         CValue::Bool(term)
@@ -6863,7 +6864,7 @@ pub(in crate::kernel) fn c_value_bitvector_term(value: &CValue) -> Option<Bitvec
         | CValue::UInt128(term)
         | CValue::Float32(term)
         | CValue::Float64(term) => Some(term.clone()),
-        CValue::Void | CValue::Pointer(_) => None,
+        CValue::Void | CValue::Pointer(_) | CValue::Parameter(_) => None,
     }
 }
 
@@ -7850,6 +7851,23 @@ pub(super) fn c_value_comparison_proposition(
 ) -> Option<Proposition> {
     let left = left.numeric_value();
     let right = right.numeric_value();
+    // Two values of one abstract type have equality and nothing else.
+    match (left, right) {
+        (CValue::Parameter(a), CValue::Parameter(b))
+            if a.algebraic_type == b.algebraic_type
+                && matches!(
+                    operator,
+                    CComparisonOperator::Equal | CComparisonOperator::NotEqual
+                ) =>
+        {
+            return Some(Proposition::ConditionIs(
+                ConditionTerm::AlgebraicEqual(a.clone(), b.clone()),
+                operator == CComparisonOperator::Equal,
+            ));
+        }
+        (CValue::Parameter(_), _) | (_, CValue::Parameter(_)) => return None,
+        _ => {}
+    }
     if let (CValue::Pointer(a), CValue::Pointer(b)) = (left, right)
         && !a.is_null()
         && !b.is_null()
@@ -8062,6 +8080,7 @@ fn c_value_int32_term(value: &CValue) -> Option<Bitvector32Term> {
         | CValue::Int64(_)
         | CValue::UInt64(_)
         | CValue::Pointer(_)
+        | CValue::Parameter(_)
         | CValue::Float32(_)
         | CValue::Float64(_) => None,
     }
@@ -8083,6 +8102,7 @@ fn c_value_int64_term(value: &CValue) -> Option<Bitvector32Term> {
         | CValue::Void
         | CValue::UInt64(_)
         | CValue::Pointer(_)
+        | CValue::Parameter(_)
         | CValue::Float32(_)
         | CValue::Float64(_) => None,
     }
@@ -8104,6 +8124,7 @@ fn c_value_uint64_term(value: &CValue) -> Option<Bitvector32Term> {
         | CValue::UInt128(_)
         | CValue::Void
         | CValue::Pointer(_)
+        | CValue::Parameter(_)
         | CValue::Float32(_)
         | CValue::Float64(_) => None,
     }

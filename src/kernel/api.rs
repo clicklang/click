@@ -3049,6 +3049,49 @@ pub fn c_function(
     CFunction::new(return_type, name, parameters, body)
 }
 
+/// Lowers each contract clause of `function` once: its `requires` at
+/// `entry_state`, its `ensures` at that state with the result a fresh
+/// symbolic value of the return type. A clause that does not lower, as one
+/// using arithmetic on a value of an abstract type, is refused with the
+/// lowering's reason. Nothing is proved: a declaration no body answers for,
+/// a generic trait's interface, is checked this way once for every type.
+pub fn c_check_contract_clauses_lower(
+    function: &CFunction,
+    state: &CState,
+    arguments: &[CValue],
+    assumptions: &PureFactContext,
+) -> Result<(), String> {
+    // The parameters are bound to the arguments as model values, as a call
+    // binds them; no storage is declared for them.
+    let mut entry_state = state.clone();
+    for (parameter, argument) in function.parameters().iter().zip(arguments) {
+        entry_state.locals.bind_logical_typed(
+            parameter.name(),
+            argument.clone(),
+            parameter.c_type(),
+        );
+    }
+    let entry_state = &entry_state;
+    for clause in function.contract_requires() {
+        c_lower_spec_proposition_at_state(entry_state, clause, Some(entry_state), assumptions)?;
+    }
+    let mut exit_state = entry_state.clone();
+    if function.return_type() != CType::Void {
+        // A variable no argument uses: arguments are numbered from zero.
+        let result = crate::kernel::symbolic_call_result(
+            function.return_type(),
+            Variable(u64::from(u32::MAX)),
+        );
+        exit_state
+            .locals
+            .set_typed(C_CONTRACT_RESULT_NAME, result, function.return_type());
+    }
+    for clause in function.contract_ensures() {
+        c_lower_spec_proposition_at_state(&exit_state, clause, Some(entry_state), assumptions)?;
+    }
+    Ok(())
+}
+
 /// Lowers a spec proposition at `state`, the one lowering every proof-side
 /// proposition and every contract clause share. `entry_state` is what
 /// `old(...)` refers to. The result is the proposition on the lowering's

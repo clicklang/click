@@ -192,6 +192,7 @@ pub(super) fn click_type_from_algebraic_value_type(value_type: &AlgebraicValueTy
 
 pub(super) fn c0_type_from_kernel(c_type: CType) -> C0Type {
     match c_type {
+        CType::Parameter(name) => C0Type::Parameter(name),
         CType::Void => C0Type::Void,
         CType::Bool => C0Type::Bool,
         CType::VoidPointer => C0Type::VoidPointer,
