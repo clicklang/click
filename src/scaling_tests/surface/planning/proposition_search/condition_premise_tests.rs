@@ -5,6 +5,31 @@
 use super::*;
 
 #[test]
+fn refused_integer_equality_does_not_rebuild_connected_order_facts() {
+    let left = IntegerTerm::var(Variable(791_001));
+    let right = IntegerTerm::var(Variable(791_002));
+    let goal = Proposition::ConditionIs(
+        ConditionTerm::IntegerEqual(left.clone().into(), right.into()),
+        true,
+    );
+    for size in [4u64, 16, 64, 256] {
+        let mut context = PureFactContext::new();
+        for index in 0..size {
+            let sum = IntegerTerm::add(left.clone(), IntegerTerm::var(Variable(792_000 + index)));
+            context = context.assume_condition(
+                ConditionTerm::integer_less_equal(IntegerTerm::constant_i64(0), sum),
+                true,
+            );
+        }
+        let (derivation, work) = crate::instrumentation::measure_deterministic_work(|| {
+            context.derive_simp_proposition(&goal)
+        });
+        assert!(derivation.is_none());
+        assert!(work <= 512, "{size} connected order facts: {work} work");
+    }
+}
+
+#[test]
 fn wide_condition_index_construction_charges_its_variable_entries() {
     let mut samples = Vec::new();
     for size in [4, 8, 16, 32] {
