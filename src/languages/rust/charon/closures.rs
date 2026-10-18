@@ -684,7 +684,13 @@ impl Adapter<'_> {
                 .get(trait_ref.id)
                 .and_then(|decl| decl.item_meta.lang_item.clone());
             match lang_item {
-                Some(LangItem::Sized | LangItem::MetaSized | LangItem::Destruct) => {}
+                Some(
+                    LangItem::Sized
+                    | LangItem::MetaSized
+                    | LangItem::Destruct
+                    | LangItem::Copy
+                    | LangItem::Clone,
+                ) => {}
                 Some(LangItem::Fn) => {
                     let Some(a::TyKind::Adt(tuple)) =
                         trait_ref.generics.types.get(1).map(|ty| ty.kind())
@@ -731,6 +737,15 @@ impl Adapter<'_> {
                     }
                 }
                 _ => return Err(unsupported("trait bound other than Fn or a crate trait")),
+            }
+        }
+        // A parameter bound by nothing else is an abstract type, whose
+        // values the function holds and passes on but does not read.
+        for (id, parameter) in generics.types.iter_enumerated() {
+            if callable[id.index()].is_none() {
+                callable[id.index()] = Some(Type::Parameter {
+                    name: parameter.name.clone(),
+                });
             }
         }
         Ok(callable)

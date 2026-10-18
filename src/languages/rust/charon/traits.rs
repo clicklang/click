@@ -85,6 +85,13 @@ impl Adapter<'_> {
         arguments: Vec<a::Ty>,
     ) -> Result<String, String> {
         let instance = self.trait_instance_name(id, &arguments)?;
+        let types = arguments
+            .iter()
+            .map(|argument| self.ty(argument))
+            .collect::<Result<Vec<_>, _>>()?;
+        self.instance_types
+            .borrow_mut()
+            .insert(instance.clone(), types);
         let mut name = instance.clone();
         super::super::names::push_path_segment(&mut name, method);
         self.trait_instances
@@ -109,22 +116,22 @@ impl Adapter<'_> {
     }
 
     /// The Rust spelling of a generic trait instance's type argument.
-    fn instance_argument_spelling(&self, argument: &a::Ty) -> Result<&'static str, String> {
+    fn instance_argument_spelling(&self, argument: &a::Ty) -> Result<String, String> {
         let refused = || {
             unsupported(
                 "crate trait instance at a type other than i32, u8, u16, u32, usize or bool",
             )
         };
-        if matches!(argument.kind(), a::TyKind::TypeVar(_)) {
-            return Err(refused());
-        }
         Ok(match self.ty(argument).map_err(|_| refused())? {
-            Type::I32 => "i32",
-            Type::U8 => "u8",
-            Type::U16 => "u16",
-            Type::U32 => "u32",
-            Type::Usize => "usize",
-            Type::Bool => "bool",
+            // A generic implementation's own type parameter, `T` of
+            // `impl<T> Keep<T> for Echo`: the instance at every type.
+            Type::Parameter { name } if matches!(argument.kind(), a::TyKind::TypeVar(_)) => name,
+            Type::I32 => "i32".into(),
+            Type::U8 => "u8".into(),
+            Type::U16 => "u16".into(),
+            Type::U32 => "u32".into(),
+            Type::Usize => "usize".into(),
+            Type::Bool => "bool".into(),
             _ => return Err(refused()),
         })
     }
@@ -140,7 +147,7 @@ impl Adapter<'_> {
         for argument in arguments {
             super::super::names::push_type_argument(
                 &mut name,
-                self.instance_argument_spelling(argument)?,
+                &self.instance_argument_spelling(argument)?,
             );
         }
         Ok(name)
@@ -166,12 +173,25 @@ impl Adapter<'_> {
 
     /// `ty` in a method of a trait instance whose type arguments after
     /// `Self` are `arguments`.
-    fn instance_ty(&self, ty: &a::Ty, arguments: &[a::Ty]) -> Result<Type, String> {
+    fn instance_ty(&self, ty: &a::Ty, instance: &str, arguments: &[a::Ty]) -> Result<Type, String> {
         if let a::TyKind::TypeVar(a::DeBruijnVar::Bound(_, var) | a::DeBruijnVar::Free(var)) =
             ty.kind()
-            && let Some(argument) = var.index().checked_sub(1).and_then(|at| arguments.get(at))
+            && let Some(at) = var.index().checked_sub(1)
         {
-            return self.ty(argument);
+            // An instance's arguments are the types they were when it was
+            // named: a generic implementation's own type parameter is an
+            // abstract type there, or the scalar a call gave it.
+            if let Some(resolved) = self
+                .instance_types
+                .borrow()
+                .get(instance)
+                .and_then(|types| types.get(at))
+            {
+                return Ok(resolved.clone());
+            }
+            if let Some(argument) = arguments.get(at) {
+                return self.ty(argument);
+            }
         }
         self.ty(ty)
     }
@@ -221,8 +241,10 @@ impl Adapter<'_> {
                     span: span(binder.item_meta.span),
                 }];
                 for (index, ty) in inputs.iter().enumerate() {
-                    let value_type = self.instance_ty(ty, &arguments)?;
-                    if !closures::callable_scalar(&value_type) {
+                    let value_type = self.instance_ty(ty, &instance, &arguments)?;
+                    if !closures::callable_scalar(&value_type)
+                        && !matches!(value_type, Type::Parameter { .. })
+                    {
                         return Err(unsupported("trait method parameter other than a scalar"));
                     }
                     parameters.push(out::Place {
@@ -231,8 +253,11 @@ impl Adapter<'_> {
                         span: span(binder.item_meta.span),
                     });
                 }
-                let return_type = self.instance_ty(&signature.output, &arguments)?;
-                if !closures::callable_scalar(&return_type) && return_type != Type::Unit {
+                let return_type = self.instance_ty(&signature.output, &instance, &arguments)?;
+                if !closures::callable_scalar(&return_type)
+                    && return_type != Type::Unit
+                    && !matches!(return_type, Type::Parameter { .. })
+                {
                     return Err(unsupported("trait method result other than a scalar or ()"));
                 }
                 // A default method's body defines its interface function, as
@@ -254,6 +279,7 @@ impl Adapter<'_> {
                     external: true,
                     captures: 0,
                     implements: None,
+                    instance_of: None,
                     span: span(binder.item_meta.span),
                 });
             }
@@ -294,13 +320,40 @@ impl Adapter<'_> {
             .get(impl_id)
             .ok_or_else(|| unsupported("missing trait implementation"))?;
         // The trait has no default methods, so each method is the impl's own.
+        // A generic implementation is imported once, at its type parameters,
+        // when each is an argument of the trait, `impl<T> Keep<T> for Echo`,
+        // a value of an abstract type.
+        let instance_parameters = imp
+            .impl_trait
+            .generics
+            .types
+            .iter()
+            .skip(1)
+            .filter(|ty| matches!(ty.kind(), a::TyKind::TypeVar(_)))
+            .count();
         if imp.is_unsafe
-            || !imp.generics.types.is_empty()
+            || imp.generics.types.len() != instance_parameters
             || !imp.generics.const_generics.is_empty()
-            || !f.generics.types.is_empty()
+            || f.generics.types.len() != imp.generics.types.len()
         {
             return Err(unsupported("generic crate trait implementation"));
         }
+        // The implementation's type parameters are abstract types while its
+        // names are read.
+        let callable = self.callable_type_parameters(&imp.generics)?;
+        let previous = std::mem::replace(&mut *self.callable_parameters.borrow_mut(), callable);
+        let names = self.trait_impl_method_names(f, imp, trait_id, method);
+        *self.callable_parameters.borrow_mut() = previous;
+        names
+    }
+
+    pub(super) fn trait_impl_method_names(
+        &self,
+        _f: &a::FunDecl,
+        imp: &a::TraitImpl,
+        trait_id: a::TraitDeclId,
+        method: a::TraitMethodId,
+    ) -> Result<(String, String), String> {
         let receiver = imp
             .impl_trait
             .generics
@@ -579,6 +632,7 @@ impl Adapter<'_> {
                 external: true,
                 captures: 0,
                 implements: None,
+                instance_of: None,
                 span: span.clone(),
             })
             .collect())
@@ -856,6 +910,71 @@ mod tests {
             assert!(super::super::super::names::is_object_coercion(
                 &coercion.name
             ));
+        }
+    }
+
+    // A generic implementation is imported once, at its type parameter, an
+    // abstract type; each call at a scalar type names an instance the
+    // import declares, at that type, as an instance of the generic function.
+    #[test]
+    fn charon_generic_implementations_import_once_with_an_instance_per_call() {
+        const GENERIC: &[u8] = include_bytes!(
+            "../../../../design/charon-trial/generic-impls/.click/generic_impls/shapes.rs.ullbc"
+        );
+        const GENERIC_SOURCE: &[u8] =
+            include_bytes!("../../../../design/charon-trial/generic-impls/shapes.rs");
+        let artifact: ExtractionArtifact = serde_json::from_slice(GENERIC).unwrap();
+        let sources = [("shapes.rs".into(), GENERIC_SOURCE.to_vec())]
+            .into_iter()
+            .collect();
+        let export = decode_crate(
+            &serde_json::to_vec(&artifact).unwrap(),
+            "shapes.rs",
+            GENERIC_SOURCE,
+            artifact.crate_config.as_ref(),
+            Some(&sources),
+        )
+        .unwrap();
+        let display = |name: &str| super::super::super::names::rust_display_name(name).unwrap();
+        let named = |path: &str| {
+            export
+                .functions
+                .iter()
+                .find(|f| {
+                    super::super::super::names::rust_display_name(&f.name).as_deref() == Some(path)
+                })
+                .unwrap_or_else(|| panic!("{path}"))
+        };
+        let abstract_type = Type::Parameter { name: "T".into() };
+        let generic = named("<generic_impls::Echo as generic_impls::Keep<T>>::keep");
+        assert!(!generic.external);
+        assert_eq!(generic.parameters[1].value_type, abstract_type);
+        assert_eq!(generic.return_type, abstract_type);
+        assert_eq!(
+            generic.implements.as_deref().map(display).as_deref(),
+            Some("generic_impls::Keep<T>::keep")
+        );
+        assert_eq!(named("generic_impls::pick").return_type, abstract_type);
+        for (instance, generic, scalar) in [
+            (
+                "<generic_impls::Echo as generic_impls::Keep<i32>>::keep",
+                "<generic_impls::Echo as generic_impls::Keep<T>>::keep",
+                Type::I32,
+            ),
+            (
+                "<generic_impls::Echo as generic_impls::Keep<u32>>::keep",
+                "<generic_impls::Echo as generic_impls::Keep<T>>::keep",
+                Type::U32,
+            ),
+            ("generic_impls::pick<i32>", "generic_impls::pick", Type::I32),
+        ] {
+            let function = named(instance);
+            assert!(function.external);
+            assert_eq!(function.return_type, scalar);
+            assert_eq!(
+                function.instance_of.as_deref().map(display).as_deref(),
+                Some(generic)
+            );
         }
     }
 

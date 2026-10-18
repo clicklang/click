@@ -115,7 +115,13 @@ pub(super) fn expand_generic_traits(
     let mut targets = BTreeSet::new();
     for (trait_name, block) in &generic {
         for arguments in instances.get(trait_name).into_iter().flatten() {
-            if arguments.len() == block.arguments.len() {
+            // An instance at a generic implementation's own type
+            // parameters is the generic block itself.
+            if arguments.len() == block.arguments.len()
+                && arguments
+                    .iter()
+                    .all(|argument| INSTANCE_SCALARS.contains(&argument.as_str()))
+            {
                 targets.insert((trait_name.clone(), arguments.clone()));
             }
         }

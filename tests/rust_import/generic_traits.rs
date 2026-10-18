@@ -115,3 +115,52 @@ fn charon_generic_trait_objects_carry_state_at_each_instance() {
         assert!(rendered.contains(expected), "{rendered}");
     }
 }
+
+const IMPL_SIDECAR: &str = include_str!("../../design/charon-trial/generic-impls/shapes.click");
+
+// A generic implementation, `impl<T> Keep<T> for Echo`, and a generic
+// function, `pick<T: Copy>`, are each verified once with `T` an abstract
+// type. A call at a scalar type calls that instance, whose contract is the
+// generic one at its types.
+#[test]
+fn charon_generic_implementations_are_verified_once_for_every_type() {
+    let p = Project::from_fixture("design/charon-trial/generic-impls");
+    fs::write(p.root.join("borrow.click"), IMPL_SIDECAR).unwrap();
+    let prepared = p.prepared().unwrap();
+    C0VerificationSession::new_program_prepared(IMPL_SIDECAR, &prepared)
+        .unwrap_or_else(|error| panic!("{error:?}"));
+    for (before, after, expected) in [
+        // The generic implementation answers to the generic interface.
+        (
+            "        ensures result == x;\n    }\n}\n\n// One",
+            "        ensures result != x;\n    }\n}\n\n// One",
+            "<generic_impls::Echo as generic_impls::Keep<T>>::keep.interface_ensures_0",
+        ),
+        // The generic function's body is checked once for every type.
+        (
+            "    ensures not first implies result == b;",
+            "    ensures result == a;",
+            "generic_impls::pick.ensures_1",
+        ),
+        // A caller at `u32` knows the instance's contract and no more.
+        (
+            "fn generic_impls::through_wide(x: u32) -> u32 {\n    ensures result == x;",
+            "fn generic_impls::through_wide(x: u32) -> u32 {\n    ensures result == x + 1;",
+            "generic_impls::through_wide.ensures_0",
+        ),
+        (
+            "    ensures result == y;",
+            "    ensures result == x;",
+            "generic_impls::choose.ensures_0",
+        ),
+    ] {
+        assert!(IMPL_SIDECAR.contains(before), "{before}");
+        let invalid = IMPL_SIDECAR.replacen(before, after, 1);
+        let error = C0VerificationSession::new_program_prepared(&invalid, &prepared)
+            .err()
+            .expect("a claim the generic contracts do not justify must fail");
+        let rendered = format!("{error:?} {error}");
+        let rendered = click::languages::rust::names::display_rust_names(&rendered);
+        assert!(rendered.contains(expected), "{rendered}");
+    }
+}

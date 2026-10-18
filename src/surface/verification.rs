@@ -5395,6 +5395,21 @@ impl parser::ProgramLayouts {
                         .collect(),
                 );
             }
+            if let Some(generic) = function.generic_instance() {
+                tables.rust_generic_instances.push((
+                    function.source_name().to_string(),
+                    source_names
+                        .get(generic)
+                        .map_or(generic, |name| name)
+                        .to_string(),
+                    function
+                        .parameters()
+                        .iter()
+                        .map(|parameter| parameter.c_type())
+                        .collect(),
+                    function.return_type(),
+                ));
+            }
             if let Some((trait_name, arguments)) =
                 crate::languages::rust::names::interface_instance(function.name())
             {

@@ -630,7 +630,8 @@ import, since a generic call names its instance's implementation and a
 crate trait with const generics, associated items, or supertraits, a method
 that is generic or takes no `&self` or `&mut self`,
 non-scalar parameters or results, an implementation for anything but a
-crate struct, and a generic implementation
+crate struct, and a generic implementation other than one whose type
+parameters are its trait's arguments (below)
 ([`design/charon-trial/trait-methods`](https://github.com/clicklang/click/blob/master/design/charon-trial/trait-methods/shapes.click)).
 
 A crate trait may have type parameters, `trait Scale<T> { fn scale(&self,
@@ -658,6 +659,25 @@ instance only. An instance is taken at `i32`, `u8`,
 `u16`, `u32`, `usize` or `bool`, and the importer refuses a default method
 of a generic trait
 ([`design/charon-trial/generic-traits`](https://github.com/clicklang/click/blob/master/design/charon-trial/generic-traits/shapes.click)).
+
+Generic code is verified once for every type. An implementation whose type
+parameters are its trait's arguments, `impl<T> Keep<T> for Echo`, and a
+function generic over a type parameter bound by nothing but `Copy` or
+`Clone`, `fn pick<T: Copy>(first: bool, a: T, b: T) -> T`, are imported once
+with `T` an abstract type, and the sidecar writes them so, `impl<T>
+generic_impls::Keep<T> for generic_impls::Echo { ... }` and `fn
+generic_impls::pick<T: Copy>(...)`. A value of `T` is passed, returned,
+held in a local and compared with `==` and `!=`; the body is proved once,
+and the implementation refines the generic block's interface. A call at
+scalar types, `echo.keep(x)` with `x: i32`, calls the instance
+`<generic_impls::Echo as generic_impls::Keep<i32>>::keep`, which the import
+declares and whose contract is the generic function's at those types: a
+clause that reads its abstract values only by `==` and `!=` means the same
+at every type. A type parameter is instantiated at `i32`, `u8`, `u16`,
+`u32`, `usize` or `bool`; a reference to a value of `T`, a `T` in a struct
+or memory, a generic call from generic code, and a generic block whose
+object carries state are refused
+([`design/charon-trial/generic-impls`](https://github.com/clicklang/click/blob/master/design/charon-trial/generic-impls/shapes.click)).
 
 A generic trait's object may carry state, as any trait's does (below): the
 generic block's `function last(self) -> T;` and `function items(self) ->

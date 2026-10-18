@@ -803,6 +803,7 @@ mod tests {
             external: false,
             captures: 0,
             implements: None,
+            instance_of: None,
             span: Span { line: 1, column: 1 },
             mir: Some(MirBody {
                 locals: vec![

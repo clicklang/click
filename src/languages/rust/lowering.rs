@@ -46,6 +46,9 @@ fn scalar_type(t: &Type) -> Result<C0Type, String> {
         Type::Usize => Ok(C0Type::UInt64(LongRank::Long)),
         Type::Bool => Ok(C0Type::Bool),
         Type::Unit => Ok(C0Type::Void),
+        Type::Parameter { name } => Ok(C0Type::Parameter(
+            crate::kernel::TypeParameterName::intern(name),
+        )),
         Type::Reference { pointee, .. } => match pointee.as_ref() {
             // A reference to a value of unknown type is opaque as a struct
             // reference is: nothing is read through it without its fields.
@@ -227,6 +230,7 @@ fn lower_function(
             | Type::Bool
             | Type::Unit
             | Type::Record { .. }
+            | Type::Parameter { .. }
     ) {
         return Err("Rust reference/aggregate returns are not supported".into());
     }
@@ -384,10 +388,15 @@ fn lower_function(
         if f.mir.is_some() || !f.body.is_empty() {
             return Err("Rust extern function must not carry a body".into());
         }
-        return Ok(
-            C0Function::external(return_type, f.name.clone(), parameters)
-                .with_positional_parameters(),
-        );
+        let declaration = C0Function::external(return_type, f.name.clone(), parameters)
+            .with_generic_instance(f.instance_of.clone());
+        // A generic function's instance names its parameters as the generic
+        // function does.
+        return Ok(if f.instance_of.is_some() {
+            declaration
+        } else {
+            declaration.with_positional_parameters()
+        });
     }
     let mut cx = Context {
         shared_array_iterators: BTreeMap::new(),
