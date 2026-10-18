@@ -2,24 +2,44 @@ use super::*;
 
 #[test]
 fn refined_pure_arithmetic_does_not_rescan_unrelated_parameters() {
-    let (source, _) = mdtest_sources("mdtests/pure_arithmetic_retains_a_rewritten_fold_goal.md");
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("mdtests/pure_arithmetic_retains_a_rewritten_fold_goal.md");
+    let fixture = crate::cli::parse_mdtest(
+        &path,
+        include_str!("../../../../mdtests/pure_arithmetic_retains_a_rewritten_fold_goal.md"),
+    )
+    .unwrap();
+    let source = fixture.click_source.unwrap();
+    let definitions = source.split_once("theorem count_step").unwrap().0;
     let mut samples = Vec::new();
     for size in [0, 4, 16, 64] {
         let parameters = (0..size)
             .map(|index| format!(", unused{index}: uint64"))
             .collect::<String>();
-        let source = source.replace(
-            "theorem count_step(n: uint64)",
-            &format!("theorem count_step(n: uint64{parameters})"),
+        let source = format!(
+            "{definitions}
+theorem count_step(n: uint64{parameters}) {{
+    requires 0u64 <= n - 1u64;
+    requires n - 1u64 < 18446744073709551615u64;
+    requires full_width_count(n - 1u64) == to_integer(n - 1u64);
+    requires to_integer(n - 1u64) == to_integer(n) - to_integer(1u64);
+    ensures full_width_count(n) == to_integer(n) by {{
+        peel(full_width_count(n)) using {{
+            0u64 <= n - 1u64;
+            n - 1u64 < 18446744073709551615u64;
+        }};
+        rewrite(full_width_count(n - 1u64) == to_integer(n - 1u64));
+        rewrite(to_integer(n - 1u64) == to_integer(n) - to_integer(1u64));
+        arithmetic() using {{}};
+    }}
+}}"
         );
-        let (result, work) = crate::instrumentation::collect_tactic_work(|| {
-            verify_click_theorems(&source)
-        });
+        let (result, work) =
+            crate::instrumentation::collect_tactic_work(|| verify_click_theorems(&source));
         result.unwrap();
         let work = work
             .iter()
-            .filter(|sample| sample.tactic.tactic_name == "arithmetic")
-            .next_back()
+            .rfind(|sample| sample.tactic.tactic_name == "arithmetic")
             .expect("the final arithmetic closure ran")
             .work;
         samples.push((size, work));
