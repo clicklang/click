@@ -293,6 +293,158 @@ fn wide_read_keeps_native_index_beside_a_narrow_alias() {
 }
 
 #[test]
+fn wide_cursor_advance_keeps_its_native_producer_beside_narrow_aliases() {
+    let mut samples = Vec::new();
+    for count in [4_u64, 16, 64] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let bytes = Pointer {
+            block: PointerBlock::ExternalArgument,
+            offset: PointerOffsetTerm::scale_int32(Bitvector32Term::Variable(Variable(988_400)), 1),
+        };
+        let cursor = Pointer::symbolic(Variable(988_402));
+        let remaining = Bitvector32Term::Variable(Variable(988_403));
+        let advance = Bitvector32Term::Variable(Variable(988_404));
+        let length = Bitvector32Term::Variable(Variable(988_410));
+        let prefix = Bitvector32Term::Variable(Variable(988_411));
+        let narrow = bytes.offset_by_elements(
+            Bitvector32Term::subtract(
+                Bitvector32Term::UInt32From64(Box::new(prefix.clone())),
+                Bitvector32Term::UInt32From64(Box::new(remaining.clone())),
+            ),
+            1,
+        );
+        let wide = bytes.offset_by_typed_elements(
+            Bitvector32Term::uint64_subtract(prefix.clone(), remaining.clone()),
+            1,
+            true,
+            true,
+        );
+        let bytes_value =
+            crate::kernel::CPointerValue::new(bytes.clone(), crate::kernel::CType::UInt8Pointer);
+        let cursor_value =
+            crate::kernel::CPointerValue::new(cursor.clone(), crate::kernel::CType::UInt8Pointer);
+        let aliases = PureFactContext::new()
+            .assume_condition(
+                ConditionTerm::pointer_value_equal(
+                    cursor_value.clone(),
+                    bytes_value.clone().with_address(wide),
+                ),
+                true,
+            )
+            .assume_condition(
+                ConditionTerm::pointer_value_equal(
+                    cursor_value.clone(),
+                    bytes_value.clone().with_address(narrow),
+                ),
+                true,
+            );
+        let mut facts = aliases
+            .clone()
+            .assume_condition(
+                ConditionTerm::uint64_less_equal(prefix.clone(), length.clone()),
+                true,
+            )
+            .assume_condition(
+                ConditionTerm::uint64_less_equal(remaining.clone(), prefix.clone()),
+                true,
+            )
+            .assume_condition(
+                ConditionTerm::uint64_equal(
+                    advance.clone(),
+                    Bitvector32Term::UInt64Constant(22208),
+                ),
+                true,
+            )
+            .assume_condition(
+                ConditionTerm::uint64_less_equal(advance.clone(), remaining.clone()),
+                true,
+            );
+        for value in [&length, &prefix, &remaining] {
+            facts = facts.assume_condition(
+                ConditionTerm::uint64_less_equal(
+                    value.clone(),
+                    Bitvector32Term::UInt64Constant(i32::MAX as u64),
+                ),
+                true,
+            );
+        }
+        for item in 0..count {
+            facts = facts.assume_condition(
+                ConditionTerm::pointer_equal(
+                    Pointer::symbolic(Variable(989_000 + item)),
+                    cursor.clone(),
+                ),
+                true,
+            );
+        }
+        let resources = ResourceContext::new().unchecked_with_fact(CResourceFact::view_memory(
+            CMemoryRange::new_wide(bytes.clone(), Bitvector32Term::UInt64Constant(0), length, 1)
+                .with_pointer_carrier(&bytes_value),
+        ));
+        resources.synchronize_memory_equalities(&facts);
+        let query = cursor.offset_by_typed_elements(advance.clone(), 1, true, true);
+        let permits = |resources: &ResourceContext,
+                       query: &Pointer,
+                       facts: &PureFactContext,
+                       designation: (&Pointer, Option<&Pointer>)| {
+            resources.permits_designated_pointer_position(query, &cursor, designation, facts)
+        };
+        let (permitted, work) = crate::instrumentation::measure_deterministic_work(|| {
+            permits(
+                &resources,
+                &query,
+                &facts,
+                cursor_value.access_designation(),
+            )
+        });
+        assert!(permitted, "the advancing cursor keeps its native bounds");
+        assert!(!permits(
+            &ResourceContext::new(),
+            &query,
+            &facts,
+            cursor_value.access_designation()
+        ));
+        assert!(!permits(
+            &resources,
+            &query,
+            &aliases,
+            cursor_value.access_designation()
+        ));
+        assert!(!permits(
+            &resources,
+            &query,
+            &facts,
+            (
+                &Pointer::symbolic(Variable(988_406)),
+                cursor_value.opaque_extent()
+            )
+        ));
+        assert!(!permits(
+            &resources,
+            &cursor.offset_by_typed_elements(
+                Bitvector32Term::UInt64Constant(1u64 << 32),
+                1,
+                true,
+                true
+            ),
+            &facts,
+            cursor_value.access_designation()
+        ));
+        assert!(!permits(
+            &resources,
+            &cursor.offset_by_typed_elements(advance, 2, true, true),
+            &facts,
+            cursor_value.access_designation()
+        ));
+        samples.push(work);
+    }
+    assert!(
+        samples.iter().all(|work| *work <= samples[0] + 32),
+        "advancing a native cursor scanned aliases: {samples:?}"
+    );
+}
+
+#[test]
 #[ignore = "nightly: 1.7s in the parallel gate"]
 fn constant_base_interior_lookup_scales_with_selected_range() {
     let mut samples = Vec::new();

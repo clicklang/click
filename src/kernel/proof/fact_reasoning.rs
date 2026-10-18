@@ -2840,6 +2840,57 @@ mod uint64_loop_tests {
         );
     }
 
+    #[test]
+    fn uint64_partial_restoration_requires_both_subtraction_and_addition_bounds() {
+        let whole = Bitvector32Term::Variable(Variable(981_021));
+        let removed = Bitvector32Term::Variable(Variable(981_022));
+        let restored = Bitvector32Term::Variable(Variable(981_023));
+        let upper = Bitvector32Term::Variable(Variable(981_024));
+        let difference = Bitvector32Term::uint64_subtract(whole.clone(), removed.clone());
+        let premises = [
+            Proposition::ConditionIs(
+                ConditionTerm::uint64_less_equal(removed.clone(), whole.clone()),
+                true,
+            ),
+            Proposition::ConditionIs(
+                ConditionTerm::uint64_less_equal(restored.clone(), removed),
+                true,
+            ),
+            Proposition::ConditionIs(ConditionTerm::uint64_less_equal(whole, upper.clone()), true),
+        ];
+        let facts = crate::kernel::proof::ProofFacts::from_ordered(&premises);
+        for sum in [
+            Bitvector32Term::uint64_add(difference.clone(), restored.clone()),
+            Bitvector32Term::uint64_add(restored, difference),
+        ] {
+            let condition = ConditionTerm::uint64_less_equal(sum, upper.clone());
+            let goal = Proposition::ConditionIs(condition.clone(), true);
+            normalize_using_conditions(&goal, &premises, &facts).unwrap();
+            for omitted in 0..premises.len() {
+                let selected: Vec<_> = premises
+                    .iter()
+                    .enumerate()
+                    .filter(|(i, _)| *i != omitted)
+                    .map(|(_, p)| p.clone())
+                    .collect();
+                assert!(normalize_using_conditions(&goal, &selected, &facts).is_err());
+                let context = selected
+                    .into_iter()
+                    .fold(crate::kernel::PureFactContext::new(), |context, fact| {
+                        context.assume_proposition(fact)
+                    });
+                assert_ne!(context.decide(&condition), Some(true));
+            }
+            let context = premises
+                .iter()
+                .cloned()
+                .fold(crate::kernel::PureFactContext::new(), |context, fact| {
+                    context.assume_proposition(fact)
+                });
+            assert_eq!(context.decide(&condition), Some(true));
+        }
+    }
+
     #[cfg(test)]
     mod scaling_tests {
         include!("../../scaling_tests/kernel/proof/fact_reasoning/uint64_loop_tests.rs");
