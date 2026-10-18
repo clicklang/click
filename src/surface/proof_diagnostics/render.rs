@@ -524,6 +524,12 @@ impl SnapshotLabels {
         }
     }
 
+    /// Whether some variable is spelled `name` in source, so a printed
+    /// binder must not take it.
+    fn names_a_variable(&self, name: &str) -> bool {
+        self.source_names.values().any(|source| source == name)
+    }
+
     fn source_name_for(&self, variable: Variable) -> Option<&str> {
         self.source_names
             .get(&variable)

@@ -1674,8 +1674,9 @@ fn validate_comparison_expression_types(
             }
             if left != right {
                 return Err(ClickError::new(format!(
-                    "algebraic comparison type mismatch in {context}: `{}<...>` and `{}<...>`",
-                    left.name, right.name
+                    "algebraic comparison type mismatch in {context}: `{}` and `{}`",
+                    describe_click_type(&ClickType::Algebraic(left.clone())),
+                    describe_click_type(&ClickType::Algebraic(right.clone()))
                 )));
             }
             Ok(())
