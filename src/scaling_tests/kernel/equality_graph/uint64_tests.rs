@@ -5,6 +5,33 @@
 use super::*;
 
 #[test]
+fn integer_address_queries_ignore_unrelated_equations_and_reuse_definitions() {
+    let _session = VerificationSession::enter();
+    let mut samples = Vec::new();
+    for size in [16_u64, 64, 256, 1024] {
+        let mut graph = EqualityGraph::default();
+        for i in 0..size {
+            graph.add_uint64_equality(
+                &Bitvector32Term::Variable(Variable(i)),
+                &Bitvector32Term::Variable(Variable(i + 10_000)),
+            );
+        }
+        let bits = Bitvector32Term::Variable(Variable(960_004));
+        let decoded = Pointer::integer_address(bits.clone());
+        assert!(graph.are_uint64_equal(&raw_address(&decoded), &bits));
+        let (((), work), maps) = crate::persistent::measure_persistent_work(|| {
+            crate::instrumentation::measure_deterministic_work(|| {
+                for _ in 0..16 {
+                    assert!(graph.are_uint64_equal(&raw_address(&decoded), &bits));
+                }
+            })
+        });
+        samples.push((work, maps));
+    }
+    assert!(samples.windows(2).all(|p| p[0].0 == p[1].0 && p[1].1 <= p[0].1 * 2), "{samples:?}");
+}
+
+#[test]
 fn wide_congruence_queries_do_not_scan_unrelated_equalities() {
     let mut previous = None;
     for size in [16_u64, 64, 256, 1024] {

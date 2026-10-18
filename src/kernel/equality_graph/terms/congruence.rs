@@ -550,12 +550,7 @@ impl TermClasses {
                         continue;
                     }
                     if let CValue::Pointer(pointer) = value {
-                        let address = self
-                            .address(
-                                pointer.pointer().block.clone(),
-                                pointer.pointer().offset.clone(),
-                            )
-                            .0;
+                        let address = self.numeric_address(pointer.pointer());
                         // Address, allocation origin and selected extent are
                         // distinct congruence operands. Only a complete value
                         // equality merges the latter two domains.
@@ -958,6 +953,11 @@ impl TermClasses {
         let PointerBlock::PureFunctionApplication(application) = &origin.block else {
             return;
         };
+        // This internal constructor names numeric coordinates only. Equal
+        // words cannot identify the designation or bounds of their casts.
+        if application.integer_address_bits().is_some() {
+            return;
+        }
         if origin.offset != PointerOffsetTerm::Constant(0) {
             return;
         }

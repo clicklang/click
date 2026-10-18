@@ -1819,3 +1819,20 @@ retains access-class annotation only: its annotation is excluded from numeric
 identity and cannot establish nominal type evidence. Recovering a typed pointer
 from those coordinates still needs the current scope's checked type facts.
 This does not recover a designation, bounds, or memory permission from numbers.
+
+### Numeric coordinates of logical word casts
+
+A logical word cast names its address as `$integer-address(bits)`. Registering
+that constructor joins its numeric address to `bits` in the uint64 classes,
+using the existing iterative dependency worklist once per constructor. Byte
+displacements and compatible same-snapshot reads therefore use the same
+classes as the original word. Complete pointer-value applications use the numeric
+address as one operand, alongside independent designation and extent operands;
+address equality cannot merge those other operands. Complete-value comparisons whose designation and
+bounds already match reduce the remaining zero-offset constructor comparison to
+uint64 equality. The internal constructor does not enter the result-domain
+congruence used for actual pointer-returning pure functions. Numeric definitions
+alone establish no designation, bounds, object type, or memory authority.
+The explicit source control is `tagged_pointer_explicit_round_trip.md`; scoped
+withdrawal, displaced addresses, snapshot distinctions, and designation
+separation are covered by the equality-graph unit tests.

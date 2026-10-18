@@ -1415,6 +1415,16 @@ impl TermClasses {
         loop {
             if let Some((value, application)) = self.pending_pointer_calls.pop() {
                 crate::instrumentation::record_deterministic_work(1);
+                if let Some(bits) = application.integer_address_bits() {
+                    // Decode only numeric coordinates. In particular, do not
+                    // merge the address node with a word or a pointer value.
+                    // The existing dependency worklist also handles nested
+                    // casts without recursively registering their snapshots.
+                    let numeric = self.read_address(value);
+                    let bits = self.intern_uint64(bits);
+                    self.close_with_affine_definition(vec![(numeric, bits)], true);
+                    continue;
+                }
                 let call = self.intern_pointer_call(&application);
                 self.close_with_affine_definition(vec![(value, call)], true);
                 self.retain_pointer_value_witness(
