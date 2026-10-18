@@ -18976,13 +18976,19 @@ fn class_bool_member_whole_certificate_preserves_every_return_case() {
         let header_sidecar;
         let (project, sidecar) = if locked_header {
             header_sidecar = sidecar.replace("class_record.cpp", "header_record.cpp");
-            (header_record_project("FeeRateState::IsEmpty"), header_sidecar.as_str())
+            (
+                header_record_project("FeeRateState::IsEmpty"),
+                header_sidecar.as_str(),
+            )
         } else {
-            (Project::with_fixture(
-                "class_record.cpp",
-                "FeeRateState::IsEmpty",
-                &source.replace("private:", access),
-            ), sidecar)
+            (
+                Project::with_fixture(
+                    "class_record.cpp",
+                    "FeeRateState::IsEmpty",
+                    &source.replace("private:", access),
+                ),
+                sidecar,
+            )
         };
         refresh_import(&project.config()).unwrap();
         let import = load_import(&project.config()).unwrap();
