@@ -53,3 +53,15 @@ pub fn via_methods(x: u32) -> u32 {
     cell.set(x);
     cell.get()
 }
+
+pub fn read_twice<U: Copy>(cell: &Cell<U>) -> U {
+    let first = read(cell);
+    let second = cell.get();
+    let _ = first;
+    second
+}
+
+pub fn twice_at(x: i32) -> i32 {
+    let cell = make(x);
+    read_twice(&cell)
+}

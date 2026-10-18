@@ -48,7 +48,18 @@ impl<T: Copy> generic_structs::Cell<T> {
     } by { execute(); simp(); }
 }
 
+// Generic code calls generic code at its own abstract type: `read` and
+// `Cell::get` at `U` have their contracts with `T` read as `U`.
+fn generic_structs::read_twice<U: Copy>(cell: &generic_structs::Cell<U>) -> U {
+    views cell.value;
+    ensures result == cell.value;
+} by { execute(); simp(); }
+
 // The calls at `u32` use them at `Cell<u32>`.
 fn generic_structs::via_methods(x: u32) -> u32 {
+    ensures result == x;
+} by { execute(); simp(); }
+
+fn generic_structs::twice_at(x: i32) -> i32 {
     ensures result == x;
 } by { execute(); simp(); }

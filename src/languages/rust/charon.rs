@@ -308,12 +308,16 @@ impl Adapter<'_> {
             .zip(pointer.generics.types.iter())
             .map(|(parameter, argument)| match parameter {
                 Some(Type::Parameter { .. }) => match self.ty(argument)? {
+                    // A call from generic code at its own type parameter,
+                    // `read::<T>(cell)`, calls the instance at that abstract
+                    // type.
                     scalar @ (Type::I32
                     | Type::U8
                     | Type::U16
                     | Type::U32
                     | Type::Usize
-                    | Type::Bool) => Ok(Some(scalar)),
+                    | Type::Bool
+                    | Type::Parameter { .. }) => Ok(Some(scalar)),
                     _ => Err(unsupported(
                         "type parameter instantiated at a type other than a scalar",
                     )),
@@ -354,6 +358,23 @@ impl Adapter<'_> {
         callee: &a::FunDecl,
         types: &[Option<Type>],
     ) -> Result<String, String> {
+        // The instance at the callee's own type parameters, a call from
+        // generic code whose parameters share their names, is the generic
+        // function itself.
+        if callee.generics.types.len() == types.len()
+            && callee
+                .generics
+                .types
+                .iter()
+                .zip(types)
+                .all(|(parameter, ty)| match ty {
+                    Some(Type::Parameter { name }) => *name == parameter.name,
+                    _ => ty.is_none(),
+                })
+            && let Some(name) = self.functions.get(&id)
+        {
+            return Ok(name.clone());
+        }
         let name = match &callee.src {
             a::FunSource::TraitImpl {
                 trait_ref,
@@ -390,16 +411,9 @@ impl Adapter<'_> {
                     .ok_or_else(|| unsupported("unmodeled external call"))?
                     .clone();
                 for ty in types.iter().flatten() {
-                    let spelling = match ty {
-                        Type::I32 => "i32",
-                        Type::U8 => "u8",
-                        Type::U16 => "u16",
-                        Type::U32 => "u32",
-                        Type::Usize => "usize",
-                        Type::Bool => "bool",
-                        _ => continue,
-                    };
-                    super::names::push_type_argument(&mut name, spelling);
+                    if let Some(spelling) = record_argument_spelling(ty) {
+                        super::names::push_type_argument(&mut name, &spelling);
+                    }
                 }
                 name
             }

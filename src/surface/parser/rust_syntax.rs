@@ -46,7 +46,7 @@ impl Parser {
         self.rust_trait_type_parameters.clear();
         // A generic function's instance, written out at its types,
         // `fn cells::read<i32>(...)`, is named with them.
-        let instance_arguments = self.rust_instance_arguments();
+        let instance_arguments = self.rust_instance_arguments(written_instance);
         if !instance_arguments.is_empty() && !written_instance {
             return Err(self.error(
                 "a generic function's instance has its generic function's contract at its \
@@ -320,6 +320,18 @@ impl Parser {
                 "a generic struct's methods are written once, `impl<T> crate_name::Cell<T>`; \
                  an instance's methods have their contracts at its types",
             ));
+        }
+        // A written instance at abstract types, from generic code, reads
+        // them as abstract types.
+        if written {
+            self.rust_abstract_type_parameters.extend(
+                instance
+                    .iter()
+                    .filter(|argument| {
+                        !rust_generic_traits::INSTANCE_SCALARS.contains(&argument.as_str())
+                    })
+                    .cloned(),
+            );
         }
         self.expect(Token::LBrace)?;
         let segments: Vec<&str> = impl_path.iter().map(String::as_str).collect();
@@ -659,7 +671,11 @@ impl Parser {
     /// The scalar type arguments after a function's name, `<i32>`, that
     /// name a generic function's instance, with the list consumed; none,
     /// with nothing consumed, otherwise.
-    fn rust_instance_arguments(&mut self) -> Vec<String> {
+    ///
+    /// A `written` instance may be at abstract types too, `fn
+    /// cells::read<T>(...)` called from generic code: those are abstract
+    /// type parameters in its signature.
+    fn rust_instance_arguments(&mut self, written: bool) -> Vec<String> {
         if self.peek() != Some(&Token::LessThan) {
             return Vec::new();
         }
@@ -668,7 +684,8 @@ impl Parser {
         loop {
             match self.tokens.get(index) {
                 Some(Token::Ident(argument))
-                    if rust_generic_traits::INSTANCE_SCALARS.contains(&argument.as_str()) =>
+                    if written
+                        || rust_generic_traits::INSTANCE_SCALARS.contains(&argument.as_str()) =>
                 {
                     arguments.push(argument.clone());
                 }
@@ -681,6 +698,11 @@ impl Parser {
             }
         }
         self.position = index + 2;
+        for argument in &arguments {
+            if !rust_generic_traits::INSTANCE_SCALARS.contains(&argument.as_str()) {
+                self.rust_abstract_type_parameters.insert(argument.clone());
+            }
+        }
         arguments
     }
 

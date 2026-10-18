@@ -18,22 +18,22 @@
             "profile": "38b817cc5760845d2e37b8f72a333f6d36a3ccdbfbf19e8c22da436e67a79ab1"
           },
           "schema": 9,
-          "source": "561cfc232f7add177dc44e4c6172fd01efe83ccca77ef53860385752f22ef827"
+          "source": "d848e8547be6d846b573971a8bc9932ec4e1fbaf81b58816903039d220fad7b9"
         },
         "sources": {
           "cells.rs": {
             "artifact": {
-              "bytes": 111686,
+              "bytes": 124881,
               "path": ".click/generic_structs/cells.rs.ullbc",
-              "sha256": "4e89636714712c03eb134d14ca133f10d6754cc011bef218bedaf72a130b045b"
+              "sha256": "9841e671e743cf2b1e7de305c4379c512640b090040d67b88887a1e42f07d72f"
             },
-            "identity": "8d9ce31193f92778495f0f300f41b282e736ec593eba5e337ad7f561342770b0",
+            "identity": "b237675d016da356b92adb8387580aab85fccd1bb6e718ab885a2fce54548347",
             "inputs": {
-              "cells.rs": "0b5509fd9e90af79f4ac0fd22e3573959a4c7ce4e03ef33a664006aaba4c0ad2"
+              "cells.rs": "5eb598e5f8cf21b79f3bed3a63a288e6b949c0d747178a2eaec389fa9f78b05b"
             }
           }
         },
-        "unit": "6fba02a32bc6fca8cb74ca10a43b128b646a7f31d82ccaeadebdc57efa381f5b"
+        "unit": "d949d1b1e1875db58823fb36d3a86e93885137573774df46a1d706c12226e084"
       }
     }
   }

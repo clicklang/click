@@ -674,9 +674,11 @@ scalar types, `echo.keep(x)` with `x: i32`, calls the instance
 declares and whose contract is the generic function's at those types: a
 clause that reads its abstract values only by `==` and `!=` means the same
 at every type. A type parameter is instantiated at `i32`, `u8`, `u16`,
-`u32`, `usize` or `bool`; a reference to a value of `T`, a generic call
-from generic code, and a generic block whose object carries state are
-refused
+`u32`, `usize` or `bool`, or at an abstract type of the calling generic
+code: `read_twice<U: Copy>` calling `read(cell)` calls `read<U>`, whose
+contract is `read`'s with `T` read as `U`, and a call at the callee's own
+parameter names calls the generic function itself. A reference to a value
+of `T` and a generic block whose object carries state are refused
 ([`design/charon-trial/generic-impls`](https://github.com/clicklang/click/blob/master/design/charon-trial/generic-impls/shapes.click)).
 
 A generic struct, `struct Cell<T> { value: T, count: u32 }`, holds values of

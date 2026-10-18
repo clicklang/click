@@ -12,7 +12,8 @@
         "roots": [
           "generic_structs::round_trip",
           "generic_structs::swapped",
-          "generic_structs::via_methods"
+          "generic_structs::via_methods",
+          "generic_structs::twice_at"
         ],
         "files": [
           "cells.rs"
