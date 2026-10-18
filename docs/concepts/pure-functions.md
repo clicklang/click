@@ -257,6 +257,10 @@ such as `ih(n - 2)` are supported when the branch facts prove the argument is
 nonnegative and smaller. The local hypothesis is not a global theorem and is
 not available in C execution proofs.
 
+Fixed mathematical `Integer` parameters and requirements on them retain the
+theorem's Integer bindings in the induction hypothesis. See
+[`scalar_induction_keeps_fixed_integer_parameters.md`](https://github.com/clicklang/click/blob/master/mdtests/scalar_induction_keeps_fixed_integer_parameters.md).
+
 For a recursive algebraic parameter, constructor-branching `induct` combines
 exhaustive case analysis with structural induction:
 
