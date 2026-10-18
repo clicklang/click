@@ -165,8 +165,7 @@ fn charon_generic_implementations_are_verified_once_for_every_type() {
     }
 }
 
-const STRUCT_SIDECAR: &str =
-    include_str!("../../design/charon-trial/generic-structs/cells.click");
+const STRUCT_SIDECAR: &str = include_str!("../../design/charon-trial/generic-structs/cells.click");
 
 // A generic struct's fields of `T` are values of `T` in memory: generic
 // functions over `&Cell<T>` and `&mut Pair<T>` are verified once with `T`

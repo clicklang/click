@@ -143,7 +143,9 @@ fn block_at(source: &[Spanned], start: usize) -> Result<Option<(String, Block)>,
     }
     let clauses_end = matching(source, clauses_open).ok_or_else(unterminated)?;
     let mut end = clauses_end + 1;
-    if is_ident(source.get(end), "by") && source.get(end + 1).map(|(token, _)| token) == Some(&Token::LBrace) {
+    if is_ident(source.get(end), "by")
+        && source.get(end + 1).map(|(token, _)| token) == Some(&Token::LBrace)
+    {
         end = matching(source, end + 1).ok_or_else(unterminated)? + 1;
     }
     let name = crate::languages::rust::names::path_name(

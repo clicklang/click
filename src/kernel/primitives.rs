@@ -3310,7 +3310,10 @@ impl AlgebraicTermNode {
     /// The scalar load term at the same memory and address as a
     /// [`AlgebraicTermNode::MemoryLoad`]: a walker reaches its memory and
     /// address as it reaches a scalar load's.
-    pub(crate) fn memory_load_carrier(memory: &SharedCMemory, pointer: &Pointer) -> Bitvector32Term {
+    pub(crate) fn memory_load_carrier(
+        memory: &SharedCMemory,
+        pointer: &Pointer,
+    ) -> Bitvector32Term {
         Bitvector32Term::MemoryLoad(memory.clone(), Box::new(pointer.clone()), LoadKind::Bits64)
     }
 
@@ -3346,7 +3349,10 @@ impl AlgebraicTermNode {
     }
 
     /// [`Self::memory_load_carrier`] as an algebraic field value.
-    pub(crate) fn memory_load_carrier_value(memory: &SharedCMemory, pointer: &Pointer) -> AlgebraicValue {
+    pub(crate) fn memory_load_carrier_value(
+        memory: &SharedCMemory,
+        pointer: &Pointer,
+    ) -> AlgebraicValue {
         AlgebraicValue::C(CValue::UInt64(Self::memory_load_carrier(memory, pointer)))
     }
 }

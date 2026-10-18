@@ -200,8 +200,8 @@ pub(crate) use loops::{
 };
 pub use memory_provenance::*;
 pub(crate) use model_fields::algebraic_value_variable;
-pub(crate) use primitives::resource_context_has_symbolic_range_read;
 pub(crate) use primitives::ABSTRACT_VALUE_WIDTH;
+pub(crate) use primitives::resource_context_has_symbolic_range_read;
 pub use primitives::*;
 pub(crate) use reasoning::memory_effect_write_pointers;
 pub(crate) use reasoning::memory_resolution::{

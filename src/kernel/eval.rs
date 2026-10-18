@@ -90,6 +90,7 @@ pub(crate) use memory_loads::recorded_load_access_width;
 pub(crate) use memory_loads::registered_load_bytes_for_variable;
 pub(crate) use memory_loads::registered_load_for_variable;
 pub(crate) use memory_loads::registered_load_origin_for_variable;
+pub(in crate::kernel) use memory_loads::symbolic_load_value_unrecorded;
 pub(crate) use memory_loads::terms_have_same_canonical_form;
 pub(crate) use memory_loads::viewed_as_memory_load;
 pub(crate) use memory_loads::{LOAD_VARIABLE_RANGE, proposition_mentions_load_variable};
@@ -106,7 +107,6 @@ pub(super) use memory_loads::{
     canonical_offset_term, evaluate_c_memory_load_paths, evaluate_logical_memory_load_paths,
     evaluate_spec_memory_load_paths, symbolic_load_value,
 };
-pub(in crate::kernel) use memory_loads::symbolic_load_value_unrecorded;
 pub(crate) use memory_loads::{latest_pointer_read_observation, latest_wide_load_observation};
 #[cfg(test)]
 pub(super) use memory_loads::{load_substitution_term_visits, reset_load_substitution_term_visits};
