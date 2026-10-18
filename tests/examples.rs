@@ -2460,7 +2460,7 @@ fn c_buffer_resource_modular_output_expands_and_rechecks() {
             .unwrap();
             let source = fixture.click_source.as_deref().unwrap();
             let sources = source_refs(&fixture.c_sources);
-            verify_c0_sources(source, &sources).unwrap();
+            let mut rewrites = Vec::new();
             for name in ["init", "probe"] {
                 let expanded = click::surface::expand_c0_claim_source(
                     source,
@@ -2480,8 +2480,15 @@ fn c_buffer_resource_modular_output_expands_and_rechecks() {
                     .count()
                     + 1;
                 let column = expanded[..offset].rsplit('\n').next().unwrap().len() + 1;
-                let (session, _) =
-                    click::surface::C0VerificationSession::new(source, &sources).unwrap();
+                rewrites.push((expanded, line, column));
+            }
+            // Finish all cold checks first: they reset the thread-local kernel
+            // tables. Construction then cold-verifies the complete original
+            // once and provides one retained baseline for both rewritten claims.
+            let (session, verified) =
+                click::surface::C0VerificationSession::new(source, &sources).unwrap();
+            assert!(!verified.is_empty());
+            for (expanded, line, column) in rewrites {
                 session
                     .verify_at(&expanded, line, column)
                     .expect("the expanded buffer output must check in its retained session");
@@ -2651,7 +2658,6 @@ fn owned_vector_grow_then_push_prefix_rechecks_in_all_proof_modes() {
             let source = fs::read_to_string(&path).unwrap();
             let c_sources = read_verifying_sources(&path, &source).unwrap();
             let sources = source_refs(&c_sources);
-            verify_c0_sources(&source, &sources).unwrap();
             let expanded = click::surface::expand_c0_claim_source(
                 &source,
                 &sources,
@@ -2665,8 +2671,10 @@ fn owned_vector_grow_then_push_prefix_rechecks_in_all_proof_modes() {
             let column = expanded[..offset].rsplit('\n').next().unwrap().len() + 1;
             verify_c0_sources_at(&expanded, &sources, line, column)
                 .expect("the expanded grow-then-push claim must check fresh");
-            let (session, _) =
+            // Session construction cold-verifies the complete original source.
+            let (session, verified) =
                 click::surface::C0VerificationSession::new(&source, &sources).unwrap();
+            assert!(!verified.is_empty());
             session
                 .verify_at(&expanded, line, column)
                 .expect("the expanded grow-then-push claim must check retained");
