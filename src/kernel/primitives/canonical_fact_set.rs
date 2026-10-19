@@ -27,7 +27,7 @@
 //! it and whether its whole subtree came from that table. Two pure trees of
 //! one table are equal exactly when their roots are one node; any other pair
 //! is compared fact by fact.
-use super::CResourceFact;
+use super::{CResourceFact, Variable};
 use std::cmp::Ordering;
 use std::sync::{Arc, Weak};
 
@@ -46,7 +46,13 @@ struct Node {
     domain: u64,
     /// Every node of this subtree was made by `domain`'s table.
     pure: bool,
+    /// [`CanonicalFactSet::syntax_ceiling`] of this subtree, once asked.
+    ceiling: std::sync::OnceLock<SyntaxCeiling>,
 }
+
+/// The greatest execution-range variable a fact's written syntax names, and
+/// whether that syntax names a snapshot.
+pub(in crate::kernel) type SyntaxCeiling = (Option<Variable>, bool);
 
 type Key = (u64, u32, usize, usize);
 
@@ -126,6 +132,7 @@ fn make(
             right,
             domain,
             pure,
+            ceiling: std::sync::OnceLock::new(),
         });
         table
             .nodes
@@ -228,6 +235,40 @@ impl CanonicalFactSet {
 
     pub(in crate::kernel) fn len(&self) -> usize {
         len(&self.root)
+    }
+
+    /// The held facts' combined [`SyntaxCeiling`]: the greatest of their
+    /// variables, and whether any names a snapshot. Each node caches its
+    /// subtree's answer, and interned nodes are shared by every context that
+    /// holds them, so a context derived by one insertion computes only the
+    /// nodes along that insertion's path rather than every held fact.
+    ///
+    /// `fact_ceiling` must be the one pure function every caller passes: the
+    /// cache does not record which function filled it.
+    pub(in crate::kernel) fn syntax_ceiling(
+        &self,
+        fact_ceiling: fn(&CResourceFact) -> SyntaxCeiling,
+    ) -> SyntaxCeiling {
+        fn subtree(
+            node: &Option<Arc<Node>>,
+            fact_ceiling: fn(&CResourceFact) -> SyntaxCeiling,
+        ) -> SyntaxCeiling {
+            let Some(node) = node else {
+                return (None, false);
+            };
+            // Uncharged: a node fills its cache at most once, and every node
+            // was made by an insertion that its context already paid for.
+            *node.ceiling.get_or_init(|| {
+                let (variable, snapshot) = fact_ceiling(&node.fact);
+                let (left, left_snapshot) = subtree(&node.left, fact_ceiling);
+                let (right, right_snapshot) = subtree(&node.right, fact_ceiling);
+                (
+                    variable.max(left).max(right),
+                    snapshot || left_snapshot || right_snapshot,
+                )
+            })
+        }
+        subtree(&self.root, fact_ceiling)
     }
 
     /// The facts in fact order, each as often as it is held.

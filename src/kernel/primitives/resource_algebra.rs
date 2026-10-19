@@ -5716,6 +5716,15 @@ impl ResourceContext {
         Ok((context, inserted))
     }
 
+    /// The held facts' combined written-syntax ceiling, cached on the
+    /// canonical fact set ([`canonical_fact_set::CanonicalFactSet::syntax_ceiling`]).
+    pub(in crate::kernel) fn syntax_ceiling(
+        &self,
+        fact_ceiling: fn(&CResourceFact) -> canonical_fact_set::SyntaxCeiling,
+    ) -> canonical_fact_set::SyntaxCeiling {
+        self.storage.index.canonical.syntax_ceiling(fact_ceiling)
+    }
+
     pub fn facts(&self) -> &[CResourceFact] {
         self.storage
             .materialized

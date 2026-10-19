@@ -10418,6 +10418,50 @@ mod execution_variable_ceiling_tests {
         assert!(context.execution_variable_ceiling() >= Some(execution_variable(7)));
     }
 
+    /// A composition fact's syntax ceiling is read from its context's cached
+    /// canonical fact set: it agrees with walking every held fact, and the
+    /// context one more fact derives computes only that insertion's path.
+    #[test]
+    fn composition_ceiling_reads_the_cached_fact_set() {
+        let owned = |index: u64| {
+            CResourceFact::own_memory(CMemoryRange::new(
+                Pointer::symbolic(execution_variable(index)),
+                Bitvector32Term::Constant(0),
+                Bitvector32Term::Constant(4),
+            ))
+        };
+        use crate::kernel::reasoning::variable_collection::{
+            COLLECTED_RESOURCE_FACTS, collect_proposition_bitvector_variables,
+            execution_variable_ceiling, proposition_syntax_execution_variable_ceiling,
+        };
+        let walked = |proposition: &Proposition| {
+            execution_variable_ceiling(Some(false), |variables| {
+                collect_proposition_bitvector_variables(proposition, variables)
+            })
+        };
+        for size in [16u64, 64, 256] {
+            let resources = (0..size).fold(ResourceContext::new(), |resources, index| {
+                resources.unchecked_with_fact(owned(index))
+            });
+            let composition = Proposition::CResourceComposition(resources.clone());
+            let ceiling = proposition_syntax_execution_variable_ceiling(&composition);
+            assert_eq!(ceiling, walked(&composition), "size {size}");
+            assert_eq!(ceiling, (Some(execution_variable(size - 1)), false));
+            let next =
+                Proposition::CResourceComposition(resources.unchecked_with_fact(owned(size)));
+            COLLECTED_RESOURCE_FACTS.with(|count| count.set(0));
+            let ceiling = proposition_syntax_execution_variable_ceiling(&next);
+            assert_eq!(ceiling, (Some(execution_variable(size)), false));
+            // A treap path: logarithmic in the held facts, where walking
+            // the composition visits all `size + 1` of them.
+            let visits = COLLECTED_RESOURCE_FACTS.with(Cell::get);
+            assert!(
+                visits <= 4 * size.ilog2() as usize,
+                "size {size}: {visits} facts visited"
+            );
+        }
+    }
+
     #[test]
     fn asking_after_every_fact_takes_each_snapshot_fact_whole_once() {
         for size in [8, 32] {
