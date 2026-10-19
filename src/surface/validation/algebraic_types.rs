@@ -1,5 +1,6 @@
 use super::*;
 use crate::surface::parser::algebraic_field_c_type_supported;
+use crate::surface::scoped_names::{Scope, ScopedNames};
 
 /// Scalar validation reads C carriers; generic inference additionally needs
 /// the declared struct identity of bindings. Keep that metadata in the same
@@ -2713,46 +2714,65 @@ fn generic_click_types_compatible(actual: &ClickType, expected: &ClickType) -> b
     }
 }
 
-/// Lexical return-checking types. Bindings are updated and restored in place;
+/// Lexical return-checking types. Bindings are updated and undone in place;
 /// branching and nested lets do not copy unrelated parameters or outer locals.
+/// The C and `Integer` names are indexes of the scoped types, kept in step.
 struct ReturnTypes {
-    values: BTreeMap<String, ClickType>,
+    values: ScopedNames<ClickType>,
     c_values: BTreeMap<String, C0Type>,
     integers: BTreeSet<String>,
 }
 
 impl ReturnTypes {
     fn new(values: BTreeMap<String, ClickType>) -> Self {
-        let c_values = values
-            .iter()
-            .filter_map(|(name, ty)| ty.c_type().map(|ty| (name.clone(), ty)))
-            .collect();
-        let integers = values
-            .iter()
-            .filter(|(_, ty)| **ty == ClickType::Integer)
-            .map(|(name, _)| name.clone())
-            .collect();
-        Self {
-            values,
-            c_values,
-            integers,
+        let mut types = Self {
+            values: ScopedNames::default(),
+            c_values: BTreeMap::new(),
+            integers: BTreeSet::new(),
+        };
+        for (name, value) in &values {
+            Self::index(&mut types.c_values, &mut types.integers, name, Some(value));
+        }
+        types.values = ScopedNames::new(values);
+        types
+    }
+
+    fn index(
+        c_values: &mut BTreeMap<String, C0Type>,
+        integers: &mut BTreeSet<String>,
+        name: &str,
+        value: Option<&ClickType>,
+    ) {
+        c_values.remove(name);
+        integers.remove(name);
+        if let Some(value) = value {
+            if let Some(ty) = value.c_type() {
+                c_values.insert(name.to_string(), ty);
+            }
+            if *value == ClickType::Integer {
+                integers.insert(name.to_string());
+            }
         }
     }
 
-    fn bind(&mut self, name: &str, value: Option<ClickType>) -> Option<ClickType> {
-        self.c_values.remove(name);
-        self.integers.remove(name);
-        if let Some(value) = value {
-            if let Some(ty) = value.c_type() {
-                self.c_values.insert(name.to_string(), ty);
-            }
-            if value == ClickType::Integer {
-                self.integers.insert(name.to_string());
-            }
-            self.values.insert(name.to_string(), value)
-        } else {
-            self.values.remove(name)
+    fn scope(&self) -> Scope {
+        self.values.scope()
+    }
+
+    /// Binds `name` to `value` until the open scope ends; `None` hides it.
+    fn bind(&mut self, name: &str, value: Option<ClickType>) {
+        Self::index(&mut self.c_values, &mut self.integers, name, value.as_ref());
+        match value {
+            Some(value) => self.values.bind(name, value),
+            None => self.values.hide(name),
         }
+    }
+
+    fn end(&mut self, scope: Scope) {
+        let (c_values, integers) = (&mut self.c_values, &mut self.integers);
+        self.values.end_with(scope, |name, value| {
+            Self::index(c_values, integers, name, value)
+        });
     }
 }
 
@@ -2767,7 +2787,7 @@ fn require_scalar_return_value(
     definitions: &BTreeMap<&str, &AlgebraicTypeDefinition>,
     context: &str,
 ) -> Result<(), ClickError> {
-    let mut previous = Vec::new();
+    let scope = types.scope();
     let checked = (|| {
         while let ContractExpression::Let {
             name,
@@ -2791,7 +2811,7 @@ fn require_scalar_return_value(
                 SpecValueType::Algebraic(application) => Some(ClickType::Algebraic(application)),
                 _ => infer_generic_expression_type(
                     value,
-                    &types.values,
+                    types.values.names(),
                     click_functions,
                     definitions,
                     context,
@@ -2816,10 +2836,7 @@ fn require_scalar_return_value(
                     )));
                 }
             }
-            previous.push((
-                name.as_str(),
-                types.bind(name, click_type.clone().or(value_type)),
-            ));
+            types.bind(name, click_type.clone().or(value_type));
             expression = body;
         }
         require_scalar_return_leaf(
@@ -2831,9 +2848,7 @@ fn require_scalar_return_value(
             context,
         )
     })();
-    for (name, value) in previous.into_iter().rev() {
-        types.bind(name, value);
-    }
+    types.end(scope);
     checked
 }
 
@@ -2872,7 +2887,7 @@ fn require_scalar_return_leaf(
         ContractExpression::AlgebraicMatch { scrutinee, arms } => {
             let scrutinee_type = infer_generic_expression_type(
                 scrutinee,
-                &types.values,
+                types.values.names(),
                 click_functions,
                 definitions,
                 context,
@@ -2890,7 +2905,7 @@ fn require_scalar_return_leaf(
                         }),
                     _ => None,
                 };
-                let mut previous = Vec::new();
+                let scope = types.scope();
                 for (index, binding) in arm.bindings.iter().enumerate() {
                     let value = fields
                         .and_then(|(definition, application, fields)| {
@@ -2900,7 +2915,7 @@ fn require_scalar_return_leaf(
                             instantiate_field_type(definition, application, field)
                         })
                         .transpose()?;
-                    previous.push((binding, types.bind(binding, value)));
+                    types.bind(binding, value);
                 }
                 let checked = require_scalar_return_value(
                     &arm.body,
@@ -2910,9 +2925,7 @@ fn require_scalar_return_leaf(
                     definitions,
                     context,
                 );
-                for (name, value) in previous.into_iter().rev() {
-                    types.bind(name, value);
-                }
+                types.end(scope);
                 checked?;
             }
             Ok(())
@@ -2972,8 +2985,9 @@ fn require_scalar_return_leaf(
                 definitions,
                 context,
             )?;
-            let old_accumulator = types.bind(accumulator, Some(accumulator_type.clone()));
-            let old_item = types.bind(item, Some(item_type));
+            let scope = types.scope();
+            types.bind(accumulator, Some(accumulator_type.clone()));
+            types.bind(item, Some(item_type));
             let checked = require_scalar_return_value(
                 body,
                 &accumulator_type,
@@ -2982,8 +2996,7 @@ fn require_scalar_return_leaf(
                 definitions,
                 context,
             );
-            types.bind(item, old_item);
-            types.bind(accumulator, old_accumulator);
+            types.end(scope);
             checked?;
             if generic_click_types_compatible(&accumulator_type, expected)
                 && (expected != &ClickType::C(C0Type::Bool) || &accumulator_type == expected)
@@ -3031,7 +3044,7 @@ fn require_scalar_return_leaf(
             let actual_type = if actual == SpecValueType::Scalar(None) {
                 infer_generic_expression_type(
                     value,
-                    &types.values,
+                    types.values.names(),
                     click_functions,
                     definitions,
                     context,

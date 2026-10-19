@@ -1603,10 +1603,7 @@ fn expand_declared_resource_proof_of(
     for tactic in tactics {
         if let ProofTactic::LetSatisfy(obtain) = &tactic {
             for (name, click_type) in &obtain.bindings {
-                bound.push((
-                    name.clone(),
-                    constructors.bind(name, Some(click_type.clone())),
-                ));
+                bound.push(constructors.bind(name, Some(click_type.clone())));
             }
         }
         let introduced = match &tactic {
@@ -1630,7 +1627,7 @@ fn expand_declared_resource_proof_of(
                     body,
                 }) => {
                     let name = rename.unwrap_or_else(|| written_name.unwrap_or(name));
-                    bound.push((name.clone(), constructors.bind(&name, Some(click_type))));
+                    bound.push(constructors.bind(&name, Some(click_type)));
                     Some(*body)
                 }
                 Some(ClickProposition::Implies(_, consequent)) => Some(*consequent),
@@ -1638,8 +1635,8 @@ fn expand_declared_resource_proof_of(
             };
         }
     }
-    for (name, previous) in bound.into_iter().rev() {
-        constructors.restore(&name, previous);
+    if let Some(first) = bound.first() {
+        constructors.restore(*first);
     }
     result.map(|()| SourceProof::Script(expanded))
 }
@@ -3124,27 +3121,27 @@ fn expand_declared_resource_proposition(
             click_type: ClickType,
             name: String,
             written_name: Option<String>,
-            shadowed: Option<Option<ClickType>>,
+            shadowed: crate::surface::scoped_names::Scope,
         },
         BuildExists {
             click_type: ClickType,
             name: String,
             written_name: Option<String>,
-            shadowed: Option<Option<ClickType>>,
+            shadowed: crate::surface::scoped_names::Scope,
         },
         BuildRangeAll {
             start: ContractExpression,
             end: ContractExpression,
             item: String,
             written_item: Option<String>,
-            shadowed: Option<Option<ClickType>>,
+            shadowed: crate::surface::scoped_names::Scope,
         },
         BuildRangeAny {
             start: ContractExpression,
             end: ContractExpression,
             item: String,
             written_item: Option<String>,
-            shadowed: Option<Option<ClickType>>,
+            shadowed: crate::surface::scoped_names::Scope,
         },
     }
     let constructors = &resource_definitions.constructors;
@@ -3288,7 +3285,7 @@ fn expand_declared_resource_proposition(
                 written_name,
                 shadowed,
             } => {
-                constructors.restore(&name, shadowed);
+                constructors.restore(shadowed);
                 let body = expanded.pop().expect("expanded universal body");
                 expanded.push(ClickProposition::ForAll {
                     click_type,
@@ -3303,7 +3300,7 @@ fn expand_declared_resource_proposition(
                 written_name,
                 shadowed,
             } => {
-                constructors.restore(&name, shadowed);
+                constructors.restore(shadowed);
                 let body = expanded.pop().expect("expanded existential body");
                 expanded.push(ClickProposition::Exists {
                     click_type,
@@ -3319,7 +3316,7 @@ fn expand_declared_resource_proposition(
                 written_item,
                 shadowed,
             } => {
-                constructors.restore(&item, shadowed);
+                constructors.restore(shadowed);
                 let body = expanded.pop().expect("expanded range universal body");
                 expanded.push(ClickProposition::RangeAll {
                     start,
@@ -3336,7 +3333,7 @@ fn expand_declared_resource_proposition(
                 written_item,
                 shadowed,
             } => {
-                constructors.restore(&item, shadowed);
+                constructors.restore(shadowed);
                 let body = expanded.pop().expect("expanded range existential body");
                 expanded.push(ClickProposition::RangeAny {
                     start,
@@ -3559,7 +3556,7 @@ fn expand_declared_resource_expression(
         String,
         Option<ClickType>,
         ContractExpression,
-        Option<Option<ClickType>>,
+        crate::surface::scoped_names::Scope,
     );
     let mut lets: Vec<ExpandedLet> = Vec::new();
     while let ContractExpression::Let {
@@ -3573,8 +3570,8 @@ fn expand_declared_resource_expression(
         let (value, previous) = match expanded {
             Ok(expanded) => expanded,
             Err(error) => {
-                for (name, _, _, previous) in lets.into_iter().rev() {
-                    resource_definitions.constructors.restore(&name, previous);
+                if let Some((_, _, _, first)) = lets.first() {
+                    resource_definitions.constructors.restore(*first);
                 }
                 return Err(error);
             }
@@ -3583,10 +3580,8 @@ fn expand_declared_resource_expression(
         expression = *body;
     }
     let expanded = expand_declared_resource_expression_node(expression, resource_definitions);
-    for (name, _, _, previous) in lets.iter_mut().rev() {
-        resource_definitions
-            .constructors
-            .restore(name, previous.take());
+    if let Some((_, _, _, first)) = lets.first() {
+        resource_definitions.constructors.restore(*first);
     }
     let mut expanded = expanded?;
     while let Some((name, click_type, value, _)) = lets.pop() {
@@ -3615,7 +3610,7 @@ fn expand_let_value(
     click_type: Option<&ClickType>,
     value: ContractExpression,
     resource_definitions: &DeclaredResourceScope,
-) -> Result<(ContractExpression, Option<Option<ClickType>>), ClickError> {
+) -> Result<(ContractExpression, crate::surface::scoped_names::Scope), ClickError> {
     let constructors = &resource_definitions.constructors;
     let mut value = value;
     if let Some(click_type) = click_type {
@@ -3905,8 +3900,8 @@ fn expand_declared_resource_expression_children(
             let accumulator_previous = constructors.bind(&accumulator, None);
             let item_previous = constructors.bind(&item, None);
             let body = recurse(*body);
-            constructors.restore(&item, item_previous);
-            constructors.restore(&accumulator, accumulator_previous);
+            constructors.restore(item_previous);
+            constructors.restore(accumulator_previous);
             ContractExpression::RangeFold {
                 start: Box::new(start),
                 end: Box::new(end),
@@ -3925,7 +3920,7 @@ fn expand_declared_resource_expression_children(
             let (value, previous) =
                 expand_let_value(&name, click_type.as_ref(), *value, resource_definitions)?;
             let body = recurse(*body);
-            resource_definitions.constructors.restore(&name, previous);
+            resource_definitions.constructors.restore(previous);
             ContractExpression::Let {
                 name,
                 click_type,

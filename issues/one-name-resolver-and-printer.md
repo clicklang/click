@@ -159,6 +159,13 @@ it was lowered from, and no expansion path calls the kernel-fact printer.
 `docs/internals/source-names-and-printing.md` documents that printer as the
 diagnostic extension, with its own explicit modes.
 
+The rule that a binding hides an earlier one until its scope ends was
+written once per pass. It is now `ScopedNames`, an undo log of bindings with
+scope marks, which constructor inference and the return-type check use. The
+remaining copies move to it next: validation's `AlgebraicVariables`, which
+copies its whole map for each inner scope, and the parser's hand-written
+save and restore for quantifiers, proof `let`s and hidden facts.
+
 The complete scoped table for parameters, fields, binders, constructors,
 resources, program points and project modules remains open. Within a
 tactic's parser-recorded range, expansion still finds the arm blocks of `if`,

@@ -101,6 +101,13 @@ aggregate parameters, arm binder types, facts). Cross-kind questions,
 `is_bound` and `is_c_variable`, and the hiding and restoring of bindings are
 methods of the table.
 
+Lexical bindings after parsing go through `ScopedNames`
+(`src/surface/scoped_names.rs`): a binding hides an earlier binding of its
+name until its scope ends, and ending the scope undoes, newest first,
+everything bound or hidden since its `Scope` mark. An inner scope copies
+nothing of the scopes around it. Constructor inference's binder types and
+the return-type check's local types are `ScopedNames`.
+
 Top-level declarations go through one declaration table,
 `DeclarationTable` (`src/surface/validation/declaration_table.rs`).
 `validate_click_definitions` declares each predicate, contract, function,
