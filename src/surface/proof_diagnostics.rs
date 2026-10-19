@@ -828,6 +828,7 @@ mod tests {
                     load: None,
                     read_equalities: Vec::new(),
                     read_context_changed: false,
+                    transport: None,
                     resources: Vec::new(),
                     more_resources: 0,
                 },

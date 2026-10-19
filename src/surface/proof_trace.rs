@@ -132,6 +132,7 @@ pub(super) struct TraceStep {
     pub load: Option<TraceLoad>,
     pub read_equalities: Vec<TraceFact>,
     pub read_context_changed: bool,
+    pub transport: Option<[TraceFact; 2]>,
     pub resources: Vec<TraceResourceChange>,
     pub more_resources: usize,
 }
@@ -1075,6 +1076,14 @@ fn append_path(
                 )
             ));
             let detail_indent = format!("{indent}  ");
+            if let Some([source, target]) = &step.transport {
+                for (name, fact) in [("source", source), ("target", target)] {
+                    detail.push_str(&format!(
+                        "\n{detail_indent}checked transport {name}: {}",
+                        render::render_proposition_labeled(&fact.kernel, labels),
+                    ));
+                }
+            }
             append_added_facts(&mut detail, &step.facts, labels, &detail_indent);
             if step.more_facts > 0 {
                 detail.push_str(&format!(
@@ -1525,6 +1534,7 @@ mod tests {
                     load: None,
                     read_equalities: Vec::new(),
                     read_context_changed: false,
+                    transport: None,
                     resources: Vec::new(),
                     more_resources: 0,
                 },
@@ -1587,6 +1597,7 @@ mod tests {
                 load: None,
                 read_equalities: Vec::new(),
                 read_context_changed: false,
+                transport: None,
                 resources: Vec::new(),
                 more_resources: 0,
             };
@@ -1679,6 +1690,7 @@ mod tests {
                 load: None,
                 read_equalities: Vec::new(),
                 read_context_changed: false,
+                transport: None,
                 resources: Vec::new(),
                 more_resources: 0,
             };
@@ -1789,6 +1801,7 @@ mod tests {
                     load: None,
                     read_equalities: Vec::new(),
                     read_context_changed: false,
+                    transport: None,
                     resources: Vec::new(),
                     more_resources: 0,
                 },
@@ -1805,6 +1818,7 @@ mod tests {
                     load: None,
                     read_equalities: Vec::new(),
                     read_context_changed: false,
+                    transport: None,
                     resources: Vec::new(),
                     more_resources: 0,
                 },
@@ -1872,6 +1886,7 @@ mod tests {
                 load: None,
                 read_equalities: Vec::new(),
                 read_context_changed: false,
+                transport: None,
                 resources: Vec::new(),
                 more_resources: 0,
             };

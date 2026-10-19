@@ -9794,6 +9794,10 @@ fn execution_transport_forks_without_copying_unrelated_state() {
         assert_eq!(root.certificate().steps(), &[]);
         assert_eq!(successor.certificate().steps(), &[step]);
         assert!(successor.added_facts().is_empty());
+        assert_eq!(
+            successor.state().checked_facts(),
+            &[kernel.clone(), kernel.clone()]
+        );
         let root_execution = root.execution().expect("root execution state");
         let successor_execution = successor.execution().expect("successor execution state");
         assert!(

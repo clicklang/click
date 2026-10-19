@@ -697,9 +697,18 @@ impl<'a> Proof<'a> {
             load: None,
             read_equalities: Vec::new(),
             read_context_changed: false,
+            transport: None,
             resources: Vec::new(),
             more_resources: 0,
         };
+        if tactic == "transport"
+            && let [source, target] = next.state().checked_facts()
+        {
+            detail.transport = Some([
+                next.checked_trace_fact(source.clone()),
+                next.checked_trace_fact(target.clone()),
+            ]);
+        }
         if let Some(checkpoint) = read_checkpoint
             && let Some(branch) = next.focused_branch().or_else(|| self.focused_branch())
         {
