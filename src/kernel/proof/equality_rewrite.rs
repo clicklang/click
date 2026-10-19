@@ -1262,6 +1262,18 @@ fn rewrite_atomic_proposition_by_exact_equality(
             if &rewritten != pointer {
                 return rewritten;
             }
+            // A loaded pointer is the read of its defining address; the
+            // rewritten address reads the same cell.
+            if let Some(read) = pointer.as_loaded_value() {
+                let address = rewrite_pointer_directly(&read.defining_address);
+                if address != read.defining_address {
+                    let loaded = Pointer::canonical_loaded_value(&read.defining_memory, &address);
+                    return Pointer {
+                        offset: PointerOffsetTerm::add(loaded.offset, read.displacement),
+                        block: loaded.block,
+                    };
+                }
+            }
             rewrite_through_loaded_pointer_block(pointer, &rewrite_pointer_directly, 8)
                 .unwrap_or(rewritten)
         };

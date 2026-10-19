@@ -4949,17 +4949,18 @@ pub(crate) fn first_unavailable_connective_side<'a>(
 }
 
 /// The canonical defining read of loaded pointer bits: a raw load or the
-/// load variable minted for it.
+/// load variable minted for it. A raw load is named as its load variable,
+/// whose recorded snapshot is the cell's epoch, so equal reads of one cell
+/// across unchanged snapshots name one value.
 fn canonical_pointer_read(bits: &Bitvector32Term) -> Option<(SharedCMemory, Pointer)> {
-    let definition = match crate::kernel::canonical_term(bits) {
-        Bitvector32Term::Variable(variable) if crate::kernel::is_load_variable(&variable) => {
-            crate::kernel::registered_load_term_for_variable(&variable)
+    let variable = match bits {
+        Bitvector32Term::Variable(variable) if crate::kernel::is_load_variable(variable) => {
+            *variable
         }
-        load @ Bitvector32Term::MemoryLoad(_, _, _) => Some(load),
-        _ => None,
+        Bitvector32Term::MemoryLoad(_, _, _) => crate::kernel::load_variable_for_term(bits)?.0,
+        _ => return None,
     };
-    match definition {
-        Some(Bitvector32Term::MemoryLoad(memory, address, _)) => Some((memory, *address)),
-        _ => None,
-    }
+    // A snapshot that left these bytes unchanged reads them from its source.
+    crate::kernel::registered_load_for_variable(&variable)
+        .map(|(memory, address)| (memory.unchanged_bytes_source(), address))
 }
