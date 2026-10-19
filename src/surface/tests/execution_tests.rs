@@ -6,10 +6,13 @@ fn generic_result_type_fixture() -> (&'static str, &'static str) {
         struct other { int32 value; };
         struct node* unchanged(struct node* p, struct other* q) { return p; }
     "#;
+    // Null satisfies the logical pointer domain without assuming original
+    // object-class evidence from a C formal's declared type.
     let source = r#"
         function select<T>(first: T, second: T) -> T { first }
         verifying "result.c";
         struct node* unchanged(struct node* p, struct other* q) {
+            requires p == 0;
             ensures select(p, result) == p;
             ensures result == p;
         } by {
