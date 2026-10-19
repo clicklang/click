@@ -665,19 +665,21 @@ impl ZlibProject {
     }
 }
 
-fn zlib_project() -> ZlibProject {
-    fn copy_tree(from: &Path, to: &Path) {
-        fs::create_dir_all(to).unwrap();
-        for entry in fs::read_dir(from).unwrap() {
-            let entry = entry.unwrap();
-            let destination = to.join(entry.file_name());
-            if entry.file_type().unwrap().is_dir() {
-                copy_tree(&entry.path(), &destination);
-            } else {
-                fs::copy(entry.path(), destination).unwrap();
-            }
+/// Copies the directory tree `from` to `to`.
+fn copy_tree(from: &Path, to: &Path) {
+    fs::create_dir_all(to).unwrap();
+    for entry in fs::read_dir(from).unwrap() {
+        let entry = entry.unwrap();
+        let destination = to.join(entry.file_name());
+        if entry.file_type().unwrap().is_dir() {
+            copy_tree(&entry.path(), &destination);
+        } else {
+            fs::copy(entry.path(), destination).unwrap();
         }
     }
+}
+
+fn zlib_project() -> ZlibProject {
     let copy = tempfile::tempdir().expect("isolated offline Adler-32 project");
     let repository = Path::new(env!("CARGO_MANIFEST_DIR"));
     copy_tree(
@@ -2327,4 +2329,105 @@ fn project_unit_verifies_an_external_tree_in_place() {
     let error = load(&sidecar).unwrap_err();
     assert!(error.contains("does not match its description"), "{error}");
     let _ = fs::remove_dir_all(&base);
+}
+
+/// The files and directories under `root`, by relative path, with each file's
+/// bytes: the inventory a run must leave unchanged.
+fn tree_inventory(root: &Path) -> std::collections::BTreeMap<PathBuf, Option<Vec<u8>>> {
+    let mut inventory = std::collections::BTreeMap::new();
+    let mut pending = vec![root.to_path_buf()];
+    while let Some(directory) = pending.pop() {
+        for entry in fs::read_dir(&directory).unwrap() {
+            let path = entry.unwrap().path();
+            let relative = path.strip_prefix(root).unwrap().to_path_buf();
+            if path.is_dir() {
+                inventory.insert(relative, None);
+                pending.push(path);
+            } else {
+                inventory.insert(relative, Some(fs::read(&path).unwrap()));
+            }
+        }
+    }
+    inventory
+}
+
+/// Sets every file and directory under `root` read-only, or writable again.
+fn set_tree_writable(root: &Path, writable: bool) {
+    use std::os::unix::fs::PermissionsExt;
+    let mut pending = vec![root.to_path_buf()];
+    while let Some(path) = pending.pop() {
+        let directory = path.is_dir();
+        if directory {
+            pending.extend(fs::read_dir(&path).unwrap().map(|e| e.unwrap().path()));
+        }
+        let mode = match (directory, writable) {
+            (true, true) => 0o755,
+            (true, false) => 0o555,
+            (false, true) => 0o644,
+            (false, false) => 0o444,
+        };
+        fs::set_permissions(&path, fs::Permissions::from_mode(mode)).unwrap();
+    }
+}
+
+/// The foreign-layout example reads an upstream tree whose paths and names
+/// Click did not choose, with its generated configuration header in an
+/// out-of-tree build directory in the project. Locking and verifying a copy
+/// whose upstream tree is read-only add and change no file in the tree,
+/// reproduce the committed portable lock, and a changed upstream byte is
+/// refused by the name of the file.
+#[test]
+#[ignore = "nightly: runs GCC to lock the foreign-layout example"]
+fn foreign_layout_tree_is_read_in_place_and_never_written() {
+    let copy = tempfile::tempdir().unwrap();
+    let example = copy.path().join("foreign-layout");
+    copy_tree(
+        &Path::new(env!("CARGO_MANIFEST_DIR")).join("examples/foreign-layout"),
+        &example,
+    );
+    let project = example.join("project");
+    let upstream = example.join("upstream/RingQ-1.2");
+    let committed = fs::read(project.join("click.project.lock.json")).unwrap();
+    fs::remove_file(project.join("click.project.lock.json")).unwrap();
+    fs::remove_dir_all(project.join(".click")).unwrap();
+    let before = tree_inventory(&upstream);
+    set_tree_writable(&upstream, false);
+    let click = |args: &[&str]| {
+        std::process::Command::new(env!("CARGO_BIN_EXE_click"))
+            .args(args)
+            .current_dir(&project)
+            .output()
+            .unwrap()
+    };
+    let locked = click(&["import", "lock"]);
+    let verified = click(&["verify", "ringq.click"]);
+    let after = tree_inventory(&upstream);
+    set_tree_writable(&upstream, true);
+    assert!(
+        locked.status.success(),
+        "{}",
+        String::from_utf8_lossy(&locked.stderr)
+    );
+    assert!(
+        verified.status.success(),
+        "{}",
+        String::from_utf8_lossy(&verified.stderr)
+    );
+    assert_eq!(
+        before, after,
+        "locking and verifying changed the upstream tree"
+    );
+    assert_eq!(
+        fs::read(project.join("click.project.lock.json")).unwrap(),
+        committed,
+        "a fresh lock of the copy differs from the committed one"
+    );
+    let header = upstream.join("inc/ringq/RingQ.h");
+    let mut bytes = fs::read(&header).unwrap();
+    bytes[0] = b'#';
+    fs::write(&header, bytes).unwrap();
+    let stale = click(&["verify", "ringq.click"]);
+    let error = String::from_utf8_lossy(&stale.stderr);
+    assert!(!stale.status.success());
+    assert!(error.contains("RingQ.h"), "{error}");
 }

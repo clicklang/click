@@ -295,9 +295,15 @@ C++ items were chosen explicitly; the rest are the recommended defaults.
   `#[path = "../../vendor/..."]` attribute produces, only through real
   directories inside the unit root. The upstream units' artifacts are
   byte-identical; the clients' differ only in recorded file paths.
-- **Remaining:** the foreign-layout regression below; exceptions to the
-  import boundary, such as Click files kept apart from the code in a
-  monorepo, are left for a separate setting if needed.
+- **Foreign layout.** `examples/foreign-layout` is a project beside an
+  upstream tree with paths and names Click did not choose, its generated
+  header in an out-of-tree build directory in the project. The example gate
+  verifies it offline; a nightly test locks a copy with the tree read-only and
+  checks that the tree is unchanged, the lock reproduces, and a changed
+  upstream byte is refused by file name.
+- **Remaining:** none of the intended regressions. Exceptions to the import
+  boundary, such as Click files kept apart from the code in a monorepo, are
+  left for a separate setting if needed.
 
 ## Intended regressions
 

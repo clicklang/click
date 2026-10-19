@@ -548,6 +548,12 @@ sequence:
   worked example of [Verify a function in your own project](../concepts/own-project.md).
   One sidecar and one compiler import cover both files with the build's `-I`
   and `-D` flags, and `<string.h>` resolves to Click's modeled header.
+- `examples/foreign-layout/project/`: a full-sidecar project. It reads the
+  library in `upstream/RingQ-1.2/` beside it, whose paths and names Click did
+  not choose (`inc/ringq/RingQ.h`, `Source/RingQ_Core.c`), in place as its
+  unit root, with the generated configuration header in an out-of-tree build
+  directory inside the project (`build/gen/rq_config.h`). Nothing is added to
+  the upstream tree; a nightly test locks a copy with the tree read-only.
 - `examples/pcg/pcg-basic/`: byte-preserved upstream pcg-c-basic source with a
   checked SHA-256 manifest. Proves the PCG32 generator step and output, the
   reentrant seeding helper, and the public wrappers that pass the file's
