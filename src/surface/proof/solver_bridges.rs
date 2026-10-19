@@ -44,6 +44,36 @@ const DEFINITION_LEAVES: usize = 16;
 /// own definitions on the way to one end.
 const DEFINITION_UNFOLDS: usize = 4;
 
+thread_local! {
+    static ACTIVE_MACHINE_EQUALITY_BRIDGE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+pub(super) fn machine_equality_bridge_active() -> bool {
+    ACTIVE_MACHINE_EQUALITY_BRIDGE.with(std::cell::Cell::get)
+}
+
+/// The outer search owns memory transport. Arithmetic subgoals may use
+/// retained facts and operation bridges without restarting that search.
+struct MachineEqualityBridgeScope;
+
+impl MachineEqualityBridgeScope {
+    fn enter() -> Option<Self> {
+        ACTIVE_MACHINE_EQUALITY_BRIDGE.with(|active| {
+            if active.replace(true) {
+                None
+            } else {
+                Some(Self)
+            }
+        })
+    }
+}
+
+impl Drop for MachineEqualityBridgeScope {
+    fn drop(&mut self) {
+        ACTIVE_MACHINE_EQUALITY_BRIDGE.with(|active| active.set(false));
+    }
+}
+
 /// The machine type an order fact compares, with the names its bridges use.
 #[derive(Clone, Copy, Eq, PartialEq)]
 enum MachineOrder {
@@ -1623,15 +1653,32 @@ impl<'a> Proof<'a> {
         let Some(order) = MachineOrder::of(goal) else {
             return Ok(None);
         };
-        // Plain 32-bit equality already has the indexed native-reading
-        // solver route. Re-entering full auto on its Integer reading repeats
-        // equality-by-bounds and snapshot search for the same comparison.
-        if matches!(
+        // Plain 32-bit equality has the indexed native-reading route.
+        // Arithmetic operands may additionally need checked definedness
+        // and term-by-term operation bridges before their Integer reading
+        // can be proved. Keep ordinary read equalities out of full auto:
+        // it would repeat equality-by-bounds and snapshot search.
+        let _arithmetic_scope = if matches!(
             goal,
             Proposition::ConditionIs(ConditionTerm::Bitvector32Equal(..), true)
         ) {
-            return Ok(None);
-        }
+            let arithmetic = matches!(surface_goal,
+                ClickProposition::Comparison { left, right, .. }
+                    if matches!(left, ContractExpression::Add(..) | ContractExpression::Subtract(..))
+                        || matches!(right, ContractExpression::Add(..) | ContractExpression::Subtract(..)));
+            if !arithmetic {
+                return Ok(None);
+            }
+            if let Some(closed) = self.try_native_goal_by_integer_reading()? {
+                return Ok(Some(closed));
+            }
+            let Some(scope) = MachineEqualityBridgeScope::enter() else {
+                return Ok(None);
+            };
+            Some(scope)
+        } else {
+            None
+        };
         if (order == MachineOrder::Equal64) != wide_equality {
             return Ok(None);
         }
