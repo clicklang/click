@@ -4210,3 +4210,107 @@ fn equal_object_origins_frame_neighbor_fields_without_equating_index_atoms() {
         "the same alias geometry must reject a partial overwrite"
     );
 }
+
+#[test]
+fn stated_separation_frames_equal_model_and_program_origins() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let origin = |variable| Pointer {
+        block: PointerBlock::ExternalArgument,
+        offset: PointerOffsetTerm::scale_int32(Bitvector32Term::Variable(Variable(variable)), 4),
+    };
+    let entry = origin(9_883_101);
+    let parent = Pointer::symbolic(Variable(9_883_102));
+    let bridge = Pointer::symbolic(Variable(9_883_103));
+    let node = origin(9_883_104);
+    let first = Proposition::ConditionIs(
+        ConditionTerm::pointer_equal(parent.clone(), bridge.clone()),
+        true,
+    );
+    let second =
+        Proposition::ConditionIs(ConditionTerm::pointer_equal(bridge, entry.clone()), true);
+    let separation = Proposition::CResourceSeparate {
+        left: Box::new(CResource::Memory(memory_range(
+            parent.offset_by_bytes(8),
+            0,
+            2,
+        ))),
+        right: Box::new(CResource::Memory(memory_range(
+            node.offset_by_bytes(16),
+            0,
+            2,
+        ))),
+    };
+    let before = intern_c_memory(CMemory::new());
+    let after = intern_c_memory(before.memory().clone().store(
+        node.offset_by_bytes(16),
+        CValue::UInt64(Bitvector32Term::UInt64Constant(19)),
+    ));
+    let read = entry.offset_by_bytes(8);
+    let load = |memory: &SharedCMemory| {
+        Bitvector32Term::MemoryLoad(memory.clone(), Box::new(read.clone()), LoadKind::Bits64)
+    };
+    let original = PureFactContext::new().assume_proposition(separation.clone());
+    for separation_first in [true, false] {
+        let mut context = if separation_first {
+            original.clone()
+        } else {
+            PureFactContext::new()
+        };
+        context = context
+            .assume_proposition(first.clone())
+            .assume_proposition(second.clone());
+        if !separation_first {
+            context = context.assume_proposition(separation.clone());
+        }
+        assert!(context.pointers_known_equal(&entry, &parent));
+        let proof = with_extended_dag_bridging(|| {
+            atomic_memory_load_equality_evidence(&load(&after), &load(&before), &context)
+        })
+        .expect("stated separation follows checked origin equality");
+        let goal =
+            Proposition::ConditionIs(ConditionTerm::equal(load(&after), load(&before)), true);
+        assert!(proof.checks(&goal, &context));
+        assert!(typed_read_has_same_memory_source(
+            before.memory(),
+            after.memory(),
+            &read,
+            8,
+            &context
+        ));
+        for removed in [&first, &second, &separation] {
+            let missing = context.without_exact_fact(removed);
+            assert!(!proof.checks(&goal, &missing));
+            assert!(!typed_read_has_same_memory_source(
+                before.memory(),
+                after.memory(),
+                &read,
+                8,
+                &missing
+            ));
+        }
+        assert!(
+            !typed_read_has_same_memory_source(
+                before.memory(),
+                after.memory(),
+                &read,
+                16,
+                &context
+            ),
+            "authority covers only eight bytes"
+        );
+        assert!(
+            !typed_read_has_same_memory_source(
+                before.memory(),
+                after.memory(),
+                &entry.offset_by_bytes(4),
+                8,
+                &context
+            ),
+            "partial membership in a separated field does not protect the whole read"
+        );
+    }
+    assert!(
+        !typed_read_has_same_memory_source(before.memory(), after.memory(), &read, 8, &original),
+        "a sibling context must not inherit equalities or cached class payloads"
+    );
+}

@@ -1814,6 +1814,15 @@ lookup (including `assumption()`) share this indexed rule. The latter also
 handles negated pointer equality and retains the exact separation premise;
 it performs no owned-composition scan, alias search, or unfolding.
 
+Store framing also retrieves stated separation authority through the checked
+address classes of both range anchors. `SeparatedAddressIndex` retains each
+exact proposition and follows term-class merge deltas, rekeying only incident
+pairs. Persistent roots and separate cache locks preserve context forks;
+withdrawing equality support reconstructs the index against the remaining
+checked graph. The existing direct anchor lookup stays first. Every retrieved
+candidate still needs membership evidence covering both complete byte ranges,
+and an overlapping numeric address relation rejects the frame.
+
 ### Resource logical call domains
 
 Opening an active selected resource body retains the nominal pointer domains of
