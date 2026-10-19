@@ -129,7 +129,13 @@ instead of from what the step changed.
    fact against every fact already held, memory snapshots included. The
    stream's indexes now cover its context blocks and survive filtering
    (`membership_reads_no_context_block_of_a_growing_stream`); at N = 128 the
-   membership lookups went from 492 to 6 million instructions.
+   membership lookups went from 492 to 6 million instructions. A plain
+   composite `unfold` also renormalized the whole context it composed its
+   body into; it now normalizes around the body alone
+   (`ResourceContext::normalized_around_facts`;
+   `unfolding_one_object_does_not_renormalize_every_held_object`), and at
+   N = 128 whole-context normalization went from 738 to 60 million
+   instructions.
 5. **Fixed: satisfying a composite checked every held one of its shape.**
    `ResourceContext::satisfies_fact` tried entailment against every held
    `boxed(..)` when the required pointer was spelled differently, so each

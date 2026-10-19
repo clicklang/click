@@ -87,6 +87,8 @@ mod nat_integer;
 pub(crate) use nat_integer::{check_nat_integer_law, is_conversion_nat_type, is_nat_integer_image};
 mod object_types;
 mod primitives;
+#[cfg(test)]
+pub(crate) use primitives::take_whole_normalization_facts;
 pub(crate) mod proof;
 mod publication;
 mod pure_functions;
