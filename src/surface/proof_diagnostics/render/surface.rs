@@ -1470,7 +1470,7 @@ impl Printer<'_> {
         let context = self
             .labels
             .source_memory_context(memory)
-            .map(|(point, naming)| (point.len() <= 256, std::rc::Rc::new(naming.clone())));
+            .map(|(point, naming)| (point.len() <= 256, std::sync::Arc::new(naming.clone())));
         if !self.source_mode() && context.is_none() {
             return None;
         }
@@ -1492,7 +1492,7 @@ impl Printer<'_> {
     /// The place a load reads, before its memory qualifies it.
     fn load_place(
         &mut self,
-        naming: &Option<std::rc::Rc<NamingTables>>,
+        naming: &Option<std::sync::Arc<NamingTables>>,
         pointer: &Pointer,
         kind: crate::kernel::LoadKind,
         depth: usize,
