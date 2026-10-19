@@ -2265,3 +2265,35 @@ int32 choose(int32 a, int32 b) {
             .unwrap_or_else(|error| panic!("{}\n{expanded}", error.message()));
     }
 }
+
+#[test]
+fn algebraic_constructor_keeps_struct_pointer_field_identity_across_old() {
+    let c_source = r#"
+        struct child { int32 value; };
+        struct other { int32 value; };
+        struct parent { struct child* kid; struct other* wrong; int32 scalar; };
+        void unchanged(struct parent* p) {}
+    "#;
+    let source = r#"
+        spec enum Link { Linked(struct child*), }
+        verifying "field.c";
+        void unchanged(struct parent* p) {
+            views p->kid;
+            views p->wrong;
+            views p->scalar;
+            ensures Link::Linked(old(p->kid)) == Link::Linked(p->kid);
+        } by { execute(); }
+    "#;
+    verify_c0_sources(source, &[("field.c", c_source)])
+        .expect("a historical field retains its declared struct pointer type");
+    for wrong in ["p->wrong", "p->scalar"] {
+        let error = verify_c0_sources(&source.replace("p->kid", wrong), &[("field.c", c_source)])
+            .expect_err("a different struct or scalar cannot fill a child pointer field");
+        assert!(error.message().contains("expects struct child*"), "{error}");
+    }
+    verify_c0_sources(
+        &source.replace(" == Link::Linked", " != Link::Linked"),
+        &[("field.c", c_source)],
+    )
+    .expect_err("retaining a field type must not establish a false postcondition");
+}

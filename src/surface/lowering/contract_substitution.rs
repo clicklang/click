@@ -3425,7 +3425,9 @@ pub(in crate::surface) fn substitute_contract_expression_in(
             field,
             lowered,
             offset_bytes,
+            pointee_struct,
         } => Ok(ContractExpression::Field {
+            pointee_struct: pointee_struct.clone(),
             base: Box::new(substitute_contract_expression_in(base, substitutions)?),
             field: field.clone(),
             lowered: if substitutions.is_contract_result_binding()

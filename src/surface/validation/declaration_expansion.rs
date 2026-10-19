@@ -3861,7 +3861,9 @@ fn expand_declared_resource_expression_children(
             field,
             lowered,
             offset_bytes,
+            pointee_struct,
         } => ContractExpression::Field {
+            pointee_struct,
             base: Box::new(recurse(*base)?),
             field,
             lowered,
