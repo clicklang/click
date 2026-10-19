@@ -5091,8 +5091,7 @@ impl AnnotationLowerer<'_> {
     ) -> bool {
         [start, end].into_iter().any(|bound| {
             matches!(
-                generics::explicit_cast_click_type(bound)
-                    .or_else(|| self.contract_expression_click_type(bound, environment)),
+                self.contract_expression_click_type(bound, environment),
                 Some(ClickType::C(C0Type::UInt64(_)))
             ) || matches!(bound, ContractExpression::CFragment(CExpression::Variable(name))
                     if self.c_variable_type(name) == Some(CType::UInt64))
