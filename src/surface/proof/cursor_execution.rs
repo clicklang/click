@@ -516,6 +516,18 @@ pub(super) fn execute_branch_step_from_frontier_position(
             tactic_index,
             tactic_name,
         )?;
+    // A Rust `match` arm's variant test that the facts do not decide has one
+    // successor per variant, as an undecided C condition has two. Each is
+    // its own proof arm: a proof `match` on the value names the fields its
+    // arm learns, which a proof `if` on the test could not.
+    if let Some(split) = enum_switch_proof_match(&statement, &current_state, context) {
+        return Err(ClickError::new(format!(
+            "`{claim_label}` tactic {tactic_index}: `{tactic_name}` reached a Rust `match` of `{}`, whose variant is not known here; each variant is its own proof arm. Write `{}` here, or let `execute()` split it",
+            describe_c_expression(&CExpression::Variable(split.scrutinee_name().to_string())),
+            split.outline(),
+        ))
+        .with_path_case_match(split));
+    }
     let CStatement::If {
         condition,
         then_branch,
@@ -3675,6 +3687,87 @@ pub(super) fn condition_path_case_split_condition(
         .map(|path_facts| PathCase { path_facts })
         .collect::<Vec<_>>();
     path_case_split_condition(&cases, available, state, proof_context)
+}
+
+/// The proof `match` that separates a Rust `match` of an enum local: one arm
+/// per variant, each field bound as `<local>_<variant>_<index>` with the
+/// variant in snake case, made fresh against the function's locals. Every
+/// arm's binders differ, so all stay bound after `execute()` finishes.
+fn enum_switch_proof_match(
+    statement: &CStatement,
+    state: &CState,
+    facts: Option<&PureFactContext>,
+) -> Option<ProofMatch> {
+    let CStatement::If { condition, .. } = statement else {
+        return None;
+    };
+    let mut test = condition;
+    while let CExpression::Or(left, _) = test {
+        test = left;
+    }
+    let CExpression::EnumIs { value, .. } = test else {
+        return None;
+    };
+    let CExpression::Variable(name) = value.as_ref() else {
+        return None;
+    };
+    let CValue::Parameter(term) = state.locals().get(name)? else {
+        return None;
+    };
+    if term.algebraic_type.rigid
+        || matches!(
+            term.node,
+            crate::kernel::AlgebraicTermNode::Constructor { .. }
+        )
+        || facts.is_some_and(|facts| facts.knows_algebraic_constructor(term))
+    {
+        return None;
+    }
+    let arms = term
+        .algebraic_type
+        .variants
+        .iter()
+        .map(|variant| {
+            let mut used = BTreeSet::new();
+            let snake = snake_case(&variant.name);
+            let bindings = (0..variant.fields.len())
+                .map(|index| {
+                    let mut binding = format!("{name}_{snake}_{index}");
+                    while state.locals().contains_name(&binding) || !used.insert(binding.clone()) {
+                        binding.push('_');
+                    }
+                    binding
+                })
+                .collect();
+            ProofInductionArm {
+                type_name: term.algebraic_type.name.clone(),
+                variant: variant.name.clone(),
+                bindings,
+                tactics: Vec::new(),
+            }
+        })
+        .collect();
+    Some(ProofMatch {
+        scrutinee: ContractExpression::CFragment(CExpression::Variable(name.clone())),
+        ensuring: None,
+        arms,
+    })
+}
+
+/// `IsEmpty` as `is_empty`.
+fn snake_case(name: &str) -> String {
+    let mut snake = String::new();
+    for (index, character) in name.chars().enumerate() {
+        if character.is_uppercase() {
+            if index > 0 {
+                snake.push('_');
+            }
+            snake.extend(character.to_lowercase());
+        } else {
+            snake.push(character);
+        }
+    }
+    snake
 }
 
 /// The condition a case split of `cases` splits on first: a distinguishing

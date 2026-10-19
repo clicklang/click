@@ -395,12 +395,26 @@ fn collect_spec_c_expression_carriers(expression: &CExpression, variables: &mut 
         CExpression::Cast { expression, .. }
         | CExpression::FloatNegate(expression)
         | CExpression::FloatClassification { expression, .. }
+        | CExpression::EnumField {
+            value: expression, ..
+        }
+        | CExpression::EnumIs {
+            value: expression, ..
+        }
         | CExpression::AddressOf(expression)
         | CExpression::CheckedObjectAddress(expression)
         | CExpression::Not(expression)
         | CExpression::Load(expression)
         | CExpression::BitwiseNot(expression) => {
             collect_spec_c_expression_carriers(expression, variables)
+        }
+        CExpression::EnumConstruct { fields, .. } => {
+            for field in fields {
+                collect_spec_c_expression_carriers(field, variables);
+                if variables.exhausted() {
+                    return;
+                }
+            }
         }
         CExpression::PointerOffsetBytes { pointer, .. }
         | CExpression::Subobject { pointer, .. } => {
@@ -449,6 +463,9 @@ fn collect_spec_algebraic_carriers(
         SpecAlgebraicExpressionNode::Binding(_) => {}
         SpecAlgebraicExpressionNode::ResourceField(projection) => {
             variables.c.insert(projection.identity);
+        }
+        SpecAlgebraicExpressionNode::CValue(value) => {
+            collect_spec_expression_carriers(value, variables, integer_seen)
         }
         SpecAlgebraicExpressionNode::Constructor { fields, .. } => {
             for field in fields {
@@ -1443,6 +1460,9 @@ impl<'a> TermRewrite<'a> {
             SpecAlgebraicExpressionNode::ResourceField(projection) => {
                 SpecAlgebraicExpressionNode::ResourceField(projection.clone())
             }
+            SpecAlgebraicExpressionNode::CValue(value) => {
+                SpecAlgebraicExpressionNode::CValue(Box::new(self.rewrite_spec_expression(value)?))
+            }
             SpecAlgebraicExpressionNode::Constructor { variant, fields } => {
                 SpecAlgebraicExpressionNode::Constructor {
                     variant: variant.clone(),
@@ -1654,6 +1674,31 @@ impl<'a> TermRewrite<'a> {
             CExpression::FloatNegate(value) => {
                 CExpression::FloatNegate(Box::new(self.rewrite_c_expression(value)?))
             }
+            CExpression::EnumConstruct {
+                enum_type,
+                variant,
+                fields,
+            } => CExpression::EnumConstruct {
+                enum_type: *enum_type,
+                variant: variant.clone(),
+                fields: fields
+                    .iter()
+                    .map(|field| self.rewrite_c_expression(field))
+                    .collect::<Result<_, _>>()?,
+            },
+            CExpression::EnumField {
+                value,
+                variant,
+                index,
+            } => CExpression::EnumField {
+                value: Box::new(self.rewrite_c_expression(value)?),
+                variant: variant.clone(),
+                index: *index,
+            },
+            CExpression::EnumIs { value, variant } => CExpression::EnumIs {
+                value: Box::new(self.rewrite_c_expression(value)?),
+                variant: variant.clone(),
+            },
             CExpression::FloatClassification {
                 expression,
                 classification,

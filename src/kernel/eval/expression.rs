@@ -1481,6 +1481,26 @@ pub(in crate::kernel) fn evaluate_c_expression_paths(
         CExpression::FloatNegate(expression) => {
             evaluate_c_float_negate_paths(state, expression, assumptions, budget)?
         }
+        CExpression::EnumConstruct {
+            enum_type,
+            variant,
+            fields,
+        } => evaluate_c_enum_construct_paths(
+            state,
+            *enum_type,
+            variant,
+            fields,
+            assumptions,
+            budget,
+        )?,
+        CExpression::EnumField {
+            value,
+            variant,
+            index,
+        } => evaluate_c_enum_field_paths(state, value, variant, *index, assumptions, budget)?,
+        CExpression::EnumIs { value, variant } => {
+            evaluate_c_enum_is_paths(state, value, variant, assumptions, budget)?
+        }
         CExpression::FloatClassification {
             expression,
             classification,
@@ -2149,6 +2169,278 @@ fn evaluate_c_float_negate_paths(
             facts,
             obligations,
         });
+    }
+    budget.check_path_width(paths.len())?;
+    Ok(paths)
+}
+
+/// An enum value of `variant` built from `fields`, evaluated in order. Each
+/// field must have its declared type: the frontend's types are checked, not
+/// trusted.
+fn evaluate_c_enum_construct_paths(
+    state: &CState,
+    enum_type: TypeParameterName,
+    variant: &str,
+    fields: &[CExpression],
+    assumptions: &PureFactContext,
+    budget: &mut ExecutionBudget,
+) -> ExecutionResult<Vec<CExpressionPath>> {
+    let algebraic_type = enum_type.algebraic_type();
+    let declared = algebraic_type
+        .variants
+        .iter()
+        .find(|declared| declared.name == variant)
+        .map(|declared| declared.fields.clone());
+    let mut paths = Vec::new();
+    for path in crate::kernel::functions::evaluate_c_arguments_paths(
+        state,
+        fields,
+        assumptions,
+        budget,
+        None,
+    )? {
+        let outcome = match path.outcome {
+            Some(CFunctionOutcome::UndefinedBehavior(error)) => {
+                CExpressionOutcome::UndefinedBehavior(error)
+            }
+            Some(CFunctionOutcome::RuntimeError(error)) => CExpressionOutcome::RuntimeError(error),
+            Some(_) => CExpressionOutcome::RuntimeError(CRuntimeError::TypeMismatch),
+            None => match &declared {
+                Some(declared)
+                    if !algebraic_type.rigid
+                        && declared.len() == path.values.len()
+                        && declared
+                            .iter()
+                            .zip(&path.values)
+                            .all(|(declared, value)| declared.accepts_c_value(value)) =>
+                {
+                    CExpressionOutcome::Value(CValue::Parameter(Box::new(AlgebraicTerm {
+                        algebraic_type: algebraic_type.clone(),
+                        node: AlgebraicTermNode::Constructor {
+                            variant: variant.to_string(),
+                            fields: path.values.into_iter().map(AlgebraicValue::C).collect(),
+                        },
+                    })))
+                }
+                _ => CExpressionOutcome::RuntimeError(CRuntimeError::EnumVariant(format!(
+                    "`{}::{variant}` is not a variant of these field types",
+                    algebraic_type.name
+                ))),
+            },
+        };
+        paths.push(CExpressionPath {
+            outcome,
+            facts: path.facts,
+            obligations: path.obligations,
+        });
+    }
+    budget.check_path_width(paths.len())?;
+    Ok(paths)
+}
+
+/// Field `index` of an enum value. The value must be a constructor of
+/// `variant`: a `match` arm makes the value it matches one, so a field a
+/// Rust arm reads is always that arm's. Anything else is refused rather than
+/// given an unconstrained value.
+fn evaluate_c_enum_field_paths(
+    state: &CState,
+    value: &CExpression,
+    variant: &str,
+    index: usize,
+    assumptions: &PureFactContext,
+    budget: &mut ExecutionBudget,
+) -> ExecutionResult<Vec<CExpressionPath>> {
+    let mut paths = Vec::new();
+    for path in evaluate_c_expression_paths(state, value, assumptions, budget)? {
+        let CExpressionPath {
+            outcome,
+            facts,
+            obligations,
+        } = path;
+        let outcome = match outcome {
+            CExpressionOutcome::Value(CValue::Parameter(term)) => {
+                match &known_enum_constructor(&term, &facts, assumptions)
+                    .unwrap_or_else(|| term.as_ref().clone())
+                    .node
+                {
+                    AlgebraicTermNode::Constructor {
+                        variant: actual,
+                        fields,
+                    } if actual == variant => match fields.get(index) {
+                        Some(AlgebraicValue::C(field)) => CExpressionOutcome::Value(field.clone()),
+                        _ => CExpressionOutcome::RuntimeError(CRuntimeError::TypeMismatch),
+                    },
+                    _ => CExpressionOutcome::RuntimeError(CRuntimeError::EnumVariant(format!(
+                        "a field of `{}::{variant}` is read from a value not known to be that variant",
+                        term.algebraic_type.name
+                    ))),
+                }
+            }
+            CExpressionOutcome::Value(_) => {
+                CExpressionOutcome::RuntimeError(CRuntimeError::TypeMismatch)
+            }
+            outcome => outcome,
+        };
+        paths.push(CExpressionPath {
+            outcome,
+            facts,
+            obligations,
+        });
+    }
+    budget.check_path_width(paths.len())?;
+    Ok(paths)
+}
+
+/// The constructor `term` is known to be: itself, or one the facts equate
+/// it to. Reads the path's own facts and the context's index; never
+/// rebuilds a context.
+pub(in crate::kernel) fn known_enum_constructor(
+    term: &AlgebraicTerm,
+    facts: &ExecutionFacts,
+    assumptions: &PureFactContext,
+) -> Option<AlgebraicTerm> {
+    if matches!(term.node, AlgebraicTermNode::Constructor { .. }) {
+        return Some(term.clone());
+    }
+    facts
+        .fact_iter()
+        .find_map(|fact| match fact.proposition() {
+            Proposition::Equal(Term::Algebraic(left), Term::Algebraic(right))
+                if left == term && matches!(right.node, AlgebraicTermNode::Constructor { .. }) =>
+            {
+                Some(right.clone())
+            }
+            _ => None,
+        })
+        .or_else(|| assumptions.known_algebraic_constructor(term))
+}
+
+/// One path per variant `term` can still be, each with the constructor it
+/// is: the known one alone, or a constructor of fresh fields, ranged over
+/// their types, with the equation a proof `match` arm states as a path
+/// fact. Variants the facts refute get no path.
+pub(in crate::kernel) fn enum_variant_paths(
+    term: &AlgebraicTerm,
+    facts: &ExecutionFacts,
+    assumptions: &PureFactContext,
+    budget: &mut ExecutionBudget,
+) -> ExecutionResult<Result<Vec<(AlgebraicTerm, ExecutionFacts)>, CRuntimeError>> {
+    if let Some(known) = known_enum_constructor(term, facts, assumptions) {
+        return Ok(Ok(vec![(known, facts.clone())]));
+    }
+    let mut paths = Vec::new();
+    for variant in term.algebraic_type.variants.iter() {
+        let mut fields = Vec::with_capacity(variant.fields.len());
+        for field in &variant.fields {
+            let variable = budget.allocate_kernel_variable()?;
+            let Some(value) = field.symbolic_c_value(variable) else {
+                return Ok(Err(CRuntimeError::EnumVariant(format!(
+                    "`{}::{}` has a field that is not a C value",
+                    term.algebraic_type.name, variant.name
+                ))));
+            };
+            fields.push(AlgebraicValue::C(value));
+        }
+        let mut case_facts = facts.clone();
+        // A fresh narrow field ranges over its type's values only.
+        for field in &fields {
+            if let AlgebraicValue::C(value) = field {
+                add_narrow_integer_range_execution_pure_facts(&mut case_facts, assumptions, value);
+            }
+        }
+        let constructor = AlgebraicTerm {
+            algebraic_type: term.algebraic_type.clone(),
+            node: AlgebraicTermNode::Constructor {
+                variant: variant.name.clone(),
+                fields,
+            },
+        };
+        let condition =
+            ConditionTerm::AlgebraicEqual(Box::new(term.clone()), Box::new(constructor.clone()));
+        match decide_with_facts(assumptions, &case_facts, &condition) {
+            Some(false) => continue,
+            Some(true) => {}
+            None => {
+                if add_path_fact(
+                    &mut case_facts,
+                    assumptions,
+                    Proposition::Equal(
+                        Term::Algebraic(term.clone()),
+                        Term::Algebraic(constructor.clone()),
+                    ),
+                )
+                .is_none()
+                {
+                    continue;
+                }
+            }
+        }
+        paths.push((constructor, case_facts));
+    }
+    Ok(Ok(paths))
+}
+
+/// `value is variant` as a `bool`, on each path [`enum_variant_paths`]
+/// splits `value` into.
+fn evaluate_c_enum_is_paths(
+    state: &CState,
+    value: &CExpression,
+    variant: &str,
+    assumptions: &PureFactContext,
+    budget: &mut ExecutionBudget,
+) -> ExecutionResult<Vec<CExpressionPath>> {
+    let mut paths = Vec::new();
+    for path in evaluate_c_expression_paths(state, value, assumptions, budget)? {
+        let CExpressionPath {
+            outcome,
+            facts,
+            obligations,
+        } = path;
+        let term = match outcome {
+            CExpressionOutcome::Value(CValue::Parameter(term)) if !term.algebraic_type.rigid => {
+                term
+            }
+            CExpressionOutcome::Value(_) => {
+                paths.push(CExpressionPath {
+                    outcome: CExpressionOutcome::RuntimeError(CRuntimeError::TypeMismatch),
+                    facts,
+                    obligations,
+                });
+                continue;
+            }
+            outcome => {
+                paths.push(CExpressionPath {
+                    outcome,
+                    facts,
+                    obligations,
+                });
+                continue;
+            }
+        };
+        match enum_variant_paths(&term, &facts, assumptions, budget)? {
+            Ok(cases) => {
+                for (constructor, case_facts) in cases {
+                    let AlgebraicTermNode::Constructor {
+                        variant: actual, ..
+                    } = &constructor.node
+                    else {
+                        unreachable!("variant paths carry constructors");
+                    };
+                    paths.push(CExpressionPath {
+                        outcome: CExpressionOutcome::Value(CValue::Bool(
+                            Bitvector32Term::Constant(u32::from(actual == variant)),
+                        )),
+                        facts: case_facts,
+                        obligations: obligations.clone(),
+                    });
+                }
+            }
+            Err(error) => paths.push(CExpressionPath {
+                outcome: CExpressionOutcome::RuntimeError(error),
+                facts,
+                obligations,
+            }),
+        }
     }
     budget.check_path_width(paths.len())?;
     Ok(paths)

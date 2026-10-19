@@ -3124,9 +3124,14 @@ fn validate_pointer_cast_operands(
         | CExpression::Load(inner)
         | CExpression::TypedLoad { pointer: inner, .. }
         | CExpression::PointerOffsetBytes { pointer: inner, .. }
-        | CExpression::Subobject { pointer: inner, .. } => {
+        | CExpression::Subobject { pointer: inner, .. }
+        | CExpression::EnumField { value: inner, .. }
+        | CExpression::EnumIs { value: inner, .. } => {
             validate_pointer_cast_operands(inner, variables, context)
         }
+        CExpression::EnumConstruct { fields, .. } => fields
+            .iter()
+            .try_for_each(|field| validate_pointer_cast_operands(field, variables, context)),
         CExpression::Conditional {
             condition,
             then_branch,
@@ -3171,7 +3176,7 @@ pub(in crate::surface) fn infer_c_expression_type(
         CExpression::Value(CValue::Float32(_)) => Some(C0Type::Float32),
         CExpression::Value(CValue::Float64(_)) => Some(C0Type::Float64),
         CExpression::Value(CValue::Parameter(term)) => Some(C0Type::Parameter(
-            crate::kernel::TypeParameterName::intern(&term.algebraic_type.name),
+            crate::kernel::TypeParameterName::of(&term.algebraic_type),
         )),
         CExpression::Value(CValue::Pointer(_)) => None,
         CExpression::Variable(name) => variables.get(name).copied(),
@@ -3249,6 +3254,32 @@ pub(in crate::surface) fn infer_c_expression_type(
                 _ => None,
             }
         }
+        CExpression::EnumConstruct { enum_type, .. } => Some(C0Type::Parameter(*enum_type)),
+        // A field's type is its variant's declared field type.
+        CExpression::EnumField {
+            value,
+            variant,
+            index,
+        } => match infer_c_expression_type(value, variables)? {
+            C0Type::Parameter(enum_type) => enum_type
+                .algebraic_type()
+                .variants
+                .iter()
+                .find(|declared| &declared.name == variant)
+                .and_then(|declared| declared.fields.get(*index))
+                .and_then(|field| match field {
+                    crate::kernel::AlgebraicValueType::C(c_type) => {
+                        Some(crate::surface::generics::c0_type_from_kernel(*c_type))
+                    }
+                    _ => None,
+                }),
+            _ => None,
+        },
+        CExpression::EnumIs { value, .. } => matches!(
+            infer_c_expression_type(value, variables),
+            Some(C0Type::Parameter(_))
+        )
+        .then_some(C0Type::Bool),
         CExpression::FloatNegate(expression) => {
             infer_c_expression_type(expression, variables).filter(|c_type| type_is_float(*c_type))
         }

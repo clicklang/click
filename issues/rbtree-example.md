@@ -1831,3 +1831,11 @@ lemmas preserving the exact in-order identity sequence, and all 68 C
 expansion-audit sites pass. This increment changes proofs only. Arbitrary
 transferred-middle and uncle subtrees, chains ending in rotations, and writable
 erase integration remain.
+
+The transferred-middle cached-count helpers now prove bounds and validity for
+both double-rotation directions with arbitrary far and transferred subtree
+models. The demoted parent's cache becomes `pv - 1`, and
+the promoted node's becomes `pv`. Bare theorem application now retains the
+already-known evaluation guard for that subtraction when it occurs inside a
+model argument; explicit expansion still checks the same guard. The two C
+callback compositions for these transferred-middle cases remain to be written.

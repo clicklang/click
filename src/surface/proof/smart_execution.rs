@@ -985,7 +985,7 @@ impl<'a> Proof<'a> {
             }
         }
 
-        premises.extend(self.integer_argument_guard_premises(
+        premises.extend(self.argument_guard_premises(
             theorem,
             application,
             &application_context,
@@ -1170,7 +1170,7 @@ impl<'a> Proof<'a> {
                 premises.push(surface);
             }
         }
-        premises.extend(self.integer_argument_guard_premises(
+        premises.extend(self.argument_guard_premises(
             &theorem,
             application,
             &application_context,
@@ -1182,10 +1182,10 @@ impl<'a> Proof<'a> {
         })
     }
 
-    /// Propose checked source evidence for evaluation of mathematical theorem
+    /// Propose source evidence for evaluation of Integer and model theorem
     /// arguments. Formal callee requirements alone cannot justify a native
     /// overflow, load or domain condition inside an argument expression.
-    fn integer_argument_guard_premises(
+    fn argument_guard_premises(
         &self,
         theorem: &TheoremDefinition,
         application: &TheoremApplication,
@@ -1198,14 +1198,15 @@ impl<'a> Proof<'a> {
             .iter()
             .zip(&application.arguments)
             .filter(|(parameter, argument)| {
-                parameter.click_type() == &ClickType::Integer
-                    && crate::surface::lowering::lower_contract_integer_to_spec(
-                        argument,
-                        context.integer_values,
-                    )
-                    .is_err()
+                matches!(parameter.click_type(), ClickType::Algebraic(_))
+                    || (parameter.click_type() == &ClickType::Integer
+                        && crate::surface::lowering::lower_contract_integer_to_spec(
+                            argument,
+                            context.integer_values,
+                        )
+                        .is_err())
             })
-            .map(|(_, argument)| argument)
+            .map(|(parameter, argument)| (parameter.click_type(), argument))
             .collect::<Vec<_>>();
         if arguments.is_empty() {
             return Ok(premises);
@@ -1220,7 +1221,50 @@ impl<'a> Proof<'a> {
             explicit = explicit
                 .assume_proposition(self.lower_surface_proposition(surface, "theorem premise")?);
         }
-        for argument in arguments {
+        for (argument_type, argument) in arguments {
+            if matches!(argument_type, ClickType::Algebraic(_)) {
+                let bindings = contract_expression_referenced_names(argument)
+                    .into_iter()
+                    .filter_map(|name| {
+                        context
+                            .algebraic_values
+                            .get(&name)
+                            .cloned()
+                            .map(|value| (name, value))
+                    })
+                    .collect();
+                let spec = capture_fixed_state_algebraic_expression_with_values(
+                    argument,
+                    ContractEnvironment::new(context.values, context.array_refs),
+                    bindings,
+                    FixedStateFrame::new(
+                        context.pre_state,
+                        context.post_state,
+                        context.result,
+                        context.recorded_snapshots,
+                    ),
+                    spec_definitions,
+                )
+                .map_err(|message| self.step_error(message))?;
+                let guards = crate::kernel::algebraic_argument_evaluation_guards(
+                    context.post_state,
+                    &spec,
+                    Some(context.pre_state),
+                    &explicit,
+                )
+                .map_err(|message| self.step_error(message))?;
+                for guard in guards {
+                    if normalizes_context_free(&guard) || explicit.proves_exact(&guard) {
+                        continue;
+                    }
+                    let (surface, evidence) = self.argument_guard_source(&guard).ok_or_else(|| self.step_error(format!(
+                        "model theorem argument needs explicit source evidence for `{}`; cite its evaluation guard with `apply(...) using {{ ... }}`",
+                        crate::surface::proof_diagnostics::render::render_proposition(&guard))))?;
+                    explicit = explicit.assume_proposition(evidence);
+                    premises.push(surface);
+                }
+                continue;
+            }
             // Source forms retain evaluation guards even when evaluation under
             // the ambient context has already discharged and removed them.
             let mut pending = vec![argument];
@@ -1290,15 +1334,10 @@ impl<'a> Proof<'a> {
                 if normalizes_context_free(&guard) {
                     continue;
                 }
-                let surface = self.context_surface_propositions()
-                    .into_iter().flat_map(|forms| forms.surfaces(&guard))
-                    .find(|surface| self.lower_surface_proposition(surface, "Integer argument guard")
-                        .is_ok_and(|lowered| lowered == guard && self.facts().listed_premise_available(&lowered, &[], false)))
-                    .cloned().ok_or_else(|| self.step_error(format!(
-                        "Integer theorem argument needs explicit source evidence for `{}`; cite its evaluation guard with `apply(...) using {{ ... }}`",
-                        crate::surface::proof_diagnostics::render::render_proposition(&guard))))?;
-                let lowered = self.lower_surface_proposition(&surface, "Integer capture guard")?;
-                explicit = explicit.assume_proposition(lowered);
+                let (surface, evidence) = self.argument_guard_source(&guard).ok_or_else(|| self.step_error(format!(
+                    "Integer theorem argument needs explicit source evidence for `{}`; cite its evaluation guard with `apply(...) using {{ ... }}`",
+                    crate::surface::proof_diagnostics::render::render_proposition(&guard))))?;
+                explicit = explicit.assume_proposition(evidence);
                 premises.push(surface);
             }
             // Check the proposed argument evidence before returning a simple
@@ -1324,6 +1363,36 @@ impl<'a> Proof<'a> {
             })?;
         }
         Ok(premises)
+    }
+
+    /// Consult only the guard's indexed spellings and containing source facts.
+    /// Re-lowering prevents a moved resource field or snapshot name from citing
+    /// an old fact under its current spelling.
+    fn argument_guard_source(
+        &self,
+        guard: &Proposition,
+    ) -> Option<(ClickProposition, Proposition)> {
+        for forms in self
+            .context_surface_propositions()
+            .into_iter()
+            .chain(std::iter::once(self.local_surface_facts()))
+        {
+            for whole in std::iter::once(guard).chain(forms.kernels_containing_conjunct(guard)) {
+                for surface in forms.surfaces(whole) {
+                    let Ok(lowered) =
+                        self.lower_surface_proposition(surface, "argument evaluation guard")
+                    else {
+                        continue;
+                    };
+                    if lowered == *whole
+                        && self.facts().listed_premise_available(&lowered, &[], false)
+                    {
+                        return Some((surface.clone(), lowered));
+                    }
+                }
+            }
+        }
+        None
     }
 
     /// The guarantees of a theorem application as the caller would write
@@ -1437,4 +1506,9 @@ impl<'a> Proof<'a> {
             .collect::<BTreeMap<_, _>>();
         Some((theorem, substitutions))
     }
+}
+
+#[cfg(test)]
+mod scaling_tests {
+    include!("../../scaling_tests/surface/proof/smart_execution.rs");
 }

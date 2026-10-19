@@ -1,0 +1,927 @@
+{
+  "constants": [],
+  "dependencies": [],
+  "exception_behavior": "normal_only",
+  "functions": [
+    {
+      "body": [
+        {
+          "arguments": [
+            {
+              "kind": "reference",
+              "place": {
+                "declaration_id": "c:shapes.cpp@349@F@through_square#&1$@S@Square#I#@square",
+                "name": "square",
+                "span": {
+                  "end_column": 18,
+                  "end_line": 14,
+                  "file": "shapes.cpp",
+                  "start_column": 12,
+                  "start_line": 14
+                }
+              }
+            },
+            {
+              "kind": "value",
+              "value": {
+                "kind": "load",
+                "place": {
+                  "declaration_id": "c:shapes.cpp@371@F@through_square#&1$@S@Square#I#@scale",
+                  "name": "scale",
+                  "span": {
+                    "end_column": 29,
+                    "end_line": 14,
+                    "file": "shapes.cpp",
+                    "start_column": 24,
+                    "start_line": 14
+                  }
+                },
+                "span": {
+                  "end_column": 29,
+                  "end_line": 14,
+                  "file": "shapes.cpp",
+                  "start_column": 24,
+                  "start_line": 14
+                },
+                "value_type": {
+                  "bits": 32,
+                  "is_const": false,
+                  "kind": "integer",
+                  "signed": true,
+                  "source_aliases": []
+                }
+              }
+            }
+          ],
+          "callee": {
+            "declaration_id": "c:@S@Square@F@area#I#1",
+            "name": "Square_area",
+            "span": {
+              "end_column": 23,
+              "end_line": 14,
+              "file": "shapes.cpp",
+              "start_column": 12,
+              "start_line": 14
+            }
+          },
+          "cleanups": [],
+          "kind": "return_call",
+          "span": {
+            "end_column": 30,
+            "end_line": 14,
+            "file": "shapes.cpp",
+            "start_column": 5,
+            "start_line": 14
+          },
+          "value_type": {
+            "bits": 32,
+            "is_const": false,
+            "kind": "integer",
+            "signed": true,
+            "source_aliases": []
+          }
+        }
+      ],
+      "declaration_id": "c:@F@through_square#&1$@S@Square#I#",
+      "declared_noexcept": true,
+      "function_kind": {
+        "kind": "free"
+      },
+      "name": "through_square",
+      "parameters": [
+        {
+          "declaration_id": "c:shapes.cpp@349@F@through_square#&1$@S@Square#I#@square",
+          "name": "square",
+          "span": {
+            "end_column": 40,
+            "end_line": 13,
+            "file": "shapes.cpp",
+            "start_column": 20,
+            "start_line": 13
+          },
+          "value_type": {
+            "kind": "lvalue_reference",
+            "pointee": {
+              "declaration_id": "c:@S@Square",
+              "is_const": true,
+              "kind": "record",
+              "name": "Square"
+            }
+          }
+        },
+        {
+          "declaration_id": "c:shapes.cpp@371@F@through_square#&1$@S@Square#I#@scale",
+          "name": "scale",
+          "span": {
+            "end_column": 51,
+            "end_line": 13,
+            "file": "shapes.cpp",
+            "start_column": 42,
+            "start_line": 13
+          },
+          "value_type": {
+            "bits": 32,
+            "is_const": false,
+            "kind": "integer",
+            "signed": true,
+            "source_aliases": []
+          }
+        }
+      ],
+      "path": [
+        "through_square"
+      ],
+      "return_type": {
+        "bits": 32,
+        "is_const": false,
+        "kind": "integer",
+        "signed": true,
+        "source_aliases": []
+      },
+      "span": {
+        "end_column": 2,
+        "end_line": 15,
+        "file": "shapes.cpp",
+        "start_column": 1,
+        "start_line": 13
+      }
+    }
+  ],
+  "language": "c++",
+  "logical_source": "shapes.cpp",
+  "preprocessor_files": [
+    {
+      "accessed_path": "$unit/shapes.cpp",
+      "canonical_path": "$unit/shapes.cpp"
+    }
+  ],
+  "profile": {
+    "compilation_command": [
+      "clang++",
+      "-x",
+      "c++",
+      "-std=c++20",
+      "--target=x86_64-unknown-linux-gnu",
+      "-fno-exceptions",
+      "-fno-rtti",
+      "-O2",
+      "-fno-strict-aliasing",
+      "-funsigned-char",
+      "-ffreestanding",
+      "-nostdinc",
+      "-nostdinc++",
+      "-c",
+      "shapes.cpp",
+      "-o",
+      "shapes.cpp.o"
+    ],
+    "compilation_directory": "$unit",
+    "compilation_file": "shapes.cpp",
+    "exceptions": false,
+    "frontend": "clang",
+    "frontend_version": "clang version 19.1.7 (/home/runner/work/llvm-project/llvm-project/clang cd708029e0b2869e80abe31ddb175f7c35361f90)",
+    "rtti": false,
+    "standard": "c++20",
+    "target": "x86_64-unknown-linux-gnu"
+  },
+  "reachable_functions": [
+    {
+      "body": [
+        {
+          "cleanups": [],
+          "kind": "return",
+          "span": {
+            "end_column": 70,
+            "end_line": 7,
+            "file": "shapes.cpp",
+            "start_column": 51,
+            "start_line": 7
+          },
+          "value": {
+            "kind": "binary",
+            "left": {
+              "field": {
+                "declaration_id": "c:@S@Square@FI@side",
+                "name": "side",
+                "record_declaration_id": "c:@S@Square",
+                "span": {
+                  "end_column": 62,
+                  "end_line": 7,
+                  "file": "shapes.cpp",
+                  "start_column": 58,
+                  "start_line": 7
+                }
+              },
+              "kind": "member_load",
+              "object": {
+                "declaration_id": "c:@S@Square@F@area#I#1@this",
+                "name": "self",
+                "span": {
+                  "end_column": 13,
+                  "end_line": 7,
+                  "file": "shapes.cpp",
+                  "start_column": 9,
+                  "start_line": 7
+                }
+              },
+              "span": {
+                "end_column": 62,
+                "end_line": 7,
+                "file": "shapes.cpp",
+                "start_column": 58,
+                "start_line": 7
+              },
+              "value_type": {
+                "bits": 32,
+                "is_const": false,
+                "kind": "integer",
+                "signed": true,
+                "source_aliases": []
+              }
+            },
+            "operator": "add",
+            "right": {
+              "kind": "load",
+              "place": {
+                "declaration_id": "c:shapes.cpp@136@S@Square@F@area#I#1@scale",
+                "name": "scale",
+                "span": {
+                  "end_column": 70,
+                  "end_line": 7,
+                  "file": "shapes.cpp",
+                  "start_column": 65,
+                  "start_line": 7
+                }
+              },
+              "span": {
+                "end_column": 70,
+                "end_line": 7,
+                "file": "shapes.cpp",
+                "start_column": 65,
+                "start_line": 7
+              },
+              "value_type": {
+                "bits": 32,
+                "is_const": false,
+                "kind": "integer",
+                "signed": true,
+                "source_aliases": []
+              }
+            },
+            "span": {
+              "end_column": 70,
+              "end_line": 7,
+              "file": "shapes.cpp",
+              "start_column": 58,
+              "start_line": 7
+            },
+            "value_type": {
+              "bits": 32,
+              "is_const": false,
+              "kind": "integer",
+              "signed": true,
+              "source_aliases": []
+            }
+          }
+        }
+      ],
+      "declaration_id": "c:@S@Square@F@area#I#1",
+      "declared_noexcept": true,
+      "function_kind": {
+        "is_const": true,
+        "kind": "method",
+        "record_declaration_id": "c:@S@Square",
+        "record_name": "Square"
+      },
+      "name": "Square_area",
+      "parameters": [
+        {
+          "declaration_id": "c:@S@Square@F@area#I#1@this",
+          "name": "self",
+          "span": {
+            "end_column": 13,
+            "end_line": 7,
+            "file": "shapes.cpp",
+            "start_column": 9,
+            "start_line": 7
+          },
+          "value_type": {
+            "kind": "lvalue_reference",
+            "pointee": {
+              "declaration_id": "c:@S@Square",
+              "is_const": true,
+              "kind": "record",
+              "name": "Square"
+            }
+          }
+        },
+        {
+          "declaration_id": "c:shapes.cpp@136@S@Square@F@area#I#1@scale",
+          "name": "scale",
+          "span": {
+            "end_column": 23,
+            "end_line": 7,
+            "file": "shapes.cpp",
+            "start_column": 14,
+            "start_line": 7
+          },
+          "value_type": {
+            "bits": 32,
+            "is_const": false,
+            "kind": "integer",
+            "signed": true,
+            "source_aliases": []
+          }
+        }
+      ],
+      "path": [
+        "Square",
+        "area"
+      ],
+      "return_type": {
+        "bits": 32,
+        "is_const": false,
+        "kind": "integer",
+        "signed": true,
+        "source_aliases": []
+      },
+      "span": {
+        "end_column": 73,
+        "end_line": 7,
+        "file": "shapes.cpp",
+        "start_column": 5,
+        "start_line": 7
+      },
+      "virtual": {
+        "overridden_by": [
+          {
+            "declaration_id": "c:@S@BigSquare@F@area#I#1",
+            "name": "BigSquare_area",
+            "span": {
+              "end_column": 13,
+              "end_line": 11,
+              "file": "shapes.cpp",
+              "start_column": 9,
+              "start_line": 11
+            }
+          }
+        ],
+        "overrides": [
+          {
+            "declaration_id": "c:@S@Shape@F@area#I#1",
+            "name": "Shape_area",
+            "span": {
+              "end_column": 21,
+              "end_line": 2,
+              "file": "shapes.cpp",
+              "start_column": 17,
+              "start_line": 2
+            }
+          }
+        ],
+        "pure": false
+      }
+    },
+    {
+      "body": [],
+      "declaration_id": "c:@S@Shape@F@area#I#1",
+      "declared_noexcept": true,
+      "function_kind": {
+        "is_const": true,
+        "kind": "method",
+        "record_declaration_id": "c:@S@Shape",
+        "record_name": "Shape"
+      },
+      "name": "Shape_area",
+      "parameters": [
+        {
+          "declaration_id": "c:@S@Shape@F@area#I#1@this",
+          "name": "self",
+          "span": {
+            "end_column": 21,
+            "end_line": 2,
+            "file": "shapes.cpp",
+            "start_column": 17,
+            "start_line": 2
+          },
+          "value_type": {
+            "kind": "lvalue_reference",
+            "pointee": {
+              "declaration_id": "c:@S@Shape",
+              "is_const": true,
+              "kind": "record",
+              "name": "Shape"
+            }
+          }
+        },
+        {
+          "declaration_id": "c:shapes.cpp@36@S@Shape@F@area#I#1@scale",
+          "name": "scale",
+          "span": {
+            "end_column": 31,
+            "end_line": 2,
+            "file": "shapes.cpp",
+            "start_column": 22,
+            "start_line": 2
+          },
+          "value_type": {
+            "bits": 32,
+            "is_const": false,
+            "kind": "integer",
+            "signed": true,
+            "source_aliases": []
+          }
+        }
+      ],
+      "path": [
+        "Shape",
+        "area"
+      ],
+      "return_type": {
+        "bits": 32,
+        "is_const": false,
+        "kind": "integer",
+        "signed": true,
+        "source_aliases": []
+      },
+      "span": {
+        "end_column": 51,
+        "end_line": 2,
+        "file": "shapes.cpp",
+        "start_column": 5,
+        "start_line": 2
+      },
+      "virtual": {
+        "overridden_by": [
+          {
+            "declaration_id": "c:@S@Square@F@area#I#1",
+            "name": "Square_area",
+            "span": {
+              "end_column": 13,
+              "end_line": 7,
+              "file": "shapes.cpp",
+              "start_column": 9,
+              "start_line": 7
+            }
+          }
+        ],
+        "overrides": [],
+        "pure": true
+      }
+    },
+    {
+      "body": [
+        {
+          "cleanups": [],
+          "kind": "return",
+          "span": {
+            "end_column": 82,
+            "end_line": 11,
+            "file": "shapes.cpp",
+            "start_column": 51,
+            "start_line": 11
+          },
+          "value": {
+            "kind": "binary",
+            "left": {
+              "kind": "binary",
+              "left": {
+                "kind": "binary",
+                "left": {
+                  "field": {
+                    "declaration_id": "c:@S@Square@FI@side",
+                    "name": "side",
+                    "record_declaration_id": "c:@S@Square",
+                    "span": {
+                      "end_column": 62,
+                      "end_line": 11,
+                      "file": "shapes.cpp",
+                      "start_column": 58,
+                      "start_line": 11
+                    }
+                  },
+                  "kind": "member_load",
+                  "object": {
+                    "declaration_id": "c:@S@BigSquare@F@area#I#1@this",
+                    "name": "self",
+                    "projections": [
+                      {
+                        "base": {
+                          "base_declaration_id": "c:@S@Square",
+                          "base_name": "Square",
+                          "record_declaration_id": "c:@S@BigSquare",
+                          "span": {
+                            "end_column": 62,
+                            "end_line": 11,
+                            "file": "shapes.cpp",
+                            "start_column": 58,
+                            "start_line": 11
+                          }
+                        }
+                      }
+                    ],
+                    "span": {
+                      "end_column": 13,
+                      "end_line": 11,
+                      "file": "shapes.cpp",
+                      "start_column": 9,
+                      "start_line": 11
+                    }
+                  },
+                  "span": {
+                    "end_column": 62,
+                    "end_line": 11,
+                    "file": "shapes.cpp",
+                    "start_column": 58,
+                    "start_line": 11
+                  },
+                  "value_type": {
+                    "bits": 32,
+                    "is_const": false,
+                    "kind": "integer",
+                    "signed": true,
+                    "source_aliases": []
+                  }
+                },
+                "operator": "add",
+                "right": {
+                  "field": {
+                    "declaration_id": "c:@S@BigSquare@FI@extra",
+                    "name": "extra",
+                    "record_declaration_id": "c:@S@BigSquare",
+                    "span": {
+                      "end_column": 70,
+                      "end_line": 11,
+                      "file": "shapes.cpp",
+                      "start_column": 65,
+                      "start_line": 11
+                    }
+                  },
+                  "kind": "member_load",
+                  "object": {
+                    "declaration_id": "c:@S@BigSquare@F@area#I#1@this",
+                    "name": "self",
+                    "span": {
+                      "end_column": 13,
+                      "end_line": 11,
+                      "file": "shapes.cpp",
+                      "start_column": 9,
+                      "start_line": 11
+                    }
+                  },
+                  "span": {
+                    "end_column": 70,
+                    "end_line": 11,
+                    "file": "shapes.cpp",
+                    "start_column": 65,
+                    "start_line": 11
+                  },
+                  "value_type": {
+                    "bits": 32,
+                    "is_const": false,
+                    "kind": "integer",
+                    "signed": true,
+                    "source_aliases": []
+                  }
+                },
+                "span": {
+                  "end_column": 70,
+                  "end_line": 11,
+                  "file": "shapes.cpp",
+                  "start_column": 58,
+                  "start_line": 11
+                },
+                "value_type": {
+                  "bits": 32,
+                  "is_const": false,
+                  "kind": "integer",
+                  "signed": true,
+                  "source_aliases": []
+                }
+              },
+              "operator": "add",
+              "right": {
+                "kind": "load",
+                "place": {
+                  "declaration_id": "c:shapes.cpp@255@S@BigSquare@F@area#I#1@scale",
+                  "name": "scale",
+                  "span": {
+                    "end_column": 78,
+                    "end_line": 11,
+                    "file": "shapes.cpp",
+                    "start_column": 73,
+                    "start_line": 11
+                  }
+                },
+                "span": {
+                  "end_column": 78,
+                  "end_line": 11,
+                  "file": "shapes.cpp",
+                  "start_column": 73,
+                  "start_line": 11
+                },
+                "value_type": {
+                  "bits": 32,
+                  "is_const": false,
+                  "kind": "integer",
+                  "signed": true,
+                  "source_aliases": []
+                }
+              },
+              "span": {
+                "end_column": 78,
+                "end_line": 11,
+                "file": "shapes.cpp",
+                "start_column": 58,
+                "start_line": 11
+              },
+              "value_type": {
+                "bits": 32,
+                "is_const": false,
+                "kind": "integer",
+                "signed": true,
+                "source_aliases": []
+              }
+            },
+            "operator": "add",
+            "right": {
+              "kind": "integer_literal",
+              "span": {
+                "end_column": 82,
+                "end_line": 11,
+                "file": "shapes.cpp",
+                "start_column": 81,
+                "start_line": 11
+              },
+              "value": "1",
+              "value_type": {
+                "bits": 32,
+                "is_const": false,
+                "kind": "integer",
+                "signed": true,
+                "source_aliases": []
+              }
+            },
+            "span": {
+              "end_column": 82,
+              "end_line": 11,
+              "file": "shapes.cpp",
+              "start_column": 58,
+              "start_line": 11
+            },
+            "value_type": {
+              "bits": 32,
+              "is_const": false,
+              "kind": "integer",
+              "signed": true,
+              "source_aliases": []
+            }
+          }
+        }
+      ],
+      "declaration_id": "c:@S@BigSquare@F@area#I#1",
+      "declared_noexcept": true,
+      "function_kind": {
+        "is_const": true,
+        "kind": "method",
+        "record_declaration_id": "c:@S@BigSquare",
+        "record_name": "BigSquare"
+      },
+      "name": "BigSquare_area",
+      "parameters": [
+        {
+          "declaration_id": "c:@S@BigSquare@F@area#I#1@this",
+          "name": "self",
+          "span": {
+            "end_column": 13,
+            "end_line": 11,
+            "file": "shapes.cpp",
+            "start_column": 9,
+            "start_line": 11
+          },
+          "value_type": {
+            "kind": "lvalue_reference",
+            "pointee": {
+              "declaration_id": "c:@S@BigSquare",
+              "is_const": true,
+              "kind": "record",
+              "name": "BigSquare"
+            }
+          }
+        },
+        {
+          "declaration_id": "c:shapes.cpp@255@S@BigSquare@F@area#I#1@scale",
+          "name": "scale",
+          "span": {
+            "end_column": 23,
+            "end_line": 11,
+            "file": "shapes.cpp",
+            "start_column": 14,
+            "start_line": 11
+          },
+          "value_type": {
+            "bits": 32,
+            "is_const": false,
+            "kind": "integer",
+            "signed": true,
+            "source_aliases": []
+          }
+        }
+      ],
+      "path": [
+        "BigSquare",
+        "area"
+      ],
+      "return_type": {
+        "bits": 32,
+        "is_const": false,
+        "kind": "integer",
+        "signed": true,
+        "source_aliases": []
+      },
+      "span": {
+        "end_column": 85,
+        "end_line": 11,
+        "file": "shapes.cpp",
+        "start_column": 5,
+        "start_line": 11
+      },
+      "virtual": {
+        "overridden_by": [],
+        "overrides": [
+          {
+            "declaration_id": "c:@S@Square@F@area#I#1",
+            "name": "Square_area",
+            "span": {
+              "end_column": 13,
+              "end_line": 7,
+              "file": "shapes.cpp",
+              "start_column": 9,
+              "start_line": 7
+            }
+          }
+        ],
+        "pure": false
+      }
+    }
+  ],
+  "records": [
+    {
+      "alignment_bytes": 8,
+      "byte_template_arguments": [],
+      "declaration_id": "c:@S@Shape",
+      "destructor": null,
+      "fields": [],
+      "name": "Shape",
+      "path": [
+        "Shape"
+      ],
+      "polymorphic": true,
+      "size_bytes": 8,
+      "span": {
+        "end_column": 2,
+        "end_line": 3,
+        "file": "shapes.cpp",
+        "start_column": 1,
+        "start_line": 1
+      }
+    },
+    {
+      "alignment_bytes": 8,
+      "base": {
+        "offset_bytes": 0,
+        "size_bytes": 8,
+        "span": {
+          "end_column": 22,
+          "end_line": 4,
+          "file": "shapes.cpp",
+          "start_column": 17,
+          "start_line": 4
+        },
+        "value_type": {
+          "declaration_id": "c:@S@Shape",
+          "is_const": false,
+          "kind": "record",
+          "name": "Shape"
+        }
+      },
+      "byte_template_arguments": [],
+      "declaration_id": "c:@S@Square",
+      "destructor": null,
+      "fields": [
+        {
+          "declaration_id": "c:@S@Square@FI@side",
+          "name": "side",
+          "offset_bytes": 8,
+          "size_bytes": 4,
+          "span": {
+            "end_column": 13,
+            "end_line": 5,
+            "file": "shapes.cpp",
+            "start_column": 5,
+            "start_line": 5
+          },
+          "value_type": {
+            "bits": 32,
+            "is_const": false,
+            "kind": "integer",
+            "signed": true,
+            "source_aliases": []
+          }
+        },
+        {
+          "declaration_id": "c:@S@Square@FI@color",
+          "name": "color",
+          "offset_bytes": 12,
+          "size_bytes": 4,
+          "span": {
+            "end_column": 14,
+            "end_line": 6,
+            "file": "shapes.cpp",
+            "start_column": 5,
+            "start_line": 6
+          },
+          "value_type": {
+            "bits": 32,
+            "is_const": false,
+            "kind": "integer",
+            "signed": true,
+            "source_aliases": []
+          }
+        }
+      ],
+      "name": "Square",
+      "path": [
+        "Square"
+      ],
+      "polymorphic": true,
+      "size_bytes": 16,
+      "span": {
+        "end_column": 2,
+        "end_line": 8,
+        "file": "shapes.cpp",
+        "start_column": 1,
+        "start_line": 4
+      }
+    },
+    {
+      "alignment_bytes": 8,
+      "base": {
+        "offset_bytes": 0,
+        "size_bytes": 16,
+        "span": {
+          "end_column": 26,
+          "end_line": 9,
+          "file": "shapes.cpp",
+          "start_column": 20,
+          "start_line": 9
+        },
+        "value_type": {
+          "declaration_id": "c:@S@Square",
+          "is_const": false,
+          "kind": "record",
+          "name": "Square"
+        }
+      },
+      "byte_template_arguments": [],
+      "declaration_id": "c:@S@BigSquare",
+      "destructor": null,
+      "fields": [
+        {
+          "declaration_id": "c:@S@BigSquare@FI@extra",
+          "name": "extra",
+          "offset_bytes": 16,
+          "size_bytes": 4,
+          "span": {
+            "end_column": 14,
+            "end_line": 10,
+            "file": "shapes.cpp",
+            "start_column": 5,
+            "start_line": 10
+          },
+          "value_type": {
+            "bits": 32,
+            "is_const": false,
+            "kind": "integer",
+            "signed": true,
+            "source_aliases": []
+          }
+        }
+      ],
+      "name": "BigSquare",
+      "path": [
+        "BigSquare"
+      ],
+      "polymorphic": true,
+      "size_bytes": 24,
+      "span": {
+        "end_column": 2,
+        "end_line": 12,
+        "file": "shapes.cpp",
+        "start_column": 1,
+        "start_line": 9
+      }
+    }
+  ],
+  "schema": 60
+}
