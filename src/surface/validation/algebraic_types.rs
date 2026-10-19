@@ -79,6 +79,18 @@ impl AlgebraicVariables {
             return Ok(Some(cast_type));
         }
         match expression {
+            ContractExpression::Field {
+                pointee_struct: Some(struct_name),
+                lowered,
+                ..
+            } => {
+                if let Some(c_type) = infer_c_expression_type(lowered, self) {
+                    return Ok(Some(ClickType::CObjectPointer {
+                        c_type,
+                        struct_name: struct_name.clone(),
+                    }));
+                }
+            }
             ContractExpression::AlgebraicVariable { algebraic_type, .. }
             | ContractExpression::AlgebraicConstructor { algebraic_type, .. } => {
                 return Ok(Some(ClickType::Algebraic(algebraic_type.clone())));

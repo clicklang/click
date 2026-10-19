@@ -1391,6 +1391,7 @@ impl Parser {
             let pointer =
                 self.member_field_pointer(CExpression::Variable(name.to_string()), &field);
             Ok(ContractExpression::Field {
+                pointee_struct: None,
                 base: Box::new(surface_base.clone()),
                 field: field_name.to_string(),
                 lowered: lowered_field_expression(pointer, &field),

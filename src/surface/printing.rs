@@ -2321,6 +2321,7 @@ mod tests {
     fn array_field_read_through_an_erased_pointer_keeps_its_element_type() {
         let read = ContractExpression::Index(
             Box::new(ContractExpression::Field {
+                pointee_struct: None,
                 base: Box::new(ContractExpression::CFragment(CExpression::Variable(
                     "p".into(),
                 ))),

@@ -377,6 +377,7 @@ fn field_pointer_bases(
             };
             bases.push(NamedRangeBase {
                 surface: ContractExpression::Field {
+                    pointee_struct: None,
                     base: Box::new(ContractExpression::CFragment(owner.base.clone())),
                     field: field_name.clone(),
                     lowered: lowered.clone(),
@@ -2624,6 +2625,7 @@ fn synthesize_parameter_field_pointer_value(
                 }
             };
             return Some(ContractExpression::Field {
+                pointee_struct: None,
                 base: Box::new(ContractExpression::CFragment(base_expression)),
                 field: field_name.clone(),
                 lowered: CExpression::TypedLoad {
@@ -2660,6 +2662,7 @@ fn synthesize_parameter_field_pointer_value(
                 continue;
             }
             return Some(ContractExpression::Field {
+                pointee_struct: None,
                 base: Box::new(ContractExpression::CFragment(owner.base.clone())),
                 field: field_name.clone(),
                 lowered: CExpression::TypedLoad {
@@ -3551,6 +3554,7 @@ fn synthesize_local_struct_pointer_field(
                 continue;
             }
             return Some(ContractExpression::Field {
+                pointee_struct: None,
                 base: Box::new(ContractExpression::CFragment(owner.base.clone())),
                 field: field_name.clone(),
                 lowered: CExpression::TypedLoad {
@@ -3636,6 +3640,7 @@ fn synthesize_local_aggregate_field(
                         }
                     };
                     let field_expression = ContractExpression::Field {
+                        pointee_struct: None,
                         base: Box::new(ContractExpression::CFragment(base)),
                         field: field.name().to_string(),
                         lowered: CExpression::TypedLoad {
@@ -3843,6 +3848,7 @@ fn synthesize_parameter_field_load(
             }
         };
         return Some(ContractExpression::Field {
+            pointee_struct: None,
             base: Box::new(ContractExpression::CFragment(base)),
             field: field_name.clone(),
             lowered: CExpression::TypedLoad {
@@ -3886,6 +3892,7 @@ fn synthesize_local_field_load(
             continue;
         }
         return Some(ContractExpression::Field {
+            pointee_struct: None,
             base: Box::new(ContractExpression::CFragment(owner.base.clone())),
             field: field_name.clone(),
             lowered: CExpression::TypedLoad {
@@ -3933,6 +3940,7 @@ fn synthesize_owned_field_at_address(
     })?;
     let base = CExpression::Variable(surface_local_name(name).to_string());
     Some(ContractExpression::Field {
+        pointee_struct: None,
         base: Box::new(ContractExpression::CFragment(base.clone())),
         field: field.name().to_string(),
         lowered: CExpression::TypedLoad {
@@ -3978,6 +3986,7 @@ fn synthesize_owned_pointer_field(pointer: &Pointer, state: &CState) -> Option<C
     })?;
     let base = CExpression::Variable(surface_local_name(name).to_string());
     Some(ContractExpression::Field {
+        pointee_struct: None,
         base: Box::new(ContractExpression::CFragment(base.clone())),
         field: field.name().to_string(),
         lowered: CExpression::TypedLoad {

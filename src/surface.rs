@@ -2836,6 +2836,9 @@ pub enum ContractExpression {
     /// The source place is retained for certificates and diagnostics; only
     /// `lowered` crosses into semantic checking.
     Field {
+        /// Declared struct identity of a pointer-valued field, retained for
+        /// nominal type validation independently of its scalar C carrier.
+        pointee_struct: Option<String>,
         base: Box<ContractExpression>,
         field: String,
         lowered: CExpression,
