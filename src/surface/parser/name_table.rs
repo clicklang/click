@@ -5,12 +5,19 @@
 //! arm binder types, facts) are maps beside them. Each kind keeps its own
 //! index, so a block can set one kind aside and restore it in constant time.
 //! A question about a name across kinds, such as whether anything visible
-//! already binds it, is one query here, and so is hiding an earlier binding
-//! and restoring it when the hiding binder's block ends.
+//! already binds it, is one query here. Every binding a block makes is
+//! recorded in one undo log with what it replaced, so ending the block at its
+//! [`NameScope`] mark undoes them all, newest first, without copying the
+//! names of the blocks around it.
 
 use super::*;
 
-/// A binding a proof binder hid, put back when the binder's block ends.
+/// A point in the name table's undo log; ending it undoes what came after.
+#[derive(Clone, Copy, Debug)]
+#[must_use = "a name scope is ended with `NameTable::end`"]
+pub(super) struct NameScope(usize);
+
+/// A binding a block changed, put back when the block ends.
 #[derive(Clone, Debug)]
 pub(super) enum ShadowRestore {
     /// A fact name: its previous proposition, or none when `have` bound it
@@ -28,6 +35,22 @@ pub(super) enum ShadowRestore {
     /// A contract value binder a proof binder of the same spelling hid, so
     /// `name.parameter` reads the newer binding until its block ends.
     ValueBinder { name: String, binder: ValueBinder },
+    /// Whether `name` had a binding of `kind` before a binder changed it.
+    Name {
+        kind: NameKind,
+        name: String,
+        was_bound: bool,
+    },
+    /// The bare resource field a quantified variable of its name hid.
+    ResourceField {
+        name: String,
+        field: ResourceFieldAccess,
+    },
+    /// The struct layout `name` had before a binder gave or took one.
+    StructParam {
+        name: String,
+        previous: Option<String>,
+    },
 }
 
 /// A kind of lexical binding the parser tracks by name.
@@ -126,8 +149,8 @@ pub(super) struct NameTable {
     /// of its block, nested blocks included. A citation by name is read as
     /// the proposition, exactly as if it were restated there.
     pub(super) fact_names: BTreeMap<String, ClickProposition>,
-    /// The bindings each name shadowed, undone when its block ends.
-    pub(super) fact_name_restores: Vec<ShadowRestore>,
+    /// What each scoped binding replaced, undone when its block ends.
+    pub(super) undo: Vec<ShadowRestore>,
     pub(super) ended_fact_names: BTreeSet<String>,
     /// Names whose `have` proof is being parsed, and names whose block has
     /// ended inside the current proof, so citing one is refused by name
@@ -182,11 +205,6 @@ impl NameTable {
             || self.is_c_variable(name)
     }
 
-    /// Every name of `kind`.
-    pub(super) fn set(&self, kind: NameKind) -> &BTreeSet<String> {
-        &self.names[kind.index()]
-    }
-
     /// Sets `kind`'s bindings aside, leaving none, for a block to restore.
     pub(super) fn take(&mut self, kind: NameKind) -> BTreeSet<String> {
         std::mem::take(&mut self.names[kind.index()])
@@ -197,15 +215,53 @@ impl NameTable {
         std::mem::replace(&mut self.names[kind.index()], names)
     }
 
-    /// Ends the fact names bound since `checkpoint` and puts back each fact
-    /// or resource a later binder hid.
-    pub(super) fn restore_fact_names(&mut self, checkpoint: usize) {
-        while self.fact_name_restores.len() > checkpoint {
-            match self
-                .fact_name_restores
-                .pop()
-                .expect("restore above checkpoint")
-            {
+    /// The mark of the current point, for [`Self::end`].
+    pub(super) fn scope(&self) -> NameScope {
+        NameScope(self.undo.len())
+    }
+
+    /// Gives or takes `name`'s binding of `kind` until the open scope ends.
+    pub(super) fn set_scoped(&mut self, kind: NameKind, name: &str, bound: bool) {
+        let was_bound = if bound {
+            !self.insert(kind, name.to_string())
+        } else {
+            self.remove(kind, name)
+        };
+        self.undo.push(ShadowRestore::Name {
+            kind,
+            name: name.to_string(),
+            was_bound,
+        });
+    }
+
+    /// Gives `name` the layout of struct `layout`, or none, until the open
+    /// scope ends.
+    pub(super) fn set_scoped_struct_param(&mut self, name: &str, layout: Option<String>) {
+        let previous = match layout {
+            Some(layout) => self.struct_params.insert(name.to_string(), layout),
+            None => self.struct_params.remove(name),
+        };
+        self.undo.push(ShadowRestore::StructParam {
+            name: name.to_string(),
+            previous,
+        });
+    }
+
+    /// Hides the bare resource field `name` until the open scope ends.
+    pub(super) fn hide_resource_field(&mut self, name: &str) {
+        if let Some(field) = self.resource_fields.remove(name) {
+            self.undo.push(ShadowRestore::ResourceField {
+                name: name.to_string(),
+                field,
+            });
+        }
+    }
+
+    /// Ends every binding made since `scope`, newest first, putting back
+    /// what each replaced. A fact name `have` bound fresh is ended.
+    pub(super) fn end(&mut self, scope: NameScope) {
+        while self.undo.len() > scope.0 {
+            match self.undo.pop().expect("a binding above the scope") {
                 ShadowRestore::Fact {
                     name,
                     previous: Some(proposition),
@@ -232,6 +288,28 @@ impl NameTable {
                 ShadowRestore::ValueBinder { name, binder } => {
                     self.value_binders.insert(name, binder);
                 }
+                ShadowRestore::Name {
+                    kind,
+                    name,
+                    was_bound,
+                } => {
+                    if was_bound {
+                        self.insert(kind, name);
+                    } else {
+                        self.remove(kind, &name);
+                    }
+                }
+                ShadowRestore::ResourceField { name, field } => {
+                    self.resource_fields.insert(name, field);
+                }
+                ShadowRestore::StructParam { name, previous } => match previous {
+                    Some(layout) => {
+                        self.struct_params.insert(name, layout);
+                    }
+                    None => {
+                        self.struct_params.remove(&name);
+                    }
+                },
             }
         }
     }
@@ -243,20 +321,20 @@ impl NameTable {
     /// `outer.name` still reaches.
     pub(super) fn hide_for_proof_binder(&mut self, name: &str, resource: bool) {
         if let Some(binder) = self.value_binders.remove(name) {
-            self.fact_name_restores.push(ShadowRestore::ValueBinder {
+            self.undo.push(ShadowRestore::ValueBinder {
                 name: name.to_string(),
                 binder,
             });
         }
         if let Some(previous) = self.fact_names.remove(name) {
-            self.fact_name_restores.push(ShadowRestore::Fact {
+            self.undo.push(ShadowRestore::Fact {
                 name: name.to_string(),
                 previous: Some(previous),
             });
         }
         if !resource && let Some(binding) = self.resource_bindings.remove(name) {
             let target = self.resource_targets.remove(name);
-            self.fact_name_restores.push(ShadowRestore::Resource {
+            self.undo.push(ShadowRestore::Resource {
                 name: name.to_string(),
                 binding,
                 target,
