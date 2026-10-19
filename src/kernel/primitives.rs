@@ -24,6 +24,7 @@ pub(crate) const MUTEX_HELD_PREDICATE_NAME: &str = "__click_mutex_held";
 mod contracts;
 #[cfg(test)]
 mod memory_construction_tests;
+mod statement_clone;
 #[cfg(test)]
 pub(crate) use contracts::memory_range_byte_count_guards;
 pub(crate) use contracts::{
@@ -4010,7 +4011,7 @@ pub enum CAggregateDeclarationKind {
     ConstructionDestination,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+#[derive(Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum CStatement {
     Skip,
     Break,
