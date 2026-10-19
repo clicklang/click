@@ -6726,6 +6726,13 @@ impl AnnotationLowerer<'_> {
                                 self.lower_contract_expression_to_spec(argument, environment)?;
                             Ok(SpecAlgebraicValue::C(if *c_type == CType::VoidPointer {
                                 SpecExpression::PointerCoercion(Box::new(value), *c_type)
+                            } else if crate::kernel::MachineIntegerType::from_c_type(*c_type)
+                                .is_some()
+                            {
+                                // Validation admits only an argument whose type
+                                // converts to the field's exactly, so this cast
+                                // widens, as a pure call's argument does.
+                                SpecExpression::Cast(Box::new(value), *c_type)
                             } else {
                                 value
                             }))

@@ -1992,15 +1992,34 @@ fn validate_algebraic_expression_node(
                         },
                         None,
                     ) => {
+                        // A scalar field takes an argument that converts to
+                        // it exactly; a literal is checked against the field's
+                        // range where it is lowered.
                         if let Some(actual) = infer_contract_expression_type(
                             argument,
                             variables,
                             click_functions,
                             context,
-                        )? && !click_types_compatible(actual, *expected)
-                        {
+                        )? && !(if type_is_arithmetic(actual) && type_is_arithmetic(*expected) {
+                            matches!(argument, ContractExpression::IntegerLiteral(_))
+                                || matches!(argument, ContractExpression::Negate(inner)
+                                    if matches!(inner.as_ref(), ContractExpression::IntegerLiteral(_)))
+                                || implicitly_converts(actual, *expected)
+                        } else {
+                            click_types_compatible(actual, *expected)
+                        }) {
+                            let conversion = if type_is_arithmetic(actual)
+                                && type_is_arithmetic(*expected)
+                            {
+                                format!(
+                                    "; a conversion that can change the value is written, as in `({}) ...`",
+                                    describe_c0_type(*expected)
+                                )
+                            } else {
+                                String::new()
+                            };
                             return Err(ClickError::new(format!(
-                                "constructor `{}::{variant}` argument {index} expects {}, got {} in {context}",
+                                "constructor `{}::{variant}` argument {index} expects {}, got {} in {context}{conversion}",
                                 definition.name(),
                                 describe_c0_type(*expected),
                                 describe_c0_type(actual)
