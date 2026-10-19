@@ -121,6 +121,22 @@ including machine-valued pure calls with model arguments. Binder-bearing match
 expressions remain opaque. This supplies congruence, not unfolding, arithmetic
 solving, function injectivity, or new read permission.
 
+Constructors are injective and pairwise distinct, and the closure applies both
+rules to classes rather than to stated equalities. Each class retains one
+interned constructor application, from any registration. When two classes
+merge and both have one, the same variant joins their fields position by
+position, and a field wrapped in one argument tag also joins the wrapped
+values; distinct variants set the graph's conflict flag, so the context is
+impossible. A union reads only its two witnesses, so the work is the arity of
+one constructor. `x == Full(a)` and `Full(b) == x` therefore give `a == b`
+without a stated `Full(a) == Full(b)`, including nested fields; `x == Empty`
+instead refutes the context. Cyclic equations such as `x == Cons(k, x)` are
+not refuted: there is no occurs check. Regressions:
+`mdtests/constructor_injectivity_through_an_equal_value.md`,
+`constructor_disjointness_through_an_equal_value.md`,
+`constructor_injectivity_keeps_field_positions.md`, and
+`constructor_injectivity_needs_one_value.md`.
+
 Registration traverses only the selected expression, iteratively. Hot node and
 support keys are shallow IDs. Resolved root schemas are interned once per
 schema allocation and nominal instantiation; retained schema Arcs prevent
@@ -1737,9 +1753,9 @@ boundaries; they were not migrated by extracting this equality rule.
 
 Soundness tests include unproved aliases, snapshot changes, incompatible load
 interpretations, branch leakage, restricted-premise leakage, offset wrapping,
-and tampered equality explanations. Later constructor support must address
-injectivity, no-confusion, and cyclic equations under the declared value
-semantics. Distinct constants of the same sort produce a contradiction;
+and tampered equality explanations. Constructor injectivity and no-confusion
+are class rules (see "Typed algebraic model values"); cyclic constructor
+equations remain unrefuted. Distinct constants of the same sort produce a contradiction;
 constants in different sorts must not be merged at all.
 
 ## Migration and deletion

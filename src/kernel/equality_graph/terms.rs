@@ -400,6 +400,13 @@ pub(super) struct TermClasses {
     // equality's root operands are retained, once, so nested models are not
     // copied at every subtree. Union carries this witness in constant work.
     algebraic_constructors: PersistentMap<u64, Arc<crate::kernel::AlgebraicTerm>>,
+    // Constructor heads by variant and arity, and one interned constructor
+    // application per class. Union compares the two classes' applications:
+    // one variant joins their fields (injectivity), two variants make the
+    // context empty. Each union reads only its two witnesses.
+    constructor_heads: PersistentMap<u64, (String, usize)>,
+    constructor_applications: PersistentMap<u64, u64>,
+    argument_tags: PersistentSet<u64>,
     condition_kinds: PersistentSet<(congruence::ConditionKind, bool)>,
     // Truth is an annotation of a condition class, not a union between all
     // true facts. Unrelated order facts must not create value equivalences.
@@ -1337,6 +1344,13 @@ impl TermClasses {
             return id;
         }
         let id = self.nodes.len() as u64;
+        match &node {
+            Node::AlgebraicConstructor(_, variant, arity) => {
+                self.constructor_heads.insert(id, (variant.clone(), *arity));
+            }
+            Node::ArgumentTag(_) => self.argument_tags = self.argument_tags.with_value(id),
+            _ => {}
+        }
         let application = match &node {
             Node::Apply(left, right) => Some(Application::Apply(*left, *right)),
             Node::Condition(kind, left, right) => {
@@ -1789,6 +1803,85 @@ impl TermClasses {
         self.close_pending(pending);
     }
 
+    /// Record an interned constructor application as its class's witness,
+    /// joining it with a witness the class already has.
+    fn retain_constructor_application(&mut self, id: u64) {
+        let root = self.root(id);
+        match self.constructor_applications.get(&root).copied() {
+            None => {
+                self.constructor_applications.insert(root, id);
+            }
+            Some(existing) if existing != id => {
+                let mut pending = PendingUnions::default();
+                self.join_constructor_applications(existing, id, &mut pending);
+                self.close_pending(pending);
+            }
+            Some(_) => {}
+        }
+    }
+
+    /// Two constructor applications in one class denote one value. The same
+    /// variant has equal fields; distinct variants cannot be equal, so the
+    /// context is empty. A field wrapped in one argument tag also joins the
+    /// wrapped values, since a tag only names the field's sort.
+    fn join_constructor_applications(
+        &mut self,
+        left: u64,
+        right: u64,
+        pending: &mut PendingUnions,
+    ) {
+        let (Some((left_head, left_fields)), Some((right_head, right_fields))) = (
+            self.constructor_fields(left),
+            self.constructor_fields(right),
+        ) else {
+            return;
+        };
+        let (Some((left_variant, _)), Some((right_variant, _))) = (
+            self.constructor_heads.get(&left_head),
+            self.constructor_heads.get(&right_head),
+        ) else {
+            return;
+        };
+        if left_variant != right_variant {
+            self.scalar_constant_conflict = true;
+            return;
+        }
+        if left_fields.len() != right_fields.len() {
+            return;
+        }
+        for (left, right) in left_fields.into_iter().zip(right_fields) {
+            crate::instrumentation::record_deterministic_work(1);
+            pending.push((left, right));
+            if let (
+                Some(Application::Apply(left_tag, left)),
+                Some(Application::Apply(right_tag, right)),
+            ) = (self.applications.get(&left), self.applications.get(&right))
+                && left_tag == right_tag
+                && self.argument_tags.contains(left_tag)
+            {
+                pending.push((*left, *right));
+            }
+        }
+    }
+
+    /// The head and structural field nodes of a full constructor application.
+    fn constructor_fields(&self, mut id: u64) -> Option<(u64, Vec<u64>)> {
+        let mut fields = Vec::new();
+        while !self.constructor_heads.contains_key(&id) {
+            let Some(Application::Apply(head, field)) = self.applications.get(&id) else {
+                return None;
+            };
+            fields.push(*field);
+            id = *head;
+        }
+        let (_, arity) = self.constructor_heads.get(&id)?;
+        if fields.len() != *arity {
+            return None;
+        }
+        fields.reverse();
+        Some((id, fields))
+    }
+
     fn retain_condition_truth(&mut self, id: u64, truth: u8) {
         let root = self.root(id);
         let previous = self.condition_truth.get(&root).copied().unwrap_or(0);
@@ -2055,6 +2148,17 @@ impl TermClasses {
                 self.algebraic_constructors.remove(&moved);
                 if !self.algebraic_constructors.contains_key(&kept) {
                     self.algebraic_constructors.insert(kept, constructor);
+                }
+            }
+            if let Some(application) = self.constructor_applications.get(&moved).copied() {
+                self.constructor_applications.remove(&moved);
+                match self.constructor_applications.get(&kept).copied() {
+                    Some(existing) => {
+                        self.join_constructor_applications(existing, application, &mut pending);
+                    }
+                    None => {
+                        self.constructor_applications.insert(kept, application);
+                    }
                 }
             }
             self.merge_additive_addresses(moved, kept);

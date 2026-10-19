@@ -446,3 +446,49 @@ fn model_constructor_lookup_prefers_a_stated_constructor_on_an_infeasible_path()
         );
     }
 }
+
+#[test]
+fn constructor_classes_join_fields_and_refute_distinct_variants() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let ty = model_type("Injective", AlgebraicValueType::C(CType::Int32));
+    let (model, alias) = (variable(&ty, 90), variable(&ty, 91));
+    let first = eq(&model, &constructor(&ty, "Node", vec![scalar(92)]));
+    let second = eq(&constructor(&ty, "Node", vec![scalar(93)]), &alias);
+    let fields = Proposition::ConditionIs(
+        ConditionTerm::equal(
+            Bitvector32Term::Variable(Variable(92)),
+            Bitvector32Term::Variable(Variable(93)),
+        ),
+        true,
+    );
+    let edge = eq(&model, &alias);
+    let base = PureFactContext::new()
+        .assume_proposition(first.clone())
+        .assume_proposition(second.clone());
+    assert!(!base.contains_known(&fields));
+    let joined = base.clone().assume_proposition(edge.clone());
+    assert!(joined.contains_known(&fields));
+    assert!(!joined.equality_graph.has_scalar_constant_conflict());
+    assert!(!base.contains_known(&fields));
+    for weakened in [
+        joined.without_exact_fact(&edge),
+        joined.without_exact_fact(&first),
+        joined.restricted_to_facts(&[], &[first.clone(), edge.clone()]),
+    ] {
+        assert!(!weakened.contains_known(&fields));
+    }
+
+    let empty = eq(&alias, &constructor(&ty, "Empty", vec![]));
+    let refuted = PureFactContext::new()
+        .assume_proposition(first)
+        .assume_proposition(empty.clone())
+        .assume_proposition(edge.clone());
+    assert!(refuted.equality_graph.has_scalar_constant_conflict());
+    assert!(refuted.is_inconsistent());
+    for weakened in [
+        refuted.without_exact_fact(&edge),
+        refuted.without_exact_fact(&empty),
+    ] {
+        assert!(!weakened.equality_graph.has_scalar_constant_conflict());
+    }
+}
