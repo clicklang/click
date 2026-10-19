@@ -1853,10 +1853,15 @@ fn validate_reachable_records(
             .chain(record.base.iter().map(|base| &base.value_type))
         {
             crate::instrumentation::record_deterministic_work(1);
-            if let CppType::Record { declaration_id, .. } = value_type
-                && referenced.insert(declaration_id.as_str())
+            // An embedded record, or the one a pointer field points to.
+            let target = match value_type {
+                CppType::Record { declaration_id, .. } => Some(declaration_id.as_str()),
+                pointer => super::scalar::record_pointee(pointer).map(|(id, _)| id),
+            };
+            if let Some(declaration_id) = target
+                && referenced.insert(declaration_id)
             {
-                pending.push(declaration_id.as_str());
+                pending.push(declaration_id);
             }
         }
     }
@@ -3320,7 +3325,17 @@ impl CppStatement {
                 span,
             } => {
                 span.validate(logical_source)?;
-                let target_type = validate_place_reference(target, places, logical_source)?;
+                // A local, or a field of a mutable object, `this->head`.
+                let root = validate_root_reference(target, places, logical_source)?;
+                if matches!(root, CppType::Record { is_const: true, .. })
+                    || matches!(root, CppType::LvalueReference { pointee } if matches!(pointee.as_ref(), CppType::Record { is_const: true, .. }))
+                {
+                    return Err("C++ `new` cannot assign through a const record".into());
+                }
+                for projection in &target.projections {
+                    projection.span().validate(logical_source)?;
+                }
+                let (target_type, _) = records.resolve_path(root, &target.projections)?;
                 let CppType::Record {
                     declaration_id,
                     name,
@@ -4028,7 +4043,13 @@ impl CppCallArgument {
                     validate_record_reference(records, declaration_id, name)?;
                     return Ok(());
                 }
-                if !place.projections.is_empty() || matches!(root, CppType::LvalueReference { .. })
+                // A scalar local, `int out`, bound to a native reference
+                // parameter: its address, as `&out` would be.
+                if !place.projections.is_empty()
+                    || matches!(
+                        root,
+                        CppType::LvalueReference { .. } | CppType::Integer { .. }
+                    )
                 {
                     require_native_pointer_element(value_type, true, "call reference argument")
                 } else {
@@ -5715,7 +5736,10 @@ fn validate_argument_types(
                             let expected_const =
                                 Scalar::of(expected).is_some_and(|scalar| scalar.is_const);
                             (!place.projections.is_empty()
-                                || matches!(root, CppType::LvalueReference { .. }))
+                                || matches!(
+                                    root,
+                                    CppType::LvalueReference { .. } | CppType::Integer { .. }
+                                ))
                                 && (expected_const || !actual_const)
                         }
                         (

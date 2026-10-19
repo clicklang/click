@@ -1,0 +1,11 @@
+{
+  "units": {
+    "stack": {
+      "language": "c++",
+      "args": ["-funsigned-char", "-ffreestanding", "-nostdinc", "-nostdinc++"],
+      "sources": {
+        "stack.cpp": {"functions": ["round_trip", "pushed_size"]}
+      }
+    }
+  }
+}
