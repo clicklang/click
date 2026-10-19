@@ -68,6 +68,11 @@ pub enum Type {
     Box {
         pointee: Box<Type>,
     },
+    /// An `Option<Box<R>>`: the address of the box's allocation, or null
+    /// for `None`.
+    OptionBox {
+        pointee: Box<Type>,
+    },
     /// What a reference to a type parameter bound by a crate trait, `&T`
     /// for `T: Shape`, or a `&dyn Shape` refers to: a value of a type the
     /// function does not know, which it reaches only through the trait's
@@ -203,6 +208,8 @@ pub enum Expression {
     Boolean {
         value: bool,
     },
+    /// The `None` of an `Option<Box<R>>`: the null address.
+    NoneBox,
     Local {
         name: String,
     },

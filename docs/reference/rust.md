@@ -1202,10 +1202,19 @@ pub fn boxed(x: u32) -> u32 {
 ```
 
 against `requires x < 100; ensures result == x + 1;` with
-`execute(); simp();`. Import refuses a box parameter or result ("box parameter
-or result"), a box struct field ("boxed struct field"), and a box of a record
-with a destructor or boxed fields ("box of a record with drop glue"). `Option`
-of a box and recursive boxed structs are later work in
+`execute(); simp();`.
+
+An `Option<Box<R>>` is the box's address, or null for `None`. `Some(b)` and
+`None` make one, a `match` tests it for null and moves the box out of `Some`,
+and its drop frees a `Some` box (freeing null has no effect).
+[`design/charon-trial/option-boxes`](https://github.com/clicklang/click/blob/master/design/charon-trial/option-boxes/options.rs)
+verifies `maybe`, which boxes a `Cell` only when asked and matches on the
+option, and `dropped`, whose possibly-`Some` option is dropped at scope end.
+
+Import refuses a box or option-of-box parameter or result ("box parameter
+or result"), such a struct field ("boxed struct field"), and a box of a record
+with a destructor or boxed fields ("box of a record with drop glue"). `take`,
+`?`, and recursive boxed structs are later work in
 [`issues/generic-stack.md`](https://github.com/clicklang/click/blob/master/issues/generic-stack.md).
 
 ## Borrow and proof boundary
