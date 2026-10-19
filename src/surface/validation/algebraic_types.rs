@@ -1936,6 +1936,7 @@ fn validate_algebraic_expression_node(
                     context,
                 )?;
                 let expected = instantiate_field_type(definition, algebraic_type, field)?;
+                let field_type = &expected;
                 match (&expected, actual_algebraic) {
                     (ClickType::Parameter(_), _) => {}
                     (ClickType::Algebraic(expected), Some(actual)) if expected == &actual => {}
@@ -1992,15 +1993,50 @@ fn validate_algebraic_expression_node(
                         },
                         None,
                     ) => {
+                        // An object pointer field takes a pointer to its own
+                        // struct: the C types alone do not tell `struct node*`
+                        // from another struct's pointer of the same layout.
+                        if let ClickType::CObjectPointer { struct_name, .. } = field_type
+                            && let Some(actual) =
+                                variables.argument_type(argument, click_functions, context)?
+                            && actual.c_type().is_some()
+                            && !matches!(&actual, ClickType::CObjectPointer { struct_name: actual_name, .. } if actual_name == struct_name)
+                        {
+                            return Err(ClickError::new(format!(
+                                "constructor `{}::{variant}` argument {index} expects {}, got {} in {context}",
+                                definition.name(),
+                                describe_click_type(field_type),
+                                describe_click_type(&actual)
+                            )));
+                        }
+                        // A scalar field takes an argument that converts to
+                        // it exactly; a literal is checked against the field's
+                        // range where it is lowered.
                         if let Some(actual) = infer_contract_expression_type(
                             argument,
                             variables,
                             click_functions,
                             context,
-                        )? && !click_types_compatible(actual, *expected)
-                        {
+                        )? && !(if type_is_arithmetic(actual) && type_is_arithmetic(*expected) {
+                            matches!(argument, ContractExpression::IntegerLiteral(_))
+                                || matches!(argument, ContractExpression::Negate(inner)
+                                    if matches!(inner.as_ref(), ContractExpression::IntegerLiteral(_)))
+                                || implicitly_converts(actual, *expected)
+                        } else {
+                            click_types_compatible(actual, *expected)
+                        }) {
+                            let conversion = if type_is_arithmetic(actual)
+                                && type_is_arithmetic(*expected)
+                            {
+                                format!(
+                                    "; a conversion that can change the value is written, as in `({}) ...`",
+                                    describe_c0_type(*expected)
+                                )
+                            } else {
+                                String::new()
+                            };
                             return Err(ClickError::new(format!(
-                                "constructor `{}::{variant}` argument {index} expects {}, got {} in {context}",
+                                "constructor `{}::{variant}` argument {index} expects {}, got {} in {context}{conversion}",
                                 definition.name(),
                                 describe_c0_type(*expected),
                                 describe_c0_type(actual)
