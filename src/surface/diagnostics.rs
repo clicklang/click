@@ -6635,27 +6635,6 @@ fn aligned_comparison_sugar<'a>(
         .then_some((pointer.as_ref(), alignment))
 }
 
-thread_local! {
-    /// Whether propositions are being spelled for a refusal a person reads,
-    /// rather than as Click source that must parse back.
-    static REFUSAL_SPELLING: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
-}
-
-/// Spells propositions inside `spell` for a refusal. The source form is
-/// what an expansion writes into a proof, so it keeps every term literal;
-/// a refusal may instead print a term as what it means, such as an
-/// unsigned order, in a form that is not Click source.
-pub(in crate::surface) fn with_refusal_spelling<T>(spell: impl FnOnce() -> T) -> T {
-    struct Restore(bool);
-    impl Drop for Restore {
-        fn drop(&mut self) {
-            REFUSAL_SPELLING.with(|mode| mode.set(self.0));
-        }
-    }
-    let _restore = Restore(REFUSAL_SPELLING.with(|mode| mode.replace(true)));
-    spell()
-}
-
 /// A 32-bit unsigned order written the way the kernel states it: the signed
 /// order of both operands with their sign bit flipped, a constant operand
 /// arriving already flipped. It is spelled as the unsigned comparison it
@@ -6715,12 +6694,7 @@ pub(super) fn unsigned_order_sugar(proposition: &ClickProposition) -> Option<Str
 }
 
 pub(super) fn describe_click_proposition(proposition: &ClickProposition) -> String {
-    let mode = if REFUSAL_SPELLING.with(std::cell::Cell::get) {
-        printing::PropositionSpelling::Refusal
-    } else {
-        printing::PropositionSpelling::Diagnostic
-    };
-    printing::print_proposition(proposition, mode)
+    printing::print_proposition(proposition, printing::PropositionSpelling::Diagnostic)
 }
 
 pub(super) fn describe_snapshot_selector(selector: &SnapshotSelector) -> String {

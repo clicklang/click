@@ -5,10 +5,17 @@ use super::diagnostics::{
 };
 use super::*;
 
-/// Source output always selects source syntax explicitly, regardless of a
-/// diagnostic caller's thread-local presentation preference.
+/// Click source that parses back. Every spelling is chosen by its caller;
+/// no output depends on who else is printing.
 pub(in crate::surface) fn source_click_proposition(proposition: &ClickProposition) -> String {
     print_proposition(proposition, PropositionSpelling::Source)
+}
+
+/// A proposition spelled for a refusal a person reads. It may print a term
+/// as what it means, such as an unsigned order, in a form that is not Click
+/// source, so it never reaches generated source.
+pub(in crate::surface) fn refusal_click_proposition(proposition: &ClickProposition) -> String {
+    print_proposition(proposition, PropositionSpelling::Refusal)
 }
 
 // Diagnostic quotations retain the declaration's spelling; certificate-only
@@ -2267,7 +2274,7 @@ mod tests {
     }
 
     #[test]
-    fn source_propositions_ignore_refusal_mode_even_when_nested() {
+    fn only_refusal_spelling_prints_unsigned_sugar() {
         let expression =
             |text: &str| ContractExpression::CFragment(CExpression::Variable(text.into()));
         let flipped = ContractExpression::BitwiseXor(
@@ -2300,15 +2307,11 @@ mod tests {
             right: expression("x"),
         };
         let conditional_source = source_click_proposition(&conditional);
-        diagnostics::with_refusal_spelling(|| {
-            assert_eq!(source_click_proposition(&conditional), conditional_source);
-        });
+        assert!(!conditional_source.contains("(unsigned)"));
         let source = source_click_proposition(&proposition);
         assert!(!source.contains("(unsigned)"));
-        let refusal = diagnostics::with_refusal_spelling(|| {
-            assert_eq!(source_click_proposition(&proposition), source);
-            diagnostics::describe_click_proposition(&proposition)
-        });
+        assert!(!diagnostics::describe_click_proposition(&proposition).contains("(unsigned)"));
+        let refusal = refusal_click_proposition(&proposition);
         assert!(refusal.contains("(unsigned)"), "{refusal}");
         assert!(parser::has_valid_source_tokens(&source));
         let file = format!(
