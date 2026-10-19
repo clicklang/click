@@ -3327,6 +3327,15 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
                     return Err(StableViewPlanError::ConflictingRequirement(selected));
                 }
             }
+            // The checked supplier owns this slice in its original pointer
+            // domain. Keep that domain in escrow; the callee's view may have
+            // selected a known member extent instead.
+            let selected = match (selected, owned.memory_own_range()) {
+                (CResourceFact::Own(CResource::Memory(range), quantity), Some(source)) => {
+                    CResourceFact::Own(CResource::Memory(range.with_carrier_of(source)), quantity)
+                }
+                (selected, _) => selected,
+            };
             let suspended_owned_reader =
                 split_reborrowed_views && selected.memory_own_range().is_some();
             let opening = if suspended_owned_reader {

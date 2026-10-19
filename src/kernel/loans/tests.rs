@@ -56,6 +56,49 @@ fn opaque_memory_borrow_fixture() -> (CResourceFact, CCheckedResourceFact) {
 }
 
 #[test]
+fn concrete_view_recovery_retains_the_callers_opaque_carrier() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let assumptions = PureFactContext::new();
+    let (owner, requested) = opaque_memory_borrow_fixture();
+    let requested = requested.fact.memory_own_range().unwrap();
+    let first = checked(CResourceFact::view_memory(requested.clone()));
+    let second = checked(CResourceFact::view_memory(
+        crate::kernel::CMemoryRange::new_with_element_width(
+            requested.base().clone(),
+            2u32.into(),
+            3u32.into(),
+            4,
+        )
+        .with_carrier_of(requested),
+    ));
+    for views in [vec![first.clone()], vec![first.clone(), second]] {
+        let resources = ResourceContext::new().unchecked_with_fact(owner.clone());
+        let (ledger, caller, callee) = participants();
+        let plan =
+            plan_stable_view_transfer(&resources, &views, &assumptions, &ledger, caller, callee)
+                .unwrap();
+        assert!(
+            !plan
+                .caller_resources_after_requirements
+                .satisfies_fact(&owner, &assumptions)
+        );
+        assert!(
+            !plan
+                .callee_resources
+                .satisfies_fact(&CResourceFact::own_memory(requested.clone()), &assumptions,)
+        );
+        let recovery = plan
+            .recover_stable_views(&assumptions, &BTreeMap::new(), &[])
+            .unwrap();
+        assert!(
+            recovery.resources.satisfies_fact(&owner, &assumptions),
+            "recovery must restore the original opaque owner after {} view(s)",
+            views.len()
+        );
+    }
+}
+
+#[test]
 fn partial_owned_borrow_returns_only_its_slice_with_the_callers_opaque_domain() {
     let _session = crate::kernel::VerificationSession::enter();
     let assumptions = PureFactContext::new();
