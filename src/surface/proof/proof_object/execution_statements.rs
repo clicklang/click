@@ -77,6 +77,23 @@ fn ranking_member_diagnostic(ranking_measures: &[crate::kernel::CRankingComponen
 /// introduces ever become one of these.
 pub(in crate::surface::proof) type NamedArithmeticPremise = (Proposition, ClickProposition);
 
+fn compact_bundle_arithmetic_premises(
+    goal: &Proposition,
+    premises: &[NamedArithmeticPremise],
+) -> Vec<NamedArithmeticPremise> {
+    let goal_variables =
+        crate::kernel::proposition_variables(&crate::kernel::canonical_condition_fact(goal));
+    premises
+        .iter()
+        .filter(|(kernel, _)| {
+            crate::instrumentation::record_deterministic_work(1);
+            crate::kernel::proposition_variables(&crate::kernel::canonical_condition_fact(kernel))
+                .is_subset(&goal_variables)
+        })
+        .cloned()
+        .collect()
+}
+
 /// Splits a written contract clause into the conjuncts a source proof would
 /// cite one at a time. The walk is over the written proposition only; it
 /// reads no fact context.
@@ -685,9 +702,23 @@ impl<'a> Proof<'a> {
             })
             .cloned()
             .collect::<Vec<_>>();
-        if !signed.is_empty()
-            && let Some(goal) = self.goal()
-        {
+        // A ranking leaf needs its counter's bounds, not the independent
+        // counter equalities named by every other invariant. Keep the first
+        // arithmetic slice local to this leaf; retain the full named slice
+        // as a fallback when a relation through another variable is needed.
+        let compact = self
+            .goal()
+            .map(|goal| compact_bundle_arithmetic_premises(goal, &signed))
+            .unwrap_or_default();
+        let candidates = std::iter::once(compact.as_slice())
+            .chain((compact.len() != signed.len()).then_some(signed.as_slice()));
+        for signed in candidates {
+            if signed.is_empty() {
+                continue;
+            }
+            let Some(goal) = self.goal() else {
+                continue;
+            };
             let kernels = signed
                 .iter()
                 .map(|(kernel, _)| kernel.clone())
@@ -722,7 +753,7 @@ impl<'a> Proof<'a> {
                 crate::surface::checking::plan_signed_arithmetic_certificate(goal, &kernels)
                 && let Some(surface_goal) = self.surface_goal()
                 && let Some(certificate) =
-                    { self.signed_plan_to_surface_certificate(&plan, &signed, surface_goal) }
+                    { self.signed_plan_to_surface_certificate(&plan, signed, surface_goal) }
                 && let Some(closed) = {
                     let attempt =
                         self.apply_step(ProofStep::ArithmeticCertificate(ArithmeticCertificate {
@@ -3132,4 +3163,11 @@ pub fn without_implicit_auto<R>(operation: impl FnOnce() -> R) -> R {
     }
     let _restore = Restore(IMPLICIT_AUTO_DISABLED.with(|disabled| disabled.replace(true)));
     operation()
+}
+
+#[cfg(test)]
+mod scaling_tests {
+    include!(
+        "../../../scaling_tests/surface/proof/proof_object/execution_statements/loop_arithmetic_selection_tests.rs"
+    );
 }

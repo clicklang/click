@@ -1,5 +1,50 @@
 use super::*;
 
+#[test]
+#[ignore = "nightly: generated wide loop bundles and expansion controls"]
+fn loop_decreases_keeps_its_bounds_beside_many_counter_invariants() {
+    let program = |count| {
+        let declarations = (0..count)
+            .map(|i| format!("int32 v{i};"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let initializers = (0..count)
+            .map(|i| format!("v{i} = 0;"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let updates = (0..count)
+            .map(|i| format!("v{i} = v{i} + 1;"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let c_source = format!(
+            "int32 caller() {{ int32 i; {declarations} i = 0; {initializers} while (i < 4) {{ {updates} i = i + 1; }} return i; }}"
+        );
+        let invariants = (0..count)
+            .map(|i| format!("invariant v{i} == i;"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let steps = "step();\n".repeat(2 * count + 2);
+        let source = format!(
+            "verifying \"many.c\";\nint32 caller() {{ ensures result == 4; }} by {{ {steps} loop {{ decreases 4 - i; invariant i >= 0; invariant i <= 4; {invariants} }} step(); simp(); }}"
+        );
+        (source, c_source)
+    };
+    for count in [4, 32, 64] {
+        let (source, c_source) = program(count);
+        verify_c0_sources(&source, &[("many.c", c_source.as_str())]).unwrap();
+    }
+    let (source, c_source) = program(4);
+    let sources = [("many.c", c_source.as_str())];
+    let expanded =
+        expand_c0_claim_source(&source, &sources, "caller", CProofClaim::Grouped).unwrap();
+    without_implicit_auto(|| verify_c0_sources(&expanded, &sources)).unwrap();
+    let false_ranking = source.replace("decreases 4 - i;", "decreases i;");
+    assert!(verify_c0_sources(&false_ranking, &sources).is_err());
+    let false_result = expanded.replacen("ensures result == 4;", "ensures result == 5;", 1);
+    assert_ne!(false_result, expanded);
+    assert!(verify_c0_sources(&false_result, &sources).is_err());
+}
+
 /// Collects every `loop` clause reachable from a proof script, including the
 /// clauses nested inside another loop's own phase proofs.
 fn loop_clauses_in(tactics: &[ProofTactic], clauses: &mut Vec<StructuralClause>) {
