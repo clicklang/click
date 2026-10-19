@@ -1,3 +1,5 @@
+arithmetic "integer";
+
 verifying "borrow.rs";
 
 fn choose(x: i32) -> i32 {

@@ -1,3 +1,5 @@
+arithmetic "integer";
+
 verifying "guard.rs";
 
 impl Drop for Guard {

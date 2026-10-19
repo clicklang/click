@@ -1,3 +1,5 @@
+arithmetic "integer";
+
 import "rbtree_erase_splice.click";
 
 function splice_black_leaf(node: struct rb_node*, parent: struct rb_node*) -> RbTree {

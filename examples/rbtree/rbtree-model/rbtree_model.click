@@ -1,3 +1,5 @@
+arithmetic "integer";
+
 spec enum Color {
     Red,
     Black,

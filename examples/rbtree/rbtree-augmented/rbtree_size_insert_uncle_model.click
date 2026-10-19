@@ -1,3 +1,5 @@
+arithmetic "integer";
+
 // Nonempty black middle and uncle subtrees retain arbitrary descendants.
 // The in-order theorem leaves every descendant sequence symbolic.
 verifying "rbtree_size_compute.c";

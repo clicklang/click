@@ -1,3 +1,5 @@
+arithmetic "integer";
+
 verifying "arrays.rs";
 
 fn literal() -> u32 { ensures result == 5u32; } by { execute(); simp(); }

@@ -1,3 +1,5 @@
+arithmetic "integer";
+
 // Remaining insertion flips, with an arbitrary owned black-parent boundary.
 verifying "rb_insert_augmented.c";
 verifying "rbtree_size_compute.c";

@@ -1,3 +1,5 @@
+arithmetic "integer";
+
 verifying "arrays.rs";
 
 fn first(bytes: &[u8]) -> u8 {
