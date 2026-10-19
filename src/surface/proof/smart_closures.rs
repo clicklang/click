@@ -3034,9 +3034,10 @@ impl<'a> Proof<'a> {
         // Population bounds are arithmetic on the authority's count, even
         // when that count shares a carrier with a C field. Try its indexed
         // bounds before searching memory equalities and recorded snapshots.
-        // Signed orders likewise select indexed bounds before spelling
-        // historical aliases, including terminal outcomes with many earlier
-        // clauses. Named rules keep first choice over those bounds.
+        // Compound signed orders likewise select indexed bounds before
+        // spelling historical aliases, including terminal outcomes with
+        // many earlier clauses. Simple terminal comparisons retain their
+        // result-aware rewrites and named-rule routes first.
         let population_count_comparison = matches!(
             self.surface_goal(),
             Some(
@@ -3049,17 +3050,36 @@ impl<'a> Proof<'a> {
                 }
             )
         );
-        let indexed_arithmetic_tried = population_count_comparison
-            || matches!(
-                self.goal(),
-                Some(Proposition::ConditionIs(
-                    ConditionTerm::Bitvector32SignedLessThan(..)
-                        | ConditionTerm::Bitvector32SignedLessEqual(..)
-                        | ConditionTerm::Bitvector32SignedGreaterThan(..)
-                        | ConditionTerm::Bitvector32SignedGreaterEqual(..),
-                    _
+        let compound_signed_order = matches!(
+            self.goal(),
+            Some(Proposition::ConditionIs(
+                ConditionTerm::Bitvector32SignedLessThan(..)
+                    | ConditionTerm::Bitvector32SignedLessEqual(..)
+                    | ConditionTerm::Bitvector32SignedGreaterThan(..)
+                    | ConditionTerm::Bitvector32SignedGreaterEqual(..),
+                _
+            ))
+        ) && matches!(
+            self.surface_goal(),
+            Some(ClickProposition::Comparison { left, right, .. })
+                if [left, right].into_iter().any(|term| matches!(
+                    term,
+                    ContractExpression::Add(..)
+                        | ContractExpression::Subtract(..)
+                        | ContractExpression::Multiply(..)
                 ))
-            );
+        );
+        let indexed_arithmetic_tried = population_count_comparison
+            || compound_signed_order
+            || (self.focused_outcome_data().is_none()
+                && matches!(
+                    self.goal(),
+                    Some(Proposition::ConditionIs(
+                        ConditionTerm::Bitvector32SignedLessThan(..)
+                            | ConditionTerm::Bitvector32SignedLessEqual(..),
+                        _
+                    ))
+                ));
         if indexed_arithmetic_tried
             && let Some(proof) = crate::instrumentation::measure_operation(
                 "surface",
