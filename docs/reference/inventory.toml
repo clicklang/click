@@ -2362,6 +2362,10 @@ id = "library.type.List"
 path = "reference/library/index.md#list"
 
 [[item]]
+id = "library.type.Option"
+path = "reference/library/index.md#option"
+
+[[item]]
 id = "library.function.list::append"
 path = "reference/library/index.md#listappend"
 

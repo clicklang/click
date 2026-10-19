@@ -1,0 +1,15 @@
+{
+  "units": {
+    "option_values": {
+      "language": "rust",
+      "sources": { "options.rs": {} },
+      "crate": {
+        "name": "option_values",
+        "edition": "2021",
+        "features": [],
+        "roots": ["option_values::round"],
+        "files": ["options.rs"]
+      }
+    }
+  }
+}

@@ -202,6 +202,27 @@ pub(crate) fn qualified_name<'s>(segments: impl IntoIterator<Item = &'s str>) ->
     encoded
 }
 
+/// The record Click lays a Rust `Option<argument>` out as, which a
+/// sidecar names `Option<argument>`.
+pub(crate) fn option_record_name(argument: &str) -> String {
+    let mut name = qualified_name(["core", "option", "Option"]);
+    push_type_argument(&mut name, argument);
+    name
+}
+
+/// The type argument of `name` when it is an option record's name.
+pub(crate) fn option_record_argument(name: &str) -> Option<String> {
+    match instance_type_arguments(name, &qualified_name(["core", "option", "Option"]))?.as_slice() {
+        [argument] => Some(argument.clone()),
+        _ => None,
+    }
+}
+
+/// Whether a sidecar path names Rust's `Option`, `Option` or its full path.
+pub(crate) fn is_option_path(segments: &[&str]) -> bool {
+    matches!(segments, ["Option"] | ["core" | "std", "option", "Option"])
+}
+
 /// The name a sidecar's path of segments denotes: a single segment is the
 /// name itself, a longer path its [`qualified_name`].
 pub(crate) fn path_name(segments: &[&str]) -> String {

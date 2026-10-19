@@ -2619,6 +2619,47 @@ fn charon_option_boxes_match_and_drop_their_box() {
     }
 }
 
+const OPTION_VALUE_SIDECAR: &str =
+    include_str!("../design/charon-trial/option-values/options.click");
+
+// A Rust `Option<u32>` is Click's `Option<u32>` in a contract: a function
+// returning one, a function matching one, and a caller composing the two
+// through their contracts.
+#[test]
+fn charon_option_values_read_as_click_options() {
+    let p = Project::from_fixture("design/charon-trial/option-values");
+    fs::write(p.root.join("borrow.click"), OPTION_VALUE_SIDECAR).unwrap();
+    let prepared = p.prepared().unwrap();
+    C0VerificationSession::new_program_prepared(OPTION_VALUE_SIDECAR, &prepared)
+        .unwrap_or_else(|error| panic!("{error:?}"));
+    for (before, after, expected) in [
+        (
+            "    ensures make implies result == Option<u32>::Some(x);",
+            "    ensures make implies result == Option<u32>::None;",
+            "option_values::some_if.ensures_0",
+        ),
+        (
+            "Option::None => 0u32 }",
+            "Option::None => 1u32 }",
+            "option_values::or_zero.ensures_0",
+        ),
+        (
+            "    ensures result == x;",
+            "    ensures result == 0u32;",
+            "option_values::round.ensures_0",
+        ),
+    ] {
+        assert!(OPTION_VALUE_SIDECAR.contains(before), "{before}");
+        let invalid = OPTION_VALUE_SIDECAR.replacen(before, after, 1);
+        let error = C0VerificationSession::new_program_prepared(&invalid, &prepared)
+            .err()
+            .expect("a claim the option program does not meet must fail");
+        let rendered = format!("{error:?} {error}");
+        let rendered = click::languages::rust::names::display_rust_names(&rendered);
+        assert!(rendered.contains(expected), "{rendered}");
+    }
+}
+
 /// A box lives within one function body for now: a parameter or result
 /// that holds one is refused at import.
 #[test]

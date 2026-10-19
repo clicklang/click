@@ -3,7 +3,8 @@
 The Click library is the public Surface Click API in the
 [`library/`](https://github.com/clicklang/click/tree/master/library) modules.
 It isn't the Rust crate's internal `pub` API. Every sidecar sees
-`click::primitives`, `click::nat`, `click::list` and `click::c::builtins`. A
+`click::primitives`, `click::nat`, `click::list`, `click::option` and
+`click::c::builtins`. A
 C program that declares or calls a `<string.h>` function Click specifies
 brings `click::c::string`, with `click::bytes` and `click::cstr`. Any other
 module's declarations need that module's `import click::...;` line; see
@@ -761,6 +762,23 @@ theorem length_append<T>(xs: List<T>, ys: List<T>) {
 
 **Verified use:** [`mdtests/stdlib_list_length.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_list_length.md).
 
+
+## Options
+
+### `Option`
+
+```click
+spec enum Option<T> {
+    None,
+    Some(T),
+}
+```
+
+**Meaning:** An optional value. A Rust `Option<u32>` parameter or result is
+this value in a contract: `ensures result == Option<u32>::Some(x);`. The
+importer lays the Rust value out itself; a contract never reads that layout.
+
+**Verified use:** [`design/charon-trial/option-values`](https://github.com/clicklang/click/blob/master/design/charon-trial/option-values/options.click).
 
 ## Signed `int32` theorems
 
