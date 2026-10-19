@@ -624,6 +624,17 @@ impl<'a> Proof<'a> {
                 .resources()
                 .synchronize_memory_equalities(next.facts().assumptions());
         }
+        let result = result.and_then(|next| {
+            // Fact admission or memory synchronization can consume the last
+            // unit after the transport checker returned. Its checked delta
+            // still carries the exact goal; do not report the outer C goal.
+            if tactic == "transport"
+                && let Err(error) = check_verification_deadline()
+            {
+                return Err(self.attach_transport_budget_diagnostic(error, &next));
+            }
+            Ok(next)
+        });
         if let Ok(next) = &result
             && crate::surface::proof_trace::enabled_for(self.claim_label())
             && !Arc::ptr_eq(&self.node, &next.node)

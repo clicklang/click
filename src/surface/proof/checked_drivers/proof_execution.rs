@@ -1108,7 +1108,13 @@ fn apply_frontier_source_tactic<'a>(
     // completed checked operation cannot hand control to a later tactic after
     // exhausting its own budget. The stopped tactic has no accepted successor;
     // retain its checked predecessor just as an operation refusal does.
-    check_verification_deadline().map_err(|error| proof.attach_step_diagnostic(error))?;
+    check_verification_deadline().map_err(|error| {
+        if matches!(indexed.tactic, ProofTactic::TransportUsing { .. }) {
+            proof.attach_transport_budget_diagnostic(error, &next)
+        } else {
+            proof.attach_step_diagnostic(error)
+        }
+    })?;
     // Generated certificates retain the source index of the smart operation
     // that produced them. Their nested steps are part of that operation's
     // already-recorded branch certificate, not independent expansions of the

@@ -3634,7 +3634,7 @@ fn budget_stopped_transport_retains_its_checked_loop_prefix() {
 }
 
 #[test]
-fn budget_stopped_explicit_transport_retains_its_checked_prefix() {
+fn budget_stopped_explicit_transport_retains_its_checked_prefix_and_goal() {
     use crate::instrumentation::{TacticWorkLimits, collect_tactic_work, with_tactic_work_limits};
     let source = r#"verifying "f.c";
         void f(int32 **p, int32 **q) {
@@ -3677,6 +3677,14 @@ fn budget_stopped_explicit_transport_retains_its_checked_prefix() {
                 .trace_context_report()
                 .expect("a stopped explicit transport retains the checked predecessor");
             assert!(trace.contains("steps through: *q = "), "{trace}");
+            if limit != 0 {
+                let failed = trace
+                    .split("failed check:")
+                    .nth(1)
+                    .expect("failure context");
+                assert!(failed.contains("checked transport target:"), "{trace}");
+                assert!(trace.contains("pointer read at snapshot#"), "{trace}");
+            }
         });
     }
 }
