@@ -3104,6 +3104,43 @@ impl PureFactContext {
             (CResource::Iterated(_), _) | (_, CResource::Iterated(_)) => return false,
             _ => {}
         }
+        // Separation is a claim about bytes, so a range may be spelled at the
+        // coordinate its base is proven equal to: the argument block or a
+        // storage block its class has, where held ranges are spelled. Address
+        // equality decides bytes; it grants no access, which ownership
+        // coverage checks separately.
+        if let (CResource::Memory(left_range), CResource::Memory(right_range)) = (left, right) {
+            let rebase = |range: &CMemoryRange| {
+                let coordinate = self.equality_graph.canonical_pointer(range.base())?;
+                if coordinate.representative == range.base().block
+                    || !matches!(coordinate.representative, PointerBlock::ExternalArgument)
+                        && !matches!(
+                            coordinate.representative,
+                            PointerBlock::Heap(_)
+                                | PointerBlock::Temporary(_)
+                                | PointerBlock::StringLiteral { .. }
+                        )
+                        && !matches!(&coordinate.representative, PointerBlock::Concrete(name) if name != "null")
+                {
+                    return None;
+                }
+                let base = Pointer {
+                    block: coordinate.representative,
+                    offset: coordinate.offset.to_offset_term()?,
+                };
+                let (start, end) = range.bound_terms();
+                Some(range.with_bounds(base, start.clone(), end.clone()))
+            };
+            let (rebased_left, rebased_right) = (rebase(left_range), rebase(right_range));
+            if (rebased_left.is_some() || rebased_right.is_some())
+                && self.proves_resource_separate_inner(
+                    &CResource::Memory(rebased_left.unwrap_or_else(|| left_range.clone())),
+                    &CResource::Memory(rebased_right.unwrap_or_else(|| right_range.clone())),
+                )
+            {
+                return true;
+            }
+        }
         if let (CResource::Memory(left), CResource::Memory(right)) = (left, right)
             && left.base().blocks_proven_distinct(right.base())
         {
