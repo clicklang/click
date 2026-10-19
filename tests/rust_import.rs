@@ -4014,8 +4014,8 @@ fn rust_slice_for_sum_verifies_and_expands() {
     C0VerificationSession::new_program_prepared(&sidecar, &copied_prepared).unwrap();
     for invalid in [
         sidecar.replace(
-            "ensures to_integer(result) == old(prefix",
-            "ensures to_integer(result) + 1 == old(prefix",
+            "ensures result == old(prefix",
+            "ensures result + 1 == old(prefix",
         ),
         sidecar.replace(
             "decreases iter_remaining;",

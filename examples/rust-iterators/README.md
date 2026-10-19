@@ -13,6 +13,17 @@ slice length before the source body. The copied pattern reads the saved address.
 An exhausted iterator performs no read or pointer advance. Remaining length is
 signed under the shared memory model's checked length limit.
 
+The sidecar uses Integer specification arithmetic (`arithmetic "integer";`),
+so it imports no library bridge: the contract and invariants compare exact
+Integers, and the body's arithmetic is `have P by auto();`. The prefix length
+`bytes.len() - iter_remaining` is also a `usize` value, used as a fold
+endpoint and a cursor offset. Facts about that machine value are written as
+Integer observations, `to_integer(bytes.len() - iter_remaining) < 18446744073709551615`,
+which is the same fact as the native bound (see "One form for comparisons of
+observations" in `docs/internals/mathematical-integers.md`), so `peel` and
+pointer arithmetic use it directly. A plain `bytes.len() - iter_remaining` in
+a comparison is Integer subtraction.
+
 No processed count or index is supplied by default. This sidecar explicitly
 derives its prefix length as original slice length minus remaining length and
 relates it to the cursor. It retains views of the input and uses remaining
