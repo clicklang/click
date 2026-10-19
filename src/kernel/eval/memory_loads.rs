@@ -1910,16 +1910,20 @@ fn canonicalized_symbolic_load_value_with_identity(
     // Losing a scalar cache does not lose a complete pointer stored in the
     // selected memory history. Return that whole value before minting another
     // numeric read coordinate, preserving its bounds and object class.
+    // Forced symbolic reads retain the selected snapshot's read instead;
+    // recovering a representation is neither requested nor needed there.
     let complete_read = CPointerValue::from_read(
         pointer_value.pointer().clone(),
         value_type,
         &crate::kernel::intern_c_memory_ref(memory),
         &address,
     );
-    if let Some(stored) = crate::kernel::memory_provenance::complete_pointer_read_value(
-        complete_read.designation(),
-        assumptions,
-    ) {
+    if !assumptions.should_force_symbolic_external_loads()
+        && let Some(stored) = crate::kernel::memory_provenance::complete_pointer_read_value(
+            complete_read.designation(),
+            assumptions,
+        )
+    {
         let stored = stored.with_type(value_type);
         facts.push(ExecutionPureFact::logical_read_equation(
             stored.clone(),

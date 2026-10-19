@@ -17338,6 +17338,13 @@ fn arm_premises_at_symbolic_bindings(
     evaluation_assumptions: &PureFactContext,
     assumptions: &PureFactContext,
 ) -> Option<PureFactContext> {
+    // These bindings describe a hypothetical constructor, not a concrete
+    // program read. Retain each cell's snapshot term instead of recovering
+    // whole pointer values through unrelated execution history.
+    let evaluation_assumptions = evaluation_assumptions
+        .clone()
+        .keep_spec_loads_symbolic()
+        .force_symbolic_external_loads();
     let mut body_state = evaluation.clone();
     let mut algebraic_bindings = BTreeMap::new();
     for (name, value) in arm.bindings.iter().zip(bindings) {
@@ -17360,7 +17367,7 @@ fn arm_premises_at_symbolic_bindings(
         &body_state,
         &arm.contains,
         &[],
-        evaluation_assumptions,
+        &evaluation_assumptions,
         &mut budget,
         false,
     ) else {

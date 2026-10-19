@@ -303,7 +303,14 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                     let demoted = fold(sized_recompute_at(g), {
                         model: SizedTree::Node(g, node, Color::Red, 3, SizedTree::Empty, SizedTree::Empty)
                     }, { metadata: g_size, right: g_right, left: g_left });
+                    have old(g->rb_right->rb_left) == node by { assumption(); }
+                    have at(before_parent_update, (old(g->rb_right->rb_left))->rb_right == p) by { rewrite(old(g->rb_right->rb_left) == node); assumption(); }
                     transport(at(before_parent_update, node->rb_right == p), node->rb_right == p) using {
+                        at(before_parent_update, (old(g->rb_right->rb_left))->rb_right == p);
+                        old(g->rb_right->rb_left) == node;
+                        gparent == g;
+                        parent == node;
+                        p == old(g->rb_right);
                         at(before_parent_update, node->rb_right == p);
                     };
                     have parent->rb_left == gparent by { simp(); }
