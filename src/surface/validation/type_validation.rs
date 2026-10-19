@@ -2643,6 +2643,26 @@ pub(in crate::surface) fn implicitly_converts(actual: C0Type, expected: C0Type) 
     }
 }
 
+/// Whether `argument`, when it is an integer literal (negated or not), is a
+/// value of the integer type `expected`; `None` for any other argument or
+/// type. A literal takes its position's type when it holds its value, and
+/// is refused rather than wrapped when it does not.
+pub(in crate::surface) fn literal_fits(
+    argument: &ContractExpression,
+    expected: C0Type,
+) -> Option<bool> {
+    let text = match argument {
+        ContractExpression::IntegerLiteral(text) => text.clone(),
+        ContractExpression::Negate(inner) => match inner.as_ref() {
+            ContractExpression::IntegerLiteral(text) => format!("-{text}"),
+            _ => return None,
+        },
+        _ => return None,
+    };
+    let ty = crate::kernel::MachineIntegerType::from_c_type(expected.to_kernel_type())?;
+    Some(crate::kernel::MachineIntegerConstant::parse_decimal(ty.format(), &text).is_some())
+}
+
 pub(in crate::surface) fn click_types_compatible(actual: C0Type, expected: C0Type) -> bool {
     match (actual, expected) {
         (C0Type::Int32Array(_), C0Type::Int32Pointer)
@@ -2687,7 +2707,9 @@ pub(in crate::surface) fn click_types_compatible(actual: C0Type, expected: C0Typ
         {
             true
         }
-        (actual, expected) if type_is_arithmetic(actual) && type_is_arithmetic(expected) => true,
+        (actual, expected) if type_is_arithmetic(actual) && type_is_arithmetic(expected) => {
+            implicitly_converts(actual, expected)
+        }
         _ => actual == expected,
     }
 }

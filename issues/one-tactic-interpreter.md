@@ -67,6 +67,32 @@ state it supplies and in which tactics it admits, and admission is a declared
 table, not a separate code path. Expansion prints what checking recorded, from
 one source of truth.
 
+## Case splits
+
+Proof `if`, `cases` and `match` follow one rule in every context
+(`docs/reference/tactics/index.md`, "Case splits"). Each arm runs once.
+With tactics written after the split, the live arms rejoin with the facts
+every arm proved, or the split is refused. An arm that reaches function exit
+is a finished path, and the closer that ends the proof closes its goals.
+After execution a split that forks outcome paths does not rejoin, so tactics
+after it are refused.
+
+Two differences remain for `match` after execution:
+
+- A `match` at function exit splits once at the exit frontier, on the facts
+  every outcome path shares, through the frontier `match` driver. `if` and
+  `cases` decide each outcome path: a path whose facts decide the case runs
+  only its arm, and only an undecided path forks. So on a path whose facts
+  rule out a constructor, that arm still runs. Closing it needs a deferred
+  `match` that issues the kernel's constructor partition against each
+  path's facts, an n-way `OutcomeEvidenceFork`, and n-way certificate
+  synthesis in `synthesize_surface_paths`.
+- A `match` nested in the arm of an `if` or `cases` after execution is not
+  deferred (`deferred_post_execution_region` declines it).
+
+Both are easier once claims are goals held by the `Proof`, so that the three
+splits share one post-execution implementation.
+
 ## Intended regression
 
 Add mdtests that write the same tactic in each context where the language

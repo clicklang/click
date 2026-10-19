@@ -3078,8 +3078,8 @@ impl<'a> Proof<'a> {
     }
 
     /// Runs the narrow statement selector on this focused branch frontier until it
-    /// reaches function exit. A nested C `if` recurses through an in-`Proof`
-    /// split whose arms are focused branch runs of this same search; any other
+    /// reaches function exit. A nested C `if` uses an in-`Proof`
+    /// split whose arms are driven by an explicit continuation stack; any other
     /// structural frontier is a search miss.
     #[cfg(test)]
     pub(in crate::surface::proof) fn try_focused_execute_to_exit(
@@ -3115,19 +3115,11 @@ impl<'a> Proof<'a> {
         Ok(())
     }
 
-    /// The nested-branch execute-to-exit recursion. `enclosing` is the chain
-    /// of bounded-arm split records this execution runs inside, innermost
-    /// last: reaching a bounded arm's typed boundary consumes one record to
-    /// continue privately into that arm's parent continuation, so a terminal
-    /// path escapes exactly as many regions as it is nested inside.
-    ///
-    /// `steps` counts the statement steps the owning `execute()` has taken,
-    /// across every nested arm: [`Self::charge_execute_step`] refuses the
-    /// search at its fixed budget. `introduced`, given only at the top level,
-    /// collects the facts each advance there adds, for a scope that retains
-    /// what its body introduced. `until` stops the run before that source
-    /// statement instead of at function exit; such a run follows one path
-    /// and refuses where it would have to split.
+    /// Runs nested execution arms with an explicit continuation stack. Each
+    /// frame retains the checked split and its parent region chain; completing
+    /// an arm either focuses its sibling or joins the checked descendants.
+    /// Statement steps share one budget across all frames. Only top-level
+    /// advances contribute to `introduced`, as in straight-line execution.
     pub(in crate::surface::proof) fn try_focused_execute_to_exit_within(
         &self,
         enclosing: Vec<&ExecutionSplit<'a>>,
@@ -3136,6 +3128,24 @@ impl<'a> Proof<'a> {
         mut introduced: Option<&mut Vec<Proposition>>,
         until: Option<usize>,
     ) -> Result<Option<Self>, ClickError> {
+        enum Pending<'a> {
+            Branch {
+                record: Arc<ExecutionSplit<'a>>,
+                call_outcomes: bool,
+                next_else: bool,
+                enclosing: imbl::Vector<Arc<ExecutionSplit<'a>>>,
+            },
+            Cases {
+                record: Box<ExecutionProofCaseSplit<'a>>,
+                next_else: bool,
+                enclosing: imbl::Vector<Arc<ExecutionSplit<'a>>>,
+            },
+        }
+        let mut pending = Vec::new();
+        let mut enclosing: imbl::Vector<_> = enclosing
+            .into_iter()
+            .map(|record| Arc::new(record.clone()))
+            .collect();
         let mut record_added = |proof: &Self| {
             if let Some(introduced) = introduced.as_deref_mut() {
                 for fact in proof.added_facts() {
@@ -3146,55 +3156,99 @@ impl<'a> Proof<'a> {
             }
         };
         let mut proof = self.clone();
-        let mut enclosing = enclosing;
         loop {
             while proof.is_at_region_boundary() {
-                // A break/continue has completed the bounded iteration's
-                // evidence. Decline this function-exit strategy rather than
-                // resuming the enclosing branch's tail on that terminal path.
                 if proof
                     .execution()
                     .is_some_and(|execution| execution.core.evidence_completed)
                 {
                     return Ok(None);
                 }
-                let Some(record) = enclosing.pop() else {
+                let Some(record) = enclosing.pop_back() else {
                     return Ok(None);
                 };
-                proof = proof.continue_arm_into_parent_frontier(record)?;
+                proof = proof.continue_arm_into_parent_frontier(&record)?;
             }
             if let Some(target) = until {
                 match proof.current_statement_index()? {
                     Some(current) if current == target => return Ok(Some(proof)),
                     Some(current) if current < target => {}
-                    Some(current) => {
-                        return Err(proof.step_error(format!(
-                            "`execute_until(statement({target}))` target is not reachable from the current execution path; execution moved the frontier to statement({current})"
-                        )));
-                    }
-                    None => {
-                        return Err(proof.step_error(format!(
-                            "`execute_until(statement({target}))` reached function exit before its target"
-                        )));
-                    }
+                    Some(current) => return Err(proof.step_error(format!(
+                        "`execute_until(statement({target}))` target is not reachable from the current execution path; execution moved the frontier to statement({current})"
+                    ))),
+                    None => return Err(proof.step_error(format!(
+                        "`execute_until(statement({target}))` reached function exit before its target"
+                    ))),
                 }
             } else if proof.is_at_function_exit() {
-                return Ok(Some(proof));
+                let Some(frame) = pending.pop() else {
+                    return Ok(Some(proof));
+                };
+                match frame {
+                    Pending::Branch {
+                        record,
+                        call_outcomes,
+                        next_else,
+                        enclosing: parent,
+                    } => {
+                        if next_else && record.arm_id(false).is_some() {
+                            proof = proof.focus_split_arm(&record, false)?;
+                            enclosing = parent.clone();
+                            enclosing.push_back(record.clone());
+                            pending.push(Pending::Branch {
+                                record,
+                                call_outcomes,
+                                next_else: false,
+                                enclosing: parent,
+                            });
+                            continue;
+                        }
+                        proof = if call_outcomes {
+                            proof.join_focused_call_outcomes_terminal(&record)?
+                        } else if record.sole_feasible_arm().is_some() {
+                            proof.finish_focused_execution_decided(&record)?
+                        } else {
+                            proof.join_focused_execution_terminal(&record)?
+                        };
+                        enclosing = parent;
+                    }
+                    Pending::Cases {
+                        record,
+                        next_else,
+                        enclosing: parent,
+                    } => {
+                        if next_else {
+                            proof = proof.focus_execution_if_arm(&record, false)?;
+                            enclosing = parent.clone();
+                            pending.push(Pending::Cases {
+                                record,
+                                next_else: false,
+                                enclosing: parent,
+                            });
+                            continue;
+                        }
+                        proof = proof.join_focused_execution_if_terminal(&record)?;
+                        enclosing = parent;
+                    }
+                }
+                if pending.is_empty() {
+                    record_added(&proof);
+                }
+                retried_requirements.clear();
+                continue;
             }
             proof.charge_execute_step(steps)?;
             if let Some(next) =
                 proof.try_smart_statement_step(ProofStep::Step, retried_requirements)?
             {
-                record_added(&next);
+                if pending.is_empty() {
+                    record_added(&next);
+                }
                 proof = next;
                 retried_requirements.clear();
                 continue;
             }
             if let Some(target) = until {
-                // `execute_until` runs one path and does not split it: a
-                // frontier the bare step cannot take (an undecided C `if`, a
-                // maybe-throwing call) is refused with that step's own
-                // diagnostic.
                 return match proof.apply_step(ProofStep::Step) {
                     Err(error) => Err(error),
                     Ok(_) => Err(proof.step_error(format!(
@@ -3202,100 +3256,56 @@ impl<'a> Proof<'a> {
                     ))),
                 };
             }
-            let Some((split, record, call_outcomes)) = (if proof.is_at_call_outcomes_frontier()? {
+            let split = if proof.is_at_call_outcomes_frontier()? {
                 proof
-                    .split_focused_call_outcomes()?
-                    .map(|(split, record)| (split, record, true))
+                    .split_focused_call_outcomes()
+                    .map(|split| split.map(|(proof, record)| (proof, record, true)))
             } else if proof.is_at_execution_branch()? {
-                // A condition with path cases needs a case split on their
-                // facts before a C `branch` applies: split the proof on the
-                // condition that tells them apart, and each case meets the
-                // same `if` again with one path per arm.
-                let (split, record) = match proof.split_focused_execution_branch() {
-                    Ok(split) => split,
-                    Err(error) if error.is_path_case_split() => {
-                        let Some(condition) = error.path_case_condition() else {
-                            return Ok(None);
-                        };
-                        let cases = proof.try_focused_execute_cases_to_exit(
-                            condition.clone(),
-                            &enclosing,
-                            retried_requirements,
-                            steps,
-                        )?;
-                        if let Some(cases) = &cases {
-                            record_added(cases);
-                        }
-                        return Ok(cases);
-                    }
-                    Err(error) => return Err(error),
-                };
-                Some((split, record, false))
+                proof
+                    .split_focused_execution_branch()
+                    .map(|(proof, record)| Some((proof, record, false)))
             } else {
-                None
-            }) else {
-                // A statement whose successors are path cases (a load's
-                // may-alias cases, a symbolic `switch`) splits the proof on
-                // the condition that tells them apart; each case runs to exit
-                // under its side of the condition.
-                return match proof.apply_step(ProofStep::Step) {
-                    Err(error) if error.is_path_case_split() => {
-                        let Some(condition) = error.path_case_condition() else {
-                            return Ok(None);
-                        };
-                        let cases = proof.try_focused_execute_cases_to_exit(
-                            condition.clone(),
-                            &enclosing,
-                            retried_requirements,
-                            steps,
-                        )?;
-                        if let Some(cases) = &cases {
-                            record_added(cases);
-                        }
-                        Ok(cases)
-                    }
-                    // The statement cannot run here in the whole proof
-                    // context; its refusal is the answer.
+                match proof.apply_step(ProofStep::Step) {
                     Err(error) => Err(error),
-                    Ok(_) => Ok(None),
-                };
-            };
-            let mut advanced = split;
-            for take_then in [true, false] {
-                if record.arm_id(take_then).is_none() {
-                    continue;
+                    Ok(_) => return Ok(None),
                 }
-                let mut arm_enclosing = enclosing.clone();
-                arm_enclosing.push(&record);
-                let Some(next) = advanced
-                    .focus_split_arm(&record, take_then)?
-                    .try_focused_execute_to_exit_within(
-                        arm_enclosing,
-                        retried_requirements,
-                        steps,
-                        None,
-                        None,
-                    )?
-                else {
-                    return Ok(None);
-                };
-                advanced = next;
-            }
-            proof = if call_outcomes {
-                advanced.join_focused_call_outcomes_terminal(&record)?
-            } else if record.sole_feasible_arm().is_some() {
-                advanced.finish_focused_execution_decided(&record)?
-            } else {
-                advanced.join_focused_execution_terminal(&record)?
             };
-            record_added(&proof);
-            retried_requirements.clear();
+            match split {
+                Ok(Some((split, record, call_outcomes))) => {
+                    let record = Arc::new(record);
+                    let take_then = record.arm_id(true).is_some();
+                    proof = split.focus_split_arm(&record, take_then)?;
+                    let parent = enclosing.clone();
+                    enclosing.push_back(record.clone());
+                    pending.push(Pending::Branch {
+                        record,
+                        call_outcomes,
+                        next_else: take_then,
+                        enclosing: parent,
+                    });
+                }
+                Err(error) if error.is_path_case_split() => {
+                    let Some(condition) = error.path_case_condition() else {
+                        return Ok(None);
+                    };
+                    let (split, record) = proof.prepare_focused_execute_cases(condition.clone())?;
+                    proof = split.focus_execution_if_arm(&record, true)?;
+                    pending.push(Pending::Cases {
+                        record: Box::new(record),
+                        next_else: true,
+                        enclosing: enclosing.clone(),
+                    });
+                }
+                Err(error) => return Err(error),
+                Ok(None) => return Ok(None),
+            }
         }
     }
 
     /// Splits the proof on `condition` and runs each case to function exit,
     /// then joins the two terminal cases. `enclosing` is the chain of bounded
     /// arms the split runs inside; each case escapes all of them.
+    #[cfg(test)]
     fn try_focused_execute_cases_to_exit(
         &self,
         condition: ClickProposition,
@@ -3303,6 +3313,32 @@ impl<'a> Proof<'a> {
         retried_requirements: &mut BTreeSet<PropositionIdentityKey>,
         steps: &mut usize,
     ) -> Result<Option<Self>, ClickError> {
+        let (mut advanced, record) = self.prepare_focused_execute_cases(condition)?;
+        for take_then in [true, false] {
+            let Some(next) = advanced
+                .focus_execution_if_arm(&record, take_then)?
+                .try_focused_execute_to_exit_within(
+                    enclosing.to_vec(),
+                    retried_requirements,
+                    steps,
+                    None,
+                    None,
+                )?
+            else {
+                return Ok(None);
+            };
+            advanced = next;
+        }
+        retried_requirements.clear();
+        advanced
+            .join_focused_execution_if_terminal(&record)
+            .map(Some)
+    }
+
+    fn prepare_focused_execute_cases(
+        &self,
+        condition: ClickProposition,
+    ) -> Result<(Self, ExecutionProofCaseSplit<'a>), ClickError> {
         // This selector will also surround deferred path-dependent closers
         // after return. Read it where the case was checked, rather than from
         // a compiler temporary or a parameter's later value at function exit.
@@ -3355,26 +3391,7 @@ impl<'a> Proof<'a> {
                 proof.step_error("anchored execute case condition changed its checked meaning")
             );
         }
-        let (mut advanced, record) = proof.split_focused_execution_if(anchored)?;
-        for take_then in [true, false] {
-            let Some(next) = advanced
-                .focus_execution_if_arm(&record, take_then)?
-                .try_focused_execute_to_exit_within(
-                    enclosing.to_vec(),
-                    retried_requirements,
-                    steps,
-                    None,
-                    None,
-                )?
-            else {
-                return Ok(None);
-            };
-            advanced = next;
-        }
-        retried_requirements.clear();
-        advanced
-            .join_focused_execution_if_terminal(&record)
-            .map(Some)
+        proof.split_focused_execution_if(anchored)
     }
 
     /// Validates and applies one already-expanded logical execution arm.
@@ -4368,4 +4385,11 @@ mod progress_tests {
             );
         }
     }
+}
+
+#[cfg(test)]
+mod scaling_tests {
+    include!(
+        "../../../scaling_tests/surface/proof/proof_object/execution_joins/deep_execute_tests.rs"
+    );
 }
