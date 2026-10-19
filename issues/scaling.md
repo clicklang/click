@@ -80,7 +80,13 @@ instead of from what the step changed.
    persistent set, so stating a composition no longer copies it. About
    twenty other `resource_compositions.iter()` sites, in load resolution and
    condition reasoning, still scan the whole set; each needs the same
-   argument for which listed compositions can answer it.
+   argument for which listed compositions can answer it. Filing a
+   composition fact bounded its variables by walking every held fact
+   (`proposition_syntax_execution_variable_ceiling`), about four whole
+   contexts per step; the bound is now cached on each canonical fact-set
+   node, so a context one insertion derives computes that path alone
+   (`composition_ceiling_reads_the_cached_fact_set`; `heap_objects` at
+   N = 128, 406 to 9 million instructions).
 3. **A call rebuilds what the caller keeps.** `call_kept_ownership` expanded
    every kept composite at every call to list the memory the caller keeps.
    Fixed for composites whose definition is argument-direct, such as
