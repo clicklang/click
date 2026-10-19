@@ -422,6 +422,132 @@ pub(crate) fn capture_spec_algebraic_value(
     Ok(path.value.clone())
 }
 
+/// Smart theorem selection asks only for the evaluation conditions of its
+/// selected model argument. This query grants no value or proof authority:
+/// the explicit application still checks the selected premises. Evaluate with
+/// those premises, not ambient facts, so discharged ambient guards are retained.
+pub(crate) fn algebraic_argument_evaluation_guards(
+    state: &CState,
+    expression: &SpecAlgebraicExpression,
+    entry_state: Option<&CState>,
+    assumptions: &PureFactContext,
+) -> Result<Vec<Proposition>, String> {
+    use walk::{SpecNode, Visit, spec_tree_all};
+
+    let scope = SpecScope::unbound(state, entry_state);
+    let mut execution_budget = ExecutionBudget::beside_live_state();
+    let mut evaluation = SpecEvaluation::logical(&mut execution_budget);
+    let mut guards = Vec::new();
+    let mut refusal = None;
+    spec_tree_all(SpecNode::Algebraic(expression), |node| {
+        if let Err(limit) = evaluation.consume_expression_step() {
+            refusal = Some(format!(
+                "model argument evaluation stopped at {}",
+                limit.describe()
+            ));
+            return Visit::Stop(());
+        }
+        // Constructors and ordinary opaque calls need their arguments' guards,
+        // not their materialized model values. In particular a checked model
+        // field cannot introduce evaluation guards from its stored contents.
+        // Keep matches/conditionals and partial builtins with their evaluator:
+        // its scoping decides which conditions are actually required.
+        let paths = match node {
+            SpecNode::Algebraic(algebraic) => match &algebraic.node {
+                SpecAlgebraicExpressionNode::Variable(_)
+                | SpecAlgebraicExpressionNode::Binding(_)
+                | SpecAlgebraicExpressionNode::ResourceField(_) => return Visit::Skip,
+                SpecAlgebraicExpressionNode::Constructor { .. } => return Visit::Descend,
+                SpecAlgebraicExpressionNode::PureFunctionApplication { name, .. }
+                    if name != "to_nat" =>
+                {
+                    return Visit::Descend;
+                }
+                _ => evaluate_spec_algebraic_at_state_with_bindings_in(
+                    scope,
+                    algebraic,
+                    assumptions,
+                    &mut evaluation,
+                )
+                .map(|paths| {
+                    paths
+                        .into_iter()
+                        .map(|path| (path.facts, path.obligations))
+                        .collect::<Vec<_>>()
+                }),
+            },
+            SpecNode::AlgebraicValue(_) | SpecNode::Argument(_) => return Visit::Descend,
+            SpecNode::Expression(expression) => {
+                evaluate_spec_expression_paths_with_algebraic_bindings_in(
+                    scope,
+                    expression,
+                    assumptions,
+                    &mut evaluation,
+                )
+                .map(|paths| {
+                    paths
+                        .into_iter()
+                        .map(|path| (path.facts, path.obligations))
+                        .collect()
+                })
+            }
+            SpecNode::Integer(expression) => evaluate_spec_integer_expression_paths_in(
+                scope,
+                expression,
+                assumptions,
+                &mut evaluation,
+            )
+            .map(|paths| {
+                paths
+                    .into_iter()
+                    .map(|path| (path.facts, path.obligations))
+                    .collect()
+            }),
+            _ => {
+                refusal = Some("unsupported model argument evaluation guard".into());
+                return Visit::Stop(());
+            }
+        };
+        let mut paths = match paths {
+            Ok(paths) => paths,
+            Err(limit) => {
+                refusal = Some(format!(
+                    "model argument evaluation stopped at {}",
+                    limit.describe()
+                ));
+                return Visit::Stop(());
+            }
+        };
+        if paths.len() != 1 {
+            refusal = Some("model argument needs explicit evaluation evidence: evaluation does not select one symbolic value".into());
+            return Visit::Stop(());
+        }
+        let (facts, obligations) = paths.pop().unwrap();
+        if crate::instrumentation::deadline_exceeded_with_work(
+            facts.len().saturating_add(obligations.len()),
+        ) {
+            refusal = Some("model argument guard retention exceeded its work limit".into());
+            return Visit::Stop(());
+        }
+        guards.extend(
+            facts
+                .iter()
+                .filter(|fact| !fact.is_certified())
+                .map(|fact| fact.proposition().clone()),
+        );
+        guards.extend(
+            obligations
+                .into_iter()
+                .map(|obligation| obligation.proposition().clone()),
+        );
+        Visit::Skip
+    });
+    match refusal {
+        Some(message) => Err(message),
+        None => Ok(guards),
+    }
+}
+
 /// The written subterm of a captured Integer expression that an evaluation
 /// condition came from. A capture refusal names it so the reader is pointed
 /// at the part of the source that has to change, rather than at whichever
