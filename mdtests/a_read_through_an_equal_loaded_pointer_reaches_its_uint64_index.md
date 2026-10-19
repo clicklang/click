@@ -1,10 +1,9 @@
-# Rewriting an address reaches a uint64 index load
+# A read through an equal loaded pointer reaches its uint64 index
 
-`a[p->q->idx]` loads its index through `p->q`. Rewriting by `p->q == r`
-must reach that inner load whatever the index's width, so the goal becomes the
-stated `a[r->idx] == 5`. The `int32` index always did; a 64-bit index was
-scaled into the address by a different offset form that the rewrite skipped,
-and `assumption` then saw the unrewritten goal.
+`a[p->q->idx]` loads its uint64 index through the pointer `p->q` read from
+memory. With `p->q == r` known, that read lands on the cell `r->idx`, so the
+goal is the stated `a[r->idx] == 5` without a rewrite, whatever the index's
+width.
 
 ```c filename=rewrite_through_a_uint64_index_load.c
 struct S { uint64 idx; };
@@ -25,7 +24,7 @@ void f(struct P* p, struct S* r, int32* a) {
     requires a[r->idx] == 5;
     ensures 1 == 1;
 } by {
-    have a[p->q->idx] == 5 by { rewrite(p->q == r); assumption(); }
+    have a[p->q->idx] == 5 by assumption();
     execute();
     simp();
 }
