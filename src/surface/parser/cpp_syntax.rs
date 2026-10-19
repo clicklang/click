@@ -109,6 +109,23 @@ impl Parser {
         Some(record)
     }
 
+    /// Whether a C++ record type starts here, `Node` or `Stored<int>`, as a
+    /// specification's binder may write one: `p: Node*`.
+    pub(super) fn at_cpp_record_type(&mut self) -> bool {
+        if !self.verifies_cpp() {
+            return false;
+        }
+        if let Some(Token::Ident(name)) = self.tokens.get(self.position)
+            && self.cpp_record(name).is_some()
+        {
+            return true;
+        }
+        let start = self.position;
+        let record = self.parse_cpp_record_type().is_some();
+        self.position = start;
+        record
+    }
+
     /// The layout name of the record a head's qualifier spells, `Rec` or
     /// `Stored<long long>`.
     fn cpp_record(&self, spelling: &str) -> Option<String> {
