@@ -4099,6 +4099,10 @@ pub enum CStatement {
         zeroed: bool,
         /// A directly bound struct object: class, complete size, and alignment.
         object_type: Option<(crate::kernel::effective_type::CAccessClass, u32, u32)>,
+        /// The allocation's failure ends the program instead of yielding
+        /// null, as a C++ `new` does in a `noexcept` function: no execution
+        /// continues past a failure, so only the success outcome follows.
+        ends_program_on_failure: bool,
     },
     /// End the heap allocation named by `pointer`. Null is a no-op.
     HeapFree {

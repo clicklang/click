@@ -19110,3 +19110,34 @@ fn record_pointer_arrows_require_a_parameter_or_local_root() {
         assert!(error.contains(expected), "{name}: {error}");
     }
 }
+
+// `new` allocates one simple aggregate record with the global `operator new`,
+// initialized one field per brace initializer, and `delete` ends one; array
+// forms and placement are refused.
+#[test]
+fn new_and_delete_admit_one_simple_record() {
+    let node = "struct Node { int value; Node* next; };\n";
+    for (name, body, expected) in [
+        (
+            "array_new",
+            "int probe() noexcept { Node* n = nullptr; n = new Node[2]; return 0; }",
+            "a supported C++ `new` allocates one simple aggregate record",
+        ),
+        (
+            "partial_initializer",
+            "int probe() noexcept { Node* n = nullptr; n = new Node{1}; return 0; }",
+            "one direct brace initializer per field",
+        ),
+        (
+            "array_delete",
+            "int probe(Node* n) noexcept { delete[] n; return 0; }",
+            "a supported C++ `delete` ends one simple record",
+        ),
+    ] {
+        let source = format!("{node}{body}\n");
+        let project = Project::with_fixture("list.cpp", "probe", &source);
+        let error = refresh_import(&project.config())
+            .expect_err(&format!("{name} must not enter a locked artifact"));
+        assert!(error.contains(expected), "{name}: {error}");
+    }
+}

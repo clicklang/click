@@ -13527,7 +13527,15 @@ impl Parser {
                 if parsed_type.c_type == C0Type::Void {
                     return Err(self.error("`sizeof(void)` is not supported"));
                 }
-                parsed_type.c_type.abi_size_bytes()
+                match &parsed_type.struct_name {
+                    // A C++ record named as the source names it, `Node`.
+                    Some(name) if !parsed_type.struct_pointer => self
+                        .struct_layouts
+                        .get(name)
+                        .ok_or_else(|| self.error(format!("unknown struct declaration `{name}`")))?
+                        .size_bytes(),
+                    _ => parsed_type.c_type.abi_size_bytes(),
+                }
             };
             return Ok(ContractExpression::CFragment(CExpression::Value(int32(
                 bytes,

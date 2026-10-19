@@ -8,7 +8,10 @@ use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
 
 use super::storage::SharedValue;
-use crate::kernel::{CResourceFact, CState, CValue, Proposition};
+use crate::kernel::{
+    CFunctionContractClaimKey, CFunctionContractClaimTarget, CResourceFact, CState, CValue,
+    Proposition,
+};
 
 /// Diagnostic evidence returned when an allocation-lifetime obligation could
 /// not be discharged. The allocation is semantic evidence; the optional
@@ -287,6 +290,8 @@ pub(crate) struct FunctionOutcomeObligation<S> {
     pub(crate) path_index: usize,
     pub(crate) data: S,
     pub(crate) allocation_lifetime: AllocationLifetimeObligation,
+    /// The contract claims this path owes, once opened at function exit.
+    pub(crate) claims: Option<OutcomeClaimGoals>,
 }
 
 impl<S> FunctionOutcomeObligation<S> {
@@ -295,7 +300,115 @@ impl<S> FunctionOutcomeObligation<S> {
             path_index,
             data,
             allocation_lifetime: AllocationLifetimeObligation::new(path_index),
+            claims: None,
         }
+    }
+}
+
+/// Why a claim goal of an outcome path could not be closed.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) enum ClaimGoalError {
+    /// The path owes no such claim.
+    Unknown,
+    /// The claim is already closed on this path.
+    AlreadyClosed,
+    /// The completion names a different claim.
+    WrongClaim,
+    /// The completion was proved about a different outcome.
+    WrongOutcome,
+}
+
+/// The contract claims one outcome path owes, in the order the contract
+/// writes them, each open or closed. A closer acts on the first open claim;
+/// the path is finished when every claim is closed.
+///
+/// A claim about the other kind of outcome (an `ensures` on a throwing path,
+/// an exceptional `ensures` on a returning one) holds vacuously and opens
+/// closed.
+#[derive(Clone, Debug)]
+pub(crate) struct OutcomeClaimGoals {
+    claims: Arc<[OutcomeClaimGoal]>,
+}
+
+#[derive(Clone, Debug)]
+struct OutcomeClaimGoal {
+    key: CFunctionContractClaimKey,
+    /// The kernel claim the goal stands for. A clause the kernel files no
+    /// claim for (a `consumes` transition) has none.
+    target: Option<CFunctionContractClaimTarget>,
+    closed: bool,
+}
+
+impl OutcomeClaimGoals {
+    pub(crate) fn open(
+        claims: impl IntoIterator<
+            Item = (
+                CFunctionContractClaimKey,
+                Option<CFunctionContractClaimTarget>,
+            ),
+        >,
+        is_exceptional: bool,
+    ) -> Self {
+        Self {
+            claims: claims
+                .into_iter()
+                .map(|(key, target)| OutcomeClaimGoal {
+                    closed: matches!(
+                        (&key, is_exceptional),
+                        (CFunctionContractClaimKey::Ensure(_), true)
+                            | (CFunctionContractClaimKey::ExceptionalEnsure(_), false)
+                    ),
+                    key,
+                    target,
+                })
+                .collect(),
+        }
+    }
+
+    /// The claim a closer acts on: the first open one.
+    pub(crate) fn first_open(&self) -> Option<&CFunctionContractClaimKey> {
+        self.claims
+            .iter()
+            .find_map(|goal| (!goal.closed).then_some(&goal.key))
+    }
+
+    /// Closes `key`. A checked completion offered as its evidence must have
+    /// been proved about `outcome` and, when it names a claim, must name this
+    /// one.
+    pub(crate) fn close(
+        &self,
+        key: &CFunctionContractClaimKey,
+        completion: Option<&CheckedProposition>,
+        outcome: &OutcomeIdentity,
+    ) -> Result<Self, ClaimGoalError> {
+        let position = self
+            .claims
+            .iter()
+            .position(|goal| goal.key == *key)
+            .ok_or(ClaimGoalError::Unknown)?;
+        let goal = &self.claims[position];
+        if goal.closed {
+            return Err(ClaimGoalError::AlreadyClosed);
+        }
+        if let Some(completion) = completion {
+            if completion
+                .outcome()
+                .is_some_and(|core| !core.identity.same_as(outcome))
+            {
+                return Err(ClaimGoalError::WrongOutcome);
+            }
+            if completion
+                .claim()
+                .is_some_and(|target| goal.target.as_ref() != Some(target))
+            {
+                return Err(ClaimGoalError::WrongClaim);
+            }
+        }
+        let mut claims = self.claims.to_vec();
+        claims[position].closed = true;
+        Ok(Self {
+            claims: claims.into(),
+        })
     }
 }
 
@@ -308,4 +421,165 @@ pub(crate) enum ProofObligation<P, O> {
     Proposition(PropositionObligation<P, O>),
     Frontier(FrontierObligation),
     FunctionOutcome(FunctionOutcomeObligation<O>),
+}
+
+#[cfg(test)]
+mod outcome_claim_goal_tests {
+    use super::*;
+    use crate::kernel::CFunctionContractClaimTarget as Target;
+    use crate::kernel::{ExecutionFacts, api::int32};
+
+    fn outcome() -> OutcomeProofCore {
+        OutcomeProofCore {
+            identity: OutcomeIdentity::fresh(),
+            result: Arc::new(int32(0)),
+            state: CState::new().into(),
+            store_consequences_available: false,
+            is_exceptional: false,
+            effect_facts: Arc::new(ExecutionFacts::new()),
+        }
+    }
+
+    fn completion(outcome: &OutcomeProofCore, claim: Option<Target>) -> CheckedProposition {
+        CheckedProposition::new(
+            Proposition::Predicate {
+                name: "done".into(),
+                arguments: Vec::new(),
+            },
+            super::super::ProofFacts::default(),
+            Some(outcome.clone()),
+            claim,
+        )
+    }
+
+    fn goals(is_exceptional: bool) -> OutcomeClaimGoals {
+        OutcomeClaimGoals::open(
+            [
+                (
+                    CFunctionContractClaimKey::Ensure(0),
+                    Some(Target::EnsureProposition(0)),
+                ),
+                (
+                    CFunctionContractClaimKey::Ensure(1),
+                    Some(Target::EnsureResource(0)),
+                ),
+                (
+                    CFunctionContractClaimKey::ExceptionalEnsure(0),
+                    Some(Target::ExceptionalEnsureProposition(0)),
+                ),
+                (CFunctionContractClaimKey::Ensure(2), None),
+            ],
+            is_exceptional,
+        )
+    }
+
+    /// Claims open in contract order, a claim about the other kind of
+    /// outcome opens closed, and closing the first open claim advances the
+    /// focus to the next one.
+    #[test]
+    fn claim_goals_open_in_contract_order_and_advance_as_they_close() {
+        let outcome = outcome();
+        let returning = goals(false);
+        assert_eq!(
+            returning.first_open(),
+            Some(&CFunctionContractClaimKey::Ensure(0))
+        );
+        let returning = returning
+            .close(
+                &CFunctionContractClaimKey::Ensure(0),
+                Some(&completion(&outcome, Some(Target::EnsureProposition(0)))),
+                &outcome.identity,
+            )
+            .unwrap();
+        assert_eq!(
+            returning.first_open(),
+            Some(&CFunctionContractClaimKey::Ensure(1))
+        );
+        let returning = returning
+            .close(
+                &CFunctionContractClaimKey::Ensure(1),
+                None,
+                &outcome.identity,
+            )
+            .and_then(|goals| {
+                goals.close(
+                    &CFunctionContractClaimKey::Ensure(2),
+                    None,
+                    &outcome.identity,
+                )
+            })
+            .unwrap();
+        assert_eq!(returning.first_open(), None);
+
+        let throwing = goals(true);
+        assert_eq!(
+            throwing.first_open(),
+            Some(&CFunctionContractClaimKey::ExceptionalEnsure(0))
+        );
+    }
+
+    /// A completion closes only the claim it was proved for, on the outcome
+    /// it was proved about, and a claim closes once.
+    #[test]
+    fn a_claim_goal_refuses_the_wrong_completion() {
+        let outcome = outcome();
+        let sibling = self::outcome();
+        let goals = goals(false);
+        let key = CFunctionContractClaimKey::Ensure(0);
+        assert_eq!(
+            goals
+                .close(
+                    &key,
+                    Some(&completion(&outcome, Some(Target::EnsureProposition(1)))),
+                    &outcome.identity,
+                )
+                .unwrap_err(),
+            ClaimGoalError::WrongClaim
+        );
+        assert_eq!(
+            goals
+                .close(
+                    &key,
+                    Some(&completion(&sibling, Some(Target::EnsureProposition(0)))),
+                    &outcome.identity,
+                )
+                .unwrap_err(),
+            ClaimGoalError::WrongOutcome
+        );
+        assert_eq!(
+            goals
+                .close(
+                    &CFunctionContractClaimKey::Ensure(2),
+                    Some(&completion(&outcome, Some(Target::EnsureProposition(0)))),
+                    &outcome.identity,
+                )
+                .unwrap_err(),
+            ClaimGoalError::WrongClaim
+        );
+        assert_eq!(
+            goals
+                .close(
+                    &CFunctionContractClaimKey::ExceptionalEnsure(0),
+                    None,
+                    &outcome.identity,
+                )
+                .unwrap_err(),
+            ClaimGoalError::AlreadyClosed
+        );
+        assert_eq!(
+            goals
+                .close(
+                    &CFunctionContractClaimKey::Ensure(9),
+                    None,
+                    &outcome.identity
+                )
+                .unwrap_err(),
+            ClaimGoalError::Unknown
+        );
+        let closed = goals.close(&key, None, &outcome.identity).unwrap();
+        assert_eq!(
+            closed.close(&key, None, &outcome.identity).unwrap_err(),
+            ClaimGoalError::AlreadyClosed
+        );
+    }
 }

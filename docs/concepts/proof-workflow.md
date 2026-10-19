@@ -386,8 +386,8 @@ first:
 
 <!-- verified-example: mdtests/byte_slice_range_predicates.md -->
 ```click
-requires bytes::contains(p, 0u64, (uint64) n, 'x');
-ensures opened_contains: bytes::contains(p, 0u64, (uint64) n, 'x') by {
+requires bytes::contains(p, 0, (uint64) n, 'x');
+ensures opened_contains: bytes::contains(p, 0, (uint64) n, 'x') by {
     execute();
     unfold(bytes::contains);
     obtain (found: uint64) {

@@ -406,6 +406,19 @@ resource over `p: Node*` describes a list by its nodes
 (`mdtests/cpp_record_pointers.md`). A pointer to a polymorphic class is
 refused.
 
+`target = new Node{v, n};` allocates one such record with the global
+`operator new`, its brace initializer naming one value per field in
+declaration order, and assigns its address to a local or field. It is
+admitted in a `noexcept` function: a failed allocation throws
+`std::bad_alloc`, which there ends the program, so the result is never null
+and the caller holds `allocation(p, sizeof(Node))` and `*p`, as after a
+successful `malloc`. A contract writes `sizeof(Node)` for the record's size
+and `aligned(p, 8)` where a callee needs the pointer's alignment. `delete p;`
+ends a record with trivial destruction through the global `operator delete`,
+needing the same resources as `free`; deleting null does nothing
+(`mdtests/cpp_new_delete.md`). Array `new` and `delete[]`, placement `new`,
+class-specific allocation functions and `new` in a declaration are refused.
+
 Native `int&` and `const int&` results use `int32&` and `const int32&`
 sidecar results. `result` reads the returned referent; `&result` identifies its
 address. For example, a helper returning an existing reference parameter can

@@ -64,9 +64,9 @@ pub(crate) use object::{
     PropositionSplitError,
 };
 pub(crate) use obligations::{
-    AllocationLifetimeObligation, CheckedProposition, FrontierObligation,
-    FunctionOutcomeObligation, LiveAllocationObligation, OutcomeIdentity, OutcomeProofCore,
-    OutcomeProofState, ProofObligation, PropositionObligation,
+    AllocationLifetimeObligation, CheckedProposition, ClaimGoalError, FrontierObligation,
+    FunctionOutcomeObligation, LiveAllocationObligation, OutcomeClaimGoals, OutcomeIdentity,
+    OutcomeProofCore, OutcomeProofState, ProofObligation, PropositionObligation,
 };
 pub(crate) use storage::{
     PersistentOrderedSet, PersistentSequence, PersistentVector, SharedValue, SharedVec,
