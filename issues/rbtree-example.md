@@ -1804,4 +1804,14 @@ sites. It retains arbitrary descendants, symbolic valid cached counts, and
 an arbitrary owned outer context. The C proof is unchanged from the recorded
 reproducer: stable admission order for pointer-origin aliases fixes its
 history-dependent frame-search cost without changing proof rules or budgets.
-The mirrored C composition remains unfinished.
+The mirrored C composition now also verifies all three contracts and all 30
+expansion sites, with the same arbitrary descendants, symbolic valid counts,
+and owned outer context. This follow-up changes proof files only.
+
+Generalized left-right and right-left model proofs now retain arbitrary far,
+transferred-middle, and uncle subtrees, identify their result with the existing
+inner/outer insertion operations, and preserve the full in-order sequence.
+Shared pure cached-count lemmas establish node validity from its children and
+root sum, and identify valid cached counts with nonnegative abstract subtree
+sizes. Composing the generalized double rotations with both writable C callbacks,
+then chains ending in rotations and writable erase integration, remains.
