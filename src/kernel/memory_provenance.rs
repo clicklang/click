@@ -4938,7 +4938,7 @@ fn wide_read_observations_have_value(
         }
         if let (Some(left_cell), Some(right_cell)) = (
             bounded_recorded_cell_source(left_memory, left_pointer, 8, assumptions, 64),
-            bounded_recorded_cell_source(right_memory, left_pointer, 8, assumptions, 64),
+            bounded_recorded_cell_source(right_memory, right_pointer, 8, assumptions, 64),
         ) && left_cell.node() == right_cell.node()
         {
             return true;
@@ -7264,6 +7264,66 @@ mod opaque_pointer_frame_tests {
             .clone()
             .store(field, CValue::pointer(argument));
         assert!(prove_c_condition_fact_transport(&source, &changed, &assumptions).is_none());
+    }
+
+    #[test]
+    fn wide_alias_reads_reconnect_each_endpoints_own_projection() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let left_pointer = Pointer::symbolic(Variable(9_880_610));
+        let right_pointer = Pointer::symbolic(Variable(9_880_611));
+        let alias = Proposition::ConditionIs(
+            ConditionTerm::pointer_equal(left_pointer.clone(), right_pointer.clone()),
+            true,
+        );
+        let context = PureFactContext::new().assume_proposition(alias.clone());
+        let source = intern_c_memory(
+            CMemory::new()
+                .with_block_without_derivation("local:projection-left", 4)
+                .with_block_without_derivation("local:projection-right", 4),
+        );
+        // These projections retain different irrelevant local declarations.
+        // Neither changes the bytes observable through either symbolic pointer.
+        let left_memory = intern_c_memory(
+            CMemory::new().with_block_without_derivation("local:projection-left", 4),
+        );
+        let right_memory = intern_c_memory(
+            CMemory::new().with_block_without_derivation("local:projection-right", 4),
+        );
+        record_canonical_load_projection(&source, &left_memory, &left_pointer);
+        record_canonical_load_projection(&source, &right_memory, &right_pointer);
+        let left = Bitvector32Term::MemoryLoad(
+            left_memory,
+            Box::new(left_pointer.clone()),
+            LoadKind::Bits64,
+        );
+        let right = Bitvector32Term::MemoryLoad(
+            right_memory.clone(),
+            Box::new(right_pointer.clone()),
+            LoadKind::Bits64,
+        );
+        assert!(wide_read_has_recorded_value(&left, &right, &context));
+        assert!(wide_read_has_recorded_value(&right, &left, &context));
+        assert!(!wide_read_has_recorded_value(
+            &left,
+            &right,
+            &context.without_exact_fact(&alias),
+        ));
+        let narrow = Bitvector32Term::MemoryLoad(
+            right_memory,
+            Box::new(right_pointer.clone()),
+            LoadKind::Bits32,
+        );
+        assert!(!wide_read_has_recorded_value(&left, &narrow, &context));
+        let overwritten_source = intern_c_memory(source.memory().clone().store(
+            right_pointer.clone(),
+            CValue::UInt64(Bitvector32Term::UInt64Constant(7)),
+        ));
+        let overwritten = Bitvector32Term::MemoryLoad(
+            canonical_projected_load_memory(&overwritten_source, &right_pointer),
+            Box::new(right_pointer),
+            LoadKind::Bits64,
+        );
+        assert!(!wide_read_has_recorded_value(&left, &overwritten, &context));
     }
 
     #[test]
