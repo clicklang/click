@@ -40,7 +40,16 @@ The parser records each braced proof block it reads (`ProofBlockSpan`: its
 braces and the start of each tactic), and `ProofSourceIndex::for_project`
 indexes exactly the blocks the entry module's verification parse recorded.
 A tactic's extent within a block is the range from its recorded start to
-the next one's, so expansion finds no tactic's end by scanning tokens.
+the next one's, so expansion finds no tactic's end by scanning tokens. The
+parser also records each proof clause it reads (`ProofClauseSpan`: the `by`
+or a default clause's `;`, its last token, and for a loop's `initialize` or
+`preserve` the keyword it proves), and each declaration body's closing
+brace and `exceptional ensures` clauses. Expansion and the index read all
+of these through `ParsedBlocks` (`src/surface/expansion/parsed_blocks.rs`):
+a structured tactic's arms and a `have` or `open` body are the recorded
+blocks directly inside its range, a claim's proof is the first recorded
+clause after the claim, and a loop phase is the clause its keyword owns.
+Expansion pairs no braces and scans for no `by`.
 
 `printing::print_proposition` is the common Surface proposition printer.
 Every caller selects its spelling explicitly, and no printer reads a mode

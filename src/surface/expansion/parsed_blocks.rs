@@ -1,8 +1,10 @@
-//! The proof blocks a parse recorded, located in a source's tokens. Every
-//! brace expansion pairs and every arm it finds is one of these records;
-//! nothing here counts braces.
+//! The proof blocks and proof clauses a parse recorded, located in a
+//! source's tokens. Every brace expansion pairs, every arm it finds and every
+//! proof clause it edits is one of these records; nothing here counts braces
+//! or scans for a `by`.
 use super::*;
-use crate::surface::parser::SourceSpans;
+use crate::surface::parser::{ProofClauseSpan, SourceSpans};
+use std::collections::HashMap;
 
 pub(super) struct ParsedBlock {
     pub(super) close: usize,
@@ -11,10 +13,97 @@ pub(super) struct ParsedBlock {
     pub(super) tactics: Vec<Range<usize>>,
 }
 
-/// The proof blocks of one parse, keyed by the token index of their `{`.
+/// The proof blocks of one parse, keyed by the token index of their `{`,
+/// and its proof clauses.
 #[derive(Default)]
 pub(super) struct ParsedBlocks {
     blocks: BTreeMap<usize, ParsedBlock>,
+    /// The end of each block's tactics, by the tactic's first token.
+    tactic_ends: HashMap<usize, usize>,
+    pub(super) clauses: ProofClauses,
+}
+
+/// One recorded proof clause, located in a source's tokens.
+#[derive(Clone, Copy, Debug)]
+pub(super) struct ProofClause {
+    /// The `by`, or the `;` of a clause left to its default proof.
+    pub(super) start: usize,
+    /// The `}` or `;` that ends the clause.
+    pub(super) last: usize,
+}
+
+impl ProofClause {
+    pub(super) fn is_default(&self, tokens: &[SourceToken]) -> bool {
+        tokens[self.start].text == ";"
+    }
+
+    /// The clause's source bytes, `by` through its last token.
+    pub(super) fn span(&self, tokens: &[SourceToken]) -> Range<usize> {
+        tokens[self.start].span.start..tokens[self.last].span.end
+    }
+}
+
+/// The proof clauses of one parse, keyed by the token index of their start,
+/// and those a reader gave an owner keyword, keyed by that keyword's token.
+#[derive(Default)]
+pub(super) struct ProofClauses {
+    by_start: BTreeMap<usize, ProofClause>,
+    by_owner: BTreeMap<usize, ProofClause>,
+}
+
+impl ProofClauses {
+    pub(super) fn new(tokens: &[SourceToken], spans: &[ProofClauseSpan]) -> Self {
+        let located = DeclarationSources::new(tokens);
+        let mut clauses = Self::default();
+        for span in spans {
+            crate::instrumentation::record_deterministic_work(1);
+            let (Some(start), Some(last)) = (
+                located.token_at(&span.start, None),
+                located.token_at(&span.last, None),
+            ) else {
+                continue;
+            };
+            let clause = ProofClause { start, last };
+            clauses.by_start.insert(start, clause);
+            if let Some(owner) = span
+                .owner
+                .as_ref()
+                .and_then(|owner| located.token_at(owner, None))
+            {
+                clauses.by_owner.insert(owner, clause);
+            }
+        }
+        clauses
+    }
+
+    /// The clause starting at token `start`.
+    pub(super) fn at(&self, start: usize) -> Result<ProofClause, ClickError> {
+        self.by_start
+            .get(&start)
+            .copied()
+            .ok_or_else(|| ClickError::new("the parser read no proof clause here"))
+    }
+
+    /// The first clause after token `after` and before `limit`: the proof of
+    /// the clause or item whose first token is `after`, since nothing a
+    /// claim states holds a proof of its own.
+    pub(super) fn after(&self, after: usize, limit: usize) -> Result<ProofClause, ClickError> {
+        self.by_start
+            .range(after + 1..limit)
+            .next()
+            .map(|(_, clause)| *clause)
+            .ok_or_else(|| ClickError::new("could not locate source proof terminator"))
+    }
+
+    /// The clauses owned by a keyword in `range`, with the owner's token.
+    pub(super) fn owned_in(
+        &self,
+        range: Range<usize>,
+    ) -> impl Iterator<Item = (usize, ProofClause)> + '_ {
+        self.by_owner
+            .range(range)
+            .map(|(&owner, &clause)| (owner, clause))
+    }
 }
 
 impl ParsedBlocks {
@@ -49,6 +138,11 @@ impl ParsedBlocks {
                 .collect();
             blocks.insert(open, ParsedBlock { close, tactics });
         }
+        let clauses = ProofClauses::new(tokens, &spans.proof_clauses);
+        let tactic_ends = blocks
+            .values()
+            .flat_map(|block| block.tactics.iter().map(|range| (range.start, range.end)))
+            .collect();
         let mut implicit = Vec::new();
         for (index, token) in tokens.iter().enumerate() {
             if !token.span.is_empty() {
@@ -70,7 +164,11 @@ impl ParsedBlocks {
                 );
             }
         }
-        Self { blocks }
+        Self {
+            blocks,
+            tactic_ends,
+            clauses,
+        }
     }
 
     pub(super) fn iter(&self) -> impl Iterator<Item = (usize, &ParsedBlock)> {
@@ -81,6 +179,11 @@ impl ParsedBlocks {
         self.blocks
             .get(&open)
             .ok_or_else(|| ClickError::new("the parser read no proof block at this brace"))
+    }
+
+    /// The token range of the tactic that starts at token `start`.
+    pub(super) fn tactic(&self, start: usize) -> Option<Range<usize>> {
+        self.tactic_ends.get(&start).map(|&end| start..end)
     }
 
     /// The proof blocks directly inside the tactic `range`, in source order:

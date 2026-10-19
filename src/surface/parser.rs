@@ -264,6 +264,20 @@ pub(in crate::surface) struct ImplicitProofSpan {
     pub(in crate::surface) last: SourcePosition,
 }
 
+/// A proof clause as the parser read it: `by` and the proof after it, or the
+/// `;` of a clause left to its default proof.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(in crate::surface) struct ProofClauseSpan {
+    /// The `by`, or the default clause's `;`.
+    pub(in crate::surface) start: SourcePosition,
+    /// The clause's last token: the `}` or `;` that ends its proof, or the
+    /// default clause's `;`.
+    pub(in crate::surface) last: SourcePosition,
+    /// The keyword the clause proves, where its reader named one: a loop's
+    /// `initialize` or `preserve`.
+    pub(in crate::surface) owner: Option<SourcePosition>,
+}
+
 /// Where the parser read a declaration's clauses: the brace that opens them,
 /// and the first token of each written claim clause (`ensures`, `owns` or
 /// `produces`, in source order). It records where the declaration was read,
@@ -271,9 +285,15 @@ pub(in crate::surface) struct ImplicitProofSpan {
 #[derive(Clone, Debug, Default)]
 pub struct DeclarationBody {
     pub(in crate::surface) open: Option<SourcePosition>,
+    /// The brace that closes the clauses.
+    pub(in crate::surface) close: Option<SourcePosition>,
     pub(in crate::surface) clauses: Vec<Option<SourcePosition>>,
+    /// The `exceptional` token of each `exceptional ensures` clause.
+    pub(in crate::surface) exceptional_clauses: Vec<Option<SourcePosition>>,
     /// The unbraced one-tactic proofs read inside the declaration.
     pub(in crate::surface) implicit_proofs: Vec<ImplicitProofSpan>,
+    /// The proof clauses read inside the declaration and its grouped proof.
+    pub(in crate::surface) proof_clauses: Vec<ProofClauseSpan>,
 }
 
 impl PartialEq for DeclarationBody {
@@ -290,6 +310,7 @@ impl Eq for DeclarationBody {}
 #[derive(Clone, Debug, Default)]
 pub(in crate::surface) struct SourceSpans {
     pub(in crate::surface) proof_blocks: Vec<ProofBlockSpan>,
+    pub(in crate::surface) proof_clauses: Vec<ProofClauseSpan>,
     pub(in crate::surface) implicit_proofs: Vec<ImplicitProofSpan>,
 }
 
@@ -843,6 +864,9 @@ struct Parser {
     /// Every braced proof block parsed so far, in parse order: the block's
     /// braces and the first token of each tactic it holds.
     proof_block_spans: Vec<ProofBlockSpan>,
+    proof_clause_spans: Vec<ProofClauseSpan>,
+    /// The owner the next proof clause records, taken as the clause starts.
+    proof_clause_owner: Option<SourcePosition>,
     implicit_proof_spans: Vec<ImplicitProofSpan>,
     matching_parentheses: Vec<Option<usize>>,
     position: usize,
@@ -1419,6 +1443,8 @@ impl Parser {
             in_function_block: false,
             integer_literal_context: false,
             proof_block_spans: Vec::new(),
+            proof_clause_spans: Vec::new(),
+            proof_clause_owner: None,
             implicit_proof_spans: Vec::new(),
         })
     }
@@ -1959,6 +1985,7 @@ impl Parser {
             entry_module: None,
             source_spans: std::sync::Arc::new(SourceSpans {
                 proof_blocks: std::mem::take(&mut self.proof_block_spans),
+                proof_clauses: std::mem::take(&mut self.proof_clause_spans),
                 implicit_proofs: std::mem::take(&mut self.implicit_proof_spans),
             }),
         };
@@ -3484,6 +3511,7 @@ impl Parser {
         let mut target_instances = Vec::new();
         let body_open = self.here();
         let first_implicit_proof = self.implicit_proof_spans.len();
+        let first_proof_clause = self.proof_clause_spans.len();
         self.expect(Token::LBrace)?;
 
         let parameter_names = parsed_parameters
@@ -3693,6 +3721,7 @@ impl Parser {
                 }
             }
         }
+        let body_close = self.here();
         self.expect(Token::RBrace)?;
         self.names.struct_params = previous_struct_params;
         self.names
@@ -3728,8 +3757,11 @@ impl Parser {
         Ok(TheoremDefinition {
             body: DeclarationBody {
                 open: body_open,
+                close: body_close,
                 clauses: clause_positions,
+                exceptional_clauses: Vec::new(),
                 implicit_proofs: self.implicit_proof_spans[first_implicit_proof..].to_vec(),
+                proof_clauses: self.proof_clause_spans[first_proof_clause..].to_vec(),
             },
             name,
             type_parameters,
@@ -3814,6 +3846,7 @@ impl Parser {
         }
         let body_open = self.here();
         let first_implicit_proof = self.implicit_proof_spans.len();
+        let first_proof_clause = self.proof_clause_spans.len();
         self.expect(Token::LBrace)?;
 
         let parameter_names = signature
@@ -3841,6 +3874,7 @@ impl Parser {
         let mut ensure_kinds = Vec::new();
         let mut clause_positions = Vec::new();
         let mut exceptional_ensures = Vec::new();
+        let mut exceptional_positions = Vec::new();
         // A local of struct-pointer type is a memory base in this function's
         // proof just as a parameter is. The signature wins a shared spelling.
         for (name, struct_name) in self
@@ -4252,6 +4286,7 @@ impl Parser {
                             signature.name()
                         )));
                     }
+                    exceptional_positions.push(clause_start.clone());
                     self.position += 1;
                     self.expect_ident_spelling("ensures")?;
                     let ensure = self.parse_ensure_clause_after_keyword()?;
@@ -4286,6 +4321,7 @@ impl Parser {
                 }
             }
         }
+        let body_close = self.here();
         self.expect(Token::RBrace)?;
         let grouped_proof = if self.peek_ident() == Some("by") {
             let proof = self.parse_by_clause()?;
@@ -4503,8 +4539,11 @@ impl Parser {
         Ok(FunctionBlock {
             body: DeclarationBody {
                 open: body_open,
+                close: body_close,
                 clauses: clause_positions,
+                exceptional_clauses: exceptional_positions,
                 implicit_proofs: self.implicit_proof_spans[first_implicit_proof..].to_vec(),
+                proof_clauses: self.proof_clause_spans[first_proof_clause..].to_vec(),
             },
             c_object_names,
             recursion_peers,
@@ -7900,6 +7939,8 @@ impl Parser {
     }
 
     fn parse_by_clause(&mut self) -> Result<SourceProof, ClickError> {
+        let start = self.here();
+        let owner = self.proof_clause_owner.take();
         self.expect_ident_spelling("by")?;
         let scope = self.names.scope();
         let previous_proof_let_names = self.names.take(NameKind::ProofBinder);
@@ -7915,7 +7956,30 @@ impl Parser {
         {
             self.skip_redundant_semicolon();
         }
+        if result.is_ok() {
+            self.record_proof_clause(start, owner);
+        }
         result
+    }
+
+    /// Records the proof clause from `start` to the token before the cursor.
+    fn record_proof_clause(
+        &mut self,
+        start: Option<SourcePosition>,
+        owner: Option<SourcePosition>,
+    ) {
+        if let Some(start) = start
+            && let Some(last) = self
+                .position
+                .checked_sub(1)
+                .and_then(|last| self.positions.get(last))
+        {
+            self.proof_clause_spans.push(ProofClauseSpan {
+                start,
+                last: last.clone(),
+                owner,
+            });
+        }
     }
 
     /// Makes `name` a proof binder of a value or a resource instance. The
@@ -8026,7 +8090,10 @@ impl Parser {
         if self.peek_ident() == Some("by") {
             self.parse_by_clause()
         } else {
+            let start = self.here();
+            let owner = self.proof_clause_owner.take();
             self.expect(Token::Semicolon)?;
+            self.record_proof_clause(start, owner);
             Ok(SourceProof::Default)
         }
     }
@@ -9006,6 +9073,7 @@ impl Parser {
                     continue;
                 }
                 if self.peek_ident() == Some("initialize") {
+                    self.proof_clause_owner = self.here();
                     self.position += 1;
                     if initialize_proof.is_some() {
                         return Err(self.error("duplicate `initialize` proof"));
@@ -9014,6 +9082,7 @@ impl Parser {
                     continue;
                 }
                 if self.peek_ident() == Some("preserve") {
+                    self.proof_clause_owner = self.here();
                     self.position += 1;
                     if preserve_proof.is_some() {
                         return Err(self.error("duplicate `preserve` proof"));

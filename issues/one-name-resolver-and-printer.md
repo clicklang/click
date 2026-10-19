@@ -172,9 +172,10 @@ so a proof-bound instance name ends with its block and a resource match arm
 copies nothing.
 
 The complete scoped table for parameters, fields, binders, constructors,
-resources, program points and project modules remains open. Within a
-tactic's parser-recorded range, expansion still finds the arm blocks of `if`,
-`cases` and `both` by matching their braces' tokens. Keep this issue until all
+resources, program points and project modules remains open. Expansion
+splices through parser spans: proof blocks, arms, claim and loop-phase proof
+clauses and declaration bodies are all parser records, and no printer reads
+a diagnostic thread-local. Keep this issue until all
 acceptance criteria below are met. The audit below describes the original
 baseline; the separate lexer and raw-text spelling helpers it names are removed.
 
