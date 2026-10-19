@@ -25,6 +25,22 @@ fn borrowed_resource_receipts_survive_post_return_folds() {
 }
 
 #[test]
+fn borrowed_resource_receipts_do_not_hide_an_unspent_authority_member() {
+    let (source, sources) =
+        mdtest_sources("mdtests/authority_helper_raw_consume_without_spend_rejected.md");
+    let sources = sources
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    let error = verify_c0_sources(&source, &sources)
+        .expect_err("returning the borrowed authority does not establish the declared spend");
+    assert!(
+        error.to_string().contains("Requires consumes ticket(p)"),
+        "{error}"
+    );
+}
+
+#[test]
 fn uint64_measure_induction_expands_and_rechecks_without_narrowing() {
     let (source, _) = mdtest_sources("mdtests/uint64_measure_induction_counts_a_range_fold.md");
     let expanded =
