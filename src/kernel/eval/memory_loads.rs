@@ -1956,8 +1956,15 @@ fn canonicalized_symbolic_load_value_with_identity(
         // The logical evaluator constructs a term, not a C access. Retain
         // its exact typed definition in the trusted graph's term metadata;
         // logical evaluation still exports no defining proposition premise.
-        if let Bitvector32Term::MemoryLoad(memory, address, _) = &load {
-            assumptions.register_pointer_read(&pointer, memory, address);
+        // A materialized cell can reuse an earlier read's variable. Its
+        // unconditional definition remains that variable's original cell;
+        // the current observation and its checked equation are retained
+        // separately. Registering the current snapshot here would give one
+        // value two distinct definitions.
+        if let Some(Bitvector32Term::MemoryLoad(memory, address, _)) =
+            registered_load_term_for_variable(&fresh)
+        {
+            assumptions.register_pointer_read(&pointer, &memory, &address);
         }
     }
     record_load_variable_defining_fact_with_source_and_pointer(
@@ -4309,6 +4316,52 @@ mod tests {
                 assumptions_with_path_context(&forced_context, &path.facts, &path.obligations);
             assert!(known.pointers_known_equal(read.pointer(), &stored));
         }
+    }
+
+    #[test]
+    fn forced_logical_pointer_read_reuses_a_materialized_reads_definition() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let address = Pointer {
+            block: PointerBlock::ExternalArgument,
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        let context = PureFactContext::new()
+            .allow_symbolic_contract_loads()
+            .force_symbolic_external_loads();
+        let memory = CMemory::new();
+        let first = evaluate_logical_memory_load_paths(
+            &memory,
+            address.clone(),
+            CType::Int32Pointer,
+            ExecutionFacts::new(),
+            vec![],
+            &context,
+        );
+        let CExpressionOutcome::Value(value @ CValue::Pointer(_)) = &first[0].outcome else {
+            panic!("pointer read")
+        };
+        let retained = memory.store(address.clone(), value.clone());
+        let second = evaluate_logical_memory_load_paths(
+            &retained,
+            address,
+            CType::Int32Pointer,
+            ExecutionFacts::new(),
+            vec![],
+            &context,
+        );
+        let CValue::Pointer(expected) = value else {
+            unreachable!()
+        };
+        let CExpressionOutcome::Value(CValue::Pointer(actual)) = &second[0].outcome else {
+            panic!("retained pointer read")
+        };
+        assert_eq!(actual.pointer(), expected.pointer());
+        assert!(
+            second[0]
+                .facts
+                .iter()
+                .any(ExecutionPureFact::is_logical_read_equation)
+        );
     }
 
     #[test]
