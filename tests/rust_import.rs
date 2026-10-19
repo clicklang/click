@@ -2549,6 +2549,88 @@ fn rust_sidecar_contract_declarations_verify() {
         .unwrap_or_else(|error| panic!("{error:?}"));
 }
 
+const BOX_SIDECAR: &str = include_str!("../design/charon-trial/boxes/boxed.click");
+
+/// A `Box` of a crate struct made, read, written and dropped in one body:
+/// `Box::new` moves the struct into an allocation that never fails, reads
+/// and writes go through the box, and its drop frees the allocation.
+#[test]
+fn charon_boxes_allocate_read_write_and_free_their_struct() {
+    let p = Project::from_fixture("design/charon-trial/boxes");
+    fs::write(p.root.join("borrow.click"), BOX_SIDECAR).unwrap();
+    let prepared = p.prepared().unwrap();
+    C0VerificationSession::new_program_prepared(BOX_SIDECAR, &prepared)
+        .unwrap_or_else(|error| panic!("{error:?}"));
+    for (before, after, expected) in [
+        (
+            "    ensures result == x + 1;",
+            "    ensures result == x;",
+            "boxed::boxed.ensures_0",
+        ),
+        ("    requires x < 100;\n", "", "Rust add panic check"),
+    ] {
+        assert!(BOX_SIDECAR.contains(before), "{before}");
+        let invalid = BOX_SIDECAR.replacen(before, after, 1);
+        let error = C0VerificationSession::new_program_prepared(&invalid, &prepared)
+            .err()
+            .expect("a claim the box program does not meet must fail");
+        let rendered = format!("{error:?} {error}");
+        let rendered = click::languages::rust::names::display_rust_names(&rendered);
+        assert!(rendered.contains(expected), "{rendered}");
+    }
+}
+
+const OPTION_BOX_SIDECAR: &str = include_str!("../design/charon-trial/option-boxes/options.click");
+
+// An `Option<Box<R>>` is the box's address or null: `Some` and `None` make
+// it, a `match` reads its payload, and its drop frees a `Some`.
+#[test]
+fn charon_option_boxes_match_and_drop_their_box() {
+    let p = Project::from_fixture("design/charon-trial/option-boxes");
+    fs::write(p.root.join("borrow.click"), OPTION_BOX_SIDECAR).unwrap();
+    let prepared = p.prepared().unwrap();
+    C0VerificationSession::new_program_prepared(OPTION_BOX_SIDECAR, &prepared)
+        .unwrap_or_else(|error| panic!("{error:?}"));
+    for (before, after, expected) in [
+        (
+            "    ensures make implies result == x;",
+            "    ensures make implies result == x + 1;",
+            "option_boxes::maybe.ensures_0",
+        ),
+        (
+            "    ensures make == false implies result == 0;",
+            "    ensures make == false implies result == x;",
+            "option_boxes::maybe.ensures_1",
+        ),
+    ] {
+        assert!(OPTION_BOX_SIDECAR.contains(before), "{before}");
+        let invalid = OPTION_BOX_SIDECAR.replacen(before, after, 1);
+        let error = C0VerificationSession::new_program_prepared(&invalid, &prepared)
+            .err()
+            .expect("a claim the option program does not meet must fail");
+        let rendered = format!("{error:?} {error}");
+        let rendered = click::languages::rust::names::display_rust_names(&rendered);
+        assert!(rendered.contains(expected), "{rendered}");
+    }
+}
+
+/// A box lives within one function body for now: a parameter or result
+/// that holds one is refused at import.
+#[test]
+fn charon_box_parameters_and_results_are_refused() {
+    for source in [
+        "pub struct Cell { value: u32 }\npub fn read(b: Box<Cell>) -> u32 { b.value }\n",
+        "pub struct Cell { value: u32 }\npub fn make(x: u32) -> Box<Cell> { Box::new(Cell { value: x }) }\n",
+        "pub struct Cell { value: u32 }\npub fn read(b: Option<Box<Cell>>) -> u32 { match b { Some(b) => b.value, None => 0 } }\n",
+    ] {
+        let p = Project::new(source);
+        let error = p
+            .refresh()
+            .expect_err("a box crossing a call must be refused");
+        assert!(error.contains("box parameter or result"), "{error}");
+    }
+}
+
 /// This is the contract `examples/rust-field-borrow` states for the free
 /// function `Guard_drop(struct Guard* self)`.
 #[test]

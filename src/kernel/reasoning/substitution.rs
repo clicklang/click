@@ -932,11 +932,13 @@ fn walk_c_statement<S: VariableSubstitution + ?Sized>(statement: &CStatement, s:
             bytes,
             zeroed,
             object_type,
+            ends_program_on_failure,
         } => CStatement::HeapAllocate {
             target: target.clone(),
             bytes: s.c_expression(bytes),
             zeroed: *zeroed,
             object_type: object_type.clone(),
+            ends_program_on_failure: *ends_program_on_failure,
         },
         CStatement::HeapFree { pointer } => CStatement::HeapFree {
             pointer: s.c_expression(pointer),

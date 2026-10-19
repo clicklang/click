@@ -377,6 +377,84 @@ impl<'a> Proof<'a> {
         })
     }
 
+    /// Opens the contract claims the focused outcome path owes, in contract
+    /// order, as that goal's claim goals. A claim about the other kind of
+    /// outcome opens closed.
+    pub(in crate::surface::proof) fn open_contract_claim_goals(
+        &self,
+        claims: impl IntoIterator<
+            Item = (
+                CFunctionContractClaimKey,
+                Option<CFunctionContractClaimTarget>,
+            ),
+        >,
+    ) -> Result<Self, ClickError> {
+        let Some(Obligation::FunctionOutcome(goal)) = self.focused_obligation() else {
+            return Err(self.step_error("claim goals require a focused outcome goal"));
+        };
+        if goal.claims.is_some() {
+            return Err(self.step_error("this outcome path's claim goals are already open"));
+        }
+        let mut goal = goal.clone();
+        goal.claims = Some(OutcomeClaimGoals::open(
+            claims,
+            goal.data.core.is_exceptional,
+        ));
+        self.with_focused_outcome_obligation(goal)
+    }
+
+    /// The focused outcome path's claim goals, once opened.
+    pub(in crate::surface::proof) fn claim_goals(&self) -> Option<&OutcomeClaimGoals> {
+        match self.focused_obligation() {
+            Some(Obligation::FunctionOutcome(goal)) => goal.claims.as_ref(),
+            _ => None,
+        }
+    }
+
+    /// Closes one claim goal of the focused outcome path with its evidence.
+    /// A checked completion must be proved about this outcome and about this
+    /// claim.
+    pub(in crate::surface::proof) fn close_claim_goal(
+        &self,
+        key: &CFunctionContractClaimKey,
+        evidence: ClaimGoalEvidence,
+    ) -> Result<Self, ClickError> {
+        let Some(Obligation::FunctionOutcome(goal)) = self.focused_obligation() else {
+            return Err(self.step_error("closing a claim requires a focused outcome goal"));
+        };
+        let claims = goal
+            .claims
+            .as_ref()
+            .ok_or_else(|| self.step_error("this outcome path's claim goals are not open"))?
+            .close(key, evidence, &goal.data.core.identity)
+            .map_err(|error| {
+                self.step_error(match error {
+                    ClaimGoalError::Unknown => "this outcome path owes no such claim",
+                    ClaimGoalError::AlreadyClosed => "this claim is already closed on this path",
+                    ClaimGoalError::WrongClaim => "the completion proves a different claim",
+                    ClaimGoalError::WrongOutcome => {
+                        "the completion was proved about a different outcome path"
+                    }
+                })
+            })?;
+        let mut goal = goal.clone();
+        goal.claims = Some(claims);
+        self.with_focused_outcome_obligation(goal)
+    }
+
+    fn with_focused_outcome_obligation(&self, goal: OutcomeObligation) -> Result<Self, ClickError> {
+        let state = self
+            .state
+            .replace_focused_obligation(Obligation::FunctionOutcome(goal))
+            .map_err(|_| self.step_error("outcome goal is no longer open"))?;
+        Ok(Self {
+            site: self.site.clone(),
+            context: self.context.clone(),
+            state,
+            node: self.node.clone(),
+        })
+    }
+
     /// Resource observations are consequences of this outcome's checked
     /// resource state. Publish their persistent fact delta on the same branch.
     pub(in crate::surface::proof) fn project_outcome_resources(&self) -> Result<Self, ClickError> {

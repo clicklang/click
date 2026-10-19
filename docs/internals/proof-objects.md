@@ -597,6 +597,12 @@ Three standing rules keep the boundary where the 2026-09 cleanup left it.
   reconstruct a match-bound scalar name, but only when lowering that name in
   the same scope yields the exact available kernel premise. The emitted proof
   keeps the source name, never the kernel's fresh variable spelling.
+  For an implication guarded by algebraic equality, `simp` first tries to
+  refute the guard with an indexed model equality and direct normalization.
+  A successful candidate emits the ordinary scoped `have`, `rewrite`,
+  `intro`, and `contradiction` operations, before selecting or spelling facts
+  connected to the entire implication. A missed candidate leaves the ordinary
+  closure search available.
 
 The target invariants are:
 

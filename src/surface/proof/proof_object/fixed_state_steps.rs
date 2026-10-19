@@ -3816,14 +3816,15 @@ impl<'a> Proof<'a> {
         } else {
             vec![checked.target.clone()]
         };
+        let checked_facts = vec![checked.source, checked.target.clone()];
         facts = facts.with_kernel_checked_fact(checked.target);
         let complete = self.goal().is_some_and(|goal| facts.contains(goal));
         Ok(self.checked_execution_transition(
             facts,
             complete,
             execution,
-            added_facts.clone(),
             added_facts,
+            checked_facts,
         ))
     }
 }

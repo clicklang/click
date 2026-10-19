@@ -1795,6 +1795,22 @@ impl PureFactContext {
         })
     }
 
+    /// A flat caller owner or surviving view selected by the access's own
+    /// base spellings, without resolving ambient aliases or memory history.
+    pub(in crate::kernel) fn readable_member_holding_access<'a>(
+        &self,
+        resources: &'a ResourceContext,
+        pointer: &Pointer,
+        bytes: u32,
+    ) -> Option<&'a CMemoryRange> {
+        additive_base_spellings(pointer).iter().find_map(|base| {
+            resources
+                .memory_members_with_base(base, true)
+                .find(|(_, range)| self.access_within_memory_range(pointer, bytes, range))
+                .map(|(_, range)| range)
+        })
+    }
+
     /// The range of `ranges` -- memory a caller kept owning across a call --
     /// that holds every byte of an access of `bytes` at `pointer`.
     ///
@@ -1814,18 +1830,47 @@ impl PureFactContext {
         pointer: &Pointer,
         bytes: u32,
     ) -> Option<&'a CMemoryRange> {
-        // Views and folded resources supply no flat owner to this lookup.
-        // Avoid resolving a pointer read's history just to query that empty
-        // index; composite ownership is queried separately by the caller.
-        if ranges.flat_owned_memory_ranges().is_empty() {
+        self.kept_memory_range_holding_access(ranges, placement, pointer, bytes, false)
+    }
+
+    /// A surviving caller view preserves values without supplying write access.
+    pub(in crate::kernel) fn kept_read_range_holding_access<'a>(
+        &self,
+        ranges: &'a ResourceContext,
+        placement: impl FnOnce() -> Option<PureFactContext>,
+        pointer: &Pointer,
+        bytes: u32,
+    ) -> Option<&'a CMemoryRange> {
+        self.kept_memory_range_holding_access(ranges, placement, pointer, bytes, true)
+    }
+
+    fn kept_memory_range_holding_access<'a>(
+        &self,
+        ranges: &'a ResourceContext,
+        placement: impl FnOnce() -> Option<PureFactContext>,
+        pointer: &Pointer,
+        bytes: u32,
+        include_views: bool,
+    ) -> Option<&'a CMemoryRange> {
+        // Folded resources supply no flat memory to this lookup. Avoid
+        // resolving a read's history just to query that empty index;
+        // composite ownership is queried separately by the caller.
+        let empty = if include_views {
+            ranges.memory_input_facts().is_empty()
+        } else {
+            ranges.flat_owned_memory_ranges().is_empty()
+        };
+        if empty {
             return None;
         }
-        // Checked pointer classes select owned memory for ordinary accesses.
+        // Checked pointer classes select readable memory for ordinary accesses.
         // A kept call frame must use that same selection: one-hop aliases
         // and a block-local fallback miss transitive model-pointer aliases
         // crossing symbolic blocks. Coverage remains the selected access's
-        // whole byte extent; views never grant kept ownership.
-        if let Some(range) = ranges.kept_range_via_address_class(pointer, bytes, self) {
+        // whole byte extent. A kept view preserves values without granting writes.
+        if let Some(range) =
+            ranges.kept_range_via_address_class(pointer, bytes, self, include_views)
+        {
             return Some(range);
         }
         let spellings = additive_base_spellings(pointer);
@@ -1833,7 +1878,7 @@ impl PureFactContext {
         let mut seen = BTreeSet::new();
         for base in &spellings {
             for alias in std::iter::once(base).chain(self.exact_pointer_aliases(base)) {
-                for (entry, range) in ranges.owned_memory_members_with_base(alias) {
+                for (entry, range) in ranges.memory_members_with_base(alias, include_views) {
                     if seen.insert(entry) {
                         spelled.push(range);
                     }

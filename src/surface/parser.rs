@@ -5324,10 +5324,14 @@ impl Parser {
         let Some(name) = self.peek_ident() else {
             return Err(self.error("expected Click type"));
         };
-        if is_c_type_keyword(name) {
+        let c_type = is_c_type_keyword(name);
+        if c_type || self.at_cpp_record_type() {
             let parsed = self.parse_type()?;
             return Ok((ClickType::C(parsed.c_type), Some(parsed)));
         }
+        let Some(name) = self.peek_ident() else {
+            return Err(self.error("expected Click type"));
+        };
         if name == "Integer" {
             self.position += 1;
             return Ok((ClickType::Integer, None));
@@ -13530,7 +13534,15 @@ impl Parser {
                 if parsed_type.c_type == C0Type::Void {
                     return Err(self.error("`sizeof(void)` is not supported"));
                 }
-                parsed_type.c_type.abi_size_bytes()
+                match &parsed_type.struct_name {
+                    // A C++ record named as the source names it, `Node`.
+                    Some(name) if !parsed_type.struct_pointer => self
+                        .struct_layouts
+                        .get(name)
+                        .ok_or_else(|| self.error(format!("unknown struct declaration `{name}`")))?
+                        .size_bytes(),
+                    _ => parsed_type.c_type.abi_size_bytes(),
+                }
             };
             return Ok(ContractExpression::CFragment(CExpression::Value(int32(
                 bytes,

@@ -656,6 +656,13 @@ impl MemoryAccessCandidates {
                     .graph
                     .pointer_at_base_with_wide_index(&self.query, range.base());
             }
+            if let Some(address) = self
+                .index
+                .graph
+                .pointer_at_constant_base(&self.query, range.base())
+            {
+                return Some(address);
+            }
             let spelling = if matches!(self.query.offset, PointerOffsetTerm::Add(_, _)) {
                 self.query.clone()
             } else {
@@ -1242,7 +1249,19 @@ impl ResourceContext {
         pointer: &Pointer,
         bytes: u32,
         assumptions: &PureFactContext,
+        include_views: bool,
     ) -> Option<&CMemoryRange> {
+        // A view-only frame can answer an explicit base or an admitted alias
+        // in the caller's structural lookup. Do not resolve an opaque pointer
+        // read merely to discover whether its pointee might have a supplier.
+        if self.flat_owned_memory_ranges().is_empty()
+            && (Self::pointer_read_coordinate(pointer)
+                || matches!(&pointer.block, PointerBlock::LoadedPointer(_))
+                || matches!(&pointer.block, PointerBlock::Symbolic(variable)
+                    if crate::kernel::is_load_variable(variable)))
+        {
+            return None;
+        }
         let published = self
             .memory_equalities
             .lock()
@@ -1253,21 +1272,25 @@ impl ResourceContext {
             while let Some(entry) = entries.next() {
                 crate::instrumentation::record_deterministic_work(1);
                 let fact = self.storage.facts.get(&entry)?;
-                let Some(range) = fact.memory_own_range() else {
+                let Some(range) = (if include_views {
+                    fact.memory_range()
+                } else {
+                    fact.memory_own_range()
+                }) else {
                     continue;
                 };
-                let Some(quantity) = fact.owned_quantity_term() else {
+                if fact.owned_quantity_term().is_some_and(|quantity| {
+                    !super::resource_algebra::resource_quantity_is_positive(quantity, assumptions)
+                }) {
                     continue;
-                };
+                }
                 let Some(address) = entries.address(entry) else {
                     continue;
                 };
                 if needs_current_equality && !assumptions.pointers_known_equal(pointer, &address) {
                     continue;
                 }
-                if super::resource_algebra::resource_quantity_is_positive(quantity, assumptions)
-                    && assumptions.kept_range_holds_access(range, &address, bytes)
-                {
+                if assumptions.kept_range_holds_access(range, &address, bytes) {
                     return Some(range);
                 }
             }
@@ -1280,9 +1303,14 @@ impl ResourceContext {
         // Try this bounded selection before pairing another input, so recheck
         // does not rebuild an index over the frame or ambient equality history.
         if published.graph.input_key().root() != assumptions.equality_graph.input_key().root()
-            && let Some(entries) = Self::indexed_access_entries(&published, pointer, bytes, true)
-                .or_else(|| Self::partial_start_entries(&published, pointer, bytes, true))
-                .or_else(|| Self::relative_access_entries(&published, pointer, bytes, true))
+            && let Some(entries) =
+                Self::indexed_access_entries(&published, pointer, bytes, !include_views)
+                    .or_else(|| {
+                        Self::partial_start_entries(&published, pointer, bytes, !include_views)
+                    })
+                    .or_else(|| {
+                        Self::relative_access_entries(&published, pointer, bytes, !include_views)
+                    })
             && let Some(range) = select(
                 MemoryAccessCandidates {
                     entries,
@@ -1295,10 +1323,12 @@ impl ResourceContext {
         {
             return Some(range);
         }
-        select(
-            self.write_access_entries(pointer, bytes, assumptions)?,
-            false,
-        )
+        let candidates = if include_views {
+            self.read_access_entries(pointer, bytes, assumptions)
+        } else {
+            self.write_access_entries(pointer, bytes, assumptions)
+        }?;
+        select(candidates, false)
     }
 
     /// Pair at proof boundaries, then apply only resource and class deltas.
@@ -2184,6 +2214,31 @@ impl ResourceContext {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn kept_field_uses_checked_constant_coordinates_and_full_width() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let owner = Pointer::symbolic(Variable(989_810));
+        let query = Pointer {
+            block: PointerBlock::ExternalArgument,
+            offset: PointerOffsetTerm::add(
+                PointerOffsetTerm::scale_int32(Bitvector32Term::Variable(Variable(989_811)), 4),
+                PointerOffsetTerm::scale_int32(Bitvector32Term::Variable(Variable(989_812)), 4),
+            ),
+        };
+        let equality = Proposition::ConditionIs(
+            ConditionTerm::pointer_equal(query.clone(), owner.offset_by_bytes(24)),
+            true,
+        );
+        let assumptions = PureFactContext::new().assume_proposition(equality.clone());
+        let range = CMemoryRange::new_with_element_width(owner, 0u32.into(), 8u32.into(), 4);
+        let resources = ResourceContext::new_with_equalities(&assumptions)
+            .unchecked_with_fact(CResourceFact::own_memory(range));
+        let kept = crate::kernel::primitives::CallKeptRanges::new(resources, vec![], None);
+        assert!(kept.holds_access(&query, 8, &assumptions));
+        assert!(!kept.holds_access(&query, 12, &assumptions));
+        assert!(!kept.holds_access(&query, 8, &assumptions.without_exact_fact(&equality),));
+    }
 
     #[test]
     fn wide_read_aligns_external_buffer_from_symbolic_cursor() {

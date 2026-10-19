@@ -1,0 +1,22 @@
+{
+  "units": {
+    "option_boxes": {
+      "language": "rust",
+      "sources": {
+        "options.rs": {}
+      },
+      "crate": {
+        "name": "option_boxes",
+        "edition": "2021",
+        "features": [],
+        "roots": [
+          "option_boxes::maybe",
+          "option_boxes::dropped"
+        ],
+        "files": [
+          "options.rs"
+        ]
+      }
+    }
+  }
+}

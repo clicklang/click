@@ -502,7 +502,8 @@ fn alias_effect(expr: &E, aliases: &BTreeSet<&str>) -> Result<(bool, bool), Fron
         | E::Integer { .. }
         | E::UnsignedInteger { .. }
         | E::UsizeInteger { .. }
-        | E::Boolean { .. } => return Ok((false, false)),
+        | E::Boolean { .. }
+        | E::NoneBox => return Ok((false, false)),
         E::SharedArrayHasNext { .. }
         | E::SharedArrayOptionElement { .. }
         | E::SharedArrayOptionTag { .. }
@@ -748,7 +749,11 @@ pub(super) fn certify_scalar_reference_end<'a>(
                     statement: 0,
                 };
             }
-            T::If { .. } | T::Switch { .. } | T::Drop { .. } => {
+            T::If { .. }
+            | T::Switch { .. }
+            | T::Drop { .. }
+            | T::BoxNew { .. }
+            | T::BoxFree { .. } => {
                 return Err(FrontierRefusal::UnsupportedFlow);
             }
         }

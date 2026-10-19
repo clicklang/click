@@ -13939,7 +13939,9 @@ fn nested_record_qualified_and_pointer_fields_and_nontrivial_destruction_remain_
     for (declaration, body) in [
         ("const FeeState state;", "return stamp;"),
         ("mutable FeeState state;", "return stamp;"),
-        ("FeeState* state;", "return stamp;"),
+        // A pointer to a mutable record is a supported field; one to a const
+        // record is not.
+        ("const FeeState* state;", "return stamp;"),
     ] {
         let source = format!(
             "struct FeeState {{ int size; }}; struct Envelope {{ {declaration} int stamp; int Read() const noexcept {{ {body} }} }};"
@@ -14464,7 +14466,9 @@ fn projected_calls_keep_cpp_constness_and_source_profile_boundaries() {
         "struct Child { int value; void Set() noexcept { value = 1; } }; struct Outer { Child child; }; void run(const Outer& root) noexcept { root.child.Set(); }",
         "struct Child { int value; }; struct Outer { Child child; }; void Set(Child& value) noexcept { value.value = 1; } void run(const Outer& root) noexcept { Set(root.child); }",
         "struct Outer { int value; }; void Set(int& value) noexcept { value = 1; } void run(const Outer& root) noexcept { Set(root.value); }",
-        "struct Child { int value; int Read() const noexcept { return value; } }; struct Outer { Child child; }; int run(Outer* root) noexcept { return root->child.Read(); }",
+        // A record pointer parameter roots `root->child`; one read from a
+        // field does not.
+        "struct Child { int value; int Read() const noexcept { return value; } }; struct Outer { Child child; Outer* next; }; int run(Outer* root) noexcept { return root->next->child.Read(); }",
         "struct Child { int value; int Read() const noexcept { return value; } }; int run() noexcept { return Child{1}.Read(); }",
         "struct Outer { long long value; }; void Set(long long& value) noexcept { value = 1; } void run(Outer& root) noexcept { Set(root.value); }",
     ] {
@@ -19076,4 +19080,90 @@ fn diagnostics_print_record_types_by_their_cpp_paths() {
         shown.contains("`Box<SizeTag, true>` has no field `nope`"),
         "{shown}"
     );
+}
+
+// `p->field` reads through a record pointer held by a parameter or local.
+// A pointer read from a field or returned by a call does not root a place,
+// and a pointer to a polymorphic record is not a simple record pointer.
+#[test]
+fn record_pointer_arrows_require_a_parameter_or_local_root() {
+    let node = "struct Node { int value; Node* next; };\nNode* rest(Node* n) noexcept { return n->next; }\n";
+    for (name, body, expected) in [
+        (
+            "field",
+            "int probe(Node* n) noexcept { return n->next->value; }",
+            "arrow access requires the current object or a record pointer parameter or local",
+        ),
+        (
+            "call",
+            "int probe(Node* n) noexcept { return rest(n)->value; }",
+            "arrow access requires the current object or a record pointer parameter or local",
+        ),
+        (
+            "polymorphic",
+            "struct Shape { virtual int area() noexcept = 0; };\nint probe(Shape* s) noexcept { return 0; }",
+            "a mutable pointer to a simple record",
+        ),
+    ] {
+        let source = format!("{node}{body}\n");
+        let project = Project::with_fixture("list.cpp", "probe", &source);
+        let error = refresh_import(&project.config())
+            .expect_err(&format!("{name} must not enter a locked artifact"));
+        assert!(error.contains(expected), "{name}: {error}");
+    }
+}
+
+// `new` allocates one simple aggregate record with the global `operator new`,
+// initialized one field per brace initializer, and `delete` ends one; array
+// forms and placement are refused.
+#[test]
+fn new_and_delete_admit_one_simple_record() {
+    let node = "struct Node { int value; Node* next; };\n";
+    for (name, body, expected) in [
+        (
+            "array_new",
+            "int probe() noexcept { Node* n = nullptr; n = new Node[2]; return 0; }",
+            "a supported C++ `new` allocates one simple aggregate record",
+        ),
+        (
+            "partial_initializer",
+            "int probe() noexcept { Node* n = nullptr; n = new Node{1}; return 0; }",
+            "one direct brace initializer per field",
+        ),
+        (
+            "array_delete",
+            "int probe(Node* n) noexcept { delete[] n; return 0; }",
+            "a supported C++ `delete` ends one simple record",
+        ),
+    ] {
+        let source = format!("{node}{body}\n");
+        let project = Project::with_fixture("list.cpp", "probe", &source);
+        let error = refresh_import(&project.config())
+            .expect_err(&format!("{name} must not enter a locked artifact"));
+        assert!(error.contains(expected), "{name}: {error}");
+    }
+}
+
+// A default member initializer is a constant, and a local default-constructed
+// from them needs one on every field; other forms stay refused.
+#[test]
+fn default_construction_reads_constant_member_initializers_only() {
+    for (name, source, expected) in [
+        (
+            "computed",
+            "int seed() noexcept { return 3; }\nstruct S { int a = seed(); };\nint probe() noexcept { S s; return s.a; }",
+            "the supported C++ record fields must be",
+        ),
+        (
+            "missing",
+            "struct S { int a = 1; int b; };\nint probe() noexcept { S s; return s.a; }",
+            "one direct brace initializer per field",
+        ),
+    ] {
+        let source = format!("{source}\n");
+        let project = Project::with_fixture("init.cpp", "probe", &source);
+        let error = refresh_import(&project.config())
+            .expect_err(&format!("{name} must not enter a locked artifact"));
+        assert!(error.contains(expected), "{name}: {error}");
+    }
 }

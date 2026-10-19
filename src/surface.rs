@@ -117,6 +117,7 @@ pub use surface_propositions::SurfacePropositionMap;
 mod printing;
 mod proof;
 pub(crate) mod pure_fact_list;
+mod scoped_names;
 mod validation;
 mod verification;
 

@@ -8,7 +8,10 @@ use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
 
 use super::storage::SharedValue;
-use crate::kernel::{CResourceFact, CState, CValue, Proposition};
+use crate::kernel::{
+    CFunctionContractClaimKey, CFunctionContractClaimTarget, CResourceFact, CState, CValue,
+    Proposition,
+};
 
 /// Diagnostic evidence returned when an allocation-lifetime obligation could
 /// not be discharged. The allocation is semantic evidence; the optional
@@ -287,6 +290,8 @@ pub(crate) struct FunctionOutcomeObligation<S> {
     pub(crate) path_index: usize,
     pub(crate) data: S,
     pub(crate) allocation_lifetime: AllocationLifetimeObligation,
+    /// The contract claims this path owes, once opened at function exit.
+    pub(crate) claims: Option<OutcomeClaimGoals>,
 }
 
 impl<S> FunctionOutcomeObligation<S> {
@@ -295,7 +300,157 @@ impl<S> FunctionOutcomeObligation<S> {
             path_index,
             data,
             allocation_lifetime: AllocationLifetimeObligation::new(path_index),
+            claims: None,
         }
+    }
+}
+
+/// Why a claim goal of an outcome path could not be closed.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) enum ClaimGoalError {
+    /// The path owes no such claim.
+    Unknown,
+    /// The claim is already closed on this path.
+    AlreadyClosed,
+    /// The completion names a different claim.
+    WrongClaim,
+    /// The completion was proved about a different outcome.
+    WrongOutcome,
+}
+
+/// The kernel evidence that closed one claim goal of an outcome path.
+#[derive(Clone)]
+pub(crate) enum ClaimGoalEvidence {
+    /// A checked completion of the claim's proposition.
+    Proposition(CheckedProposition),
+    /// A resource claim checked against the path's outcome, with the
+    /// resources it accounts for in what the path returns.
+    Resource(ClaimResourceReceipt),
+}
+
+/// What a checked resource claim accounts for in a path's returned
+/// resources.
+#[derive(Clone)]
+pub(crate) struct ClaimResourceReceipt {
+    pub(crate) returned_resources: crate::kernel::ResourceContext,
+    /// Whether the receipt is a new returned owner rather than a borrow or a
+    /// guarded transition still to come.
+    pub(crate) contributes_returned_resources: bool,
+    /// Whether the contract's resource transition is deferred to a guard.
+    pub(crate) defers_resource_transition: bool,
+}
+
+/// The contract claims one outcome path owes, in the order the contract
+/// writes them, each open or closed. A closer acts on the first open claim;
+/// the path is finished when every claim is closed, and each closed claim
+/// keeps the evidence that closed it.
+///
+/// A claim about the other kind of outcome (an `ensures` on a throwing path,
+/// an exceptional `ensures` on a returning one) holds vacuously and opens
+/// closed.
+#[derive(Clone)]
+pub(crate) struct OutcomeClaimGoals {
+    claims: Arc<[OutcomeClaimGoal]>,
+}
+
+#[derive(Clone)]
+struct OutcomeClaimGoal {
+    key: CFunctionContractClaimKey,
+    /// The kernel claim the goal stands for. A clause the kernel files no
+    /// claim for (a `consumes` transition) has none.
+    target: Option<CFunctionContractClaimTarget>,
+    state: ClaimGoalState,
+}
+
+#[derive(Clone)]
+enum ClaimGoalState {
+    Open,
+    Vacuous,
+    Closed(ClaimGoalEvidence),
+}
+
+impl OutcomeClaimGoals {
+    pub(crate) fn open(
+        claims: impl IntoIterator<
+            Item = (
+                CFunctionContractClaimKey,
+                Option<CFunctionContractClaimTarget>,
+            ),
+        >,
+        is_exceptional: bool,
+    ) -> Self {
+        Self {
+            claims: claims
+                .into_iter()
+                .map(|(key, target)| OutcomeClaimGoal {
+                    state: if matches!(
+                        (&key, is_exceptional),
+                        (CFunctionContractClaimKey::Ensure(_), true)
+                            | (CFunctionContractClaimKey::ExceptionalEnsure(_), false)
+                    ) {
+                        ClaimGoalState::Vacuous
+                    } else {
+                        ClaimGoalState::Open
+                    },
+                    key,
+                    target,
+                })
+                .collect(),
+        }
+    }
+
+    /// The claim a closer acts on: the first open one.
+    pub(crate) fn first_open(&self) -> Option<&CFunctionContractClaimKey> {
+        self.claims
+            .iter()
+            .find_map(|goal| matches!(goal.state, ClaimGoalState::Open).then_some(&goal.key))
+    }
+
+    /// The evidence that closed `key`. A vacuous or open claim has none.
+    pub(crate) fn evidence(&self, key: &CFunctionContractClaimKey) -> Option<&ClaimGoalEvidence> {
+        self.claims.iter().find_map(|goal| match &goal.state {
+            ClaimGoalState::Closed(evidence) if goal.key == *key => Some(evidence),
+            _ => None,
+        })
+    }
+
+    /// Closes `key` with `evidence`. A checked completion must have been
+    /// proved about `outcome` and, when it names a claim, must name this
+    /// one.
+    pub(crate) fn close(
+        &self,
+        key: &CFunctionContractClaimKey,
+        evidence: ClaimGoalEvidence,
+        outcome: &OutcomeIdentity,
+    ) -> Result<Self, ClaimGoalError> {
+        let position = self
+            .claims
+            .iter()
+            .position(|goal| goal.key == *key)
+            .ok_or(ClaimGoalError::Unknown)?;
+        let goal = &self.claims[position];
+        if !matches!(goal.state, ClaimGoalState::Open) {
+            return Err(ClaimGoalError::AlreadyClosed);
+        }
+        if let ClaimGoalEvidence::Proposition(completion) = &evidence {
+            if completion
+                .outcome()
+                .is_some_and(|core| !core.identity.same_as(outcome))
+            {
+                return Err(ClaimGoalError::WrongOutcome);
+            }
+            if completion
+                .claim()
+                .is_some_and(|target| goal.target.as_ref() != Some(target))
+            {
+                return Err(ClaimGoalError::WrongClaim);
+            }
+        }
+        let mut claims = self.claims.to_vec();
+        claims[position].state = ClaimGoalState::Closed(evidence);
+        Ok(Self {
+            claims: claims.into(),
+        })
     }
 }
 
@@ -308,4 +463,174 @@ pub(crate) enum ProofObligation<P, O> {
     Proposition(PropositionObligation<P, O>),
     Frontier(FrontierObligation),
     FunctionOutcome(FunctionOutcomeObligation<O>),
+}
+
+#[cfg(test)]
+mod outcome_claim_goal_tests {
+    use super::*;
+    use crate::kernel::CFunctionContractClaimTarget as Target;
+    use crate::kernel::{ExecutionFacts, ResourceContext, api::int32};
+
+    fn outcome() -> OutcomeProofCore {
+        OutcomeProofCore {
+            identity: OutcomeIdentity::fresh(),
+            result: Arc::new(int32(0)),
+            state: CState::new().into(),
+            store_consequences_available: false,
+            is_exceptional: false,
+            effect_facts: Arc::new(ExecutionFacts::new()),
+        }
+    }
+
+    fn completion(outcome: &OutcomeProofCore, claim: Option<Target>) -> ClaimGoalEvidence {
+        ClaimGoalEvidence::Proposition(CheckedProposition::new(
+            Proposition::Predicate {
+                name: "done".into(),
+                arguments: Vec::new(),
+            },
+            super::super::ProofFacts::default(),
+            Some(outcome.clone()),
+            claim,
+        ))
+    }
+
+    fn receipt() -> ClaimGoalEvidence {
+        ClaimGoalEvidence::Resource(ClaimResourceReceipt {
+            returned_resources: ResourceContext::new(),
+            contributes_returned_resources: true,
+            defers_resource_transition: false,
+        })
+    }
+
+    fn goals(is_exceptional: bool) -> OutcomeClaimGoals {
+        OutcomeClaimGoals::open(
+            [
+                (
+                    CFunctionContractClaimKey::Ensure(0),
+                    Some(Target::EnsureProposition(0)),
+                ),
+                (
+                    CFunctionContractClaimKey::Ensure(1),
+                    Some(Target::EnsureResource(0)),
+                ),
+                (
+                    CFunctionContractClaimKey::ExceptionalEnsure(0),
+                    Some(Target::ExceptionalEnsureProposition(0)),
+                ),
+                (CFunctionContractClaimKey::Ensure(2), None),
+            ],
+            is_exceptional,
+        )
+    }
+
+    /// Claims open in contract order, a claim about the other kind of
+    /// outcome opens closed, closing the first open claim advances the focus
+    /// to the next one, and each closed claim keeps its evidence.
+    #[test]
+    fn claim_goals_open_in_contract_order_and_keep_their_evidence() {
+        let outcome = outcome();
+        let returning = goals(false);
+        assert_eq!(
+            returning.first_open(),
+            Some(&CFunctionContractClaimKey::Ensure(0))
+        );
+        let returning = returning
+            .close(
+                &CFunctionContractClaimKey::Ensure(0),
+                completion(&outcome, Some(Target::EnsureProposition(0))),
+                &outcome.identity,
+            )
+            .unwrap();
+        assert_eq!(
+            returning.first_open(),
+            Some(&CFunctionContractClaimKey::Ensure(1))
+        );
+        let returning = returning
+            .close(
+                &CFunctionContractClaimKey::Ensure(1),
+                receipt(),
+                &outcome.identity,
+            )
+            .and_then(|goals| {
+                goals.close(
+                    &CFunctionContractClaimKey::Ensure(2),
+                    completion(&outcome, None),
+                    &outcome.identity,
+                )
+            })
+            .unwrap();
+        assert_eq!(returning.first_open(), None);
+        assert!(matches!(
+            returning.evidence(&CFunctionContractClaimKey::Ensure(0)),
+            Some(ClaimGoalEvidence::Proposition(_))
+        ));
+        assert!(matches!(
+            returning.evidence(&CFunctionContractClaimKey::Ensure(1)),
+            Some(ClaimGoalEvidence::Resource(_))
+        ));
+        assert!(
+            returning
+                .evidence(&CFunctionContractClaimKey::ExceptionalEnsure(0))
+                .is_none()
+        );
+
+        let throwing = goals(true);
+        assert_eq!(
+            throwing.first_open(),
+            Some(&CFunctionContractClaimKey::ExceptionalEnsure(0))
+        );
+    }
+
+    /// A completion closes only the claim it was proved for, on the outcome
+    /// it was proved about, and a claim closes once.
+    #[test]
+    fn a_claim_goal_refuses_the_wrong_completion() {
+        let outcome = outcome();
+        let sibling = self::outcome();
+        let goals = goals(false);
+        let key = CFunctionContractClaimKey::Ensure(0);
+        let refusal = |key: &CFunctionContractClaimKey, evidence| {
+            goals
+                .close(key, evidence, &outcome.identity)
+                .err()
+                .expect("the close is refused")
+        };
+        assert_eq!(
+            refusal(
+                &key,
+                completion(&outcome, Some(Target::EnsureProposition(1)))
+            ),
+            ClaimGoalError::WrongClaim
+        );
+        assert_eq!(
+            refusal(
+                &key,
+                completion(&sibling, Some(Target::EnsureProposition(0)))
+            ),
+            ClaimGoalError::WrongOutcome
+        );
+        assert_eq!(
+            refusal(
+                &CFunctionContractClaimKey::Ensure(2),
+                completion(&outcome, Some(Target::EnsureProposition(0)))
+            ),
+            ClaimGoalError::WrongClaim
+        );
+        assert_eq!(
+            refusal(&CFunctionContractClaimKey::ExceptionalEnsure(0), receipt()),
+            ClaimGoalError::AlreadyClosed
+        );
+        assert_eq!(
+            refusal(&CFunctionContractClaimKey::Ensure(9), receipt()),
+            ClaimGoalError::Unknown
+        );
+        let closed = goals.close(&key, receipt(), &outcome.identity).unwrap();
+        assert_eq!(
+            closed
+                .close(&key, receipt(), &outcome.identity)
+                .err()
+                .expect("a closed claim does not close again"),
+            ClaimGoalError::AlreadyClosed
+        );
+    }
 }

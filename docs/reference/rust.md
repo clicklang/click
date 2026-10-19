@@ -968,7 +968,8 @@ general library methods.
 
 Single-file units exclude modules and imports; crate units support
 the locked module closure described above. Macros, semantic attributes,
-dependencies, unsafe code, heap allocation, nested aggregate parameters,
+dependencies, unsafe code, heap allocation beyond
+[boxes within one body](#boxes-within-one-body), nested aggregate parameters,
 reference returns, and other integer widths are outside this slice. Trait
 dispatch and type parameters are limited to the forms described under
 [callable bounds](#function-pointers-and-named-contracts) and
@@ -1167,8 +1168,9 @@ complete Rust loan protocol or infer ownership contracts from Rust types.
 
 The adapter supports moving a reference field out of a plain local struct.
 It still excludes general partial moves with cleanup, nested owned fields,
-nested aggregate arguments or returns, unstructured control flow, heap owners such
-as `Box`/`Vec`, and panic unwinding. Arithmetic, owned values, and loops use the
+nested aggregate arguments or returns, unstructured control flow, heap owners
+other than the [local `Box`](#boxes-within-one-body) such as `Vec`, and panic
+unwinding. Arithmetic, owned values, and loops use the
 same native body representation; there is no whole-function coverage switch.
 
 ```console
@@ -1177,6 +1179,43 @@ cargo run --bin click -- verify examples/rust-move-drop/guard.click
 cargo run --bin click -- import lock examples/rust-field-borrow/guard.click
 cargo run --bin click -- verify examples/rust-field-borrow/guard.click
 ```
+
+## Boxes within one body
+
+A `Box<R>` of a crate struct `R` with no drop glue lives within one function
+body: `Box::new(r)` allocates `size_of::<R>()` bytes, moves the record local
+`r` into them, and gives the box their address; `b.field` reads and writes
+through it; the box's drop frees the allocation. Allocation failure aborts the
+process, so the body continues only on success and the proof sees a non-null,
+owned allocation. The compiler places the drop; the free is the kernel's
+checked heap free, as for C `free`.
+[`design/charon-trial/boxes`](https://github.com/clicklang/click/blob/master/design/charon-trial/boxes/boxed.rs)
+verifies
+
+```rust
+pub struct Cell { value: u32, }
+pub fn boxed(x: u32) -> u32 {
+    let mut b = Box::new(Cell { value: x });
+    b.value = b.value + 1;
+    b.value
+}
+```
+
+against `requires x < 100; ensures result == x + 1;` with
+`execute(); simp();`.
+
+An `Option<Box<R>>` is the box's address, or null for `None`. `Some(b)` and
+`None` make one, a `match` tests it for null and moves the box out of `Some`,
+and its drop frees a `Some` box (freeing null has no effect).
+[`design/charon-trial/option-boxes`](https://github.com/clicklang/click/blob/master/design/charon-trial/option-boxes/options.rs)
+verifies `maybe`, which boxes a `Cell` only when asked and matches on the
+option, and `dropped`, whose possibly-`Some` option is dropped at scope end.
+
+Import refuses a box or option-of-box parameter or result ("box parameter
+or result"), such a struct field ("boxed struct field"), and a box of a record
+with a destructor or boxed fields ("box of a record with drop glue"). `take`,
+`?`, and recursive boxed structs are later work in
+[`issues/generic-stack.md`](https://github.com/clicklang/click/blob/master/issues/generic-stack.md).
 
 ## Enums and `match`
 
@@ -1225,7 +1264,8 @@ that matches on `s`, reduced at that constructor, so a requirement
 `match s { Shape::Circle(r) => { execute(); simp(); }, ... }` does the same
 with its own binders.
 
-Not yet supported: generic enums (including `Option<T>`), enums declared in
+Not yet supported: generic enums (`Option<T>` other than the `Option<Box<R>>`
+above), enums declared in
 crate units, enum fields of other enum or struct types, references to enums,
 enums in struct fields, and reducing a callee's `match` precondition over a call result
 whose constructor the caller knows only from the call's postcondition

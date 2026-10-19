@@ -1340,6 +1340,13 @@ uninitialized, and produces complete owned memory plus the
 exclusive `allocation(base, bytes)` lifetime resource. Returning a different
 value while an allocation outcome remains unresolved is rejected.
 
+An allocation marked `ends_program_on_failure` has no null arm: its failure
+ends the program rather than yielding null, as a C++ `new` does in a `noexcept`
+function, where `std::bad_alloc` calls `std::terminate`. No execution
+continues past a failure, so the transition records the result as not null
+and resolves it at once to the success arm. Partial correctness, and
+termination, are unaffected: the ended program makes no return.
+
 Nonnull `free` requires the exact live base, allocation authority, and complete
 owned access. It frees that allocation, clears its cells, consumes those
 resources, and rejects surviving direct or composite resource aliases at the

@@ -159,11 +159,13 @@ impl CStatement {
                 bytes,
                 zeroed,
                 object_type,
+                ends_program_on_failure,
             } => Self::HeapAllocate {
                 target: target.clone(),
                 bytes: bytes.clone(),
                 zeroed: *zeroed,
                 object_type: object_type.clone(),
+                ends_program_on_failure: *ends_program_on_failure,
             },
             Self::HeapFree { pointer } => Self::HeapFree {
                 pointer: pointer.clone(),

@@ -1575,16 +1575,20 @@ permitted stores or a transition that drops the fact:
   Opened-instance cells still lose their cached value and are named across
   the edge at their pre-call value using the checked kept ranges and premises.
   `CallKeptRanges` retains an immutable indexed snapshot of *all* flat residual
-  owners, including uncached members, plus the opened ranges and placement
-  premises. The write-set marker uses a canonical identity for the complete
+  owners and surviving views, including uncached members, plus the opened
+  ranges and placement premises. The write-set marker uses a canonical identity for the complete
   range set: cached hashes select a bucket, exact persistent-map comparison
   decides equality, and globally unique identities distinguish unequal sets
   across threads. Diagnostics enumerate the ranges only when requested.
   Recording and comparing an unchanged retained frame therefore costs a
   persistent handle rather than a walk over every other parameter object
   (`a_call_records_kept_members_without_visiting_unrelated_residual_resources`,
-  `a_call_records_aliasing_kept_members_without_enumerating_them`). Views
-  still keep nothing (`mdtests/calls_havoc_an_uncached_field_the_caller_only_views.md`).
+  `a_call_records_aliasing_kept_members_without_enumerating_them`). A surviving
+  flat view preserves its bytes under the checked stable-view call transfer
+  (`mdtests/calls_keep_an_uncached_field_the_caller_views.md`). Its existing
+  input index is shared in the frame identity; base and prepared address-class
+  lookups select views without visiting unrelated ranges. This retains read
+  values, never write authority. Conflicting loans still refuse the call.
   The narrow atomic-parameter selection preserves the ordinary treatment of
   other cached cells; the arena pipeline remains a regression control.
   Exact flat borrows retain the caller's original checked partition instead

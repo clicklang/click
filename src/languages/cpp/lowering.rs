@@ -378,6 +378,9 @@ fn lower_parameter(
                 .pointer_type()
                 .to_kernel_type(),
         )),
+        pointer @ CppType::Pointer { .. } if scalar::record_pointee(pointer).is_some() => {
+            Ok(c_parameter(parameter.name.clone(), CType::Int32Pointer))
+        }
         CppType::Pointer { pointee } if Scalar::pointer_element(pointee, false).is_some() => {
             Ok(c_parameter(
                 parameter.name.clone(),
@@ -984,6 +987,80 @@ impl LoweringContext<'_> {
                     c_typed_store(self.lower_place(target)?, evaluation.value, CType::Int32)
                 };
                 Ok(evaluate_then(evaluation.prefix, assignment))
+            }
+            CppStatement::NewObject {
+                target,
+                record,
+                fields,
+                ..
+            } => {
+                let CppType::Record {
+                    declaration_id,
+                    name,
+                    ..
+                } = record
+                else {
+                    return Err("C++ `new` allocates a record".into());
+                };
+                let source = self.records.get(declaration_id.as_str()).ok_or_else(|| {
+                    format!("C++ lowering found unknown record declaration `{declaration_id}`")
+                })?;
+                if source.name != *name || fields.len() != source.fields.len() {
+                    return Err(format!(
+                        "C++ `new` initializer for `{name}` disagrees with its record"
+                    ));
+                }
+                let class = self
+                    .layouts
+                    .get(name.as_str())
+                    .and_then(|layout| layout.class())
+                    .map(|class| {
+                        (
+                            crate::kernel::effective_type::CAccessClass::Struct(class.clone()),
+                            source.size_bytes,
+                            source.alignment_bytes,
+                        )
+                    });
+                // The allocation comes first and each field's value after it,
+                // as C++17 sequences a new-expression.
+                let object = self.fresh_call_capture()?;
+                let mut result = c_seq(
+                    c_declare(object.clone(), CType::Int32Pointer),
+                    CStatement::HeapAllocate {
+                        target: object.clone(),
+                        bytes: crate::kernel::c_int32_literal(source.size_bytes),
+                        zeroed: false,
+                        object_type: class,
+                        ends_program_on_failure: true,
+                    },
+                );
+                for (initializer, field) in fields.iter().zip(&source.fields) {
+                    if initializer.field.declaration_id != field.declaration_id {
+                        return Err(format!(
+                            "C++ `new` initializer for `{name}` is out of declaration order"
+                        ));
+                    }
+                    let pointer =
+                        c_pointer_offset_bytes(c_variable(object.clone()), field.offset_bytes);
+                    let value = self.lower_expression(&initializer.value)?;
+                    result = c_seq(
+                        result,
+                        c_typed_store(pointer, value, cpp_scalar_kernel_type(&field.value_type)?),
+                    );
+                }
+                let assignment = if target.projections.is_empty() {
+                    c_assign(self.variable_name(target), c_variable(object))
+                } else {
+                    c_typed_store(
+                        self.lower_place(target)?,
+                        c_variable(object),
+                        CType::Int32Pointer,
+                    )
+                };
+                Ok(c_seq(result, assignment))
+            }
+            CppStatement::DeleteObject { pointer, .. } => {
+                Ok(crate::kernel::c_heap_free(self.lower_expression(pointer)?))
             }
             CppStatement::Store { pointer, value, .. } => Ok(c_typed_store(
                 self.lower_expression(pointer)?,
@@ -1654,7 +1731,9 @@ impl LoweringContext<'_> {
         &mut self,
         expression: &CppExpression,
     ) -> Result<ScalarEvaluation, String> {
-        let value_type = if let CppType::Pointer { pointee } = expression.value_type() {
+        let value_type = if scalar::record_pointee(expression.value_type()).is_some() {
+            CType::Int32Pointer
+        } else if let CppType::Pointer { pointee } = expression.value_type() {
             Scalar::pointer_element(pointee, true)
                 .and_then(|scalar| scalar.kind.pointer_kernel_type())
                 .ok_or("unsupported native pointer expression")?
@@ -1832,8 +1911,16 @@ impl LoweringContext<'_> {
                 } else {
                     self.note_object_coercion(place)?;
                 }
-                let address = self.lower_place(place)?;
                 let root = self.place(place)?;
+                // A scalar local bound to a native reference: its address.
+                if place.projections.is_empty()
+                    && matches!(root.value_type, CppType::Integer { .. })
+                {
+                    return Ok(CExpression::AddressOf(Box::new(c_variable(
+                        self.variable_name(place),
+                    ))));
+                }
+                let address = self.lower_place(place)?;
                 // Binding a reference to a scalar field selects the same
                 // member bounds as taking its address. This checks storage
                 // without loading the field value.
@@ -1971,6 +2058,11 @@ impl LoweringContext<'_> {
                     },
                 ) if Scalar::pointer_element(pointee, false).is_some()
                     && scalar::same_scalar_type(pointee, value_pointee) =>
+                {
+                    Ok(c_variable(self.variable_name(place)))
+                }
+                (pointer @ CppType::Pointer { .. }, value_type)
+                    if scalar::record_pointee(pointer).is_some() && pointer == value_type =>
                 {
                     Ok(c_variable(self.variable_name(place)))
                 }
@@ -2334,6 +2426,9 @@ fn lower_binary_value(
 }
 
 fn cpp_return_scalar_type(value_type: &CppType) -> Result<CType, String> {
+    if scalar::record_pointee(value_type).is_some() {
+        return Ok(CType::Int32Pointer);
+    }
     if let CppType::Pointer { pointee } = value_type {
         return Scalar::pointer_element(pointee, true)
             .and_then(|scalar| scalar.kind.pointer_kernel_type())
@@ -2360,6 +2455,8 @@ fn cpp_scalar_kernel_type(value_type: &CppType) -> Result<CType, String> {
         Ok(kind.kernel_type())
     } else if is_native_object_pointer(value_type) {
         cpp_return_scalar_type(value_type)
+    } else if scalar::record_pointee(value_type).is_some() {
+        Ok(CType::Int32Pointer)
     } else {
         Err("unsupported C++ scalar kernel type".into())
     }

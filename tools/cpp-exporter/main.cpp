@@ -912,16 +912,20 @@ private:
     const bool function_pointer =
         !parameter->getType().hasQualifiers() &&
         function_pointer_prototype(parameter->getType()) != nullptr;
+    const auto *pointed_record = record_pointer_target(parameter->getType());
     if (!int_reference && record_reference == nullptr && !mutable_int_pointer &&
         !by_value_bool && !by_value_integer && !trivial_record_value &&
-        !function_pointer) {
+        !function_pointer && pointed_record == nullptr) {
       fail(parameter->getLocation(),
            "the supported C++ parameter must be a by-value bool or "
            "signed/unsigned "
            "32/64/128-bit integer or unsigned char, a native element "
            "reference (int, unsigned int, unsigned char or std::byte, possibly const), a const signed-64 reference, or mutable int* parameter, mutable unsigned int*/unsigned char* parameter, or a "
            "mutable or const simple-record reference parameter, a trivially copied simple-record value, "
-           "or a pointer to a noexcept function");
+           "a mutable pointer to a simple record, or a pointer to a noexcept function");
+      return std::nullopt;
+    }
+    if (pointed_record != nullptr && !remember_record(pointed_record)) {
       return std::nullopt;
     }
     if (record_reference != nullptr && !remember_record(record_reference)) {
@@ -989,6 +993,21 @@ private:
          context_.hasSameType(unqualified, context_.UnsignedCharTy) ||
          (supported_byte_enum(type) &&
           type->getAs<clang::EnumType>()->getDecl()->getQualifiedNameAsString() == "std::byte"));
+  }
+
+  // A mutable pointer to a simple, complete, non-polymorphic record, such
+  // as a list node's `Node* next`: its value is the record's address or
+  // null, and `p->field` reads the record it points to.
+  const clang::CXXRecordDecl *record_pointer_target(clang::QualType type) const {
+    const auto *pointer = type->getAs<clang::PointerType>();
+    if (pointer == nullptr || type.hasQualifiers() ||
+        pointer->getPointeeType().hasQualifiers())
+      return nullptr;
+    const auto *record = pointer->getPointeeType()->getAsCXXRecordDecl();
+    record = record == nullptr ? nullptr : record->getDefinition();
+    if (record == nullptr || record->isPolymorphic() || record->getNumBases() != 0)
+      return nullptr;
+    return record;
   }
 
   bool supported_byte_pointer_cast(const clang::CastExpr *cast) const {
@@ -1630,6 +1649,27 @@ private:
       }
       return lower_call(call, function);
     }
+    // `delete p`: the end of one simple record that `new` allocated, whose
+    // destruction does nothing. Deleting null does nothing.
+    if (const auto *deleted = llvm::dyn_cast<clang::CXXDeleteExpr>(statement)) {
+      const auto *record = record_pointer_target(deleted->getArgument()->IgnoreImpCasts()->getType());
+      const auto *deallocator = deleted->getOperatorDelete();
+      if (deleted->isArrayForm() || record == nullptr || deallocator == nullptr ||
+          !deallocator->isReplaceableGlobalAllocationFunction() ||
+          !record->hasTrivialDestructor()) {
+        fail(deleted->getBeginLoc(),
+             "a supported C++ `delete` ends one simple record with trivial destruction "
+             "through the global operator delete");
+        return std::nullopt;
+      }
+      auto pointer = lower_expression(deleted->getArgument(), function);
+      if (!pointer) return std::nullopt;
+      llvm::json::Object result;
+      result["kind"] = "delete_object";
+      result["pointer"] = std::move(*pointer);
+      result["span"] = span(deleted->getSourceRange());
+      return Json(std::move(result));
+    }
     if (const auto *binary = llvm::dyn_cast<clang::BinaryOperator>(statement)) {
       if (binary->getOpcode() != clang::BO_Assign &&
           binary->getOpcode() != clang::BO_AddAssign &&
@@ -1637,6 +1677,19 @@ private:
         fail(binary->getOperatorLoc(),
              "the first C++ slice supports only simple assignment statements");
         return std::nullopt;
+      }
+      if (const auto *created =
+              llvm::dyn_cast<clang::CXXNewExpr>(binary->getRHS()->IgnoreParenImpCasts());
+          created != nullptr && binary->getOpcode() == clang::BO_Assign) {
+        auto target = lower_place_reference(binary->getLHS()->IgnoreParens(), function);
+        if (!target) return std::nullopt;
+        auto object = lower_new_object(created, function);
+        if (!object) return std::nullopt;
+        llvm::json::Object result = std::move(*object->getAsObject());
+        result["kind"] = "new_object";
+        result["target"] = std::move(*target);
+        result["span"] = span(binary->getSourceRange());
+        return Json(std::move(result));
       }
       auto value = lower_expression(binary->getRHS(), function);
       if (!value) {
@@ -2216,8 +2269,13 @@ private:
         !local->getType().isVolatileQualified() && !local->getType().isRestrictQualified();
     const bool mutable_int = scalar_int && !local->getType().isConstQualified();
     const auto *local_pointer = local->getType()->getAs<clang::PointerType>();
-    const bool mutable_pointer = local_pointer && !local->getType().hasQualifiers() &&
-        !local_pointer->getPointeeType().hasQualifiers() && supported_pointer_element(local_pointer->getPointeeType());
+    const auto *pointed_record = record_pointer_target(local->getType());
+    const bool mutable_pointer = (local_pointer && !local->getType().hasQualifiers() &&
+        !local_pointer->getPointeeType().hasQualifiers() && supported_pointer_element(local_pointer->getPointeeType())) ||
+        pointed_record != nullptr;
+    if (pointed_record != nullptr && !remember_record(pointed_record)) {
+      return std::nullopt;
+    }
     const auto *local_reference = local->getType()->getAs<clang::LValueReferenceType>();
     const bool int_reference = local_reference != nullptr &&
         supported_pointer_element(local_reference->getPointeeType());
@@ -2245,7 +2303,7 @@ private:
       fail(local->getLocation(),
            "the supported automatic C++ local must resolve to "
            "signed/unsigned "
-           "32/64/128-bit integer or unsigned char, an initialized native object pointer, a native element lvalue reference, a function pointer, or one simple record object");
+           "32/64/128-bit integer or unsigned char, an initialized native object or simple record pointer, a native element lvalue reference, a function pointer, or one simple record object");
       return std::nullopt;
     }
     if (!local->hasInit() && !mutable_int) {
@@ -2337,6 +2395,30 @@ private:
       initializer["kind"] = "construction_call";
       initializer["callee"] = std::move(operation->callee);
       initializer["arguments"] = std::move(operation->arguments);
+      initializer["span"] = span(source_initializer->getSourceRange());
+    } else if (record_object &&
+               member_initialized_default_construction(source_initializer, record)) {
+      // The implicit default constructor runs each default member
+      // initializer in declaration order and nothing else.
+      if (!remember_record(record)) return std::nullopt;
+      llvm::json::Array fields;
+      for (const clang::FieldDecl *field : record->fields()) {
+        const clang::Expr *member_initializer = field->getInClassInitializer();
+        auto value = lower_expression(member_initializer, function);
+        if (!value) return std::nullopt;
+        llvm::json::Object field_reference;
+        field_reference["record_declaration_id"] = declaration_id(record);
+        field_reference["declaration_id"] = declaration_id(field);
+        field_reference["name"] = field->getNameAsString();
+        field_reference["span"] = span(field->getSourceRange());
+        llvm::json::Object field_initializer;
+        field_initializer["field"] = std::move(field_reference);
+        field_initializer["value"] = std::move(*value);
+        field_initializer["span"] = span(member_initializer->getSourceRange());
+        fields.push_back(std::move(field_initializer));
+      }
+      initializer["kind"] = "aggregate";
+      initializer["fields"] = std::move(fields);
       initializer["span"] = span(source_initializer->getSourceRange());
     } else if (record_object && record->isAggregate()) {
       const auto *semantic_list =
@@ -3846,9 +3928,10 @@ private:
         return std::nullopt;
       }
       const auto *pointer = cast->getType()->getAs<clang::PointerType>();
-      if (pointer == nullptr || pointer->getPointeeType().hasQualifiers() ||
-          !supported_pointer_element(pointer->getPointeeType())) {
-        fail(cast->getExprLoc(), "C++ null pointer literal requires a mutable int32 pointer, uint32 pointer or unsigned-byte pointer");
+      if ((pointer == nullptr || pointer->getPointeeType().hasQualifiers() ||
+           !supported_pointer_element(pointer->getPointeeType())) &&
+          record_pointer_target(cast->getType()) == nullptr) {
+        fail(cast->getExprLoc(), "C++ null pointer literal requires a mutable int32 pointer, uint32 pointer, unsigned-byte pointer or simple record pointer");
         return std::nullopt;
       }
       auto value_type = lower_type(cast->getType().getUnqualifiedType(), cast->getExprLoc());
@@ -4553,18 +4636,23 @@ private:
           array->getSize().getZExtValue() <= std::numeric_limits<std::uint32_t>::max();
       const auto *embedded = type->getAsCXXRecordDecl();
       const bool mutable_record = embedded != nullptr && !type.hasQualifiers();
+      const auto *pointed_record = record_pointer_target(type);
       // Access control is checked by Clang at each source use. It does not
       // change the layout or memory authority of a resolved data field.
       if (field->isBitField() ||
-          field->isMutable() || field->hasInClassInitializer() ||
+          field->isMutable() ||
+          (field->hasInClassInitializer() && !constant_member_initializer(field)) ||
           field->getName().empty() ||
-          (!mutable_int && !mutable_int_pointer && !mutable_record && !native_array)) {
+          (!mutable_int && !mutable_int_pointer && !mutable_record && !native_array &&
+           pointed_record == nullptr)) {
         fail(
             field->getLocation(),
             "the supported C++ record fields must be named mutable 32/64-bit "
-            "integers, unsigned char, mutable pointers to or nonempty arrays of native int/unsigned int/unsigned char/std::byte elements, or embedded record fields without bit-fields");
+            "integers, unsigned char, mutable pointers to or nonempty arrays of native int/unsigned int/unsigned char/std::byte elements, mutable pointers to simple records, or embedded record fields without bit-fields");
         return false;
       }
+      if (pointed_record != nullptr && !remember_record(pointed_record))
+        return false;
       if (mutable_record) {
         if (!remember_record(embedded))
           return false;
@@ -4885,10 +4973,15 @@ private:
 
   bool validate_member_object(const clang::MemberExpr *member,
                               const clang::CXXRecordDecl *owner) {
+    // `p->field` reads through a record pointer held by a parameter or a
+    // local, which roots the place; a pointer read from a field or returned
+    // by a call does not.
     if (member->isArrow() &&
-        !llvm::isa<clang::CXXThisExpr>(member->getBase()->IgnoreParenImpCasts())) {
+        !llvm::isa<clang::CXXThisExpr>(member->getBase()->IgnoreParenImpCasts()) &&
+        !record_pointer_variable(member->getBase())) {
       fail(member->getOperatorLoc(),
-           "C++ field projections cannot traverse record pointers; arrow access requires the current object");
+           "C++ field projections cannot traverse record pointers; arrow access requires the current object "
+           "or a record pointer parameter or local");
       return false;
     }
     auto type = member->getBase()->getType();
@@ -4900,6 +4993,118 @@ private:
       return false;
     }
     return remember_record(owner);
+  }
+
+  // `new R{v...}`, the allocation of one simple record initialized with one
+  // value per field in declaration order, as `expression` when it is one.
+  // The global replaceable `operator new` allocates it; its failure throws
+  // `std::bad_alloc`, which ends the program in a `noexcept` function, the
+  // only place one is admitted. `{"record": ..., "fields": [...]}`.
+  std::optional<Json> lower_new_object(const clang::CXXNewExpr *created,
+                                       const clang::FunctionDecl *function) {
+    const auto *prototype = function->getType()->getAs<clang::FunctionProtoType>();
+    const auto *record = record_pointer_target(created->getType());
+    const auto *allocator = created->getOperatorNew();
+    if (prototype == nullptr || !prototype->isNothrow()) {
+      fail(created->getBeginLoc(),
+           "a C++ `new` expression is supported in a noexcept function, where a failed "
+           "allocation ends the program");
+      return std::nullopt;
+    }
+    if (created->isArray() || created->getNumPlacementArgs() != 0 || record == nullptr ||
+        allocator == nullptr || !allocator->isReplaceableGlobalAllocationFunction() ||
+        !record->isAggregate() || !record->hasTrivialDestructor() ||
+        has_stateless_field(record)) {
+      fail(created->getBeginLoc(),
+           "a supported C++ `new` allocates one simple aggregate record with the global "
+           "operator new");
+      return std::nullopt;
+    }
+    if (!remember_record(record)) return std::nullopt;
+    const auto *semantic_list =
+        llvm::dyn_cast_or_null<clang::InitListExpr>(created->getInitializer());
+    const clang::InitListExpr *syntactic_list = semantic_list;
+    if (semantic_list != nullptr && semantic_list->getSyntacticForm() != nullptr)
+      syntactic_list = semantic_list->getSyntacticForm();
+    const unsigned field_count = std::distance(record->field_begin(), record->field_end());
+    if (created->getInitializationStyle() != clang::CXXNewInitializationStyle::Braces ||
+        syntactic_list == nullptr || syntactic_list->getNumInits() != field_count) {
+      fail(created->getBeginLoc(),
+           "a supported C++ `new` requires one direct brace initializer per field in "
+           "declaration order");
+      return std::nullopt;
+    }
+    llvm::json::Array fields;
+    unsigned index = 0;
+    for (const clang::FieldDecl *field : record->fields()) {
+      const clang::Expr *field_source = syntactic_list->getInit(index);
+      auto value = lower_expression(semantic_list->getInit(index), function);
+      ++index;
+      if (!value) return std::nullopt;
+      llvm::json::Object field_reference;
+      field_reference["record_declaration_id"] = declaration_id(record);
+      field_reference["declaration_id"] = declaration_id(field);
+      field_reference["name"] = field->getNameAsString();
+      field_reference["span"] = span(field->getSourceRange());
+      llvm::json::Object field_initializer;
+      field_initializer["field"] = std::move(field_reference);
+      field_initializer["value"] = std::move(*value);
+      field_initializer["span"] = span(field_source->getSourceRange());
+      fields.push_back(std::move(field_initializer));
+    }
+    auto record_type = lower_type(created->getAllocatedType(), created->getBeginLoc());
+    if (!record_type) return std::nullopt;
+    llvm::json::Object result;
+    result["record"] = std::move(*record_type);
+    result["fields"] = std::move(fields);
+    return Json(std::move(result));
+  }
+
+  // A default member initializer the importer can read without running
+  // code: `nullptr`, or an integer or `bool` literal, as `Node* head =
+  // nullptr;` and `unsigned long count = 0;` are.
+  static bool constant_member_initializer(const clang::FieldDecl *field) {
+    const clang::Expr *value = field->getInClassInitializer();
+    if (value == nullptr) return false;
+    value = value->IgnoreParenImpCasts();
+    return llvm::isa<clang::CXXNullPtrLiteralExpr>(value) ||
+           llvm::isa<clang::IntegerLiteral>(value) ||
+           llvm::isa<clang::CXXBoolLiteralExpr>(value);
+  }
+
+  // A local built by its record's implicit or first-declaration-defaulted
+  // default constructor, which only runs each field's default member
+  // initializer: every field has a constant one, and the record has no base
+  // and trivial destruction. `Stack<int> stack;`
+  bool member_initialized_default_construction(const clang::Expr *initializer,
+                                               const clang::CXXRecordDecl *record) const {
+    const auto *construction =
+        llvm::dyn_cast<clang::CXXConstructExpr>(initializer->IgnoreParenImpCasts());
+    const auto *constructor =
+        construction == nullptr ? nullptr : construction->getConstructor();
+    if (constructor == nullptr || !constructor->isDefaultConstructor() ||
+        construction->getNumArgs() != 0 || record->getNumBases() != 0 ||
+        record->isPolymorphic() || !record->hasTrivialDestructor() ||
+        !(constructor->isImplicit() || constructor->isExplicitlyDefaulted()) ||
+        has_stateless_field(record) || record->field_empty())
+      return false;
+    for (const clang::FieldDecl *field : record->fields())
+      if (!constant_member_initializer(field)) return false;
+    return true;
+  }
+
+  // Whether `base`, the object operand of an arrow, reads a parameter or
+  // local that holds a record pointer.
+  bool record_pointer_variable(const clang::Expr *base) const {
+    const auto *cast = llvm::dyn_cast<clang::ImplicitCastExpr>(base->IgnoreParens());
+    if (cast == nullptr || cast->getCastKind() != clang::CK_LValueToRValue)
+      return false;
+    const auto *reference =
+        llvm::dyn_cast<clang::DeclRefExpr>(cast->getSubExpr()->IgnoreParens());
+    const auto *variable =
+        reference == nullptr ? nullptr : llvm::dyn_cast<clang::VarDecl>(reference->getDecl());
+    return variable != nullptr && variable->hasLocalStorage() &&
+           record_pointer_target(variable->getType()) != nullptr;
   }
 
   Json field_reference(const clang::MemberExpr *member,

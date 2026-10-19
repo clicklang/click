@@ -3620,6 +3620,19 @@ impl C0Function {
         self
     }
 
+    /// A foreign adapter's struct-pointer result, a C++ `Node*`: its
+    /// contract reads `result->field` through the struct's layout.
+    pub(crate) fn with_struct_pointer_return(
+        mut self,
+        name: String,
+        layout: C0StructLayout,
+    ) -> Self {
+        self.return_type = C0Type::Int32Pointer;
+        self.structs.insert(name.clone(), layout);
+        self.return_pointer_struct_name = Some(name);
+        self
+    }
+
     /// Preserve a foreign adapter's by-value return identity for sidecar checks.
     pub(crate) fn with_struct_return(mut self, name: String, layout: C0StructLayout) -> Self {
         self.return_type = struct_value_type(&layout);
@@ -4419,6 +4432,12 @@ impl C0Expression {
 }
 
 impl C0StructLayout {
+    /// The struct's class for the strict-aliasing check, when it has one
+    /// (`design/effective-types.md`).
+    pub(crate) fn class(&self) -> Option<&crate::kernel::effective_type::CStructClass> {
+        self.class.as_ref()
+    }
+
     /// Constructs the proof-facing view of a flat, compiler-laid-out record.
     ///
     /// This is intentionally narrower than the C parser's aggregate builder:
@@ -4476,8 +4495,12 @@ impl C0StructLayout {
         let mut aggregate_fields = Vec::with_capacity(fields.len());
         let mut previous_end = 0u32;
         for (name, c_type, struct_name, offset_bytes, byte_width) in fields {
+            // A pointer field's struct name is its pointee's, as a C
+            // `struct node *next` field's is: it embeds nothing, so the
+            // pointee may be this struct itself.
             let nested = struct_name
                 .as_ref()
+                .filter(|_| c_type != C0Type::Int32Pointer)
                 .map(|name| {
                     structs
                         .get(name)
@@ -5444,6 +5467,57 @@ impl C0Statement {
         &self,
         targets: &BTreeMap<String, (crate::kernel::CControlTargetId, usize)>,
     ) -> crate::kernel::CStatement {
+        enum Task<'a> {
+            Visit(&'a C0Statement),
+            Seq,
+            If(&'a C0Expression),
+        }
+        let mut tasks = vec![Task::Visit(self)];
+        let mut results = Vec::new();
+        while let Some(task) = tasks.pop() {
+            crate::instrumentation::record_deterministic_work(1);
+            match task {
+                Task::Visit(Self::Seq(first, second)) => {
+                    tasks.push(Task::Seq);
+                    tasks.push(Task::Visit(second));
+                    tasks.push(Task::Visit(first));
+                }
+                Task::Visit(Self::If {
+                    condition,
+                    then_branch,
+                    else_branch,
+                    ..
+                }) => {
+                    tasks.push(Task::If(condition));
+                    tasks.push(Task::Visit(else_branch));
+                    tasks.push(Task::Visit(then_branch));
+                }
+                Task::Visit(Self::Label { statement, .. }) => tasks.push(Task::Visit(statement)),
+                Task::Visit(statement) => results.push(statement.to_kernel_statement_leaf(targets)),
+                Task::Seq => {
+                    let second = results.pop().expect("second statement");
+                    let first = results.pop().expect("first statement");
+                    results.push(crate::kernel::c_seq(first, second));
+                }
+                Task::If(condition) => {
+                    let else_branch = results.pop().expect("else statement");
+                    let then_branch = results.pop().expect("then statement");
+                    results.push(crate::kernel::c_if(
+                        condition.to_kernel_expression(),
+                        then_branch,
+                        else_branch,
+                    ));
+                }
+            }
+        }
+        debug_assert_eq!(results.len(), 1);
+        results.pop().expect("root statement")
+    }
+
+    fn to_kernel_statement_leaf(
+        &self,
+        targets: &BTreeMap<String, (crate::kernel::CControlTargetId, usize)>,
+    ) -> crate::kernel::CStatement {
         match self {
             Self::Skip => crate::kernel::c_skip(),
             Self::Break => crate::kernel::c_break(),
@@ -5454,8 +5528,8 @@ impl C0Statement {
                     .expect("validated C goto target has a kernel identity")
                     .0,
             ),
-            Self::Label { statement, .. } => {
-                statement.to_kernel_statement_with_control_targets(targets)
+            Self::Label { .. } | Self::Seq(..) | Self::If { .. } => {
+                unreachable!("structured statement handled by the iterative visitor")
             }
             Self::Declare {
                 c_type,
@@ -5540,6 +5614,7 @@ impl C0Statement {
                 bytes: bytes.to_kernel_expression(),
                 zeroed: *zeroed,
                 object_type: object_type.clone(),
+                ends_program_on_failure: false,
             },
             Self::HeapFree { pointer, .. } => {
                 crate::kernel::c_heap_free(pointer.to_kernel_expression())
@@ -5547,10 +5622,6 @@ impl C0Statement {
             Self::Assert {
                 condition, label, ..
             } => crate::kernel::c_labeled_assert(condition.to_kernel_expression(), label.clone()),
-            Self::Seq(first, second) => crate::kernel::c_seq(
-                first.to_kernel_statement_with_control_targets(targets),
-                second.to_kernel_statement_with_control_targets(targets),
-            ),
             Self::Return(expression, _) => {
                 crate::kernel::c_return(expression.to_kernel_expression())
             }
@@ -5619,16 +5690,6 @@ impl C0Statement {
                     C0UpdateOperator::BitwiseXor => crate::kernel::CUpdateOperator::BitwiseXor,
                 },
                 operand.to_kernel_expression(),
-            ),
-            Self::If {
-                condition,
-                then_branch,
-                else_branch,
-                ..
-            } => crate::kernel::c_if(
-                condition.to_kernel_expression(),
-                then_branch.to_kernel_statement_with_control_targets(targets),
-                else_branch.to_kernel_statement_with_control_targets(targets),
             ),
             Self::While {
                 condition, body, ..
@@ -12154,11 +12215,149 @@ impl Parser {
     /// Statements nested inside it were parsed here first and keep theirs.
     #[inline(never)]
     fn parse_statement(&mut self) -> Result<C0Statement, C0SyntaxError> {
+        if self.peek_ident() == Some("if") || self.peek() == Some(&Token::LBrace) {
+            let controlled_depth = self.controlled_statement_depth;
+            let result = self.parse_statement_iterative();
+            self.controlled_statement_depth = controlled_depth;
+            return result;
+        }
+        // The ordinary leaf path must keep the large conditional dispatcher
+        // out of expression parsing's small-stack callers.
         let start = self.position;
         let mut statement = self.parse_statement_unsited()?;
         let site = self.site_between(start, self.position);
         fill_missing_sites(&mut statement, &site);
         Ok(statement)
+    }
+
+    /// Keep conditional bodies and their blocks off the native call stack.
+    /// A completed block is already lowered; its parent need inspect only its
+    /// own condition instead of walking every nested body again.
+    #[inline(never)]
+    fn parse_statement_iterative(&mut self) -> Result<C0Statement, C0SyntaxError> {
+        enum Task {
+            Parse(Option<&'static str>),
+            Site(usize),
+            Controlled,
+            Block(Vec<C0Statement>, bool),
+            BlockChild(Vec<C0Statement>, bool),
+            Then(Box<C0Expression>),
+            Else(Box<C0Expression>, Box<C0Statement>, bool),
+        }
+        let mut tasks = vec![Task::Parse(None)];
+        let mut results: Vec<(C0Statement, bool)> = Vec::new();
+        while let Some(task) = tasks.pop() {
+            crate::instrumentation::record_deterministic_work(1);
+            match task {
+                Task::Parse(controlled) => {
+                    if let Some(construct) = controlled {
+                        self.controlled_statement_depth += 1;
+                        tasks.push(Task::Controlled);
+                        if self.peek() != Some(&Token::LBrace) && self.is_type_start() {
+                            return Err(self.error_here(format!(
+                                "a declaration controlled by `{construct}` must be enclosed in braces"
+                            )));
+                        }
+                    }
+                    if controlled.is_none() || self.peek() != Some(&Token::LBrace) {
+                        tasks.push(Task::Site(self.position));
+                    }
+                    if self.peek() == Some(&Token::LBrace) {
+                        self.expect(Token::LBrace)?;
+                        if self.current_function_source_name.is_some() {
+                            self.function_block_depth += 1;
+                        }
+                        self.push_scope();
+                        tasks.push(Task::Block(Vec::new(), false));
+                    } else if self.peek_ident() == Some("if") {
+                        self.position += 1;
+                        self.expect(Token::LParen)?;
+                        let condition = self.parse_expression()?;
+                        self.expect(Token::RParen)?;
+                        tasks.push(Task::Then(Box::new(condition)));
+                        tasks.push(Task::Parse(Some("if")));
+                    } else {
+                        let statement = self.parse_statement_unsited()?;
+                        let lowerable = self.statement_contains_lowerable_expression(&statement);
+                        results.push((statement, lowerable));
+                    }
+                }
+                Task::Site(start) => {
+                    let (mut statement, lowerable) = results.pop().expect("parsed statement");
+                    let site = self.site_between(start, self.position);
+                    fill_missing_sites(&mut statement, &site);
+                    results.push((statement, lowerable));
+                }
+                Task::Controlled => self.controlled_statement_depth -= 1,
+                Task::Block(statements, lowerable) => {
+                    if self.peek() == Some(&Token::RBrace) {
+                        self.expect(Token::RBrace)?;
+                        let body =
+                            balanced_statement_sequence(statements).unwrap_or(C0Statement::Skip);
+                        let body = if lowerable {
+                            self.lower_statement_calls(body)?
+                        } else {
+                            body
+                        };
+                        self.pop_scope();
+                        if self.current_function_source_name.is_some() {
+                            self.function_block_depth -= 1;
+                        }
+                        results.push((body, false));
+                    } else {
+                        if self.peek().is_none() {
+                            return Err(
+                                self.error_here("expected statement or `}`, got end of input")
+                            );
+                        }
+                        tasks.push(Task::BlockChild(statements, lowerable));
+                        tasks.push(Task::Parse(None));
+                    }
+                }
+                Task::BlockChild(mut statements, lowerable) => {
+                    let (statement, child_lowerable) = results.pop().expect("block child");
+                    statements.push(statement);
+                    tasks.push(Task::Block(statements, lowerable || child_lowerable));
+                }
+                Task::Then(condition) => {
+                    let (then_branch, lowerable) = results.pop().expect("then branch");
+                    if self.peek_ident() == Some("else") {
+                        self.position += 1;
+                        tasks.push(Task::Else(condition, Box::new(then_branch), lowerable));
+                        tasks.push(Task::Parse(Some("else")));
+                    } else {
+                        let lowerable =
+                            lowerable || self.expression_contains_lowerable_expression(&condition);
+                        results.push((
+                            C0Statement::If {
+                                condition: *condition,
+                                then_branch: Box::new(then_branch),
+                                else_branch: Box::new(C0Statement::Skip),
+                                site: C0Site::NONE,
+                            },
+                            lowerable,
+                        ));
+                    }
+                }
+                Task::Else(condition, then_branch, lowerable) => {
+                    let (else_branch, else_lowerable) = results.pop().expect("else branch");
+                    let lowerable = lowerable
+                        || else_lowerable
+                        || self.expression_contains_lowerable_expression(&condition);
+                    results.push((
+                        C0Statement::If {
+                            condition: *condition,
+                            then_branch,
+                            else_branch: Box::new(else_branch),
+                            site: C0Site::NONE,
+                        },
+                        lowerable,
+                    ));
+                }
+            }
+        }
+        debug_assert_eq!(results.len(), 1);
+        Ok(results.pop().expect("root statement").0)
     }
 
     /// The site of the statement written from token `start` up to (not

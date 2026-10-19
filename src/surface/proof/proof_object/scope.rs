@@ -621,6 +621,15 @@ impl<'a> ProofScope<'a> {
         Ok(Some(next))
     }
 
+    pub(in crate::surface::proof) fn try_direct_model_equality_rewrite_closure(
+        &self,
+    ) -> Option<Self> {
+        let body = self.body.try_direct_model_equality_rewrite_closure()?;
+        let mut next = self.clone();
+        next.body = body;
+        Some(next)
+    }
+
     pub(in crate::surface::proof) fn try_simp_closure(&self) -> Result<Option<Self>, ClickError> {
         let Some(mut body) = self.body.try_simp_closure()? else {
             return Ok(None);
@@ -1056,6 +1065,7 @@ impl<'a> ProofScope<'a> {
                             load: None,
                             read_equalities: Vec::new(),
                             read_context_changed: false,
+                            transport: None,
                             resources: Vec::new(),
                             more_resources: 0,
                         },

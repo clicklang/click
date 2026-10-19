@@ -2357,36 +2357,44 @@ pub(in crate::kernel) fn indexed_store_byte_separation_evidence(
     if assumptions.pointers_proven_equal_ignoring_memory_separation(write, pointer) {
         return None;
     }
+    let check_stated = |proposition: &Proposition| {
+        crate::instrumentation::record_deterministic_work(1);
+        let (left, right) = proposition.memory_separation()?;
+        let (orientation, write_membership, load_membership) = if let (Some(w), Some(r)) = (
+            AccessInRangeEvidence::for_access(write, write_bytes, left, assumptions),
+            AccessInRangeEvidence::for_access(pointer, load_bytes, right, assumptions),
+        ) {
+            (StoreSeparatedRangeOrientation::WriteLeftLoadRight, w, r)
+        } else if let (Some(w), Some(r)) = (
+            AccessInRangeEvidence::for_access(write, write_bytes, right, assumptions),
+            AccessInRangeEvidence::for_access(pointer, load_bytes, left, assumptions),
+        ) {
+            (StoreSeparatedRangeOrientation::WriteRightLoadLeft, w, r)
+        } else {
+            return None;
+        };
+        if assumptions.memory_ranges_overlap_after_base_equality(left, right) {
+            return None;
+        }
+        crate::kernel::record_implicit_reasoning_provenance(assumptions, proposition);
+        Some(MemoryDagHopJustification::StoreSeparatedRanges {
+            authority: StoreSeparatedRangesAuthority::ExactProposition(proposition.clone()),
+            left: left.clone(),
+            right: right.clone(),
+            orientation,
+            write_membership,
+            load_membership,
+        })
+    };
     assumptions
         .anchored_memory_separation_candidates(write, pointer)
-        .find_map(|proposition| {
-            crate::instrumentation::record_deterministic_work(1);
-            let (left, right) = proposition.memory_separation()?;
-            let (orientation, write_membership, load_membership) = if let (Some(w), Some(r)) = (
-                AccessInRangeEvidence::for_access(write, write_bytes, left, assumptions),
-                AccessInRangeEvidence::for_access(pointer, load_bytes, right, assumptions),
-            ) {
-                (StoreSeparatedRangeOrientation::WriteLeftLoadRight, w, r)
-            } else if let (Some(w), Some(r)) = (
-                AccessInRangeEvidence::for_access(write, write_bytes, right, assumptions),
-                AccessInRangeEvidence::for_access(pointer, load_bytes, left, assumptions),
-            ) {
-                (StoreSeparatedRangeOrientation::WriteRightLoadLeft, w, r)
-            } else {
-                return None;
-            };
-            if assumptions.memory_ranges_overlap_after_base_equality(left, right) {
-                return None;
-            }
-            crate::kernel::record_implicit_reasoning_provenance(assumptions, proposition);
-            Some(MemoryDagHopJustification::StoreSeparatedRanges {
-                authority: StoreSeparatedRangesAuthority::ExactProposition(proposition.clone()),
-                left: left.clone(),
-                right: right.clone(),
-                orientation,
-                write_membership,
-                load_membership,
-            })
+        .find_map(check_stated)
+        .or_else(|| {
+            assumptions
+                .separated_address_classes
+                .candidates(write, pointer, &assumptions.equality_graph)
+                .iter()
+                .find_map(check_stated)
         })
         .or_else(|| {
             owned_composition_store_separated_evidence_impl(
@@ -2915,12 +2923,24 @@ pub(in crate::kernel) fn complete_pointer_read_value(
     Some(value)
 }
 
+#[cfg(test)]
+thread_local! {
+    static COMPLETE_POINTER_RECOVERY_QUERIES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+pub(super) fn complete_pointer_recovery_queries() -> usize {
+    COMPLETE_POINTER_RECOVERY_QUERIES.with(std::cell::Cell::get)
+}
+
 /// Recover an actual complete pointer or pointer-carrying integer store.
 /// Numeric scalar bytes never manufacture a representation record.
 pub(in crate::kernel) fn complete_pointer_carrier_read_value(
     origin: &Pointer,
     assumptions: &PureFactContext,
 ) -> Option<CValue> {
+    #[cfg(test)]
+    COMPLETE_POINTER_RECOVERY_QUERIES.with(|count| count.set(count.get() + 1));
     let read = origin.as_loaded_value()?;
     // A copied value uses the same whole-byte frame premises as a read
     // retained in place. In particular, an explicit separation of the

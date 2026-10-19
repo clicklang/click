@@ -396,6 +396,38 @@ that names both spellings; a C++ `int*` parameter stays a pointer. A member
 function's receiver is the pointer `this`, as in C++: `this->fee`,
 `owns *this`.
 
+A pointer to a simple record, `Node*`, is a parameter, a local, a field and a
+result, its value the record's address or null. `p->field` reads and writes
+the record when `p` is a parameter or local. An arrow through a field or a
+call result, `p->next->value`, is refused. `nullptr` initializes and assigns
+one, and `==` and `!=` compare two of one record type. The sidecar writes the
+type as the source does, in a head and in a specification's binder: a
+resource over `p: Node*` describes a list by its nodes
+(`mdtests/cpp_record_pointers.md`). A pointer to a polymorphic class is
+refused.
+
+`target = new Node{v, n};` allocates one such record with the global
+`operator new`, its brace initializer naming one value per field in
+declaration order, and assigns its address to a local or field. It is
+admitted in a `noexcept` function: a failed allocation throws
+`std::bad_alloc`, which there ends the program, so the result is never null
+and the caller holds `allocation(p, sizeof(Node))` and `*p`, as after a
+successful `malloc`. A contract writes `sizeof(Node)` for the record's size
+and `aligned(p, 8)` where a callee needs the pointer's alignment. `delete p;`
+ends a record with trivial destruction through the global `operator delete`,
+needing the same resources as `free`; deleting null does nothing
+(`mdtests/cpp_new_delete.md`). Array `new` and `delete[]`, placement `new`,
+class-specific allocation functions and `new` in a declaration are refused.
+
+A field may have a constant default member initializer, `Node* head =
+nullptr;` or `unsigned long count = 0;`. A local built by the record's implicit
+or defaulted default constructor, `Stack<int> stack;`, where every field has
+one, is initialized from them in declaration order, as the constructor does.
+A scalar local may be passed for a native reference parameter, `int out = 0;
+stack.pop(out);`: the callee receives its address. These and record pointers
+and `new` verify the class template `Stack<T>` at its `int` instance
+(`examples/cpp-stack/`).
+
 Native `int&` and `const int&` results use `int32&` and `const int32&`
 sidecar results. `result` reads the returned referent; `&result` identifies its
 address. For example, a helper returning an existing reference parameter can

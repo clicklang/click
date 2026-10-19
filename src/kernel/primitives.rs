@@ -4123,6 +4123,10 @@ pub enum CStatement {
         zeroed: bool,
         /// A directly bound struct object: class, complete size, and alignment.
         object_type: Option<(crate::kernel::effective_type::CAccessClass, u32, u32)>,
+        /// The allocation's failure ends the program instead of yielding
+        /// null, as a C++ `new` does in a `noexcept` function: no execution
+        /// continues past a failure, so only the success outcome follows.
+        ends_program_on_failure: bool,
     },
     /// End the heap allocation named by `pointer`. Null is a no-op.
     HeapFree {
@@ -12165,6 +12169,8 @@ pub struct PureFactContext {
         (Pointer, Pointer),
         crate::persistent::PersistentSet<Proposition>,
     >,
+    /// Scoped separation authority selected through checked address classes.
+    pub(super) separated_address_classes: super::assumptions::SeparatedAddressIndex,
     /// Exact signed-order bounds keyed by either endpoint — under the term
     /// the fact wrote and, when different, its canonical form as an alias.
     /// Each entry carries the fact's own endpoint term first, so evidence
