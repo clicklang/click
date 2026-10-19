@@ -650,8 +650,9 @@ fn compiler_import_dependency_closure_projection_is_an_explicit_checked_option()
 }
 
 /// A copy of the pinned Adler-32 project, whose `zlib` directory holds the
-/// original zlib files and their sidecars: the project file, lock, prepared
-/// sources and every sidecar come along.
+/// zlib sidecars, beside a copy of the repository's `vendor` trees, which hold
+/// the original zlib files: the project file, lock, prepared sources and every
+/// sidecar come along.
 struct ZlibProject {
     _copy: tempfile::TempDir,
     zlib: PathBuf,
@@ -678,16 +679,20 @@ fn zlib_project() -> ZlibProject {
         }
     }
     let copy = tempfile::tempdir().expect("isolated offline Adler-32 project");
+    let repository = Path::new(env!("CARGO_MANIFEST_DIR"));
     copy_tree(
-        &Path::new(env!("CARGO_MANIFEST_DIR")).join("design/adler32"),
-        copy.path(),
+        &repository.join("design/adler32"),
+        &copy.path().join("design/adler32"),
     );
-    let zlib = copy.path().join("zlib");
+    let zlib = copy.path().join("design/adler32/project/zlib");
     ZlibProject { _copy: copy, zlib }
 }
 
-/// The prepared zlib `source` from the project's `zlib` unit, without the
-/// compiler.
+/// The original `adler32.c`, as the zlib sidecars spell it.
+const ZLIB_ADLER32: &str = "../../vendor/zlib-1.3.1/adler32.c";
+
+/// The prepared zlib `source`, spelled as from a zlib sidecar, from the
+/// project's units, without the compiler.
 fn zlib_imports(root: &Path, source: &str) -> Result<Vec<PreparedCImport>, String> {
     let project = click::project::Project::load(&root.join("..").join(click::project::FILE_NAME))?;
     let path = fs::canonicalize(root.join(source)).ok();
@@ -701,7 +706,7 @@ fn zlib_imports(root: &Path, source: &str) -> Result<Vec<PreparedCImport>, Strin
 fn pinned_zlib_empty_contract_verifies_offline_and_relocates() {
     let root = zlib_project();
     let imports =
-        zlib_imports(root.path(), "adler32.c").expect("offline locked zlib source closure");
+        zlib_imports(root.path(), ZLIB_ADLER32).expect("offline locked zlib source closure");
     let proof = fs::read_to_string(root.path().join("empty.click")).unwrap();
     let verified =
         verify_c0_prepared_sources(&proof, &imports).expect("unchanged zlib empty input");
@@ -722,7 +727,7 @@ fn pinned_zlib_empty_contract_verifies_offline_and_relocates() {
     verify_c0_prepared_sources(&expanded, &imports).expect("expanded zlib contract");
     let false_claim = proof.replace("ensures result == 1u64", "ensures result == 2u64");
     assert!(verify_c0_prepared_sources(&false_claim, &imports).is_err());
-    let header = root.path().join("zutil.h");
+    let header = root.path().join("../../vendor/zlib-1.3.1/zutil.h");
     fs::write(
         &header,
         format!(
@@ -731,7 +736,7 @@ fn pinned_zlib_empty_contract_verifies_offline_and_relocates() {
         ),
     )
     .unwrap();
-    assert!(zlib_imports(root.path(), "adler32.c").is_err());
+    assert!(zlib_imports(root.path(), ZLIB_ADLER32).is_err());
 }
 
 #[test]
@@ -739,17 +744,17 @@ fn pinned_zlib_empty_contract_verifies_offline_and_relocates() {
 fn pinned_zlib_one_byte_matches_checked_shared_specification_offline() {
     let root = zlib_project();
     let imports =
-        zlib_imports(root.path(), "adler32.c").expect("offline locked unchanged C source");
+        zlib_imports(root.path(), ZLIB_ADLER32).expect("offline locked unchanged C source");
     // Imported pure theorem interfaces are backed by their checked bodies in
     // this verification unit; no library result summary supplies the checksum.
-    let proof = include_str!("../design/adler32/zlib/one-byte.click")
+    let proof = include_str!("../design/adler32/project/zlib/one-byte.click")
         .replace(
             "import \"../adler32-spec.click\";",
-            include_str!("../design/adler32/adler32-spec.click"),
+            include_str!("../design/adler32/project/adler32-spec.click"),
         )
         .replace(
             "import \"byte.click\";",
-            include_str!("../design/adler32/zlib/byte.click"),
+            include_str!("../design/adler32/project/zlib/byte.click"),
         );
     let verified = verify_c0_prepared_sources(&proof, &imports).expect("shared one-byte checksum");
     let implementation = verified
@@ -790,25 +795,25 @@ fn pinned_zlib_one_byte_matches_checked_shared_specification_offline() {
 fn pinned_zlib_short_loop_matches_checked_shared_specification_offline() {
     let root = zlib_project();
     let imports =
-        zlib_imports(root.path(), "adler32.c").expect("offline locked unchanged zlib source");
-    let proof = include_str!("../design/adler32/zlib/short-memory.click")
+        zlib_imports(root.path(), ZLIB_ADLER32).expect("offline locked unchanged zlib source");
+    let proof = include_str!("../design/adler32/project/zlib/short-memory.click")
         .replace(
             "import \"byte.click\";",
-            include_str!("../design/adler32/zlib/byte.click"),
+            include_str!("../design/adler32/project/zlib/byte.click"),
         )
         .replace(
             "import \"short-prefix.click\";",
-            include_str!("../design/adler32/zlib/short-prefix.click"),
+            include_str!("../design/adler32/project/zlib/short-prefix.click"),
         )
         .replace(
             "import \"../adler2/count-bridge.click\";",
-            include_str!("../design/adler32/adler2/count-bridge.click"),
+            include_str!("../design/adler32/project/adler2/count-bridge.click"),
         )
         // Both the sidecar and prefix library import the shared specification.
         // Check each theorem body once, rather than assuming its interface.
         .replacen(
             "import \"../adler32-spec.click\";",
-            include_str!("../design/adler32/adler32-spec.click"),
+            include_str!("../design/adler32/project/adler32-spec.click"),
             1,
         )
         .replace("import \"../adler32-spec.click\";", "");
@@ -871,8 +876,8 @@ fn pinned_zlib_short_loop_matches_checked_shared_specification_offline() {
 #[test]
 fn pinned_zlib_null_reset_is_independent_of_seed_and_nonunit_length() {
     let root = zlib_project();
-    let imports = zlib_imports(root.path(), "adler32.c").unwrap();
-    let proof = include_str!("../design/adler32/zlib/reset.click");
+    let imports = zlib_imports(root.path(), ZLIB_ADLER32).unwrap();
+    let proof = include_str!("../design/adler32/project/zlib/reset.click");
     verify_c0_prepared_sources(proof, &imports).expect("unchanged C null reset path");
     assert!(
         verify_c0_prepared_sources(&proof.replace("result == 1u64", "result == 2u64"), &imports)
@@ -891,9 +896,9 @@ fn pinned_zlib_null_reset_is_independent_of_seed_and_nonunit_length() {
 
 #[test]
 fn adler_c_rust_correspondence_requires_matched_inputs() {
-    let source = include_str!("../design/adler32/adler2/correspondence.click").replace(
+    let source = include_str!("../design/adler32/project/adler2/correspondence.click").replace(
         "import \"../adler32-spec.click\";",
-        include_str!("../design/adler32/adler32-spec.click"),
+        include_str!("../design/adler32/project/adler32-spec.click"),
     );
     let verify_unit = |proof: &str, name: &str| {
         let start = proof.find(&format!("theorem {name}(")).unwrap();
@@ -940,9 +945,9 @@ fn adler_c_rust_correspondence_requires_matched_inputs() {
 #[test]
 #[ignore = "nightly: correspondence expansion and every shared-specification body"]
 fn adler_c_rust_correspondence_expands_with_checked_dependencies() {
-    let source = include_str!("../design/adler32/adler2/correspondence.click").replace(
+    let source = include_str!("../design/adler32/project/adler2/correspondence.click").replace(
         "import \"../adler32-spec.click\";",
-        include_str!("../design/adler32/adler32-spec.click"),
+        include_str!("../design/adler32/project/adler32-spec.click"),
     );
     click::surface::verify_click_theorems(&source)
         .expect("result correspondence and every shared-specification dependency body");
@@ -964,27 +969,27 @@ fn adler_c_rust_correspondence_expands_with_checked_dependencies() {
 fn pinned_zlib_sixteen_block_matches_checked_shared_specification_offline() {
     let root = zlib_project();
     let imports =
-        zlib_imports(root.path(), "adler32.c").expect("offline locked unchanged zlib source");
-    let proof = include_str!("../design/adler32/zlib/sixteen.click")
+        zlib_imports(root.path(), ZLIB_ADLER32).expect("offline locked unchanged zlib source");
+    let proof = include_str!("../design/adler32/project/zlib/sixteen.click")
         .replace(
             "import \"block.click\";",
-            include_str!("../design/adler32/zlib/block.click"),
+            include_str!("../design/adler32/project/zlib/block.click"),
         )
         .replace(
             "import \"short-prefix.click\";",
-            include_str!("../design/adler32/zlib/short-prefix.click"),
+            include_str!("../design/adler32/project/zlib/short-prefix.click"),
         )
         .replace(
             "import \"byte.click\";",
-            include_str!("../design/adler32/zlib/byte.click"),
+            include_str!("../design/adler32/project/zlib/byte.click"),
         )
         .replace(
             "import \"../adler2/count-bridge.click\";",
-            include_str!("../design/adler32/adler2/count-bridge.click"),
+            include_str!("../design/adler32/project/adler2/count-bridge.click"),
         )
         .replace(
             "import \"../adler32-spec.click\";",
-            include_str!("../design/adler32/adler32-spec.click"),
+            include_str!("../design/adler32/project/adler32-spec.click"),
         );
     let checked = verify_c0_prepared_sources(&proof, &imports)
         .expect("DO16 shared checksum, termination, byte preservation, and all helper bodies");
@@ -1037,31 +1042,31 @@ fn pinned_zlib_sixteen_block_matches_checked_shared_specification_offline() {
 fn pinned_zlib_repeated_blocks_match_checked_shared_specification_offline() {
     let root = zlib_project();
     let imports =
-        zlib_imports(root.path(), "adler32.c").expect("offline locked unchanged zlib source");
-    let proof = include_str!("../design/adler32/zlib/repeated.click")
+        zlib_imports(root.path(), ZLIB_ADLER32).expect("offline locked unchanged zlib source");
+    let proof = include_str!("../design/adler32/project/zlib/repeated.click")
         .replace(
             "import \"window.click\";",
-            include_str!("../design/adler32/zlib/window.click"),
+            include_str!("../design/adler32/project/zlib/window.click"),
         )
         .replace(
             "import \"block.click\";",
-            include_str!("../design/adler32/zlib/block.click"),
+            include_str!("../design/adler32/project/zlib/block.click"),
         )
         .replace(
             "import \"short-prefix.click\";",
-            include_str!("../design/adler32/zlib/short-prefix.click"),
+            include_str!("../design/adler32/project/zlib/short-prefix.click"),
         )
         .replace(
             "import \"byte.click\";",
-            include_str!("../design/adler32/zlib/byte.click"),
+            include_str!("../design/adler32/project/zlib/byte.click"),
         )
         .replace(
             "import \"../adler2/count-bridge.click\";",
-            include_str!("../design/adler32/adler2/count-bridge.click"),
+            include_str!("../design/adler32/project/adler2/count-bridge.click"),
         )
         .replace(
             "import \"../adler32-spec.click\";",
-            include_str!("../design/adler32/adler32-spec.click"),
+            include_str!("../design/adler32/project/adler32-spec.click"),
         );
     let checked = verify_c0_prepared_sources(&proof, &imports)
         .expect("repeated-block checksum, termination, byte preservation, and all helper bodies");
@@ -1112,35 +1117,35 @@ fn pinned_zlib_repeated_blocks_match_checked_shared_specification_offline() {
 fn pinned_zlib_nmax_batch_matches_checked_shared_specification_offline() {
     let root = zlib_project();
     let imports =
-        zlib_imports(root.path(), "adler32.c").expect("offline locked unchanged zlib source");
-    let proof = include_str!("../design/adler32/zlib/batch.click")
+        zlib_imports(root.path(), ZLIB_ADLER32).expect("offline locked unchanged zlib source");
+    let proof = include_str!("../design/adler32/project/zlib/batch.click")
         .replace(
             "import \"batch-helpers.click\";",
-            include_str!("../design/adler32/zlib/batch-helpers.click"),
+            include_str!("../design/adler32/project/zlib/batch-helpers.click"),
         )
         .replace(
             "import \"window.click\";",
-            include_str!("../design/adler32/zlib/window.click"),
+            include_str!("../design/adler32/project/zlib/window.click"),
         )
         .replace(
             "import \"block.click\";",
-            include_str!("../design/adler32/zlib/block.click"),
+            include_str!("../design/adler32/project/zlib/block.click"),
         )
         .replace(
             "import \"short-prefix.click\";",
-            include_str!("../design/adler32/zlib/short-prefix.click"),
+            include_str!("../design/adler32/project/zlib/short-prefix.click"),
         )
         .replace(
             "import \"byte.click\";",
-            include_str!("../design/adler32/zlib/byte.click"),
+            include_str!("../design/adler32/project/zlib/byte.click"),
         )
         .replace(
             "import \"../adler2/count-bridge.click\";",
-            include_str!("../design/adler32/adler2/count-bridge.click"),
+            include_str!("../design/adler32/project/adler2/count-bridge.click"),
         )
         .replace(
             "import \"../adler32-spec.click\";",
-            include_str!("../design/adler32/adler32-spec.click"),
+            include_str!("../design/adler32/project/adler32-spec.click"),
         );
     let checked = verify_c0_prepared_sources(&proof, &imports)
         .expect("NMAX batch checksum, termination, byte preservation, and all helper bodies");
@@ -1189,26 +1194,26 @@ fn pinned_zlib_nmax_batch_matches_checked_shared_specification_offline() {
 #[test]
 #[ignore = "nightly: symbolic DO16 count, lane, and read-bound theorem bodies"]
 fn pinned_zlib_window_lemmas_have_checked_bodies() {
-    let source = include_str!("../design/adler32/zlib/window.click")
+    let source = include_str!("../design/adler32/project/zlib/window.click")
         .replace(
             "import \"block.click\";",
-            include_str!("../design/adler32/zlib/block.click"),
+            include_str!("../design/adler32/project/zlib/block.click"),
         )
         .replace(
             "import \"short-prefix.click\";",
-            include_str!("../design/adler32/zlib/short-prefix.click"),
+            include_str!("../design/adler32/project/zlib/short-prefix.click"),
         )
         .replace(
             "import \"byte.click\";",
-            include_str!("../design/adler32/zlib/byte.click"),
+            include_str!("../design/adler32/project/zlib/byte.click"),
         )
         .replace(
             "import \"../adler2/count-bridge.click\";",
-            include_str!("../design/adler32/adler2/count-bridge.click"),
+            include_str!("../design/adler32/project/adler2/count-bridge.click"),
         )
         .replace(
             "import \"../adler32-spec.click\";",
-            include_str!("../design/adler32/adler32-spec.click"),
+            include_str!("../design/adler32/project/adler32-spec.click"),
         );
     click::surface::verify_click_theorems(&source)
         .expect("all shared, native recurrence, and symbolic window bodies");
@@ -1217,22 +1222,22 @@ fn pinned_zlib_window_lemmas_have_checked_bodies() {
 #[test]
 #[ignore = "nightly: shared checksum library and native block recurrence bodies"]
 fn pinned_zlib_block_lemmas_have_checked_bodies() {
-    let source = include_str!("../design/adler32/zlib/block.click")
+    let source = include_str!("../design/adler32/project/zlib/block.click")
         .replace(
             "import \"short-prefix.click\";",
-            include_str!("../design/adler32/zlib/short-prefix.click"),
+            include_str!("../design/adler32/project/zlib/short-prefix.click"),
         )
         .replace(
             "import \"byte.click\";",
-            include_str!("../design/adler32/zlib/byte.click"),
+            include_str!("../design/adler32/project/zlib/byte.click"),
         )
         .replace(
             "import \"../adler2/count-bridge.click\";",
-            include_str!("../design/adler32/adler2/count-bridge.click"),
+            include_str!("../design/adler32/project/adler2/count-bridge.click"),
         )
         .replace(
             "import \"../adler32-spec.click\";",
-            include_str!("../design/adler32/adler32-spec.click"),
+            include_str!("../design/adler32/project/adler32-spec.click"),
         );
     click::surface::verify_click_theorems(&source)
         .expect("all shared and native recurrence bodies");
@@ -1241,34 +1246,34 @@ fn pinned_zlib_block_lemmas_have_checked_bodies() {
 #[test]
 #[ignore = "nightly: seeded NMAX arithmetic, reduction, prefix composition, and expansion"]
 fn pinned_zlib_seeded_batch_lemmas_have_checked_bodies() {
-    let source = include_str!("../design/adler32/zlib/seeded-batch.click")
+    let source = include_str!("../design/adler32/project/zlib/seeded-batch.click")
         .replace(
             "import \"batch-helpers.click\";",
-            include_str!("../design/adler32/zlib/batch-helpers.click"),
+            include_str!("../design/adler32/project/zlib/batch-helpers.click"),
         )
         .replace(
             "import \"window.click\";",
-            include_str!("../design/adler32/zlib/window.click"),
+            include_str!("../design/adler32/project/zlib/window.click"),
         )
         .replace(
             "import \"block.click\";",
-            include_str!("../design/adler32/zlib/block.click"),
+            include_str!("../design/adler32/project/zlib/block.click"),
         )
         .replace(
             "import \"short-prefix.click\";",
-            include_str!("../design/adler32/zlib/short-prefix.click"),
+            include_str!("../design/adler32/project/zlib/short-prefix.click"),
         )
         .replace(
             "import \"byte.click\";",
-            include_str!("../design/adler32/zlib/byte.click"),
+            include_str!("../design/adler32/project/zlib/byte.click"),
         )
         .replace(
             "import \"../adler2/count-bridge.click\";",
-            include_str!("../design/adler32/adler2/count-bridge.click"),
+            include_str!("../design/adler32/project/adler2/count-bridge.click"),
         )
         .replace(
             "import \"../adler32-spec.click\";",
-            include_str!("../design/adler32/adler32-spec.click"),
+            include_str!("../design/adler32/project/adler32-spec.click"),
         );
     click::surface::verify_click_theorems(&source)
         .expect("seeded native recurrence, reductions, prefix composition, and all dependencies");
@@ -1622,39 +1627,39 @@ fn compiler_import_lock_binds_clicks_header_text_and_catalog() {
 fn pinned_zlib_stream_matches_checked_shared_specification_offline() {
     let root = zlib_project();
     let imports =
-        zlib_imports(root.path(), "adler32.c").expect("offline locked unchanged zlib source");
-    let proof = include_str!("../design/adler32/zlib/stream.click")
+        zlib_imports(root.path(), ZLIB_ADLER32).expect("offline locked unchanged zlib source");
+    let proof = include_str!("../design/adler32/project/zlib/stream.click")
         .replace(
             "import \"seeded-batch.click\";",
-            include_str!("../design/adler32/zlib/seeded-batch.click"),
+            include_str!("../design/adler32/project/zlib/seeded-batch.click"),
         )
         .replace(
             "import \"batch-helpers.click\";",
-            include_str!("../design/adler32/zlib/batch-helpers.click"),
+            include_str!("../design/adler32/project/zlib/batch-helpers.click"),
         )
         .replace(
             "import \"window.click\";",
-            include_str!("../design/adler32/zlib/window.click"),
+            include_str!("../design/adler32/project/zlib/window.click"),
         )
         .replace(
             "import \"block.click\";",
-            include_str!("../design/adler32/zlib/block.click"),
+            include_str!("../design/adler32/project/zlib/block.click"),
         )
         .replace(
             "import \"short-prefix.click\";",
-            include_str!("../design/adler32/zlib/short-prefix.click"),
+            include_str!("../design/adler32/project/zlib/short-prefix.click"),
         )
         .replace(
             "import \"byte.click\";",
-            include_str!("../design/adler32/zlib/byte.click"),
+            include_str!("../design/adler32/project/zlib/byte.click"),
         )
         .replace(
             "import \"../adler2/count-bridge.click\";",
-            include_str!("../design/adler32/adler2/count-bridge.click"),
+            include_str!("../design/adler32/project/adler2/count-bridge.click"),
         )
         .replace(
             "import \"../adler32-spec.click\";",
-            include_str!("../design/adler32/adler32-spec.click"),
+            include_str!("../design/adler32/project/adler32-spec.click"),
         );
     let checked = verify_c0_prepared_sources(&proof, &imports).expect(
         "multi-batch and tail checksum, termination, byte preservation, and all helper bodies",
@@ -1711,47 +1716,47 @@ fn pinned_zlib_stream_matches_checked_shared_specification_offline() {
 fn pinned_zlib_full_stream_matches_checked_shared_specification_offline() {
     let root = zlib_project();
     let imports =
-        zlib_imports(root.path(), "adler32.c").expect("offline locked unchanged zlib source");
-    let proof = include_str!("../design/adler32/zlib/full-stream.click")
+        zlib_imports(root.path(), ZLIB_ADLER32).expect("offline locked unchanged zlib source");
+    let proof = include_str!("../design/adler32/project/zlib/full-stream.click")
         .replace(
             "import \"full-stream-helpers.click\";",
-            include_str!("../design/adler32/zlib/full-stream-helpers.click"),
+            include_str!("../design/adler32/project/zlib/full-stream-helpers.click"),
         )
         .replace(
             "import \"../adler2/bounded-count.click\";",
-            include_str!("../design/adler32/adler2/bounded-count.click"),
+            include_str!("../design/adler32/project/adler2/bounded-count.click"),
         )
         .replace(
             "import \"seeded-batch.click\";",
-            include_str!("../design/adler32/zlib/seeded-batch.click"),
+            include_str!("../design/adler32/project/zlib/seeded-batch.click"),
         )
         .replace(
             "import \"batch-helpers.click\";",
-            include_str!("../design/adler32/zlib/batch-helpers.click"),
+            include_str!("../design/adler32/project/zlib/batch-helpers.click"),
         )
         .replace(
             "import \"window.click\";",
-            include_str!("../design/adler32/zlib/window.click"),
+            include_str!("../design/adler32/project/zlib/window.click"),
         )
         .replace(
             "import \"block.click\";",
-            include_str!("../design/adler32/zlib/block.click"),
+            include_str!("../design/adler32/project/zlib/block.click"),
         )
         .replace(
             "import \"short-prefix.click\";",
-            include_str!("../design/adler32/zlib/short-prefix.click"),
+            include_str!("../design/adler32/project/zlib/short-prefix.click"),
         )
         .replace(
             "import \"byte.click\";",
-            include_str!("../design/adler32/zlib/byte.click"),
+            include_str!("../design/adler32/project/zlib/byte.click"),
         )
         .replace(
             "import \"../adler2/count-bridge.click\";",
-            include_str!("../design/adler32/adler2/count-bridge.click"),
+            include_str!("../design/adler32/project/adler2/count-bridge.click"),
         )
         .replace(
             "import \"../adler32-spec.click\";",
-            include_str!("../design/adler32/adler32-spec.click"),
+            include_str!("../design/adler32/project/adler32-spec.click"),
         );
     let checked = verify_c0_prepared_sources(&proof, &imports).expect(
         "full signed-range checksum, termination, byte preservation, and all helper bodies",
@@ -1807,42 +1812,42 @@ fn pinned_zlib_full_stream_matches_checked_shared_specification_offline() {
 #[test]
 #[ignore = "nightly: full-range native count, cursor, capacity, concatenation guards and expansion"]
 fn pinned_zlib_full_stream_lemmas_have_checked_bodies() {
-    let source = include_str!("../design/adler32/zlib/full-stream-helpers.click")
+    let source = include_str!("../design/adler32/project/zlib/full-stream-helpers.click")
         .replace(
             "import \"../adler2/bounded-count.click\";",
-            include_str!("../design/adler32/adler2/bounded-count.click"),
+            include_str!("../design/adler32/project/adler2/bounded-count.click"),
         )
         .replace(
             "import \"seeded-batch.click\";",
-            include_str!("../design/adler32/zlib/seeded-batch.click"),
+            include_str!("../design/adler32/project/zlib/seeded-batch.click"),
         )
         .replace(
             "import \"batch-helpers.click\";",
-            include_str!("../design/adler32/zlib/batch-helpers.click"),
+            include_str!("../design/adler32/project/zlib/batch-helpers.click"),
         )
         .replace(
             "import \"window.click\";",
-            include_str!("../design/adler32/zlib/window.click"),
+            include_str!("../design/adler32/project/zlib/window.click"),
         )
         .replace(
             "import \"block.click\";",
-            include_str!("../design/adler32/zlib/block.click"),
+            include_str!("../design/adler32/project/zlib/block.click"),
         )
         .replace(
             "import \"short-prefix.click\";",
-            include_str!("../design/adler32/zlib/short-prefix.click"),
+            include_str!("../design/adler32/project/zlib/short-prefix.click"),
         )
         .replace(
             "import \"byte.click\";",
-            include_str!("../design/adler32/zlib/byte.click"),
+            include_str!("../design/adler32/project/zlib/byte.click"),
         )
         .replace(
             "import \"../adler2/count-bridge.click\";",
-            include_str!("../design/adler32/adler2/count-bridge.click"),
+            include_str!("../design/adler32/project/adler2/count-bridge.click"),
         )
         .replace(
             "import \"../adler32-spec.click\";",
-            include_str!("../design/adler32/adler32-spec.click"),
+            include_str!("../design/adler32/project/adler32-spec.click"),
         );
 
     click::surface::verify_click_theorems(&source)
@@ -1908,51 +1913,51 @@ fn pinned_zlib_full_stream_lemmas_have_checked_bodies() {
 fn pinned_zlib_canonical_seed_matches_checked_shared_specification_offline() {
     let root = zlib_project();
     let imports =
-        zlib_imports(root.path(), "adler32.c").expect("offline locked unchanged zlib source");
-    let proof = include_str!("../design/adler32/zlib/canonical.click")
+        zlib_imports(root.path(), ZLIB_ADLER32).expect("offline locked unchanged zlib source");
+    let proof = include_str!("../design/adler32/project/zlib/canonical.click")
         .replace(
             "import \"canonical-helpers.click\";",
-            include_str!("../design/adler32/zlib/canonical-helpers.click"),
+            include_str!("../design/adler32/project/zlib/canonical-helpers.click"),
         )
         .replace(
             "import \"full-stream-helpers.click\";",
-            include_str!("../design/adler32/zlib/full-stream-helpers.click"),
+            include_str!("../design/adler32/project/zlib/full-stream-helpers.click"),
         )
         .replace(
             "import \"../adler2/bounded-count.click\";",
-            include_str!("../design/adler32/adler2/bounded-count.click"),
+            include_str!("../design/adler32/project/adler2/bounded-count.click"),
         )
         .replace(
             "import \"seeded-batch.click\";",
-            include_str!("../design/adler32/zlib/seeded-batch.click"),
+            include_str!("../design/adler32/project/zlib/seeded-batch.click"),
         )
         .replace(
             "import \"batch-helpers.click\";",
-            include_str!("../design/adler32/zlib/batch-helpers.click"),
+            include_str!("../design/adler32/project/zlib/batch-helpers.click"),
         )
         .replace(
             "import \"window.click\";",
-            include_str!("../design/adler32/zlib/window.click"),
+            include_str!("../design/adler32/project/zlib/window.click"),
         )
         .replace(
             "import \"block.click\";",
-            include_str!("../design/adler32/zlib/block.click"),
+            include_str!("../design/adler32/project/zlib/block.click"),
         )
         .replace(
             "import \"short-prefix.click\";",
-            include_str!("../design/adler32/zlib/short-prefix.click"),
+            include_str!("../design/adler32/project/zlib/short-prefix.click"),
         )
         .replace(
             "import \"byte.click\";",
-            include_str!("../design/adler32/zlib/byte.click"),
+            include_str!("../design/adler32/project/zlib/byte.click"),
         )
         .replace(
             "import \"../adler2/count-bridge.click\";",
-            include_str!("../design/adler32/adler2/count-bridge.click"),
+            include_str!("../design/adler32/project/adler2/count-bridge.click"),
         )
         .replace(
             "import \"../adler32-spec.click\";",
-            include_str!("../design/adler32/adler32-spec.click"),
+            include_str!("../design/adler32/project/adler32-spec.click"),
         );
     let checked = verify_c0_prepared_sources(&proof, &imports).expect(
         "canonical-seed signed-range checksum, termination, byte preservation, and all helper bodies",
@@ -2008,46 +2013,46 @@ fn pinned_zlib_canonical_seed_matches_checked_shared_specification_offline() {
 #[test]
 #[ignore = "nightly: canonical seed, reduction, unpacking and composition and expansion"]
 fn pinned_zlib_canonical_seed_lemmas_have_checked_bodies() {
-    let source = include_str!("../design/adler32/zlib/canonical-helpers.click")
+    let source = include_str!("../design/adler32/project/zlib/canonical-helpers.click")
         .replace(
             "import \"full-stream-helpers.click\";",
-            include_str!("../design/adler32/zlib/full-stream-helpers.click"),
+            include_str!("../design/adler32/project/zlib/full-stream-helpers.click"),
         )
         .replace(
             "import \"../adler2/bounded-count.click\";",
-            include_str!("../design/adler32/adler2/bounded-count.click"),
+            include_str!("../design/adler32/project/adler2/bounded-count.click"),
         )
         .replace(
             "import \"seeded-batch.click\";",
-            include_str!("../design/adler32/zlib/seeded-batch.click"),
+            include_str!("../design/adler32/project/zlib/seeded-batch.click"),
         )
         .replace(
             "import \"batch-helpers.click\";",
-            include_str!("../design/adler32/zlib/batch-helpers.click"),
+            include_str!("../design/adler32/project/zlib/batch-helpers.click"),
         )
         .replace(
             "import \"window.click\";",
-            include_str!("../design/adler32/zlib/window.click"),
+            include_str!("../design/adler32/project/zlib/window.click"),
         )
         .replace(
             "import \"block.click\";",
-            include_str!("../design/adler32/zlib/block.click"),
+            include_str!("../design/adler32/project/zlib/block.click"),
         )
         .replace(
             "import \"short-prefix.click\";",
-            include_str!("../design/adler32/zlib/short-prefix.click"),
+            include_str!("../design/adler32/project/zlib/short-prefix.click"),
         )
         .replace(
             "import \"byte.click\";",
-            include_str!("../design/adler32/zlib/byte.click"),
+            include_str!("../design/adler32/project/zlib/byte.click"),
         )
         .replace(
             "import \"../adler2/count-bridge.click\";",
-            include_str!("../design/adler32/adler2/count-bridge.click"),
+            include_str!("../design/adler32/project/adler2/count-bridge.click"),
         )
         .replace(
             "import \"../adler32-spec.click\";",
-            include_str!("../design/adler32/adler32-spec.click"),
+            include_str!("../design/adler32/project/adler32-spec.click"),
         );
 
     click::surface::verify_click_theorems(&source)
@@ -2101,59 +2106,62 @@ fn pinned_zlib_incremental_c_matches_checked_shared_specification_offline() {
     let root = zlib_project();
     let imports =
         zlib_imports(root.path(), "incremental.c").expect("offline locked unchanged zlib source");
-    let proof = include_str!("../design/adler32/zlib/incremental.click")
+    let proof = include_str!("../design/adler32/project/zlib/incremental.click")
         .replace(
             "import \"canonical.click\";",
-            include_str!("../design/adler32/zlib/canonical.click"),
+            include_str!("../design/adler32/project/zlib/canonical.click"),
         )
-        .replace("verifying \"adler32.c\";", "verifying \"incremental.c\";")
+        .replace(
+            "verifying \"../../vendor/zlib-1.3.1/adler32.c\";",
+            "verifying \"incremental.c\";",
+        )
         .replace(
             "import \"../adler2/incremental-split.click\";",
-            include_str!("../design/adler32/adler2/incremental-split.click"),
+            include_str!("../design/adler32/project/adler2/incremental-split.click"),
         )
         .replace(
             "import \"canonical-helpers.click\";",
-            include_str!("../design/adler32/zlib/canonical-helpers.click"),
+            include_str!("../design/adler32/project/zlib/canonical-helpers.click"),
         )
         .replace(
             "import \"full-stream-helpers.click\";",
-            include_str!("../design/adler32/zlib/full-stream-helpers.click"),
+            include_str!("../design/adler32/project/zlib/full-stream-helpers.click"),
         )
         .replace(
             "import \"../adler2/bounded-count.click\";",
-            include_str!("../design/adler32/adler2/bounded-count.click"),
+            include_str!("../design/adler32/project/adler2/bounded-count.click"),
         )
         .replace(
             "import \"seeded-batch.click\";",
-            include_str!("../design/adler32/zlib/seeded-batch.click"),
+            include_str!("../design/adler32/project/zlib/seeded-batch.click"),
         )
         .replace(
             "import \"batch-helpers.click\";",
-            include_str!("../design/adler32/zlib/batch-helpers.click"),
+            include_str!("../design/adler32/project/zlib/batch-helpers.click"),
         )
         .replace(
             "import \"window.click\";",
-            include_str!("../design/adler32/zlib/window.click"),
+            include_str!("../design/adler32/project/zlib/window.click"),
         )
         .replace(
             "import \"block.click\";",
-            include_str!("../design/adler32/zlib/block.click"),
+            include_str!("../design/adler32/project/zlib/block.click"),
         )
         .replace(
             "import \"short-prefix.click\";",
-            include_str!("../design/adler32/zlib/short-prefix.click"),
+            include_str!("../design/adler32/project/zlib/short-prefix.click"),
         )
         .replace(
             "import \"byte.click\";",
-            include_str!("../design/adler32/zlib/byte.click"),
+            include_str!("../design/adler32/project/zlib/byte.click"),
         )
         .replace(
             "import \"../adler2/count-bridge.click\";",
-            include_str!("../design/adler32/adler2/count-bridge.click"),
+            include_str!("../design/adler32/project/adler2/count-bridge.click"),
         )
         .replace(
             "import \"../adler32-spec.click\";",
-            include_str!("../design/adler32/adler32-spec.click"),
+            include_str!("../design/adler32/project/adler32-spec.click"),
         );
     let checked = verify_c0_prepared_sources(&proof, &imports).expect(
         "canonical-seed signed-range checksum, termination, byte preservation, and all helper bodies",

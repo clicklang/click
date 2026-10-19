@@ -1143,7 +1143,11 @@ Signed-arithmetic planning and source-certificate term matching use the kernel's
 canonical load identities. A raw read and its registered load variable are the
 same arithmetic atom; comparing their surface representations must not lose a
 population-count bound after a call. Bound selection starts from these canonical
-goal variables and follows only their indexed bounds. The resulting arithmetic
+goal variables and first selects their constant bounds, before following other
+indexed bounds. Signed-order outcomes try that compact selection before broad
+atomic search and source spelling; the number of earlier relational
+postconditions does not enlarge its arithmetic certificate's premise slice.
+The resulting arithmetic
 certificate remains explicit and is checked normally. Population-count
 comparisons try that indexed arithmetic path before memory-equality rewrites,
 so successive retains do not search every earlier call snapshot to rediscover

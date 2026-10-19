@@ -2615,6 +2615,34 @@ pub(in crate::surface) fn click_argument_types_compatible(
     ) || click_types_compatible(actual, expected)
 }
 
+/// Whether a value of arithmetic type `actual` converts implicitly to
+/// `expected` in Click syntax: exactly when every value of `actual` is a
+/// value of `expected`, so the conversion never changes a value. Narrowing,
+/// a change of sign and a float's integer part must be written. C source
+/// keeps C's own conversions; this is the rule for Click's typed positions.
+pub(in crate::surface) fn implicitly_converts(actual: C0Type, expected: C0Type) -> bool {
+    use crate::kernel::{CType, MachineIntegerType};
+    let (actual, expected) = (actual.to_kernel_type(), expected.to_kernel_type());
+    if actual == expected {
+        return true;
+    }
+    let integer = |ty: CType| MachineIntegerType::from_c_type(ty).map(MachineIntegerType::format);
+    // A float holds an integer exactly when its significand covers the
+    // integer's magnitude bits: 24 for `float`, 53 for `double`.
+    let significand = |ty: CType| match ty {
+        CType::Float32 => Some(24),
+        CType::Float64 => Some(53),
+        _ => None,
+    };
+    match (integer(actual), integer(expected)) {
+        (Some(from), Some(to)) => to.contains(from),
+        (Some(from), None) => significand(expected)
+            .is_some_and(|digits| from.bits() - u32::from(from.is_signed()) <= digits),
+        (None, None) => actual == CType::Float32 && expected == CType::Float64,
+        (None, Some(_)) => false,
+    }
+}
+
 pub(in crate::surface) fn click_types_compatible(actual: C0Type, expected: C0Type) -> bool {
     match (actual, expected) {
         (C0Type::Int32Array(_), C0Type::Int32Pointer)
@@ -3457,7 +3485,7 @@ fn type_is_scalar(c_type: C0Type) -> bool {
     )
 }
 
-fn type_is_arithmetic(c_type: C0Type) -> bool {
+pub(super) fn type_is_arithmetic(c_type: C0Type) -> bool {
     type_is_scalar(c_type) || type_is_float(c_type)
 }
 

@@ -186,6 +186,30 @@ Assigning
 or returning an `int32` into `uint8` is checked narrowing: the current pure
 facts must prove `0 <= value <= 255`.
 
+### Implicit conversions
+
+In Click syntax a value converts implicitly to another type only when the
+conversion is exact: every value of its type is a value of the other. An
+`int32` converts to `int64`, a `uint32` to `int64`, a `uint8` to `uint32`,
+and an `int32` to `double`. A conversion that can change a value, a
+narrowing such as `int64` to `int32`, a change of sign such as `int32` to
+`uint32`, or a float's integer part, is written, as a cast `(int32) e` or a
+checked `to_int32(e)`. An integer literal converts to any integer type that
+holds its value and is refused where it does not. C source keeps C's own
+conversions, including its modular ones; this rule is for Click's typed
+positions.
+
+A constructor's field takes its argument by this rule: `Seq<int64>::Cons(x,
+Seq<int64>::Nil)` with `x: int32` holds `x` widened to `int64`, and
+`Seq<int32>::Cons(y, ...)` with `y: int64` is refused until the narrowing
+is written. A constructor whose type arguments are left to inference takes
+them from the type its position expects, a function's return type or a
+`let`'s written type, before its own arguments, so
+`function wrap(x: int32) -> Seq<int64> { Seq::Cons(x, Seq::Nil) }` builds
+a `Seq<int64>`. Other typed positions, such as pure call arguments, still
+accept any arithmetic type; they move to this rule as the corpus that
+relies on their current conversions is updated.
+
 ### Postconditions
 
 Each `ensures` clause is a separate guarantee. A guarantee may be labeled with

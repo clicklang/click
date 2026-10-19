@@ -1083,8 +1083,14 @@ fn expand_declared_resource_clauses_with_rules(
         resource_definitions
             .constructors
             .enter_declaration(declaration_parameter_types(function.parameters()));
-        function.body =
-            expand_declared_resource_expression(function.body.clone(), &resource_definitions)?;
+        // The return type fixes the constructors in the body's result
+        // positions before their arguments are read, so an argument that
+        // converts to a field exactly does not fix a narrower type argument.
+        let mut body = function.body.clone();
+        resource_definitions
+            .constructors
+            .push_expected(&mut body, &function.return_type);
+        function.body = expand_declared_resource_expression(body, &resource_definitions)?;
         resource_definitions
             .constructors
             .push_expected(&mut function.body, &function.return_type);
@@ -3611,6 +3617,10 @@ fn expand_let_value(
     resource_definitions: &DeclaredResourceScope,
 ) -> Result<(ContractExpression, Option<Option<ClickType>>), ClickError> {
     let constructors = &resource_definitions.constructors;
+    let mut value = value;
+    if let Some(click_type) = click_type {
+        constructors.push_expected(&mut value, click_type);
+    }
     let mut value = expand_declared_resource_expression(value, resource_definitions)?;
     if let Some(click_type) = click_type {
         constructors.push_expected(&mut value, click_type);

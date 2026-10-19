@@ -42,6 +42,33 @@ fn borrowed_resource_receipts_do_not_hide_an_unspent_authority_member() {
 }
 
 #[test]
+#[ignore = "nightly: generated 256-clause outcome proof and expansion controls"]
+fn outcome_arithmetic_is_independent_of_postcondition_count() {
+    let c_source = "int32 caller(int32 x) { return x; }";
+    let sources = [("many.c", c_source)];
+    let source = |count| {
+        let clauses = (0..count)
+            .map(|index| format!("ensures result >= x - {index};"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        format!(
+            "verifying \"many.c\";\nint32 caller(int32 x) {{\nrequires 0 <= x;\nrequires x <= 1000;\n{clauses}\n}} by {{ step(); simp(); }}"
+        )
+    };
+    for count in [4, 64, 256] {
+        verify_c0_sources(&source(count), &sources).unwrap();
+    }
+    let expanded =
+        expand_c0_claim_source(&source(4), &sources, "caller", CProofClaim::Grouped).unwrap();
+    without_implicit_auto(|| verify_c0_sources(&expanded, &sources)).unwrap();
+    let false_source = source(64).replace("result >= x - 63", "result >= x + 1");
+    assert!(verify_c0_sources(&false_source, &sources).is_err());
+    let false_expansion = expanded.replacen("result >= x - 3", "result >= x + 1", 1);
+    assert_ne!(false_expansion, expanded);
+    assert!(verify_c0_sources(&false_expansion, &sources).is_err());
+}
+
+#[test]
 fn uint64_measure_induction_expands_and_rechecks_without_narrowing() {
     let (source, _) = mdtest_sources("mdtests/uint64_measure_induction_counts_a_range_fold.md");
     let expanded =

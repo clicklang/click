@@ -14,5 +14,5 @@ void forged(struct other_node* p) { produces held: token(); ensures true; } by {
 }
 ```
 ```expect
-fail: original object class
+fail: constructor `NodeRef::At` argument 0 expects struct model_node*, got struct other_node*
 ```
