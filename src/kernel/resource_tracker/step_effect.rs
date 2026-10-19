@@ -666,14 +666,17 @@ fn store_cell_effect(
                 MemoryDagAssumptionKind::StoreCommonBaseDistinctness,
             ))
         }
-    } else if let Some(aligned) = assumptions.pointer_at_known_base(write, &pointer.object_base())
+    } else if let Some(aligned) = assumptions
+        .pointer_at_known_constant_base(write, pointer)
+        .or_else(|| assumptions.pointer_at_known_base(write, &pointer.object_base()))
         && !write.blocks_proven_distinct(&aligned)
         && assumptions.pointers_known_equal(write, &aligned)
         && exact_access_byte_overlap(&aligned, value.byte_width(), pointer, bytes)
             == Some(AccessByteOverlap::Separate)
     {
-        // A transitive base alias can name two fields of the same node.
-        // Retain the selected spelling, then recheck equality and all bytes
+        // A node origin may itself be a loaded pointer with symbolic
+        // coordinates. Align that whole origin before falling back to its
+        // outer block, then retain the spelling and all access bytes
         // when consuming the hop; no alias/history search enters the proof.
         hop(MemoryDagHopJustification::StoreAliasedByteSeparation { write: aligned })
     } else if let Some(justification) =

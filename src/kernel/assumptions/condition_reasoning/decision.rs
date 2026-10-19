@@ -37,6 +37,18 @@ impl PureFactContext {
         if self.equality_graph.are_algebraic_equal(left, right) {
             return Some(true);
         }
+        // Values known to be constructors of different variants differ.
+        if let (Some(left), Some(right)) = (
+            self.known_algebraic_constructor(left),
+            self.known_algebraic_constructor(right),
+        ) && let (
+            AlgebraicTermNode::Constructor { variant: left, .. },
+            AlgebraicTermNode::Constructor { variant: right, .. },
+        ) = (&left.node, &right.node)
+            && left != right
+        {
+            return Some(false);
+        }
         self.exact_condition_value(&ConditionTerm::AlgebraicEqual(
             Box::new(left.clone()),
             Box::new(right.clone()),

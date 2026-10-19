@@ -2,8 +2,9 @@
 
 Priority: P1.
 
-Soundness: incomplete. Click refuses both stack programs below at import, so
-no claim about them can be stated; no false acceptance is known. The generic
+Soundness: incomplete. Click refuses the Rust program below at import, and
+verifies the C++ one only at `Stack<int>`, not once for every `T`; no false
+acceptance is known. The generic
 features that already verify (abstract type parameters, generic structs with
 `T` fields, `&T` and `&mut T`, generic calls) keep their own regressions.
 
@@ -102,11 +103,10 @@ int round_trip(int x) noexcept {
 }
 ```
 
-Today the importer refuses `Stack`'s default member initializers, `head =
-nullptr`: `the supported C++ record fields must be named mutable ...
-without bit-fields`. Pointers to simple records, `Node* next`, as fields,
-parameters, locals and results, with `p->field` through a parameter or local,
-are supported (`mdtests/cpp_record_pointers.md`).
+The C++ program verifies at its `int` instance, `Stack<int>`, in
+[`examples/cpp-stack/`](../examples/cpp-stack/), with `round_trip` and a second
+client, `pushed_size`, calling `size`. What remains for C++ is verifying the
+template once for every `T`.
 
 ## Target contracts
 
@@ -131,11 +131,16 @@ the remaining nodes, frees every node; leaking is not part of the contract.
    enum value, `Box::new` as an owned allocation, `take` and `?` on `Option`,
    and a struct whose field holds a `Box` of its own type. The recursive
    resource describes a `List<T>` by its nodes, as the rbtree resources do.
-2. **C++ `new`/`delete` and default member initializers.** `new
-   Node<T>{...}` as an allocation that yields an owned object, `delete` as its
-   release, and `Stack`'s implicit default constructor running its member
-   initializers, first at one instance, `Stack<int>`. Done: fields holding a
-   pointer to a record, and `p->field` through a parameter or local.
+   Started: a `Box<R>` of a crate struct without drop glue is made, read,
+   written and dropped within one body (`design/charon-trial/boxes`), and an
+   `Option<Box<R>>` local is made, matched and dropped
+   (`design/charon-trial/option-boxes`); box parameters, results and fields,
+   `take`, `?`, `Option<T>` values, and recursive drop remain.
+2. **C++ at one instance.** Done: fields holding a pointer to a record,
+   `p->field` through a parameter or local, `new` and `delete` of one simple
+   record in a `noexcept` function, constant default member initializers and
+   default construction from them, and a scalar local passed by reference.
+   `Stack<int>` verifies in `examples/cpp-stack/`.
 3. **Templates checked once.** A class template's methods verified once for
    every `T` with `T` an abstract type, as Rust generic `impl` blocks already
    are, each instance reading the contract at its own layout. Today a C++

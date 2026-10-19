@@ -2479,6 +2479,7 @@ pub fn c_heap_allocate_sized_with_zeroed(
         bytes,
         zeroed,
         object_type: None,
+        ends_program_on_failure: false,
     }
 }
 

@@ -899,3 +899,65 @@ fn nominal_pointer_constructor_matches_preserve_the_checked_payload() {
         }
     }
 }
+
+#[test]
+fn model_argument_guard_query_does_not_materialize_stored_models() {
+    let ty = maybe_type();
+    let stored = SpecAlgebraicExpression {
+        algebraic_type: ty.clone(),
+        node: SpecAlgebraicExpressionNode::ResourceField(ResourceFieldProjection {
+            identity: Variable(90_000),
+            children: vec![],
+            field_index: 0,
+            at_entry: false,
+        }),
+    };
+    let envelope = SpecAlgebraicExpression {
+        algebraic_type: envelope_type(&ty),
+        node: SpecAlgebraicExpressionNode::Constructor {
+            variant: "Present".into(),
+            fields: vec![SpecAlgebraicValue::Algebraic(stored.clone())],
+        },
+    };
+    let state = CState::new();
+    let assumptions = PureFactContext::new();
+    for expression in [&stored, &envelope] {
+        assert!(
+            algebraic_argument_evaluation_guards(&state, expression, None, &assumptions)
+                .unwrap()
+                .is_empty()
+        );
+        // The query grants no value or ownership: capture still refuses the
+        // missing instance. Guard selection must not read or clone its payload.
+        assert!(capture_spec_algebraic_value(&state, expression, None, &assumptions).is_err());
+    }
+    let guarded = SpecAlgebraicExpression {
+        algebraic_type: ty.clone(),
+        node: SpecAlgebraicExpressionNode::Constructor {
+            variant: "Some".into(),
+            fields: vec![SpecAlgebraicValue::C(SpecExpression::Subtract(
+                Box::new(SpecExpression::Value(CValue::Int32(
+                    Bitvector32Term::Variable(Variable(90_001)),
+                ))),
+                Box::new(SpecExpression::Value(int32(1))),
+            ))],
+        },
+    };
+    let expected =
+        algebraic_argument_evaluation_guards(&state, &guarded, None, &assumptions).unwrap();
+    assert!(!expected.is_empty());
+    let application = SpecAlgebraicExpression {
+        algebraic_type: ty,
+        node: SpecAlgebraicExpressionNode::PureFunctionApplication {
+            name: "choose_model".into(),
+            arguments: vec![
+                SpecPureFunctionArgument::Algebraic(stored),
+                SpecPureFunctionArgument::Algebraic(guarded),
+            ],
+        },
+    };
+    assert_eq!(
+        algebraic_argument_evaluation_guards(&state, &application, None, &assumptions).unwrap(),
+        expected
+    );
+}

@@ -3567,6 +3567,11 @@ fn advance_execution_match_group<'a>(
     }
     certificates[index] = Some(proof.execution_match_arm_certificate(&marker)?);
     proof.record_execution_match_arm_trace(plan, index, &marker);
+    // An arm that finished the function leaves its binders to the closers
+    // written after the `match`, which close its path.
+    if proof.is_at_function_exit() {
+        return Ok(Ok(proof.leave_terminal_execution_match_arm(plan)?));
+    }
     Ok(Ok(proof.leave_execution_match_arm(plan)?))
 }
 

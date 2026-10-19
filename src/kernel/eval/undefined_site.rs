@@ -159,6 +159,12 @@ fn unconditional_operands<'a>(expression: &'a CExpression, operands: &mut Vec<&'
         CExpression::Cast { expression, .. }
         | CExpression::FloatNegate(expression)
         | CExpression::FloatClassification { expression, .. }
+        | CExpression::EnumField {
+            value: expression, ..
+        }
+        | CExpression::EnumIs {
+            value: expression, ..
+        }
         | CExpression::Not(expression)
         | CExpression::BitwiseNot(expression)
         | CExpression::Load(expression)
@@ -175,6 +181,7 @@ fn unconditional_operands<'a>(expression: &'a CExpression, operands: &mut Vec<&'
             ..
         } => operands.push(expression),
         CExpression::Conditional { condition, .. } => operands.push(condition),
+        CExpression::EnumConstruct { fields, .. } => operands.extend(fields),
         CExpression::And(left, _) | CExpression::Or(left, _) => operands.push(left),
         CExpression::AddressOf(place) | CExpression::CheckedObjectAddress(place) => {
             place_address_operands(place, operands);

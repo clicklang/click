@@ -1,8 +1,8 @@
 use super::*;
 
-// Parse the original C outside the constrained execution thread: debug-build
-// parser frames have their own nesting cost. The proof and all kernel state
-// are constructed and executed entirely on the two-megabyte thread.
+// Prepare the original native function outside the constrained execution
+// thread so this test isolates proof execution. The proof and all kernel
+// state are constructed and executed on the two-megabyte thread.
 #[test]
 #[ignore = "nightly: deep focused execution on a constrained stack"]
 fn focused_execute_handles_deep_branches_on_a_two_megabyte_stack() {

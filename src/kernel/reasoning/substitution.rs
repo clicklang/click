@@ -932,11 +932,13 @@ fn walk_c_statement<S: VariableSubstitution + ?Sized>(statement: &CStatement, s:
             bytes,
             zeroed,
             object_type,
+            ends_program_on_failure,
         } => CStatement::HeapAllocate {
             target: target.clone(),
             bytes: s.c_expression(bytes),
             zeroed: *zeroed,
             object_type: object_type.clone(),
+            ends_program_on_failure: *ends_program_on_failure,
         },
         CStatement::HeapFree { pointer } => CStatement::HeapFree {
             pointer: s.c_expression(pointer),
@@ -2500,8 +2502,19 @@ fn collect_c_expression_bound_variables(
             collect_c_expression_bound_variables(else_branch, variables);
         }
         CExpression::FloatNegate(expression)
-        | CExpression::FloatClassification { expression, .. } => {
+        | CExpression::FloatClassification { expression, .. }
+        | CExpression::EnumField {
+            value: expression, ..
+        }
+        | CExpression::EnumIs {
+            value: expression, ..
+        } => {
             collect_c_expression_bound_variables(expression, variables);
+        }
+        CExpression::EnumConstruct { fields, .. } => {
+            for field in fields {
+                collect_c_expression_bound_variables(field, variables);
+            }
         }
         CExpression::AddressOf(body)
         | CExpression::CheckedObjectAddress(body)
@@ -4431,6 +4444,35 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_c_expression(
         CExpression::FloatNegate(expression) => CExpression::FloatNegate(Box::new(
             substitute_bitvector_variable_in_c_expression(expression, from, to),
         )),
+        CExpression::EnumConstruct {
+            enum_type,
+            variant,
+            fields,
+        } => CExpression::EnumConstruct {
+            enum_type: *enum_type,
+            variant: variant.clone(),
+            fields: fields
+                .iter()
+                .map(|field| substitute_bitvector_variable_in_c_expression(field, from, to))
+                .collect(),
+        },
+        CExpression::EnumField {
+            value,
+            variant,
+            index,
+        } => CExpression::EnumField {
+            value: Box::new(substitute_bitvector_variable_in_c_expression(
+                value, from, to,
+            )),
+            variant: variant.clone(),
+            index: *index,
+        },
+        CExpression::EnumIs { value, variant } => CExpression::EnumIs {
+            value: Box::new(substitute_bitvector_variable_in_c_expression(
+                value, from, to,
+            )),
+            variant: variant.clone(),
+        },
         CExpression::AddressOf(body) => CExpression::AddressOf(Box::new(
             substitute_bitvector_variable_in_c_expression(body, from, to),
         )),
@@ -6074,6 +6116,31 @@ fn substitute_pointer_variable_in_c_expression(
         CExpression::FloatNegate(expression) => CExpression::FloatNegate(Box::new(
             substitute_pointer_variable_in_c_expression(expression, from, to),
         )),
+        CExpression::EnumConstruct {
+            enum_type,
+            variant,
+            fields,
+        } => CExpression::EnumConstruct {
+            enum_type: *enum_type,
+            variant: variant.clone(),
+            fields: fields
+                .iter()
+                .map(|field| substitute_pointer_variable_in_c_expression(field, from, to))
+                .collect(),
+        },
+        CExpression::EnumField {
+            value,
+            variant,
+            index,
+        } => CExpression::EnumField {
+            value: Box::new(substitute_pointer_variable_in_c_expression(value, from, to)),
+            variant: variant.clone(),
+            index: *index,
+        },
+        CExpression::EnumIs { value, variant } => CExpression::EnumIs {
+            value: Box::new(substitute_pointer_variable_in_c_expression(value, from, to)),
+            variant: variant.clone(),
+        },
         CExpression::AddressOf(body) => CExpression::AddressOf(Box::new(
             substitute_pointer_variable_in_c_expression(body, from, to),
         )),
@@ -6404,6 +6471,11 @@ fn substitute_pointer_variable_in_spec_algebraic_expression(
         }
         SpecAlgebraicExpressionNode::Binding(name) => {
             SpecAlgebraicExpressionNode::Binding(name.clone())
+        }
+        SpecAlgebraicExpressionNode::CValue(value) => {
+            SpecAlgebraicExpressionNode::CValue(Box::new(
+                substitute_pointer_variable_in_spec_expression(value, from, to),
+            ))
         }
         SpecAlgebraicExpressionNode::Constructor { variant, fields } => {
             SpecAlgebraicExpressionNode::Constructor {

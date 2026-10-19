@@ -2411,6 +2411,103 @@ fn rust_two_guards_clean_up_in_reverse_construction_order() {
     assert_eq!(drops, constructors.into_iter().rev().collect::<Vec<_>>());
 }
 
+const ENUMS_SIDECAR: &str = include_str!("../examples/rust-enums/shapes.click");
+fn rust_enums_project() -> Project {
+    let p = Project::from_fixture("examples/rust-enums");
+    fs::write(p.root.join("borrow.click"), ENUMS_SIDECAR).unwrap();
+    p
+}
+
+/// A Rust enum is the `spec enum` the import declares: false claims about
+/// construction, a matched field, and a variant test are refused, and
+/// `step()` refuses at a `match` whose variant is open, naming the proof
+/// `match` that splits it.
+#[test]
+fn rust_enum_claims_are_checked_and_step_names_the_match_split() {
+    let p = rust_enums_project();
+    let prepared = p.prepared().unwrap();
+    C0VerificationSession::new_program_prepared(
+        include_str!("fixtures/rust-verification/enums.click"),
+        &prepared,
+    )
+    .unwrap_or_else(|error| panic!("{error:?}"));
+    for (owner, invalid) in [
+        (
+            "square",
+            ENUMS_SIDECAR.replace(
+                "ensures result == Shape::Rect(side, side);",
+                "ensures result == Shape::Rect(side, 0u32);",
+            ),
+        ),
+        (
+            "perimeter",
+            ENUMS_SIDECAR.replace("Shape::Circle(r) => r * 6u32,", "Shape::Circle(r) => r * 4u32,"),
+        ),
+        (
+            "grow",
+            ENUMS_SIDECAR.replace(
+                "Shape::Circle(r) => Shape::Circle(r + 1u32),",
+                "Shape::Circle(r) => Shape::Circle(r),",
+            ),
+        ),
+        (
+            "radius",
+            ENUMS_SIDECAR.replace(
+                "Shape::Circle(r) => r, Shape::Rect(w, h) => 0u32, Shape::Empty => 0u32 };",
+                "Shape::Circle(r) => r, Shape::Rect(w, h) => w, Shape::Empty => 0u32 };",
+            ),
+        ),
+        (
+            "is_empty",
+            ENUMS_SIDECAR.replace(
+                "ensures result == (s == Shape::Empty);",
+                "ensures result == (s == Shape::Circle(0u32));",
+            ),
+        ),
+        // Without the requirement the `+ 1` can overflow and panic.
+        (
+            "grow",
+            ENUMS_SIDECAR.replace(
+                "requires match s { Shape::Circle(r) => r, Shape::Rect(w, h) => 0u32, Shape::Empty => 0u32 } < 4294967295u32;",
+                "",
+            ),
+        ),
+    ] {
+        assert_ne!(invalid, ENUMS_SIDECAR);
+        assert!(
+            verify_rust_function(&invalid, &prepared, owner).is_err(),
+            "{owner} accepted a false claim"
+        );
+    }
+    let stepped = "verifying \"shapes.rs\";\nfn is_empty(s: Shape) -> bool { ensures result == (s == Shape::Empty); } by { step(); step(); step(); step(); step(); step(); step(); simp(); }\n";
+    let error = C0VerificationSession::new_program_prepared(stepped, &prepared)
+        .err()
+        .expect("step() does not pass an open match");
+    assert!(
+        error.to_string().contains(
+            "reached a Rust `match` of `s`, whose variant is not known here; each variant is its own proof arm. Write `match s { Shape::Circle(s_circle_0) => { ... }, Shape::Rect(s_rect_0, s_rect_1) => { ... }, Shape::Empty => { ... } }` here"
+        ),
+        "{error}"
+    );
+}
+
+/// `execute()`'s proof `match`, expanded, verifies as written: its arms
+/// cite the requirement each arm instantiates at its constructor.
+#[test]
+#[ignore = "nightly: checked proof expansion"]
+fn rust_enum_match_expansions_verify() {
+    let p = rust_enums_project();
+    for claim in ["grow.contract", "is_empty.contract", "classify.contract"] {
+        assert_cli(&p, &["expand", "--claim", claim, "--in-place"]);
+    }
+    let expanded = fs::read_to_string(p.root.join("borrow.click")).unwrap();
+    assert!(
+        expanded.contains("Shape::Circle(s_circle_0) => {"),
+        "{expanded}"
+    );
+    assert_cli(&p, &["verify"]);
+}
+
 const UNSIGNED_SOURCE: &str = include_str!("../examples/rust-unsigned/arithmetic.rs");
 const UNSIGNED_SIDECAR: &str = include_str!("../examples/rust-unsigned/arithmetic.click");
 
@@ -2455,6 +2552,88 @@ fn rust_sidecar_contract_declarations_verify() {
     let prepared = p.prepared().unwrap();
     C0VerificationSession::new_program_prepared(sidecar, &prepared)
         .unwrap_or_else(|error| panic!("{error:?}"));
+}
+
+const BOX_SIDECAR: &str = include_str!("../design/charon-trial/boxes/boxed.click");
+
+/// A `Box` of a crate struct made, read, written and dropped in one body:
+/// `Box::new` moves the struct into an allocation that never fails, reads
+/// and writes go through the box, and its drop frees the allocation.
+#[test]
+fn charon_boxes_allocate_read_write_and_free_their_struct() {
+    let p = Project::from_fixture("design/charon-trial/boxes");
+    fs::write(p.root.join("borrow.click"), BOX_SIDECAR).unwrap();
+    let prepared = p.prepared().unwrap();
+    C0VerificationSession::new_program_prepared(BOX_SIDECAR, &prepared)
+        .unwrap_or_else(|error| panic!("{error:?}"));
+    for (before, after, expected) in [
+        (
+            "    ensures result == x + 1;",
+            "    ensures result == x;",
+            "boxed::boxed.ensures_0",
+        ),
+        ("    requires x < 100;\n", "", "Rust add panic check"),
+    ] {
+        assert!(BOX_SIDECAR.contains(before), "{before}");
+        let invalid = BOX_SIDECAR.replacen(before, after, 1);
+        let error = C0VerificationSession::new_program_prepared(&invalid, &prepared)
+            .err()
+            .expect("a claim the box program does not meet must fail");
+        let rendered = format!("{error:?} {error}");
+        let rendered = click::languages::rust::names::display_rust_names(&rendered);
+        assert!(rendered.contains(expected), "{rendered}");
+    }
+}
+
+const OPTION_BOX_SIDECAR: &str = include_str!("../design/charon-trial/option-boxes/options.click");
+
+// An `Option<Box<R>>` is the box's address or null: `Some` and `None` make
+// it, a `match` reads its payload, and its drop frees a `Some`.
+#[test]
+fn charon_option_boxes_match_and_drop_their_box() {
+    let p = Project::from_fixture("design/charon-trial/option-boxes");
+    fs::write(p.root.join("borrow.click"), OPTION_BOX_SIDECAR).unwrap();
+    let prepared = p.prepared().unwrap();
+    C0VerificationSession::new_program_prepared(OPTION_BOX_SIDECAR, &prepared)
+        .unwrap_or_else(|error| panic!("{error:?}"));
+    for (before, after, expected) in [
+        (
+            "    ensures make implies result == x;",
+            "    ensures make implies result == x + 1;",
+            "option_boxes::maybe.ensures_0",
+        ),
+        (
+            "    ensures make == false implies result == 0;",
+            "    ensures make == false implies result == x;",
+            "option_boxes::maybe.ensures_1",
+        ),
+    ] {
+        assert!(OPTION_BOX_SIDECAR.contains(before), "{before}");
+        let invalid = OPTION_BOX_SIDECAR.replacen(before, after, 1);
+        let error = C0VerificationSession::new_program_prepared(&invalid, &prepared)
+            .err()
+            .expect("a claim the option program does not meet must fail");
+        let rendered = format!("{error:?} {error}");
+        let rendered = click::languages::rust::names::display_rust_names(&rendered);
+        assert!(rendered.contains(expected), "{rendered}");
+    }
+}
+
+/// A box lives within one function body for now: a parameter or result
+/// that holds one is refused at import.
+#[test]
+fn charon_box_parameters_and_results_are_refused() {
+    for source in [
+        "pub struct Cell { value: u32 }\npub fn read(b: Box<Cell>) -> u32 { b.value }\n",
+        "pub struct Cell { value: u32 }\npub fn make(x: u32) -> Box<Cell> { Box::new(Cell { value: x }) }\n",
+        "pub struct Cell { value: u32 }\npub fn read(b: Option<Box<Cell>>) -> u32 { match b { Some(b) => b.value, None => 0 } }\n",
+    ] {
+        let p = Project::new(source);
+        let error = p
+            .refresh()
+            .expect_err("a box crossing a call must be refused");
+        assert!(error.contains("box parameter or result"), "{error}");
+    }
 }
 
 /// This is the contract `examples/rust-field-borrow` states for the free

@@ -7226,16 +7226,16 @@ pub(super) fn assumed_mutex_input_reservations(
     super::mutexes::MutexInputReservations::from_ranges_and_guards(ranges, guard_ranges)
 }
 
-/// What a caller keeps owning across a call whose resource transfer left it
-/// `residual`: the residual itself, whose flat owned members the havoc finds
+/// What a caller keeps unchanged across a call whose resource transfer left it
+/// `residual`: the residual itself, whose flat owners and views the havoc finds
 /// through its base index, and the owned memory of each owned residual
 /// instance and folded composite, opened one body layer at `state` exactly as
 /// `unfold` opens it, with composites in that body expanded.
 ///
 /// Only exactly held bytes count. An iterated fact in an opened body is
 /// skipped rather than counted at its span, a nested instance is not opened
-/// again, views never count, and an instance this layer cannot open --
-/// a matched body whose arm is not decided, a recursive or witness-bearing
+/// again, viewed composite bodies are not opened, and an instance this layer
+/// cannot open -- a matched body whose arm is not decided, a recursive or witness-bearing
 /// body -- contributes nothing, so the rule never keeps a cell on the
 /// strength of a body it could not read. The opening is paid once per call,
 /// one unit per visited residual instance or composite and its body, except
@@ -17338,6 +17338,13 @@ fn arm_premises_at_symbolic_bindings(
     evaluation_assumptions: &PureFactContext,
     assumptions: &PureFactContext,
 ) -> Option<PureFactContext> {
+    // These bindings describe a hypothetical constructor, not a concrete
+    // program read. Retain each cell's snapshot term instead of recovering
+    // whole pointer values through unrelated execution history.
+    let evaluation_assumptions = evaluation_assumptions
+        .clone()
+        .keep_spec_loads_symbolic()
+        .force_symbolic_external_loads();
     let mut body_state = evaluation.clone();
     let mut algebraic_bindings = BTreeMap::new();
     for (name, value) in arm.bindings.iter().zip(bindings) {
@@ -17360,7 +17367,7 @@ fn arm_premises_at_symbolic_bindings(
         &body_state,
         &arm.contains,
         &[],
-        evaluation_assumptions,
+        &evaluation_assumptions,
         &mut budget,
         false,
     ) else {
@@ -18049,6 +18056,8 @@ fn resolve_retained_aggregate_fields(
             expression: inner, ..
         }
         | CExpression::FloatNegate(inner)
+        | CExpression::EnumField { value: inner, .. }
+        | CExpression::EnumIs { value: inner, .. }
         | CExpression::Not(inner)
         | CExpression::BitwiseNot(inner)
         | CExpression::Load(inner)
@@ -18056,6 +18065,11 @@ fn resolve_retained_aggregate_fields(
         | CExpression::PointerOffsetBytes { pointer: inner, .. }
         | CExpression::Subobject { pointer: inner, .. } => {
             resolve_retained_aggregate_fields(entry, state, inner, true, assumptions, budget)?
+        }
+        CExpression::EnumConstruct { fields, .. } => {
+            for field in fields {
+                resolve_retained_aggregate_fields(entry, state, field, true, assumptions, budget)?;
+            }
         }
         CExpression::Conditional {
             condition,

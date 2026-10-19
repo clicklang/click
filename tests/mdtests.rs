@@ -3,8 +3,9 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use click::cli::{
-    CInput, MdTestExpectation, prepare_mdtest_inputs, read_c_inputs_for_project,
-    read_click_project, read_mdtest, read_mdtest_project_if_needed, source_refs,
+    CInput, MdTestExpectation, export_cpp_mdtest_import, prepare_mdtest_inputs,
+    read_c_inputs_for_project, read_click_project, read_mdtest, read_mdtest_project_if_needed,
+    source_refs,
 };
 use click::instrumentation::{self, ArtifactReuseRejection, HiddenPrerequisiteRoute};
 use click::surface::{
@@ -18,8 +19,8 @@ mod limits;
 mod tactic_work;
 
 const RUN_QUARANTINED: &str = "CLICK_RUN_QUARANTINED";
-/// Set by the gate when the pinned C++ exporter is not installed.
-const SKIP_CPP_FRONTEND: &str = "CLICK_SKIP_CPP_FRONTEND";
+/// Rewrites the checked-in C++ imports instead of comparing them.
+const REFRESH_CPP_IMPORTS: &str = "CLICK_REFRESH_CPP_IMPORTS";
 const BUBBLE_SORT3_WORK_LIMIT: usize = 100_000;
 /// The explicit frame refusal takes about 175,000 units with scoped failure
 /// reuse, versus 513,000 when its proof routes repeat the same questions.
@@ -38,6 +39,10 @@ const QUARANTINED: &[(&str, &str)] = &[];
 /// libraries stay in the gate so it checks both sides of their imports. Run
 /// one with `MDTEST_FILTER=<name>`.
 const NIGHTLY: &[&str] = &[
+    // 1.9s focused; the named scaling regression also checks its work.
+    "refuted_implication_after_stack_pop.md",
+    // 2.60s in its focused harness run; the unit regression stays in the gate.
+    "equal_object_origins_frame_neighbor_fields.md",
     "a_bounded_symbolic_read_of_an_initialized_local_array_is_initialized.md", // 0.6s
     "a_frame_holds_across_a_write_at_a_64_bit_index.md",                       // 0.7s
     "a_freed_cell_is_not_read_through_another_owner_after_a_loop.md",          // 1.2s
@@ -278,6 +283,197 @@ const ARTIFACT_REUSE_REJECTION_BASELINE: &[(ArtifactReuseRejection, usize)] = &[
 /// count may only fall, and it is zero.
 const HIDDEN_PREREQUISITE_BASELINE: &[((HiddenPrerequisiteRoute, &str), usize)] = &[];
 
+/// Every C++ mdtest's checked-in import under `mdtests/cpp-imports` is what
+/// the pinned exporter produces now, and no import outlives its mdtest. The
+/// other mdtests load these imports without a compiler; this test needs the
+/// exporter, so it runs where `CLICK_CPP_EXPORTER` names one.
+/// `scripts/refresh-cpp-imports.sh` rewrites them.
+#[test]
+fn cpp_mdtest_imports_match_the_pinned_exporter() {
+    let Some(exporter) = std::env::var_os("CLICK_CPP_EXPORTER").map(PathBuf::from) else {
+        println!("SKIPPING C++ import freshness: CLICK_CPP_EXPORTER is not set");
+        return;
+    };
+    let refresh = std::env::var_os(REFRESH_CPP_IMPORTS).is_some();
+    let mdtests_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("mdtests");
+    let imports_dir = mdtests_dir.join("cpp-imports");
+    let mut fixtures = fs::read_dir(&mdtests_dir)
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .filter(|path| path.extension().is_some_and(|extension| extension == "md"))
+        .filter_map(|path| {
+            let mdtest = read_mdtest(&path).ok()?;
+            mdtest.cpp_source.is_some().then_some((path, mdtest))
+        })
+        .collect::<Vec<_>>();
+    fixtures.sort_by(|left, right| left.0.cmp(&right.0));
+    let exported = std::thread::scope(|scope| {
+        let handles = fixtures
+            .iter()
+            .map(|(path, mdtest)| {
+                let exporter = &exporter;
+                scope.spawn(move || {
+                    (
+                        path.clone(),
+                        mdtest
+                            .cpp_source
+                            .as_ref()
+                            .unwrap()
+                            .import_directory
+                            .clone()
+                            .unwrap(),
+                        export_cpp_mdtest_import(mdtest, exporter),
+                    )
+                })
+            })
+            .collect::<Vec<_>>();
+        handles
+            .into_iter()
+            .map(|handle| handle.join().unwrap())
+            .collect::<Vec<_>>()
+    });
+    let mut problems = Vec::new();
+    let mut kept = std::collections::BTreeSet::new();
+    for (path, directory, files) in exported {
+        let files = files.unwrap_or_else(|error| panic!("`{}`: {error}", path.display()));
+        kept.insert(directory.clone());
+        let checked_in = checked_in_files(&directory);
+        if same_import(&checked_in, &files) {
+            continue;
+        }
+        if refresh {
+            let _ = fs::remove_dir_all(&directory);
+            for (relative, bytes) in &files {
+                let destination = directory.join(relative);
+                fs::create_dir_all(destination.parent().unwrap()).unwrap();
+                fs::write(destination, bytes).unwrap();
+            }
+        } else {
+            problems.push(format!(
+                "`{}`: {}",
+                directory.display(),
+                first_import_difference(&checked_in, &files)
+            ));
+        }
+    }
+    for entry in fs::read_dir(&imports_dir).into_iter().flatten() {
+        let directory = entry.unwrap().path();
+        if !kept.contains(&directory) {
+            if refresh {
+                fs::remove_dir_all(&directory).unwrap();
+            } else {
+                problems.push(format!("`{}` (no mdtest uses it)", directory.display()));
+            }
+        }
+    }
+    assert!(
+        problems.is_empty(),
+        "C++ mdtest imports differ from the pinned exporter's; run scripts/refresh-cpp-imports.sh:\n  {}",
+        problems.join("\n  ")
+    );
+}
+
+/// Whether two imports hold the same lock and artifacts apart from which
+/// build of the pinned toolchain exported them. Every machine builds its own
+/// exporter, whose digest and the identities derived from it differ, and the
+/// pinned Clang 19.1.7 may be packaged differently (a source build or a
+/// distribution package of the same release), which only its version string
+/// records. The artifacts themselves are compared, so the lock's record of
+/// their digest and size is left out too.
+fn same_import(
+    left: &std::collections::BTreeMap<PathBuf, Vec<u8>>,
+    right: &std::collections::BTreeMap<PathBuf, Vec<u8>>,
+) -> bool {
+    fn without_build_provenance(value: &mut serde_json::Value) {
+        match value {
+            serde_json::Value::Object(fields) => {
+                for (name, field) in fields.iter_mut() {
+                    match (name.as_str(), &*field) {
+                        ("identity" | "unit", serde_json::Value::String(_)) => {
+                            *field = serde_json::Value::Null;
+                        }
+                        ("frontend_version", serde_json::Value::String(version))
+                            if version.contains("clang version 19.1.7 ") =>
+                        {
+                            *field = serde_json::Value::Null;
+                        }
+                        ("artifact", serde_json::Value::Object(record)) => {
+                            let path = record.get("path").cloned();
+                            *field = serde_json::json!({ "path": path });
+                        }
+                        _ => without_build_provenance(field),
+                    }
+                }
+            }
+            serde_json::Value::Array(items) => items.iter_mut().for_each(without_build_provenance),
+            _ => {}
+        }
+    }
+    let normalized = |bytes: &[u8]| {
+        let mut value = serde_json::from_slice::<serde_json::Value>(bytes).ok()?;
+        without_build_provenance(&mut value);
+        Some(value)
+    };
+    left.len() == right.len()
+        && left
+            .iter()
+            .zip(right)
+            .all(|((left_path, left_bytes), (right_path, right_bytes))| {
+                left_path == right_path
+                    && normalized(left_bytes)
+                        .is_some_and(|left| Some(left) == normalized(right_bytes))
+            })
+}
+
+/// Where a checked-in import first differs from a fresh export, for the
+/// freshness failure message.
+fn first_import_difference(
+    checked_in: &std::collections::BTreeMap<PathBuf, Vec<u8>>,
+    exported: &std::collections::BTreeMap<PathBuf, Vec<u8>>,
+) -> String {
+    for path in checked_in.keys().chain(exported.keys()) {
+        let (Some(old), Some(new)) = (checked_in.get(path), exported.get(path)) else {
+            return format!("only one side has `{}`", path.display());
+        };
+        if old == new {
+            continue;
+        }
+        let at = old.iter().zip(new).take_while(|(a, b)| a == b).count();
+        let context = |bytes: &[u8]| {
+            let start = at.saturating_sub(80);
+            String::from_utf8_lossy(&bytes[start..(at + 80).min(bytes.len())]).into_owned()
+        };
+        return format!(
+            "`{}` differs at byte {at}\n    checked in: {}\n    exported:   {}",
+            path.display(),
+            context(old),
+            context(new)
+        );
+    }
+    "the lock differs only in its exporter identity".into()
+}
+
+/// The files under `directory`, by their paths inside it.
+fn checked_in_files(directory: &Path) -> std::collections::BTreeMap<PathBuf, Vec<u8>> {
+    let mut files = std::collections::BTreeMap::new();
+    let mut pending = vec![PathBuf::new()];
+    while let Some(relative) = pending.pop() {
+        for entry in fs::read_dir(directory.join(&relative))
+            .into_iter()
+            .flatten()
+        {
+            let entry = entry.unwrap();
+            let child = relative.join(entry.file_name());
+            if entry.file_type().unwrap().is_dir() {
+                pending.push(child);
+            } else {
+                files.insert(child.clone(), fs::read(directory.join(&child)).unwrap());
+            }
+        }
+    }
+    files
+}
+
 #[test]
 fn mdtests() {
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -341,24 +537,6 @@ fn mdtests() {
         );
         true
     };
-    // A gate run on a machine without the pinned C++ toolchain
-    // (`scripts/check.sh`) leaves out the mdtests that need its exporter.
-    let skipped_cpp = std::env::var_os(SKIP_CPP_FRONTEND).is_some() && {
-        let before = paths.len();
-        paths.retain(|path| {
-            let cpp = path.extension().is_some_and(|extension| extension == "md")
-                && read_mdtest(path).is_ok_and(|mdtest| mdtest.cpp_source.is_some());
-            if cpp {
-                println!(
-                    "SKIPPING C++ mdtest `{}`: {SKIP_CPP_FRONTEND} is set",
-                    path.display()
-                );
-            }
-            !cpp
-        });
-        paths.len() != before
-    };
-    let filtered = filtered || skipped_cpp;
     paths.sort();
     // CI splits the corpus across jobs to stay inside the gate's time
     // budget: `MDTEST_PARTITION=k/n` keeps every n-th file from the k-th,

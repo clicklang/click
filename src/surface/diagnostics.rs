@@ -1489,7 +1489,8 @@ pub(super) fn describe_runtime_error(
                 describe_pointer(pointer, parameter_binding)
             )
         }
-        crate::kernel::CRuntimeError::PointerConversion(message) => message.clone(),
+        crate::kernel::CRuntimeError::PointerConversion(message)
+        | crate::kernel::CRuntimeError::EnumVariant(message) => message.clone(),
         crate::kernel::CRuntimeError::IndeterminatePointeeType => {
             "pointer operation has no known pointee type".to_string()
         }
@@ -5351,6 +5352,33 @@ pub(super) fn describe_c_expression(expression: &CExpression) -> String {
             format!("(({spelling}){})", describe_c_expression(expression))
         }
         CExpression::FloatNegate(expression) => format!("-{}", describe_c_expression(expression)),
+        CExpression::EnumConstruct {
+            enum_type,
+            variant,
+            fields,
+        } => {
+            let name = format!("{}::{variant}", enum_type.name());
+            if fields.is_empty() {
+                name
+            } else {
+                format!(
+                    "{name}({})",
+                    fields
+                        .iter()
+                        .map(describe_c_expression)
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                )
+            }
+        }
+        CExpression::EnumField {
+            value,
+            variant,
+            index,
+        } => format!("({} as {variant}).{index}", describe_c_expression(value)),
+        CExpression::EnumIs { value, variant } => {
+            format!("{} is {variant}", describe_c_expression(value))
+        }
         CExpression::FloatClassification {
             expression,
             classification,
@@ -5963,10 +5991,17 @@ pub(super) fn describe_c_statement_head(statement: &CStatement) -> String {
             target,
             bytes,
             zeroed,
+            ends_program_on_failure,
             ..
         } => format!(
             "{target} = {}({});",
-            if *zeroed { "calloc" } else { "malloc" },
+            if *ends_program_on_failure {
+                "operator new"
+            } else if *zeroed {
+                "calloc"
+            } else {
+                "malloc"
+            },
             describe_c_expression(bytes)
         ),
         CStatement::HeapFree { pointer } => {

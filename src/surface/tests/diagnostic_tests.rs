@@ -3323,6 +3323,43 @@ fn failed_final_assumption_preserves_its_checked_trace_context() {
 }
 
 #[test]
+fn successful_transport_trace_keeps_checked_operands_without_added_facts() {
+    for suffix in ["", " using { at(saved, p[0] == 7); }"] {
+        let source = format!(
+            r#"verifying "f.c";
+            void f(int32 *p) {{ owns p[0]; requires p[0] == 7; ensures true; }} by {{
+                step(); mark saved;
+                transport(at(saved, p[0] == 7), p[0] == 7){suffix};
+                execute(); assumption();
+            }}
+        "#
+        );
+        with_proof_trace("f", || {
+            verify_c0_sources(
+                &source,
+                &[("f.c", "void f(int32 *p) { int32 y = 0; return; }")],
+            )
+            .expect("identity transport should verify");
+            let trace = accepted_proof_trace(&|_, _| None, &|_, _, _| None, &|_, _, _| false, None)
+                .expect("accepted transport retains its trace");
+            assert!(trace.contains("checked transport source:"), "{trace}");
+            assert!(trace.contains("checked transport target:"), "{trace}");
+            let focused = accepted_proof_trace(
+                &|_, path| {
+                    let line = path.first()? + 1;
+                    Some((format!("tactic@{line}"), SourcePosition::new(line, 1)))
+                },
+                &|_, _, _| None,
+                &|_, _, _| false,
+                Some(&SourcePosition::new(3, 1)),
+            )
+            .expect("the written transport source occurrence remains traceable");
+            assert!(focused.contains("checked transport target:"), "{focused}");
+        });
+    }
+}
+
+#[test]
 fn rejected_transport_prints_checked_reads_and_retains_prefix() {
     let stores = (1..10).map(|i| format!("p[{i}] = 9; ")).collect::<String>();
     let c = format!("void f(int32 *p) {{ {stores} p[0] = 9; return; }}");
