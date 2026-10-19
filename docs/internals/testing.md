@@ -284,9 +284,9 @@ Clang 19.1.7 for the exporter, and the Rust import tests need Charon's pinned
 `scripts/build-charon.sh --check` reports its toolchain missing,
 `scripts/check.sh` skips the suites that need it and runs the rest. Without
 the C++ toolchain it leaves out `tests/cpp_import.rs`,
-`tests/bitcoin_core_money_range.rs`, `tests/libcxx_span.rs`, `tests/libcxx_functional.rs`, the four `click` command tests that run a
-C++ mdtest (named in its filterset), and, through `CLICK_SKIP_CPP_FRONTEND`,
-the C++ mdtests and examples. Without Charon it leaves out
+`tests/bitcoin_core_money_range.rs`, `tests/libcxx_span.rs`,
+`tests/libcxx_functional.rs` and the C++ mdtest import freshness check; the C++
+mdtests and examples still run from their checked-in imports. Without Charon it leaves out
 `tests/rust_import.rs`. The gate names each skipped suite when it starts and
 again after its elapsed time, so a partial run cannot pass for a full one.
 
@@ -1023,10 +1023,14 @@ fence metadata can be `cpp filename=caller.cpp function=caller
 profile=scalar_int32`; keep the usual Click and expected-result blocks.
 
 `profile=normal_only` uses the exception-disabled baseline; `scalar_int32`
-enables typed `int` throw/catch. The mdtest gate and the profile, expand, and
-audit commands prepare the same locked C++ semantic import in a temporary
-directory. Run `scripts/build-cpp-exporter.sh` first when using those commands
-outside `scripts/check.sh`, or set `CLICK_CPP_EXPORTER` to the pinned exporter.
+enables typed `int` throw/catch. Each C++ mdtest's lock and semantic artifact
+are checked in under `mdtests/cpp-imports/<mdtest>/`, so the mdtest gate and
+the profile, expand, and audit commands load them without a compiler. A C++
+mdtest outside the corpus has none and needs `CLICK_CPP_EXPORTER`. After
+adding a C++ mdtest, changing its C++ fence, or changing the exporter, run
+`scripts/refresh-cpp-imports.sh` (LLVM 19.1.7) and commit the result. Where the
+exporter is available, `cpp_mdtest_imports_match_the_pinned_exporter` in
+`tests/mdtests.rs` fails on a stale, missing or orphaned import.
 The C++ and C fences cannot be mixed in one mdtest. See
 `mdtests/cpp_scalar_catch.md` for a real exception path.
 

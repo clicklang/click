@@ -27,7 +27,6 @@ mod tactic_work;
 
 const RUN_QUARANTINED: &str = "CLICK_RUN_QUARANTINED";
 /// Set by the gate when the pinned C++ exporter is not installed.
-const SKIP_CPP_FRONTEND: &str = "CLICK_SKIP_CPP_FRONTEND";
 const SOURCE_MANIFEST: &str = "SOURCE.sha256";
 const SOURCE_METADATA: &str = "SOURCE.md";
 
@@ -198,22 +197,6 @@ fn example_projects() {
         });
         projects.len() != before
     };
-    // A gate run on a machine without the pinned C++ toolchain
-    // (`scripts/check.sh`) leaves out the examples that refresh a C++ import.
-    let skipped_cpp = std::env::var_os(SKIP_CPP_FRONTEND).is_some() && {
-        let before = projects.len();
-        projects.retain(|path| {
-            let cpp = imports_cpp(path);
-            if cpp {
-                println!(
-                    "SKIPPING C++ example `{}`: {SKIP_CPP_FRONTEND} is set",
-                    path.display()
-                );
-            }
-            !cpp
-        });
-        projects.len() != before
-    };
     // CI splits the examples across jobs to stay inside the gate's time
     // budget: `EXAMPLE_PARTITION=k/n` keeps every n-th project from the k-th,
     // over the sorted names, so the shards cover them exactly once.
@@ -298,7 +281,6 @@ fn example_projects() {
     let hidden_prerequisites = instrumentation::take_hidden_prerequisite_census();
     if requested.is_none()
         && !run_quarantined
-        && !skipped_cpp
         && let Some(mismatch) = instrumentation::artifact_reuse_rejection_census_mismatch(
             &census,
             ARTIFACT_REUSE_REJECTION_BASELINE,
@@ -308,7 +290,6 @@ fn example_projects() {
     }
     if requested.is_none()
         && !run_quarantined
-        && !skipped_cpp
         && let Some(mismatch) = instrumentation::hidden_prerequisite_census_mismatch(
             &hidden_prerequisites,
             HIDDEN_PREREQUISITE_BASELINE,
@@ -1299,24 +1280,6 @@ fn byte_representation_source_is_frozen() {
         "4d5a08408323753ddae195ae33c4a776a4499a7aa9e8d0abf68c491245fe6847",
         "the byte-representation proof must use the selected C source unchanged"
     );
-}
-
-/// Whether any sidecar of `project` imports C++, which needs the exporter.
-fn imports_cpp(project: &Path) -> bool {
-    fs::read_dir(project)
-        .into_iter()
-        .flatten()
-        .flatten()
-        .any(|entry| {
-            let path = entry.path();
-            path.file_name()
-                .and_then(|name| name.to_str())
-                .is_some_and(|name| name.ends_with(".click.import.json"))
-                && fs::read(&path)
-                    .ok()
-                    .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok())
-                    .is_some_and(|config| config["language"] == "c++")
-        })
 }
 
 /// The directories the example gate runs: each directory under `examples`

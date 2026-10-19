@@ -1569,6 +1569,9 @@ pub struct CppMdTestSource {
     pub function: String,
     pub profile: String,
     pub source: String,
+    /// Where the fixture's checked-in import lives: the lock and artifact
+    /// `click import lock` writes, under `cpp-imports/<stem>` beside it.
+    pub import_directory: Option<PathBuf>,
 }
 
 impl MdTest {
@@ -1700,6 +1703,7 @@ pub fn parse_mdtest(path: &Path, source: &str) -> Result<MdTest, String> {
                         function,
                         profile,
                         source: body,
+                        import_directory: cpp_mdtest_import_directory(path),
                     })
                     .is_some()
                 {
@@ -1818,6 +1822,53 @@ fn read_mdtest_click_project(
     Ok(project)
 }
 
+const CPP_IMPORT_REFRESH: &str = "run scripts/refresh-cpp-imports.sh to export it again";
+
+/// `cpp-imports/<stem>` beside the mdtest at `path`.
+fn cpp_mdtest_import_directory(path: &Path) -> Option<PathBuf> {
+    Some(path.parent()?.join("cpp-imports").join(path.file_stem()?))
+}
+
+/// The lock and artifacts in a C++ import, by their paths inside it.
+fn cpp_import_files(directory: &Path) -> Result<Vec<PathBuf>, String> {
+    let mut files = vec![PathBuf::from(crate::project::LOCK_NAME)];
+    let mut pending = vec![PathBuf::from(".click")];
+    while let Some(relative) = pending.pop() {
+        let entries = fs::read_dir(directory.join(&relative))
+            .map_err(|error| format!("failed to read `{}`: {error}", relative.display()))?;
+        for entry in entries {
+            let entry = entry.map_err(|error| error.to_string())?;
+            let child = relative.join(entry.file_name());
+            if entry
+                .file_type()
+                .map_err(|error| error.to_string())?
+                .is_dir()
+            {
+                pending.push(child);
+            } else {
+                files.push(child);
+            }
+        }
+    }
+    files.sort();
+    Ok(files)
+}
+
+/// Copies a C++ import's lock and artifacts from one project directory to
+/// another.
+fn copy_cpp_import(from: &Path, to: &Path) -> Result<(), String> {
+    for relative in cpp_import_files(from)? {
+        let destination = to.join(&relative);
+        if let Some(parent) = destination.parent() {
+            fs::create_dir_all(parent)
+                .map_err(|error| format!("failed to create `{}`: {error}", parent.display()))?;
+        }
+        fs::copy(from.join(&relative), &destination)
+            .map_err(|error| format!("failed to copy `{}`: {error}", relative.display()))?;
+    }
+    Ok(())
+}
+
 /// Prepares the source representation consumed by every mdtest driver. C++
 /// fences go through the same locked semantic import as ordinary C++ sidecars;
 /// they never fall back to the C parser.
@@ -1825,57 +1876,108 @@ pub fn prepare_mdtest_inputs(mdtest: &MdTest) -> Result<CInput, String> {
     let Some(cpp) = &mdtest.cpp_source else {
         return Ok(CInput::Bundle(mdtest.c_sources.clone()));
     };
-    static NEXT_MDTEST_IMPORT: AtomicUsize = AtomicUsize::new(0);
-    let directory = std::env::temp_dir().join(format!(
-        "click-cpp-mdtest-{}-{}",
-        std::process::id(),
-        NEXT_MDTEST_IMPORT.fetch_add(1, Ordering::Relaxed)
-    ));
-    fs::create_dir(&directory)
-        .map_err(|error| format!("failed to create C++ mdtest directory: {error}"))?;
-    struct RemoveDirectory(PathBuf);
-    impl Drop for RemoveDirectory {
-        fn drop(&mut self) {
-            let _ = fs::remove_dir_all(&self.0);
-        }
-    }
-    let _guard = RemoveDirectory(directory.clone());
-    let exporter = std::env::var_os("CLICK_CPP_EXPORTER")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| {
-            Path::new(env!("CARGO_MANIFEST_DIR")).join("target/cpp-exporter/click-cpp-exporter")
+    let fixture = CppMdTestProject::materialize(cpp)?;
+    let checked_in = cpp
+        .import_directory
+        .as_ref()
+        .filter(|directory| directory.join(crate::project::LOCK_NAME).is_file());
+    if let Some(checked_in) = checked_in {
+        copy_cpp_import(checked_in, &fixture.directory)?;
+    } else if let Some(exporter) = std::env::var_os("CLICK_CPP_EXPORTER") {
+        // A fixture written outside the corpus, as a command test writes one,
+        // has nothing checked in; the pinned exporter imports it directly.
+        fixture
+            .project
+            .lock_with_cpp_exporter(Some(Path::new(&exporter)))?;
+    } else {
+        return Err(match &cpp.import_directory {
+            Some(directory) => format!(
+                "this C++ mdtest has no checked-in import at `{}`; {CPP_IMPORT_REFRESH}",
+                directory.display()
+            ),
+            None => format!("this C++ mdtest has no checked-in import; {CPP_IMPORT_REFRESH}"),
         });
-    let exporter = fs::canonicalize(&exporter).map_err(|error| {
-        format!(
-            "C++ mdtests need the pinned exporter at `{}` ({error}); run scripts/build-cpp-exporter.sh or set CLICK_CPP_EXPORTER",
-            exporter.display()
-        )
-    })?;
-    fs::write(directory.join(&cpp.filename), &cpp.source)
-        .map_err(|error| format!("failed to materialize C++ mdtest source: {error}"))?;
-    let project = serde_json::json!({"units": {"fixture": {
-        "language": "c++",
-        "exceptions": cpp.profile == "scalar_int32",
-        "args": ["-funsigned-char", "-ffreestanding", "-nostdinc", "-nostdinc++"],
-        "sources": {&cpp.filename: {
-            "functions": [&cpp.function],
-            "exception_behavior": &cpp.profile,
-        }},
-    }}});
-    let project_file = directory.join(crate::project::FILE_NAME);
-    fs::write(
-        &project_file,
-        serde_json::to_vec_pretty(&project).map_err(|error| error.to_string())?,
-    )
-    .map_err(|error| format!("failed to materialize C++ mdtest project: {error}"))?;
-    let project = crate::project::Project::load(&project_file)?;
-    project.lock_with_cpp_exporter(Some(&exporter))?;
-    let source = fs::canonicalize(directory.join(&cpp.filename)).ok();
-    match project.prepared_sources(&[(cpp.filename.clone(), source)])? {
+    }
+    let source = fs::canonicalize(fixture.directory.join(&cpp.filename)).ok();
+    let prepared = fixture
+        .project
+        .prepared_sources(&[(cpp.filename.clone(), source)])
+        .map_err(|error| format!("{error}\n  for a C++ mdtest, {CPP_IMPORT_REFRESH}"))?;
+    match prepared {
         Some(crate::project::UnitSelection::Program(program)) => {
             Ok(CInput::PreparedProgram(program))
         }
         _ => Err("the C++ mdtest project does not prepare its source".into()),
+    }
+}
+
+/// Exports a C++ mdtest with the pinned exporter at `exporter`, returning the
+/// files its checked-in import holds by their paths inside that import.
+pub fn export_cpp_mdtest_import(
+    mdtest: &MdTest,
+    exporter: &Path,
+) -> Result<BTreeMap<PathBuf, Vec<u8>>, String> {
+    let cpp = mdtest
+        .cpp_source
+        .as_ref()
+        .ok_or("only a C++ mdtest has an import")?;
+    let fixture = CppMdTestProject::materialize(cpp)?;
+    fixture.project.lock_with_cpp_exporter(Some(exporter))?;
+    let mut files = BTreeMap::new();
+    for relative in cpp_import_files(&fixture.directory)? {
+        let bytes = fs::read(fixture.directory.join(&relative))
+            .map_err(|error| format!("failed to read `{}`: {error}", relative.display()))?;
+        files.insert(relative, bytes);
+    }
+    Ok(files)
+}
+
+/// A C++ mdtest's one-unit project, written to a temporary directory that is
+/// removed when this is dropped.
+struct CppMdTestProject {
+    directory: PathBuf,
+    project: crate::project::Project,
+}
+
+impl CppMdTestProject {
+    fn materialize(cpp: &CppMdTestSource) -> Result<Self, String> {
+        static NEXT_MDTEST_IMPORT: AtomicUsize = AtomicUsize::new(0);
+        let directory = std::env::temp_dir().join(format!(
+            "click-cpp-mdtest-{}-{}",
+            std::process::id(),
+            NEXT_MDTEST_IMPORT.fetch_add(1, Ordering::Relaxed)
+        ));
+        fs::create_dir(&directory)
+            .map_err(|error| format!("failed to create C++ mdtest directory: {error}"))?;
+        let remove = |error: String| {
+            let _ = fs::remove_dir_all(&directory);
+            error
+        };
+        fs::write(directory.join(&cpp.filename), &cpp.source)
+            .map_err(|error| remove(format!("failed to materialize C++ mdtest source: {error}")))?;
+        let project = serde_json::json!({"units": {"fixture": {
+            "language": "c++",
+            "exceptions": cpp.profile == "scalar_int32",
+            "args": ["-funsigned-char", "-ffreestanding", "-nostdinc", "-nostdinc++"],
+            "sources": {&cpp.filename: {
+                "functions": [&cpp.function],
+                "exception_behavior": &cpp.profile,
+            }},
+        }}});
+        let project_file = directory.join(crate::project::FILE_NAME);
+        fs::write(
+            &project_file,
+            serde_json::to_vec_pretty(&project).map_err(|error| remove(error.to_string()))?,
+        )
+        .map_err(|error| remove(format!("failed to materialize C++ mdtest project: {error}")))?;
+        let project = crate::project::Project::load(&project_file).map_err(remove)?;
+        Ok(Self { directory, project })
+    }
+}
+
+impl Drop for CppMdTestProject {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.directory);
     }
 }
 

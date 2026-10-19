@@ -1,0 +1,73 @@
+{
+  "schema": 1,
+  "units": {
+    "fixture": {
+      "language": "c++",
+      "lock": {
+        "c++": {
+          "sources": {
+            "field_drop.cpp": {
+              "compilation_database_sha256": "cda422936380de4fd6b2b5a2f91e5c1a92eab55af6bdb539b195c05096695b18",
+              "dependencies": {},
+              "logical_source_sha256": "06ff84357ed52897d0699d93a68cdee16c6e20c3ef8648a5b9407c54ed8f6274",
+              "prepared_roots": [
+                "$unit",
+                "$project"
+              ],
+              "profile": {
+                "compilation_command": [
+                  "clang++",
+                  "-x",
+                  "c++",
+                  "-std=c++20",
+                  "--target=x86_64-unknown-linux-gnu",
+                  "-fexceptions",
+                  "-fno-rtti",
+                  "-O2",
+                  "-fno-strict-aliasing",
+                  "-funsigned-char",
+                  "-ffreestanding",
+                  "-nostdinc",
+                  "-nostdinc++",
+                  "-c",
+                  "field_drop.cpp",
+                  "-o",
+                  "field_drop.cpp.o"
+                ],
+                "compilation_directory": "$unit",
+                "compilation_file": "field_drop.cpp",
+                "exceptions": true,
+                "frontend": "clang",
+                "frontend_version": "clang version 19.1.7 (/home/runner/work/llvm-project/llvm-project/clang cd708029e0b2869e80abe31ddb175f7c35361f90)",
+                "rtti": false,
+                "standard": "c++20",
+                "target": "x86_64-unknown-linux-gnu"
+              },
+              "schema": 6,
+              "source_sha256": "06ff84357ed52897d0699d93a68cdee16c6e20c3ef8648a5b9407c54ed8f6274"
+            }
+          }
+        },
+        "envelope": 1,
+        "frontend": {
+          "identity": "b0f42fd6919745ef3ce9ff6dc1c83435e410d8545ae2d494a02dd03e61c6ee4d",
+          "name": "clang"
+        },
+        "sources": {
+          "field_drop.cpp": {
+            "artifact": {
+              "bytes": 19258,
+              "path": ".click/fixture/field_drop.cpp.click-cpp.json",
+              "sha256": "7c2fc04e1ed35bbc6dded5c71c8c5fbe82d8f77769989a302b7fd917fc6f2ea2"
+            },
+            "identity": "22ab6418975511da3c3ac4c96557f68354f8207220a281352209fa405fee3473",
+            "inputs": {
+              "$unit/field_drop.cpp": "06ff84357ed52897d0699d93a68cdee16c6e20c3ef8648a5b9407c54ed8f6274"
+            }
+          }
+        },
+        "unit": "aa20b0857066fa27f48be5b74689863c93f39a1a61890bb3697c520e0944789f"
+      }
+    }
+  }
+}
