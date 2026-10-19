@@ -7721,6 +7721,12 @@ impl<'a> Proof<'a> {
                         Bitvector32Term::Constant(bits) => Some(ContractExpression::CFragment(
                             CExpression::Value(CValue::Int32(Bitvector32Term::Constant(*bits))),
                         )),
+                        Bitvector32Term::UInt64Constant(_) => Some(ContractExpression::CFragment(
+                            CExpression::Value(CValue::UInt64(value.clone())),
+                        )),
+                        Bitvector32Term::Int64Constant(_) => Some(ContractExpression::CFragment(
+                            CExpression::Value(CValue::Int64(value.clone())),
+                        )),
                         Bitvector32Term::Variable(variable) => {
                             let Some(goal) = self.proposition_obligation() else {
                                 continue;

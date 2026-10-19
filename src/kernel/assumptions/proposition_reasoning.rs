@@ -2758,6 +2758,39 @@ impl PureFactContext {
                         candidates,
                     );
                 }
+                (
+                    PointerOffsetTerm::Int64Scaled {
+                        value: left,
+                        byte_width: left_width,
+                        unsigned: left_unsigned,
+                    },
+                    PointerOffsetTerm::Int64Scaled {
+                        value: right,
+                        byte_width: right_width,
+                        unsigned: right_unsigned,
+                    },
+                ) if left_width == right_width && left_unsigned == right_unsigned => {
+                    collect_term_candidates(left, right, bound, candidates);
+                }
+                (
+                    PointerOffsetTerm::Int64Scaled {
+                        value: left,
+                        byte_width,
+                        unsigned,
+                    },
+                    PointerOffsetTerm::Constant(bytes),
+                ) if *byte_width != 0 && bytes % byte_width == 0 => {
+                    let elements = bytes / byte_width;
+                    let value = if *unsigned {
+                        let Ok(elements) = u64::try_from(elements) else {
+                            return;
+                        };
+                        Bitvector32Term::UInt64Constant(elements)
+                    } else {
+                        Bitvector32Term::Int64Constant(elements)
+                    };
+                    collect_term_candidates(left, &value, bound, candidates);
+                }
                 _ => {}
             }
         }

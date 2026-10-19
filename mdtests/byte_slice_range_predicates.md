@@ -21,10 +21,10 @@ verifying "byte_slice_range_predicates.c";
 int32 byte_slice_range_predicates(uint8 p[], int32 n) {
     requires viewable(p[0..n]);
     requires viewable(p[0..3]);
-    requires bytes::contains(p, 0u64, (uint64) n, 'x');
+    requires bytes::contains(p, 0, (uint64) n, 'x');
     requires bytes::all_not_equal(p, 0, 3, 'y');
 
-    ensures opened_contains: bytes::contains(p, 0u64, (uint64) n, 'x') by {
+    ensures opened_contains: bytes::contains(p, 0, (uint64) n, 'x') by {
         execute();
         unfold(bytes::contains);
         obtain (found: uint64) {

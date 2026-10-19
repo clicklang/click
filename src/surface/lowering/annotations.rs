@@ -4610,6 +4610,24 @@ impl AnnotationLowerer<'_> {
         }
     }
 
+    fn lower_pure_parameter_argument_to_spec(
+        &mut self,
+        parameter: &FunctionParameter,
+        argument: &ContractExpression,
+        environment: &SpecElaborationContext,
+    ) -> Result<SpecExpression, String> {
+        // Lower the borrowed argument once: wrapping its surface tree first
+        // would clone every nested call's subtree.
+        let value = self.lower_contract_expression_to_spec(argument, environment)?;
+        Ok(match pure_function_parameter_conversion(parameter) {
+            Some((target, crate::kernel::CIntegerCastMode::PointerCoercion)) => {
+                SpecExpression::PointerCoercion(Box::new(value), target)
+            }
+            Some((target, _)) => SpecExpression::Cast(Box::new(value), target),
+            None => value,
+        })
+    }
+
     #[inline(never)]
     fn lower_predicate_call_proposition_to_spec(
         &mut self,
@@ -4746,7 +4764,11 @@ impl AnnotationLowerer<'_> {
                             ClickType::C(_) | ClickType::CObjectPointer { .. } => {
                                 predicate_environment.values.insert(
                                     parameter.name().to_string(),
-                                    self.lower_contract_expression_to_spec(argument, environment)?,
+                                    self.lower_pure_parameter_argument_to_spec(
+                                        parameter,
+                                        argument,
+                                        environment,
+                                    )?,
                                 );
                             }
                             ClickType::Integer => {
@@ -4810,7 +4832,11 @@ impl AnnotationLowerer<'_> {
                         });
                     } else {
                         lowered_arguments.push(SpecPredicateArgument::Value(
-                            self.lower_contract_expression_to_spec(argument, environment)?,
+                            self.lower_pure_parameter_argument_to_spec(
+                                parameter,
+                                argument,
+                                environment,
+                            )?,
                         ));
                     }
                 }
@@ -5065,7 +5091,8 @@ impl AnnotationLowerer<'_> {
     ) -> bool {
         [start, end].into_iter().any(|bound| {
             matches!(
-                self.contract_expression_click_type(bound, environment),
+                generics::explicit_cast_click_type(bound)
+                    .or_else(|| self.contract_expression_click_type(bound, environment)),
                 Some(ClickType::C(C0Type::UInt64(_)))
             ) || matches!(bound, ContractExpression::CFragment(CExpression::Variable(name))
                     if self.c_variable_type(name) == Some(CType::UInt64))
@@ -7140,17 +7167,11 @@ impl AnnotationLowerer<'_> {
                         })
                     }
                     ClickType::C(_) | ClickType::CObjectPointer { .. } => {
-                        // Lower the borrowed argument once; wrapping its surface
-                        // tree first would clone every nested call's subtree.
-                        let value =
-                            self.lower_contract_expression_to_spec(argument, environment)?;
-                        let value = match pure_function_parameter_conversion(parameter) {
-                            Some((target, crate::kernel::CIntegerCastMode::PointerCoercion)) => {
-                                SpecExpression::PointerCoercion(Box::new(value), target)
-                            }
-                            Some((target, _)) => SpecExpression::Cast(Box::new(value), target),
-                            None => value,
-                        };
+                        let value = self.lower_pure_parameter_argument_to_spec(
+                            parameter,
+                            argument,
+                            environment,
+                        )?;
                         Ok(crate::kernel::SpecPureFunctionArgument::Value(value))
                     }
                 }?;
@@ -7862,6 +7883,10 @@ impl AnnotationLowerer<'_> {
                 || *target_type == CType::UInt64
                     && (!matches!(environment.current_memory, SpecMemory::Current)
                         || environment.current_loop_entry.is_some()
+                        // A cast introduced by parameter substitution still
+                        // reads a quantified value from its lexical environment.
+                        || matches!(expression.as_ref(), CExpression::Variable(name)
+                            if environment.values.contains_key(name))
                         || self
                             .c_expression_array_element_width(expression, environment)
                             .is_some())
