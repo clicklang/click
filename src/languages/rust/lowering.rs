@@ -76,14 +76,26 @@ impl EnumTypes {
                 })
                 .collect::<Result<Vec<_>, String>>()?
                 .into();
+            // An instance of a library enum is that `spec enum` at its
+            // arguments: `Option<u32>` is `Option` at `u32`.
+            let spec_name = declared.generic.as_ref().unwrap_or(&declared.name);
+            let arguments = declared
+                .arguments
+                .iter()
+                .map(|argument| {
+                    Ok(AlgebraicValueType::C(
+                        scalar_type(argument)?.to_kernel_type(),
+                    ))
+                })
+                .collect::<Result<Vec<_>, String>>()?;
             let nominal = AlgebraicValueType::Algebraic {
-                name: declared.name.clone(),
-                arguments: Vec::new(),
+                name: spec_name.clone(),
+                arguments: arguments.clone(),
             };
             let algebraic_type = AlgebraicType {
                 rigid: false,
-                name: declared.name.clone(),
-                arguments: Vec::new(),
+                name: spec_name.clone(),
+                arguments,
                 variants: variants.clone(),
                 schemas: std::sync::Arc::new(AlgebraicSchemas::new(BTreeMap::from([(
                     nominal, variants,
@@ -1709,14 +1721,34 @@ impl Context<'_> {
                 name,
                 variant,
                 fields,
-            } => Ok(CExpression::EnumConstruct {
-                enum_type: EnumTypes::get(name)?,
-                variant: variant.clone(),
-                fields: fields
+            } => {
+                let enum_type = EnumTypes::get(name)?;
+                let declared = enum_type
+                    .algebraic_type()
+                    .variants
                     .iter()
-                    .map(|field| self.expr(field))
-                    .collect::<Result<_, _>>()?,
-            }),
+                    .find(|declared| declared.name == *variant)
+                    .map(|declared| declared.fields.clone())
+                    .ok_or_else(|| format!("unknown variant `{variant}` of a Rust enum"))?;
+                // A field is converted to its declared type as an assignment
+                // is: a `bool` operand is an `int` until it is stored.
+                let fields = fields
+                    .iter()
+                    .zip(&declared)
+                    .map(|(field, declared)| {
+                        let value = self.expr(field)?;
+                        Ok(match declared {
+                            AlgebraicValueType::C(c_type) => c_cast(value, *c_type),
+                            _ => value,
+                        })
+                    })
+                    .collect::<Result<_, String>>()?;
+                Ok(CExpression::EnumConstruct {
+                    enum_type,
+                    variant: variant.clone(),
+                    fields,
+                })
+            }
             E::EnumField {
                 base,
                 variant,

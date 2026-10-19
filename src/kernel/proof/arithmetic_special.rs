@@ -706,36 +706,76 @@ impl SpecialArithmeticCertificate {
         premises: &[Proposition],
     ) -> Result<(), SpecialArithmeticCheckError> {
         match node {
-            SpecialArithmeticNode::IntegerProductBounds { bounds, result } => {
-                super::integer_product_bounds::check(index, bounds, premises, result)
-            }
-            SpecialArithmeticNode::IntegerDivisionBounds { bounds, result } => {
-                super::integer_division_bounds::check(index, bounds, premises, result)
-            }
-            SpecialArithmeticNode::IntegerMultiplyOrder { bounds, result } => {
-                super::integer_multiply_order::check(index, bounds, premises, result)
-            }
-            SpecialArithmeticNode::IntegerQuotientBound { bounds, result } => {
-                super::integer_quotient_bound::check(index, bounds, premises, result)
-            }
-            SpecialArithmeticNode::IntegerBoundExclusion { bounds, result } => {
-                super::integer_bound_exclusion::check(index, bounds, premises, result)
-            }
-            SpecialArithmeticNode::IntegerRelationTransport { bounds, result } => {
-                super::integer_relation_transport::check(index, bounds, premises, result)
-            }
-            SpecialArithmeticNode::IntegerPolynomialIdentity { bounds, result } => {
-                super::integer_polynomial_identity::check(index, bounds, premises, result)
-            }
-            SpecialArithmeticNode::IntegerQuotientShift { bounds, result } => {
-                super::integer_quotient_shift::check(index, bounds, premises, result)
-            }
-            SpecialArithmeticNode::IntegerCastIdentity { bounds, result } => {
-                super::integer_cast_identity::check(index, bounds, premises, result)
-            }
-            SpecialArithmeticNode::IntegerOperationIdentity { bounds, result } => {
-                super::integer_operation_identity::check(index, bounds, premises, result)
-            }
+            SpecialArithmeticNode::IntegerProductBounds { bounds, result } => integer_rule(
+                index,
+                bounds,
+                premises,
+                result,
+                super::integer_product_bounds::check,
+            ),
+            SpecialArithmeticNode::IntegerDivisionBounds { bounds, result } => integer_rule(
+                index,
+                bounds,
+                premises,
+                result,
+                super::integer_division_bounds::check,
+            ),
+            SpecialArithmeticNode::IntegerMultiplyOrder { bounds, result } => integer_rule(
+                index,
+                bounds,
+                premises,
+                result,
+                super::integer_multiply_order::check,
+            ),
+            SpecialArithmeticNode::IntegerQuotientBound { bounds, result } => integer_rule(
+                index,
+                bounds,
+                premises,
+                result,
+                super::integer_quotient_bound::check,
+            ),
+            SpecialArithmeticNode::IntegerBoundExclusion { bounds, result } => integer_rule(
+                index,
+                bounds,
+                premises,
+                result,
+                super::integer_bound_exclusion::check,
+            ),
+            SpecialArithmeticNode::IntegerRelationTransport { bounds, result } => integer_rule(
+                index,
+                bounds,
+                premises,
+                result,
+                super::integer_relation_transport::check,
+            ),
+            SpecialArithmeticNode::IntegerPolynomialIdentity { bounds, result } => integer_rule(
+                index,
+                bounds,
+                premises,
+                result,
+                super::integer_polynomial_identity::check,
+            ),
+            SpecialArithmeticNode::IntegerQuotientShift { bounds, result } => integer_rule(
+                index,
+                bounds,
+                premises,
+                result,
+                super::integer_quotient_shift::check,
+            ),
+            SpecialArithmeticNode::IntegerCastIdentity { bounds, result } => integer_rule(
+                index,
+                bounds,
+                premises,
+                result,
+                super::integer_cast_identity::check,
+            ),
+            SpecialArithmeticNode::IntegerOperationIdentity { bounds, result } => integer_rule(
+                index,
+                bounds,
+                premises,
+                result,
+                super::integer_operation_identity::check,
+            ),
             SpecialArithmeticNode::PointerTranslation {
                 relation,
                 bounds,
@@ -753,24 +793,14 @@ impl SpecialArithmeticCertificate {
                 let relation_proposition = premises
                     .get(*relation)
                     .ok_or(SpecialArithmeticCheckError::InvalidPremise(*relation))?;
-                // An Integer comparison of exact observations holds exactly
-                // when its native comparison does, so a bound listed in that
-                // form reads as the native bound it is equivalent to.
                 let bound_propositions = bounds
                     .iter()
                     .map(|bound| {
-                        let premise = premises
+                        premises
                             .get(*bound)
-                            .ok_or(SpecialArithmeticCheckError::InvalidPremise(*bound))?;
-                        Ok(
-                            crate::kernel::assumptions::native_reading_of_integer_observation_fact(
-                                premise,
-                            )
-                            .unwrap_or_else(|| premise.clone()),
-                        )
+                            .ok_or(SpecialArithmeticCheckError::InvalidPremise(*bound))
                     })
                     .collect::<Result<Vec<_>, _>>()?;
-                let bound_propositions = bound_propositions.iter().collect::<Vec<_>>();
                 let accepted =
                     pointer_translation(relation_proposition, &bound_propositions, result);
                 if !accepted {
@@ -1396,6 +1426,74 @@ enum OffsetPart<'a> {
     Scaled(&'a Bitvector32Term, i64),
     /// An unsigned 64-bit index scaled by an element width.
     Scaled64(&'a Bitvector32Term, i64),
+}
+
+/// Check Integer rule node `index` against the Integer readings of the
+/// premises it cites. The Integer rules read a native comparison premise as
+/// the Integer comparison of its exact observations, which holds exactly
+/// when it does; only the cited premises are read, so the work follows the
+/// certificate rather than the context.
+fn integer_rule(
+    index: usize,
+    bounds: &[usize],
+    premises: &[Proposition],
+    result: &Proposition,
+    check: fn(
+        usize,
+        &[usize],
+        &[Proposition],
+        &Proposition,
+    ) -> Result<(), SpecialArithmeticCheckError>,
+) -> Result<(), SpecialArithmeticCheckError> {
+    if bounds.iter().any(|&bound| bound >= premises.len()) {
+        return check(index, bounds, premises, result);
+    }
+    let cited = bounds
+        .iter()
+        .map(|&bound| {
+            crate::kernel::assumptions::integer_observations_of_native_comparison(&premises[bound])
+                .into_iter()
+                .next()
+                .unwrap_or_else(|| premises[bound].clone())
+        })
+        .collect::<Vec<_>>();
+    let local = (0..bounds.len()).collect::<Vec<_>>();
+    integer_rule_holds(result, |result| check(index, &local, &cited, result))
+}
+
+/// An Integer rule's result as the rule derives it: a native comparison
+/// result is the Integer comparison of its exact observations, in whichever
+/// of its readings the rule's inputs name. The first reading that checks is
+/// the node's.
+fn integer_rule_holds(
+    result: &Proposition,
+    check: impl Fn(&Proposition) -> Result<(), SpecialArithmeticCheckError>,
+) -> Result<(), SpecialArithmeticCheckError> {
+    let negated;
+    let native = match result {
+        Proposition::Not(inner) => match inner.as_ref() {
+            Proposition::ConditionIs(condition, value) => {
+                negated = Proposition::ConditionIs(condition.clone(), !value);
+                &negated
+            }
+            _ => result,
+        },
+        _ => result,
+    };
+    let readings = crate::kernel::assumptions::integer_observations_of_native_comparison(native);
+    if readings.is_empty() {
+        return check(result);
+    }
+    let mut first_error = None;
+    for reading in &readings {
+        match check(reading) {
+            Ok(()) => return Ok(()),
+            Err(error) => {
+                first_error.get_or_insert(error);
+            }
+        }
+    }
+    Err(first_error.expect("a reading was checked"))
 }
 
 fn pointer_translation(
@@ -3208,64 +3306,6 @@ mod tests {
             Err(SpecialArithmeticCheckError::NodeResultMismatch(0))
                 | Err(SpecialArithmeticCheckError::InvalidPremise(_))
         ));
-    }
-
-    #[test]
-    fn translation_reads_an_integer_observation_bound_as_its_native_bound() {
-        let p = PointerOffsetTerm::Variable(crate::kernel::Variable(100));
-        let arr = PointerOffsetTerm::Variable(crate::kernel::Variable(101));
-        let i = Bitvector32Term::Variable(crate::kernel::Variable(1));
-        let n = Bitvector32Term::Variable(crate::kernel::Variable(2));
-        let relation = pointer_eq(p.clone(), add(arr.clone(), scaled(i.clone())));
-        let observe = |value: &Bitvector32Term| {
-            crate::kernel::SharedIntegerTerm::from(crate::kernel::IntegerTerm::Machine(
-                crate::kernel::SharedMachineIntegerTerm::intern(
-                    crate::kernel::MachineIntegerType::Int32,
-                    value.clone(),
-                ),
-            ))
-        };
-        // `to_integer(i) < to_integer(n)` holds exactly when `i < n` does.
-        let bound = Proposition::ConditionIs(
-            ConditionTerm::IntegerLessThan(observe(&i), observe(&n)),
-            true,
-        );
-        let goal = pointer_eq(
-            add(p, PointerOffsetTerm::Constant(4)),
-            add(
-                arr,
-                scaled(Bitvector32Term::Add(
-                    Box::new(i),
-                    Box::new(Bitvector32Term::Constant(1)),
-                )),
-            ),
-        );
-        let certificate = SpecialArithmeticCertificate {
-            nodes: vec![SpecialArithmeticNode::PointerTranslation {
-                relation: 0,
-                bounds: vec![1],
-                result: goal.clone(),
-            }],
-            conclusion: 0,
-        };
-        certificate
-            .check(&goal, &[relation.clone(), bound])
-            .unwrap();
-        // An Integer comparison that is not an observation of machine values
-        // is not a native bound.
-        let sum = Proposition::ConditionIs(
-            ConditionTerm::IntegerLessThan(
-                crate::kernel::SharedIntegerTerm::from(crate::kernel::IntegerTerm::Add(
-                    observe(&Bitvector32Term::Variable(crate::kernel::Variable(1))),
-                    crate::kernel::SharedIntegerTerm::from(
-                        crate::kernel::IntegerTerm::constant_i64(0),
-                    ),
-                )),
-                observe(&Bitvector32Term::Variable(crate::kernel::Variable(2))),
-            ),
-            true,
-        );
-        assert!(certificate.check(&goal, &[relation, sum]).is_err());
     }
 
     #[test]

@@ -531,12 +531,8 @@ fn is_signed_scalar_bound(p: &Proposition) -> bool {
     };
     true
 }
-/// A scalar bound a pointer translation may cite: a native order, or an
-/// Integer comparison of exact observations, which the kernel reads as the
-/// native order it is equivalent to.
+/// A scalar bound a pointer translation may cite.
 fn is_pointer_translation_bound(p: &Proposition) -> bool {
-    let native = crate::kernel::assumptions::native_reading_of_integer_observation_fact(p);
-    let p = native.as_ref().unwrap_or(p);
     is_signed_scalar_bound(p) || is_unsigned64_bound(p)
 }
 /// An unsigned 64-bit order, which bounds a `uint64` index.

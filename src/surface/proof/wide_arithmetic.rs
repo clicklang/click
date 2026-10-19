@@ -539,6 +539,20 @@ impl<'a> Proof<'a> {
             for item in pending {
                 let attempt = match &item {
                     Pending::Premise(premise, lower, upper, relation) => {
+                        // The carry below is `assumption()`, whose refusal
+                        // would name the observed reading rather than the
+                        // listed premise the proof lacks.
+                        let available = self
+                            .lower_surface_proposition(premise, "`arithmetic` premise")
+                            .is_ok_and(|lowered| {
+                                self.facts().listed_premise_available(&lowered, &[], false)
+                            });
+                        if !available {
+                            return Err(Some(format!(
+                                "`arithmetic` requires an unavailable exact premise: `{}`",
+                                spell(premise)
+                            )));
+                        }
                         let observed = relate(to_integer(lower), to_integer(upper), *relation);
                         // Equal values have equal observations: rewriting
                         // by the premise leaves an identity.
@@ -550,22 +564,10 @@ impl<'a> Proof<'a> {
                         } else {
                             Ok(proof.clone())
                         };
-                        // Equal values have equal observations: rewriting
-                        // by the premise leaves an identity.
-                        let carried = match relation {
-                            Relation::Equal => {
-                                vec![ProofStep::Rewrite(premise.clone()), ProofStep::Normalize]
-                            }
-                            order => vec![apply(
-                                &carrier.theorem(if *order == Relation::Less {
-                                    "less_than_to_integer"
-                                } else {
-                                    "less_equal_to_integer"
-                                }),
-                                vec![lower.clone(), upper.clone()],
-                                vec![stated],
-                            )],
-                        };
+                        // A comparison of exact observations is the native
+                        // comparison of their carriers, so the Integer
+                        // order is the stated premise itself.
+                        let carried = vec![ProofStep::Assumption];
                         restated
                             .and_then(|proof| proof.apply_step(have(observed.clone(), carried)))
                             .map(|proof| (proof, observed))
@@ -782,22 +784,15 @@ impl<'a> Proof<'a> {
                     ),
                 })
             })?;
-        let applied = proof
-            .apply_step(apply(
-                &carrier.theorem(match goal_relation {
-                    Relation::Less => "to_integer_less_than_implies_less_than",
-                    Relation::LessEqual => "to_integer_less_equal_implies_less_equal",
-                    Relation::Equal => "to_integer_equal_implies_equal",
-                }),
-                vec![goal_lower, goal_upper],
-                vec![observed_goal],
+        // The observed goal is the native goal's own form, so the fact just
+        // proved closes it.
+        let _ = (goal_lower, goal_upper);
+        let applied = proof.apply_step(ProofStep::Assumption).map_err(|error| {
+            Some(format!(
+                "the Integer claim could not be carried back: {}",
+                error.raw_summary()
             ))
-            .map_err(|error| {
-                Some(format!(
-                    "the Integer claim could not be carried back: {}",
-                    error.raw_summary()
-                ))
-            })?;
+        })?;
         if applied.is_complete() || applied.goal() != self.goal() {
             return Ok(applied);
         }

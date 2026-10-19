@@ -5406,7 +5406,7 @@ impl parser::ProgramLayouts {
                 {
                     tables
                         .rust_enum_types
-                        .insert(enum_type.name().to_string(), enum_type);
+                        .insert(rust_enum_type_name(enum_type), enum_type);
                 }
             }
             if let Some(generic) = function.generic_instance() {
@@ -9048,3 +9048,27 @@ mod retained_caller_tests {
 
 #[cfg(test)]
 mod construction_return_tests;
+
+/// The name a sidecar's Rust type resolves to for enum type `enum_type`: a
+/// crate enum's own name, or an `Option` instance's importer name.
+fn rust_enum_type_name(enum_type: crate::kernel::TypeParameterName) -> String {
+    let algebraic_type = enum_type.algebraic_type();
+    let spelling = |argument: &crate::kernel::AlgebraicValueType| match argument {
+        crate::kernel::AlgebraicValueType::C(c_type) => match c_type {
+            crate::kernel::CType::Int32 => "i32",
+            crate::kernel::CType::UInt8 => "u8",
+            crate::kernel::CType::UInt16 => "u16",
+            crate::kernel::CType::UInt32 => "u32",
+            crate::kernel::CType::UInt64 => "usize",
+            crate::kernel::CType::Bool => "bool",
+            _ => "?",
+        },
+        _ => "?",
+    };
+    match algebraic_type.arguments.as_slice() {
+        [argument] if algebraic_type.name == "Option" => {
+            crate::languages::rust::names::option_type_name(spelling(argument))
+        }
+        _ => algebraic_type.name.clone(),
+    }
+}

@@ -40,3 +40,12 @@ pub fn classify(x: u32) -> u32 {
         _ => 30,
     }
 }
+
+pub enum Light {
+    Off,
+    On(bool),
+}
+
+pub fn light(on: bool) -> Light {
+    if on { Light::On(true) } else { Light::Off }
+}

@@ -4043,6 +4043,10 @@ pub(super) fn finish_ordered_proof<'a>(
                                             Some(completed) => {
                                                 Some((claim_index, before_simp, completed))
                                             }
+                                            None if opened.falls_back_on_miss() => {
+                                                opened_claim = Some(opened.with_proof(proof));
+                                                None
+                                            }
                                             None => {
                                                 let claim_label = function_claim_label(
                                                     function_block,
@@ -4677,16 +4681,13 @@ pub(super) fn finish_ordered_proof<'a>(
                                 }) {
                                     continue;
                                 }
-                                // A per-claim proof does not require every
-                                // source tactic to be a closer. If retained
-                                // `simp` contributes no checked transition,
-                                // leave the claim open for the ordinary
-                                // path-end check below. This is not an empty
-                                // proof authority: no closure is recorded and
-                                // no certificate is constructed. Grouped and
-                                // explicitly closed contracts still require a
-                                // complete retained transition here.
-                                if !require_explicit_closers {
+                                // The implicit `auto` at the end of a
+                                // per-claim proof leaves a claim it does not
+                                // close for the path-end check, which names
+                                // it. A written closer that leaves a claim it
+                                // acts on open is refused here.
+                                if !require_explicit_closers && deferred.source_index == usize::MAX
+                                {
                                     continue;
                                 }
                                 let mut reasons = Vec::new();
@@ -4724,9 +4725,22 @@ pub(super) fn finish_ordered_proof<'a>(
                                         ClaimClosureSearch::None,
                                         None,
                                     )? {
-                                        reasons.push(reason.raw_summary().to_owned());
+                                        reasons.push(reason);
                                     }
                                 }
+                                let summary = format!(
+                                    "`{proof_label}` path {path_index}, tactic {tactic_index}: checked outcome `{closer_name}` did not retain a complete transition for every pending claim"
+                                );
+                                // One claim's refusal keeps its checked context: the goal and the
+                                // premises it saw.
+                                if reasons.len() == 1 && pending_resource_transition_error.is_none()
+                                {
+                                    return Err(reasons.remove(0).with_context(summary));
+                                }
+                                let mut reasons = reasons
+                                    .iter()
+                                    .map(|reason| reason.raw_summary().to_owned())
+                                    .collect::<Vec<_>>();
                                 if let Some(error) = &pending_resource_transition_error {
                                     reasons.push(format!(
                                         "the contract resource transition did not apply to this outcome: {error}"
@@ -4737,9 +4751,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                 } else {
                                     format!("\n{}", reasons.join("\n"))
                                 };
-                                return Err(ClickError::new(format!(
-                                    "`{proof_label}` path {path_index}, tactic {tactic_index}: checked outcome `simp` did not retain a complete transition for every pending claim{detail}",
-                                )));
+                                return Err(ClickError::new(format!("{summary}{detail}")));
                             }
                             // Every other leaf advances the path's outcome
                             // proof; the leaves that refine or close a claim

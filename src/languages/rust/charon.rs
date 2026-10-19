@@ -507,33 +507,18 @@ fn local_impl_method_path(name: &a::Name, krate: &str, id: a::TraitImplId, metho
         && matches!(&name.name[n-1], a::PathElem::Ident(found,d) if found == method && d.is_zero())
 }
 
+/// A variant of an enum as the adapter reads it. A field of a library
+/// enum's parameter has no type of its own (`None`); the instance's argument
+/// is its type.
+struct EnumVariant {
+    id: a::VariantId,
+    name: String,
+    discriminant: a::IntegerValue,
+    fields: Vec<Option<a::Ty>>,
+}
+
 /// How a generic struct's instance name spells type argument `ty`: a type
 /// parameter by its name, a scalar by its Rust name.
-/// The fields Click lays an option record out with.
-const OPTION_IS_SOME: &str = "is_some";
-const OPTION_VALUE: &str = "value";
-
-/// An option record's `is_some` byte: 1 for `Some`, 0 for `None`.
-fn option_tag(is_some: bool) -> E {
-    E::UnsignedInteger {
-        value: u32::from(is_some),
-        value_type: Type::U8,
-    }
-}
-
-/// The zero of the scalar type `ty`, which a `None` holds as its payload.
-fn zero(ty: &Type) -> Result<E, String> {
-    Ok(match ty {
-        Type::I32 => E::Integer { value: 0 },
-        Type::Usize => E::UsizeInteger { value: 0 },
-        Type::U8 | Type::U16 | Type::U32 => E::UnsignedInteger {
-            value: 0,
-            value_type: ty.clone(),
-        },
-        _ => return Err(unsupported("Option payload type")),
-    })
-}
-
 fn record_argument_spelling(ty: &Type) -> Option<String> {
     Some(match ty {
         Type::Parameter { name } => name.clone(),
@@ -616,9 +601,9 @@ struct Adapter<'a> {
     /// Each instance of a generic struct a type names, `Cell<T>` or
     /// `Cell<i32>`, by its name: the struct and its type arguments.
     record_instances: std::cell::RefCell<BTreeMap<String, (a::TypeDeclId, Vec<Type>)>>,
-    /// Each `Option<T>` of a scalar a type names, `core::option::Option<u32>`,
-    /// by its name: its payload type.
-    option_instances: std::cell::RefCell<BTreeMap<String, Type>>,
+    /// Each instance of a generic library enum the functions named, by the
+    /// name of its type: `Option<u32>`, with the arguments it is at.
+    enum_instances: std::cell::RefCell<BTreeMap<String, (String, Vec<Type>)>>,
 }
 impl Adapter<'_> {
     fn ty(&self, t: &a::Ty) -> Result<Type, String> {
@@ -803,21 +788,21 @@ impl Adapter<'_> {
                     pointee: Box::new(self.ty(pointee)?),
                 }
             }
-            // An `Option<T>` of a scalar is a record Click lays out, whose
-            // contracts read it as Click's `Option<T>`.
+            // An `Option<T>` of a scalar is the value of the library's
+            // `spec enum Option<T>` at that scalar.
             a::TyKind::Adt(_) if let Some(payload) = self.option_payload(t) => {
                 let payload = self.ty(payload)?;
-                let name = super::names::option_record_name(
+                let name = super::names::option_type_name(
                     &record_argument_spelling(&payload)
                         .filter(|_| !matches!(payload, Type::Parameter { .. } | Type::Bool))
                         .ok_or_else(|| {
                             unsupported("Option of a type other than i32, u8, u16, u32 or usize")
                         })?,
                 );
-                self.option_instances
+                self.enum_instances
                     .borrow_mut()
-                    .insert(name.clone(), payload);
-                Type::Record { name }
+                    .insert(name.clone(), ("Option".into(), vec![payload]));
+                Type::Enum { name }
             }
             // An instance of a generic struct is a record of its own, named
             // with its type arguments: `Cell<T>` in generic code, `Cell<i32>`
@@ -912,7 +897,8 @@ impl Adapter<'_> {
                 if let u::StatementKind::Assign(target, a::Rvalue::Discriminant(place)) =
                     &statement.kind
                     && let a::PlaceKind::Local(local) = target.kind
-                    && matches!(place.ty.kind(), a::TyKind::Adt(r) if self.enums.contains_key(&r.id))
+                    && (matches!(place.ty.kind(), a::TyKind::Adt(r) if self.enums.contains_key(&r.id))
+                        || self.option_payload(&place.ty).is_some())
                 {
                     discriminants.insert(local, place.clone());
                 }
@@ -920,28 +906,51 @@ impl Adapter<'_> {
         }
         discriminants
     }
-    /// The variants of crate enum `ty`.
-    fn enum_variants(
-        &self,
-        ty: &a::Ty,
-    ) -> Result<
-        (
-            &String,
-            &charon_lib::ids::IndexVec<a::VariantId, a::Variant>,
-        ),
-        String,
-    > {
+    /// The name of enum `ty`'s type, a crate enum or an `Option` instance,
+    /// and its variants. The compiler leaves `Option`'s declaration opaque;
+    /// its variants are `None` and `Some(T)`, tagged 0 and 1.
+    fn enum_variants(&self, ty: &a::Ty) -> Result<(String, Vec<EnumVariant>), String> {
         let a::TyKind::Adt(r) = ty.kind() else {
             return Err(unsupported("enum type"));
         };
+        if self.option_payload(ty).is_some() {
+            let Type::Enum { name } = self.ty(ty)? else {
+                unreachable!("an option of a scalar is an enum")
+            };
+            let variant = |index: usize, name: &str, fields| EnumVariant {
+                id: a::VariantId::from_usize(index),
+                name: name.into(),
+                discriminant: a::IntegerValue::Signed(a::IntTy::Isize, index as i128),
+                fields,
+            };
+            return Ok((
+                name,
+                vec![variant(0, "None", vec![]), variant(1, "Some", vec![None])],
+            ));
+        }
         let name = self
             .enums
             .get(&r.id)
             .ok_or_else(|| unsupported("nonlocal enum"))?;
-        match &self.krate.type_decls[r.id].kind {
-            a::TypeDeclKind::Enum(variants) => Ok((name, variants)),
-            _ => Err(unsupported("enum declaration")),
-        }
+        let a::TypeDeclKind::Enum(variants) = &self.krate.type_decls[r.id].kind else {
+            return Err(unsupported("enum declaration"));
+        };
+        Ok((
+            name.clone(),
+            variants
+                .iter()
+                .map(|variant| EnumVariant {
+                    id: variant.id,
+                    name: variant.name.clone(),
+                    discriminant: variant.discriminant,
+                    fields: variant
+                        .fields
+                        .iter()
+                        .map(|field| Some(field.ty.clone()))
+                        .collect(),
+                })
+                .collect(),
+        ))
     }
     /// The `Box<R>` an `Option<Box<R>>` of a crate struct `R` holds.
     fn option_box_payload<'t>(&self, ty: &'t a::Ty) -> Option<&'t a::Ty> {
@@ -1260,23 +1269,6 @@ impl BodyAdapter<'_, '_> {
             }
             return self.place(base);
         }
-        // `(o as Some).0` of an option record is its `value` field.
-        if let a::PlaceKind::Projection(base, a::ProjectionElem::Field(Some(variant), field)) =
-            &p.kind
-            && self.adapter.option_payload(&base.ty).is_some()
-        {
-            if variant.index() != 1 || field.index() != 0 {
-                return Err(unsupported("Option projection"));
-            }
-            let Type::Record { name } = self.adapter.ty(&base.ty)? else {
-                unreachable!("an option of a scalar is a record")
-            };
-            return Ok(E::Field {
-                base: Box::new(self.place(base)?),
-                record: name,
-                field: OPTION_VALUE.into(),
-            });
-        }
         if let Some(value) = self.iterator_projection(p)? {
             return Ok(value);
         }
@@ -1321,19 +1313,22 @@ impl BodyAdapter<'_, '_> {
             {
                 let (name, variants) = self.adapter.enum_variants(&base.ty)?;
                 let declared = variants
-                    .get(*variant)
+                    .get(variant.index())
                     .ok_or_else(|| unsupported("invalid enum variant"))?;
-                let field_type = &declared
+                let field_type = declared
                     .fields
-                    .get(*field)
-                    .ok_or_else(|| unsupported("invalid enum field"))?
-                    .ty;
-                if self.adapter.ty(&p.ty)? != self.adapter.ty(field_type)? {
+                    .get(field.index())
+                    .ok_or_else(|| unsupported("invalid enum field"))?;
+                // A library enum's field is of its parameter, which the
+                // projected place's own type instantiates.
+                if let Some(field_type) = field_type
+                    && self.adapter.ty(&p.ty)? != self.adapter.ty(field_type)?
+                {
                     return Err(unsupported("enum field projection type mismatch"));
                 }
                 E::EnumField {
                     base: Box::new(self.place(base)?),
-                    name: name.clone(),
+                    name,
                     variant: declared.name.clone(),
                     index: field.index(),
                 }
@@ -1544,17 +1539,18 @@ impl BodyAdapter<'_, '_> {
                     as u64,
             },
             a::Rvalue::Aggregate(a::AggregateKind::Adt(r, Some(variant), None), fields)
-                if self.adapter.enums.contains_key(&r.id) =>
+                if self.adapter.enums.contains_key(&r.id)
+                    || self.adapter.option_payload(ty).is_some() =>
             {
                 let (name, variants) = self.adapter.enum_variants(ty)?;
                 let declared = variants
-                    .get(*variant)
+                    .get(variant.index())
                     .ok_or_else(|| unsupported("invalid enum variant"))?;
                 if declared.fields.len() != fields.len() {
                     return Err(unsupported("enum constructor arity"));
                 }
                 E::EnumConstruct {
-                    name: name.clone(),
+                    name,
                     variant: declared.name.clone(),
                     fields: fields
                         .iter()
@@ -1805,26 +1801,6 @@ impl BodyAdapter<'_, '_> {
                         return Err(unsupported("partial record assignment"));
                     };
                     match v {
-                        // `None` is not `is_some` with a zero payload, which
-                        // no contract reads, and `Some(v)` is `is_some` with `v`.
-                        a::Rvalue::Aggregate(
-                            a::AggregateKind::Adt(_, Some(variant), None),
-                            fields,
-                        ) if self.adapter.option_payload(&p.ty).is_some() => {
-                            let payload = self
-                                .adapter
-                                .ty(self.adapter.option_payload(&p.ty).unwrap())?;
-                            let fields = match (variant.index(), fields.as_slice()) {
-                                (0, []) => vec![option_tag(false), zero(&payload)?],
-                                (1, [value]) => vec![option_tag(true), self.operand(value)?],
-                                _ => return Err(unsupported("Option constructor")),
-                            };
-                            Some(S::Initialize {
-                                target: self.local(target)?,
-                                record: name,
-                                fields,
-                            })
-                        }
                         a::Rvalue::Aggregate(a::AggregateKind::Adt(r, None, None), fields)
                             if r.id == self.adapter.struct_id(&p.ty)? =>
                         {
@@ -1919,7 +1895,7 @@ impl BodyAdapter<'_, '_> {
                 a::ConstantExprKind::Integer(value) => variants
                     .iter()
                     .find(|variant| variant.discriminant == *value),
-                a::ConstantExprKind::Discriminant(_, variant) => variants.get(*variant),
+                a::ConstantExprKind::Discriminant(_, variant) => variants.get(variant.index()),
                 _ => None,
             }
             .ok_or_else(|| unsupported("enum switch constant"))?;
@@ -2505,7 +2481,7 @@ pub(super) fn decode_crate(
         instance_types: std::cell::RefCell::default(),
         generic_records: BTreeMap::new(),
         record_instances: std::cell::RefCell::default(),
-        option_instances: std::cell::RefCell::default(),
+        enum_instances: std::cell::RefCell::default(),
     };
     if crate_config.is_some() {
         adapter.record_closure_captures()?;
@@ -2828,6 +2804,8 @@ pub(super) fn decode_crate(
         }
         enums.push(out::Enum {
             name: name.clone(),
+            generic: None,
+            arguments: Vec::new(),
             variants: exported,
         });
     }
@@ -3187,28 +3165,30 @@ pub(super) fn decode_crate(
             destructor: None,
         });
     }
-    // Each option record: whether it is `Some`, then its payload.
-    for (name, payload) in adapter.option_instances.borrow().iter() {
-        let size = model_field_size(payload).ok_or_else(|| unsupported("Option payload type"))?;
-        let offset = 1u32.next_multiple_of(size);
-        let alignment = size.max(1);
-        records.push(out::Record {
+    // Each instance of a library enum, with its variants' fields at the
+    // instance's arguments.
+    for (name, (generic, arguments)) in adapter.enum_instances.borrow().iter() {
+        // Only `Option` is instantiated, at its one argument.
+        let [payload] = arguments.as_slice() else {
+            return Err(unsupported("library enum instance"));
+        };
+        let exported = vec![
+            out::Variant {
+                name: "None".into(),
+                field_names: Vec::new(),
+                fields: Vec::new(),
+            },
+            out::Variant {
+                name: "Some".into(),
+                field_names: Vec::new(),
+                fields: vec![payload.clone()],
+            },
+        ];
+        enums.push(out::Enum {
             name: name.clone(),
-            size: (offset + size).next_multiple_of(alignment),
-            alignment,
-            fields: vec![
-                out::Field {
-                    name: OPTION_IS_SOME.into(),
-                    value_type: Type::U8,
-                    offset: 0,
-                },
-                out::Field {
-                    name: OPTION_VALUE.into(),
-                    value_type: payload.clone(),
-                    offset,
-                },
-            ],
-            destructor: None,
+            generic: Some(generic.clone()),
+            arguments: arguments.clone(),
+            variants: exported,
         });
     }
     Ok(out::RustExport {

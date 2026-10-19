@@ -87,6 +87,8 @@ pub(in crate::kernel) mod canonical_fact_set;
 mod composition_member_index;
 mod memory_equality_index;
 mod resource_algebra;
+#[cfg(test)]
+pub(crate) use resource_algebra::take_whole_normalization_facts;
 mod term_operations;
 mod term_shape;
 mod term_width;

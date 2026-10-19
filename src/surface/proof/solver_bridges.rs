@@ -16,6 +16,34 @@ use super::wide_arithmetic::{Carrier, Relation, apply, have, relate, relation_pa
 use super::*;
 use crate::surface::checking::{IntegerRefutation, plan_integer_refutation};
 
+// Arithmetic subgoals reuse the outer memory search. Nested arithmetic
+// scopes preserve that choice until the outermost bridge returns.
+thread_local! {
+    static ACTIVE_MACHINE_EQUALITY_BRIDGE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+pub(super) fn machine_equality_bridge_active() -> bool {
+    ACTIVE_MACHINE_EQUALITY_BRIDGE.with(std::cell::Cell::get)
+}
+
+struct MachineEqualityBridgeScope {
+    previous: bool,
+}
+
+impl MachineEqualityBridgeScope {
+    fn enter() -> Self {
+        Self {
+            previous: ACTIVE_MACHINE_EQUALITY_BRIDGE.with(|active| active.replace(true)),
+        }
+    }
+}
+
+impl Drop for MachineEqualityBridgeScope {
+    fn drop(&mut self) {
+        ACTIVE_MACHINE_EQUALITY_BRIDGE.with(|active| active.set(self.previous));
+    }
+}
+
 /// How many rewrites `auto`'s equality search chains before closing.
 const REWRITE_DEPTH: usize = 3;
 
@@ -43,36 +71,6 @@ const DEFINITION_LEAVES: usize = 16;
 /// How many applications at a definition's ends `auto` follows into their
 /// own definitions on the way to one end.
 const DEFINITION_UNFOLDS: usize = 4;
-
-thread_local! {
-    static ACTIVE_MACHINE_EQUALITY_BRIDGE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
-}
-
-pub(super) fn machine_equality_bridge_active() -> bool {
-    ACTIVE_MACHINE_EQUALITY_BRIDGE.with(std::cell::Cell::get)
-}
-
-/// The outer search owns memory transport. Arithmetic subgoals may use
-/// retained facts and operation bridges without restarting that search.
-struct MachineEqualityBridgeScope;
-
-impl MachineEqualityBridgeScope {
-    fn enter() -> Option<Self> {
-        ACTIVE_MACHINE_EQUALITY_BRIDGE.with(|active| {
-            if active.replace(true) {
-                None
-            } else {
-                Some(Self)
-            }
-        })
-    }
-}
-
-impl Drop for MachineEqualityBridgeScope {
-    fn drop(&mut self) {
-        ACTIVE_MACHINE_EQUALITY_BRIDGE.with(|active| active.set(false));
-    }
-}
 
 /// The machine type an order fact compares, with the names its bridges use.
 #[derive(Clone, Copy, Eq, PartialEq)]
@@ -107,14 +105,6 @@ impl MachineOrder {
                 Some(Self::Equal64)
             }
             _ => None,
-        }
-    }
-
-    /// The types whose bridges may carry this fact.
-    fn carriers(self) -> Vec<Self> {
-        match self {
-            Self::Equal64 => vec![Self::Wide(Carrier::UInt64), Self::Wide(Carrier::Int64)],
-            order => vec![order],
         }
     }
 
@@ -453,7 +443,7 @@ impl<'a> Proof<'a> {
         let (Some(goal), Some(surface_goal)) = (self.goal(), self.surface_goal()) else {
             return Ok(None);
         };
-        if crate::kernel::proof::integer_arithmetic::integer_affine_claim(goal).is_none() {
+        if !crate::kernel::proof::integer_arithmetic::written_integer_affine_claim(goal) {
             return Ok(None);
         }
         let Some(candidates) =
@@ -622,19 +612,48 @@ impl<'a> Proof<'a> {
         let (Some(goal), Some(surface_goal)) = (self.goal(), self.surface_goal()) else {
             return Ok(None);
         };
-        if !crate::kernel::proof::integer_arithmetic::integer_affine_claim(goal).is_some_and(
-            |claim| {
-                claim.relation
-                    == crate::kernel::proof::integer_arithmetic::IntegerAffineRelation::Equal
-            },
-        ) {
+        // A plain 32-bit equality, with no sum or difference on either side,
+        // already has the indexed native-reading solver route; proving it by
+        // bounds would repeat that search for each bound.
+        if let (
+            Proposition::ConditionIs(ConditionTerm::Bitvector32Equal(..), true),
+            ClickProposition::Comparison { left, right, .. },
+        ) = (goal, surface_goal)
+            && ![left, right].into_iter().any(|side| {
+                matches!(
+                    side,
+                    ContractExpression::Add(..) | ContractExpression::Subtract(..)
+                )
+            })
+        {
             return Ok(None);
         }
+        // A 64-bit equality has a reading in each signedness; either is an
+        // Integer equality.
+        if !crate::kernel::proof::integer_arithmetic::integer_affine_claims(goal)
+            .iter()
+            .any(|claim| {
+                claim.relation
+                    == crate::kernel::proof::integer_arithmetic::IntegerAffineRelation::Equal
+            })
+        {
+            return Ok(None);
+        }
+        let _arithmetic_scope = matches!(
+            goal,
+            Proposition::ConditionIs(ConditionTerm::Bitvector32Equal(..), true)
+        )
+        .then(MachineEqualityBridgeScope::enter);
+        // A native equality is split as its observed reading, so a bound
+        // such as `0u64 <= x` that holds by its type stays a stated Integer
+        // fact rather than folding to `true`.
+        let observed =
+            super::smart_closures::observed_native_surface_comparison(goal, surface_goal);
         let ClickProposition::Comparison {
             left,
             operator: ComparisonOperator::Equal,
             right,
-        } = surface_goal
+        } = &observed
         else {
             return Ok(None);
         };
@@ -1653,90 +1672,25 @@ impl<'a> Proof<'a> {
         let Some(order) = MachineOrder::of(goal) else {
             return Ok(None);
         };
-        // Plain 32-bit equality has the indexed native-reading route.
-        // Arithmetic operands may additionally need checked definedness
-        // and term-by-term operation bridges before their Integer reading
-        // can be proved. Keep ordinary read equalities out of full auto:
-        // it would repeat equality-by-bounds and snapshot search.
-        let _arithmetic_scope = if matches!(
-            goal,
-            Proposition::ConditionIs(ConditionTerm::Bitvector32Equal(..), true)
-        ) {
-            let arithmetic = matches!(surface_goal,
-                ClickProposition::Comparison { left, right, .. }
-                    if matches!(left, ContractExpression::Add(..) | ContractExpression::Subtract(..))
-                        || matches!(right, ContractExpression::Add(..) | ContractExpression::Subtract(..)));
-            if !arithmetic {
-                return Ok(None);
-            }
-            if let Some(closed) = self.try_native_goal_by_integer_reading()? {
-                return Ok(Some(closed));
-            }
-            let Some(scope) = MachineEqualityBridgeScope::enter() else {
-                return Ok(None);
-            };
-            Some(scope)
-        } else {
-            None
-        };
         if (order == MachineOrder::Equal64) != wide_equality {
             return Ok(None);
         }
         let Some((lower, upper, relation, true)) = relation_parts(surface_goal) else {
             return Ok(None);
         };
-        let stem = match (order, relation) {
-            (_, Relation::Equal) => "to_integer_equal_implies_equal",
-            (_, Relation::LessEqual) => "to_integer_less_equal_implies_less_equal",
-            // `int32` has no strict converse bridge in the standard library.
-            (MachineOrder::Wide(_), Relation::Less) => "to_integer_less_than_implies_less_than",
-            _ => return Ok(None),
-        };
-        // The `Integer` reading proved for the previous type, which the next
-        // type reuses when its literals read the same.
-        let mut proved: Option<(ClickProposition, Self)> = None;
-        for order in order.carriers() {
-            let lower = order.typed_literals(&lower);
-            let upper = order.typed_literals(&upper);
-            let observed = relate(to_integer(&lower), to_integer(&upper), relation);
-            let proof = match &proved {
-                Some((reading, proof)) if *reading == observed => proof.clone(),
-                _ => {
-                    let Some(proof) = self.prove_integer_reading(&lower, &upper, &observed)? else {
-                        continue;
-                    };
-                    proved = Some((observed.clone(), proof.clone()));
-                    proof
-                }
-            };
-            let Ok(applied) = proof.apply_step(apply(
-                &format!("{}_{stem}", order.name()),
-                vec![lower, upper],
-                vec![observed],
-            )) else {
-                continue;
-            };
-            if applied.is_complete() || applied.goal() != self.goal() {
-                return Ok(Some(applied));
-            }
-            if let Some(closed) = applied.try_direct_logical_closure().ok().flatten() {
-                return Ok(Some(closed));
-            }
-        }
-        Ok(None)
-    }
-
-    /// `observed`, the `Integer` reading of a machine comparison of `lower`
-    /// and `upper`, proved by `auto` as a stated fact.
-    fn prove_integer_reading(
-        &self,
-        lower: &ContractExpression,
-        upper: &ContractExpression,
-        observed: &ClickProposition,
-    ) -> Result<Option<Self>, ClickError> {
-        // `to_integer(a + b)` can be stated only where `a + b` is defined.
+        let _arithmetic_scope = matches!(
+            goal,
+            Proposition::ConditionIs(ConditionTerm::Bitvector32Equal(..), true)
+        )
+        .then(MachineEqualityBridgeScope::enter);
+        // A machine comparison is the Integer comparison of its operands'
+        // exact observations, so its Integer reading is the goal itself:
+        // state each sum or difference defined, as `to_integer` of it needs,
+        // and close the goal by the Integer solver with operation identities.
+        let _ = order;
         let mut base = self.clone();
-        for side in [lower, upper] {
+        let mut stated = false;
+        for side in [&lower, &upper] {
             if matches!(
                 side,
                 ContractExpression::Add(..) | ContractExpression::Subtract(..)
@@ -1746,17 +1700,23 @@ impl<'a> Proof<'a> {
                 };
                 if let Some(next) = base.prove_stated_fact(&defined)? {
                     base = next;
+                    stated = true;
                 }
             }
         }
-        let scope = match base.begin_have(observed.clone()) {
-            Ok(scope) => scope,
-            Err(_) => return Ok(None),
-        };
-        let Some(closed) = scope.try_auto_fact_closure()? else {
+        // Without a stated definedness fact this is the solver run `auto`
+        // already made on the goal. Plain 32-bit equality, with no sum or
+        // difference to observe, already has the indexed native-reading
+        // solver route; re-entering it by bounds repeats equality-by-bounds
+        // and snapshot search for the same comparison.
+        if !stated && !wide_equality {
             return Ok(None);
-        };
-        Ok(closed.join().ok())
+        }
+        // The solver refutes bounds; an equality is proved from its two.
+        if relation == Relation::Equal {
+            return base.try_solver_equality_closure();
+        }
+        base.solver_closure(true, &[])
     }
 
     /// The sums and differences named by connected `defined(...)` facts.
