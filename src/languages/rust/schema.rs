@@ -62,6 +62,12 @@ pub enum Type {
     Record {
         name: String,
     },
+    /// An owning `Box<R>` of a crate struct, carried as the address of its
+    /// heap allocation; also the `*const R` the compiler reads it through,
+    /// which only a box's own pointer becomes.
+    Box {
+        pointee: Box<Type>,
+    },
     /// What a reference to a type parameter bound by a crate trait, `&T`
     /// for `T: Shape`, or a `&dyn Shape` refers to: a value of a type the
     /// function does not know, which it reaches only through the trait's
@@ -405,6 +411,22 @@ pub enum MirTerminator {
     },
     Return,
     Unreachable,
+    /// `destination = Box::new(source)`: allocate the record on the heap,
+    /// move the record local `source` into it, and make `destination` its
+    /// address. A failed allocation aborts the process, so it never returns.
+    BoxNew {
+        source: String,
+        record: String,
+        destination: String,
+        target: usize,
+    },
+    /// The drop of the box `local`, whose record has no drop glue: free its
+    /// allocation.
+    BoxFree {
+        local: String,
+        record: String,
+        target: usize,
+    },
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
