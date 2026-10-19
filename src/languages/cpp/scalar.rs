@@ -95,6 +95,23 @@ impl Scalar {
     }
 }
 
+/// The record a mutable record pointer, `Node*`, points to: its
+/// declaration and name. Its kernel value is an address, as a C struct
+/// pointer's is.
+pub(super) fn record_pointee(value: &CppType) -> Option<(&str, &str)> {
+    match value {
+        CppType::Pointer { pointee } => match pointee.as_ref() {
+            CppType::Record {
+                declaration_id,
+                name,
+                is_const: false,
+            } => Some((declaration_id, name)),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
 /// Nominal candidate only: the importer separately authenticates the declaration
 /// span against the pinned standard header before any lowering can use it.
 pub(super) fn is_standard_byte(value: &CppType) -> bool {
