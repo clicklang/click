@@ -1266,9 +1266,23 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
                             )
                         }
                     };
+                    // One fact, one form: an Integer comparison of exact
+                    // observations of one machine type holds exactly when
+                    // the native comparison of their carriers does, so it is
+                    // that native comparison. A type-range bound such as
+                    // `to_integer(x) <= 4294967295` is trivially true of the
+                    // carrier but is what Integer reasoning cites, so it
+                    // keeps its Integer form.
+                    let (condition, truth) =
+                        match crate::kernel::assumptions::native_comparison_of_integer_observation(
+                            &condition, true,
+                        ) {
+                            Some((ConditionTerm::Constant(_), _)) | None => (condition, true),
+                            Some(native) => native,
+                        };
                     result.push(SpecPropositionPath {
                         introductions: Vec::new(),
-                        proposition: Proposition::ConditionIs(condition, true),
+                        proposition: Proposition::ConditionIs(condition, truth),
                         facts,
                         obligations,
                     });

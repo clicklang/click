@@ -1,8 +1,9 @@
 //! An immutable index of a container's proof blocks, shared by every
 //! location query in one trace.
+use super::parsed_blocks::ParsedBlocks;
 use super::*;
 use crate::surface::parser::SourceSpans;
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::collections::HashMap;
 
 thread_local! {
     static TOKENIZATION_WORK: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
@@ -21,11 +22,10 @@ struct IndexedTactic {
 }
 
 /// Source positions and proof-block structure for an immutable Click container.
-/// Construction walks the source once and skips indexed delimiter groups when
-/// inspecting a block's direct children. Queries never tokenize or scan source.
+/// Its blocks, tactics and arms are the ones the container's parse recorded.
+/// Queries never tokenize or scan source.
 pub struct ProofSourceIndex {
     tokens: Vec<SourceToken>,
-    pairs: Vec<Option<usize>>,
     characters: Vec<usize>,
     lines: Vec<usize>,
     positions: Vec<SourcePosition>,
@@ -57,7 +57,7 @@ impl ProofSourceIndex {
         let source = project.entry_source().ok_or_else(|| {
             ClickError::new(format!("missing entry module `{}`", project.entry()))
         })?;
-        let mut index = Self::build(source, Some(file.source_spans()))?;
+        let mut index = Self::build(source, file.source_spans())?;
         index.file = Some(file);
         Ok(index)
     }
@@ -67,49 +67,22 @@ impl ProofSourceIndex {
     pub fn for_sidecar(click_source: &str, inputs: &ProgramInputs<'_>) -> Result<Self, ClickError> {
         let sources = CSourceContext::of(inputs)?;
         let file = parse_source_with_c_layouts_context(click_source, &sources)?;
-        let mut index = Self::build(click_source, Some(file.source_spans()))?;
+        let mut index = Self::build(click_source, file.source_spans())?;
         index.file = Some(file);
         Ok(index)
     }
 
-    /// The index of a proof fragment with no declarations to parse, whose
-    /// proof blocks are found lexically from the token before each brace.
+    /// The index of a Click source parsed on its own, without C layouts.
     #[cfg(test)]
     pub fn new(source: &str) -> Result<Self, ClickError> {
-        Self::build(source, None)
+        let spans = parser::parsed_source_spans(source, parser::ProgramLayouts::default())?;
+        Self::build(source, &spans)
     }
 
-    pub(super) fn build(source: &str, spans: Option<&SourceSpans>) -> Result<Self, ClickError> {
+    pub(super) fn build(source: &str, spans: &SourceSpans) -> Result<Self, ClickError> {
         crate::instrumentation::record_deterministic_work(source.len());
-        let tokens = match spans {
-            Some(spans) => proof_source_tokens(source, &spans.implicit_proofs)?,
-            None => plain_source_tokens(source)?,
-        };
-        let parsed = spans.map(|spans| spans.proof_blocks.as_slice());
-        let mut pairs = vec![None; tokens.len()];
-        let mut stack = Vec::new();
-        for (index, token) in tokens.iter().enumerate() {
-            crate::instrumentation::record_deterministic_work(1);
-            match token.text.as_str() {
-                "(" | "[" | "{" => stack.push(index),
-                ")" | "]" | "}" => {
-                    let open = stack
-                        .pop()
-                        .ok_or_else(|| ClickError::new("unbalanced source delimiters"))?;
-                    if !matches!(
-                        (tokens[open].text.as_str(), token.text.as_str()),
-                        ("(", ")") | ("[", "]") | ("{", "}")
-                    ) {
-                        return Err(ClickError::new("unbalanced source delimiters"));
-                    }
-                    pairs[open] = Some(index);
-                }
-                _ => {}
-            }
-        }
-        if !stack.is_empty() {
-            return Err(ClickError::new("unbalanced source delimiters"));
-        }
+        let tokens = proof_source_tokens(source, &spans.implicit_proofs)?;
+        let parsed = ParsedBlocks::new(&tokens, spans);
         let mut characters = Vec::new();
         let mut lines = vec![0];
         for (offset, character) in source.char_indices() {
@@ -124,7 +97,6 @@ impl ProofSourceIndex {
             by_offset: HashMap::new(),
             starts: vec![Vec::new(); lines.len()],
             tokens,
-            pairs,
             characters,
             lines,
             blocks: HashMap::new(),
@@ -140,67 +112,12 @@ impl ProofSourceIndex {
                 result.by_offset.entry(offset).or_insert(index);
             }
         }
-        // Library contracts appended after the entry text lie past its
-        // last line; every other parsed block opens at a written brace.
-        let parsed = parsed
-            .map(|blocks| {
-                blocks
-                    .iter()
-                    .filter(|block| block.open.line <= result.lines.len())
-                    .map(|block| {
-                        crate::instrumentation::record_deterministic_work(1);
-                        result
-                            .token(&block.open)
-                            .ok()
-                            .filter(|&open| result.tokens[open].text == "{")
-                            .ok_or_else(|| {
-                                ClickError::new("a parsed proof block does not open at a brace")
-                            })
-                    })
-                    .collect::<Result<HashSet<_>, _>>()
-            })
-            .transpose()?;
-        let mut arm_blocks = BTreeSet::new();
-        let mut open_since_boundary = false;
-        for open in 0..result.tokens.len() {
-            crate::instrumentation::record_deterministic_work(1);
-            let text = result.tokens[open].text.as_str();
-            if text != "{" {
-                if text == "open" {
-                    open_since_boundary = true;
-                }
-                if matches!(text, ";" | "}") {
-                    open_since_boundary = false;
-                }
-                continue;
-            }
-            let previous = open.checked_sub(1).map(|i| result.tokens[i].text.as_str());
-            let is_open_body = previous == Some(")") && open_since_boundary;
-            open_since_boundary = false;
-            // A zero-width brace pairs a lone `by T(args);` tactic, which
-            // the parser reads without a block.
-            let selected = match &parsed {
-                Some(parsed) => result.tokens[open].span.is_empty() || parsed.contains(&open),
-                None => {
-                    matches!(
-                        previous,
-                        Some("by" | "then" | "else" | "and" | "both" | "=>")
-                    ) || is_open_body
-                        || arm_blocks.contains(&open)
-                }
-            };
-            if !selected {
-                continue;
-            }
-            let close = result.pairs[open].expect("balanced opening brace");
-            let Ok(ranges) = result.direct_ranges(open, close) else {
-                continue;
-            };
+        for (open, block) in parsed.iter() {
             let mut children = Vec::new();
-            for range in ranges {
+            for range in &block.tactics {
+                crate::instrumentation::record_deterministic_work(1);
                 let start = range.start;
-                let tactic = result.describe_tactic(start, range.end - 1);
-                arm_blocks.extend(tactic.arms.iter().map(|&(open, _)| open));
+                let tactic = result.describe_tactic(&parsed, range);
                 let line = result.positions[start].line - 1;
                 result.starts[line].push(result.tokens[start].span.start);
                 result.tactics.insert(start, tactic);
@@ -215,30 +132,44 @@ impl ProofSourceIndex {
         Ok(result)
     }
 
-    /// Every written proof block the lexical index found, with the start of
-    /// each tactic in it, for comparison with the parser's own spans.
-    #[cfg(test)]
-    pub(in crate::surface) fn written_blocks(
-        &self,
-    ) -> Vec<(SourcePosition, SourcePosition, Vec<SourcePosition>)> {
-        let mut blocks = self
-            .blocks
+    /// The tactic `range` of a parsed block: where it ends, and the proof
+    /// blocks it holds as a body or as arms.
+    fn describe_tactic(&self, parsed: &ParsedBlocks, range: &Range<usize>) -> IndexedTactic {
+        let mut result = IndexedTactic {
+            end: range.end - 1,
+            ..Default::default()
+        };
+        match self.tokens[range.start].text.as_str() {
+            "have" | "open" => result.body = parsed.child_blocks(range).first().copied(),
+            kind @ ("if" | "branch" | "both") => {
+                result.arms = parsed
+                    .two_arms(range, kind)
+                    .map(|arms| arms.to_vec())
+                    .unwrap_or_default();
+            }
+            "cases" | "match" => result.arms = parsed.child_blocks(range),
+            "outcomes" => {
+                result.arms = parsed
+                    .outcomes_arms(&self.tokens, range)
+                    .map(|arms| arms.to_vec())
+                    .unwrap_or_default();
+            }
+            _ => {}
+        }
+        result.arm_ranges = result
+            .arms
             .iter()
-            .filter(|(open, _)| !self.tokens[**open].span.is_empty())
-            .map(|(open, children)| {
-                let close = self.pairs[*open].expect("balanced block");
+            .enumerate()
+            .map(|(index, &(open, close))| {
                 (
-                    self.positions[*open].clone(),
-                    self.positions[close].clone(),
-                    children
-                        .iter()
-                        .map(|child| self.positions[*child].clone())
-                        .collect(),
+                    self.tokens[open].span.start,
+                    self.tokens[close].span.end,
+                    index,
                 )
             })
-            .collect::<Vec<_>>();
-        blocks.sort_by_key(|(open, _, _)| (open.line, open.column));
-        blocks
+            .collect();
+        result.arm_ranges.sort_unstable();
+        result
     }
 
     fn position_at(&self, offset: usize) -> SourcePosition {
@@ -277,137 +208,6 @@ impl ProofSourceIndex {
             .get(&self.offset(position)?)
             .copied()
             .ok_or_else(|| ClickError::new("could not locate source tactic"))
-    }
-
-    fn end(&self, start: usize, limit: usize) -> Result<usize, ClickError> {
-        let mut cursor = start;
-        let mut have_body_started = self.tokens[start].text != "have";
-        while cursor < limit {
-            crate::instrumentation::record_deterministic_work(1);
-            match self.tokens[cursor].text.as_str() {
-                "by" => have_body_started = true,
-                "(" | "[" => {
-                    cursor = self.pairs[cursor]
-                        .ok_or_else(|| ClickError::new("unbalanced source tactic"))?
-                }
-                "{" => {
-                    cursor = self.pairs[cursor]
-                        .ok_or_else(|| ClickError::new("unbalanced source tactic"))?;
-                    let next = self.tokens.get(cursor + 1).map(|t| t.text.as_str());
-                    let kind = self.tokens[start].text.as_str();
-                    if have_body_started
-                        && !(matches!(next, Some("else" | "by" | "=" | "=>"))
-                            || (kind == "both" && next == Some("and"))
-                            || (kind == "match" && next == Some("{"))
-                            || (matches!(kind, "branch" | "if") && next == Some("then")))
-                    {
-                        return Ok(cursor + usize::from(next == Some(";")));
-                    }
-                }
-                ";" => return Ok(cursor),
-                _ => {}
-            }
-            cursor += 1;
-        }
-        Err(ClickError::new(
-            "unterminated tactic in selected source proof",
-        ))
-    }
-
-    fn direct_ranges(&self, open: usize, close: usize) -> Result<Vec<Range<usize>>, ClickError> {
-        let mut ranges = Vec::new();
-        let mut start = open + 1;
-        while start < close {
-            let end = self.end(start, close)?;
-            ranges.push(start..end + 1);
-            start = end + 1;
-        }
-        Ok(ranges)
-    }
-
-    fn describe_tactic(&self, start: usize, end: usize) -> IndexedTactic {
-        let mut result = IndexedTactic {
-            end,
-            ..Default::default()
-        };
-        let kind = self.tokens[start].text.as_str();
-        let mut cursor = start + 1;
-        let mut by = false;
-        let mut returned = None;
-        let mut threw = None;
-        while cursor <= end {
-            crate::instrumentation::record_deterministic_work(1);
-            let text = self.tokens[cursor].text.as_str();
-            if text == "by" {
-                by = true;
-            }
-            if matches!(text, "(" | "[") {
-                cursor = self.pairs[cursor].expect("balanced group") + 1;
-                continue;
-            }
-            if text == "{" {
-                let close = self.pairs[cursor].expect("balanced block");
-                let block = (cursor, close);
-                if (kind == "have" && by) || kind == "open" {
-                    result.body = Some(block);
-                    break;
-                }
-                if (matches!(kind, "cases" | "outcomes") && cursor == start + 1) || kind == "match"
-                {
-                    // Inspect arm headers, skipping each arm's contents and
-                    // any quantifier in its assumption.
-                    let mut arm = cursor + 1;
-                    while arm < close {
-                        crate::instrumentation::record_deterministic_work(1);
-                        if self.tokens[arm].text == "{" {
-                            let arm_close = self.pairs[arm].expect("balanced arm");
-                            if arm >= 1 && self.tokens[arm - 1].text == "=>" {
-                                if matches!(kind, "cases" | "match") {
-                                    result.arms.push((arm, arm_close));
-                                } else if arm >= 2 {
-                                    match self.tokens[arm - 2].text.as_str() {
-                                        "returned" => returned = Some((arm, arm_close)),
-                                        "threw" => threw = Some((arm, arm_close)),
-                                        _ => {}
-                                    }
-                                }
-                            }
-                            arm = arm_close + 1;
-                        } else {
-                            arm += 1;
-                        }
-                    }
-                } else if (matches!(kind, "if" | "branch")
-                    && (self.tokens.get(close + 1).is_some_and(|t| t.text == "else")
-                        || self.tokens[cursor - 1].text == "else"))
-                    || kind == "both"
-                {
-                    result.arms.push(block);
-                }
-                cursor = close + 1;
-            } else {
-                cursor += 1;
-            }
-        }
-        if kind == "outcomes"
-            && let (Some(returned), Some(threw)) = (returned, threw)
-        {
-            result.arms = vec![returned, threw];
-        }
-        result.arm_ranges = result
-            .arms
-            .iter()
-            .enumerate()
-            .map(|(index, &(open, close))| {
-                (
-                    self.tokens[open].span.start,
-                    self.tokens[close].span.end,
-                    index,
-                )
-            })
-            .collect();
-        result.arm_ranges.sort_unstable();
-        result
     }
 
     /// Claim roots use the same token stream as nested paths and containment.
@@ -480,10 +280,11 @@ impl ProofSourceIndex {
         position: &SourcePosition,
     ) -> Result<(&'a str, &'a str), ClickError> {
         let start = self.token(position)?;
-        let end = match self.tactics.get(&start) {
-            Some(tactic) => tactic.end,
-            None => self.end(start, self.tokens.len())?,
-        };
+        let end = self
+            .tactics
+            .get(&start)
+            .ok_or_else(|| ClickError::new("the parser read no tactic at this position"))?
+            .end;
         let offset = self.offset(position)?;
         let line_start = self.characters[self.lines[position.line - 1]];
         Ok((

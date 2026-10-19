@@ -8821,7 +8821,10 @@ impl ProofObligation {
 
     pub fn verification_condition(proposition: Proposition) -> Self {
         Self {
-            proposition,
+            // A condition the kernel builds, such as a ranking decrease over
+            // an Integer measure, is stated in the same one form as written
+            // ones.
+            proposition: canonical_observation_form(&proposition),
             context: None,
             assumable: false,
             call_requirement_site: None,
@@ -9681,6 +9684,36 @@ pub(in crate::kernel) fn wrapped_equality_of_integer_equality(
     (observed && !matches!(wrapped, ConditionTerm::Constant(_))).then_some(wrapped)
 }
 
+/// `proposition` with each Integer comparison of exact observations replaced
+/// by the native comparison it holds exactly when, as specification lowering
+/// writes it: one fact, one form. A comparison whose native form folds to a
+/// constant, such as a type-range bound, keeps its Integer form. The walk
+/// visits each connective once.
+pub(crate) fn canonical_observation_form(proposition: &Proposition) -> Proposition {
+    match proposition {
+        Proposition::ConditionIs(condition, value) => {
+            match native_comparison_of_integer_observation(condition, *value) {
+                Some((ConditionTerm::Constant(_), _)) | None => proposition.clone(),
+                Some((native, truth)) => Proposition::ConditionIs(native, truth),
+            }
+        }
+        Proposition::Not(inner) => Proposition::Not(Box::new(canonical_observation_form(inner))),
+        Proposition::And(left, right) => Proposition::And(
+            Box::new(canonical_observation_form(left)),
+            Box::new(canonical_observation_form(right)),
+        ),
+        Proposition::Or(left, right) => Proposition::Or(
+            Box::new(canonical_observation_form(left)),
+            Box::new(canonical_observation_form(right)),
+        ),
+        Proposition::Implies(left, right) => Proposition::Implies(
+            Box::new(canonical_observation_form(left)),
+            Box::new(canonical_observation_form(right)),
+        ),
+        other => other.clone(),
+    }
+}
+
 /// The native comparison fact that an Integer comparison fact of exact
 /// observations of one machine type holds exactly when it does
 /// (`native_comparison_of_integer_observation`), or `None` for any other fact.
@@ -9950,11 +9983,18 @@ pub(crate) fn integer_observations_of_native_comparison(
     };
     let (left, right, types): (&Bitvector32Term, &Bitvector32Term, &[MachineIntegerType]) =
         match condition {
+            // A `uint32` order is the signed order of sign-flipped operands,
+            // so its own reading comes first; a genuinely signed order has no
+            // sign-bit encoding to strip and reads as `int32`.
             ConditionTerm::Bitvector32SignedLessThan(left, right)
             | ConditionTerm::Bitvector32SignedLessEqual(left, right)
             | ConditionTerm::Bitvector32SignedGreaterThan(left, right)
-            | ConditionTerm::Bitvector32SignedGreaterEqual(left, right)
-            | ConditionTerm::Bitvector32Equal(left, right) => (
+            | ConditionTerm::Bitvector32SignedGreaterEqual(left, right) => (
+                left,
+                right,
+                &[MachineIntegerType::UInt32, MachineIntegerType::Int32],
+            ),
+            ConditionTerm::Bitvector32Equal(left, right) => (
                 left,
                 right,
                 &[MachineIntegerType::Int32, MachineIntegerType::UInt32],
@@ -9996,9 +10036,10 @@ pub(crate) fn integer_observations_of_native_comparison(
             _ => None,
         }
     };
-    // A native order has four spellings (`a >= 1` is `1 <= a`); the forward
-    // map produces one, so compare against all of them.
-    let spellings = crate::kernel::proof::fact_reasoning::condition_polarity_forms(proposition);
+    // A native order has four spellings (`a >= 1` is `1 <= a`, and a false
+    // `0 < x` is `x <= 0`) in every order family; the forward map produces
+    // one, so compare against all of them.
+    let spellings = crate::kernel::proof::fact_reasoning::order_claim_forms(proposition);
     let mut lifted = Vec::new();
     for &ty in types {
         let carriers = if ty == MachineIntegerType::UInt32
@@ -10239,6 +10280,36 @@ mod integer_observation_tests {
                 )
             )
         );
+        // The same holds in the 64-bit unsigned family, at either polarity:
+        // `x >= 32u64` and a false `0u64 < x` read as their bounds.
+        for (fact, reading) in [
+            (
+                ConditionTerm::Bitvector64UnsignedGreaterEqual(
+                    Box::new(word(1)),
+                    Box::new(Bitvector32Term::UInt64Constant(32)),
+                ),
+                ConditionTerm::IntegerLessEqual(
+                    constant(32),
+                    observe(MachineIntegerType::UInt64, 1),
+                ),
+            ),
+            (
+                ConditionTerm::Bitvector64UnsignedLessThan(
+                    Box::new(Bitvector32Term::UInt64Constant(0)),
+                    Box::new(word(1)),
+                ),
+                ConditionTerm::IntegerLessEqual(
+                    observe(MachineIntegerType::UInt64, 1),
+                    constant(0),
+                ),
+            ),
+        ] {
+            let truth = matches!(fact, ConditionTerm::Bitvector64UnsignedGreaterEqual(..));
+            assert_eq!(
+                integer_observations_of_native_comparison(&Proposition::ConditionIs(fact, truth)),
+                vec![Proposition::ConditionIs(reading, true)]
+            );
+        }
         // Facts other than native comparisons read as nothing.
         assert!(
             integer_observations_of_native_comparison(&Proposition::ConditionIs(

@@ -54,7 +54,11 @@ impl fmt::Debug for IntegerFoldAtomRecord {
 #[derive(Clone)]
 pub(crate) enum IntegerAffineAtom {
     Variable(crate::kernel::Variable),
-    Machine(u64),
+    /// An exact machine observation. The atom owns its interned term: the
+    /// interner reuses an id only while some holder keeps the term alive, so
+    /// a claim that kept only the id could see the same term under a fresh
+    /// id once it was read again.
+    Machine(crate::kernel::SharedMachineIntegerTerm),
     Application(u64),
     Fold(Arc<IntegerFoldAtomRecord>),
     /// A complete symbolic product, quotient, or remainder, keyed by shared DAG identity.
@@ -65,7 +69,7 @@ impl fmt::Debug for IntegerAffineAtom {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Variable(variable) => formatter.debug_tuple("Variable").field(variable).finish(),
-            Self::Machine(id) => formatter.debug_tuple("Machine").field(id).finish(),
+            Self::Machine(term) => formatter.debug_tuple("Machine").field(&term.id()).finish(),
             Self::Application(id) => formatter.debug_tuple("Application").field(id).finish(),
             Self::Nonlinear(id) => formatter.debug_tuple("Nonlinear").field(id).finish(),
             Self::Fold(record) => formatter.debug_tuple("Fold").field(&record.id()).finish(),
@@ -77,7 +81,7 @@ impl PartialEq for IntegerAffineAtom {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
             (Self::Variable(left), Self::Variable(right)) => left == right,
-            (Self::Machine(left), Self::Machine(right)) => left == right,
+            (Self::Machine(left), Self::Machine(right)) => left.id() == right.id(),
             (Self::Application(left), Self::Application(right)) => left == right,
             (Self::Fold(left), Self::Fold(right)) => left.id() == right.id(),
             (Self::Nonlinear(left), Self::Nonlinear(right)) => left == right,
@@ -101,7 +105,7 @@ impl Ord for IntegerAffineAtom {
         match tag(self).cmp(&tag(other)) {
             Ordering::Equal => match (self, other) {
                 (Self::Variable(left), Self::Variable(right)) => left.cmp(right),
-                (Self::Machine(left), Self::Machine(right)) => left.cmp(right),
+                (Self::Machine(left), Self::Machine(right)) => left.id().cmp(&right.id()),
                 (Self::Application(left), Self::Application(right)) => left.cmp(right),
                 (Self::Fold(left), Self::Fold(right)) => left.id().cmp(&right.id()),
                 (Self::Nonlinear(left), Self::Nonlinear(right)) => left.cmp(right),
@@ -125,9 +129,9 @@ impl Hash for IntegerAffineAtom {
                 0u8.hash(state);
                 variable.hash(state);
             }
-            Self::Machine(id) => {
+            Self::Machine(term) => {
                 1u8.hash(state);
-                id.hash(state);
+                term.id().hash(state);
             }
             Self::Application(id) => {
                 2u8.hash(state);

@@ -3086,7 +3086,11 @@ fn verify_kernel_standard_theorem_axiom(
         .fold(goal.clone(), |body, requirement| {
             Proposition::Implies(Box::new(requirement.clone()), Box::new(body))
         });
-    if axiom.proposition() != &expected {
+    // The declaration lowers each comparison of exact observations to its
+    // native form; the axiom is compared in that same form.
+    if crate::kernel::assumptions::canonical_observation_form(axiom.proposition())
+        != crate::kernel::assumptions::canonical_observation_form(&expected)
+    {
         return Err(ClickError::new(format!(
             "`{claim_label}` declaration does not match its kernel axiom",
         )));

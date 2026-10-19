@@ -3571,7 +3571,7 @@ fn signed_antisymmetry_simp_expands_to_checked_arithmetic() {
     let position = expansion::position_at_offset(source, source.find("simp();").unwrap());
     let expanded = expand_c0_tactic_source_at(source, &[], position.line, position.column).unwrap();
     assert!(
-        expanded.contains("arithmetic_certificate signed_int32"),
+        expanded.contains("equal_from_bounds 0, 1 => i == 0;"),
         "{expanded}"
     );
     verify_c0_sources(&expanded, &[]).unwrap();
@@ -8520,7 +8520,7 @@ fn restricted_simp_retains_one_plus_operand_specific_theorems() {
 }
 
 #[test]
-fn restricted_simp_composes_equality_rewrites_with_adjacent_order() {
+fn restricted_simp_composes_equalities_with_adjacent_order() {
     let click_source = r#"
         theorem aliased_positive_bound(
             position: int32,
@@ -8554,12 +8554,15 @@ fn restricted_simp_composes_equality_rewrites_with_adjacent_order() {
 
     let expanded = expand_c0_tactic_source_at(click_source, &[], line, column)
         .expect("rewrites followed by adjacent order should expand");
-    assert!(expanded.contains("rewrite(bound == length);"), "{expanded}");
-    assert!(expanded.contains("rewrite(position == 0);"), "{expanded}");
-    assert!(
-        expanded.contains("apply(int32_increment_less_equal_implies_less_than(0, length)) using"),
-        "{expanded}"
-    );
+    // The equalities and the order are each one Integer fact, so one
+    // certificate combines them without rewriting first.
+    for cited in [
+        "premise 0: bound == length",
+        "premise 1: position == 0",
+        "premise 2: 1 <= length",
+    ] {
+        assert!(expanded.contains(cited), "{cited}\n{expanded}");
+    }
     assert!(!expanded.contains("simp() using"), "{expanded}");
     assert!(!expanded.contains("derive using"), "{expanded}");
     verify_click_theorems(&expanded).expect("composed explicit certificate should check");
@@ -17042,7 +17045,10 @@ fn uint32_arithmetic_bound_weakening_expands_and_rechecks() {
     ] {
         let expanded = expand_c0_claim_source_by_label(&source, &[], &format!("{name}.ensures_0"))
             .expect("unsigned weakening should expand");
-        assert!(expanded.contains("arithmetic_certificate signed_int32"));
+        // An unsigned bound is the Integer bound of its observation, so the
+        // step is an Integer certificate with no sign-bit encoding.
+        assert!(expanded.contains("arithmetic_certificate {"), "{expanded}");
+        assert!(!expanded.contains("signed_int32"), "{expanded}");
         let (result, planning) =
             crate::surface::proof::count_planning_statement_transitions(|| {
                 verify_c0_sources(&expanded, &[])
@@ -17051,9 +17057,8 @@ fn uint32_arithmetic_bound_weakening_expands_and_rechecks() {
         assert_eq!(planning, 0, "explicit recheck must not plan");
         if name == "lane_ceiling" {
             let forged = expanded.replace("1073741823u32", "65519u32");
-            let error = verify_c0_sources(&forged, &[])
-                .expect_err("a strengthened conclusion must not encode the original child sum");
-            assert!(error.message().contains("does not encode the child sum"));
+            verify_c0_sources(&forged, &[])
+                .expect_err("a strengthened conclusion must not reuse the original certificate");
         }
     }
     for (premise, goal) in [
