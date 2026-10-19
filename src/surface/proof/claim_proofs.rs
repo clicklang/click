@@ -1604,7 +1604,7 @@ fn continue_claim_existence_proof<'a>(
     introduced_claim_scope: &mut bool,
     closures: &mut [ClaimClosure],
     claims: &[FunctionClaimRef<'_>],
-    outcome_proof: &Option<Proof<'a>>,
+    outcome_proof: &mut Option<Proof<'a>>,
     path_index: usize,
     apply: impl FnOnce(&Proof<'a>) -> Result<Proof<'a>, ClickError>,
 ) -> Result<bool, ClickError> {
@@ -1616,12 +1616,18 @@ fn continue_claim_existence_proof<'a>(
         Ok(proof) => {
             if proof.is_complete() {
                 *introduced_claim_scope = false;
-                closures[claim_index] = ClaimClosure::by_continued_proposition(
-                    claims[claim_index].key(),
-                    path_index,
-                    Vec::new(),
-                    proof.completed_proposition()?,
-                );
+                record_claim_closure(
+                    outcome_proof,
+                    closures,
+                    claims,
+                    claim_index,
+                    ClaimClosure::by_continued_proposition(
+                        claims[claim_index].key(),
+                        path_index,
+                        Vec::new(),
+                        proof.completed_proposition()?,
+                    ),
+                )?;
             } else {
                 *existence_proof = Some((claim_index, surface_goal, proof));
             }
@@ -1640,8 +1646,45 @@ fn continue_claim_existence_proof<'a>(
 /// The main goal a written closer acts on after execution: the first open
 /// claim, in contract order. A resource claim (`owns`, `produces`) is a goal
 /// like a proposition claim; `assumption` closes it when the instance is held.
-fn main_goal_claim(closures: &[ClaimClosure]) -> Option<usize> {
-    closures.iter().position(|closure| !closure.is_closed())
+///
+/// The outcome `Proof` holds the claim goals of a path that has one. A
+/// divergent path has none, and its closures say which claims are open.
+fn main_goal_claim(
+    outcome_proof: &Option<Proof<'_>>,
+    closures: &[ClaimClosure],
+    claims: &[FunctionClaimRef<'_>],
+) -> Result<Option<usize>, ClickError> {
+    match outcome_proof {
+        Some(proof) => {
+            let goals = proof.claim_goals().ok_or_else(|| {
+                proof.step_error("the outcome Proof no longer holds this path's claim goals")
+            })?;
+            Ok(goals
+                .first_open()
+                .and_then(|key| claims.iter().position(|claim| &claim.key() == key)))
+        }
+        None => Ok(closures.iter().position(|closure| !closure.is_closed())),
+    }
+}
+
+/// Records a claim's closure on the path. On a path with an outcome `Proof`
+/// it also closes that claim's goal there, so the outcome `Proof` decides
+/// which claims are still open; a closure the goal refuses is an error.
+fn record_claim_closure<'e>(
+    outcome_proof: &mut Option<Proof<'_>>,
+    closures: &mut [ClaimClosure<'e>],
+    claims: &[FunctionClaimRef<'_>],
+    claim_index: usize,
+    closure: ClaimClosure<'e>,
+) -> Result<(), ClickError> {
+    if let Some(proof) = outcome_proof.as_ref() {
+        let completion = closure
+            .closed()
+            .and_then(|closed| closed.checked_proposition());
+        *outcome_proof = Some(proof.close_claim_goal(&claims[claim_index].key(), completion)?);
+    }
+    closures[claim_index] = closure;
+    Ok(())
 }
 
 /// A closer written when every proposition claim on the path is closed.
@@ -2218,7 +2261,16 @@ pub(super) fn finish_ordered_proof<'a>(
                     if let Some(root) = outcome_proof.take() {
                         let root = root.with_contract_return_counts(&completed_execution)?;
                         outcome = root.focused_outcome_snapshot()?;
-                        outcome_proof = Some(root);
+                        let contract_claims = claims.iter().map(|claim| {
+                            let key = claim.key();
+                            let target = function
+                                .contract_claims()
+                                .iter()
+                                .find(|contract_claim| *contract_claim.key() == key)
+                                .map(|contract_claim| contract_claim.target().clone());
+                            (key, target)
+                        });
+                        outcome_proof = Some(root.open_contract_claim_goals(contract_claims)?);
                     }
 
                     let mut closures = claims
@@ -2918,7 +2970,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                     &mut introduced_claim_scope,
                                     &mut closures,
                                     claims,
-                                    &outcome_proof,
+                                    &mut outcome_proof,
                                     path_index,
                                     |proof| proof.apply_step(ProofStep::Assumption),
                                 )
@@ -2994,7 +3046,8 @@ pub(super) fn finish_ordered_proof<'a>(
                                 };
                                 let mut retained_certificate = None;
                                 let mut failed_assumption = None;
-                                let main_claim = main_goal_claim(&closures);
+                                let main_claim =
+                                    main_goal_claim(&outcome_proof, &closures, claims)?;
                                 for (claim_index, claim) in claims.iter().enumerate() {
                                     if Some(claim_index) != main_claim {
                                         continue;
@@ -3008,10 +3061,16 @@ pub(super) fn finish_ordered_proof<'a>(
                                                     *claim,
                                                 )
                                         {
-                                            closures[claim_index] = ClaimClosure::resource(
-                                                ClaimCertificate::ExactCheck,
-                                                checked_resource,
-                                            );
+                                            record_claim_closure(
+                                                &mut outcome_proof,
+                                                &mut closures,
+                                                claims,
+                                                claim_index,
+                                                ClaimClosure::resource(
+                                                    ClaimCertificate::ExactCheck,
+                                                    checked_resource,
+                                                ),
+                                            )?;
                                             closed_any = true;
                                             break;
                                         }
@@ -3048,12 +3107,17 @@ pub(super) fn finish_ordered_proof<'a>(
                                                 if let Ok(proof) = candidate {
                                                     retained_certificate =
                                                         Some(proof.certificate());
-                                                    closures[claim_index] =
+                                                    record_claim_closure(
+                                                        &mut outcome_proof,
+                                                        &mut closures,
+                                                        claims,
+                                                        claim_index,
                                                         ClaimClosure::by_exact_check_completing(
                                                             claims[claim_index].key(),
                                                             path_index,
                                                             proof.completed_proposition()?,
-                                                        );
+                                                        ),
+                                                    )?;
                                                     closed_any = true;
                                                     break;
                                                 }
@@ -3109,12 +3173,17 @@ pub(super) fn finish_ordered_proof<'a>(
                                             Ok(proof) => {
                                                 retained_certificate =
                                                     Some(proof.certificate_since(checkpoint)?);
-                                                closures[claim_index] =
+                                                record_claim_closure(
+                                                    &mut outcome_proof,
+                                                    &mut closures,
+                                                    claims,
+                                                    claim_index,
                                                     ClaimClosure::by_exact_check_completing(
                                                         claims[claim_index].key(),
                                                         path_index,
                                                         proof.completed_proposition()?,
-                                                    );
+                                                    ),
+                                                )?;
                                                 closed_any = true;
                                                 break;
                                             }
@@ -3144,12 +3213,17 @@ pub(super) fn finish_ordered_proof<'a>(
                                     match closed {
                                         Some(proof) => {
                                             retained_certificate = Some(proof.certificate());
-                                            closures[claim_index] =
+                                            record_claim_closure(
+                                                &mut outcome_proof,
+                                                &mut closures,
+                                                claims,
+                                                claim_index,
                                                 ClaimClosure::by_exact_check_completing(
                                                     claims[claim_index].key(),
                                                     path_index,
                                                     proof.completed_proposition()?,
-                                                );
+                                                ),
+                                            )?;
                                             closed_any = true;
                                             break;
                                         }
@@ -3232,7 +3306,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                     &mut introduced_claim_scope,
                                     &mut closures,
                                     claims,
-                                    &outcome_proof,
+                                    &mut outcome_proof,
                                     path_index,
                                     |proof| {
                                         if let PostExecutionTactic::Both(both) = post_tactic {
@@ -3283,7 +3357,8 @@ pub(super) fn finish_ordered_proof<'a>(
                                 // refusal is the reader's, so the summary
                                 // below stands.
                                 let mut both_errors = Vec::new();
-                                let main_claim = main_goal_claim(&closures);
+                                let main_claim =
+                                    main_goal_claim(&outcome_proof, &closures, claims)?;
                                 for (claim_index, claim) in claims.iter().enumerate() {
                                     if Some(claim_index) != main_claim {
                                         continue;
@@ -3318,11 +3393,17 @@ pub(super) fn finish_ordered_proof<'a>(
                                                 "`arithmetic using` requires a return-state proposition; use context-free `normalize()` for a divergent path",
                                             ));
                                         }
-                                        closures[claim_index] = ClaimClosure::vacuous(
-                                            &completed_execution,
-                                            path_index,
-                                            claim.key(),
-                                            ClaimCertificate::ExactCheck,
+                                        record_claim_closure(
+                                            &mut outcome_proof,
+                                            &mut closures,
+                                            claims,
+                                            claim_index,
+                                            ClaimClosure::vacuous(
+                                                &completed_execution,
+                                                path_index,
+                                                claim.key(),
+                                                ClaimCertificate::ExactCheck,
+                                            )?,
                                         )?;
                                         closed_any = true;
                                         continue;
@@ -3384,12 +3465,17 @@ pub(super) fn finish_ordered_proof<'a>(
                                                 let certificate =
                                                     proof.certificate_since(checkpoint)?;
                                                 retained_certificate.get_or_insert(certificate);
-                                                closures[claim_index] =
+                                                record_claim_closure(
+                                                    &mut outcome_proof,
+                                                    &mut closures,
+                                                    claims,
+                                                    claim_index,
                                                     ClaimClosure::by_exact_check_completing(
                                                         claims[claim_index].key(),
                                                         path_index,
                                                         proof.completed_proposition()?,
-                                                    );
+                                                    ),
+                                                )?;
                                                 closed_any = true;
                                             }
                                             Err(error) => {
@@ -3545,12 +3631,17 @@ pub(super) fn finish_ordered_proof<'a>(
                                         Some(proof) => {
                                             retained_certificate
                                                 .get_or_insert_with(|| proof.certificate());
-                                            closures[claim_index] =
+                                            record_claim_closure(
+                                                &mut outcome_proof,
+                                                &mut closures,
+                                                claims,
+                                                claim_index,
                                                 ClaimClosure::by_exact_check_completing(
                                                     claims[claim_index].key(),
                                                     path_index,
                                                     proof.completed_proposition()?,
-                                                );
+                                                ),
+                                            )?;
                                             closed_any = true;
                                         }
                                         None => {
@@ -3784,7 +3875,8 @@ pub(super) fn finish_ordered_proof<'a>(
                                 // `simp` acts on the first open goal;
                                 // `auto` is the catch-all that closes every
                                 // goal still open.
-                                let main_claim = main_goal_claim(&closures);
+                                let main_claim =
+                                    main_goal_claim(&outcome_proof, &closures, claims)?;
                                 let acts_on = |claim_index: usize| {
                                     auto_closer || Some(claim_index) == main_claim
                                 };
@@ -3890,12 +3982,18 @@ pub(super) fn finish_ordered_proof<'a>(
                                     if proof_context.constants.grouped_contract {
                                         path_grouped_surface_closers.extend(added.iter().cloned());
                                     }
-                                    closures[claim_index] = ClaimClosure::by_continued_proposition(
-                                        claims[claim_index].key(),
-                                        path_index,
-                                        added,
-                                        completed.completed_proposition()?,
-                                    );
+                                    record_claim_closure(
+                                        &mut outcome_proof,
+                                        &mut closures,
+                                        claims,
+                                        claim_index,
+                                        ClaimClosure::by_continued_proposition(
+                                            claims[claim_index].key(),
+                                            path_index,
+                                            added,
+                                            completed.completed_proposition()?,
+                                        ),
+                                    )?;
                                     continue;
                                 }
                                 // A divergent path has no outcome to prove
@@ -4021,17 +4119,15 @@ pub(super) fn finish_ordered_proof<'a>(
                                                 })?;
                                         if proof_context.constants.grouped_contract {
                                             for (claim_index, _, _) in &direct_resource_claims {
-                                                closures[*claim_index] =
-                                                    ClaimClosure::resource(ClaimCertificate::GroupedTransition,
-                                                        direct_resource_evidence.remove(claim_index).ok_or_else(|| ClickError::new("grouped resource claim is missing its checked evidence"))?);
+                                                record_claim_closure(&mut outcome_proof, &mut closures, claims, *claim_index, ClaimClosure::resource(ClaimCertificate::GroupedTransition,
+                                                        direct_resource_evidence.remove(claim_index).ok_or_else(|| ClickError::new("grouped resource claim is missing its checked evidence"))?))?;
                                             }
                                             path_grouped_surface_closers
                                                 .extend(certificate.to_proof_tactics());
                                         } else {
                                             for (claim_index, _, _) in &direct_resource_claims {
-                                                closures[*claim_index] =
-                                                    ClaimClosure::resource(ClaimCertificate::Claim(certificate.to_proof_tactics()),
-                                                        direct_resource_evidence.remove(claim_index).ok_or_else(|| ClickError::new("resource claim is missing its checked evidence"))?);
+                                                record_claim_closure(&mut outcome_proof, &mut closures, claims, *claim_index, ClaimClosure::resource(ClaimCertificate::Claim(certificate.to_proof_tactics()),
+                                                        direct_resource_evidence.remove(claim_index).ok_or_else(|| ClickError::new("resource claim is missing its checked evidence"))?))?;
                                             }
                                         }
                                         if capturing_this_tactic {
@@ -4329,18 +4425,22 @@ pub(super) fn finish_ordered_proof<'a>(
                                                         .into_iter()
                                                         .zip(checked_propositions)
                                                 {
-                                                    closures[claim_index] =
+                                                    record_claim_closure(
+                                                        &mut outcome_proof,
+                                                        &mut closures,
+                                                        claims,
+                                                        claim_index,
                                                         ClaimClosure::by_grouped_proposition(
                                                             claims[claim_index].key(),
                                                             path_index,
                                                             &certificate,
                                                             checked_proposition,
-                                                        );
+                                                        ),
+                                                    )?;
                                                 }
                                                 for (claim_index, _, _) in &direct_resource_claims {
-                                                    closures[*claim_index] =
-                                                        ClaimClosure::resource(ClaimCertificate::GroupedTransition,
-                                                        direct_resource_evidence.remove(claim_index).ok_or_else(|| ClickError::new("grouped resource claim is missing its checked evidence"))?);
+                                                    record_claim_closure(&mut outcome_proof, &mut closures, claims, *claim_index, ClaimClosure::resource(ClaimCertificate::GroupedTransition,
+                                                        direct_resource_evidence.remove(claim_index).ok_or_else(|| ClickError::new("grouped resource claim is missing its checked evidence"))?))?;
                                                 }
                                                 path_grouped_surface_closers
                                                     .extend(certificate.to_proof_tactics());
@@ -4354,13 +4454,18 @@ pub(super) fn finish_ordered_proof<'a>(
                                                         .into_iter()
                                                         .zip(checked_propositions)
                                                 {
-                                                    closures[claim_index] =
+                                                    record_claim_closure(
+                                                        &mut outcome_proof,
+                                                        &mut closures,
+                                                        claims,
+                                                        claim_index,
                                                         ClaimClosure::by_checked_proposition(
                                                             claims[claim_index].key(),
                                                             path_index,
                                                             &certificate,
                                                             checked_proposition,
-                                                        );
+                                                        ),
+                                                    )?;
                                                 }
                                                 // Resource productions were checked
                                                 // before the attempt; their surface
@@ -4381,9 +4486,8 @@ pub(super) fn finish_ordered_proof<'a>(
                                                     for (claim_index, _, _) in
                                                         &direct_resource_claims
                                                     {
-                                                        closures[*claim_index] =
-                                                            ClaimClosure::resource(ClaimCertificate::Claim(assumption_certificate.to_proof_tactics()),
-                                                        direct_resource_evidence.remove(claim_index).ok_or_else(|| ClickError::new("resource claim is missing its checked evidence"))?);
+                                                        record_claim_closure(&mut outcome_proof, &mut closures, claims, *claim_index, ClaimClosure::resource(ClaimCertificate::Claim(assumption_certificate.to_proof_tactics()),
+                                                        direct_resource_evidence.remove(claim_index).ok_or_else(|| ClickError::new("resource claim is missing its checked evidence"))?))?;
                                                     }
                                                 }
                                                 if capturing_this_tactic {
@@ -4683,9 +4787,9 @@ pub(super) fn finish_ordered_proof<'a>(
                                 // retained in the path surface stream. The
                                 // ordinary implicit closer contributes no
                                 // additional syntax.
-                                closures[claim_index] = ClaimClosure::by_exact_check_completing(claims[claim_index].key(), path_index,
+                                record_claim_closure(&mut outcome_proof, &mut closures, claims, claim_index, ClaimClosure::by_exact_check_completing(claims[claim_index].key(), path_index,
                                     completed.completed_proposition()?,
-                                );
+                                ))?;
                             }
                             _ => closures[claim_index].record_failure(ClickError::new(
                                 "the retained existential Proof did not close by the implicit exact check",
@@ -4699,11 +4803,17 @@ pub(super) fn finish_ordered_proof<'a>(
                                 continue;
                             }
                             if matches!(outcome, CFunctionOutcome::VerificationDiverges) {
-                                closures[claim_index] = ClaimClosure::vacuous(
-                                    &completed_execution,
-                                    path_index,
-                                    claim.key(),
-                                    ClaimCertificate::ExactCheck,
+                                record_claim_closure(
+                                    &mut outcome_proof,
+                                    &mut closures,
+                                    claims,
+                                    claim_index,
+                                    ClaimClosure::vacuous(
+                                        &completed_execution,
+                                        path_index,
+                                        claim.key(),
+                                        ClaimCertificate::ExactCheck,
+                                    )?,
                                 )?;
                                 continue;
                             }
@@ -4735,12 +4845,17 @@ pub(super) fn finish_ordered_proof<'a>(
                                     None,
                                 )? {
                                     Ok(completed) => {
-                                        closures[claim_index] =
+                                        record_claim_closure(
+                                            &mut outcome_proof,
+                                            &mut closures,
+                                            claims,
+                                            claim_index,
                                             ClaimClosure::by_exact_check_completing(
                                                 claims[claim_index].key(),
                                                 path_index,
                                                 completed.completed_proposition()?,
-                                            );
+                                            ),
+                                        )?;
                                     }
                                     Err(reason) => closures[claim_index].record_failure(reason),
                                 }
@@ -4757,12 +4872,13 @@ pub(super) fn finish_ordered_proof<'a>(
                                 Ensure::Proposition(_) => None,
                             };
                             match exact {
-                                Some(Ok(checked)) => {
-                                    closures[claim_index] = ClaimClosure::resource(
-                                        ClaimCertificate::ExactCheck,
-                                        checked,
-                                    )
-                                }
+                                Some(Ok(checked)) => record_claim_closure(
+                                    &mut outcome_proof,
+                                    &mut closures,
+                                    claims,
+                                    claim_index,
+                                    ClaimClosure::resource(ClaimCertificate::ExactCheck, checked),
+                                )?,
                                 Some(Err(error)) => closures[claim_index].record_failure(error),
                                 None if !matches!(outcome, CFunctionOutcome::Return { .. }) => {
                                     closures[claim_index].record_failure(ClickError::new(format!(
@@ -4785,10 +4901,9 @@ pub(super) fn finish_ordered_proof<'a>(
                         }
                     }
 
-                    if let Some((claim_index, claim)) = claims
-                        .iter()
-                        .enumerate()
-                        .find(|(claim_index, _)| !closures[*claim_index].is_closed())
+                    if let Some((claim_index, claim)) =
+                        main_goal_claim(&outcome_proof, &closures, claims)?
+                            .map(|claim_index| (claim_index, &claims[claim_index]))
                     {
                         let claim_label = function_claim_label(function_block, claim);
                         let summary = format!(

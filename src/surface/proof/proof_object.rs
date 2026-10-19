@@ -4,14 +4,14 @@ use super::pure_theorems::{
 use super::*;
 use crate::kernel::CFunctionExecutionCandidate;
 use crate::kernel::proof::{
-    BranchId, CheckedBranchSplit, CheckedCallOutcomeSplit, ExecutionUpdateError,
-    FrontierObligation, FrontierSplitError, FunctionOutcomeObligation, OutcomeProofCore,
-    OutcomeProofState as KernelOutcomeProofState, ProofBranch, ProofBranchState,
-    ProofExecutionState as KernelProofExecutionState, ProofFacts, ProofFocusError, ProofJoinError,
-    ProofObject as KernelProofObject, ProofObligation as KernelBranchObligation,
-    ProofState as KernelProofState, PropositionAssumptionContext, PropositionCloseError,
-    PropositionIntroduction, PropositionObligation as KernelPropositionObligation,
-    PropositionSplitError, SplitId,
+    BranchId, CheckedBranchSplit, CheckedCallOutcomeSplit, CheckedProposition, ClaimGoalError,
+    ExecutionUpdateError, FrontierObligation, FrontierSplitError, FunctionOutcomeObligation,
+    OutcomeClaimGoals, OutcomeProofCore, OutcomeProofState as KernelOutcomeProofState, ProofBranch,
+    ProofBranchState, ProofExecutionState as KernelProofExecutionState, ProofFacts,
+    ProofFocusError, ProofJoinError, ProofObject as KernelProofObject,
+    ProofObligation as KernelBranchObligation, ProofState as KernelProofState,
+    PropositionAssumptionContext, PropositionCloseError, PropositionIntroduction,
+    PropositionObligation as KernelPropositionObligation, PropositionSplitError, SplitId,
 };
 use crate::persistent::PersistentMap;
 
