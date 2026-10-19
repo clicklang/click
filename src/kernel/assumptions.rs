@@ -5276,6 +5276,21 @@ impl PureFactContext {
         self.known_algebraic_constructor(value).is_some()
     }
 
+    /// The constructor a fact equates algebraic variable `variable` to.
+    pub(in crate::kernel) fn variable_algebraic_constructor(
+        &self,
+        variable: Variable,
+    ) -> Option<AlgebraicTerm> {
+        let (premise, constructor) = self
+            .algebraic_variable_constructors
+            .get(&variable)?
+            .iter()
+            .next()
+            .map(|(premise, constructor)| (premise.clone(), constructor.clone()))?;
+        record_reasoning_provenance(self, &premise);
+        Some(constructor)
+    }
+
     /// Whether a fact equates some algebraic variable to a constructor.
     pub(crate) fn has_algebraic_constructor_facts(&self) -> bool {
         !self.algebraic_variable_constructors.is_empty()

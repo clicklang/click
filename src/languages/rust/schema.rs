@@ -108,12 +108,18 @@ pub struct Record {
     pub fields: Vec<Field>,
     pub destructor: Option<String>,
 }
-/// A crate enum whose fields are scalars: its values are values of the
+/// An enum whose fields are scalars: its values are values of the
 /// `spec enum` of the same name, which the import declares for the sidecar.
+/// An instance of a generic enum, `Option<u32>`, names the `spec enum`
+/// `generic` at `arguments`, and its variants' fields are at those arguments.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Enum {
     pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub generic: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub arguments: Vec<Type>,
     pub variants: Vec<Variant>,
 }
 #[derive(Clone, Debug, Deserialize, Serialize)]

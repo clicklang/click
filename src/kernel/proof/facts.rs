@@ -1448,6 +1448,48 @@ impl ProofFacts {
         &self.implicit_transport_assumptions
     }
 
+    /// Each of `facts` with every algebraic variable these facts equate to a
+    /// constructor replaced by it, so a `match` on the variable reduces: a
+    /// callee's `result == match o { .. }` where the caller knows
+    /// `o == Option::Some(x)`. A proof `match` arm instantiates earlier facts
+    /// at the constructor it learns; this is the other order. Each fact's
+    /// variables are looked up in the constructor index; nothing is read
+    /// where no fact equates a variable to a constructor.
+    fn known_constructor_instances(&self, facts: &[Proposition]) -> Vec<Proposition> {
+        if !self.assumptions().has_algebraic_constructor_facts() {
+            return Vec::new();
+        }
+        let mut instances = Vec::new();
+        for fact in facts {
+            if matches!(
+                fact,
+                Proposition::Equal(Term::Algebraic(_), Term::Algebraic(_))
+            ) {
+                continue;
+            }
+            let mut instance = fact.clone();
+            for key in crate::kernel::reasoning::collect_atomic_connection_keys(fact) {
+                let crate::kernel::AtomicConnectionKey::Variable(variable) = key else {
+                    continue;
+                };
+                if let Some(constructor) =
+                    self.assumptions().variable_algebraic_constructor(variable)
+                {
+                    instance =
+                        crate::kernel::reasoning::substitute_algebraic_variable_in_proposition(
+                            &instance,
+                            variable,
+                            &constructor,
+                        );
+                }
+            }
+            if instance != *fact && !instances.contains(&instance) {
+                instances.push(instance);
+            }
+        }
+        instances
+    }
+
     /// Adds one statement's selected successor context while retaining the
     /// old ambient order by shared prefix. The statement delta is explicit,
     /// so insertion work is proportional only to that delta and index height.
@@ -1473,6 +1515,13 @@ impl ProofFacts {
             successor = successor.with_fact(fact.clone());
             if successor.fact_count() != before {
                 introduced.push(fact.clone());
+            }
+        }
+        for instance in successor.known_constructor_instances(&introduced) {
+            let before = successor.fact_count();
+            successor = successor.with_fact(instance.clone());
+            if successor.fact_count() != before {
+                introduced.push(instance);
             }
         }
         successor.ordered = ordered;

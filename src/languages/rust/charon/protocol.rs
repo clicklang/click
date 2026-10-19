@@ -104,8 +104,7 @@ pub(super) fn bindings(
         }
         if let a::Rvalue::Discriminant(option) = value
             && (adapter.protocol_option(&option.ty)
-                || adapter.option_box_payload(&option.ty).is_some()
-                || adapter.option_payload(&option.ty).is_some())
+                || adapter.option_box_payload(&option.ty).is_some())
         {
             if !matches!(
                 target.ty.kind(),
@@ -190,22 +189,7 @@ impl BodyAdapter<'_, '_> {
     fn option_tag(&self, option: a::LocalId) -> Result<E, String> {
         let ty = &self.body.locals.locals[option].ty;
         let name = self.local(option)?;
-        Ok(if self.adapter.option_payload(ty).is_some() {
-            let Type::Record { name: record } = self.adapter.ty(ty)? else {
-                unreachable!("an option of a scalar is a record")
-            };
-            E::Binary {
-                operator: "ne".into(),
-                left_type: Type::U8,
-                right_type: Type::U8,
-                left: Box::new(E::Field {
-                    base: Box::new(E::Local { name }),
-                    record,
-                    field: OPTION_IS_SOME.into(),
-                }),
-                right: Box::new(option_tag(false)),
-            }
-        } else if let Type::OptionBox { .. } = self.adapter.ty(ty)? {
+        Ok(if let Type::OptionBox { .. } = self.adapter.ty(ty)? {
             E::Binary {
                 operator: "ne".into(),
                 left_type: self.adapter.ty(ty)?,
@@ -231,8 +215,7 @@ impl BodyAdapter<'_, '_> {
             }
             u::StatementKind::Assign(target, a::Rvalue::Discriminant(option))
                 if self.adapter.protocol_option(&option.ty)
-                    || self.adapter.option_box_payload(&option.ty).is_some()
-                    || self.adapter.option_payload(&option.ty).is_some() =>
+                    || self.adapter.option_box_payload(&option.ty).is_some() =>
             {
                 Ok(Some(Some(S::Assign {
                     target: self.place(target)?,
