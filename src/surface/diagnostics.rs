@@ -4792,24 +4792,34 @@ fn describe_parameter_struct_field_pointer(
     let layout = parameter
         .pointee_struct_layout()
         .or_else(|| parameter.struct_layout())?;
-    let PointerOffsetTerm::Int32Scaled { value, byte_width } = &pointer.offset else {
-        return None;
-    };
-    let loaded_at = match value.as_ref() {
-        Bitvector32Term::MemoryLoad(_, loaded_at, _) => loaded_at.as_ref().clone(),
-        Bitvector32Term::Variable(variable) => {
-            crate::kernel::registered_load_for_variable(variable)?.1
+    // The value a load of the field read, or its storage-relative encoding.
+    let (loaded_at, byte_width) = match pointer.as_loaded_value() {
+        Some(read) if read.displacement == PointerOffsetTerm::Constant(0) => {
+            (read.defining_address, None)
         }
-        _ => return None,
+        Some(_) => return None,
+        None => {
+            let PointerOffsetTerm::Int32Scaled { value, byte_width } = &pointer.offset else {
+                return None;
+            };
+            let loaded_at = match value.as_ref() {
+                Bitvector32Term::MemoryLoad(_, loaded_at, _) => loaded_at.as_ref().clone(),
+                Bitvector32Term::Variable(variable) => {
+                    crate::kernel::registered_load_for_variable(variable)?.1
+                }
+                _ => return None,
+            };
+            if pointer.block != base.block {
+                return None;
+            }
+            (loaded_at, Some(*byte_width))
+        }
     };
-    if pointer.block != base.block {
-        return None;
-    }
     layout.fields().iter().find_map(|(name, field)| {
         let field_type = field.c_type();
         let pointee_type = field_type.pointee_type()?;
         let pointee_width = diagnostic_c0_type_byte_width(pointee_type, field.byte_width());
-        if pointee_width != *byte_width {
+        if byte_width.is_some_and(|byte_width| pointee_width != byte_width) {
             return None;
         }
         let field_offset = diagnostic_pointer_element_index_from_base(&loaded_at, base, 1)?;
@@ -5762,6 +5772,24 @@ fn describe_loaded_pointer_range(
     parameter_binding: ParameterBinding<'_>,
 ) -> Option<String> {
     range.int32_bounds()?;
+    // One element at a wide index past a loaded pointer: `s->data[s->len]`.
+    if let Some(read) = range.base().as_loaded_value()
+        && let PointerOffsetTerm::Int64Scaled {
+            value, byte_width, ..
+        } = &read.displacement
+        && *byte_width == i64::from(range.element_width())
+        && range.constant_start() == Some(0)
+        && range.constant_end() == Some(1)
+        && pointee_struct_at(&read.defining_address, parameter_binding).is_none()
+    {
+        let name = describe_load_at(&read.defining_address, parameter_binding);
+        return is_place_spelling(&name).then(|| {
+            format!(
+                "{name}[{}]",
+                describe_bitvector_with_context(value, parameter_binding)
+            )
+        });
+    }
     let (address, bytes) = loaded_pointer_split(range.base())?;
     if pointee_struct_at(&address, parameter_binding).is_some() {
         return None;
