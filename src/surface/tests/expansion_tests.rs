@@ -1,6 +1,7 @@
 use super::*;
 
 #[test]
+#[ignore = "nightly: verifies the original descriptor proof and its rejection controls"]
 fn borrowed_resource_receipts_survive_post_return_folds() {
     let (source, sources) =
         mdtest_sources("mdtests/unfold_region_then_write_a_descriptor_of_its_type.md");
