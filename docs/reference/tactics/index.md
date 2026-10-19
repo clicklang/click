@@ -394,6 +394,18 @@ and the other tactics that change the path's facts or resources act on the path
 and leave the goal list alone; the implicit `auto` at the end of the script
 closes the goals still open.
 
+Some tactics leave a claim on its own proof, which later closers continue
+instead of the claim. `choose`, `witness`, `let` and `intro` open the proof of
+the first open proposition claim, and `rewrite` rewrites each open claim on
+its own proof. Before a tactic continues such a proof, the proof takes up the
+path's current state and resources, so a later `fold` or the contract's
+resource transition reaches it. A `have` written after `intro` extends that
+proof. When `assumption`, `normalize`, `arithmetic` or `both` does not apply to
+a proof that `intro` opened, it is read against the goal list instead. A
+closer that does not apply to a proof only `choose`, `witness` or `let`
+opened is an error, since closing the claim another way would drop the
+witness, and so is a `simp` or `auto` that does not complete an opened proof.
+
 ### Execution to a program point
 
 **Form:** `execute_until(statement(N))`
