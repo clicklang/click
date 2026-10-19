@@ -290,7 +290,7 @@ pub(super) fn mir_expression_nodes(statement: &S) -> BTreeMap<usize, usize> {
         let children: Vec<&E> = match expr {
             E::Borrow { place, .. } => vec![place],
             E::Deref { reference, .. } => vec![reference],
-            E::Field { base, .. } => vec![base],
+            E::Field { base, .. } | E::EnumField { base, .. } => vec![base],
             E::Index { slice, index } => vec![slice, index],
             E::IntegerFrom { value, .. }
             | E::Not { value }
@@ -303,6 +303,9 @@ pub(super) fn mir_expression_nodes(statement: &S) -> BTreeMap<usize, usize> {
             | E::Array {
                 elements: arguments,
                 ..
+            }
+            | E::EnumConstruct {
+                fields: arguments, ..
             } => arguments.iter().collect(),
             _ => vec![],
         };
@@ -479,7 +482,7 @@ fn alias_effect(expr: &E, aliases: &BTreeSet<&str>) -> Result<(bool, bool), Fron
         | E::Repeat { value, .. } => vec![value],
         E::Borrow { place, .. } => vec![place],
         E::Deref { reference, .. } => vec![reference],
-        E::Field { base, .. } => vec![base],
+        E::Field { base, .. } | E::EnumField { base, .. } => vec![base],
         E::SliceLength { slice } | E::ArrayToSlice { array: slice, .. } => vec![slice],
         E::Index { slice, index } => vec![slice, index],
         E::Binary { left, right, .. } => vec![left, right],
@@ -491,6 +494,9 @@ fn alias_effect(expr: &E, aliases: &BTreeSet<&str>) -> Result<(bool, bool), Fron
         | E::ClosureInstance {
             captures: arguments,
             ..
+        }
+        | E::EnumConstruct {
+            fields: arguments, ..
         } => arguments.iter().collect(),
         E::FunctionAddress { .. }
         | E::Integer { .. }
@@ -742,7 +748,9 @@ pub(super) fn certify_scalar_reference_end<'a>(
                     statement: 0,
                 };
             }
-            T::If { .. } | T::Drop { .. } => return Err(FrontierRefusal::UnsupportedFlow),
+            T::If { .. } | T::Switch { .. } | T::Drop { .. } => {
+                return Err(FrontierRefusal::UnsupportedFlow);
+            }
         }
     }
     Ok(CheckedScalarReferenceEnd {
@@ -1139,6 +1147,7 @@ mod tests {
             mir_opt_level: 0,
             logical_source: "borrow.rs".into(),
             records: vec![],
+            enums: vec![],
             functions: vec![f],
         }
     }

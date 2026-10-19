@@ -37,8 +37,88 @@ fn reference_view(
 }
 
 pub(crate) type LoweredRust = (Vec<C0Function>, BTreeMap<String, C0StructLayout>);
+
+thread_local! {
+    /// The kernel types of the crate enums being lowered, by name. One
+    /// lowering runs on one thread and sets them for its duration
+    /// ([`EnumTypes::enter`]), so a type is found from its name alone.
+    static ENUM_TYPES: std::cell::RefCell<BTreeMap<String, TypeParameterName>> =
+        const { std::cell::RefCell::new(BTreeMap::new()) };
+}
+
+/// The crate's enums for the duration of one lowering.
+struct EnumTypes;
+
+impl EnumTypes {
+    fn enter(export: &RustExport) -> Result<Self, String> {
+        let mut types = BTreeMap::new();
+        for declared in &export.enums {
+            let variants: std::sync::Arc<[AlgebraicVariantType]> = declared
+                .variants
+                .iter()
+                .map(|variant| {
+                    Ok(AlgebraicVariantType {
+                        name: variant.name.clone(),
+                        fields: variant
+                            .fields
+                            .iter()
+                            .map(|field| {
+                                let c_type = scalar_type(field)?;
+                                if c_type == C0Type::Void || c_type.is_pointer() {
+                                    return Err(
+                                        "Rust enum fields must be integers or booleans".to_string()
+                                    );
+                                }
+                                Ok(AlgebraicValueType::C(c_type.to_kernel_type()))
+                            })
+                            .collect::<Result<_, String>>()?,
+                    })
+                })
+                .collect::<Result<Vec<_>, String>>()?
+                .into();
+            let nominal = AlgebraicValueType::Algebraic {
+                name: declared.name.clone(),
+                arguments: Vec::new(),
+            };
+            let algebraic_type = AlgebraicType {
+                rigid: false,
+                name: declared.name.clone(),
+                arguments: Vec::new(),
+                variants: variants.clone(),
+                schemas: std::sync::Arc::new(AlgebraicSchemas::new(BTreeMap::from([(
+                    nominal, variants,
+                )]))),
+            };
+            if types
+                .insert(
+                    declared.name.clone(),
+                    TypeParameterName::of(&algebraic_type),
+                )
+                .is_some()
+            {
+                return Err("duplicate Rust enum".into());
+            }
+        }
+        ENUM_TYPES.with(|known| *known.borrow_mut() = types);
+        Ok(Self)
+    }
+
+    fn get(name: &str) -> Result<TypeParameterName, String> {
+        ENUM_TYPES
+            .with(|known| known.borrow().get(name).copied())
+            .ok_or_else(|| format!("unknown Rust enum `{name}`"))
+    }
+}
+
+impl Drop for EnumTypes {
+    fn drop(&mut self) {
+        ENUM_TYPES.with(|known| known.borrow_mut().clear());
+    }
+}
+
 fn scalar_type(t: &Type) -> Result<C0Type, String> {
     match t {
+        Type::Enum { name } => Ok(C0Type::Parameter(EnumTypes::get(name)?)),
         Type::I32 => Ok(C0Type::Int32),
         Type::U8 => Ok(C0Type::UInt8),
         Type::U16 => Ok(C0Type::UInt16),
@@ -149,6 +229,8 @@ pub(crate) fn lower_with_identity(
     export: &RustExport,
     identity: Option<&str>,
 ) -> Result<LoweredRust, String> {
+    // Enum fields are scalars, so their types need no other enum's.
+    let _enums = EnumTypes::enter(export)?;
     let mut layouts = BTreeMap::new();
     let mut fields = BTreeMap::new();
     for record in &export.records {
@@ -233,6 +315,7 @@ fn lower_function(
             | Type::Bool
             | Type::Unit
             | Type::Record { .. }
+            | Type::Enum { .. }
             | Type::Parameter { .. }
     ) {
         return Err("Rust reference/aggregate returns are not supported".into());
@@ -1620,6 +1703,28 @@ impl Context<'_> {
             }
             E::Integer { value } => Ok(c_int32_literal(*value as u32)),
             E::UsizeInteger { value } => Ok(c_uint64_literal(*value)),
+            E::EnumConstruct {
+                name,
+                variant,
+                fields,
+            } => Ok(CExpression::EnumConstruct {
+                enum_type: EnumTypes::get(name)?,
+                variant: variant.clone(),
+                fields: fields
+                    .iter()
+                    .map(|field| self.expr(field))
+                    .collect::<Result<_, _>>()?,
+            }),
+            E::EnumField {
+                base,
+                variant,
+                index,
+                ..
+            } => Ok(CExpression::EnumField {
+                value: Box::new(self.expr(base)?),
+                variant: variant.clone(),
+                index: *index,
+            }),
             E::SliceLength { slice } => Ok(self.indexed_parts(slice)?.1),
             E::Index { .. } => Err("indexed Rust places require checked preparation".into()),
             E::UnsignedInteger { value, value_type } => match value_type {

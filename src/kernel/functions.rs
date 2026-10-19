@@ -18049,6 +18049,8 @@ fn resolve_retained_aggregate_fields(
             expression: inner, ..
         }
         | CExpression::FloatNegate(inner)
+        | CExpression::EnumField { value: inner, .. }
+        | CExpression::EnumIs { value: inner, .. }
         | CExpression::Not(inner)
         | CExpression::BitwiseNot(inner)
         | CExpression::Load(inner)
@@ -18056,6 +18058,11 @@ fn resolve_retained_aggregate_fields(
         | CExpression::PointerOffsetBytes { pointer: inner, .. }
         | CExpression::Subobject { pointer: inner, .. } => {
             resolve_retained_aggregate_fields(entry, state, inner, true, assumptions, budget)?
+        }
+        CExpression::EnumConstruct { fields, .. } => {
+            for field in fields {
+                resolve_retained_aggregate_fields(entry, state, field, true, assumptions, budget)?;
+            }
         }
         CExpression::Conditional {
             condition,

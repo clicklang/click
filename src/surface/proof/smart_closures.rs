@@ -3313,6 +3313,14 @@ impl<'a> Proof<'a> {
         {
             return Ok(Some(rewritten));
         }
+        // A goal over a value a fact equates to a constructor, as a proof
+        // `match` arm's case states it: evaluate from a rewrite.
+        if allow_function_unfold
+            && self.facts().assumptions().has_algebraic_constructor_facts()
+            && let Some(rewritten) = self.try_constructor_evaluation_closure(introduced_surfaces)?
+        {
+            return Ok(Some(rewritten));
+        }
         if let Some(surface_goal) = self.surface_goal()
             && let Some(proof) = self.try_snapshot_transport_closure(surface_goal)?
         {
@@ -3948,15 +3956,22 @@ impl<'a> Proof<'a> {
         &self,
         introduced_surfaces: &[ClickProposition],
     ) -> Result<Option<Self>, ClickError> {
+        // A fact recorded at a program point keeps its anchor, `at(p, s) ==
+        // at(p, Shape::Circle(r))`; the anchored constructor is still one.
         let is_constructor_equation = |surface: &ClickProposition| {
-            matches!(
-                surface,
-                ClickProposition::Comparison {
-                    operator: ComparisonOperator::Equal,
-                    right: ContractExpression::AlgebraicConstructor { .. },
-                    ..
-                }
-            )
+            let ClickProposition::Comparison {
+                operator: ComparisonOperator::Equal,
+                right,
+                ..
+            } = surface
+            else {
+                return false;
+            };
+            let mut right = right;
+            while let ContractExpression::At { expression, .. } = right {
+                right = expression;
+            }
+            matches!(right, ContractExpression::AlgebraicConstructor { .. })
         };
         let mut constructor_equations: Vec<ClickProposition> = introduced_surfaces
             .iter()

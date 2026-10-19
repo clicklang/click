@@ -232,6 +232,9 @@ pub(in crate::surface) struct ProgramLayouts {
     /// The instances of each generic crate trait the import declares an
     /// interface of, by the trait's importer name.
     pub(in crate::surface) rust_trait_instances: BTreeMap<String, BTreeSet<Vec<String>>>,
+    /// The type of each crate enum a Rust import's signatures take or
+    /// return, by its name: a sidecar signature names it as Rust does.
+    pub(in crate::surface) rust_enum_types: BTreeMap<String, crate::kernel::TypeParameterName>,
     /// Each C++ function's calls of methods on a receiver that may be an
     /// object of a derived class, by sidecar names: the function called, and
     /// the reference parameter the receiver is, or `None` for `this`.
@@ -853,6 +856,8 @@ struct Parser {
     matching_parentheses: Vec<Option<usize>>,
     position: usize,
     struct_layouts: BTreeMap<String, syntax::C0StructLayout>,
+    /// See [`ProgramLayouts::rust_enum_types`].
+    rust_enum_types: BTreeMap<String, crate::kernel::TypeParameterName>,
     union_layouts: BTreeMap<String, syntax::C0UnionLayout>,
     aggregate_objects_by_function: BTreeMap<String, BTreeMap<String, String>>,
     aggregate_array_objects_by_function: BTreeMap<String, BTreeSet<String>>,
@@ -1193,6 +1198,7 @@ impl Parser {
         )
         .map_err(|error| error.with_kind(ClickErrorKind::Syntax))?;
         parser.c_object_names_by_function = layouts.c_object_names;
+        parser.rust_enum_types = layouts.rust_enum_types;
         parser.recursion_peers_by_function = layouts.recursion_peers;
         parser
             .implied_library_modules
@@ -1394,6 +1400,7 @@ impl Parser {
             algebraic_type_nesting: 0,
             position: 0,
             struct_layouts,
+            rust_enum_types: BTreeMap::new(),
             union_layouts,
             c_object_names_by_function: BTreeMap::new(),
             recursion_peers_by_function: BTreeMap::new(),

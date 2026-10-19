@@ -26,7 +26,8 @@ a form usually written by `click expand`. These categories describe usage
 in the checked examples, mdtests, and expansion output. Every listed form
 remains supported.
 
-- `execute()`: run the function to its exit, splitting at undecided C `if`s.
+- `execute()`: run the function to its exit, splitting at undecided C `if`s
+  and open Rust enum `match`es.
   See [Execution](#execution).
 - `step()`: run one C statement, to put proof steps between statements. See
   [Execution](#execution).
@@ -354,7 +355,9 @@ unchanged.
 **Core.** From a live frontier, run to function exit on the checked proof: one
 `step()` per statement, a `branch` at each undecided C `if` or call outcome, and
 a proof-level case split where a condition or statement needs explicit path
-selectors (a short-circuit, a symbolic `switch`, a may-alias load).
+selectors (a short-circuit, a symbolic `switch`, a may-alias load), and a
+proof `match` at a Rust enum `match` whose variant is open, binding each
+field as `<local>_<variant>_<index>` ([Rust enums](../rust.md#enums-and-match)).
 
 A loop the context decides is walked one iteration at a time, within a
 10,000-step budget.

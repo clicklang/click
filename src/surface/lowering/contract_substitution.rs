@@ -3796,6 +3796,31 @@ pub(in crate::surface) fn substitute_c_fragment_in(
         CExpression::FloatNegate(expression) => Ok(CExpression::FloatNegate(Box::new(
             substitute_c_fragment_in(expression, substitutions)?,
         ))),
+        CExpression::EnumConstruct {
+            enum_type,
+            variant,
+            fields,
+        } => Ok(CExpression::EnumConstruct {
+            enum_type: *enum_type,
+            variant: variant.clone(),
+            fields: fields
+                .iter()
+                .map(|field| substitute_c_fragment_in(field, substitutions))
+                .collect::<Result<_, _>>()?,
+        }),
+        CExpression::EnumField {
+            value,
+            variant,
+            index,
+        } => Ok(CExpression::EnumField {
+            value: Box::new(substitute_c_fragment_in(value, substitutions)?),
+            variant: variant.clone(),
+            index: *index,
+        }),
+        CExpression::EnumIs { value, variant } => Ok(CExpression::EnumIs {
+            value: Box::new(substitute_c_fragment_in(value, substitutions)?),
+            variant: variant.clone(),
+        }),
         CExpression::FloatClassification {
             expression,
             classification,

@@ -1,0 +1,10 @@
+{
+  "units": {
+    "shapes": {
+      "language": "rust",
+      "sources": {
+        "shapes.rs": {}
+      }
+    }
+  }
+}

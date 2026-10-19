@@ -867,6 +867,35 @@ impl<'a> Proof<'a> {
         Ok(matches!(source_region.kind, SourceStatementKind::If { .. }))
     }
 
+    /// Whether the frontier `if` is an arm test of a Rust `match`. A step
+    /// splits it with a proof `match`, not a proof `if`.
+    pub(in crate::surface::proof) fn is_at_enum_match_test(&self) -> Result<bool, ClickError> {
+        let ProofContext::Execution(context) = self.context.as_ref() else {
+            return Ok(false);
+        };
+        let Some(execution) = self.execution() else {
+            return Ok(false);
+        };
+        let Ok((_, _, CStatement::If { condition, .. }, _)) =
+            next_top_level_statement_from_frontier_position(
+                execution.view(context),
+                &execution.core.state,
+                context.function,
+                context.arguments,
+                context.claim_label,
+                context.tactic_index,
+                "execute",
+            )
+        else {
+            return Ok(false);
+        };
+        let mut test = &condition;
+        while let CExpression::Or(left, _) = test {
+            test = left;
+        }
+        Ok(matches!(test, CExpression::EnumIs { .. }))
+    }
+
     /// Whether this frontier has the source shape handled by the explicit
     /// proof-object returned/threw split. This is intentionally syntax-only:
     /// the split operation performs the one checked evaluation, so merely

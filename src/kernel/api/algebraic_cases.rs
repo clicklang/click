@@ -66,7 +66,8 @@ pub(in crate::kernel) fn algebraic_constructor_case_equations(
                             Some(class) => Sort::CObjectPointer(*ty, class),
                             None => Sort::CPointer(*ty),
                         },
-                        _ => return None,
+                        // A Rust enum's narrower or unsigned integer field.
+                        ty => Sort::CMachineInteger(MachineIntegerType::from_c_type(*ty)?),
                     };
                     (
                         sort,

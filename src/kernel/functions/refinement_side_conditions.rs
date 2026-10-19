@@ -241,7 +241,8 @@ pub(super) fn state_independent_node(node: SpecNode<'_>) -> Visit<()> {
             SpecAlgebraicExpressionNode::Constructor { .. }
             | SpecAlgebraicExpressionNode::Match { .. }
             | SpecAlgebraicExpressionNode::If { .. }
-            | SpecAlgebraicExpressionNode::PureFunctionApplication { .. } => Visit::Descend,
+            | SpecAlgebraicExpressionNode::PureFunctionApplication { .. }
+            | SpecAlgebraicExpressionNode::CValue(_) => Visit::Descend,
         },
         SpecNode::AlgebraicValue(_) => Visit::Descend,
         SpecNode::Argument(SpecPureFunctionArgument::ArrayRef { .. }) => Visit::Stop(()),
@@ -351,7 +352,8 @@ pub(super) fn stateful_memory_refinement_node(node: SpecNode<'_>) -> Visit<()> {
             SpecAlgebraicExpressionNode::Constructor { .. }
             | SpecAlgebraicExpressionNode::Match { .. }
             | SpecAlgebraicExpressionNode::If { .. }
-            | SpecAlgebraicExpressionNode::PureFunctionApplication { .. } => Visit::Descend,
+            | SpecAlgebraicExpressionNode::PureFunctionApplication { .. }
+            | SpecAlgebraicExpressionNode::CValue(_) => Visit::Descend,
         },
         SpecNode::AlgebraicValue(value) => match value {
             SpecAlgebraicValue::C(_) | SpecAlgebraicValue::Algebraic(_) => Visit::Descend,
@@ -397,7 +399,8 @@ pub(super) fn obligation_free_node(node: SpecNode<'_>) -> Visit<()> {
                 Visit::Stop(())
             }
             SpecAlgebraicExpressionNode::Constructor { .. }
-            | SpecAlgebraicExpressionNode::PureFunctionApplication { .. } => Visit::Descend,
+            | SpecAlgebraicExpressionNode::PureFunctionApplication { .. }
+            | SpecAlgebraicExpressionNode::CValue(_) => Visit::Descend,
             SpecAlgebraicExpressionNode::Match { scrutinee, arms } => {
                 if algebraic_match_covers_each_variant_once(scrutinee, arms) {
                     Visit::Descend
@@ -471,6 +474,12 @@ pub(super) fn c_expression_supports_stateful_memory_refinement(expression: &CExp
         CExpression::Cast { expression, .. }
         | CExpression::FloatNegate(expression)
         | CExpression::FloatClassification { expression, .. }
+        | CExpression::EnumField {
+            value: expression, ..
+        }
+        | CExpression::EnumIs {
+            value: expression, ..
+        }
         | CExpression::AddressOf(expression)
         | CExpression::CheckedObjectAddress(expression)
         | CExpression::PointerOffsetBytes {
@@ -489,6 +498,9 @@ pub(super) fn c_expression_supports_stateful_memory_refinement(expression: &CExp
         CExpression::TypedLoad { pointer, .. } => {
             c_expression_supports_stateful_memory_refinement(pointer)
         }
+        CExpression::EnumConstruct { fields, .. } => fields
+            .iter()
+            .all(c_expression_supports_stateful_memory_refinement),
         CExpression::Conditional {
             condition,
             then_branch,
@@ -511,6 +523,12 @@ pub(in crate::kernel) fn c_expression_is_state_independent(expression: &CExpress
         CExpression::Cast { expression, .. }
         | CExpression::FloatNegate(expression)
         | CExpression::FloatClassification { expression, .. }
+        | CExpression::EnumField {
+            value: expression, ..
+        }
+        | CExpression::EnumIs {
+            value: expression, ..
+        }
         | CExpression::PointerOffsetBytes {
             pointer: expression,
             ..
@@ -521,6 +539,9 @@ pub(in crate::kernel) fn c_expression_is_state_independent(expression: &CExpress
         }
         | CExpression::Not(expression)
         | CExpression::BitwiseNot(expression) => c_expression_is_state_independent(expression),
+        CExpression::EnumConstruct { fields, .. } => {
+            fields.iter().all(c_expression_is_state_independent)
+        }
         CExpression::Conditional {
             condition,
             then_branch,
@@ -571,6 +592,12 @@ pub(super) fn c_expression_mentions_variable(expression: &CExpression, name: &st
         CExpression::Cast { expression, .. }
         | CExpression::FloatNegate(expression)
         | CExpression::FloatClassification { expression, .. }
+        | CExpression::EnumField {
+            value: expression, ..
+        }
+        | CExpression::EnumIs {
+            value: expression, ..
+        }
         | CExpression::AddressOf(expression)
         | CExpression::CheckedObjectAddress(expression)
         | CExpression::PointerOffsetBytes {
@@ -588,6 +615,9 @@ pub(super) fn c_expression_mentions_variable(expression: &CExpression, name: &st
             ..
         }
         | CExpression::BitwiseNot(expression) => c_expression_mentions_variable(expression, name),
+        CExpression::EnumConstruct { fields, .. } => fields
+            .iter()
+            .any(|field| c_expression_mentions_variable(field, name)),
         CExpression::Conditional {
             condition,
             then_branch,
@@ -613,6 +643,12 @@ pub(super) fn c_expression_takes_address_of_variable(expression: &CExpression, n
         CExpression::Cast { expression, .. }
         | CExpression::FloatNegate(expression)
         | CExpression::FloatClassification { expression, .. }
+        | CExpression::EnumField {
+            value: expression, ..
+        }
+        | CExpression::EnumIs {
+            value: expression, ..
+        }
         | CExpression::PointerOffsetBytes {
             pointer: expression,
             ..
@@ -630,6 +666,9 @@ pub(super) fn c_expression_takes_address_of_variable(expression: &CExpression, n
         | CExpression::BitwiseNot(expression) => {
             c_expression_takes_address_of_variable(expression, name)
         }
+        CExpression::EnumConstruct { fields, .. } => fields
+            .iter()
+            .any(|field| c_expression_takes_address_of_variable(field, name)),
         CExpression::Conditional {
             condition,
             then_branch,
@@ -761,6 +800,12 @@ pub(super) fn c_expression_uses_object_address(expression: &CExpression, name: &
         CExpression::Cast { expression, .. }
         | CExpression::FloatNegate(expression)
         | CExpression::FloatClassification { expression, .. }
+        | CExpression::EnumField {
+            value: expression, ..
+        }
+        | CExpression::EnumIs {
+            value: expression, ..
+        }
         | CExpression::PointerOffsetBytes {
             pointer: expression,
             ..
@@ -771,6 +816,9 @@ pub(super) fn c_expression_uses_object_address(expression: &CExpression, name: &
         }
         | CExpression::Not(expression)
         | CExpression::BitwiseNot(expression) => c_expression_uses_object_address(expression, name),
+        CExpression::EnumConstruct { fields, .. } => fields
+            .iter()
+            .any(|field| c_expression_uses_object_address(field, name)),
         CExpression::Conditional {
             condition,
             then_branch,

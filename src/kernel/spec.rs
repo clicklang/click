@@ -3404,6 +3404,28 @@ fn evaluate_spec_algebraic_at_state_with_bindings_in(
             facts: Vec::new().into(),
             obligations: Vec::new(),
         }]),
+        SpecAlgebraicExpressionNode::CValue(value) => {
+            let mut paths = Vec::new();
+            for path in evaluate_spec_expression_paths_with_algebraic_bindings_in(
+                scope,
+                value,
+                assumptions,
+                budget,
+            )? {
+                let CValue::Parameter(term) = path.value else {
+                    return Err(ExecutionLimit::Paths);
+                };
+                if term.algebraic_type != expression.algebraic_type {
+                    return Err(ExecutionLimit::Paths);
+                }
+                paths.push(SpecAlgebraicPath {
+                    value: *term,
+                    facts: path.facts,
+                    obligations: path.obligations,
+                });
+            }
+            Ok(paths)
+        }
         SpecAlgebraicExpressionNode::Binding(name) => {
             let Some(value) = algebraic_bindings.get(name) else {
                 return Err(ExecutionLimit::Paths);

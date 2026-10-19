@@ -236,6 +236,7 @@ pub(super) fn lower(
         let terminal = match &mir.blocks[block].terminator {
             T::Goto { .. } => c_skip(),
             T::If { condition, .. } => accesses(&[condition], &live),
+            T::Switch { scrutinee, .. } => accesses(&[scrutinee], &live),
             T::Return => {
                 let mut end = if f.return_type == Type::Unit {
                     c_return(c_void_value())
@@ -783,6 +784,13 @@ fn successors(t: &T, exit: usize) -> Vec<usize> {
             else_target,
             ..
         } => vec![*then_target, *else_target],
+        T::Switch {
+            cases, otherwise, ..
+        } => cases
+            .iter()
+            .map(|case| case.target)
+            .chain(*otherwise)
+            .collect(),
         _ => vec![exit],
     }
 }
@@ -941,11 +949,105 @@ fn region(
                 result = c_seq(result, branch);
                 block = join;
             }
+            T::Switch {
+                scrutinee,
+                cases,
+                otherwise,
+            } => {
+                let join = if flow.joins[block] == mir.blocks.len() {
+                    stop
+                } else {
+                    flow.joins[block]
+                };
+                result = c_seq(
+                    result,
+                    switch(
+                        cx, mir, nodes, flow, emitted, scrutinee, cases, *otherwise, join, leases,
+                    )?,
+                );
+                block = join;
+            }
             T::Goto { target } | T::Drop { target, .. } | T::Call { target, .. } => block = *target,
             _ => break,
         }
     }
     Ok(result)
+}
+
+/// A `match`: each distinct target's region once, entered by every label
+/// that leads to it. An enum's labels are its variants, which the kernel's
+/// `switch` matches; an integer's are values, tested in an `if` chain whose
+/// last arm is the otherwise target, or the last target when there is none.
+#[allow(clippy::too_many_arguments)]
+fn switch(
+    cx: &mut Context<'_>,
+    mir: &MirBody,
+    nodes: &[Option<CStatement>],
+    flow: &flow::Flow,
+    emitted: &mut [bool],
+    scrutinee: &E,
+    cases: &[crate::languages::rust::schema::SwitchCase],
+    otherwise: Option<usize>,
+    join: usize,
+    leases: Option<&super::scalar_leases::Prepared>,
+) -> Result<CStatement, String> {
+    use crate::languages::rust::schema::SwitchLabel;
+    let mut groups: Vec<(usize, Vec<&SwitchLabel>)> = Vec::new();
+    for case in cases {
+        match groups.iter_mut().find(|(target, _)| *target == case.target) {
+            Some((_, labels)) => labels.push(&case.label),
+            None => groups.push((case.target, vec![&case.label])),
+        }
+    }
+    if let Some(otherwise) = otherwise
+        && !groups.iter().any(|(target, _)| *target == otherwise)
+    {
+        groups.push((otherwise, Vec::new()));
+    }
+    let mut bodies = Vec::with_capacity(groups.len());
+    for (target, _) in &groups {
+        bodies.push(region(
+            cx,
+            mir,
+            nodes,
+            flow,
+            emitted,
+            *target..join,
+            leases,
+        )?);
+    }
+    let mut chain = None;
+    for ((target, labels), body) in groups.iter().zip(bodies).rev() {
+        let Some(rest) = chain else {
+            chain = Some(body);
+            continue;
+        };
+        if otherwise == Some(*target) {
+            return Err("a Rust match's otherwise arm must come last".into());
+        }
+        let mut condition = None;
+        for label in labels {
+            // An enum arm tests its variant; the `if` it becomes steps and
+            // splits as any other.
+            let test = match label {
+                SwitchLabel::Value { value } => c_equal(cx.expr(scrutinee)?, cx.expr(value)?),
+                SwitchLabel::Variant { name } => CExpression::EnumIs {
+                    value: Box::new(cx.expr(scrutinee)?),
+                    variant: name.clone(),
+                },
+            };
+            condition = Some(match condition {
+                Some(earlier) => c_or(earlier, test),
+                None => test,
+            });
+        }
+        chain = Some(c_if(
+            condition.ok_or("Rust match arm without a label")?,
+            body,
+            rest,
+        ));
+    }
+    chain.ok_or_else(|| "Rust match without arms".to_string())
 }
 
 fn accesses(expressions: &[&E], live: &BTreeMap<&str, String>) -> CStatement {
@@ -1072,6 +1174,7 @@ mod tests {
                 mir_opt_level: 0,
                 logical_source: "scale.rs".into(),
                 records: vec![record.clone()],
+                enums: vec![],
                 functions: vec![owned.clone()],
             };
             for i in 0..size {

@@ -1178,6 +1178,63 @@ cargo run --bin click -- import lock examples/rust-field-borrow/guard.click
 cargo run --bin click -- verify examples/rust-field-borrow/guard.click
 ```
 
+## Enums and `match`
+
+A non-generic enum declared in the selected file is the `spec enum` of the
+same name, and the import declares it for the sidecar: `Shape` below is
+`spec enum Shape { Circle(u32), Rect(u32, u32), Empty }`. Variant fields may be
+the supported integers or `bool`. A struct variant's fields are positional
+in the sidecar, in declaration order: `Shape::Rect { width, height }` is
+`Shape::Rect(width, height)`. Contracts use the enum's constructors, equality
+and spec-level `match`:
+
+```click
+fn grow(s: Shape) -> Shape {
+    requires match s { Shape::Circle(r) => r, Shape::Rect(w, h) => 0u32, Shape::Empty => 0u32 } < 4294967295u32;
+    ensures result == match s {
+        Shape::Circle(r) => Shape::Circle(r + 1u32),
+        Shape::Rect(w, h) => Shape::Rect(w, h),
+        Shape::Empty => Shape::Empty,
+    };
+} by { execute(); simp(); }
+```
+
+Enum values pass by value as parameters, returns and locals, and are built
+by constructor expressions. A `match` on an enum, `if let`, and `matches!`
+lower to an `if` chain whose conditions test the variant (`s is Circle` in
+diagnostics); a field read selects its field from the variant its arm
+established. A `match` on an integer, including or-patterns and a wildcard
+arm, lowers to an `if` chain of equality tests.
+
+`if`, integer `match` and enum `match` step and split alike. `step()` enters
+an arm whose variant the facts decide. Where the variant is open, `step()`
+refuses and names the split: a proof `match` on the value, one arm per
+variant, with each field bound as `<local>_<variant>_<index>` (variant in
+snake case, made fresh against the function's locals):
+
+```text
+`step` reached a Rust `match` of `s`, whose variant is not known here; each variant is its own proof arm. Write `match s { Shape::Circle(s_circle_0) => { ... }, Shape::Rect(s_rect_0, s_rect_1) => { ... }, Shape::Empty => { ... } }` here, or let `execute()` split it
+```
+
+`execute()` inserts that proof `match` and executes each arm to the function
+exit, as it inserts a proof `if` at an undecided C condition; expansion shows
+it. An arm that learns `s == Shape::Circle(s_circle_0)` also gets every fact
+that matches on `s`, reduced at that constructor, so a requirement
+`match s { Shape::Circle(r) => r, ... } < 4294967295u32` becomes the citable
+`s_circle_0 < 4294967295u32` for the `+ 1` panic check. A written proof
+`match s { Shape::Circle(r) => { execute(); simp(); }, ... }` does the same
+with its own binders.
+
+Not yet supported: generic enums (including `Option<T>`), enums declared in
+crate units, enum fields of other enum or struct types, references to enums,
+enums in struct fields, and reducing a callee's `match` precondition over a call result
+whose constructor the caller knows only from the call's postcondition
+(`perimeter(square(side))`).
+
+The [enum example](https://github.com/clicklang/click/tree/master/examples/rust-enums)
+covers construction, field reads, a requirement instantiated per arm,
+`matches!`, `if let` with a written proof `match`, and an integer `match`.
+
 ## Borrow and proof boundary
 
 rustc establishes source type and borrow legality. Click checks the functional
