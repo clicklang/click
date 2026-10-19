@@ -3,7 +3,8 @@
 
 This runs no compiler or verifier. Generated sidecars contain the same complete
 proof bodies as the existing checksum regressions, for ordinary `click verify`.
-The destination must be new; original sources, fragments and locks are copied.
+The destination must be new; the project, with its fragments and lock, and the
+vendored original sources are copied.
 """
 import argparse
 import pathlib
@@ -15,9 +16,11 @@ def prepare(destination):
     root = pathlib.Path(__file__).resolve().parent.parent
     if destination.exists():
         raise ValueError("destination already exists; choose a new directory")
-    trial = destination / "design/adler32"
-    trial.parent.mkdir(parents=True)
-    shutil.copytree(root / "design/adler32", trial)
+    # The project's units read the original files from the vendored trees
+    # beside it, which are copied with it.
+    (destination / "design").mkdir(parents=True)
+    shutil.copytree(root / "design/adler32", destination / "design/adler32")
+    trial = destination / "design/adler32/project"
     rust = trial / "adler2"
 
     def read(name):
@@ -39,10 +42,10 @@ def prepare(destination):
     (rust / "public-demo.click").write_text(public)
     prefix = public.split("fn adler2::adler32_slice(", 1)[0]
     incremental = "\n".join([prefix, read("incremental-split"), read("incremental")])
-    resumed = "\n".join([prefix, read("restoration").replace('verifying "src/lib.rs";', ""),
+    resumed = "\n".join([prefix, read("restoration").replace('verifying "../../vendor/adler2-2.0.1/src/lib.rs";', ""),
                           read("incremental-split"), read("resumed")])
     for name, source in [("incremental", incremental), ("resumed", resumed)]:
-        source = source.replace('verifying "src/lib.rs";', f'verifying "{name}.rs";')
+        source = source.replace('verifying "../../vendor/adler2-2.0.1/src/lib.rs";', f'verifying "{name}.rs";')
         source = source.replace("adler2::", f"adler_{name}::adler2::")
         (rust / f"{name}-demo.click").write_text(source)
 

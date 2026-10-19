@@ -168,11 +168,12 @@ pub(super) fn extract_crate(
                 let Ok(relative) = absolute.strip_prefix(root) else {
                     continue;
                 };
+                let relative = super::crate_inputs::resolve_parents(root, relative)?;
                 let name = relative.to_str().ok_or("Charon source path is not UTF-8")?;
                 if !c.files.iter().any(|f| f == name) {
                     return Err("Charon source is outside the compiler source closure".into());
                 }
-                *path = relative.to_path_buf();
+                *path = relative;
             }
         }
     }

@@ -1,0 +1,103 @@
+{
+  "units": {
+    "zlib": {
+      "language": "c",
+      "root": "../vendor/zlib-1.3.1",
+      "compiler": "/usr/bin/gcc",
+      "env": {
+        "PATH": "/usr/bin:/bin",
+        "LC_ALL": "C",
+        "SOURCE_DATE_EPOCH": "0"
+      },
+      "args": [
+        "-std=c11"
+      ],
+      "sources": {
+        "adler32.c": {}
+      }
+    },
+    "zlib_incremental": {
+      "language": "c",
+      "root": "..",
+      "compiler": "/usr/bin/gcc",
+      "env": {
+        "PATH": "/usr/bin:/bin",
+        "LC_ALL": "C",
+        "SOURCE_DATE_EPOCH": "0"
+      },
+      "args": [
+        "-std=c11",
+        "-Ivendor/zlib-1.3.1"
+      ],
+      "sources": {
+        "project/zlib/incremental.c": {}
+      }
+    },
+    "adler2": {
+      "language": "rust",
+      "root": "../vendor/adler2-2.0.1",
+      "sources": {
+        "src/lib.rs": {}
+      },
+      "crate": {
+        "name": "adler2",
+        "edition": "2021",
+        "features": [
+          "std"
+        ],
+        "roots": [
+          "adler2::adler32_slice",
+          "adler2::Adler32::from_checksum"
+        ],
+        "files": [
+          "src/lib.rs",
+          "src/algo.rs"
+        ]
+      }
+    },
+    "adler_incremental": {
+      "language": "rust",
+      "root": "..",
+      "sources": {
+        "project/adler2/incremental.rs": {}
+      },
+      "crate": {
+        "name": "adler_incremental",
+        "edition": "2021",
+        "features": [
+          "std"
+        ],
+        "roots": [
+          "adler_incremental::incremental"
+        ],
+        "files": [
+          "project/adler2/incremental.rs",
+          "vendor/adler2-2.0.1/src/lib.rs",
+          "vendor/adler2-2.0.1/src/algo.rs"
+        ]
+      }
+    },
+    "adler_resumed": {
+      "language": "rust",
+      "root": "..",
+      "sources": {
+        "project/adler2/resumed.rs": {}
+      },
+      "crate": {
+        "name": "adler_resumed",
+        "edition": "2021",
+        "features": [
+          "std"
+        ],
+        "roots": [
+          "adler_resumed::resumed"
+        ],
+        "files": [
+          "project/adler2/resumed.rs",
+          "vendor/adler2-2.0.1/src/lib.rs",
+          "vendor/adler2-2.0.1/src/algo.rs"
+        ]
+      }
+    }
+  }
+}

@@ -105,8 +105,9 @@ fn rust_release_archive_installs_and_verifies() {
     // The Adler project also holds the zlib C unit, which needs GCC to lock;
     // this check is about the Rust frontend, so it locks the Rust units alone
     // and compares their entries with the committed ones.
-    let adler = t.path().join("adler-proof");
-    examples::committed_project(&adler, "design/adler32");
+    let adler_copy = t.path().join("adler-proof");
+    examples::committed_project(&adler_copy, "design/adler32");
+    let adler = adler_copy.join("project");
     let mut config: serde_json::Value =
         serde_json::from_slice(&fs::read(adler.join("click.project.json")).unwrap()).unwrap();
     config["units"]
@@ -127,9 +128,10 @@ fn rust_release_archive_installs_and_verifies() {
     ));
     let fresh: serde_json::Value =
         serde_json::from_slice(&fs::read(adler.join("click.project.lock.json")).unwrap()).unwrap();
-    let mut committed: serde_json::Value =
-        serde_json::from_slice(include_bytes!("../design/adler32/click.project.lock.json"))
-            .unwrap();
+    let mut committed: serde_json::Value = serde_json::from_slice(include_bytes!(
+        "../design/adler32/project/click.project.lock.json"
+    ))
+    .unwrap();
     committed["units"]
         .as_object_mut()
         .unwrap()
@@ -139,11 +141,11 @@ fn rust_release_archive_installs_and_verifies() {
         fs::read(basic.join("borrow.rs")).unwrap(),
         include_bytes!("../examples/basic-rust/borrow.rs")
     );
-    let trial = Path::new(env!("CARGO_MANIFEST_DIR")).join("design/adler32/adler2");
+    let upstream = Path::new(env!("CARGO_MANIFEST_DIR")).join("design/adler32/vendor/adler2-2.0.1");
     for file in ["src/lib.rs", "src/algo.rs"] {
         assert_eq!(
-            fs::read(adler.join("adler2").join(file)).unwrap(),
-            fs::read(trial.join(file)).unwrap()
+            fs::read(adler_copy.join("vendor/adler2-2.0.1").join(file)).unwrap(),
+            fs::read(upstream.join(file)).unwrap()
         );
     }
     // Prepare unchanged fragments on the build host, then move the entire demo.
@@ -172,7 +174,7 @@ fn rust_release_archive_installs_and_verifies() {
         &adler,
         &["verify", "adler2/restoration.click"],
     ));
-    let trial = demo.join("design/adler32");
+    let trial = demo.join("design/adler32/project");
     for sidecar in [
         "zlib/canonical-demo.click",
         "zlib/incremental-demo.click",

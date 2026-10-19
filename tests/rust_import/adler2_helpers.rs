@@ -1,24 +1,29 @@
 use super::*;
 
-const HELPERS: &str = include_str!("../../design/adler32/adler2/helpers.click");
+const HELPERS: &str = include_str!("../../design/adler32/project/adler2/helpers.click");
 const SINGLE_BYTE_COMPUTE: &str =
-    include_str!("../../design/adler32/adler2/single-byte-compute.click");
+    include_str!("../../design/adler32/project/adler2/single-byte-compute.click");
 
-const TWO_BYTE_COMPUTE: &str = include_str!("../../design/adler32/adler2/two-byte-compute.click");
+const TWO_BYTE_COMPUTE: &str =
+    include_str!("../../design/adler32/project/adler2/two-byte-compute.click");
 const THREE_BYTE_COMPUTE: &str =
-    include_str!("../../design/adler32/adler2/three-byte-compute.click");
-const FOUR_BYTE_COMPUTE: &str = include_str!("../../design/adler32/adler2/four-byte-compute.click");
-const FOUR_BYTE_SPEC: &str = include_str!("../../design/adler32/adler2/four-byte-spec.click");
-const SMALL_PARTITION: &str = include_str!("../../design/adler32/adler2/partition.click");
-const TAIL_BOUNDS: &str = include_str!("../../design/adler32/adler2/tail-bounds.click");
-const BOUNDED_COUNT: &str = include_str!("../../design/adler32/adler2/bounded-count.click");
-const COUNT_BRIDGE: &str = include_str!("../../design/adler32/adler2/count-bridge.click");
+    include_str!("../../design/adler32/project/adler2/three-byte-compute.click");
+const FOUR_BYTE_COMPUTE: &str =
+    include_str!("../../design/adler32/project/adler2/four-byte-compute.click");
+const FOUR_BYTE_SPEC: &str =
+    include_str!("../../design/adler32/project/adler2/four-byte-spec.click");
+const SMALL_PARTITION: &str = include_str!("../../design/adler32/project/adler2/partition.click");
+const TAIL_BOUNDS: &str = include_str!("../../design/adler32/project/adler2/tail-bounds.click");
+const BOUNDED_COUNT: &str = include_str!("../../design/adler32/project/adler2/bounded-count.click");
+const COUNT_BRIDGE: &str = include_str!("../../design/adler32/project/adler2/count-bridge.click");
 const SMALL_BATCH_COMPUTE: &str =
-    include_str!("../../design/adler32/adler2/small-batch-compute.click");
+    include_str!("../../design/adler32/project/adler2/small-batch-compute.click");
 
-const REMAINDER_PREFIX: &str = include_str!("../../design/adler32/adler2/remainder-prefix.click");
+const REMAINDER_PREFIX: &str =
+    include_str!("../../design/adler32/project/adler2/remainder-prefix.click");
 
-const GENERAL_COMPUTE: &str = include_str!("../../design/adler32/adler2/general-compute.click");
+const GENERAL_COMPUTE: &str =
+    include_str!("../../design/adler32/project/adler2/general-compute.click");
 
 fn compute_proof(contract: &str) -> String {
     let getters = HELPERS
@@ -149,7 +154,7 @@ fn reject_single_byte_compute(before: &str, after: &str) {
 }
 
 fn adler2_helpers_project() -> Project {
-    let p = Project::from_fixture_part("design/adler32", "adler2");
+    let p = Project::from_fixture_part("design/adler32", "project", "adler2");
     fs::write(p.root.join("borrow.click"), HELPERS).unwrap();
     p
 }
@@ -215,7 +220,11 @@ fn charon_adler2_helpers_prove_all_lanes_and_lock_original_modules() {
     );
     C0VerificationSession::new_program_prepared(helper_library(), &prepared).unwrap();
     // Module identity is checked even when all the proved helpers are unchanged.
-    fs::write(p.root.join("src/lib.rs"), "// changed crate root\n").unwrap();
+    fs::write(
+        p.root.join("../../vendor/adler2-2.0.1/src/lib.rs"),
+        "// changed crate root\n",
+    )
+    .unwrap();
     let error = p.prepared().unwrap_err();
     assert!(
         error.contains("Rust source")
@@ -637,8 +646,8 @@ fn charon_adler2_helpers_live_refresh_proves_original_bodies() {
     C0VerificationSession::new_program_prepared(helper_library(), p.prepared().unwrap()).unwrap();
 }
 
-const BOUNDS: &str = include_str!("../../design/adler32/adler2/bounds.click");
-const RECOMBINATION: &str = include_str!("../../design/adler32/adler2/recombination.click");
+const BOUNDS: &str = include_str!("../../design/adler32/project/adler2/bounds.click");
+const RECOMBINATION: &str = include_str!("../../design/adler32/project/adler2/recombination.click");
 
 #[test]
 #[ignore = "nightly: 4s in the parallel gate"]
@@ -900,7 +909,8 @@ fn expand_bounds_claims(claims: &[(&str, usize)]) {
     );
 }
 
-const ITERATOR_BOUNDS: &str = include_str!("../../design/adler32/adler2/iterator-bounds.click");
+const ITERATOR_BOUNDS: &str =
+    include_str!("../../design/adler32/project/adler2/iterator-bounds.click");
 
 fn flat_iterator_bounds() -> String {
     format!(
@@ -1870,7 +1880,7 @@ fn charon_adler2_small_partition_verifies() {
     click::surface::verify_c0_sources(SMALL_PARTITION, &[]).unwrap();
 }
 
-const COMMON_ADLER_SPEC: &str = include_str!("../../design/adler32/adler32-spec.click");
+const COMMON_ADLER_SPEC: &str = include_str!("../../design/adler32/project/adler32-spec.click");
 
 // Checks the common mathematical target independently of an imported body:
 // one/four-byte weighted order, canonical residues, empty seeds and packed bounds.
@@ -2131,7 +2141,8 @@ fn adler_common_spec_expands_and_rejects_false_results() {
     }
 }
 
-const GENERAL_PARTITION: &str = include_str!("../../design/adler32/adler2/general-partition.click");
+const GENERAL_PARTITION: &str =
+    include_str!("../../design/adler32/project/adler2/general-partition.click");
 
 #[test]
 #[ignore = "nightly: absolute byte observations, expansion and false offsets"]
@@ -2411,7 +2422,7 @@ fn charon_adler2_general_compute_rejects_false_iterator_state() {
     }
 }
 
-const LANE_STATE: &str = include_str!("../../design/adler32/adler2/lane-state.click");
+const LANE_STATE: &str = include_str!("../../design/adler32/project/adler2/lane-state.click");
 
 // Proves the lane recurrence and modular reductions without an imported
 // computation summary, including signed reduction quotient witnesses.
@@ -2519,13 +2530,13 @@ fn adler_bounded_native_count_observations_verify() {
     );
 }
 
-const PACKING: &str = include_str!("../../design/adler32/adler2/packing.click");
-const CHECKSUM: &str = include_str!("../../design/adler32/adler2/checksum.click");
+const PACKING: &str = include_str!("../../design/adler32/project/adler2/packing.click");
+const CHECKSUM: &str = include_str!("../../design/adler32/project/adler2/checksum.click");
 
-const RESTORATION: &str = include_str!("../../design/adler32/adler2/restoration.click");
+const RESTORATION: &str = include_str!("../../design/adler32/project/adler2/restoration.click");
 
 fn restoration_project() -> Project {
-    let p = Project::from_fixture_part("design/adler32", "adler2");
+    let p = Project::from_fixture_part("design/adler32", "project", "adler2");
     fs::write(p.root.join("borrow.click"), RESTORATION).unwrap();
     p
 }
@@ -2591,7 +2602,9 @@ fn charon_adler2_restoration_live_refresh_checks_original_body() {
 fn charon_adler2_checksum_packs_original_shared_fields() {
     let p = adler2_helpers_project();
     let prepared = p.prepared().unwrap();
-    let source = format!("verifying \"src/lib.rs\";\n{COMMON_ADLER_SPEC}\n{PACKING}\n{CHECKSUM}");
+    let source = format!(
+        "verifying \"../../vendor/adler2-2.0.1/src/lib.rs\";\n{COMMON_ADLER_SPEC}\n{PACKING}\n{CHECKSUM}"
+    );
     C0VerificationSession::new_program_prepared(&source, &prepared).unwrap();
 }
 
@@ -2600,7 +2613,9 @@ fn charon_adler2_checksum_packs_original_shared_fields() {
 fn charon_adler2_checksum_rejects_false_packing_and_missing_shared_authority() {
     let p = adler2_helpers_project();
     let prepared = p.prepared().unwrap();
-    let original = format!("verifying \"src/lib.rs\";\n{COMMON_ADLER_SPEC}\n{PACKING}\n{CHECKSUM}");
+    let original = format!(
+        "verifying \"../../vendor/adler2-2.0.1/src/lib.rs\";\n{COMMON_ADLER_SPEC}\n{PACKING}\n{CHECKSUM}"
+    );
     C0VerificationSession::new_program_prepared(&original, &prepared).unwrap();
     for (before, after) in [
         (
@@ -2616,8 +2631,9 @@ fn charon_adler2_checksum_rejects_false_packing_and_missing_shared_authority() {
     ] {
         let contract = CHECKSUM.replacen(before, after, 1);
         assert_ne!(contract, CHECKSUM, "{before}");
-        let source =
-            format!("verifying \"src/lib.rs\";\n{COMMON_ADLER_SPEC}\n{PACKING}\n{contract}");
+        let source = format!(
+            "verifying \"../../vendor/adler2-2.0.1/src/lib.rs\";\n{COMMON_ADLER_SPEC}\n{PACKING}\n{contract}"
+        );
         let error = verify_public_checksum_unit(&source, &prepared, "adler2::Adler32::checksum")
             .expect_err("false packing or missing shared authority must be refused");
         assert!(
@@ -2632,7 +2648,9 @@ fn charon_adler2_checksum_rejects_false_packing_and_missing_shared_authority() {
 #[ignore = "nightly: shared checksum verify/profile/audit/expansion agreement"]
 fn charon_adler2_checksum_tools_recheck_original_contract() {
     let p = adler2_helpers_project();
-    let source = format!("verifying \"src/lib.rs\";\n{COMMON_ADLER_SPEC}\n{PACKING}\n{CHECKSUM}");
+    let source = format!(
+        "verifying \"../../vendor/adler2-2.0.1/src/lib.rs\";\n{COMMON_ADLER_SPEC}\n{PACKING}\n{CHECKSUM}"
+    );
     fs::write(p.root.join("borrow.click"), &source).unwrap();
     // Profile verifies the complete original input; the final CLI verify below
     // checks the expanded proofs. Avoid a duplicate original verification.
@@ -2669,14 +2687,18 @@ fn charon_adler2_checksum_tools_recheck_original_contract() {
     assert_cli(&p, &["verify"]);
 }
 
-const PUBLIC_ONE_BYTE: &str = include_str!("../../design/adler32/adler2/public-one-byte.click");
+const PUBLIC_ONE_BYTE: &str =
+    include_str!("../../design/adler32/project/adler2/public-one-byte.click");
 
 const PUBLIC_CONSTRUCTORS: &str =
-    include_str!("../../design/adler32/adler2/public-constructors.click");
-const PUBLIC_EMPTY: &str = include_str!("../../design/adler32/adler2/public-empty.click");
-const PUBLIC_TWO_BYTE: &str = include_str!("../../design/adler32/adler2/public-two-byte.click");
-const PUBLIC_THREE_BYTE: &str = include_str!("../../design/adler32/adler2/public-three-byte.click");
-const PUBLIC_FOUR_BYTE: &str = include_str!("../../design/adler32/adler2/public-four-byte.click");
+    include_str!("../../design/adler32/project/adler2/public-constructors.click");
+const PUBLIC_EMPTY: &str = include_str!("../../design/adler32/project/adler2/public-empty.click");
+const PUBLIC_TWO_BYTE: &str =
+    include_str!("../../design/adler32/project/adler2/public-two-byte.click");
+const PUBLIC_THREE_BYTE: &str =
+    include_str!("../../design/adler32/project/adler2/public-three-byte.click");
+const PUBLIC_FOUR_BYTE: &str =
+    include_str!("../../design/adler32/project/adler2/public-four-byte.click");
 
 fn public_one_byte_proof() -> String {
     format!(
@@ -2820,14 +2842,19 @@ fn charon_adler2_public_checksum_tools_recheck_original_contracts() {
     assert_cli(&p, &["verify"]);
 }
 
-const INCREMENTAL_CLIENT: &str = include_str!("../../design/adler32/adler2/incremental.click");
-const INCREMENTAL_SPLIT: &str = include_str!("../../design/adler32/adler2/incremental-split.click");
+const INCREMENTAL_CLIENT: &str =
+    include_str!("../../design/adler32/project/adler2/incremental.click");
+const INCREMENTAL_SPLIT: &str =
+    include_str!("../../design/adler32/project/adler2/incremental-split.click");
 
 fn incremental_proof() -> String {
     let public = public_general_proof();
     let source = public.split_once("fn adler2::adler32_slice(").unwrap().0;
     format!("{source}\n{INCREMENTAL_SPLIT}\n{INCREMENTAL_CLIENT}")
-        .replace("verifying \"src/lib.rs\";", "verifying \"incremental.rs\";")
+        .replace(
+            "verifying \"../../vendor/adler2-2.0.1/src/lib.rs\";",
+            "verifying \"incremental.rs\";",
+        )
         .replace("adler2::", "adler_incremental::adler2::")
 }
 
@@ -2837,14 +2864,18 @@ fn incremental_project() -> Project {
     p
 }
 
-const RESUMED_CLIENT: &str = include_str!("../../design/adler32/adler2/resumed.click");
+const RESUMED_CLIENT: &str = include_str!("../../design/adler32/project/adler2/resumed.click");
 
 fn resumed_proof() -> String {
     let public = public_general_proof();
     let source = public.split_once("fn adler2::adler32_slice(").unwrap().0;
-    let restoration = RESTORATION.replace("verifying \"src/lib.rs\";", "");
+    let restoration =
+        RESTORATION.replace("verifying \"../../vendor/adler2-2.0.1/src/lib.rs\";", "");
     format!("{source}\n{restoration}\n{INCREMENTAL_SPLIT}\n{RESUMED_CLIENT}")
-        .replace("verifying \"src/lib.rs\";", "verifying \"resumed.rs\";")
+        .replace(
+            "verifying \"../../vendor/adler2-2.0.1/src/lib.rs\";",
+            "verifying \"resumed.rs\";",
+        )
         .replace("adler2::", "adler_resumed::adler2::")
 }
 
@@ -2913,7 +2944,11 @@ fn charon_adler2_resumed_client_live_refresh_checks_the_input_closure() {
         serde_json::from_slice(&fs::read(p.project_file()).unwrap()).unwrap();
     assert_eq!(
         project["units"]["adler_resumed"]["crate"]["files"],
-        serde_json::json!(["resumed.rs", "src/lib.rs", "src/algo.rs"])
+        serde_json::json!([
+            "project/adler2/resumed.rs",
+            "vendor/adler2-2.0.1/src/lib.rs",
+            "vendor/adler2-2.0.1/src/algo.rs"
+        ])
     );
     p.refresh().unwrap();
     verify_public_checksum_unit(
@@ -3007,7 +3042,11 @@ fn charon_adler2_incremental_client_live_refresh_checks_the_input_closure() {
         serde_json::from_slice(&fs::read(p.project_file()).unwrap()).unwrap();
     assert_eq!(
         project["units"]["adler_incremental"]["crate"]["files"],
-        serde_json::json!(["incremental.rs", "src/lib.rs", "src/algo.rs"])
+        serde_json::json!([
+            "project/adler2/incremental.rs",
+            "vendor/adler2-2.0.1/src/lib.rs",
+            "vendor/adler2-2.0.1/src/algo.rs"
+        ])
     );
     p.refresh().unwrap();
     verify_public_checksum_unit(
@@ -3066,7 +3105,8 @@ fn adler_incremental_bridges_expand_and_reject_false_observations() {
     );
 }
 
-const PUBLIC_GENERAL: &str = include_str!("../../design/adler32/adler2/public-general.click");
+const PUBLIC_GENERAL: &str =
+    include_str!("../../design/adler32/project/adler2/public-general.click");
 
 fn public_general_proof() -> String {
     format!(
@@ -3095,9 +3135,10 @@ fn charon_adler2_general_public_checksum_matches_common_spec() {
         ("incremental", incremental_proof()),
         ("resumed", resumed_proof()),
     ] {
-        let generated =
-            fs::read_to_string(demo.join(format!("design/adler32/adler2/{name}-demo.click")))
-                .unwrap();
+        let generated = fs::read_to_string(
+            demo.join(format!("design/adler32/project/adler2/{name}-demo.click")),
+        )
+        .unwrap();
         assert!(
             generated
                 .split_whitespace()
@@ -3402,7 +3443,8 @@ fn check_public_boundary_tools(lengths: &[usize]) {
     }
 }
 
-const SERIAL_TAIL_SPEC: &str = include_str!("../../design/adler32/adler2/serial-tail-spec.click");
+const SERIAL_TAIL_SPEC: &str =
+    include_str!("../../design/adler32/project/adler2/serial-tail-spec.click");
 
 #[test]
 #[ignore = "nightly: 2.7s in the parallel gate"]
@@ -3557,7 +3599,7 @@ fn charon_adler2_general_compute_rejects_false_b_specification() {
     );
 }
 
-const BATCH_PREFIX: &str = include_str!("../../design/adler32/adler2/batch-prefix.click");
+const BATCH_PREFIX: &str = include_str!("../../design/adler32/project/adler2/batch-prefix.click");
 
 fn batch_prefix_proof(source: &str) -> String {
     format!("{COMMON_ADLER_SPEC}\n{LANE_STATE}\n{VECTOR_PREFIX}\n{source}")
@@ -3695,7 +3737,7 @@ fn adler_deferred_batch_b_rejects_false_transitions() {
     }
 }
 
-const VECTOR_PREFIX: &str = include_str!("../../design/adler32/adler2/vector-prefix.click");
+const VECTOR_PREFIX: &str = include_str!("../../design/adler32/project/adler2/vector-prefix.click");
 
 fn vector_prefix_proof() -> String {
     format!("{COMMON_ADLER_SPEC}\n{LANE_STATE}\n{VECTOR_PREFIX}")
