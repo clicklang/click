@@ -393,7 +393,22 @@ all six descendant subtrees symbolically and preserve every node's position.
 model with the unchanged Linux insertion code and writable size callbacks.
 All six descendant subtrees, valid cached counts, and the owned outer context
 remain symbolic. All three C contracts verify, and its 33 smart sites pass the
-expansion audit. The mirrored C composition remains unfinished.
+expansion audit.
+`rbtree_size_insert_mirrored_context_uncle_rotation.click` checks the mirrored
+right-right case under the same symbolic subtree and ancestor assumptions.
+Its three C contracts verify, and all 30 expansion sites pass. Neither proof
+changes the Linux C or Click's proof rules.
+
+`rbtree_size_insert_double_subtree_model.click` defines both double rotations
+with arbitrary far, transferred-middle, and uncle subtrees. Its four theorems
+identify the result with the existing inner/outer insertion operations and
+preserve the complete in-order sequence. These model proofs do not yet compose
+the two writable callbacks in the generalized C case.
+
+`rbtree_size_valid_value.click` supplies explicit cached-count lemmas: valid
+children and the root sum establish a valid node, and a recursively valid
+cached count equals its abstract subtree size and is nonnegative. These pure
+lemmas do not open ownership or read C memory.
 
 `rbtree_size_recolor.click` supplies shared model operations for root recoloring
 and insertion color flips. Its explicit lemmas preserve cached values and
