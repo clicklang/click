@@ -130,7 +130,7 @@ Architecture:
 - [One source-tactic interpreter for every proof context](one-tactic-interpreter.md)
 - [One name resolver and one printer for surface syntax](one-name-resolver-and-printer.md)
 
-## P2: after launch (13)
+## P2: after launch (14)
 
 Worth doing, not worth blocking the rbtree claim on. Promote one to P1 when
 it turns out to block that claim: if P1 work exposes one of the tooling
@@ -151,6 +151,7 @@ Additional languages:
 
 - [Stabilize and deliver the shared object model](object-model.md)
 - [Model C++ exceptions with class types and exceptional resources](cpp-exceptions.md)
+- [Support unsafe Rust](unsafe-rust.md)
 
 Proof language and tooling:
 

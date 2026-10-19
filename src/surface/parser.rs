@@ -13609,6 +13609,8 @@ impl Parser {
                 if self.names.contains_any(NameKind::VALUES, &name)
                 {
                     Ok(ContractExpression::Binding(name))
+                } else if let Some(view) = self.rust_option_view(&name)? {
+                    Ok(view)
                 } else {
                     match self.names.algebraic_params.get(&name) {
                         Some((algebraic_type, binder_index)) => {

@@ -5544,35 +5544,24 @@ impl<'a> Proof<'a> {
             // Name what has no spelling: a derivation found but not written
             // back is refused for that reason, not for the memory history a
             // supplemental explanation may show.
-            const NAMED_UNSPELLED: usize = 4;
             let unspelled = premises
                 .iter()
                 .filter(|premise| !premise_pairs.iter().any(|(spelled, _)| spelled == *premise))
                 .collect::<Vec<_>>();
-            let mut named = unspelled
-                .iter()
-                .take(NAMED_UNSPELLED)
-                .map(|premise| {
-                    crate::surface::proof_diagnostics::render::render_proposition(premise)
-                })
-                .collect::<Vec<_>>();
-            if unspelled.len() > NAMED_UNSPELLED {
-                named.push(format!("… {} more", unspelled.len() - NAMED_UNSPELLED));
-            }
             let strategy = if matches!(self.goal(), Some(Proposition::CMemoryLoadable { .. })) {
                 "simp view premise spelling"
             } else {
                 "simp premise spelling"
             };
-            attempt::record_search_note(
+            attempt::record_search_premise_note(
                 strategy,
                 format!(
-                    "{} of {} selected derivation premises have checked source spellings; {} were omitted: {}",
+                    "{} of {} selected derivation premises have checked source spellings; {} were omitted: ",
                     premise_pairs.len(),
                     premises.len(),
                     premises.len() - premise_pairs.len(),
-                    named.join("; ")
                 ),
+                &unspelled,
             );
         }
         (!crate::instrumentation::deadline_exceeded()).then_some(premise_pairs)

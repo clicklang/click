@@ -12224,6 +12224,10 @@ pub struct PureFactContext {
     /// Exact equalities between distinct checked constructors. Any such fact
     /// makes the context inconsistent by constructor disjointness.
     pub(super) algebraic_constructor_conflicts: crate::persistent::PersistentMap<Proposition, ()>,
+    /// Whether an equality between an algebraic `if` and a constructor has
+    /// decided a condition here, so a later fact's conditionals are read
+    /// against the decided conditions. Facts of no such context pay nothing.
+    pub(super) decided_algebraic_ifs: bool,
     /// Direct constructor evidence indexed by the symbolic value it describes.
     pub(super) algebraic_variable_constructors: crate::persistent::PersistentMap<
         Variable,
