@@ -1,6 +1,84 @@
 use super::*;
 
 #[test]
+#[ignore = "nightly: checks the complete stack-pop proof at four clause counts"]
+fn refuted_constructor_guards_do_not_spell_connected_heap_history() {
+    let fixture = crate::cli::parse_mdtest(
+        std::path::Path::new("refuted_implication_after_stack_pop.md"),
+        include_str!("../../../../mdtests/refuted_implication_after_stack_pop.md"),
+    )
+    .unwrap();
+    let original = fixture.click_source.as_deref().unwrap();
+    let c = fixture
+        .c_sources
+        .iter()
+        .map(|(name, source)| (name.as_str(), source.as_str()))
+        .collect::<Vec<_>>();
+    let clause = "    ensures old(before.items) == List<int32>::Nil implies result == false;\n";
+    assert_eq!(original.matches(clause).count(), 1);
+    let mut samples = Vec::new();
+    for size in [1, 2, 4, 8] {
+        // Keep the original native C and proof. Only the number of contract
+        // guards grows, each with a distinct consequent the empty path holds.
+        let extra = (1..size)
+            .map(|index| {
+                format!("    ensures old(before.items) == List<int32>::Nil implies result == false or old(s->count) == {index}u64;\n")
+            })
+            .collect::<String>();
+        let source = original.replace(clause, &format!("{clause}{extra}"));
+        let (verified, sample) = scaling_sample(size, || verify_c0_sources(&source, &c));
+        let verified =
+            verified.unwrap_or_else(|error| panic!("{size} clauses: {}", error.message()));
+        let spelling = sample
+            .named_work
+            .get("operation `simp closure: premise spelling`")
+            .copied()
+            .unwrap_or(0);
+        assert!(
+            spelling <= 40_000 * size,
+            "refuted guards searched connected heap facts: {sample:?}"
+        );
+        if size == 1 {
+            let expanded = expand_checked_grouped_claim(&source, &verified, "pop").unwrap();
+            crate::surface::proof::without_implicit_auto(|| verify_c0_sources(&expanded, &c))
+                .expect("the emitted guard refutation checks in a fresh proof");
+            assert_eq!(expanded.matches(clause).count(), 1);
+            let false_expanded = expanded.replace(
+                clause,
+                "    ensures old(before.items) != List<int32>::Nil implies result == false;\n",
+            );
+            assert!(
+                crate::surface::proof::without_implicit_auto(|| {
+                    verify_c0_sources(&false_expanded, &c)
+                })
+                .is_err(),
+                "the emitted proof cannot establish the false nonempty-list claim"
+            );
+        }
+        samples.push(sample);
+    }
+    assert!(
+        samples
+            .windows(2)
+            .all(|pair| pair[1].work <= 3 * pair[0].work),
+        "guard closure grew faster than clause count: {samples:?}"
+    );
+    eprintln!("refuted constructor guards: {samples:?}");
+    // The same native program returns true for the nonempty list. Reversing
+    // the guard must expose that false consequent rather than close it.
+    let false_source = original.replace(
+        clause,
+        "    ensures old(before.items) != List<int32>::Nil implies result == false;\n",
+    );
+    let error = verify_c0_sources(&false_source, &c).unwrap_err();
+    assert!(
+        !error.message().contains("budget"),
+        "the false claim must be refused without exhausting search: {}",
+        error.message()
+    );
+}
+
+#[test]
 fn refined_pure_arithmetic_does_not_rescan_unrelated_parameters() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("mdtests/pure_arithmetic_retains_a_rewritten_fold_goal.md");
