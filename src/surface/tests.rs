@@ -72,10 +72,18 @@ fn pure_function_returns_check_all_scalar_result_leaves() {
 #[test]
 fn pure_function_returns_keep_null_and_numeric_conversions() {
     parser::parse(
-        "function narrow(n: uint64) -> int32 { n } function null() -> int32* { 0 } function choose(p: int32*, n: int32) -> int32* { if n == 0 { 0 } else { p } } spec enum Ptr { Empty, At(int32*) } function get(m: Ptr) -> int32* { match m { Ptr::Empty => 0, Ptr::At(p) => p, } } function inc(n: Integer) -> Integer { n + 1 } function big() -> Integer { 999999999999999999999999999999 }",
+        "function narrow(n: uint64) -> int32 { (int32) n } function null() -> int32* { 0 } function choose(p: int32*, n: int32) -> int32* { if n == 0 { 0 } else { p } } spec enum Ptr { Empty, At(int32*) } function get(m: Ptr) -> int32* { match m { Ptr::Empty => 0, Ptr::At(p) => p, } } function inc(n: Integer) -> Integer { n + 1 } function big() -> Integer { 999999999999999999999999999999 }",
     ).unwrap();
     parser::parse("function id<T>(x: T) -> T { x } function flag(x: bool) -> bool { id(x) }")
         .unwrap();
+    // A narrowing return is written: it can change the value.
+    let error = parser::parse("function narrow(n: uint64) -> int32 { n }").unwrap_err();
+    assert!(
+        error
+            .message()
+            .contains("returns int32, but its body can produce `n` of type uint64"),
+        "{error}"
+    );
 }
 
 #[test]

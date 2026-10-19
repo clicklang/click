@@ -1033,23 +1033,23 @@ predicate docs_use_byte_count(bytes: uint8[], lo: int32, hi: int32, value: uint8
     bytes::count(bytes, lo, hi, value) == bytes::count(bytes, lo, hi, value)
 }
 
-predicate docs_use_bytes_equal(left: uint8[], left_lo: int32, right: uint8[], right_lo: int32, len: int32) {
+predicate docs_use_bytes_equal(left: uint8[], left_lo: uint64, right: uint8[], right_lo: uint64, len: uint64) {
     bytes::equal(left, left_lo, right, right_lo, len)
 }
 
-predicate docs_use_bytes_equal_range(left: uint8[], right: uint8[], lo: int32, hi: int32) {
+predicate docs_use_bytes_equal_range(left: uint8[], right: uint8[], lo: uint64, hi: uint64) {
     bytes::equal_range(left, right, lo, hi)
 }
 
-predicate docs_use_bytes_all_equal(bytes: uint8[], lo: int32, hi: int32, value: uint8) {
+predicate docs_use_bytes_all_equal(bytes: uint8[], lo: uint64, hi: uint64, value: uint8) {
     bytes::all_equal(bytes, lo, hi, value)
 }
 
-predicate docs_use_bytes_contains(bytes: uint8[], lo: int32, hi: int32, value: uint8) {
+predicate docs_use_bytes_contains(bytes: uint8[], lo: uint64, hi: uint64, value: uint8) {
     bytes::contains(bytes, lo, hi, value)
 }
 
-predicate docs_use_bytes_all_not_equal(bytes: uint8[], lo: int32, hi: int32, value: uint8) {
+predicate docs_use_bytes_all_not_equal(bytes: uint8[], lo: uint64, hi: uint64, value: uint8) {
     bytes::all_not_equal(bytes, lo, hi, value)
 }
 
