@@ -4839,6 +4839,9 @@ impl<'a> Proof<'a> {
         &self,
         surface_goal: &ClickProposition,
     ) -> Result<Option<Self>, ClickError> {
+        if super::solver_bridges::machine_equality_bridge_active() {
+            return Ok(None);
+        }
         // Every candidate below lowers the same goal, so a failing question
         // about the goal's own loads repeats per candidate; remember those
         // failures for this closure (`with_closure_failure_memo`).

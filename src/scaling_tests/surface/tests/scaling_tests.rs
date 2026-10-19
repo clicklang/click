@@ -9054,3 +9054,36 @@ fn native_read_equality_refusal_does_not_restart_snapshot_search_as_integer() {
         );
     }
 }
+
+#[test]
+#[ignore = "nightly: 2.164s for composite read refusal across three array sizes"]
+fn composite_native_read_equality_refusal_keeps_one_snapshot_search() {
+    let c = "int32 read_after_store(int32 *a, int32 k) { a[3] = 5; return a[k]; }";
+    for length in [4usize, 8, 16] {
+        let source = format!(
+            "verifying \"read.c\";
+             resource block(p: int32*) {{ owns p[0..{length}]; }}
+             int32 read_after_store(int32 *a, int32 k) {{
+               owns block(a); requires 0 <= k; requires k < {length};
+               ensures result + 0 == old(a[k]) + 0;
+             }} by {{ unfold(block(a)); execute(); fold(block(a)); auto(); }}"
+        );
+        let (result, events) =
+            crate::instrumentation::collect(|| verify_c0_sources(&source, &[("read.c", c)]));
+        let error = result.expect_err("zero offsets cannot hide a potentially changed read");
+        assert!(!error.message().contains("budget exhausted"), "{error}");
+        let searches = events
+            .iter()
+            .filter(|event| {
+                matches!(event,
+                    crate::instrumentation::VerificationEvent::OperationFinished { name, .. }
+                        if *name == "simp closure: snapshot transport"
+                )
+            })
+            .count();
+        assert!(
+            searches <= 1,
+            "size {length}: arithmetic restarted snapshot search {searches} times"
+        );
+    }
+}
