@@ -845,6 +845,8 @@ the goal variables are tried before following relational bounds, so earlier
 postconditions on those variables do not exhaust the arithmetic premise limit.
 
 A loop bundle closer's members cite only the loop head and the contract instead.
+Its arithmetic first tries the named premises whose variables occur in that
+member's goal, then the complete named slice when other variables are needed.
 A conjunction under implications or universals is first tried leaf by leaf with
 direct logical steps, and a written conjunction is split before any search over
 the whole goal, each conjunct trying direct steps first.

@@ -3076,7 +3076,9 @@ impl<'a> Proof<'a> {
                     self.goal(),
                     Some(Proposition::ConditionIs(
                         ConditionTerm::Bitvector32SignedLessThan(..)
-                            | ConditionTerm::Bitvector32SignedLessEqual(..),
+                            | ConditionTerm::Bitvector32SignedLessEqual(..)
+                            | ConditionTerm::Bitvector32SignedGreaterThan(..)
+                            | ConditionTerm::Bitvector32SignedGreaterEqual(..),
                         _
                     ))
                 ));
