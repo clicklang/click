@@ -1649,6 +1649,27 @@ private:
       }
       return lower_call(call, function);
     }
+    // `delete p`: the end of one simple record that `new` allocated, whose
+    // destruction does nothing. Deleting null does nothing.
+    if (const auto *deleted = llvm::dyn_cast<clang::CXXDeleteExpr>(statement)) {
+      const auto *record = record_pointer_target(deleted->getArgument()->IgnoreImpCasts()->getType());
+      const auto *deallocator = deleted->getOperatorDelete();
+      if (deleted->isArrayForm() || record == nullptr || deallocator == nullptr ||
+          !deallocator->isReplaceableGlobalAllocationFunction() ||
+          !record->hasTrivialDestructor()) {
+        fail(deleted->getBeginLoc(),
+             "a supported C++ `delete` ends one simple record with trivial destruction "
+             "through the global operator delete");
+        return std::nullopt;
+      }
+      auto pointer = lower_expression(deleted->getArgument(), function);
+      if (!pointer) return std::nullopt;
+      llvm::json::Object result;
+      result["kind"] = "delete_object";
+      result["pointer"] = std::move(*pointer);
+      result["span"] = span(deleted->getSourceRange());
+      return Json(std::move(result));
+    }
     if (const auto *binary = llvm::dyn_cast<clang::BinaryOperator>(statement)) {
       if (binary->getOpcode() != clang::BO_Assign &&
           binary->getOpcode() != clang::BO_AddAssign &&
@@ -1656,6 +1677,19 @@ private:
         fail(binary->getOperatorLoc(),
              "the first C++ slice supports only simple assignment statements");
         return std::nullopt;
+      }
+      if (const auto *created =
+              llvm::dyn_cast<clang::CXXNewExpr>(binary->getRHS()->IgnoreParenImpCasts());
+          created != nullptr && binary->getOpcode() == clang::BO_Assign) {
+        auto target = lower_place_reference(binary->getLHS()->IgnoreParens(), function);
+        if (!target) return std::nullopt;
+        auto object = lower_new_object(created, function);
+        if (!object) return std::nullopt;
+        llvm::json::Object result = std::move(*object->getAsObject());
+        result["kind"] = "new_object";
+        result["target"] = std::move(*target);
+        result["span"] = span(binary->getSourceRange());
+        return Json(std::move(result));
       }
       auto value = lower_expression(binary->getRHS(), function);
       if (!value) {
@@ -4934,6 +4968,71 @@ private:
       return false;
     }
     return remember_record(owner);
+  }
+
+  // `new R{v...}`, the allocation of one simple record initialized with one
+  // value per field in declaration order, as `expression` when it is one.
+  // The global replaceable `operator new` allocates it; its failure throws
+  // `std::bad_alloc`, which ends the program in a `noexcept` function, the
+  // only place one is admitted. `{"record": ..., "fields": [...]}`.
+  std::optional<Json> lower_new_object(const clang::CXXNewExpr *created,
+                                       const clang::FunctionDecl *function) {
+    const auto *prototype = function->getType()->getAs<clang::FunctionProtoType>();
+    const auto *record = record_pointer_target(created->getType());
+    const auto *allocator = created->getOperatorNew();
+    if (prototype == nullptr || !prototype->isNothrow()) {
+      fail(created->getBeginLoc(),
+           "a C++ `new` expression is supported in a noexcept function, where a failed "
+           "allocation ends the program");
+      return std::nullopt;
+    }
+    if (created->isArray() || created->getNumPlacementArgs() != 0 || record == nullptr ||
+        allocator == nullptr || !allocator->isReplaceableGlobalAllocationFunction() ||
+        !record->isAggregate() || !record->hasTrivialDestructor() ||
+        has_stateless_field(record)) {
+      fail(created->getBeginLoc(),
+           "a supported C++ `new` allocates one simple aggregate record with the global "
+           "operator new");
+      return std::nullopt;
+    }
+    if (!remember_record(record)) return std::nullopt;
+    const auto *semantic_list =
+        llvm::dyn_cast_or_null<clang::InitListExpr>(created->getInitializer());
+    const clang::InitListExpr *syntactic_list = semantic_list;
+    if (semantic_list != nullptr && semantic_list->getSyntacticForm() != nullptr)
+      syntactic_list = semantic_list->getSyntacticForm();
+    const unsigned field_count = std::distance(record->field_begin(), record->field_end());
+    if (created->getInitializationStyle() != clang::CXXNewInitializationStyle::Braces ||
+        syntactic_list == nullptr || syntactic_list->getNumInits() != field_count) {
+      fail(created->getBeginLoc(),
+           "a supported C++ `new` requires one direct brace initializer per field in "
+           "declaration order");
+      return std::nullopt;
+    }
+    llvm::json::Array fields;
+    unsigned index = 0;
+    for (const clang::FieldDecl *field : record->fields()) {
+      const clang::Expr *field_source = syntactic_list->getInit(index);
+      auto value = lower_expression(semantic_list->getInit(index), function);
+      ++index;
+      if (!value) return std::nullopt;
+      llvm::json::Object field_reference;
+      field_reference["record_declaration_id"] = declaration_id(record);
+      field_reference["declaration_id"] = declaration_id(field);
+      field_reference["name"] = field->getNameAsString();
+      field_reference["span"] = span(field->getSourceRange());
+      llvm::json::Object field_initializer;
+      field_initializer["field"] = std::move(field_reference);
+      field_initializer["value"] = std::move(*value);
+      field_initializer["span"] = span(field_source->getSourceRange());
+      fields.push_back(std::move(field_initializer));
+    }
+    auto record_type = lower_type(created->getAllocatedType(), created->getBeginLoc());
+    if (!record_type) return std::nullopt;
+    llvm::json::Object result;
+    result["record"] = std::move(*record_type);
+    result["fields"] = std::move(fields);
+    return Json(std::move(result));
   }
 
   // Whether `base`, the object operand of an arrow, reads a parameter or
