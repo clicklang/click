@@ -793,11 +793,12 @@ impl Adapter<'_> {
             a::TyKind::Adt(_) if let Some(payload) = self.option_payload(t) => {
                 let payload = self.ty(payload)?;
                 let name = super::names::option_type_name(
-                    &record_argument_spelling(&payload)
-                        .filter(|_| !matches!(payload, Type::Parameter { .. } | Type::Bool))
-                        .ok_or_else(|| {
-                            unsupported("Option of a type other than i32, u8, u16, u32 or usize")
-                        })?,
+                    &record_argument_spelling(&payload).ok_or_else(|| {
+                        unsupported(
+                            "Option of a type other than a type parameter, \
+                             i32, u8, u16, u32, usize or bool",
+                        )
+                    })?,
                 );
                 self.enum_instances
                     .borrow_mut()

@@ -6054,6 +6054,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                     AlgebraicTermNode::Constructor { .. }
                 ) {
                     let mut lowered_arms = Vec::with_capacity(arms.len());
+                    let mut parameter_arms = Vec::new();
                     let mut result_type = None;
                     let facts = scrutinee_path.facts.clone();
                     let obligations = scrutinee_path.obligations.clone();
@@ -6117,11 +6118,21 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                             return Err(ExecutionLimit::Paths);
                         }
                         result_type = Some(body_type);
+                        // The only remaining body facts are derived read equations.
+                        // They belong to this arm, not to the enclosing match.
+                        if let CValue::Parameter(body) = body_path.value {
+                            // A value of a Rust type parameter is a term of
+                            // its type, so the match is one too.
+                            parameter_arms.push(AlgebraicResultMatchArm {
+                                variant: arm.variant.clone(),
+                                bindings,
+                                body: *body,
+                            });
+                            continue;
+                        }
                         let Some(body) = c_value_bitvector_term(&body_path.value) else {
                             return Err(ExecutionLimit::Paths);
                         };
-                        // The only remaining body facts are derived read equations.
-                        // They belong to this arm, not to the enclosing match.
                         lowered_arms.push(AlgebraicBitvectorMatchArm {
                             variant: arm.variant.clone(),
                             bindings,
@@ -6131,14 +6142,23 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                     let Some(result_type) = result_type else {
                         return Err(ExecutionLimit::Paths);
                     };
-                    let Some(value) = c_value_from_bitvector_term(
-                        result_type,
-                        Bitvector32Term::AlgebraicMatch {
-                            scrutinee: Box::new(scrutinee_path.value),
-                            arms: lowered_arms,
-                        },
-                    ) else {
-                        return Err(ExecutionLimit::Paths);
+                    let value = if let CType::Parameter(name) = result_type {
+                        CValue::Parameter(Box::new(AlgebraicTerm {
+                            algebraic_type: name.algebraic_type(),
+                            node: AlgebraicTermNode::Match {
+                                scrutinee: Box::new(scrutinee_path.value),
+                                arms: parameter_arms,
+                            },
+                        }))
+                    } else {
+                        c_value_from_bitvector_term(
+                            result_type,
+                            Bitvector32Term::AlgebraicMatch {
+                                scrutinee: Box::new(scrutinee_path.value),
+                                arms: lowered_arms,
+                            },
+                        )
+                        .ok_or(ExecutionLimit::Paths)?
                     };
                     paths.push(SpecExpressionPath {
                         value,

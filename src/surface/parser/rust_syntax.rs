@@ -75,17 +75,6 @@ impl Parser {
     pub(super) fn parse_rust_function_signature(
         &mut self,
     ) -> Result<ParsedFunctionSignature, ClickError> {
-        // A generic function's own abstract type parameters are in scope for
-        // its signature only.
-        let previous_abstract = self.rust_abstract_type_parameters.clone();
-        let signature = self.parse_rust_function_signature_in_scope();
-        self.rust_abstract_type_parameters = previous_abstract;
-        signature
-    }
-
-    fn parse_rust_function_signature_in_scope(
-        &mut self,
-    ) -> Result<ParsedFunctionSignature, ClickError> {
         if !self.verifies_rust() {
             return Err(self.error(
                 "a `fn` signature is the Rust spelling; a C or C++ source's contract is written `type name(type parameter, ...)`",
@@ -1307,6 +1296,16 @@ impl Parser {
                 )));
             };
             return Ok(Some(scalar(c_type, !mutable)));
+        }
+        // A Rust function's abstract type parameter is the C type its values
+        // have in the program, so `Option<T>` names the program's instance.
+        if let Some(name) = self.peek_ident()
+            && self.rust_abstract_type_parameters.contains(name)
+            && self.peek_next() != Some(&Token::ColonColon)
+        {
+            let parameter = crate::kernel::TypeParameterName::intern(name);
+            self.position += 1;
+            return Ok(Some(scalar(C0Type::Parameter(parameter), false)));
         }
         let Some(c_type) = self.peek_ident().and_then(rust_scalar_type) else {
             return Ok(None);
