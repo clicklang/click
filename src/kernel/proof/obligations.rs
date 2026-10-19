@@ -318,25 +318,55 @@ pub(crate) enum ClaimGoalError {
     WrongOutcome,
 }
 
+/// The kernel evidence that closed one claim goal of an outcome path.
+#[derive(Clone)]
+pub(crate) enum ClaimGoalEvidence {
+    /// A checked completion of the claim's proposition.
+    Proposition(CheckedProposition),
+    /// A resource claim checked against the path's outcome, with the
+    /// resources it accounts for in what the path returns.
+    Resource(ClaimResourceReceipt),
+}
+
+/// What a checked resource claim accounts for in a path's returned
+/// resources.
+#[derive(Clone)]
+pub(crate) struct ClaimResourceReceipt {
+    pub(crate) returned_resources: crate::kernel::ResourceContext,
+    /// Whether the receipt is a new returned owner rather than a borrow or a
+    /// guarded transition still to come.
+    pub(crate) contributes_returned_resources: bool,
+    /// Whether the contract's resource transition is deferred to a guard.
+    pub(crate) defers_resource_transition: bool,
+}
+
 /// The contract claims one outcome path owes, in the order the contract
 /// writes them, each open or closed. A closer acts on the first open claim;
-/// the path is finished when every claim is closed.
+/// the path is finished when every claim is closed, and each closed claim
+/// keeps the evidence that closed it.
 ///
 /// A claim about the other kind of outcome (an `ensures` on a throwing path,
 /// an exceptional `ensures` on a returning one) holds vacuously and opens
 /// closed.
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub(crate) struct OutcomeClaimGoals {
     claims: Arc<[OutcomeClaimGoal]>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 struct OutcomeClaimGoal {
     key: CFunctionContractClaimKey,
     /// The kernel claim the goal stands for. A clause the kernel files no
     /// claim for (a `consumes` transition) has none.
     target: Option<CFunctionContractClaimTarget>,
-    closed: bool,
+    state: ClaimGoalState,
+}
+
+#[derive(Clone)]
+enum ClaimGoalState {
+    Open,
+    Vacuous,
+    Closed(ClaimGoalEvidence),
 }
 
 impl OutcomeClaimGoals {
@@ -353,11 +383,15 @@ impl OutcomeClaimGoals {
             claims: claims
                 .into_iter()
                 .map(|(key, target)| OutcomeClaimGoal {
-                    closed: matches!(
+                    state: if matches!(
                         (&key, is_exceptional),
                         (CFunctionContractClaimKey::Ensure(_), true)
                             | (CFunctionContractClaimKey::ExceptionalEnsure(_), false)
-                    ),
+                    ) {
+                        ClaimGoalState::Vacuous
+                    } else {
+                        ClaimGoalState::Open
+                    },
                     key,
                     target,
                 })
@@ -369,16 +403,24 @@ impl OutcomeClaimGoals {
     pub(crate) fn first_open(&self) -> Option<&CFunctionContractClaimKey> {
         self.claims
             .iter()
-            .find_map(|goal| (!goal.closed).then_some(&goal.key))
+            .find_map(|goal| matches!(goal.state, ClaimGoalState::Open).then_some(&goal.key))
     }
 
-    /// Closes `key`. A checked completion offered as its evidence must have
-    /// been proved about `outcome` and, when it names a claim, must name this
+    /// The evidence that closed `key`. A vacuous or open claim has none.
+    pub(crate) fn evidence(&self, key: &CFunctionContractClaimKey) -> Option<&ClaimGoalEvidence> {
+        self.claims.iter().find_map(|goal| match &goal.state {
+            ClaimGoalState::Closed(evidence) if goal.key == *key => Some(evidence),
+            _ => None,
+        })
+    }
+
+    /// Closes `key` with `evidence`. A checked completion must have been
+    /// proved about `outcome` and, when it names a claim, must name this
     /// one.
     pub(crate) fn close(
         &self,
         key: &CFunctionContractClaimKey,
-        completion: Option<&CheckedProposition>,
+        evidence: ClaimGoalEvidence,
         outcome: &OutcomeIdentity,
     ) -> Result<Self, ClaimGoalError> {
         let position = self
@@ -387,10 +429,10 @@ impl OutcomeClaimGoals {
             .position(|goal| goal.key == *key)
             .ok_or(ClaimGoalError::Unknown)?;
         let goal = &self.claims[position];
-        if goal.closed {
+        if !matches!(goal.state, ClaimGoalState::Open) {
             return Err(ClaimGoalError::AlreadyClosed);
         }
-        if let Some(completion) = completion {
+        if let ClaimGoalEvidence::Proposition(completion) = &evidence {
             if completion
                 .outcome()
                 .is_some_and(|core| !core.identity.same_as(outcome))
@@ -405,7 +447,7 @@ impl OutcomeClaimGoals {
             }
         }
         let mut claims = self.claims.to_vec();
-        claims[position].closed = true;
+        claims[position].state = ClaimGoalState::Closed(evidence);
         Ok(Self {
             claims: claims.into(),
         })
@@ -427,7 +469,7 @@ pub(crate) enum ProofObligation<P, O> {
 mod outcome_claim_goal_tests {
     use super::*;
     use crate::kernel::CFunctionContractClaimTarget as Target;
-    use crate::kernel::{ExecutionFacts, api::int32};
+    use crate::kernel::{ExecutionFacts, ResourceContext, api::int32};
 
     fn outcome() -> OutcomeProofCore {
         OutcomeProofCore {
@@ -440,8 +482,8 @@ mod outcome_claim_goal_tests {
         }
     }
 
-    fn completion(outcome: &OutcomeProofCore, claim: Option<Target>) -> CheckedProposition {
-        CheckedProposition::new(
+    fn completion(outcome: &OutcomeProofCore, claim: Option<Target>) -> ClaimGoalEvidence {
+        ClaimGoalEvidence::Proposition(CheckedProposition::new(
             Proposition::Predicate {
                 name: "done".into(),
                 arguments: Vec::new(),
@@ -449,7 +491,15 @@ mod outcome_claim_goal_tests {
             super::super::ProofFacts::default(),
             Some(outcome.clone()),
             claim,
-        )
+        ))
+    }
+
+    fn receipt() -> ClaimGoalEvidence {
+        ClaimGoalEvidence::Resource(ClaimResourceReceipt {
+            returned_resources: ResourceContext::new(),
+            contributes_returned_resources: true,
+            defers_resource_transition: false,
+        })
     }
 
     fn goals(is_exceptional: bool) -> OutcomeClaimGoals {
@@ -474,10 +524,10 @@ mod outcome_claim_goal_tests {
     }
 
     /// Claims open in contract order, a claim about the other kind of
-    /// outcome opens closed, and closing the first open claim advances the
-    /// focus to the next one.
+    /// outcome opens closed, closing the first open claim advances the focus
+    /// to the next one, and each closed claim keeps its evidence.
     #[test]
-    fn claim_goals_open_in_contract_order_and_advance_as_they_close() {
+    fn claim_goals_open_in_contract_order_and_keep_their_evidence() {
         let outcome = outcome();
         let returning = goals(false);
         assert_eq!(
@@ -487,7 +537,7 @@ mod outcome_claim_goal_tests {
         let returning = returning
             .close(
                 &CFunctionContractClaimKey::Ensure(0),
-                Some(&completion(&outcome, Some(Target::EnsureProposition(0)))),
+                completion(&outcome, Some(Target::EnsureProposition(0))),
                 &outcome.identity,
             )
             .unwrap();
@@ -498,18 +548,31 @@ mod outcome_claim_goal_tests {
         let returning = returning
             .close(
                 &CFunctionContractClaimKey::Ensure(1),
-                None,
+                receipt(),
                 &outcome.identity,
             )
             .and_then(|goals| {
                 goals.close(
                     &CFunctionContractClaimKey::Ensure(2),
-                    None,
+                    completion(&outcome, None),
                     &outcome.identity,
                 )
             })
             .unwrap();
         assert_eq!(returning.first_open(), None);
+        assert!(matches!(
+            returning.evidence(&CFunctionContractClaimKey::Ensure(0)),
+            Some(ClaimGoalEvidence::Proposition(_))
+        ));
+        assert!(matches!(
+            returning.evidence(&CFunctionContractClaimKey::Ensure(1)),
+            Some(ClaimGoalEvidence::Resource(_))
+        ));
+        assert!(
+            returning
+                .evidence(&CFunctionContractClaimKey::ExceptionalEnsure(0))
+                .is_none()
+        );
 
         let throwing = goals(true);
         assert_eq!(
@@ -526,59 +589,47 @@ mod outcome_claim_goal_tests {
         let sibling = self::outcome();
         let goals = goals(false);
         let key = CFunctionContractClaimKey::Ensure(0);
-        assert_eq!(
+        let refusal = |key: &CFunctionContractClaimKey, evidence| {
             goals
-                .close(
-                    &key,
-                    Some(&completion(&outcome, Some(Target::EnsureProposition(1)))),
-                    &outcome.identity,
-                )
-                .unwrap_err(),
+                .close(key, evidence, &outcome.identity)
+                .err()
+                .expect("the close is refused")
+        };
+        assert_eq!(
+            refusal(
+                &key,
+                completion(&outcome, Some(Target::EnsureProposition(1)))
+            ),
             ClaimGoalError::WrongClaim
         );
         assert_eq!(
-            goals
-                .close(
-                    &key,
-                    Some(&completion(&sibling, Some(Target::EnsureProposition(0)))),
-                    &outcome.identity,
-                )
-                .unwrap_err(),
+            refusal(
+                &key,
+                completion(&sibling, Some(Target::EnsureProposition(0)))
+            ),
             ClaimGoalError::WrongOutcome
         );
         assert_eq!(
-            goals
-                .close(
-                    &CFunctionContractClaimKey::Ensure(2),
-                    Some(&completion(&outcome, Some(Target::EnsureProposition(0)))),
-                    &outcome.identity,
-                )
-                .unwrap_err(),
+            refusal(
+                &CFunctionContractClaimKey::Ensure(2),
+                completion(&outcome, Some(Target::EnsureProposition(0)))
+            ),
             ClaimGoalError::WrongClaim
         );
         assert_eq!(
-            goals
-                .close(
-                    &CFunctionContractClaimKey::ExceptionalEnsure(0),
-                    None,
-                    &outcome.identity,
-                )
-                .unwrap_err(),
+            refusal(&CFunctionContractClaimKey::ExceptionalEnsure(0), receipt()),
             ClaimGoalError::AlreadyClosed
         );
         assert_eq!(
-            goals
-                .close(
-                    &CFunctionContractClaimKey::Ensure(9),
-                    None,
-                    &outcome.identity
-                )
-                .unwrap_err(),
+            refusal(&CFunctionContractClaimKey::Ensure(9), receipt()),
             ClaimGoalError::Unknown
         );
-        let closed = goals.close(&key, None, &outcome.identity).unwrap();
+        let closed = goals.close(&key, receipt(), &outcome.identity).unwrap();
         assert_eq!(
-            closed.close(&key, None, &outcome.identity).unwrap_err(),
+            closed
+                .close(&key, receipt(), &outcome.identity)
+                .err()
+                .expect("a closed claim does not close again"),
             ClaimGoalError::AlreadyClosed
         );
     }
