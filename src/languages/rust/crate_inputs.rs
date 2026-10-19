@@ -128,6 +128,7 @@ pub(super) fn dep_files(bytes: &[u8], root: &Path) -> Result<BTreeSet<String>, S
         let relative = path
             .strip_prefix(root)
             .map_err(|_| "Rust compiler read a file outside the locked crate")?;
+        let relative = resolve_parents(root, relative)?;
         let name = relative
             .to_str()
             .ok_or("Rust crate path is not UTF-8")?
@@ -141,6 +142,36 @@ pub(super) fn dep_files(bytes: &[u8], root: &Path) -> Result<BTreeSet<String>, S
         return Err("empty Rust source closure".into());
     }
     Ok(files)
+}
+
+/// Resolves the `..` components of a path the compiler reports relative to
+/// the crate root, as a `#[path = "../shared/lib.rs"]` attribute produces.
+/// A `..` is resolved only after the component it steps back over has been
+/// found to be a directory and not a symbolic link, so the textual result
+/// names the file the compiler opened; a path that climbs above the root is
+/// outside the crate.
+pub(super) fn resolve_parents(root: &Path, relative: &Path) -> Result<PathBuf, String> {
+    let mut resolved = PathBuf::new();
+    for component in relative.components() {
+        match component {
+            Component::Normal(name) => resolved.push(name),
+            Component::CurDir => {}
+            Component::ParentDir => {
+                let metadata = std::fs::symlink_metadata(root.join(&resolved))
+                    .map_err(|e| format!("Rust crate input `{}`: {e}", relative.display()))?;
+                if !metadata.is_dir() {
+                    return Err("Rust crate inputs cannot use symlinks".into());
+                }
+                if !resolved.pop() {
+                    return Err("Rust compiler read a file outside the locked crate".into());
+                }
+            }
+            Component::RootDir | Component::Prefix(_) => {
+                return Err("Rust compiler read a file outside the locked crate".into());
+            }
+        }
+    }
+    Ok(resolved)
 }
 
 pub(super) type SourceFiles = BTreeMap<String, Vec<u8>>;
@@ -228,6 +259,44 @@ mod tests {
             dep_files(b"out.d: /outside.rs\n", root.path())
                 .unwrap_err()
                 .contains("outside the locked crate")
+        );
+    }
+
+    /// A `#[path]` attribute that steps up from a client crate's directory to
+    /// a shared library is resolved through real directories only.
+    #[test]
+    fn dep_info_resolves_parent_steps_through_real_directories() {
+        let root = tempfile::tempdir().unwrap();
+        let root = root.path();
+        std::fs::create_dir_all(root.join("client")).unwrap();
+        std::fs::create_dir_all(root.join("vendor/lib/src")).unwrap();
+        std::fs::write(root.join("client/main.rs"), "").unwrap();
+        std::fs::write(root.join("vendor/lib/src/lib.rs"), "").unwrap();
+        let dependency = format!(
+            "out.d: {0}/client/main.rs {0}/client/../vendor/lib/src/lib.rs\n",
+            root.display()
+        );
+        assert_eq!(
+            dep_files(dependency.as_bytes(), root).unwrap(),
+            BTreeSet::from([
+                "client/main.rs".to_string(),
+                "vendor/lib/src/lib.rs".to_string()
+            ])
+        );
+        let escape = format!("out.d: {0}/client/../../outside.rs\n", root.display());
+        assert!(
+            dep_files(escape.as_bytes(), root)
+                .unwrap_err()
+                .contains("outside the locked crate")
+        );
+        // A `..` after a symbolic link would name a different file than the
+        // one the compiler opened.
+        std::os::unix::fs::symlink(root.join("vendor/lib/src"), root.join("link")).unwrap();
+        let through_link = format!("out.d: {0}/link/../src/lib.rs\n", root.display());
+        assert!(
+            dep_files(through_link.as_bytes(), root)
+                .unwrap_err()
+                .contains("symlinks")
         );
     }
 }

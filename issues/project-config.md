@@ -51,7 +51,7 @@ There is no project-level notion of how code is imported. Each sidecar
   `integrations/bitcoin-core-money-range` alone has 12 that repeat the same
   exporter, compilation database, standard and profile.
 - **Fixture problems:**
-  - `design/adler32/zlib` hard-codes host GCC 14 include directories,
+  - `design/adler32/project/zlib` hard-codes host GCC 14 include directories,
     while its lock records GCC 13's `cc1`.
   - Upstream adler2 and zlib files are copied into the Click directory.
 
@@ -73,7 +73,7 @@ All of these must work with **one configuration format**.
    may show they do the same thing. The supported route is that both
    implementations prove one shared Click specification whose functional
    postconditions determine the result. The existing Adler-32 work in
-   `design/adler32/checksum-correspondence.md` composes separately
+   `design/adler32/project/checksum-correspondence.md` composes separately
    checked zlib C and adler2 Rust results this way, wired up by hand today.
    A direct relational (product-program) proof is out of scope here.
 
@@ -285,10 +285,19 @@ C++ items were chosen explicitly; the rest are the recommended defaults.
   one lock, the start of the cross-language regression below. The re-locked
   artifacts are byte-identical. A Rust unit now locks without an existing
   artifact directory.
-- **Remaining:** the cross-language and foreign-layout regressions below
-  (the Adler-32 project still copies the upstream zlib and adler2 files);
-  exceptions to the import boundary, such as Click files kept apart from
-  the code in a monorepo, are left for a separate setting if needed.
+- **Cross-language project.** The Adler-32 project
+  (`design/adler32/project`) reads zlib 1.3.1 and adler2 2.0.1 from vendored
+  trees beside it (`design/adler32/vendor`), kept byte for byte at their
+  upstream paths; no upstream file is inside the Click project. Click's own
+  client units (`incremental.c`, `incremental.rs`, `resumed.rs`) are rooted
+  at the directory that holds the project and the vendored trees. The Rust
+  importer resolves a `..` in a compiler-reported input, as a
+  `#[path = "../../vendor/..."]` attribute produces, only through real
+  directories inside the unit root. The upstream units' artifacts are
+  byte-identical; the clients' differ only in recorded file paths.
+- **Remaining:** the foreign-layout regression below; exceptions to the
+  import boundary, such as Click files kept apart from the code in a
+  monorepo, are left for a separate setting if needed.
 
 ## Intended regressions
 

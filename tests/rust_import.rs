@@ -23,6 +23,8 @@ struct Project {
     /// The project root, holding the project file, lock and artifacts: `root`
     /// itself, or its ancestor for a fixture that is part of a larger project.
     project: PathBuf,
+    /// The temporary directory holding the copy, removed on drop.
+    scratch: PathBuf,
 }
 impl Project {
     fn isolated(source: &str) -> Self {
@@ -37,6 +39,7 @@ impl Project {
         fs::write(root.join("borrow.click"), SIDECAR).unwrap();
         Self {
             project: root.clone(),
+            scratch: root.clone(),
             root,
         }
     }
@@ -109,15 +112,28 @@ impl Project {
         );
         Self {
             project: root.clone(),
+            scratch: root.clone(),
             root,
         }
     }
-    /// A copy of a committed project, working in its directory `part`: the
-    /// adler2 crate of the Adler-32 project.
-    fn from_fixture_part(directory: &str, part: &str) -> Self {
-        let mut copy = Self::from_fixture(directory);
-        copy.root = copy.project.join(part);
-        copy
+    /// A copy of the committed directory `tree`, which holds the project
+    /// `project` beside the vendored trees its units read, working in the
+    /// project's directory `part`: the adler2 crate of the Adler-32 project.
+    fn from_fixture_part(tree: &str, project: &str, part: &str) -> Self {
+        static NEXT: AtomicUsize = AtomicUsize::new(0);
+        let scratch = std::env::temp_dir().join(format!(
+            "click-rust-fixture-part-{}-{}",
+            std::process::id(),
+            NEXT.fetch_add(1, Ordering::Relaxed)
+        ));
+        let repository = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        copy_tree(&repository.join(tree), &scratch.join(tree));
+        let project = scratch.join(tree).join(project);
+        Self {
+            root: project.join(part),
+            project,
+            scratch,
+        }
     }
     fn project_file(&self) -> PathBuf {
         self.project.join("click.project.json")
@@ -132,7 +148,7 @@ impl Project {
             .lines()
             .filter_map(|line| line.strip_prefix("verifying \""))
             .filter_map(|rest| rest.split('"').next())
-            .any(|path| self.lists(path))
+            .any(|path| self.lists(&self.root.join(path)))
         {
             return prepared_sidecar(&sidecar);
         }
@@ -155,14 +171,20 @@ impl Project {
             _ => Err("expected a prepared Rust unit".into()),
         }
     }
-    /// Whether a unit of the project lists `source`.
-    fn lists(&self, source: &str) -> bool {
+    /// Whether a unit of the project lists the source at `path`.
+    fn lists(&self, path: &Path) -> bool {
+        let Ok(path) = fs::canonicalize(path) else {
+            return false;
+        };
         let (project, _) = self.project_json();
-        project["units"]
-            .as_object()
-            .unwrap()
-            .values()
-            .any(|unit| unit["sources"].get(source).is_some())
+        project["units"].as_object().unwrap().values().any(|unit| {
+            let root = self.project.join(unit["root"].as_str().unwrap_or("."));
+            unit["sources"]
+                .as_object()
+                .unwrap()
+                .keys()
+                .any(|source| fs::canonicalize(root.join(source)).ok().as_ref() == Some(&path))
+        })
     }
     fn refresh(&self) -> Result<(), String> {
         click::project::Project::load(&self.project_file())?.lock()
@@ -225,7 +247,7 @@ fn copy_tree(from: &std::path::Path, to: &std::path::Path) {
 }
 impl Drop for Project {
     fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.project);
+        let _ = fs::remove_dir_all(&self.scratch);
     }
 }
 
@@ -4625,17 +4647,19 @@ fn rust_arm_local_borrows_close_without_escaping_before_the_join() {
 #[test]
 #[ignore = "requires the separately built pinned Charon/compiler"]
 fn charon_project_crate_unit_serves_every_sidecar_of_the_crate() {
-    let trial = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("design/adler32/adler2");
+    let trial = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("design/adler32/project/adler2");
+    let upstream =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("design/adler32/vendor/adler2-2.0.1");
     let root = std::env::temp_dir().join(format!("click-rust-project-unit-{}", std::process::id()));
     let crate_root = root.join("vendor/adler2-2.0.1");
     fs::create_dir_all(crate_root.join("src")).unwrap();
     fs::create_dir_all(root.join("proofs")).unwrap();
     for file in ["src/lib.rs", "src/algo.rs"] {
-        fs::copy(trial.join(file), crate_root.join(file)).unwrap();
+        fs::copy(upstream.join(file), crate_root.join(file)).unwrap();
     }
     for sidecar in ["helpers.click", "restoration.click"] {
         let proof = fs::read_to_string(trial.join(sidecar)).unwrap().replace(
-            "verifying \"src/lib.rs\";",
+            "verifying \"../../vendor/adler2-2.0.1/src/lib.rs\";",
             "verifying \"../vendor/adler2-2.0.1/src/lib.rs\";",
         );
         fs::write(root.join("proofs").join(sidecar), proof).unwrap();

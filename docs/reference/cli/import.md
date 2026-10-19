@@ -1830,7 +1830,7 @@ refresh.
 A unit that names a C library's include directories with `-isystem` puts them
 before Click's, so every header they supply is read from them, a locked input
 like any other, and the proof then assumes that library's declarations. None of
-the repository's fixtures does; `design/adler32/zlib/` uses Click's headers.
+the repository's fixtures does; `design/adler32/project/zlib/` uses Click's headers.
 
 Configured forced includes and ordered `-D` and `-U` options select additional
 preprocessing inputs. Other compiler options are rejected unless a named option
