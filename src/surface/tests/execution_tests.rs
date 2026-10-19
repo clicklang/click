@@ -1,4 +1,34 @@
 use super::*;
+
+#[test]
+fn generic_function_keeps_the_declared_struct_pointer_result_type() {
+    let c_source = r#"
+        struct node { int32 value; };
+        struct other { int32 value; };
+        struct node* unchanged(struct node* p, struct other* q) { return p; }
+    "#;
+    let source = r#"
+        function select<T>(first: T, second: T) -> T { first }
+        verifying "result.c";
+        struct node* unchanged(struct node* p, struct other* q) {
+            ensures select(p, result) == p;
+            ensures result == p;
+        } by { execute(); }
+    "#;
+    verify_c0_sources(source, &[("result.c", c_source)])
+        .expect("generic arguments retain the result's declared struct identity");
+    let error = verify_c0_sources(
+        &source.replace("select(p, result)", "select(p, q)"),
+        &[("result.c", c_source)],
+    )
+    .expect_err("distinct struct pointers cannot instantiate the same type parameter");
+    assert!(error.message().contains("type parameter `T`"), "{error}");
+    verify_c0_sources(
+        &source.replace("ensures result == p", "ensures result != p"),
+        &[("result.c", c_source)],
+    )
+    .expect_err("declared result metadata cannot prove a false postcondition");
+}
 use crate::kernel::CLoopEffectOrigin;
 
 fn authority_stack_project(click_source: &str) -> ClickProject {
