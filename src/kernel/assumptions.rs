@@ -42,6 +42,9 @@ pub(super) struct PointerValueUndo {
     graph: std::sync::Arc<EqualityGraph>,
 }
 
+mod separation_classes;
+pub(in crate::kernel) use separation_classes::SeparatedAddressIndex;
+
 mod memory_reasoning;
 pub(in crate::kernel) use memory_reasoning::additive_base_spellings;
 pub(crate) use memory_reasoning::arm_frame_composite_definitions;
@@ -4841,6 +4844,7 @@ impl PureFactContext {
         self.memory_loadable_shape_facts = std::sync::Arc::new(std::sync::OnceLock::new());
         self.memory_separation_facts = std::sync::Arc::new(BTreeMap::new());
         self.nonmemory_separation_facts = std::sync::Arc::new(Vec::new());
+        self.separated_address_classes = Default::default();
         self.separated_anchor_offsets = crate::persistent::PersistentMap::default();
         self.separated_anchor_pointers = crate::persistent::PersistentMap::default();
         self.recompute_content_fingerprint();
@@ -5438,6 +5442,23 @@ impl PureFactContext {
             return;
         };
         self.adjust_separated_anchor_offsets(proposition, &pair.0, &pair.1, insert);
+        if let (Some(left), Some(right)) =
+            (memory_range_anchor(&pair.0), memory_range_anchor(&pair.1))
+        {
+            self.separated_address_classes.adjust(
+                proposition,
+                Pointer {
+                    block: pair.0.base().block.clone(),
+                    offset: left,
+                },
+                Pointer {
+                    block: pair.1.base().block.clone(),
+                    offset: right,
+                },
+                insert,
+                &self.equality_graph,
+            );
+        }
         let key = Self::memory_separation_key(&pair.0.base().block, &pair.1.base().block);
         let index = std::sync::Arc::make_mut(&mut self.memory_separation_facts);
         if insert {
@@ -5467,6 +5488,7 @@ impl PureFactContext {
     fn rebuild_memory_separation_facts(&mut self) {
         self.memory_separation_facts = std::sync::Arc::new(BTreeMap::new());
         self.nonmemory_separation_facts = std::sync::Arc::new(Vec::new());
+        self.separated_address_classes = Default::default();
         let facts = self.prop_facts.iter().cloned().collect::<Vec<_>>();
         for proposition in facts {
             self.adjust_memory_separation_fact(&proposition, true);
