@@ -5071,6 +5071,11 @@ impl AnnotationLowerer<'_> {
                     if self.c_variable_type(name) == Some(CType::UInt64))
                 || matches!(bound, ContractExpression::CFragment(CExpression::Value(value))
                     if value.c_type() == CType::UInt64)
+                // A written cast, `(uint64) n`, has the type it names.
+                || matches!(
+                    generics::explicit_cast_click_type(bound),
+                    Some(ClickType::C(C0Type::UInt64(_)))
+                )
         })
     }
 
