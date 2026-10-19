@@ -1227,7 +1227,10 @@ in the sidecar, in declaration order: `Shape::Rect { width, height }` is
 `Shape::Rect(width, height)`. Contracts use the enum's constructors, equality
 and spec-level `match`:
 
+<!-- verified-example: tests/fixtures/rust-verification/enums.click -->
 ```click
+verifying "shapes.rs";
+
 fn grow(s: Shape) -> Shape {
     requires match s { Shape::Circle(r) => r, Shape::Rect(w, h) => 0u32, Shape::Empty => 0u32 } < 4294967295u32;
     ensures result == match s {

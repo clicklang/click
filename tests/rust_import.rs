@@ -2426,6 +2426,11 @@ fn rust_enums_project() -> Project {
 fn rust_enum_claims_are_checked_and_step_names_the_match_split() {
     let p = rust_enums_project();
     let prepared = p.prepared().unwrap();
+    C0VerificationSession::new_program_prepared(
+        include_str!("fixtures/rust-verification/enums.click"),
+        &prepared,
+    )
+    .unwrap_or_else(|error| panic!("{error:?}"));
     for (owner, invalid) in [
         (
             "square",
