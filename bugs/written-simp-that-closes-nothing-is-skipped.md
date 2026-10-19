@@ -30,11 +30,12 @@ The skip is the `if !require_explicit_closers { continue; }` at the end of
 the `simp`/`auto` arm of `finish_ordered_proof`
 (`src/surface/proof/claim_proofs.rs`). Removing it for written closers (keeping
 it for the implicit closer, `source_index == usize::MAX`) refuses the proof
-above. It also refuses two proofs that pass today only through the skip; fix
-these first:
-
-- `bugs/written-closers-miss-a-guarded-call-postcondition.md`
-- `bugs/restricted-simp-after-execution-misses-the-returned-value.md`
+above. Two proofs passed only through the skip:
+`mdtests/global_array_resource_element_types.md` (see
+`bugs/written-closers-miss-a-guarded-call-postcondition.md`) and
+`mdtests/proof_script_execute_and_simp_using.md`, whose restricted `simp`
+could not prove a conjunction. Both closers are now fixed, so both pass with
+the refusal on.
 
 ## Intended regression
 
