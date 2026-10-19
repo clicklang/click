@@ -44,6 +44,9 @@ fn old_collect_spec_algebraic_expression_c_variables(
             reads.model = true;
             Ok(())
         }
+        SpecAlgebraicExpressionNode::CValue(value) => {
+            old_collect_spec_expression_c_variables(value, reads)
+        }
         SpecAlgebraicExpressionNode::Constructor { fields, .. } => {
             for field in fields {
                 match field {

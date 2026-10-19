@@ -663,6 +663,12 @@ pub(super) fn collect_c_memory_read_expressions(
             CExpression::Cast { expression, .. }
             | CExpression::FloatNegate(expression)
             | CExpression::FloatClassification { expression, .. }
+            | CExpression::EnumField {
+                value: expression, ..
+            }
+            | CExpression::EnumIs {
+                value: expression, ..
+            }
             | CExpression::PointerOffsetBytes {
                 pointer: expression,
                 ..
@@ -673,6 +679,11 @@ pub(super) fn collect_c_memory_read_expressions(
             }
             | CExpression::Not(expression)
             | CExpression::BitwiseNot(expression) => values(expression, reads),
+            CExpression::EnumConstruct { fields, .. } => {
+                for field in fields {
+                    values(field, reads);
+                }
+            }
             CExpression::Conditional {
                 condition,
                 then_branch,
@@ -826,6 +837,12 @@ pub(super) fn c_expression_mentions_pointer_parameter(
         CExpression::Cast { expression, .. }
         | CExpression::FloatNegate(expression)
         | CExpression::FloatClassification { expression, .. }
+        | CExpression::EnumField {
+            value: expression, ..
+        }
+        | CExpression::EnumIs {
+            value: expression, ..
+        }
         | CExpression::AddressOf(expression)
         | CExpression::CheckedObjectAddress(expression)
         | CExpression::PointerOffsetBytes {
@@ -844,6 +861,9 @@ pub(super) fn c_expression_mentions_pointer_parameter(
         CExpression::TypedLoad { pointer, .. } => {
             c_expression_mentions_pointer_parameter(pointer, pointer_parameters)
         }
+        CExpression::EnumConstruct { fields, .. } => fields
+            .iter()
+            .any(|field| c_expression_mentions_pointer_parameter(field, pointer_parameters)),
         CExpression::Conditional {
             condition,
             then_branch,

@@ -2411,6 +2411,103 @@ fn rust_two_guards_clean_up_in_reverse_construction_order() {
     assert_eq!(drops, constructors.into_iter().rev().collect::<Vec<_>>());
 }
 
+const ENUMS_SIDECAR: &str = include_str!("../examples/rust-enums/shapes.click");
+fn rust_enums_project() -> Project {
+    let p = Project::from_fixture("examples/rust-enums");
+    fs::write(p.root.join("borrow.click"), ENUMS_SIDECAR).unwrap();
+    p
+}
+
+/// A Rust enum is the `spec enum` the import declares: false claims about
+/// construction, a matched field, and a variant test are refused, and
+/// `step()` refuses at a `match` whose variant is open, naming the proof
+/// `match` that splits it.
+#[test]
+fn rust_enum_claims_are_checked_and_step_names_the_match_split() {
+    let p = rust_enums_project();
+    let prepared = p.prepared().unwrap();
+    C0VerificationSession::new_program_prepared(
+        include_str!("fixtures/rust-verification/enums.click"),
+        &prepared,
+    )
+    .unwrap_or_else(|error| panic!("{error:?}"));
+    for (owner, invalid) in [
+        (
+            "square",
+            ENUMS_SIDECAR.replace(
+                "ensures result == Shape::Rect(side, side);",
+                "ensures result == Shape::Rect(side, 0u32);",
+            ),
+        ),
+        (
+            "perimeter",
+            ENUMS_SIDECAR.replace("Shape::Circle(r) => r * 6u32,", "Shape::Circle(r) => r * 4u32,"),
+        ),
+        (
+            "grow",
+            ENUMS_SIDECAR.replace(
+                "Shape::Circle(r) => Shape::Circle(r + 1u32),",
+                "Shape::Circle(r) => Shape::Circle(r),",
+            ),
+        ),
+        (
+            "radius",
+            ENUMS_SIDECAR.replace(
+                "Shape::Circle(r) => r, Shape::Rect(w, h) => 0u32, Shape::Empty => 0u32 };",
+                "Shape::Circle(r) => r, Shape::Rect(w, h) => w, Shape::Empty => 0u32 };",
+            ),
+        ),
+        (
+            "is_empty",
+            ENUMS_SIDECAR.replace(
+                "ensures result == (s == Shape::Empty);",
+                "ensures result == (s == Shape::Circle(0u32));",
+            ),
+        ),
+        // Without the requirement the `+ 1` can overflow and panic.
+        (
+            "grow",
+            ENUMS_SIDECAR.replace(
+                "requires match s { Shape::Circle(r) => r, Shape::Rect(w, h) => 0u32, Shape::Empty => 0u32 } < 4294967295u32;",
+                "",
+            ),
+        ),
+    ] {
+        assert_ne!(invalid, ENUMS_SIDECAR);
+        assert!(
+            verify_rust_function(&invalid, &prepared, owner).is_err(),
+            "{owner} accepted a false claim"
+        );
+    }
+    let stepped = "verifying \"shapes.rs\";\nfn is_empty(s: Shape) -> bool { ensures result == (s == Shape::Empty); } by { step(); step(); step(); step(); step(); step(); step(); simp(); }\n";
+    let error = C0VerificationSession::new_program_prepared(stepped, &prepared)
+        .err()
+        .expect("step() does not pass an open match");
+    assert!(
+        error.to_string().contains(
+            "reached a Rust `match` of `s`, whose variant is not known here; each variant is its own proof arm. Write `match s { Shape::Circle(s_circle_0) => { ... }, Shape::Rect(s_rect_0, s_rect_1) => { ... }, Shape::Empty => { ... } }` here"
+        ),
+        "{error}"
+    );
+}
+
+/// `execute()`'s proof `match`, expanded, verifies as written: its arms
+/// cite the requirement each arm instantiates at its constructor.
+#[test]
+#[ignore = "nightly: checked proof expansion"]
+fn rust_enum_match_expansions_verify() {
+    let p = rust_enums_project();
+    for claim in ["grow.contract", "is_empty.contract", "classify.contract"] {
+        assert_cli(&p, &["expand", "--claim", claim, "--in-place"]);
+    }
+    let expanded = fs::read_to_string(p.root.join("borrow.click")).unwrap();
+    assert!(
+        expanded.contains("Shape::Circle(s_circle_0) => {"),
+        "{expanded}"
+    );
+    assert_cli(&p, &["verify"]);
+}
+
 const UNSIGNED_SOURCE: &str = include_str!("../examples/rust-unsigned/arithmetic.rs");
 const UNSIGNED_SIDECAR: &str = include_str!("../examples/rust-unsigned/arithmetic.click");
 

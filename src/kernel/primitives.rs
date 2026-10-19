@@ -97,6 +97,7 @@ pub(super) use resource_algebra::*;
 pub(in crate::kernel) use term_operations::round_right_to_even;
 pub(crate) use term_operations::{
     first_unavailable_connective_side, listed_premise_holds, proposition_holds_without_facts,
+    single_variable_of_c_value,
 };
 pub(in crate::kernel) use term_operations::{
     int64_add_interval_fits, int64_subtract_interval_fits,
@@ -2604,6 +2605,26 @@ pub enum CExpression {
         source: CExpressionLoadSource,
     },
     Index(Box<CExpression>, Box<CExpression>),
+    /// A Rust enum value built from its variant's fields, in declaration
+    /// order: `Shape::Circle(r)`. Its type is `CType::Parameter(enum_type)`.
+    EnumConstruct {
+        enum_type: TypeParameterName,
+        variant: String,
+        fields: Vec<CExpression>,
+    },
+    /// Field `index` of an enum value of variant `variant`, which a `match`
+    /// arm has established: `(s as Shape::Circle).0`.
+    EnumField {
+        value: Box<CExpression>,
+        variant: String,
+        index: usize,
+    },
+    /// Whether an enum value is of variant `variant`, as a `bool`: the test
+    /// a Rust `match` arm makes. An undecided test splits on the variant.
+    EnumIs {
+        value: Box<CExpression>,
+        variant: String,
+    },
 }
 
 /// Optional source provenance attached to a typed load. Two expressions that
@@ -2964,6 +2985,9 @@ pub enum SpecAlgebraicExpressionNode {
         then_branch: Box<SpecAlgebraicExpression>,
         else_branch: Box<SpecAlgebraicExpression>,
     },
+    /// The algebraic value a C value of this type holds: a Rust enum
+    /// parameter, local or result, `CValue::Parameter`.
+    CValue(Box<SpecExpression>),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
@@ -6096,6 +6120,10 @@ pub enum CRuntimeError {
     /// A pointer/integer cast outside the modeled LP64 conversions: the
     /// message names the rejected direction and what evidence it needed.
     PointerConversion(String),
+    /// A Rust enum operation outside the values it is defined on: a field
+    /// read of a variant the value is not known to have, or a constructor
+    /// whose fields do not fit its variant. The message says which.
+    EnumVariant(String),
     IndeterminatePointeeType,
     WrongArity {
         expected: usize,
@@ -13287,30 +13315,46 @@ mod representation_size_tests {
     }
 }
 
-/// An abstract type parameter's name, interned so that `CType` stays `Copy`.
-/// Names are few and live for the process, so each is leaked once.
+/// The algebraic type of a value a C local holds, interned so that `CType`
+/// stays `Copy`: an abstract type parameter, a rigid type known only by its
+/// name, or a Rust enum, a `spec enum` whose values the program constructs and
+/// matches. Types are few and live for the process, so each is leaked once.
+/// Two enums of one name with different variants are different types.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct TypeParameterName(u32);
 
-static TYPE_PARAMETER_NAMES: std::sync::Mutex<Vec<&'static str>> =
+static TYPE_PARAMETER_NAMES: std::sync::Mutex<Vec<&'static AlgebraicType>> =
     std::sync::Mutex::new(Vec::new());
 
 impl TypeParameterName {
+    /// The abstract type parameter of this name.
     pub fn intern(name: &str) -> Self {
-        let mut names = TYPE_PARAMETER_NAMES.lock().expect("type parameter names");
-        if let Some(index) = names.iter().position(|known| *known == name) {
+        Self::of(&AlgebraicType::parameter(name.to_string()))
+    }
+
+    /// The type a value of `algebraic_type` has.
+    pub fn of(algebraic_type: &AlgebraicType) -> Self {
+        let mut types = TYPE_PARAMETER_NAMES.lock().expect("type parameter names");
+        if let Some(index) = types.iter().position(|known| *known == algebraic_type) {
             return Self(index as u32);
         }
-        names.push(Box::leak(name.to_string().into_boxed_str()));
-        Self(names.len() as u32 - 1)
+        types.push(Box::leak(Box::new(algebraic_type.clone())));
+        Self(types.len() as u32 - 1)
     }
 
     pub fn name(self) -> &'static str {
-        TYPE_PARAMETER_NAMES.lock().expect("type parameter names")[self.0 as usize]
+        &TYPE_PARAMETER_NAMES.lock().expect("type parameter names")[self.0 as usize].name
     }
 
-    /// The rigid algebraic type a value of this parameter is.
+    /// The algebraic type a value of this type is: rigid for a type
+    /// parameter, with its variants for an enum.
     pub fn algebraic_type(self) -> AlgebraicType {
-        AlgebraicType::parameter(self.name().to_string())
+        TYPE_PARAMETER_NAMES.lock().expect("type parameter names")[self.0 as usize].clone()
+    }
+
+    /// Whether values of this type are an enum's, which the program
+    /// constructs and matches, rather than an abstract type parameter's.
+    pub fn is_enum(self) -> bool {
+        !TYPE_PARAMETER_NAMES.lock().expect("type parameter names")[self.0 as usize].rigid
     }
 }

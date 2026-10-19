@@ -1223,6 +1223,13 @@ impl Parser {
             self.position += 1;
             return Ok(scalar(C0Type::Parameter(parameter)));
         }
+        if let Some(name) = self.peek_ident()
+            && let Some(enum_type) = self.rust_enum_types.get(name).copied()
+            && self.peek_next() != Some(&Token::ColonColon)
+        {
+            self.position += 1;
+            return Ok(scalar(C0Type::Parameter(enum_type)));
+        }
         let spelling = self.expect_rust_type_name("type")?;
         Ok(match rust_scalar_type(&spelling) {
             Some(c_type) => scalar(c_type),

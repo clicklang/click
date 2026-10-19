@@ -8927,8 +8927,17 @@ pub(super) fn collect_address_taken_in_expression(
             collect_address_taken_in_expression(else_branch, names);
         }
         CExpression::FloatNegate(expression)
-        | CExpression::FloatClassification { expression, .. } => {
-            collect_address_taken_in_expression(expression, names)
+        | CExpression::FloatClassification { expression, .. }
+        | CExpression::EnumField {
+            value: expression, ..
+        }
+        | CExpression::EnumIs {
+            value: expression, ..
+        } => collect_address_taken_in_expression(expression, names),
+        CExpression::EnumConstruct { fields, .. } => {
+            for field in fields {
+                collect_address_taken_in_expression(field, names);
+            }
         }
         CExpression::PointerOffsetBytes { pointer, .. }
         | CExpression::Subobject { pointer, .. } => {
@@ -8967,8 +8976,17 @@ pub(super) fn collect_variable_names(expression: &CExpression, names: &mut BTree
             collect_variable_names(else_branch, names);
         }
         CExpression::FloatNegate(expression)
-        | CExpression::FloatClassification { expression, .. } => {
-            collect_variable_names(expression, names)
+        | CExpression::FloatClassification { expression, .. }
+        | CExpression::EnumField {
+            value: expression, ..
+        }
+        | CExpression::EnumIs {
+            value: expression, ..
+        } => collect_variable_names(expression, names),
+        CExpression::EnumConstruct { fields, .. } => {
+            for field in fields {
+                collect_variable_names(field, names);
+            }
         }
         CExpression::PointerOffsetBytes { pointer, .. }
         | CExpression::Subobject { pointer, .. } => collect_variable_names(pointer, names),

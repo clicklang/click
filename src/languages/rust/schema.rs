@@ -16,6 +16,8 @@ pub struct RustExport {
     pub mir_opt_level: u32,
     pub logical_source: String,
     pub records: Vec<Record>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub enums: Vec<Enum>,
     pub functions: Vec<Function>,
 }
 
@@ -62,6 +64,11 @@ pub enum Type {
     Record {
         name: String,
     },
+    /// A value of a crate enum, which the sidecar names as a `spec enum` of
+    /// the same name.
+    Enum {
+        name: String,
+    },
     /// An owning `Box<R>` of a crate struct, carried as the address of its
     /// heap allocation; also the `*const R` the compiler reads it through,
     /// which only a box's own pointer becomes.
@@ -100,6 +107,24 @@ pub struct Record {
     pub alignment: u32,
     pub fields: Vec<Field>,
     pub destructor: Option<String>,
+}
+/// A crate enum whose fields are scalars: its values are values of the
+/// `spec enum` of the same name, which the import declares for the sidecar.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct Enum {
+    pub name: String,
+    pub variants: Vec<Variant>,
+}
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct Variant {
+    pub name: String,
+    /// A struct variant's field names, in declaration order; empty for a
+    /// tuple or unit variant.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub field_names: Vec<String>,
+    pub fields: Vec<Type>,
 }
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -252,6 +277,20 @@ pub enum Expression {
     FunctionAddress {
         function: String,
         value_type: Type,
+    },
+    /// A value of enum `name`'s `variant`, from its fields in declaration order.
+    EnumConstruct {
+        name: String,
+        variant: String,
+        fields: Vec<Self>,
+    },
+    /// Field `index` of `base`, an enum value a `match` arm has found to be
+    /// `variant`.
+    EnumField {
+        base: Box<Self>,
+        name: String,
+        variant: String,
+        index: usize,
     },
     /// A new instance of a closure that captures `captures`, as a callable
     /// value of `value_type`: `&|y| y + k as &dyn Fn(i32) -> i32`.
@@ -416,6 +455,14 @@ pub enum MirTerminator {
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
         through_pointer: bool,
     },
+    /// A `match`: the case whose label the scrutinee has, else `otherwise`.
+    /// An enum's cases are its variants; an integer's are its values.
+    Switch {
+        scrutinee: Expression,
+        cases: Vec<SwitchCase>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        otherwise: Option<usize>,
+    },
     Return,
     Unreachable,
     /// `destination = Box::new(source)`: allocate the record on the heap,
@@ -434,6 +481,22 @@ pub enum MirTerminator {
         record: String,
         target: usize,
     },
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct SwitchCase {
+    pub label: SwitchLabel,
+    pub target: usize,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum SwitchLabel {
+    /// An integer scrutinee's value, a constant expression of its type.
+    Value { value: Expression },
+    /// An enum scrutinee's variant.
+    Variant { name: String },
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]

@@ -3260,7 +3260,7 @@ impl<'a> Proof<'a> {
                 proof
                     .split_focused_call_outcomes()
                     .map(|split| split.map(|(proof, record)| (proof, record, true)))
-            } else if proof.is_at_execution_branch()? {
+            } else if proof.is_at_execution_branch()? && !proof.is_at_enum_match_test()? {
                 proof
                     .split_focused_execution_branch()
                     .map(|(proof, record)| Some((proof, record, false)))
@@ -3283,6 +3283,20 @@ impl<'a> Proof<'a> {
                         next_else: take_then,
                         enclosing: parent,
                     });
+                }
+                Err(error) if error.path_case_match().is_some() => {
+                    let split = Arc::new(error.path_case_match().expect("checked").clone());
+                    let parents = enclosing.iter().map(Arc::as_ref).collect::<Vec<_>>();
+                    let Some(next) = proof.execute_enum_match_to_exit(
+                        &split,
+                        &parents,
+                        retried_requirements,
+                        steps,
+                    )?
+                    else {
+                        return Ok(None);
+                    };
+                    proof = next;
                 }
                 Err(error) if error.is_path_case_split() => {
                     let Some(condition) = error.path_case_condition() else {
@@ -3333,6 +3347,106 @@ impl<'a> Proof<'a> {
         advanced
             .join_focused_execution_if_terminal(&record)
             .map(Some)
+    }
+
+    /// Splits the proof on `split`, the variants of the enum a Rust `match`
+    /// selects among, and runs each arm to function exit: the proof `match`
+    /// a sidecar would write, with `execute()` in every arm. Arms the facts
+    /// rule out are not run. Expansion prints the `match`.
+    fn execute_enum_match_to_exit(
+        &self,
+        split: &Arc<ProofMatch>,
+        enclosing: &[&ExecutionSplit<'a>],
+        retried_requirements: &mut BTreeSet<PropositionIdentityKey>,
+        steps: &mut usize,
+    ) -> Result<Option<Self>, ClickError> {
+        let tactic_index = match self.context.as_ref() {
+            ProofContext::Execution(context) => context.tactic_index,
+            _ => return Err(self.step_error("a Rust `match` split requires an execution proof")),
+        };
+        let prepared = self.prepare_execution_match(false, tactic_index)?;
+        let marker = prepared.checkpoint();
+        let plan = prepared.plan_execution_match(split, |_| usize::MAX)?;
+        let live = plan.live_cases();
+        let mut certificates = vec![None; split.arms.len()];
+        let Some(proof) = prepared.execute_enum_match_group(
+            &plan,
+            &live,
+            &mut certificates,
+            enclosing,
+            retried_requirements,
+            steps,
+        )?
+        else {
+            return Ok(None);
+        };
+        let Some(certificates) = certificates.into_iter().collect::<Option<Vec<_>>>() else {
+            return Err(
+                proof.step_error("a Rust `match` split left a variant without a checked arm")
+            );
+        };
+        Ok(Some(proof.finish_execution_match(
+            &marker,
+            split,
+            certificates,
+            plan.take_trace(),
+        )?))
+    }
+
+    /// Runs one group of live variant arms to function exit, halving the
+    /// group at a frontier split until one arm remains, as a written proof
+    /// `match` does.
+    fn execute_enum_match_group(
+        &self,
+        plan: &super::ExecutionMatchPlan,
+        live: &[usize],
+        certificates: &mut [Option<ProofCertificate>],
+        enclosing: &[&ExecutionSplit<'a>],
+        retried_requirements: &mut BTreeSet<PropositionIdentityKey>,
+        steps: &mut usize,
+    ) -> Result<Option<Self>, ClickError> {
+        let [index] = live else {
+            let (left, right) = live.split_at(live.len() / 2);
+            if left.is_empty() {
+                return Err(self.step_error("a Rust `match` split has no live variant"));
+            }
+            let (mut proof, record) = self.split_execution_match_group(plan.condition(left))?;
+            for (take_left, group) in [(true, left), (false, right)] {
+                let focused = proof.focus_execution_if_arm(&record, take_left)?;
+                let Some(next) = focused.execute_enum_match_group(
+                    plan,
+                    group,
+                    certificates,
+                    enclosing,
+                    retried_requirements,
+                    steps,
+                )?
+                else {
+                    return Ok(None);
+                };
+                proof = next;
+            }
+            return Ok(Some(proof.join_focused_execution_if_terminal(&record)?));
+        };
+        let index = *index;
+        let entered = self.enter_execution_match_arm(plan, index)?;
+        let marker = entered.checkpoint();
+        let Some(proof) = entered.try_focused_execute_to_exit_within(
+            enclosing.to_vec(),
+            retried_requirements,
+            steps,
+            None,
+            None,
+        )?
+        else {
+            return Ok(None);
+        };
+        if !proof.is_at_function_exit() {
+            return Ok(None);
+        }
+        certificates[index] = Some(proof.execution_match_arm_certificate(&marker)?);
+        proof.record_execution_match_arm_trace(plan, index, &marker);
+        Ok(Some(proof.leave_terminal_execution_match_arm(plan)?))
     }
 
     fn prepare_focused_execute_cases(

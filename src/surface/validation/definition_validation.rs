@@ -2628,8 +2628,19 @@ fn collect_resource_fact_reads_from_c_expression(
             collect_resource_fact_reads_from_c_expression(expression, reads);
         }
         CExpression::FloatNegate(expression)
-        | CExpression::FloatClassification { expression, .. } => {
+        | CExpression::FloatClassification { expression, .. }
+        | CExpression::EnumField {
+            value: expression, ..
+        }
+        | CExpression::EnumIs {
+            value: expression, ..
+        } => {
             collect_resource_fact_reads_from_c_expression(expression, reads);
+        }
+        CExpression::EnumConstruct { fields, .. } => {
+            for field in fields {
+                collect_resource_fact_reads_from_c_expression(field, reads);
+            }
         }
         CExpression::Conditional {
             condition,

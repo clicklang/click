@@ -582,6 +582,8 @@ struct Adapter<'a> {
     crate_mode: bool,
     krate: &'a a::TranslatedCrate,
     records: BTreeMap<a::TypeDeclId, String>,
+    /// The crate's enums, by the name their `spec enum` takes.
+    enums: BTreeMap<a::TypeDeclId, String>,
     functions: BTreeMap<a::FunDeclId, String>,
     destructors: BTreeMap<a::TypeDeclId, a::FunDeclId>,
     /// Each closure's `ClosureAsFn` function, by the closure's name.
@@ -848,6 +850,9 @@ impl Adapter<'_> {
                     .insert(name.clone(), (id, arguments));
                 Type::Record { name }
             }
+            a::TyKind::Adt(r) if self.enums.contains_key(&r.id) => Type::Enum {
+                name: self.enums[&r.id].clone(),
+            },
             a::TyKind::Adt(r)
                 if r.generics.types.is_empty() && r.generics.const_generics.is_empty() =>
             {
@@ -897,6 +902,46 @@ impl Adapter<'_> {
             && self.option_box_payload(ty).is_none()
             && !self.protocol_option(ty))
         .then_some(payload)
+    }
+    /// The locals of `body` that hold a crate enum's discriminant, with the
+    /// enum each reads.
+    fn enum_discriminants(&self, body: &u::ExprBody) -> BTreeMap<a::LocalId, a::Place> {
+        let mut discriminants = BTreeMap::new();
+        for block in &body.body {
+            for statement in &block.statements {
+                if let u::StatementKind::Assign(target, a::Rvalue::Discriminant(place)) =
+                    &statement.kind
+                    && let a::PlaceKind::Local(local) = target.kind
+                    && matches!(place.ty.kind(), a::TyKind::Adt(r) if self.enums.contains_key(&r.id))
+                {
+                    discriminants.insert(local, place.clone());
+                }
+            }
+        }
+        discriminants
+    }
+    /// The variants of crate enum `ty`.
+    fn enum_variants(
+        &self,
+        ty: &a::Ty,
+    ) -> Result<
+        (
+            &String,
+            &charon_lib::ids::IndexVec<a::VariantId, a::Variant>,
+        ),
+        String,
+    > {
+        let a::TyKind::Adt(r) = ty.kind() else {
+            return Err(unsupported("enum type"));
+        };
+        let name = self
+            .enums
+            .get(&r.id)
+            .ok_or_else(|| unsupported("nonlocal enum"))?;
+        match &self.krate.type_decls[r.id].kind {
+            a::TypeDeclKind::Enum(variants) => Ok((name, variants)),
+            _ => Err(unsupported("enum declaration")),
+        }
     }
     /// The `Box<R>` an `Option<Box<R>>` of a crate struct `R` holds.
     fn option_box_payload<'t>(&self, ty: &'t a::Ty) -> Option<&'t a::Ty> {
@@ -985,6 +1030,9 @@ struct BodyAdapter<'a, 'b> {
     slice_pairs: BTreeMap<a::LocalId, [String; 2]>,
     iterator_refs: BTreeMap<a::LocalId, a::LocalId>,
     iterator_discriminants: BTreeMap<a::LocalId, a::LocalId>,
+    /// The locals that hold a crate enum's discriminant, `_2 = @discriminant(s)`,
+    /// with the enum they read: a `match` switches on the enum itself.
+    enum_discriminants: BTreeMap<a::LocalId, a::Place>,
     /// The locals a crate struct reference is unsized into a `&dyn` crate
     /// trait for.
     unsized_objects: BTreeMap<a::LocalId, (a::TypeDeclId, (a::TraitDeclId, String), bool)>,
@@ -1268,6 +1316,28 @@ impl BodyAdapter<'_, '_> {
                     value_type: self.adapter.ty(&p.ty)?,
                 }
             }
+            a::PlaceKind::Projection(base, a::ProjectionElem::Field(Some(variant), field))
+                if matches!(self.adapter.ty(&base.ty)?, Type::Enum { .. }) =>
+            {
+                let (name, variants) = self.adapter.enum_variants(&base.ty)?;
+                let declared = variants
+                    .get(*variant)
+                    .ok_or_else(|| unsupported("invalid enum variant"))?;
+                let field_type = &declared
+                    .fields
+                    .get(*field)
+                    .ok_or_else(|| unsupported("invalid enum field"))?
+                    .ty;
+                if self.adapter.ty(&p.ty)? != self.adapter.ty(field_type)? {
+                    return Err(unsupported("enum field projection type mismatch"));
+                }
+                E::EnumField {
+                    base: Box::new(self.place(base)?),
+                    name: name.clone(),
+                    variant: declared.name.clone(),
+                    index: field.index(),
+                }
+            }
             a::PlaceKind::Projection(base, a::ProjectionElem::Field(None, field)) => {
                 let id = self.adapter.struct_id(&base.ty)?;
                 let declaration = self
@@ -1473,6 +1543,25 @@ impl BodyAdapter<'_, '_> {
                     .ok_or_else(|| unsupported("symbolic array repeat"))?
                     as u64,
             },
+            a::Rvalue::Aggregate(a::AggregateKind::Adt(r, Some(variant), None), fields)
+                if self.adapter.enums.contains_key(&r.id) =>
+            {
+                let (name, variants) = self.adapter.enum_variants(ty)?;
+                let declared = variants
+                    .get(*variant)
+                    .ok_or_else(|| unsupported("invalid enum variant"))?;
+                if declared.fields.len() != fields.len() {
+                    return Err(unsupported("enum constructor arity"));
+                }
+                E::EnumConstruct {
+                    name: name.clone(),
+                    variant: declared.name.clone(),
+                    fields: fields
+                        .iter()
+                        .map(|field| self.operand(field))
+                        .collect::<Result<_, _>>()?,
+                }
+            }
             a::Rvalue::Aggregate(a::AggregateKind::Array(..), elements) => E::Array {
                 elements: elements
                     .iter()
@@ -1682,6 +1771,23 @@ impl BodyAdapter<'_, '_> {
         if let Some(statement) = self.iterator_statement(s)? {
             return Ok(statement);
         }
+        match &s.kind {
+            // A `match` reads the enum itself; its discriminant local is gone.
+            u::StatementKind::Assign(
+                a::Place {
+                    kind: a::PlaceKind::Local(local),
+                    ..
+                },
+                a::Rvalue::Discriminant(_),
+            )
+            | u::StatementKind::StorageLive(local)
+            | u::StatementKind::StorageDead(local)
+                if self.enum_discriminants.contains_key(local) =>
+            {
+                return Ok(None);
+            }
+            _ => {}
+        }
         Ok(match &s.kind {
             u::StatementKind::Assign(p, v) => {
                 if self.adapter.ty(&p.ty)? == Type::Unit {
@@ -1781,6 +1887,105 @@ impl BodyAdapter<'_, '_> {
             _ => return Err(unsupported("statement")),
         })
     }
+    /// Whether `block` is the compiler's unreachable fallback of a `match`
+    /// that names every variant.
+    fn unreachable_block(&self, block: u::BlockId) -> bool {
+        self.body.body.get(block).is_some_and(|block| {
+            block.statements.iter().all(|statement| {
+                matches!(
+                    statement.kind,
+                    u::StatementKind::StorageLive(_)
+                        | u::StatementKind::StorageDead(_)
+                        | u::StatementKind::Nop
+                )
+            }) && matches!(block.terminator.kind, u::TerminatorKind::UndefinedBehavior)
+        })
+    }
+    /// A `match` of crate enum `matched`: one case for each variant a branch
+    /// names by its discriminant. The compiler's unreachable fallback of a
+    /// `match` that names every variant is dropped; any other fallback is
+    /// the case of the variants no branch names.
+    fn enum_switch(
+        &self,
+        matched: &a::Place,
+        data: &a::SwitchData,
+        branches: &charon_lib::ids::IndexVec<a::BranchId, u::BlockId>,
+    ) -> Result<T, String> {
+        let (_, variants) = self.adapter.enum_variants(&matched.ty)?;
+        let mut cases = Vec::new();
+        let mut named = BTreeSet::new();
+        for (constant, branch) in &data.branches {
+            let variant = match constant.kind() {
+                a::ConstantExprKind::Integer(value) => variants
+                    .iter()
+                    .find(|variant| variant.discriminant == *value),
+                a::ConstantExprKind::Discriminant(_, variant) => variants.get(*variant),
+                _ => None,
+            }
+            .ok_or_else(|| unsupported("enum switch constant"))?;
+            if !named.insert(variant.id) {
+                return Err(unsupported("repeated enum switch variant"));
+            }
+            cases.push(out::SwitchCase {
+                label: out::SwitchLabel::Variant {
+                    name: variant.name.clone(),
+                },
+                target: branches[*branch].index(),
+            });
+        }
+        let otherwise = match data.fallback {
+            Some(fallback)
+                if named.len() == variants.len() && self.unreachable_block(branches[fallback]) =>
+            {
+                None
+            }
+            Some(fallback) if named.len() < variants.len() => Some(branches[fallback].index()),
+            Some(_) => return Err(unsupported("reachable fallback of an exhaustive match")),
+            None if named.len() == variants.len() => None,
+            None => return Err(unsupported("enum switch without every variant")),
+        };
+        Ok(T::Switch {
+            scrutinee: self.place(matched)?,
+            cases,
+            otherwise,
+        })
+    }
+    /// A `match` of an integer with several values: a case for each.
+    fn integer_switch(
+        &self,
+        value: &a::Operand,
+        data: &a::SwitchData,
+        branches: &charon_lib::ids::IndexVec<a::BranchId, u::BlockId>,
+    ) -> Result<T, String> {
+        if !matches!(
+            self.adapter.ty(value.ty())?,
+            Type::I32 | Type::U8 | Type::U16 | Type::U32 | Type::Usize
+        ) {
+            return Err(unsupported("multiway switch on a non-integer"));
+        }
+        let cases = data
+            .branches
+            .iter()
+            .map(|(constant, branch)| {
+                Ok(out::SwitchCase {
+                    label: out::SwitchLabel::Value {
+                        value: self.constant(constant)?,
+                    },
+                    target: branches[*branch].index(),
+                })
+            })
+            .collect::<Result<_, String>>()?;
+        Ok(T::Switch {
+            scrutinee: self.operand(value)?,
+            cases,
+            otherwise: Some(
+                branches[data
+                    .fallback
+                    .ok_or_else(|| unsupported("integer switch without a fallback"))?]
+                .index(),
+            ),
+        })
+    }
     fn terminator(&self, t: &u::Terminator) -> Result<T, String> {
         if let Some(terminator) = self.iterator_switch(t)? {
             return Ok(terminator);
@@ -1797,8 +2002,14 @@ impl BodyAdapter<'_, '_> {
                 let a::SwitchScrutinee::Value(value) = &data.scrutinee else {
                     return Err(unsupported("enum switch"));
                 };
+                if let a::Operand::Move(place) | a::Operand::Copy(place) = value
+                    && let a::PlaceKind::Local(local) = place.kind
+                    && let Some(matched) = self.enum_discriminants.get(&local)
+                {
+                    return self.enum_switch(matched, data, branches);
+                }
                 let [(constant, yes)] = data.branches.as_slice() else {
-                    return Err(unsupported("multiway switch"));
+                    return self.integer_switch(value, data, branches);
                 };
                 let no = data
                     .fallback
@@ -2280,6 +2491,7 @@ pub(super) fn decode_crate(
         crate_mode: crate_config.is_some(),
         krate: &krate,
         records: BTreeMap::new(),
+        enums: BTreeMap::new(),
         functions: BTreeMap::new(),
         destructors: BTreeMap::new(),
         closure_shims: BTreeMap::new(),
@@ -2311,6 +2523,22 @@ pub(super) fn decode_crate(
             // A crate trait's vtable is not a record either: a call through
             // it is a call of the trait's interface function.
             if let a::TypeSource::VTable { .. } = &record.src {
+                continue;
+            }
+            // An enum is a value the sidecar names as a `spec enum`.
+            if let a::TypeDeclKind::Enum(_) = &record.kind {
+                if !record.generics.types.is_empty()
+                    || !record.generics.const_generics.is_empty()
+                    || !matches!(record.src, a::TypeSource::Normal)
+                {
+                    return Err(unsupported("generic enum"));
+                }
+                if crate_config.is_some() {
+                    return Err(unsupported("enum in a crate unit"));
+                }
+                adapter
+                    .enums
+                    .insert(id, simple_name(&record.item_meta.name, &krate.crate_name)?);
                 continue;
             }
             if !record.generics.types.is_empty()
@@ -2563,6 +2791,46 @@ pub(super) fn decode_crate(
                 .map(|f| adapter.functions[f].clone()),
         });
     }
+    let mut enums = Vec::new();
+    for (id, name) in &adapter.enums {
+        let a::TypeDeclKind::Enum(variants) = &krate.type_decls[*id].kind else {
+            return Err(unsupported("enum declaration"));
+        };
+        let mut exported = Vec::new();
+        for variant in variants.iter() {
+            let mut fields = Vec::new();
+            for field in variant.fields.iter() {
+                let ty = adapter.ty(&field.ty)?;
+                if !matches!(
+                    ty,
+                    Type::I32 | Type::U8 | Type::U16 | Type::U32 | Type::Usize | Type::Bool
+                ) {
+                    return Err(unsupported("enum field other than an integer or bool"));
+                }
+                fields.push(ty);
+            }
+            exported.push(out::Variant {
+                name: variant.name.clone(),
+                field_names: if variant.fields.iter().any(|field| !field.is_positional) {
+                    variant
+                        .fields
+                        .iter()
+                        .map(|field| field.name.clone())
+                        .collect()
+                } else {
+                    Vec::new()
+                },
+                fields,
+            });
+        }
+        if exported.is_empty() {
+            return Err(unsupported("enum without variants"));
+        }
+        enums.push(out::Enum {
+            name: name.clone(),
+            variants: exported,
+        });
+    }
     let mut functions = Vec::new();
     let mut used_names = BTreeSet::new();
     for (id, name) in &adapter.functions {
@@ -2626,6 +2894,7 @@ pub(super) fn decode_crate(
             }
         }
         let (iterator_refs, iterator_discriminants) = protocol::bindings(&adapter, body)?;
+        let enum_discriminants = adapter.enum_discriminants(body);
         let plumbing = adapter.closure_plumbing(body)?;
         let mut names = BTreeMap::new();
         let mut slice_pairs = BTreeMap::new();
@@ -2641,7 +2910,9 @@ pub(super) fn decode_crate(
             }
         }
         for local in &body.locals.locals {
-            if plumbing.elided.contains(&local.index) {
+            if plumbing.elided.contains(&local.index)
+                || enum_discriminants.contains_key(&local.index)
+            {
                 continue;
             }
             let param = local.index.index() > 0 && local.index.index() <= body.locals.arg_count;
@@ -2722,6 +2993,7 @@ pub(super) fn decode_crate(
             slice_pairs,
             iterator_refs,
             iterator_discriminants,
+            enum_discriminants,
             unsized_objects: traits::unsized_objects(&adapter, body),
             coercions: std::cell::RefCell::new(Vec::new()),
         };
@@ -2949,6 +3221,7 @@ pub(super) fn decode_crate(
         mir_opt_level: 0,
         logical_source: source.into(),
         records,
+        enums,
         functions,
     })
 }

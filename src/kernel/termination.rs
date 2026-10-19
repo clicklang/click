@@ -91,6 +91,31 @@ fn substitute_c_expression_variables(
             classification: *classification,
         },
         FloatNegate(body) => FloatNegate(unary(body)),
+        EnumConstruct {
+            enum_type,
+            variant,
+            fields,
+        } => EnumConstruct {
+            enum_type: *enum_type,
+            variant: variant.clone(),
+            fields: fields
+                .iter()
+                .map(|field| substitute_c_expression_variables(field, substitutions))
+                .collect(),
+        },
+        EnumField {
+            value,
+            variant,
+            index,
+        } => EnumField {
+            value: unary(value),
+            variant: variant.clone(),
+            index: *index,
+        },
+        EnumIs { value, variant } => EnumIs {
+            value: unary(value),
+            variant: variant.clone(),
+        },
         Conditional {
             condition,
             then_branch,
@@ -1107,7 +1132,19 @@ fn expression_address_taken_locals(expression: &CExpression, names: &mut BTreeSe
     match expression {
         Value(_) | Variable(_) | FunctionAddress(_) => {}
         Cast { expression, .. } => inner(expression),
-        FloatNegate(expression) | FloatClassification { expression, .. } => inner(expression),
+        FloatNegate(expression)
+        | FloatClassification { expression, .. }
+        | EnumField {
+            value: expression, ..
+        }
+        | EnumIs {
+            value: expression, ..
+        } => inner(expression),
+        EnumConstruct { fields, .. } => {
+            for field in fields {
+                inner(field);
+            }
+        }
         Conditional {
             condition,
             then_branch,
@@ -1162,6 +1199,12 @@ fn collect_c_expression_variables(expression: &CExpression, names: &mut BTreeSet
         Cast { expression, .. }
         | FloatNegate(expression)
         | FloatClassification { expression, .. }
+        | EnumField {
+            value: expression, ..
+        }
+        | EnumIs {
+            value: expression, ..
+        }
         | AddressOf(expression)
         | CheckedObjectAddress(expression)
         | PointerOffsetBytes {
@@ -1175,6 +1218,11 @@ fn collect_c_expression_variables(expression: &CExpression, names: &mut BTreeSet
         | Not(expression)
         | BitwiseNot(expression)
         | Load(expression) => collect_c_expression_variables(expression, names),
+        EnumConstruct { fields, .. } => {
+            for field in fields {
+                collect_c_expression_variables(field, names);
+            }
+        }
         Conditional {
             condition,
             then_branch,
@@ -1508,7 +1556,8 @@ fn collect_spec_c_variables(
                     | SpecAlgebraicExpressionNode::Binding(_)
                     | SpecAlgebraicExpressionNode::Constructor { .. }
                     | SpecAlgebraicExpressionNode::Match { .. }
-                    | SpecAlgebraicExpressionNode::PureFunctionApplication { .. } => {}
+                    | SpecAlgebraicExpressionNode::PureFunctionApplication { .. }
+                    | SpecAlgebraicExpressionNode::CValue(_) => {}
                     SpecAlgebraicExpressionNode::If { .. } => {
                         return Visit::Stop("a conditional `if` expression");
                     }
@@ -1871,7 +1920,7 @@ fn walk_termination_paths<W: TerminationWalk>(
                 escaping.extend(case_paths.continuing);
                 escaping.extend(case_paths.broken);
             }
-            if cases.iter().all(|case| case.value.is_some()) {
+            if !cases.iter().any(|case| case.value.is_none()) {
                 escaping.extend(paths);
             }
             Ok(WalkPaths {
@@ -2128,9 +2177,13 @@ fn termination_measure_display(measure: &CExpression) -> String {
             termination_measure_display(index)
         ),
         Cast { expression, .. } => termination_measure_display(expression),
-        Conditional { .. } | FloatNegate(_) | FloatClassification { .. } | Value(_) => {
-            "…".to_string()
-        }
+        Conditional { .. }
+        | FloatNegate(_)
+        | FloatClassification { .. }
+        | EnumConstruct { .. }
+        | EnumField { .. }
+        | EnumIs { .. }
+        | Value(_) => "…".to_string(),
     }
 }
 
@@ -2622,6 +2675,9 @@ fn c_ranking_measure_term_unfolded(
                 machine_type,
                 term: value.convert(machine_type),
             })
+        }
+        EnumConstruct { .. } | EnumField { .. } | EnumIs { .. } => {
+            Err("termination measures may not read Rust enum values".into())
         }
         Conditional {
             condition,
@@ -4001,6 +4057,12 @@ fn expression_function_addresses(expression: &CExpression, taken: &mut BTreeSet<
         Cast { expression, .. }
         | FloatNegate(expression)
         | FloatClassification { expression, .. }
+        | EnumField {
+            value: expression, ..
+        }
+        | EnumIs {
+            value: expression, ..
+        }
         | AddressOf(expression)
         | CheckedObjectAddress(expression)
         | PointerOffsetBytes {
@@ -4018,6 +4080,11 @@ fn expression_function_addresses(expression: &CExpression, taken: &mut BTreeSet<
         | Not(expression)
         | BitwiseNot(expression)
         | Load(expression) => expression_function_addresses(expression, taken),
+        EnumConstruct { fields, .. } => {
+            for field in fields {
+                expression_function_addresses(field, taken);
+            }
+        }
         Conditional {
             condition,
             then_branch,

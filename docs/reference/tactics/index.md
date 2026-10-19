@@ -26,7 +26,8 @@ a form usually written by `click expand`. These categories describe usage
 in the checked examples, mdtests, and expansion output. Every listed form
 remains supported.
 
-- `execute()`: run the function to its exit, splitting at undecided C `if`s.
+- `execute()`: run the function to its exit, splitting at undecided C `if`s
+  and open Rust enum `match`es.
   See [Execution](#execution).
 - `step()`: run one C statement, to put proof steps between statements. See
   [Execution](#execution).
@@ -354,7 +355,9 @@ unchanged.
 **Core.** From a live frontier, run to function exit on the checked proof: one
 `step()` per statement, a `branch` at each undecided C `if` or call outcome, and
 a proof-level case split where a condition or statement needs explicit path
-selectors (a short-circuit, a symbolic `switch`, a may-alias load).
+selectors (a short-circuit, a symbolic `switch`, a may-alias load), and a
+proof `match` at a Rust enum `match` whose variant is open, binding each
+field as `<local>_<variant>_<index>` ([Rust enums](../rust.md#enums-and-match)).
 
 A loop the context decides is walked one iteration at a time, within a
 10,000-step budget.
@@ -1502,7 +1505,11 @@ which selects or proves its premises; list them only to pin the proof down.
 Apply a verified global theorem using exactly the listed premises and add its
 guarantees. Mathematical `Integer` arguments may use explicit machine
 observations such as `to_integer(a)`; fixed-state capture checks arithmetic
-evaluation guards and preserves `old`/`at` selectors.
+evaluation guards and preserves `old`/`at` selectors. Bare `apply` also selects
+known evaluation guards for expressions nested inside model arguments, such as
+`defined(x - 1)` for `Count::At(x - 1)`. These are selected argument conditions,
+not additional theorem requirements; removing their evidence from an expanded
+`using` list can make the application fail.
 
 Heap observations follow logical specification read semantics and grant no
 access authority. Arguments are substituted simultaneously from the caller

@@ -11,7 +11,7 @@ mod rust_trait_objects;
 pub(crate) use rust_trait_objects::implementation_interface_contract;
 pub(super) mod tokenizer;
 use cpp_model::rewrite_model_accessors;
-use name_table::{NameKind, NameTable, ShadowRestore};
+use name_table::{NameKind, NameScope, NameTable, ShadowRestore};
 use rust_syntax::rust_signature_hint;
 
 use crate::languages::SourceLanguage;
@@ -232,6 +232,9 @@ pub(in crate::surface) struct ProgramLayouts {
     /// The instances of each generic crate trait the import declares an
     /// interface of, by the trait's importer name.
     pub(in crate::surface) rust_trait_instances: BTreeMap<String, BTreeSet<Vec<String>>>,
+    /// The type of each crate enum a Rust import's signatures take or
+    /// return, by its name: a sidecar signature names it as Rust does.
+    pub(in crate::surface) rust_enum_types: BTreeMap<String, crate::kernel::TypeParameterName>,
     /// Each C++ function's calls of methods on a receiver that may be an
     /// object of a derived class, by sidecar names: the function called, and
     /// the reference parameter the receiver is, or `None` for `this`.
@@ -732,12 +735,6 @@ fn reduce_contract_binary_expression(
     values.push(constructor(Box::new(left), Box::new(right)));
 }
 
-struct ProofLetParserRestore {
-    name: String,
-    was_integer_let: bool,
-    was_contract_binding: bool,
-}
-
 struct Parser {
     c_object_names_by_function: BTreeMap<String, std::sync::Arc<BTreeSet<String>>>,
     recursion_peers_by_function: BTreeMap<String, Vec<String>>,
@@ -853,6 +850,8 @@ struct Parser {
     matching_parentheses: Vec<Option<usize>>,
     position: usize,
     struct_layouts: BTreeMap<String, syntax::C0StructLayout>,
+    /// See [`ProgramLayouts::rust_enum_types`].
+    rust_enum_types: BTreeMap<String, crate::kernel::TypeParameterName>,
     union_layouts: BTreeMap<String, syntax::C0UnionLayout>,
     aggregate_objects_by_function: BTreeMap<String, BTreeMap<String, String>>,
     aggregate_array_objects_by_function: BTreeMap<String, BTreeSet<String>>,
@@ -900,7 +899,6 @@ struct Parser {
     /// Whether specification comparisons with arithmetic are Integer
     /// comparisons (`arithmetic "integer";`).
     integer_arithmetic: bool,
-    proof_let_restores: Vec<ProofLetParserRestore>,
     /// Quantifier variables open at the cursor, innermost last. Each hides
     /// a fact of the same name inside its body.
     quantifier_binders: Vec<String>,
@@ -1193,6 +1191,7 @@ impl Parser {
         )
         .map_err(|error| error.with_kind(ClickErrorKind::Syntax))?;
         parser.c_object_names_by_function = layouts.c_object_names;
+        parser.rust_enum_types = layouts.rust_enum_types;
         parser.recursion_peers_by_function = layouts.recursion_peers;
         parser
             .implied_library_modules
@@ -1394,6 +1393,7 @@ impl Parser {
             algebraic_type_nesting: 0,
             position: 0,
             struct_layouts,
+            rust_enum_types: BTreeMap::new(),
             union_layouts,
             c_object_names_by_function: BTreeMap::new(),
             recursion_peers_by_function: BTreeMap::new(),
@@ -1413,7 +1413,6 @@ impl Parser {
             bool_value_context: false,
             algebraic_variant_fields: BTreeMap::new(),
             integer_arithmetic,
-            proof_let_restores: Vec::new(),
             quantifier_binders: Vec::new(),
             callee_resource_binders: BTreeMap::new(),
             contract_resource_binders: BTreeMap::new(),
@@ -2794,18 +2793,10 @@ impl Parser {
             return;
         };
         for (binding, field) in bindings.iter().zip(fields) {
-            match field.struct_pointer_name() {
-                Some(struct_name) => {
-                    self.names
-                        .struct_params
-                        .insert(binding.clone(), struct_name.to_string());
-                }
-                // The binding shadows any enclosing name for the arm, so an
-                // outer struct parameter must not keep lending it a layout.
-                None => {
-                    self.names.struct_params.remove(binding);
-                }
-            }
+            // The binding shadows any enclosing name for the arm, so an outer
+            // struct parameter must not keep lending it a layout.
+            self.names
+                .set_scoped_struct_param(binding, field.struct_pointer_name().map(str::to_string));
             self.names.arm_binding_types.insert(binding.clone(), field);
         }
     }
@@ -2989,32 +2980,24 @@ impl Parser {
                     self.expect(Token::RParen)?;
                 }
                 self.expect(Token::FatArrow)?;
-                let inserted = bindings
-                    .iter()
-                    .filter(|name| {
-                        self.names
-                            .insert(NameKind::ContractBinding, (*name).clone())
-                    })
-                    .cloned()
-                    .collect::<Vec<_>>();
+                let scope = self.names.scope();
+                for name in &bindings {
+                    self.names.set_scoped(NameKind::ContractBinding, name, true);
+                }
                 self.match_nesting += 1;
                 let saved_bindings = self.names.resource_bindings.clone();
                 let saved_targets = self.names.resource_targets.clone();
                 let saved_child_fields = self.hidden_child_fields.clone();
-                let saved_struct_params = self.names.struct_params.clone();
                 let saved_arm_binding_types = std::mem::take(&mut self.names.arm_binding_types);
                 self.bind_arm_binding_types(&type_name, &variant, &bindings);
                 let body = self.parse_composite_resource_body(resource_name);
                 self.names.resource_bindings = saved_bindings;
                 self.names.resource_targets = saved_targets;
                 self.hidden_child_fields = saved_child_fields;
-                self.names.struct_params = saved_struct_params;
                 self.names.arm_binding_types = saved_arm_binding_types;
+                self.names.end(scope);
                 self.match_nesting -= 1;
                 let body = body?;
-                for name in inserted {
-                    self.names.remove(NameKind::ContractBinding, &name);
-                }
                 if body
                     .contains
                     .iter()
@@ -3675,20 +3658,17 @@ impl Parser {
                         names.extend(contract_let_names.iter().cloned());
                         // Executed arguments are in scope in this proof block,
                         // including the record metadata needed for field paths.
-                        let previous_structs = self.names.struct_params.clone();
-                        let previous_arrays =
-                            self.names.set(NameKind::StructArrayParameter).clone();
-                        self.names
-                            .struct_params
-                            .extend(execution_struct_params.clone());
-                        self.names.extend(
-                            NameKind::StructArrayParameter,
-                            execution_struct_array_params.clone(),
-                        );
+                        let scope = self.names.scope();
+                        for (name, layout) in &execution_struct_params {
+                            self.names
+                                .set_scoped_struct_param(name, Some(layout.clone()));
+                        }
+                        for name in &execution_struct_array_params {
+                            self.names
+                                .set_scoped(NameKind::StructArrayParameter, name, true);
+                        }
                         let parsed = self.parse_ensure_clause_with_execution_scope(Some(&names));
-                        self.names.struct_params = previous_structs;
-                        self.names
-                            .replace(NameKind::StructArrayParameter, previous_arrays);
+                        self.names.end(scope);
                         let (ensure, introduced) = parsed?;
                         target_instances.extend(introduced);
                         ensure
@@ -7395,13 +7375,8 @@ impl Parser {
             name: String,
             negations: usize,
             previous_integer_context: bool,
-            integer_was_bound: bool,
-            integer_let_was_bound: bool,
-            c_was_bound: bool,
-            /// Where the log of the bindings this binder hides starts.
-            hidden: usize,
-            /// The bare field of the enclosing resource body it hides.
-            hidden_field: Option<ResourceFieldAccess>,
+            /// Where the bindings this binder makes and hides start.
+            names: NameScope,
         }
 
         let mut scopes = Vec::new();
@@ -7469,34 +7444,35 @@ impl Parser {
                             return Err(self.error("only pointer-to-struct types are supported"));
                         }
                         let previous_integer_context = self.integer_literal_context;
-                        let integer_was_bound =
-                            self.names.contains(NameKind::IntegerParameter, &name);
-                        let integer_let_was_bound =
-                            self.names.contains(NameKind::IntegerLet, &name);
-                        let c_was_bound = self.names.contains(NameKind::ContractBinding, &name);
                         // Like a proof binder, the quantified variable hides
                         // the value binder, fact and resource instance of
                         // its name, and the field a resource body reads by
                         // it, until its body ends.
-                        let hidden = self.names.fact_name_restores.len();
+                        let names = self.names.scope();
                         self.names.hide_for_proof_binder(&name, false);
-                        let hidden_field = self.names.resource_fields.remove(&name);
+                        self.names.hide_resource_field(&name);
                         match &click_type {
                             ClickType::Integer => {
-                                self.names.remove(NameKind::ContractBinding, &name);
-                                self.names.insert(NameKind::IntegerParameter, name.clone());
+                                self.names
+                                    .set_scoped(NameKind::ContractBinding, &name, false);
+                                self.names
+                                    .set_scoped(NameKind::IntegerParameter, &name, true);
                                 self.integer_literal_context = true;
                             }
                             ClickType::C(_) | ClickType::CObjectPointer { .. } => {
-                                self.names.remove(NameKind::IntegerParameter, &name);
-                                self.names.remove(NameKind::IntegerLet, &name);
-                                self.names.remove(NameKind::ContractBinding, &name);
+                                self.names
+                                    .set_scoped(NameKind::IntegerParameter, &name, false);
+                                self.names.set_scoped(NameKind::IntegerLet, &name, false);
+                                self.names
+                                    .set_scoped(NameKind::ContractBinding, &name, false);
                                 self.integer_literal_context = false;
                             }
                             ClickType::Algebraic(_) => {
-                                self.names.remove(NameKind::IntegerParameter, &name);
-                                self.names.remove(NameKind::IntegerLet, &name);
-                                self.names.insert(NameKind::ContractBinding, name.clone());
+                                self.names
+                                    .set_scoped(NameKind::IntegerParameter, &name, false);
+                                self.names.set_scoped(NameKind::IntegerLet, &name, false);
+                                self.names
+                                    .set_scoped(NameKind::ContractBinding, &name, true);
                                 self.integer_literal_context = false;
                             }
                             ClickType::Parameter(_) => {
@@ -7512,11 +7488,7 @@ impl Parser {
                             name,
                             negations: if group_len == 0 { negations } else { 0 },
                             previous_integer_context,
-                            integer_was_bound,
-                            integer_let_was_bound,
-                            c_was_bound,
-                            hidden,
-                            hidden_field,
+                            names,
                         });
                         operators.push(Operator::Scope);
                         group_len += 1;
@@ -7580,28 +7552,8 @@ impl Parser {
                     }
                     let scope = scopes.pop().expect("quantifier scope marker has a scope");
                     self.quantifier_binders.pop();
-                    self.names.restore_fact_names(scope.hidden);
-                    if let Some(field) = scope.hidden_field {
-                        self.names.resource_fields.insert(scope.name.clone(), field);
-                    }
+                    self.names.end(scope.names);
                     self.integer_literal_context = scope.previous_integer_context;
-                    if scope.integer_was_bound {
-                        self.names
-                            .insert(NameKind::IntegerParameter, scope.name.clone());
-                    } else {
-                        self.names.remove(NameKind::IntegerParameter, &scope.name);
-                    }
-                    if scope.integer_let_was_bound {
-                        self.names.insert(NameKind::IntegerLet, scope.name.clone());
-                    } else {
-                        self.names.remove(NameKind::IntegerLet, &scope.name);
-                    }
-                    if scope.c_was_bound {
-                        self.names
-                            .insert(NameKind::ContractBinding, scope.name.clone());
-                    } else {
-                        self.names.remove(NameKind::ContractBinding, &scope.name);
-                    }
                     let body = operands.pop().expect("quantifier body operand");
                     let mut quantifier = if scope.forall {
                         ClickProposition::ForAll {
@@ -7932,12 +7884,10 @@ impl Parser {
 
     fn parse_by_clause(&mut self) -> Result<SourceProof, ClickError> {
         self.expect_ident_spelling("by")?;
-        let let_checkpoint = self.proof_let_restores.len();
-        let fact_checkpoint = self.names.fact_name_restores.len();
+        let scope = self.names.scope();
         let previous_proof_let_names = self.names.take(NameKind::ProofBinder);
         let result = self.parse_by_clause_body();
-        self.restore_proof_let_bindings(let_checkpoint);
-        self.names.restore_fact_names(fact_checkpoint);
+        self.names.end(scope);
         self.names
             .replace(NameKind::ProofBinder, previous_proof_let_names);
         // A `;` after a closing brace ends nothing; accept it after a block
@@ -7974,26 +7924,6 @@ impl Parser {
         }
         self.names.hide_for_proof_binder(name, resource);
         Ok(())
-    }
-
-    fn restore_proof_let_bindings(&mut self, checkpoint: usize) {
-        while self.proof_let_restores.len() > checkpoint {
-            let restore = self
-                .proof_let_restores
-                .pop()
-                .expect("restore above checkpoint");
-            if restore.was_integer_let {
-                self.names
-                    .insert(NameKind::IntegerLet, restore.name.clone());
-            } else {
-                self.names.remove(NameKind::IntegerLet, &restore.name);
-            }
-            if restore.was_contract_binding {
-                self.names.insert(NameKind::ContractBinding, restore.name);
-            } else {
-                self.names.remove(NameKind::ContractBinding, &restore.name);
-            }
-        }
     }
 
     fn starts_standalone_smart_proof(&self) -> bool {
@@ -8581,20 +8511,16 @@ impl Parser {
         let previous_integer_context = self.integer_literal_context;
         for (name, click_type) in &bindings {
             self.bind_proof_name(name, false)?;
-            self.proof_let_restores.push(ProofLetParserRestore {
-                name: name.clone(),
-                was_integer_let: self.names.contains(NameKind::IntegerLet, name),
-                was_contract_binding: self.names.contains(NameKind::ContractBinding, name),
-            });
             match click_type {
                 ClickType::Integer => {
-                    self.names.remove(NameKind::ContractBinding, name);
-                    self.names.insert(NameKind::IntegerLet, name.clone());
+                    self.names
+                        .set_scoped(NameKind::ContractBinding, name, false);
+                    self.names.set_scoped(NameKind::IntegerLet, name, true);
                     self.integer_literal_context = true;
                 }
                 ClickType::C(_) | ClickType::CObjectPointer { .. } | ClickType::Algebraic(_) => {
-                    self.names.remove(NameKind::IntegerLet, name);
-                    self.names.insert(NameKind::ContractBinding, name.clone());
+                    self.names.set_scoped(NameKind::IntegerLet, name, false);
+                    self.names.set_scoped(NameKind::ContractBinding, name, true);
                     self.integer_literal_context = false;
                 }
                 ClickType::Parameter(_) => unreachable!("rejected above"),
@@ -8739,9 +8665,7 @@ impl Parser {
                 .names
                 .fact_names
                 .insert(name.clone(), have.proposition.clone());
-            self.names
-                .fact_name_restores
-                .push(ShadowRestore::Fact { name, previous });
+            self.names.undo.push(ShadowRestore::Fact { name, previous });
         }
         Ok(have)
     }
@@ -8875,14 +8799,10 @@ impl Parser {
                     self.expect(Token::RParen)?;
                 }
                 self.expect(Token::FatArrow)?;
-                let newly_bound = bindings
-                    .iter()
-                    .filter(|name| {
-                        self.names
-                            .insert(NameKind::ContractBinding, (*name).clone())
-                    })
-                    .cloned()
-                    .collect::<Vec<_>>();
+                let scope = self.names.scope();
+                for name in &bindings {
+                    self.names.set_scoped(NameKind::ContractBinding, name, true);
+                }
                 // A proof arm's struct-pointer binding is a memory base in the
                 // arm body exactly as a resource arm's is (package A5), so the
                 // arm's bindings get their declared types here too. Without
@@ -8890,20 +8810,14 @@ impl Parser {
                 // lowers as a width-unknown load, which reads a different cell
                 // from the `p->word` the same arm's `fact p == id` identifies
                 // it with.
-                let saved_struct_params = self.names.struct_params.clone();
                 let saved_arm_binding_types = std::mem::take(&mut self.names.arm_binding_types);
-                let shadow_checkpoint = self.names.fact_name_restores.len();
                 for binding in &bindings {
                     self.bind_proof_name(binding, false)?;
                 }
                 self.bind_arm_binding_types(&type_name, &variant, &bindings);
                 let tactics = self.parse_possibly_empty_tactic_block();
-                self.names.restore_fact_names(shadow_checkpoint);
-                self.names.struct_params = saved_struct_params;
+                self.names.end(scope);
                 self.names.arm_binding_types = saved_arm_binding_types;
-                for name in newly_bound {
-                    self.names.remove(NameKind::ContractBinding, &name);
-                }
                 arms.push(ProofInductionArm {
                     type_name,
                     variant,
@@ -9738,11 +9652,7 @@ impl Parser {
                 self.expect(Token::LBrace)?;
                 let else_open = self.positions[self.position - 1].clone();
                 let mut else_starts = Vec::new();
-                scopes.push((
-                    self.proof_let_restores.len(),
-                    self.names.fact_name_restores.len(),
-                    self.names.take(NameKind::ProofBinder),
-                ));
+                scopes.push((self.names.scope(), self.names.take(NameKind::ProofBinder)));
                 let mut else_tactics = Vec::new();
                 while self.peek() != Some(&Token::RBrace) && self.peek_ident() != Some("if") {
                     else_starts.push(self.positions[self.position].clone());
@@ -9784,10 +9694,8 @@ impl Parser {
                 }
                 self.record_proof_block(else_open, else_starts);
                 self.expect(Token::RBrace)?;
-                let (checkpoint, fact_checkpoint, names) =
-                    scopes.pop().expect("an else block owns a scope");
-                self.restore_proof_let_bindings(checkpoint);
-                self.names.restore_fact_names(fact_checkpoint);
+                let (scope, names) = scopes.pop().expect("an else block owns a scope");
+                self.names.end(scope);
                 self.names.replace(NameKind::ProofBinder, names);
                 self.skip_redundant_semicolon();
                 nested = Some(ProofTactic::If(ProofIf {
@@ -9800,9 +9708,8 @@ impl Parser {
             Ok(nested.expect("an if spine has a root"))
         })();
         // Error exits restore exactly the same bindings as a recursive block.
-        while let Some((checkpoint, fact_checkpoint, names)) = scopes.pop() {
-            self.restore_proof_let_bindings(checkpoint);
-            self.names.restore_fact_names(fact_checkpoint);
+        while let Some((scope, names)) = scopes.pop() {
+            self.names.end(scope);
             self.names.replace(NameKind::ProofBinder, names);
         }
         result
@@ -9990,12 +9897,10 @@ impl Parser {
     }
 
     fn parse_tactics_until_rbrace(&mut self) -> Result<Vec<ProofTactic>, ClickError> {
-        let let_checkpoint = self.proof_let_restores.len();
-        let fact_checkpoint = self.names.fact_name_restores.len();
+        let scope = self.names.scope();
         let previous_proof_let_names = self.names.take(NameKind::ProofBinder);
         let result = self.parse_tactic_list_to_rbrace();
-        self.restore_proof_let_bindings(let_checkpoint);
-        self.names.restore_fact_names(fact_checkpoint);
+        self.names.end(scope);
         self.names
             .replace(NameKind::ProofBinder, previous_proof_let_names);
         result

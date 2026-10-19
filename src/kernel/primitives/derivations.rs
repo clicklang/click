@@ -1793,8 +1793,15 @@ fn c_expression_steps_for_mode(expression: &CExpression, lvalue: bool) -> usize 
                 pending.push((else_branch, false));
             }
             CExpression::FloatNegate(expression)
-            | CExpression::FloatClassification { expression, .. } => {
-                pending.push((expression, false))
+            | CExpression::FloatClassification { expression, .. }
+            | CExpression::EnumField {
+                value: expression, ..
+            }
+            | CExpression::EnumIs {
+                value: expression, ..
+            } => pending.push((expression, false)),
+            CExpression::EnumConstruct { fields, .. } => {
+                pending.extend(fields.iter().map(|field| (field, false)))
             }
             // Scalar variables add an lvalue visit. Arrays skip it, so this is
             // a safe structural allowance without consulting an execution

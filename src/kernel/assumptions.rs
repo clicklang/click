@@ -5271,6 +5271,16 @@ impl PureFactContext {
             .inspect(|_| crate::instrumentation::record_deterministic_work(1))
     }
 
+    /// Whether these facts give `value` a constructor.
+    pub(crate) fn knows_algebraic_constructor(&self, value: &AlgebraicTerm) -> bool {
+        self.known_algebraic_constructor(value).is_some()
+    }
+
+    /// Whether a fact equates some algebraic variable to a constructor.
+    pub(crate) fn has_algebraic_constructor_facts(&self) -> bool {
+        !self.algebraic_variable_constructors.is_empty()
+    }
+
     pub(in crate::kernel) fn known_algebraic_constructor(
         &self,
         value: &AlgebraicTerm,
