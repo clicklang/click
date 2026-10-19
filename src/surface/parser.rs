@@ -412,11 +412,9 @@ pub(super) fn parse_file_items_for_module(
     identity: &str,
     line_offset: usize,
     imported_algebraic_types: &[AlgebraicTypeDefinition],
-    imported_tactic_names: &BTreeSet<String>,
-    imported_function_names: &BTreeSet<String>,
     imported_callees: &[ImportedCallee<'_>],
     imported_resources: &[&ResourceDefinition],
-    imported_declarations: &names::ImportedDeclarationNames,
+    imported_declarations: &[(names::DeclarationKind, String)],
     layouts: ProgramLayouts,
 ) -> Result<ClickFile, ClickError> {
     let mut parser = Parser::with_program_layouts(
@@ -425,12 +423,12 @@ pub(super) fn parse_file_items_for_module(
         Some(&crate::source::SourceContainer::new(identity, line_offset)),
     )?;
     parser.symbols.import_declarations(imported_declarations)?;
-    parser
-        .pure_function_names
-        .extend(imported_function_names.iter().cloned());
-    parser
-        .tactic_names
-        .extend(imported_tactic_names.iter().cloned());
+    let imported_tactics = parser
+        .symbols
+        .imported_names(names::DeclarationKind::Tactic)
+        .map(str::to_string)
+        .collect::<Vec<_>>();
+    parser.tactic_names.extend(imported_tactics);
     for callee in imported_callees {
         let (named_contract, block) = match callee {
             ImportedCallee::Function(block) => (false, *block),
@@ -732,7 +730,7 @@ struct Parser {
     library_module: bool,
     /// The theorems the file declares, which a citation by bare name names
     /// before any library theorem of that name. Empty in a library module.
-    symbols: names::FileSymbols,
+    symbols: names::SymbolTable,
     source_aliases: BTreeMap<String, String>,
     qualified_functions: BTreeMap<(String, String), String>,
     qualified_objects: Option<BTreeMap<String, BTreeMap<String, parser::QualifiedCObject>>>,
@@ -854,12 +852,6 @@ struct Parser {
     /// contract bindings, Integer parameters and lets, theorem parameters
     /// and proof binders (see [`NameKind`]).
     names: NameTable,
-    /// Names of the pure functions this module can call: its own
-    /// declarations, indexed before any item is parsed, its imports' and the
-    /// standard library's. A bare call written where a proposition is
-    /// expected reads as `f(args) == true` when it names one of these, and
-    /// as a predicate call otherwise.
-    pure_function_names: BTreeSet<String>,
     /// The pure functions of this module that take a slice, indexed with
     /// their names: each one's written parameter count and the positions of
     /// its `name: &[T]` parameters. A call passes such a parameter a slice,
@@ -1396,7 +1388,6 @@ impl Parser {
             local_struct_pointers_by_function: BTreeMap::new(),
             current_reference_result: false,
             names: NameTable::default(),
-            pure_function_names: BTreeSet::new(),
             pure_function_slices: BTreeMap::new(),
             integer_function_names: BTreeSet::new(),
             pending_slice_params: None,
@@ -1463,7 +1454,9 @@ impl Parser {
             .map(|(index, _)| index)
             .collect::<Vec<_>>();
         crate::instrumentation::record_deterministic_work(self.tokens.len());
-        for declaration in names::top_level_declarations(&self.tokens) {
+        let declarations = names::top_level_declarations(&self.tokens);
+        self.symbols.declare_file(&declarations);
+        for declaration in declarations {
             match declaration.kind {
                 names::DeclarationKind::Enum
                     if declaration.at >= 2
@@ -1487,15 +1480,12 @@ impl Parser {
                         self.integer_function_names.insert(name.clone());
                     }
                     if let Some(slices) = self.written_slice_parameters(parameters) {
-                        self.pure_function_slices.insert(name.clone(), slices);
+                        self.pure_function_slices.insert(name, slices);
                     }
-                    self.pure_function_names.insert(name);
                 }
                 _ => {}
             }
         }
-        self.pure_function_names
-            .extend(names::library_pure_function_names().iter().cloned());
         for index in shift_rights {
             self.tokens[index] = Token::ShiftRight;
         }
@@ -7359,7 +7349,7 @@ impl Parser {
                     self.position = start;
                     return self.parse_proposition_comparison();
                 }
-                _ if self.pure_function_names.contains(&name) => {
+                _ if self.symbols.is_pure_function(&name) => {
                     return Ok(bool_truth(ContractExpression::Call { name, arguments }));
                 }
                 _ => return Ok(ClickProposition::PredicateCall { name, arguments }),

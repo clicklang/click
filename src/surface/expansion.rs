@@ -2388,7 +2388,7 @@ fn with_cited_library_imports(source: String, replacement: &str, original: &str)
     let cited = replacement
         .split(|character: char| !(character.is_alphanumeric() || character == '_'))
         .filter(|word| !word.is_empty());
-    let mut imported = names::FileSymbols::for_source(&source)
+    let mut imported = names::SymbolTable::for_source(&source)
         .map(|symbols| symbols.visible_modules())
         .unwrap_or_default();
     imported.extend(

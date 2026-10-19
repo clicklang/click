@@ -171,6 +171,12 @@ names, their targets and hidden child fields are bound through the same log,
 so a proof-bound instance name ends with its block and a resource match arm
 copies nothing.
 
+A file's top-level declarations, its imported modules' and its library
+bindings are one `SymbolTable`, built once per file: the project loader
+hands each module its imports' declarations, and the parser asks the table
+whether a call names a pure function, which theorem a bare citation names
+and which tactics an import declares, instead of keeping a set per kind.
+
 The complete scoped table for parameters, fields, binders, constructors,
 resources, program points and project modules remains open. Expansion
 splices through parser spans: proof blocks, arms, claim and loop-phase proof

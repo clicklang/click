@@ -19,6 +19,18 @@ pub(super) enum DeclarationKind {
     Tactic,
     /// `extern <return type> name(...)`.
     Extern,
+    /// A named contract. Only an imported module's are recorded: the
+    /// top-level walk does not read them.
+    Contract,
+}
+
+/// Where a declaration in a [`SymbolTable`] comes from.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum DeclarationOrigin {
+    /// The file itself.
+    File,
+    /// A user module the file imports.
+    Imported,
 }
 
 /// A declaration a file makes at top level, as its tokens show it: the
@@ -156,22 +168,6 @@ pub(in crate::surface) fn library_theorem_identities() -> &'static BTreeMap<Stri
     })
 }
 
-/// The theorems a file declares at top level.
-pub(super) fn top_level_theorem_names(tokens: &[Token]) -> BTreeSet<String> {
-    top_level_declarations(tokens)
-        .into_iter()
-        .filter(|declaration| declaration.kind == DeclarationKind::Theorem)
-        .map(|declaration| declaration.name)
-        .collect()
-}
-
-fn top_level_declaration_names(tokens: &[Token]) -> BTreeSet<String> {
-    top_level_declarations(tokens)
-        .into_iter()
-        .map(|declaration| declaration.name)
-        .collect()
-}
-
 /// The Click library modules whose functions and predicates, not only
 /// theorems, have qualified verifier identities. A module joins when its
 /// names drop their prefixes and its uses move to paths.
@@ -278,7 +274,7 @@ fn module_identity(segments: &[&str]) -> Option<&'static str> {
 /// Rewrites each qualified library name to the declaration it names, and
 /// records how it was written ([`WrittenPath`]). A selectively imported bare
 /// name is left as written: only the parser knows whether it is read as a
-/// Click reference ([`FileSymbols::reference`]).
+/// Click reference ([`SymbolTable::reference`]).
 ///
 /// `click::m::name` names `name` in module `click::m` and needs no import;
 /// its module joins the returned set, which the file adds to its library
@@ -291,7 +287,7 @@ pub(super) struct ResolvedLibraryTokens {
     pub(super) tokens: Vec<Token>,
     pub(super) positions: Vec<SourcePosition>,
     pub(super) path_modules: BTreeSet<&'static str>,
-    pub(super) symbols: FileSymbols,
+    pub(super) symbols: SymbolTable,
 }
 
 /// A library path joined into one token, as it was written. A C or C++
@@ -311,7 +307,7 @@ pub(super) fn resolve_library_paths(
     file: Option<&str>,
 ) -> Result<ResolvedLibraryTokens, ClickError> {
     if !tokens.contains(&Token::ColonColon) {
-        let scope = FileSymbols::from_tokens(&tokens, &positions, file)?;
+        let scope = SymbolTable::from_tokens(&tokens, &positions, file)?;
         return Ok(ResolvedLibraryTokens {
             tokens,
             positions,
@@ -320,10 +316,10 @@ pub(super) fn resolve_library_paths(
         });
     }
     let names = library_declaration_names();
-    let scope = FileSymbols::from_tokens(&tokens, &positions, file)?;
+    let scope = SymbolTable::from_tokens(&tokens, &positions, file)?;
     let mut scope = scope;
     let mut written_paths = BTreeMap::new();
-    let FileSymbols {
+    let SymbolTable {
         in_scope,
         import_spans,
         own,
@@ -499,29 +495,30 @@ fn path_error(positions: &[SourcePosition], index: usize, message: String) -> Cl
     .with_kind(ClickErrorKind::Syntax)
 }
 
-/// The top-level declaration names of the user modules a file imports.
+/// A file's symbol table: the top-level declarations of the file and of the
+/// user modules it imports, and the library modules and selectively imported
+/// names in scope. Lowering resolves file-level names here, and source
+/// spelling asks it how to write a name ([`Self::spelling`]). Canonical
+/// library identities never depend on printed text. Names bound inside a
+/// declaration are the parser's scoped `NameTable`.
 #[derive(Clone, Debug, Default)]
-pub(in crate::surface) struct ImportedDeclarationNames {
-    pub(in crate::surface) theorems: BTreeSet<String>,
-    /// Functions, predicates, resources, enums, tactics and contracts.
-    pub(in crate::surface) others: BTreeSet<String>,
-}
-
-/// File-level declaration and import bindings shared by lowering and source
-/// spelling. Canonical library identities never depend on printed text.
-#[derive(Clone, Debug, Default)]
-pub(super) struct FileSymbols {
+pub(super) struct SymbolTable {
     in_scope: BTreeMap<String, &'static str>,
     selected: BTreeMap<String, String>,
     import_spans: BTreeMap<usize, usize>,
     own: Option<&'static str>,
-    local_theorems: BTreeSet<String>,
+    /// Whether the file is a Click library module, whose bare theorem
+    /// citations name library theorems, its own included.
+    library_module: bool,
+    /// Each declared name's kinds and origins. A name declared twice keeps
+    /// both entries; validation refuses the duplicate.
+    declared: BTreeMap<String, Vec<(DeclarationKind, DeclarationOrigin)>>,
     explicit_paths: BTreeSet<String>,
     /// The library paths joined into one token, by their first position.
     written_paths: BTreeMap<SourcePosition, WrittenPath>,
 }
 
-impl FileSymbols {
+impl SymbolTable {
     fn from_tokens(
         tokens: &[Token],
         positions: &[SourcePosition],
@@ -538,7 +535,13 @@ impl FileSymbols {
         // statements, which are left as written.
         let mut selected = BTreeMap::<String, String>::new();
         let mut import_spans = BTreeMap::new();
-        let local = top_level_declaration_names(tokens);
+        let mut declared = BTreeMap::<String, Vec<(DeclarationKind, DeclarationOrigin)>>::new();
+        for declaration in top_level_declarations(tokens) {
+            declared
+                .entry(declaration.name)
+                .or_default()
+                .push((declaration.kind, DeclarationOrigin::File));
+        }
         for (index, token) in tokens.iter().enumerate() {
             if *token != Token::Ident("import".to_string())
                 || tokens.get(index + 1) != Some(&Token::Ident("click".to_string()))
@@ -563,7 +566,7 @@ impl FileSymbols {
             {
                 cursor += 2;
                 while let Some(Token::Ident(name)) = tokens.get(cursor) {
-                    if local.contains(name) {
+                    if declared.contains_key(name) {
                         return Err(path_error(
                             positions,
                             cursor,
@@ -637,11 +640,8 @@ impl FileSymbols {
             selected,
             import_spans,
             own,
-            local_theorems: if file.is_some_and(|file| file.starts_with("library/")) {
-                BTreeSet::new()
-            } else {
-                top_level_theorem_names(tokens)
-            },
+            library_module: file.is_some_and(|file| file.starts_with("library/")),
+            declared,
             explicit_paths,
             written_paths: BTreeMap::new(),
         })
@@ -678,13 +678,11 @@ impl FileSymbols {
     /// is refused, so one bare name never reads as two declarations.
     pub(super) fn import_declarations(
         &mut self,
-        imported: &ImportedDeclarationNames,
+        imported: &[(DeclarationKind, String)],
     ) -> Result<(), ClickError> {
-        if let Some(name) = imported
-            .theorems
+        if let Some((_, name)) = imported
             .iter()
-            .chain(&imported.others)
-            .find(|name| self.selected.contains_key(*name))
+            .find(|(_, name)| self.selected.contains_key(name))
         {
             return Err(ClickError::new(format!(
                 "`{name}` is imported from the Click library as `{}` and also declared by an imported module; drop the library import, rename the declaration, or write the library's by its path",
@@ -692,15 +690,54 @@ impl FileSymbols {
             ))
             .with_kind(ClickErrorKind::Syntax));
         }
-        if self.own.is_none() {
-            self.local_theorems
-                .extend(imported.theorems.iter().cloned());
+        for (kind, name) in imported {
+            self.declared
+                .entry(name.clone())
+                .or_default()
+                .push((*kind, DeclarationOrigin::Imported));
         }
         Ok(())
     }
 
+    /// Records the file's declarations as the parser reads them, after the
+    /// rewrites that write out declarations the source does not spell, such
+    /// as a Rust generic function's instances.
+    pub(super) fn declare_file(&mut self, declarations: &[TopLevelDeclaration]) {
+        for declaration in declarations {
+            let entries = self.declared.entry(declaration.name.clone()).or_default();
+            if !entries.contains(&(declaration.kind, DeclarationOrigin::File)) {
+                entries.push((declaration.kind, DeclarationOrigin::File));
+            }
+        }
+    }
+
+    /// Whether the file or a user module it imports declares `name` as `kind`.
+    pub(super) fn declares(&self, kind: DeclarationKind, name: &str) -> bool {
+        self.declared
+            .get(name)
+            .is_some_and(|entries| entries.iter().any(|(declared, _)| *declared == kind))
+    }
+
+    /// The names the user modules this file imports declare as `kind`.
+    pub(super) fn imported_names(&self, kind: DeclarationKind) -> impl Iterator<Item = &str> {
+        self.declared.iter().filter_map(move |(name, entries)| {
+            entries
+                .contains(&(kind, DeclarationOrigin::Imported))
+                .then_some(name.as_str())
+        })
+    }
+
+    /// Whether a call `name(...)` reads a pure function: one the file, an
+    /// imported module or the Click library declares. A bare call written
+    /// where a proposition is expected reads as `f(args) == true` when it
+    /// names one, and as a predicate call otherwise.
+    pub(super) fn is_pure_function(&self, name: &str) -> bool {
+        self.declares(DeclarationKind::Function, name)
+            || library_pure_function_names().contains(name)
+    }
+
     pub(super) fn theorem_identity(&self, name: String) -> String {
-        if self.local_theorems.contains(&name) {
+        if !self.library_module && self.declares(DeclarationKind::Theorem, &name) {
             name
         } else {
             bare_theorem_citation(&name).cloned().unwrap_or(name)

@@ -640,18 +640,7 @@ fn standard_library() -> Result<&'static ClickFile, ClickError> {
 }
 
 fn empty_library_file() -> Result<ClickFile, ClickError> {
-    parser::parse_file_items_for_module(
-        "",
-        "library",
-        0,
-        &[],
-        &BTreeSet::new(),
-        &BTreeSet::new(),
-        &[],
-        &[],
-        &Default::default(),
-        Default::default(),
-    )
+    parser::parse_file_items_for_module("", "library", 0, &[], &[], &[], &[], Default::default())
 }
 
 /// Parses each module in library order with the declarations of the modules
@@ -665,11 +654,6 @@ fn load_library_modules(modules: &[(&str, &str)]) -> Result<Vec<LibraryModule>, 
     let mut loaded: Vec<LibraryModule> = Vec::new();
     let mut context = empty_library_file()?;
     for (position, (identity, source)) in modules.iter().enumerate() {
-        let functions = context
-            .click_function_definitions()
-            .iter()
-            .map(|function| function.name().to_string())
-            .collect();
         let callees = context
             .function_blocks()
             .iter()
@@ -687,11 +671,9 @@ fn load_library_modules(modules: &[(&str, &str)]) -> Result<Vec<LibraryModule>, 
             identity,
             0,
             context.algebraic_type_definitions(),
-            &BTreeSet::new(),
-            &functions,
             &callees,
             &resources,
-            &Default::default(),
+            &[],
             Default::default(),
         )?;
         if !module.verifying_sources().is_empty()
