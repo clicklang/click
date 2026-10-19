@@ -1,6 +1,47 @@
 use super::*;
 
 #[test]
+#[ignore = "nightly: verifies the original descriptor proof and its rejection controls"]
+fn borrowed_resource_receipts_survive_post_return_folds() {
+    let (source, sources) =
+        mdtest_sources("mdtests/unfold_region_then_write_a_descriptor_of_its_type.md");
+    let sources = sources
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    verify_c0_sources(&source, &sources)
+        .expect("all borrowed resources must survive the checked post-return folds");
+
+    let missing_owner = source.replacen("owns *other;", "", 1);
+    assert_ne!(missing_owner, source);
+    assert!(verify_c0_sources(&missing_owner, &sources).is_err());
+
+    let false_result = source.replacen(
+        "owns *other;",
+        "owns *other;\n    ensures result != result;",
+        1,
+    );
+    assert_ne!(false_result, source);
+    assert!(verify_c0_sources(&false_result, &sources).is_err());
+}
+
+#[test]
+fn borrowed_resource_receipts_do_not_hide_an_unspent_authority_member() {
+    let (source, sources) =
+        mdtest_sources("mdtests/authority_helper_raw_consume_without_spend_rejected.md");
+    let sources = sources
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    let error = verify_c0_sources(&source, &sources)
+        .expect_err("returning the borrowed authority does not establish the declared spend");
+    assert!(
+        error.to_string().contains("Requires consumes ticket(p)"),
+        "{error}"
+    );
+}
+
+#[test]
 #[ignore = "nightly: generated 256-clause outcome proof and expansion controls"]
 fn outcome_arithmetic_is_independent_of_postcondition_count() {
     let c_source = "int32 caller(int32 x) { return x; }";

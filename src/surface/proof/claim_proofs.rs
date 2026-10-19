@@ -4808,13 +4808,11 @@ pub(super) fn finish_ordered_proof<'a>(
                             checked_resource_claims_by_path[path_index].push(key.clone());
                         }
                     }
-                    let has_returned_resource_claims =
-                        claims.iter().enumerate().any(|(claim_index, claim)| {
-                            matches!(claim.clause().ensure(), Ensure::Resource(_))
-                                && closures[claim_index].closed().is_some_and(
-                                    ClosedClaim::contributes_checked_resource_claim_resources,
-                                )
-                        });
+                    // Borrowed outputs also have checked receipts, even when no
+                    // `produces` clause contributes a new returned owner.
+                    let has_resource_claims = claims
+                        .iter()
+                        .any(|claim| matches!(claim.clause().ensure(), Ensure::Resource(_)));
                     let deferred_resource_transition =
                         claims.iter().enumerate().any(|(claim_index, claim)| {
                             matches!(claim.clause().ensure(), Ensure::Resource(_))
@@ -4822,7 +4820,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                     .closed()
                                     .is_some_and(ClosedClaim::defers_checked_resource_transition)
                         });
-                    let all_resource_claims_checked = has_returned_resource_claims
+                    let all_resource_claims_checked = has_resource_claims
                         && claims
                             .iter()
                             .enumerate()
@@ -4876,10 +4874,6 @@ pub(super) fn finish_ordered_proof<'a>(
                     let returned_resources_are_jointly_available = matches!(outcome, CFunctionOutcome::Return { ref state, .. } if {
                         resource_receipts_jointly_available(state.resources(), &checked_resource_receipts, &receipt_assumptions)
                     });
-                    checked_resource_transitions_by_path[path_index] = !deferred_resource_transition
-                        && (resource_transition_applied
-                            || (all_resource_claims_checked
-                                && returned_resources_are_jointly_available));
                     if all_resource_claims_checked {
                         checked_returned_resources_by_path[path_index] =
                             checked_returned_resources.clone();
@@ -4956,6 +4950,16 @@ pub(super) fn finish_ordered_proof<'a>(
                             "return instance fold has no checked function outcome",
                         ));
                     };
+                    // Ownership receipts do not discharge the contract's lifecycle
+                    // obligations. Reuse them only after the kernel's checked exit
+                    // returned successfully; retain any boundary refusal for normal
+                    // certification. An explicitly applied checked transition already
+                    // carries that evidence, including after post-return folds.
+                    checked_resource_transitions_by_path[path_index] = !deferred_resource_transition
+                        && (resource_transition_applied
+                            || (matches!(specification_outcome, CFunctionOutcome::Return { .. })
+                                && all_resource_claims_checked
+                                && returned_resources_are_jointly_available));
                     let specification_outcome = specification_outcome.clone();
                     let specification_requirements = certified_path.assumptions().pure_facts();
                     let specification = c_function_specification(
