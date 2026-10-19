@@ -338,7 +338,7 @@ fn cpp_mdtest_imports_match_the_pinned_exporter() {
         let files = files.unwrap_or_else(|error| panic!("`{}`: {error}", path.display()));
         kept.insert(directory.clone());
         let checked_in = checked_in_files(&directory);
-        if checked_in == files {
+        if same_import(&checked_in, &files) {
             continue;
         }
         if refresh {
@@ -367,6 +367,48 @@ fn cpp_mdtest_imports_match_the_pinned_exporter() {
         "C++ mdtest imports differ from the pinned exporter's; run scripts/refresh-cpp-imports.sh:\n  {}",
         problems.join("\n  ")
     );
+}
+
+/// Whether two imports hold the same artifacts and the same lock apart from
+/// the exporter build's identity. Every machine builds its own pinned
+/// exporter, so the binary's digest, and the identities derived from it,
+/// differ between machines that export the same artifacts.
+fn same_import(
+    left: &std::collections::BTreeMap<PathBuf, Vec<u8>>,
+    right: &std::collections::BTreeMap<PathBuf, Vec<u8>>,
+) -> bool {
+    fn without_exporter_identity(value: &mut serde_json::Value) {
+        match value {
+            serde_json::Value::Object(fields) => {
+                for (name, field) in fields.iter_mut() {
+                    if matches!(name.as_str(), "identity" | "unit") && field.is_string() {
+                        *field = serde_json::Value::Null;
+                    } else {
+                        without_exporter_identity(field);
+                    }
+                }
+            }
+            serde_json::Value::Array(items) => items.iter_mut().for_each(without_exporter_identity),
+            _ => {}
+        }
+    }
+    let lock = |bytes: &[u8]| {
+        let mut value = serde_json::from_slice::<serde_json::Value>(bytes).ok()?;
+        without_exporter_identity(&mut value);
+        Some(value)
+    };
+    left.len() == right.len()
+        && left
+            .iter()
+            .zip(right)
+            .all(|((left_path, left_bytes), (right_path, right_bytes))| {
+                left_path == right_path
+                    && if left_path.as_os_str() == "click.project.lock.json" {
+                        lock(left_bytes).is_some_and(|left| Some(left) == lock(right_bytes))
+                    } else {
+                        left_bytes == right_bytes
+                    }
+            })
 }
 
 /// The files under `directory`, by their paths inside it.
