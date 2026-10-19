@@ -580,15 +580,20 @@ fn tactic_line_disambiguation_uses_columns_only_for_shared_lines() {
             .line_has_multiple_starts(position)
             .unwrap()
     };
-    let source = "by { step(); step(); }\nby {\n    step();\n}\n";
-    assert!(multiple(source, &SourcePosition::new(1, 6)));
-    assert!(multiple(source, &SourcePosition::new(1, 14)));
-    assert!(!multiple(source, &SourcePosition::new(3, 5)));
+    let source = "void f() {} by { step(); step(); }\nvoid g() {} by {\n    step();\n}\n";
+    let steps = source
+        .match_indices("step")
+        .map(|(offset, _)| position_at_offset(source, offset))
+        .collect::<Vec<_>>();
+    assert!(multiple(source, &steps[0]));
+    assert!(multiple(source, &steps[1]));
+    assert!(!multiple(source, &steps[2]));
 
-    let quantified = "by { have exists (x: int32) { x == x }; }\n";
-    assert!(!multiple(quantified, &SourcePosition::new(1, 6)));
+    let quantified = "theorem t() { ensures true by { have exists (x: int32) { x == x }; } }\n";
+    let have = position_at_offset(quantified, quantified.find("have").unwrap());
+    assert!(!multiple(quantified, &have));
 
-    let nested = "by {\n    have n <= n by { simp(); }\n}\n";
+    let nested = "theorem t(n: int32) { ensures true by {\n    have n <= n by { simp(); }\n} }\n";
     let have = position_at_offset(nested, nested.find("have").unwrap());
     let simp = position_at_offset(nested, nested.find("simp").unwrap());
     assert!(!multiple(nested, &have));
@@ -597,7 +602,7 @@ fn tactic_line_disambiguation_uses_columns_only_for_shared_lines() {
 
 #[test]
 fn trace_target_selects_only_the_arm_containing_its_source_position() {
-    let source = "by {\n  branch { step(); } else { step(); }\n  step();\n}\n";
+    let source = "void f() {} by {\n  branch { step(); } else { step(); }\n  step();\n}\n";
     let branch = position_at_offset(source, source.find("branch").unwrap());
     let then_step = position_at_offset(
         source,
@@ -616,12 +621,16 @@ fn trace_target_selects_only_the_arm_containing_its_source_position() {
 
 #[test]
 fn nested_tactic_position_follows_have_and_open_bodies() {
-    let source = "by {\nhave true by {\n    open(resource) {\n        have true by {\n            assumption();\n        }\n    }\n}\n}\n";
+    let source = "resource cell(p: int32*) { owns *p; }\nvoid f(int32* p) {\n    owns r: cell(p);\n} by {\nhave true by {\n    open(cell(p)) {\n        have true by {\n            assumption();\n        }\n    }\n}\n}\n";
+    let have = position_at_offset(source, source.find("have").unwrap());
     let position = ProofSourceIndex::new(source)
         .unwrap()
-        .nested_position(&SourcePosition::new(2, 1), &[0, 0, 0])
+        .nested_position(&have, &[0, 0, 0])
         .expect("nested step has a source position");
-    assert_eq!(position, SourcePosition::new(5, 13));
+    assert_eq!(
+        position,
+        position_at_offset(source, source.find("assumption").unwrap())
+    );
 }
 
 #[test]
@@ -3437,25 +3446,16 @@ fn a_declaration_position_skips_uses_inside_bodies() {
 #[test]
 fn a_parsed_source_index_holds_only_proof_blocks() {
     let source = "spec enum Mode {\n    Off,\n    On(int32),\n}\n\nresource mode_at(p: int32*) {\n    field model: Mode;\n    match model {\n        Mode::Off => { fact p == 0; },\n        Mode::On(count) => { fact count > 0; },\n    }\n}\n\ntheorem t() {\n    ensures true by { simp(); }\n}\n";
-    let spans = parser::parsed_source_spans(source, parser::ProgramLayouts::default()).unwrap();
-    let opens = |index: &ProofSourceIndex| {
-        index
-            .written_blocks()
-            .into_iter()
-            .map(|(open, _, _)| open.line)
-            .collect::<Vec<_>>()
-    };
-    // The lexical reading takes the `match` arms for proofs.
-    assert_eq!(opens(&ProofSourceIndex::new(source).unwrap()), [9, 10, 15]);
-    assert_eq!(
-        opens(&ProofSourceIndex::build(source, Some(&spans)).unwrap()),
-        [15]
-    );
+    let index = ProofSourceIndex::new(source).unwrap();
+    // A resource `match` arm is braced like a proof arm but is not one.
+    assert!(index.starts_on_line(9).is_empty());
+    assert!(index.starts_on_line(10).is_empty());
+    assert_eq!(index.starts_on_line(15).len(), 1);
 }
 
 #[test]
 fn trace_source_index_preserves_nested_locations_and_containment() {
-    let source = "// αβ UTF-8\nby {\n  have true by { open(resource) { assumption(); } }\n  if true { normalize(); } else { simp(); }\n  cases { true => { step(); } false => { normalize(); } }\n  both { normalize(); } and { simp(); }\n  outcomes { threw => { step(); } returned => { simp(); } }\n  branch ensuring { true } then { step(); } else { simp(); }\n  normalize();\n}\n";
+    let source = "// αβ UTF-8\nresource cell(p: int32*) { owns *p; }\nvoid f(int32* p) {\n    owns r: cell(p);\n} by {\n  have true by { open(cell(p)) { assumption(); } }\n  if true { normalize(); } else { simp(); }\n  cases { true => { step(); } false => { normalize(); } }\n  both { normalize(); } and { simp(); }\n  outcomes { threw => { step(); } returned => { simp(); } }\n  branch ensuring { fact true; } then { step(); } else { simp(); }\n  normalize();\n}\n";
     let index = ProofSourceIndex::new(source).unwrap();
     // A `branch` shares its line only with its own arms' tactics, which are
     // inside it, so the line names it alone.
@@ -3472,7 +3472,7 @@ fn trace_source_index_preserves_nested_locations_and_containment() {
     let have = position_at_offset(source, source.find("have").unwrap());
     assert_eq!(
         index.nested_position(&have, &[0, 0]).unwrap(),
-        SourcePosition::new(3, 35)
+        position_at_offset(source, source.find("assumption").unwrap())
     );
     // Each second arm's first tactic.
     for (kind, inner) in [
@@ -3495,7 +3495,7 @@ fn trace_source_index_preserves_unicode_and_implicit_proof_columns() {
     let answers = |proof: &str| {
         let source = &format!("theorem t() {{\n    /* αβ */ ensures true {proof}\n}}\n");
         let spans = parser::parsed_source_spans(source, parser::ProgramLayouts::default()).unwrap();
-        let index = ProofSourceIndex::build(source, Some(&spans)).unwrap();
+        let index = ProofSourceIndex::build(source, &spans).unwrap();
         let have = position_at_offset(source, source.find("have").unwrap());
         let child = index.nested_position(&have, &[0]).unwrap();
         assert_eq!(
