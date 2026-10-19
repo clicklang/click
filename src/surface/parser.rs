@@ -4592,6 +4592,7 @@ impl Parser {
                 signature: FunctionSignature {
                     c_source: None,
                     return_type: C0Type::Void,
+                    return_struct_name: None,
                     return_pointee_constant: false,
                     return_reference: false,
                     name,
@@ -4755,6 +4756,7 @@ impl Parser {
             signature: FunctionSignature {
                 c_source,
                 return_type,
+                return_struct_name: parsed_return_type.struct_name.clone(),
                 return_pointee_constant: parsed_return_type.pointee_constant,
                 return_reference: parsed_return_type.reference,
                 name,

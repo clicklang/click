@@ -293,6 +293,7 @@ impl Parser {
             signature: FunctionSignature {
                 c_source: None,
                 return_type,
+                return_struct_name: parsed_return_type.struct_name.clone(),
                 return_pointee_constant: false,
                 return_reference: false,
                 name,

@@ -23,7 +23,7 @@ impl AlgebraicVariables {
     fn function(signature: &FunctionSignature, include_result: bool) -> Self {
         let mut variables = Self::parameters(signature.parameters());
         if include_result && signature.return_type() != C0Type::Void {
-            variables.insert("result", signature.return_type());
+            variables.bind("result", signature.return_click_type());
         }
         variables
     }
