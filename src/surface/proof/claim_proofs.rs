@@ -1154,7 +1154,8 @@ struct ClaimStepMiss {
 }
 
 /// Applies one written step to a proposition claim. A claim a `rewrite` left
-/// on its own proof is continued there and nowhere else. Otherwise each
+/// on its own proof is continued there and nowhere else, after that proof
+/// takes up the outcome's current state from `root`. Otherwise each
 /// candidate goal is focused from `root` in turn until the step applies.
 /// `step` returns an outer error to abort the tactic, and an inner one to
 /// refuse the goal it was given.
@@ -1166,7 +1167,11 @@ fn apply_claim_step<'a>(
     step: impl Fn(&Proof<'a>, ClaimProofOrigin) -> Result<Result<Proof<'a>, ClickError>, ClickError>,
 ) -> Result<Result<ClaimStepApplied<'a>, ClaimStepMiss>, ClickError> {
     if let Some((rewritten, checkpoint)) = rewritten {
-        return match step(rewritten, ClaimProofOrigin::Rewritten)? {
+        let rewritten = match root {
+            Some(root) => rewritten.refresh_outcome_from(root)?,
+            None => rewritten.clone(),
+        };
+        return match step(&rewritten, ClaimProofOrigin::Rewritten)? {
             Ok(proof) => Ok(Ok(ClaimStepApplied {
                 certificate: proof.certificate_since(checkpoint)?,
                 proof,
@@ -1674,18 +1679,55 @@ pub(super) fn proof_case_fact_conflicts(
     Ok(conflicts)
 }
 
-/// Continues the claim proof that earlier deferred tactics opened (an
-/// `intro`, a `witness`) with a closer, rather than starting over at the
-/// claims. `Ok(true)` means the closer applied there: a completed proof
-/// closes its claim, an incomplete one stays open. `Ok(false)` means the
-/// caller reads the closer against the claims instead, because no proof was
-/// open or because the closer did not apply after an `intro`. A proof a
-/// `witness` or `let` opened commits to that choice, so a closer that does
-/// not apply to it is an error: reading it against the claims could close
-/// one without the witness.
+/// One claim's own proof after execution, opened by `choose`, `witness`,
+/// `let` or `intro` and continued by the tactics after them.
+struct OpenedClaimProof<'a> {
+    claim_index: usize,
+    surface_goal: ClickProposition,
+    proof: Proof<'a>,
+    /// An `intro` opened a scope: a later `have` extends this proof, and a
+    /// closer that does not apply to it is read against the claims instead.
+    /// A proof only `choose`, `witness` or `let` opened commits to that
+    /// choice, so a closer that does not apply to it is an error: reading it
+    /// against the claims could close one without the witness.
+    introduces_scope: bool,
+}
+
+impl<'a> OpenedClaimProof<'a> {
+    fn with_proof(&self, proof: Proof<'a>) -> Self {
+        Self {
+            claim_index: self.claim_index,
+            surface_goal: self.surface_goal.clone(),
+            proof,
+            introduces_scope: self.introduces_scope,
+        }
+    }
+
+    /// Whether a closer that does not apply here is read against the claims.
+    fn falls_back_on_miss(&self) -> bool {
+        self.introduces_scope
+    }
+}
+
+/// Takes the opened claim proof to continue, dropping one whose claim a
+/// closer has since closed through the claims.
+fn take_opened_claim<'a>(
+    opened_claim: &mut Option<OpenedClaimProof<'a>>,
+    closures: &[ClaimClosure],
+) -> Option<OpenedClaimProof<'a>> {
+    opened_claim
+        .take()
+        .filter(|opened| !closures[opened.claim_index].is_closed())
+}
+
+/// Continues the claim proof that earlier deferred tactics opened with a
+/// closer, rather than starting over at the claims. `Ok(true)` means the
+/// closer applied there: a completed proof closes its claim, an incomplete
+/// one stays open. `Ok(false)` means the caller reads the closer against the
+/// claims instead, because no proof was open or because the closer did not
+/// apply to one that falls back on a miss.
 fn continue_claim_existence_proof<'a>(
-    existence_proof: &mut Option<(usize, ClickProposition, Proof<'a>)>,
-    introduced_claim_scope: &mut bool,
+    opened_claim: &mut Option<OpenedClaimProof<'a>>,
     closures: &mut [ClaimClosure],
     claims: &[FunctionClaimRef<'_>],
     outcome_proof: &mut Option<Proof<'a>>,
@@ -1693,14 +1735,16 @@ fn continue_claim_existence_proof<'a>(
     path_index: usize,
     apply: impl FnOnce(&Proof<'a>) -> Result<Proof<'a>, ClickError>,
 ) -> Result<bool, ClickError> {
-    let Some((claim_index, surface_goal, proof)) = existence_proof.take() else {
+    let Some(opened) = take_opened_claim(opened_claim, closures) else {
         return Ok(false);
     };
-    let refreshed = proof.refresh_outcome_from(required_outcome(outcome_proof)?)?;
+    let claim_index = opened.claim_index;
+    let refreshed = opened
+        .proof
+        .refresh_outcome_from(required_outcome(outcome_proof)?)?;
     match apply(&refreshed) {
         Ok(proof) => {
             if proof.is_complete() {
-                *introduced_claim_scope = false;
                 record_claim_closure(
                     outcome_proof,
                     closures,
@@ -1716,12 +1760,12 @@ fn continue_claim_existence_proof<'a>(
                     ),
                 )?;
             } else {
-                *existence_proof = Some((claim_index, surface_goal, proof));
+                *opened_claim = Some(opened.with_proof(proof));
             }
             Ok(true)
         }
-        Err(_) if *introduced_claim_scope => {
-            *existence_proof = Some((claim_index, surface_goal, refreshed));
+        Err(_) if opened.falls_back_on_miss() => {
+            *opened_claim = Some(opened.with_proof(refreshed));
             Ok(false)
         }
         Err(error) => Err(error),
@@ -2442,12 +2486,7 @@ pub(super) fn finish_ordered_proof<'a>(
                     // result-aware claim. Retain that typed judgment between
                     // source operations; syntax is recorded only for surface
                     // attribution, never reapplied as a candidate certificate.
-                    let mut existence_proof: Option<(usize, ClickProposition, Proof<'_>)> = None;
-                    // Only `intro` opens a shadowing scope for subsequent
-                    // top-level `have` steps. Existential witness operations
-                    // retain a claim proof too, but their `have` steps still
-                    // extend the ambient outcome as before.
-                    let mut introduced_claim_scope = false;
+                    let mut opened_claim: Option<OpenedClaimProof<'_>> = None;
                     let mut has_return_resource_rewrite = false;
                     // Frame closure also applies the contract's returned
                     // resource transition. Track that ownership transition
@@ -2729,10 +2768,10 @@ pub(super) fn finish_ordered_proof<'a>(
                                 // These leaves refine one claim's own goal, so
                                 // they run on that claim's existence proof,
                                 // opened by the first of them.
-                                let (claim_index, surface_goal, proof) =
-                                    match existence_proof.take() {
-                                        Some(active) => active,
-                                        None => begin_outcome_existence_proof(
+                                let opened = match opened_claim.take() {
+                                    Some(active) => active,
+                                    None => {
+                                        let (claim_index, surface_goal, proof) = begin_outcome_existence_proof(
                                             outcome_proof.as_ref().ok_or_else(|| {
                                                 ClickError::new(format!(
                                                     "`{proof_label}` path {path_index}, tactic {tactic_index}: the typed outcome goal for `{}` is unavailable",
@@ -2747,17 +2786,31 @@ pub(super) fn finish_ordered_proof<'a>(
                                             &closures,
                                             &rewrite_claim_equalities,
                                             &unfolded_predicates,
-                                        )?,
-                                    };
+                                        )?;
+                                        OpenedClaimProof {
+                                            claim_index,
+                                            surface_goal,
+                                            proof,
+                                            introduces_scope: false,
+                                        }
+                                    }
+                                };
                                 let step = SourceContext::PostExecution
                                     .leaf_step(tactic)
                                     .expect("a post-execution leaf converts to its checked step");
-                                let proof = proof
+                                let proof = opened
+                                    .proof
                                     .refresh_outcome_from(required_outcome(&outcome_proof)?)?
                                     .apply_step(step)?;
-                                existence_proof = Some((claim_index, surface_goal, proof));
-                                introduced_claim_scope |=
-                                    matches!(tactic, ProofTactic::Intro | ProofTactic::IntroAs(_));
+                                let introduces_scope = opened.introduces_scope
+                                    || matches!(
+                                        tactic,
+                                        ProofTactic::Intro | ProofTactic::IntroAs(_)
+                                    );
+                                opened_claim = Some(OpenedClaimProof {
+                                    introduces_scope,
+                                    ..opened.with_proof(proof)
+                                });
                                 record_post_execution_surface_tactic(
                                     &mut path_surface_post_tactics,
                                     &mut path_deferred_capture_tactics,
@@ -2867,7 +2920,9 @@ pub(super) fn finish_ordered_proof<'a>(
                                 // otherwise the later transition changes a
                                 // count-dependent predicate's captured ledger.
                                 // An introduced proposition keeps its own scope.
-                                if !introduced_claim_scope
+                                if !opened_claim
+                                    .as_ref()
+                                    .is_some_and(|opened| opened.introduces_scope)
                                     && !resource_transition_applied
                                     && matches!(outcome, CFunctionOutcome::Return { .. })
                                     && claims.iter().enumerate().any(|(index, claim)| {
@@ -2888,13 +2943,17 @@ pub(super) fn finish_ordered_proof<'a>(
                                 // A `have` after `intro` belongs to the active
                                 // claim proof, which owns the introduced binder.
                                 // Earlier `have` steps extend the outcome proof.
-                                let active_claim = if introduced_claim_scope {
-                                    existence_proof.take()
+                                let active_claim = if opened_claim
+                                    .as_ref()
+                                    .is_some_and(|opened| opened.introduces_scope)
+                                {
+                                    opened_claim.take()
                                 } else {
                                     None
                                 };
                                 let evolving_root = match &active_claim {
-                                    Some((_, _, proof)) => proof
+                                    Some(active) => active
+                                        .proof
                                         .refresh_outcome_from(required_outcome(&outcome_proof)?)?,
                                     None => outcome_proof.take().ok_or_else(|| {
                                         ClickError::new(format!(
@@ -2954,28 +3013,16 @@ pub(super) fn finish_ordered_proof<'a>(
                                     })();
                                     match attempt? {
                                         Some((joined, fact, certificate)) => {
-                                            if let Some((claim_index, surface_goal, _)) =
-                                                &active_claim
-                                            {
-                                                existence_proof = Some((
-                                                    *claim_index,
-                                                    surface_goal.clone(),
-                                                    joined,
-                                                ));
+                                            if let Some(active) = &active_claim {
+                                                opened_claim = Some(active.with_proof(joined));
                                             } else {
                                                 outcome_proof = Some(joined);
                                             }
                                             Some((fact, Some(certificate)))
                                         }
                                         None => {
-                                            if let Some((claim_index, surface_goal, _)) =
-                                                &active_claim
-                                            {
-                                                existence_proof = Some((
-                                                    *claim_index,
-                                                    surface_goal.clone(),
-                                                    evolving,
-                                                ));
+                                            if let Some(active) = &active_claim {
+                                                opened_claim = Some(active.with_proof(evolving));
                                             } else {
                                                 outcome_proof = Some(evolving);
                                             }
@@ -3096,8 +3143,7 @@ pub(super) fn finish_ordered_proof<'a>(
                             }
                             PostExecutionTactic::Leaf(ProofTactic::Assumption) => {
                                 if continue_claim_existence_proof(
-                                    &mut existence_proof,
-                                    &mut introduced_claim_scope,
+                                    &mut opened_claim,
                                     &mut closures,
                                     claims,
                                     &mut outcome_proof,
@@ -3400,8 +3446,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                     _ => unreachable!("matched a closer above"),
                                 };
                                 if continue_claim_existence_proof(
-                                    &mut existence_proof,
-                                    &mut introduced_claim_scope,
+                                    &mut opened_claim,
                                     &mut closures,
                                     claims,
                                     &mut outcome_proof,
@@ -3940,42 +3985,54 @@ pub(super) fn finish_ordered_proof<'a>(
                                         }
                                     }
                                 }
-                                if let Some((claim_index, _surface_goal, proof)) =
-                                    existence_proof.take()
+                                let opened_closure = match take_opened_claim(
+                                    &mut opened_claim,
+                                    &closures,
+                                ) {
+                                    None => None,
+                                    Some(opened) => {
+                                        let claim_index = opened.claim_index;
+                                        let proof = opened.proof.refresh_outcome_from(
+                                            required_outcome(&outcome_proof)?,
+                                        )?;
+                                        // The tactics before this `simp` opened the
+                                        // claim's proof; what `simp` itself adds is
+                                        // only what follows them.
+                                        let before_simp = proof.checkpoint();
+                                        let selected = if let Some(premises) = restricted_premises {
+                                            let selected =
+                                                proof.try_restricted_simp_closure(premises);
+                                            check_verification_deadline()?;
+                                            selected
+                                        } else if let Some(completed) =
+                                            proof.try_direct_logical_closure()?
+                                        {
+                                            Some(completed)
+                                        } else if let Some(completed) = proof.try_simp_closure()? {
+                                            Some(completed)
+                                        } else if auto_closer {
+                                            proof.try_auto_closure_after_simp()?
+                                        } else {
+                                            None
+                                        };
+                                        match selected {
+                                            Some(completed) => {
+                                                Some((claim_index, before_simp, completed))
+                                            }
+                                            None => {
+                                                let claim_label = function_claim_label(
+                                                    function_block,
+                                                    &claims[claim_index],
+                                                );
+                                                return Err(ClickError::new(format!(
+                                                    "`{proof_label}` path {path_index}, tactic {tactic_index}: checked outcome `{closer_name}` did not complete the retained existential Proof for `{claim_label}`"
+                                                )));
+                                            }
+                                        }
+                                    }
+                                };
+                                if let Some((claim_index, before_simp, completed)) = opened_closure
                                 {
-                                    introduced_claim_scope = false;
-                                    let proof = proof
-                                        .refresh_outcome_from(required_outcome(&outcome_proof)?)?;
-                                    // The tactics before this `simp` opened the
-                                    // claim's proof; what `simp` itself adds is
-                                    // only what follows them.
-                                    let before_simp = proof.checkpoint();
-                                    let selected = if let Some(premises) = restricted_premises {
-                                        let selected = proof.try_restricted_simp_closure(premises);
-                                        check_verification_deadline()?;
-                                        selected
-                                    } else if let Some(completed) =
-                                        proof.try_direct_logical_closure()?
-                                    {
-                                        Some(completed)
-                                    } else if let Some(completed) = proof.try_simp_closure()? {
-                                        Some(completed)
-                                    } else if auto_closer {
-                                        proof.try_auto_closure_after_simp()?
-                                    } else {
-                                        None
-                                    };
-                                    let completed = if let Some(completed) = selected {
-                                        completed
-                                    } else {
-                                        let claim_label = function_claim_label(
-                                            function_block,
-                                            &claims[claim_index],
-                                        );
-                                        return Err(ClickError::new(format!(
-                                            "`{proof_label}` path {path_index}, tactic {tactic_index}: checked outcome `{closer_name}` did not complete the retained existential Proof for `{claim_label}`"
-                                        )));
-                                    };
                                     if !completed.is_complete() {
                                         return Err(ClickError::new(format!(
                                             "`{proof_label}` path {path_index}, tactic {tactic_index}: retained existential Proof remained incomplete after `simp`"
@@ -4794,10 +4851,12 @@ pub(super) fn finish_ordered_proof<'a>(
                     }
 
                     if !require_explicit_closers
-                        && let Some((claim_index, _, proof)) = existence_proof.take()
+                        && let Some(opened) = take_opened_claim(&mut opened_claim, &closures)
                     {
-                        let proof =
-                            proof.refresh_outcome_from(required_outcome(&outcome_proof)?)?;
+                        let claim_index = opened.claim_index;
+                        let proof = opened
+                            .proof
+                            .refresh_outcome_from(required_outcome(&outcome_proof)?)?;
                         match proof.try_direct_logical_closure()? {
                             Some(completed) if completed.is_complete() => {
                                 // The source's choose/witness steps are already
