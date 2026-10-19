@@ -659,20 +659,22 @@ mod unit_tests {
                 std::process::id(),
                 NEXT.fetch_add(1, Ordering::Relaxed)
             ));
-        let trial = Path::new(env!("CARGO_MANIFEST_DIR")).join("design/adler32/adler2");
+        let trial = Path::new(env!("CARGO_MANIFEST_DIR")).join("design/adler32/project/adler2");
+        let upstream =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("design/adler32/vendor/adler2-2.0.1");
         let crate_root = root.join("vendor/adler2-2.0.1");
         let proofs = root.join("proofs");
         fs::create_dir_all(crate_root.join("src")).unwrap();
         fs::create_dir_all(proofs.join(".click/adler2/src")).unwrap();
         for file in ["src/lib.rs", "src/algo.rs"] {
-            fs::copy(trial.join(file), crate_root.join(file)).unwrap();
+            fs::copy(upstream.join(file), crate_root.join(file)).unwrap();
         }
         let artifact = fs::read(trial.join("../.click/adler2/src/lib.rs.ullbc")).unwrap();
         fs::write(proofs.join(".click/adler2/src/lib.rs.ullbc"), &artifact).unwrap();
         let proof = fs::read_to_string(trial.join("restoration.click"))
             .unwrap()
             .replace(
-                "verifying \"src/lib.rs\";",
+                "verifying \"../../vendor/adler2-2.0.1/src/lib.rs\";",
                 "verifying \"../vendor/adler2-2.0.1/src/lib.rs\";",
             );
         let sidecar = proofs.join("restoration.click");

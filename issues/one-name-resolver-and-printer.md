@@ -116,16 +116,19 @@ Declaration expansion follows a script's goal: an `intro()` variable, under
 its written or `intro() as` name, and an `obtain` witness have their types
 for constructor inference in the tactics after them
 (`mdtests/a_proof_binder_has_its_type_for_constructor_inference.md`).
-Constructor inference still fixes a constructor's type arguments from its own
-arguments before the type its position expects, so
-`function wrap(x: int32) -> List<int64> { List::Cons(x, List::Nil) }` is
-refused while the explicit `List<int64>::Cons(...)` is accepted. A literal constructor argument is now a value of its field's
+Constructor inference takes a constructor's type arguments from the type its
+position expects, a function's return type or a `let`'s written type,
+before its own arguments, so
+`function wrap(x: int32) -> Seq<int64> { Seq::Cons(x, Seq::Nil) }` builds a
+`Seq<int64>` (`mdtests/a_constructor_field_takes_an_exact_widening.md`). A literal constructor argument is now a value of its field's
 type: `2` in `Seq<int64>::Cons(2, ...)` is an `int64`, and a literal the
 field cannot hold is refused by name. Before, the literal lowered as an
 `int32`, so comparing the constructor with an `int64` value lowered to no
-path (`mdtests/a_literal_constructor_field_takes_the_field_type.md`). An
-`int32` variable in an `int64` field still type-checks and lowers to no
-path; whether such a field widens or is refused is not decided.
+path (`mdtests/a_literal_constructor_field_takes_the_field_type.md`). A
+constructor field takes an argument that converts to it exactly, widened,
+and refuses a narrowing or a change of sign until it is written
+(`mdtests/a_constructor_field_refuses_an_implicit_narrowing.md`); the rule
+is in the language reference under "Implicit conversions".
 
 The kernel-term printer names a bound variable `k`, `k1`, ... and skips any
 name a free source variable has, so a goal over a free `k` no longer prints

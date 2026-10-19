@@ -840,7 +840,9 @@ a simple proof. A signed `int32` goal over variables is tried with one
 arithmetic certificate from the indexed bounds reachable from those variables (a
 bound `i < n` leads on to `n`'s bounds, up to eight variables), the same way in
 a pure theorem, before execution, mid-function, in a `branch` arm, and at
-function exit; a negated branch condition counts as a bound.
+function exit; a negated branch condition counts as a bound. Constant bounds on
+the goal variables are tried before following relational bounds, so earlier
+postconditions on those variables do not exhaust the arithmetic premise limit.
 
 A loop bundle closer's members cite only the loop head and the contract instead.
 Its arithmetic first tries the named premises whose variables occur in that
@@ -1592,6 +1594,12 @@ checked once, without the constructor facts or fields of any arm; in a loop's
 execute one complete iteration on its own path — restoring the loop binder,
 closing the invariants and satisfying the structural descent at the body's end
 or at a `continue`, or leaving through a `break`, which owes none of those.
+
+After execution the `match` splits the outcome paths, as a proof `if` or
+`cases` does there: each live arm finishes its own path
+(`mdtests/match_after_execution_finishes_each_arm.md`), and with more than one
+live arm, tactics written after the `match` are refused, since they would be
+checked once per arm (`mdtests/match_after_execution_that_would_fork_is_refused.md`).
 
 Tactics written after a `match` in a `preserve` body are checked once:
 straight-line arms that end in one state rejoin as in a function body, and two

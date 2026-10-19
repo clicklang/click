@@ -10,21 +10,21 @@ its narrowing explicitly (`((bytes.len() as u32) as i32)` in Rust,
 
 ## Current state and violated invariant
 
-`design/adler32/adler32-spec.click` defines `adler_byte_sum`, `adler_weighted_sum`,
+`design/adler32/project/adler32-spec.click` defines `adler_byte_sum`, `adler_weighted_sum`,
 `adler_spec_a`, `adler_spec_b` and `adler_spec_checksum` over an `int32`
 length. The kernel has not needed that since typed-indices stage 3 (see
 `design/typed-indices.md`): a 64-bit count bounds a range and indexes memory
 directly. The specification and the proofs built on it still carry the old
 limit:
 
-- the adler2 Rust trial (`design/adler32/adler2/`): 25 `requires
+- the adler2 Rust trial (`design/adler32/project/adler2/`): 25 `requires
   ... <= 2147483647u64` preconditions, the bound library
   `bounded-count.click`, which reads each `usize` count through
   `((count as u32) as i32)`, and about 1,900 `int32` uses in 19 files;
-- the zlib C trial (`design/adler32/zlib/`): 8 files cite the signed
+- the zlib C trial (`design/adler32/project/zlib/`): 8 files cite the signed
   limit, and its README states termination "through the shared signed length
   limit";
-- the C/Rust correspondence (`design/adler32/checksum-correspondence.md`,
+- the C/Rust correspondence (`design/adler32/project/checksum-correspondence.md`,
   `adler2/correspondence.click`), which equates both trials with the same
   specification, so neither side can be widened alone.
 
@@ -36,7 +36,7 @@ or `z_size_t` argument can hold, as the original programs do.
 The specification cannot be applied to a `uint64` length. A machine scalar
 argument takes its declared parameter type, with the native conversion
 (`docs/concepts/pure-functions.md`), so a 64-bit length is narrowed. This
-theorem, appended to a copy of `design/adler32/adler32-spec.click`, verifies:
+theorem, appended to a copy of `design/adler32/project/adler32-spec.click`, verifies:
 
 ```click
 theorem probe(bytes: uint8[], length: uint64) {
@@ -111,5 +111,5 @@ fix; this prerequisite concerns the widened specification.
   restated over `uint64`.
 - The adler2, zlib and correspondence proofs verify, expand and re-verify
   over the full length range. The limit paragraphs in
-  `design/adler32/adler2/README.md`, `design/adler32/zlib/README.md`
+  `design/adler32/project/adler2/README.md`, `design/adler32/project/zlib/README.md`
   and the "Left:" sentence in `design/typed-indices.md` are removed.

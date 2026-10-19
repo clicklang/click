@@ -51,16 +51,17 @@ pub fn adler_project(root: &Path) {
     let vendor = root.parent().unwrap().join("vendor/adler2");
     fs::create_dir_all(root).unwrap();
     fs::create_dir_all(vendor.join("src")).unwrap();
-    let trial = Path::new(env!("CARGO_MANIFEST_DIR")).join("design/adler32/adler2");
+    let trial = Path::new(env!("CARGO_MANIFEST_DIR")).join("design/adler32/project/adler2");
+    let upstream = Path::new(env!("CARGO_MANIFEST_DIR")).join("design/adler32/vendor/adler2-2.0.1");
     for file in ["src/lib.rs", "src/algo.rs"] {
-        fs::copy(trial.join(file), vendor.join(file)).unwrap();
+        fs::copy(upstream.join(file), vendor.join(file)).unwrap();
     }
     fs::write(
         root.join("restoration.click"),
         fs::read_to_string(trial.join("restoration.click"))
             .unwrap()
             .replace(
-                "verifying \"src/lib.rs\";",
+                "verifying \"../../vendor/adler2-2.0.1/src/lib.rs\";",
                 "verifying \"../vendor/adler2/src/lib.rs\";",
             ),
     )
