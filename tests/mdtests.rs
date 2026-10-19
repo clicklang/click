@@ -38,6 +38,8 @@ const QUARANTINED: &[(&str, &str)] = &[];
 /// libraries stay in the gate so it checks both sides of their imports. Run
 /// one with `MDTEST_FILTER=<name>`.
 const NIGHTLY: &[&str] = &[
+    // 1.9s focused; the named scaling regression also checks its work.
+    "refuted_implication_after_stack_pop.md",
     // 2.60s in its focused harness run; the unit regression stays in the gate.
     "equal_object_origins_frame_neighbor_fields.md",
     "a_bounded_symbolic_read_of_an_initialized_local_array_is_initialized.md", // 0.6s

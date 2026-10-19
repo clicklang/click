@@ -1,34 +1,10 @@
-# Closing a refuted `implies` after execution searches for seconds
+# A matched nonempty list promptly refutes the empty-list postcondition
 
-Soundness: not soundness. The claim verifies; only the time to close it is
-wrong.
+The original stack-pop program and proof retain their empty-list implication
+after mutation, deallocation, and refolding. Its constructor premise is
+spelled at function entry without reconstructing unrelated memory history.
 
-A postcondition `ensures old(m) == List<int32>::Nil implies P` on a path whose
-proof matched `m` as `List::Cons(...)` holds because its antecedent is
-false. After execution, the closing `simp` takes seconds to find that,
-spending its time in "simp closure: premise spelling" (about 1M work units a
-call in the C++ form). Stating the same fact before execution,
-`have old(before.items) != List<int32>::Nil by simp();` at the top of the
-`Cons` arm, makes the whole proof as fast as without the clause. The
-proof-failure triage rules expect a smart search to miss or succeed promptly;
-this one is slow when it succeeds.
-
-Measured on master `6ac2083ad` (the merge of #1574) with the C++ `new`/`delete`
-change on top, debug build:
-
-| `pop` proof | time |
-| --- | --- |
-| without the `== Nil implies` clause | 2.2 s |
-| with it | 7.5 s |
-| with it and the early `have` | 2.2 s |
-| the same clause in the C++ `Stack<int>::pop` of `issues/generic-stack.md` | 28 s (2.4 s with the early `have`) |
-
-Each of the three `== Nil implies` clauses of that C++ `pop` costs 20 to 30
-seconds; the matching `!= Nil implies` clauses close in about a second.
-
-Reproduction, `pop.c`:
-
-```c
+```c filename=pop.c
 struct node { int value; struct node *next; };
 struct stack { struct node *head; unsigned long count; };
 _Bool pop(struct stack *s, int *out) {
@@ -43,8 +19,6 @@ _Bool pop(struct stack *s, int *out) {
     return 1;
 }
 ```
-
-`pop.click`:
 
 ```click
 import click::integer;
@@ -161,13 +135,6 @@ bool pop(struct stack* s, int32* out) {
 }
 ```
 
-`click profile pop.click` shows the time under "post-execution claim tactics"
-and "simp closure: premise spelling".
-
-Acceptance criteria:
-
-- The reproduction verifies within a second of the version without the
-  clause, without the early `have`.
-- A focused trace of the closing search shows where the time goes, and the
-  fix removes that cost rather than lowering a search limit.
-- A regression keeps the `pop` proof above and bounds its work.
+```expect
+pass
+```
