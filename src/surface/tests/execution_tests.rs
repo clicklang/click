@@ -2266,8 +2266,7 @@ int32 choose(int32 a, int32 b) {
     }
 }
 
-#[test]
-fn algebraic_constructor_keeps_struct_pointer_field_identity_across_old() {
+fn struct_pointer_field_constructor_fixture() -> (&'static str, &'static str) {
     let c_source = r#"
         struct child { int32 value; };
         struct other { int32 value; };
@@ -2286,8 +2285,19 @@ fn algebraic_constructor_keeps_struct_pointer_field_identity_across_old() {
                 and Link::Linked(p->kid) == Link::Linked(kid);
         } by { execute(); }
     "#;
+    (source, c_source)
+}
+
+#[test]
+fn algebraic_constructor_keeps_struct_pointer_field_identity_across_old() {
+    let (source, c_source) = struct_pointer_field_constructor_fixture();
     verify_c0_sources(source, &[("field.c", c_source)])
         .expect("a historical field retains its declared struct pointer type");
+}
+
+#[test]
+fn algebraic_constructor_rejects_wrong_struct_and_scalar_fields() {
+    let (source, c_source) = struct_pointer_field_constructor_fixture();
     for wrong in ["p->wrong", "p->scalar"] {
         let invalid = source
             .replace("Linked(old(p->kid))", &format!("Linked(old({wrong}))"))
@@ -2296,6 +2306,11 @@ fn algebraic_constructor_keeps_struct_pointer_field_identity_across_old() {
             .expect_err("a different struct or scalar cannot fill a child pointer field");
         assert!(error.message().contains("expects struct child*"), "{error}");
     }
+}
+
+#[test]
+fn algebraic_constructor_field_metadata_cannot_prove_a_false_postcondition() {
+    let (source, c_source) = struct_pointer_field_constructor_fixture();
     verify_c0_sources(
         &source.replace(" == Link::Linked", " != Link::Linked"),
         &[("field.c", c_source)],
