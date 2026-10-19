@@ -16,6 +16,7 @@ fits into verification.
 - [Propositions](propositions.md)
 - [Proof scripts](proof-scripts.md)
 - [Proof workflow](proof-workflow.md)
+- [Tracing a failed proof](tracing.md)
 - [Proof-failure triage](proof-failure-triage.md)
 
 ## Proof and execution models

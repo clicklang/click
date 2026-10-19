@@ -27,8 +27,9 @@ Click's implementation or guessing through repeated variations.
    feedback. Note friction during successful work too: a passing proof can
    still be difficult to discover, express, or maintain.
 4. On a failure, first read the ordinary report, then use a focused trace when
-   needed. Follow the existing three-strikes rule. Record separately what the
-   ordinary output explains, what tracing adds, and what remains unexplained.
+   needed. Follow the [tracing procedure](../concepts/tracing.md). Record
+   separately what the ordinary output explains, what tracing adds, and what
+   remains unexplained.
 5. At a coherent checkpoint, review the notes and choose a small improvement
    supported by the evidence. Reproduce it, classify it, make the appropriate
    change, and retry the original task. Keep unresolved notes with links to

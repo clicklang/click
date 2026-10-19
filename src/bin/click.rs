@@ -427,6 +427,89 @@ mod tests {
         fs::remove_dir_all(directory).unwrap();
     }
 
+    /// Every refused statement names its goal: the requirement it could not
+    /// establish at its pre-state, in source names, with the explicit form
+    /// that proves it. A refused call precondition, and an overflow that the
+    /// implicit `auto` did not rule out, read alike; a trace repeats the goal
+    /// in its failed check and leaves out verifier bookkeeping no proof can
+    /// cite.
+    #[test]
+    fn verify_names_the_goal_of_a_refused_statement() {
+        let directory =
+            std::env::temp_dir().join(format!("click-statement-goals-{}", std::process::id()));
+        if directory.exists() {
+            fs::remove_dir_all(&directory).unwrap();
+        }
+        fs::create_dir(&directory).unwrap();
+        fs::write(
+            directory.join("f.c"),
+            "int32 callee(int32 n) {\n    return n;\n}\n\nint32 caller(int32 n) {\n    int32 r;\n    r = callee(n) + 1;\n    return r;\n}\n\nint32 area(int32 w, int32 h) {\n    return w * h;\n}\n\nint32 frame(int32 w, int32 h) {\n    int32 inner = area(w, h);\n    return inner + 1;\n}\n\nint32 half(int32 x) {\n    return x / 2;\n}\n\nint32 halve_pair(int32 *p, int32 n) {\n    p[0] = n;\n    p[1] = half(p[0] * 2);\n    return p[1];\n}\n\nvoid set(int32 *p) {\n    p[0] = 1;\n}\n\nvoid lend_twice(int32 *p) {\n    set(p);\n    set(p + 1);\n}\n",
+        )
+        .unwrap();
+        let sidecar = directory.join("f.click");
+        let run = |proof: &str, arguments: &[&str]| {
+            fs::write(&sidecar, format!("verifying \"f.c\";\n{proof}")).unwrap();
+            let mut command = vec!["verify".to_string()];
+            command.extend(arguments.iter().map(|argument| argument.to_string()));
+            command.push(sidecar.display().to_string());
+            entry(command).unwrap_err()
+        };
+        let help = "help: to prove the goal explicitly, step to this statement and prove it there with `have <goal> by { ... }`";
+
+        let call = run(
+            "int32 callee(int32 n) {\n    requires n >= 0;\n    ensures result == n;\n}\nint32 caller(int32 n) {\n    ensures result == n + 1;\n} by {\n    step(); step(); step(); simp();\n}\n",
+            &[],
+        );
+        assert!(
+            call.contains(&format!("\ngoal: n >= 0\n{help}\n")),
+            "{call}"
+        );
+
+        let frame = "int32 area(int32 w, int32 h) {\n    requires w >= 0 and w <= 1000;\n    requires h >= 0 and h <= 1000;\n    ensures result == w * h;\n}\nint32 frame(int32 w, int32 h) {\n    requires w >= 0 and w <= 1000;\n    requires h >= 0 and h <= 1000;\n    ensures result == w * h + 1;\n}\n";
+        let overflow = run(frame, &[]);
+        assert!(
+            overflow.contains("`execute()` produced undefined behavior\n  signed overflow"),
+            "{overflow}"
+        );
+        assert!(
+            overflow.contains(&format!("\ngoal: inner <= 2147483646\n{help}")),
+            "{overflow}"
+        );
+        assert!(!overflow.contains("<unnamed"), "{overflow}");
+        let traced = run(frame, &["--trace-proof", "frame"]);
+        assert!(
+            traced.contains("\nfailed check:\n")
+                && traced.contains("\ngoal: inner <= 2147483646\n"),
+            "{traced}"
+        );
+
+        let bookkeeping = run(
+            "int32 half(int32 x) {\n    requires x >= 0 and x % 2 == 0;\n    ensures result >= 0;\n}\nint32 halve_pair(int32 *p, int32 n) {\n    owns p[0..2];\n    requires n >= 0 and n < 1000;\n    ensures result == n;\n}\n",
+            &["--trace-proof", "halve_pair"],
+        );
+        assert!(
+            bookkeeping.contains("\n  … <1 internal bookkeeping fact not shown>"),
+            "{bookkeeping}"
+        );
+        assert!(!bookkeeping.contains("__click_"), "{bookkeeping}");
+
+        let resource = run(
+            "void set(int32 *p) {\n    owns p[0..1];\n}\nvoid lend_twice(int32 *p) {\n    owns p[0..1];\n}\n",
+            &[],
+        );
+        assert!(resource.contains("\ngoal: owns p[1]\n"), "{resource}");
+
+        // A sidecar that does not load reports that failure, not the
+        // `--trace-proof` naming hint.
+        let malformed = run(
+            "int32 frame(int32 w, int32 h) {\n    requires w >=;\n}\n",
+            &["--trace-proof", "frame"],
+        );
+        assert!(malformed.starts_with("syntax error:"), "{malformed}");
+        assert!(!malformed.contains("--trace-proof` takes"), "{malformed}");
+        fs::remove_dir_all(directory).unwrap();
+    }
+
     /// In an mdtest the refused statement is named at its line of the
     /// markdown file, the line a person edits.
     #[test]
