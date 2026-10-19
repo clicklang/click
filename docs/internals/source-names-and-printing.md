@@ -99,7 +99,11 @@ reference, struct-array, `void*` and type parameters) and the names that
 carry data (resource instances, C parameter types and objects, struct and
 aggregate parameters, arm binder types, facts). Cross-kind questions,
 `is_bound` and `is_c_variable`, and the hiding and restoring of bindings are
-methods of the table.
+methods of the table. The table keeps one undo log: a quantifier, proof
+block, `else` block, match arm or execution `ensures` takes a `NameScope`
+mark, binds and hides through the table, and ends the mark, which puts back
+everything changed since, newest first, without copying the surrounding
+names.
 
 Lexical bindings after parsing go through `ScopedNames`
 (`src/surface/scoped_names.rs`): a binding hides an earlier binding of its
