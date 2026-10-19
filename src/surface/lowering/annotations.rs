@@ -4909,17 +4909,20 @@ impl AnnotationLowerer<'_> {
                         right: self.lower_contract_integer_to_spec(right, environment)?,
                     });
                 }
-                let has_algebraic = contract_expression_is_algebraic(
-                    left,
-                    self.spec_definitions.functions,
-                    environment,
-                    &mut Vec::new(),
-                ) || contract_expression_is_algebraic(
-                    right,
-                    self.spec_definitions.functions,
-                    environment,
-                    &mut Vec::new(),
-                );
+                let has_algebraic = self.is_enum_c_name(left, environment)
+                    || self.is_enum_c_name(right, environment)
+                    || contract_expression_is_algebraic(
+                        left,
+                        self.spec_definitions.functions,
+                        environment,
+                        &mut Vec::new(),
+                    )
+                    || contract_expression_is_algebraic(
+                        right,
+                        self.spec_definitions.functions,
+                        environment,
+                        &mut Vec::new(),
+                    );
                 if has_algebraic {
                     let equal = match operator {
                         ComparisonOperator::Equal => true,
@@ -6628,11 +6631,78 @@ impl AnnotationLowerer<'_> {
         }
     }
 
+    /// The Rust enum type of C name `name`, a parameter, local or `result`
+    /// that holds an enum's value.
+    fn enum_c_name_type(
+        &self,
+        name: &str,
+        environment: &SpecElaborationContext,
+    ) -> Option<crate::kernel::TypeParameterName> {
+        if environment.algebraic_values.contains_key(name) {
+            return None;
+        }
+        let c_type = if name == "result" {
+            Some(self.result_type)
+        } else {
+            self.c_parameter_types.get(name).copied().or_else(|| {
+                self.entry_values
+                    .get(name)
+                    .or_else(|| {
+                        self.local_type_state
+                            .and_then(|state| state.locals().get(name))
+                    })
+                    .map(CValue::c_type)
+            })
+        };
+        match c_type? {
+            CType::Parameter(enum_type) if enum_type.is_enum() => Some(enum_type),
+            _ => None,
+        }
+    }
+
+    /// Whether `expression` is a C name that holds a Rust enum's value.
+    fn is_enum_c_name(
+        &self,
+        expression: &ContractExpression,
+        environment: &SpecElaborationContext,
+    ) -> bool {
+        match expression {
+            ContractExpression::Binding(name)
+            | ContractExpression::CBinding(name)
+            | ContractExpression::CFragment(CExpression::Variable(name)) => {
+                self.enum_c_name_type(name, environment).is_some()
+            }
+            ContractExpression::Old(inner) => self.is_enum_c_name(inner, environment),
+            _ => false,
+        }
+    }
+
     fn lower_contract_algebraic_to_spec(
         &mut self,
         expression: &ContractExpression,
         environment: &SpecElaborationContext,
     ) -> Result<SpecAlgebraicExpression, String> {
+        if self.is_enum_c_name(expression, environment) {
+            let mut inner = expression;
+            while let ContractExpression::Old(value) = inner {
+                inner = value;
+            }
+            let (ContractExpression::Binding(name)
+            | ContractExpression::CBinding(name)
+            | ContractExpression::CFragment(CExpression::Variable(name))) = inner
+            else {
+                unreachable!("an enum C name is a name");
+            };
+            let enum_type = self
+                .enum_c_name_type(name, environment)
+                .expect("an enum C name has an enum type");
+            return Ok(SpecAlgebraicExpression {
+                algebraic_type: enum_type.algebraic_type(),
+                node: SpecAlgebraicExpressionNode::CValue(Box::new(
+                    self.lower_contract_expression_to_spec(expression, environment)?,
+                )),
+            });
+        }
         match expression {
             ContractExpression::ResourceField(access) => {
                 let Some(ClickType::Algebraic(ty)) = &access.click_type else {

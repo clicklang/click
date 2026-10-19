@@ -570,6 +570,11 @@ pub(in crate::kernel) fn collect_c_expression_bitvector_variables(
         CExpression::Cast { expression, .. } => {
             collect_c_expression_bitvector_variables(expression, variables)
         }
+        CExpression::EnumConstruct { fields, .. } => {
+            for field in fields {
+                collect_c_expression_bitvector_variables(field, variables);
+            }
+        }
         CExpression::Conditional {
             condition,
             then_branch,
@@ -580,9 +585,13 @@ pub(in crate::kernel) fn collect_c_expression_bitvector_variables(
             collect_c_expression_bitvector_variables(else_branch, variables);
         }
         CExpression::FloatNegate(expression)
-        | CExpression::FloatClassification { expression, .. } => {
-            collect_c_expression_bitvector_variables(expression, variables)
+        | CExpression::FloatClassification { expression, .. }
+        | CExpression::EnumField {
+            value: expression, ..
         }
+        | CExpression::EnumIs {
+            value: expression, ..
+        } => collect_c_expression_bitvector_variables(expression, variables),
         CExpression::AddressOf(body)
         | CExpression::CheckedObjectAddress(body)
         | CExpression::Not(body)
@@ -1052,6 +1061,12 @@ fn collect_c_expression_bound_identities(
         CExpression::Cast { expression, .. }
         | CExpression::FloatNegate(expression)
         | CExpression::FloatClassification { expression, .. }
+        | CExpression::EnumField {
+            value: expression, ..
+        }
+        | CExpression::EnumIs {
+            value: expression, ..
+        }
         | CExpression::AddressOf(expression)
         | CExpression::CheckedObjectAddress(expression)
         | CExpression::Not(expression)
@@ -1062,6 +1077,11 @@ fn collect_c_expression_bound_identities(
         }
         | CExpression::BitwiseNot(expression) => {
             collect_c_expression_bound_identities(expression, variables, integer_seen);
+        }
+        CExpression::EnumConstruct { fields, .. } => {
+            for field in fields {
+                collect_c_expression_bound_identities(field, variables, integer_seen);
+            }
         }
         CExpression::Conditional {
             condition,

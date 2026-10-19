@@ -430,10 +430,10 @@ fn algebraic_conditions_decide_from_condition_facts_and_keep_checked_polarity() 
             vec![CValue::Int32(Bitvector32Term::Constant(0))],
         )),
     );
-    // Constructor distinctness is proposition-level theory, covered by
-    // `distinct_algebraic_constructors_make_the_context_inconsistent` below.
-    // `decide` does not reach it for the condition spelling.
-    assert_eq!(PureFactContext::new().decide(&distinct), None);
+    // Constructors of different variants differ: `decide` reads the
+    // distinctness that makes their equation inconsistent (see
+    // `distinct_algebraic_constructors_make_the_context_inconsistent`).
+    assert_eq!(PureFactContext::new().decide(&distinct), Some(false));
 }
 
 #[test]

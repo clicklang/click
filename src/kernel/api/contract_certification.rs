@@ -797,6 +797,7 @@ fn certification_proves_exists_obligation_from_facts(
 pub(in crate::kernel) fn describe_certification_runtime_error(error: &CRuntimeError) -> String {
     match error {
         CRuntimeError::PointerConversion(message)
+        | CRuntimeError::EnumVariant(message)
         | CRuntimeError::FunctionContract(message)
         | CRuntimeError::UnsuppliedResourceValue(message) => {
             message.clone()

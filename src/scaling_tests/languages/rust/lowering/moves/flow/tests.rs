@@ -48,6 +48,7 @@ fn split_while_headers_preserve_order_and_have_linear_work_and_emitted_size() {
             mir_opt_level: 0,
             logical_source: "flow.rs".into(),
             records: vec![],
+            enums: vec![],
             functions: vec![f],
         };
         let (lowered, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -117,6 +118,7 @@ fn nested_while_regions_have_linear_analysis_work_and_emitted_size() {
             mir_opt_level: 0,
             logical_source: "flow.rs".into(),
             records: vec![],
+            enums: vec![],
             functions: vec![f],
         };
         let (functions, _) = super::super::super::super::lower(&export).unwrap();

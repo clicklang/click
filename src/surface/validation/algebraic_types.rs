@@ -115,6 +115,13 @@ impl AlgebraicVariables {
                 if let Some(nominal) = self.nominal_types.get(name) {
                     return Ok(Some(nominal.clone()));
                 }
+                if let Some(application) = self
+                    .c_types
+                    .get(name)
+                    .and_then(|c_type| AlgebraicTypeApplication::of_enum_c_type(*c_type))
+                {
+                    return Ok(Some(ClickType::Algebraic(application)));
+                }
             }
             ContractExpression::Old(inner)
             | ContractExpression::At {
@@ -2711,13 +2718,17 @@ fn validate_algebraic_expression_node(
                 ClickType::Integer => None,
             }))
         }
+        // A C name of a Rust enum's type holds that enum's value.
+        ContractExpression::Binding(name)
+        | ContractExpression::CBinding(name)
+        | ContractExpression::CFragment(CExpression::Variable(name)) => Ok(variables
+            .get(name)
+            .and_then(|c_type| AlgebraicTypeApplication::of_enum_c_type(*c_type))),
         ContractExpression::QualifiedC { .. }
         | ContractExpression::CUnary { .. }
         | ContractExpression::CFragment(_)
         | ContractExpression::ArrayIndex { .. }
         | ContractExpression::Field { .. }
-        | ContractExpression::Binding(_)
-        | ContractExpression::CBinding(_)
         | ContractExpression::ResourceCount(_)
         | ContractExpression::ResourceWildcard => Ok(None),
     }
