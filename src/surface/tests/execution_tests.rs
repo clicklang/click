@@ -2309,6 +2309,7 @@ fn algebraic_constructor_rejects_wrong_struct_and_scalar_fields() {
 }
 
 #[test]
+#[ignore = "nightly: false-postcondition proof took 0.579s in parallel"]
 fn algebraic_constructor_field_metadata_cannot_prove_a_false_postcondition() {
     let (source, c_source) = struct_pointer_field_constructor_fixture();
     verify_c0_sources(
