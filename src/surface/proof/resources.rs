@@ -3685,10 +3685,22 @@ fn unfold_composite_resource_with_facts<F: ResourcePureFacts>(
                         available_pure_facts.assumptions(),
                     )
             } else {
-                state.resources().clone().try_compose_with_facts(
-                    unfolded_facts.clone(),
-                    available_pure_facts.assumptions(),
-                )
+                // Normalize only around the opened body: the buckets its
+                // children land in. Renormalizing the whole ambient context
+                // made each `unfold` cost every resource the proof holds.
+                state
+                    .resources()
+                    .clone()
+                    .try_compose_with_facts_delaying_normalization(
+                        unfolded_facts.clone(),
+                        available_pure_facts.assumptions(),
+                    )
+                    .map(|resources| {
+                        resources.normalized_around_facts(
+                            &unfolded_facts,
+                            available_pure_facts.assumptions(),
+                        )
+                    })
             }
             .map_err(|error| {
                 ClickError::new(format!(
