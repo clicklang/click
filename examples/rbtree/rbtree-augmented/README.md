@@ -348,6 +348,14 @@ repaired subtree. Both augmented insertion wrappers preserve the same result.
 The repeated-flip chain proof below covers red outer ancestors; general
 rotation subtrees and writable erase integration remain unfinished.
 
+`rbtree_size_insert_context_double_far_rotation.click` extends the left-right
+case to an arbitrary owned far subtree with a symbolic valid cached size.
+Both writable callbacks repair their metadata while preserving that subtree;
+the parent-link update and context restoration return the repaired whole-root
+tree through both augmented wrappers. The focused node's children and uncle
+remain empty. The mirrored case and arbitrary transferred-middle and uncle
+subtrees still need their C compositions.
+
 
 `rbtree_size_insert_context_focus_rotation.click` extends the left-left context
 rotation to arbitrary subtrees beneath the focused node and symbolic valid
