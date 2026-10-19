@@ -147,6 +147,13 @@ pub(super) fn prepare_layouts(
                     {
                         Scalar::mutable_kind(value).unwrap().proof_type()
                     }
+                    CppType::Pointer { .. }
+                        if let Some((_, name)) =
+                            super::scalar::record_pointee(&field.value_type) =>
+                    {
+                        struct_name = Some(name.to_owned());
+                        C0Type::Int32Pointer
+                    }
                     CppType::Pointer { pointee }
                         if Scalar::pointer_element(pointee, true).is_some() =>
                     {
@@ -330,7 +337,10 @@ fn function_interface(
             .kind
             .pointer_proof_type()
             .ok_or("unsupported native reference return interface")?
-    } else if matches!(source.return_type, CppType::Record { .. }) || return_reference {
+    } else if matches!(source.return_type, CppType::Record { .. })
+        || return_reference
+        || super::scalar::record_pointee(&source.return_type).is_some()
+    {
         C0Type::Int32Pointer
     } else if let CppType::Pointer { pointee } = &source.return_type {
         Scalar::pointer_element(pointee, true)
@@ -417,6 +427,18 @@ fn function_interface(
                     .with_pointee_constant(*is_const)
                     .with_reference(is_reference))
             }
+            pointer @ CppType::Pointer { .. } if super::scalar::record_pointee(pointer).is_some() => {
+                let (_, name) = super::scalar::record_pointee(pointer).unwrap();
+                let carrier = syntax::C0Parameter::new(
+                    C0Type::Int32Pointer,
+                    carried_name.clone(),
+                    Some(name.to_owned()),
+                );
+                Ok(match layouts.get(name) {
+                    Some(layout) => carrier.with_pointee_struct_layout(name.to_owned(), layout.clone()),
+                    None => carrier,
+                })
+            }
             CppType::FunctionPointer { .. } => Ok(syntax::C0Parameter::function_pointer(
                 carried_name.clone(),
                 function_pointer_signature(&parameter.value_type)?,
@@ -448,6 +470,12 @@ fn function_interface(
     // A lambda's leading parameters are its captures, which a sidecar head
     // does not write; its contract reads them by name.
     interface = interface.with_closure_captures(source.closure_captures);
+    if let Some((_, name)) = super::scalar::record_pointee(&source.return_type) {
+        let layout = layouts
+            .get(name)
+            .ok_or("C++ record pointer return has no checked layout")?;
+        interface = interface.with_struct_pointer_return(name.to_owned(), layout.clone());
+    }
     if let CppType::Record { name, .. } = &source.return_type {
         let layout = layouts
             .get(name)
