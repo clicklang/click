@@ -3120,27 +3120,58 @@ pub(crate) struct CheckedProofCasePartition {
 
 /// One entry of an outcome-evidence fork plan
 /// ([`ExecutionProofCore::fork_outcome_evidence`]): keep a path's trace, or
-/// split it into the two arms of a checked partition.
+/// split it into one trace per live case of a checked partition, each of
+/// which may split again.
 pub(crate) enum OutcomeEvidenceFork {
     Keep,
     Split {
         partition: Arc<CheckedProofCasePartition>,
-        arm_facts: [ProofFacts; 2],
+        /// One arm per case the partition does not exclude, in case order.
+        arms: Vec<OutcomeForkArm>,
     },
-    NestedSplit {
+}
+
+/// One arm of an outcome-evidence split: the partition case it enters, its
+/// facts, and how its trace continues.
+pub(crate) struct OutcomeForkArm {
+    pub(crate) case: usize,
+    pub(crate) facts: ProofFacts,
+    pub(crate) then: OutcomeEvidenceFork,
+}
+
+impl OutcomeEvidenceFork {
+    /// The split of a two-case partition, such as a proof `if` or `cases`.
+    pub(crate) fn binary(
         partition: Arc<CheckedProofCasePartition>,
         arm_facts: [ProofFacts; 2],
-        arms: [Box<OutcomeEvidenceFork>; 2],
-    },
+        then: [OutcomeEvidenceFork; 2],
+    ) -> Self {
+        let [first, second] = then;
+        let [first_facts, second_facts] = arm_facts;
+        Self::Split {
+            partition,
+            arms: vec![
+                OutcomeForkArm {
+                    case: 0,
+                    facts: first_facts,
+                    then: first,
+                },
+                OutcomeForkArm {
+                    case: 1,
+                    facts: second_facts,
+                    then: second,
+                },
+            ],
+        }
+    }
 }
 
 /// How many traces one entry of an outcome evidence fork plan produces.
 fn outcome_fork_count(fork: &OutcomeEvidenceFork) -> usize {
     match fork {
         OutcomeEvidenceFork::Keep => 1,
-        OutcomeEvidenceFork::Split { arm_facts, .. } => arm_facts.len(),
-        OutcomeEvidenceFork::NestedSplit { arms, .. } => {
-            arms.iter().map(|arm| outcome_fork_count(arm)).sum()
+        OutcomeEvidenceFork::Split { arms, .. } => {
+            arms.iter().map(|arm| outcome_fork_count(&arm.then)).sum()
         }
     }
 }
@@ -3172,6 +3203,15 @@ pub(crate) fn proof_cases_are_exhaustive(
 }
 
 impl CheckedProofCasePartition {
+    /// The cases this partition does not exclude, in order.
+    pub(crate) fn live_cases(&self) -> impl Iterator<Item = usize> + '_ {
+        self.excluded
+            .iter()
+            .enumerate()
+            .filter(|(_, excluded)| excluded.is_none())
+            .map(|(case, _)| case)
+    }
+
     pub(crate) fn excluding_constructor_case(
         &self,
         index: usize,
@@ -9399,20 +9439,20 @@ impl ExecutionProofCore {
         ) -> Result<(), &'static str> {
             match fork {
                 OutcomeEvidenceFork::Keep => traces.push(trace.clone()),
-                OutcomeEvidenceFork::Split {
-                    partition,
-                    arm_facts,
-                }
-                | OutcomeEvidenceFork::NestedSplit {
-                    partition,
-                    arm_facts,
-                    ..
-                } => {
-                    for (arm_index, facts) in arm_facts.iter().enumerate() {
+                OutcomeEvidenceFork::Split { partition, arms } => {
+                    // A split path takes every case the partition leaves
+                    // live, each once and in order: coverage is pooled per
+                    // partition, so a missing arm would drop a case.
+                    if !arms.iter().map(|arm| arm.case).eq(partition.live_cases()) {
+                        return Err(
+                            "outcome evidence fork does not take each live case of its partition once, in order",
+                        );
+                    }
+                    for fork_arm in arms {
                         let arm = CheckedProofCaseArm {
                             partition: partition.clone(),
-                            arm_index,
-                            facts: facts.clone(),
+                            arm_index: fork_arm.case,
+                            facts: fork_arm.facts.clone(),
                         };
                         if !arm.is_valid() {
                             return Err(
@@ -9421,11 +9461,7 @@ impl ExecutionProofCore {
                         }
                         let mut forked = trace.clone();
                         forked.push(CheckedExecutionEvent::ProofCase(arm));
-                        if let OutcomeEvidenceFork::NestedSplit { arms, .. } = fork {
-                            append(&forked, &arms[arm_index], traces)?;
-                        } else {
-                            traces.push(forked);
-                        }
+                        append(&forked, &fork_arm.then, traces)?;
                     }
                 }
             }

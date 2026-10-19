@@ -7,7 +7,7 @@
         "name": "option_values",
         "edition": "2021",
         "features": [],
-        "roots": ["option_values::round"],
+        "roots": ["option_values::round", "option_values::flagged", "option_values::defaulted"],
         "files": ["options.rs"]
       }
     }

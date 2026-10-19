@@ -69,6 +69,9 @@ pub(in crate::kernel) fn algebraic_constructor_case_equations(
                         // A Rust enum's narrower or unsigned integer field,
                         // or its `bool`, a byte.
                         CType::Bool => Sort::CMachineInteger(MachineIntegerType::UInt8),
+                        // A value of a Rust type parameter, or of a crate
+                        // enum, is a term of its type.
+                        CType::Parameter(name) => Sort::Algebraic(name.algebraic_type()),
                         ty => Sort::CMachineInteger(MachineIntegerType::from_c_type(*ty)?),
                     };
                     (

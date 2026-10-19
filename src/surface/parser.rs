@@ -3745,6 +3745,18 @@ impl Parser {
     }
 
     fn parse_function_block(&mut self, external: bool) -> Result<FunctionBlock, ClickError> {
+        // A generic Rust function's abstract type parameters, which its
+        // signature declares, are in scope for its contract too.
+        let previous_abstract = self.rust_abstract_type_parameters.clone();
+        let block = self.parse_function_block_in_scope(external);
+        self.rust_abstract_type_parameters = previous_abstract;
+        block
+    }
+
+    fn parse_function_block_in_scope(
+        &mut self,
+        external: bool,
+    ) -> Result<FunctionBlock, ClickError> {
         let previous_function_block = std::mem::replace(&mut self.in_function_block, true);
         let block_scope = self.names.scope();
         let previous_resource_targets = std::mem::take(&mut self.names.resource_targets);
