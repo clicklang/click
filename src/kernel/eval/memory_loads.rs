@@ -242,8 +242,12 @@ fn evaluate_logical_memory_load_paths_unbridged(
     assumptions: &PureFactContext,
 ) -> Vec<CExpressionPath> {
     let pointer = logical_memory_load_address(memory, pointer, value_type, assumptions);
-    if assumptions.should_keep_spec_loads_symbolic() {
+    if assumptions.should_keep_spec_loads_symbolic()
+        || assumptions.should_force_symbolic_external_loads()
+    {
         let _assumptions_id_scope = assumptions.enter_id_scope();
+        // Logical reads denote snapshot cells. Forward a forced-symbolic
+        // request to the typed producer without performing a C read.
         let mut paths = evaluate_c_memory_load_paths_with_alias_cache(
             memory,
             pointer.clone(),
@@ -251,7 +255,7 @@ fn evaluate_logical_memory_load_paths_unbridged(
             facts,
             obligations,
             assumptions,
-            false,
+            assumptions.should_force_symbolic_external_loads(),
             LoadPurpose::Logical,
             &mut MemoryLoadAliasCache::default(),
             None,
@@ -1824,7 +1828,9 @@ fn canonicalized_symbolic_load_value_with_identity(
             stored.clone(),
             Pointer::loaded_value(&crate::kernel::intern_c_memory_ref(memory), &address),
         ));
-        return Some(value);
+        if !assumptions.should_force_symbolic_external_loads() {
+            return Some(value);
+        }
     }
     // A stored abstract value is the value the memory holds there.
     if let Some(value @ CValue::Parameter(_)) = memory.known_value(&address)
@@ -4244,6 +4250,66 @@ pub(in crate::kernel) fn symbolic_storage_cell_value(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn forced_logical_pointer_reads_keep_the_snapshot_identity_of_cached_values() {
+        for stored in [Pointer::null(), Pointer::symbolic(Variable(989_850))] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let address = Pointer {
+                block: PointerBlock::ExternalArgument,
+                offset: PointerOffsetTerm::Constant(0),
+            };
+            let value = CValue::typed_pointer(stored.clone(), CType::Int32Pointer);
+            let memory = CMemory::new().store(address.clone(), value.clone());
+            let context = PureFactContext::new()
+                .allow_symbolic_contract_loads()
+                .assume_proposition(Proposition::CResourceComposition(
+                    ResourceContext::new().unchecked_with_fact(CResourceFact::own_memory(
+                        CMemoryRange::new(address.clone(), 0u32.into(), 2u32.into()),
+                    )),
+                ));
+            let ordinary = evaluate_logical_memory_load_paths(
+                &memory,
+                address.clone(),
+                CType::Int32Pointer,
+                ExecutionFacts::new(),
+                vec![],
+                &context,
+            );
+            assert!(
+                matches!(&ordinary[0].outcome, CExpressionOutcome::Value(actual) if actual == &value)
+            );
+            let forced_context = context.clone().force_symbolic_external_loads();
+            let forced = evaluate_logical_memory_load_paths(
+                &memory,
+                address.clone(),
+                CType::Int32Pointer,
+                ExecutionFacts::new(),
+                vec![],
+                &forced_context,
+            );
+            let [path] = forced.as_slice() else {
+                panic!("one logical read")
+            };
+            let CExpressionOutcome::Value(CValue::Pointer(read)) = &path.outcome else {
+                panic!("typed pointer read")
+            };
+            assert_ne!(
+                read.pointer(),
+                &stored,
+                "forced reads must retain a snapshot term"
+            );
+            assert!(
+                path.facts
+                    .iter()
+                    .any(ExecutionPureFact::is_logical_read_equation),
+                "the stored value's checked equation remains available"
+            );
+            let known =
+                assumptions_with_path_context(&forced_context, &path.facts, &path.obligations);
+            assert!(known.pointers_known_equal(read.pointer(), &stored));
+        }
+    }
 
     #[test]
     fn program_pointer_facts_retain_their_scoped_read_producer() {
