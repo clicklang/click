@@ -630,12 +630,9 @@ fn resource_neutral_callee_preserves_callers_allocation_resource() {
             )
     )));
 
-    let push_start = click_source.find("int32 push").unwrap();
-    let simp_offset = push_start + click_source[push_start..].find("simp();").unwrap();
-    let position = expansion::position_at_offset(click_source, simp_offset);
     let expanded =
-        expand_c0_tactic_source_at(click_source, &sources, position.line, position.column)
-            .expect("push postconditions should expand explicitly");
+        crate::surface::expand_c0_claim_source_by_label(click_source, &sources, "push.contract")
+            .expect("all push postconditions should expand explicitly");
     assert!(
         expanded.contains("apply(int32_increment_preserves_order("),
         "{expanded}"
