@@ -758,7 +758,7 @@ mod tests {
     fn legend_names_only_matching_recorded_memories() {
         let memory = CMemory::new().with_block("legend_recorded", 8);
         let mut labels = SnapshotLabels::default();
-        let naming = std::rc::Rc::new((Vec::new(), Vec::new()));
+        let naming = std::sync::Arc::new((Vec::new(), Vec::new()));
         labels
             .source_memories
             .push((CMemory::new(), "unrelated_point".into(), naming.clone()));
