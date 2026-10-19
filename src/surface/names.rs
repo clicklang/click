@@ -8,21 +8,133 @@
 use super::parser::{Token, tokenizer};
 use super::*;
 
-/// The top-level declaration names of each Click library module, read from
-/// its tokens once per process. The library's parsed declarations are not
-/// used: library modules are themselves parsed through this resolution.
+/// A kind of declaration a file makes at top level.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum DeclarationKind {
+    Theorem,
+    Function,
+    Predicate,
+    Resource,
+    Enum,
+    Tactic,
+    /// `extern <return type> name(...)`.
+    Extern,
+}
+
+/// A declaration a file makes at top level, as its tokens show it: the
+/// kind, the name, and the token index of the name.
+#[derive(Clone, Debug)]
+pub(super) struct TopLevelDeclaration {
+    pub(super) kind: DeclarationKind,
+    pub(super) name: String,
+    pub(super) at: usize,
+}
+
+/// The declarations a file makes at top level, in source order: one walk of
+/// its tokens outside every bracket. Every index of a file's or a library
+/// module's top-level names reads this walk. It records no deterministic
+/// work: the library's walk is taken once per process, whichever
+/// verification asks first, so its caller charges a file's walk.
+pub(super) fn top_level_declarations(tokens: &[Token]) -> Vec<TopLevelDeclaration> {
+    let mut declarations = Vec::new();
+    let mut depth = 0usize;
+    for (index, token) in tokens.iter().enumerate() {
+        match token {
+            Token::LBrace | Token::LParen | Token::LBracket => depth += 1,
+            Token::RBrace | Token::RParen | Token::RBracket => {
+                depth = depth.saturating_sub(1);
+            }
+            Token::Ident(word) if depth == 0 => {
+                let kind = match word.as_str() {
+                    "theorem" => DeclarationKind::Theorem,
+                    "function" => DeclarationKind::Function,
+                    "predicate" => DeclarationKind::Predicate,
+                    "resource" => DeclarationKind::Resource,
+                    "enum" => DeclarationKind::Enum,
+                    "tactic" => DeclarationKind::Tactic,
+                    // `extern <return type> name(...)`: the name precedes the
+                    // parameter list. A member such as `V::length` declares no
+                    // bare name.
+                    "extern" => {
+                        let open = tokens[index..]
+                            .iter()
+                            .position(|token| *token == Token::LParen)
+                            .map(|offset| index + offset);
+                        if let Some(open) = open
+                            && let Some(Token::Ident(name)) = tokens.get(open.wrapping_sub(1))
+                            && tokens.get(open.wrapping_sub(2)) != Some(&Token::ColonColon)
+                        {
+                            declarations.push(TopLevelDeclaration {
+                                kind: DeclarationKind::Extern,
+                                name: name.clone(),
+                                at: open - 1,
+                            });
+                        }
+                        continue;
+                    }
+                    _ => continue,
+                };
+                if let Some(Token::Ident(name)) = tokens.get(index + 1) {
+                    declarations.push(TopLevelDeclaration {
+                        kind,
+                        name: name.clone(),
+                        at: index + 1,
+                    });
+                }
+            }
+            _ => {}
+        }
+    }
+    declarations
+}
+
+/// The top-level declarations of each Click library module, read from its
+/// tokens once per process. The library's parsed declarations are not used:
+/// library modules are themselves parsed through this resolution.
+pub(super) fn library_declarations() -> &'static BTreeMap<&'static str, Vec<TopLevelDeclaration>> {
+    static DECLARATIONS: std::sync::OnceLock<BTreeMap<&'static str, Vec<TopLevelDeclaration>>> =
+        std::sync::OnceLock::new();
+    DECLARATIONS.get_or_init(|| {
+        super::CLICK_LIBRARY_MODULES
+            .iter()
+            .filter_map(|(identity, source)| {
+                let (tokens, _) = tokenizer::tokenize(source, None).ok()?;
+                Some((*identity, top_level_declarations(&tokens)))
+            })
+            .collect()
+    })
+}
+
+/// The names a library module declares of the kinds `kinds`.
+fn library_names_of<'k>(
+    identity: &str,
+    kinds: &'k [DeclarationKind],
+) -> impl Iterator<Item = &'static str> + use<'k> {
+    library_declarations()
+        .get(identity)
+        .into_iter()
+        .flatten()
+        .filter(move |declaration| kinds.contains(&declaration.kind))
+        .map(|declaration| declaration.name.as_str())
+}
+
+/// The top-level declaration names of each Click library module.
 fn library_declaration_names() -> &'static BTreeMap<&'static str, BTreeSet<String>> {
     static NAMES: std::sync::OnceLock<BTreeMap<&'static str, BTreeSet<String>>> =
         std::sync::OnceLock::new();
     NAMES.get_or_init(|| {
-        let mut names = BTreeMap::new();
-        for (identity, source) in super::CLICK_LIBRARY_MODULES {
-            let Ok((tokens, _)) = tokenizer::tokenize(source, None) else {
-                continue;
-            };
-            names.insert(*identity, top_level_declaration_names(&tokens));
-        }
-        names
+        library_declarations()
+            .iter()
+            .map(|(identity, declarations)| {
+                (
+                    *identity,
+                    declarations
+                        .iter()
+                        .map(|declaration| declaration.name.clone())
+                        .collect(),
+                )
+            })
+            .collect()
     })
 }
 
@@ -34,13 +146,10 @@ pub(in crate::surface) fn library_theorem_identities() -> &'static BTreeMap<Stri
     static THEOREMS: std::sync::OnceLock<BTreeMap<String, String>> = std::sync::OnceLock::new();
     THEOREMS.get_or_init(|| {
         let mut theorems = BTreeMap::new();
-        for (identity, source) in super::CLICK_LIBRARY_MODULES {
-            let Ok((tokens, _)) = tokenizer::tokenize(source, None) else {
-                continue;
-            };
+        for identity in library_declarations().keys() {
             let path = crate::surface::library_module_path(identity);
-            for name in top_level_theorem_names(&tokens) {
-                theorems.insert(name.clone(), format!("{path}::{name}"));
+            for name in library_names_of(identity, &[DeclarationKind::Theorem]) {
+                theorems.insert(name.to_string(), format!("{path}::{name}"));
             }
         }
         theorems
@@ -49,61 +158,18 @@ pub(in crate::surface) fn library_theorem_identities() -> &'static BTreeMap<Stri
 
 /// The theorems a file declares at top level.
 pub(super) fn top_level_theorem_names(tokens: &[Token]) -> BTreeSet<String> {
-    let mut names = BTreeSet::new();
-    let mut depth = 0usize;
-    for (index, token) in tokens.iter().enumerate() {
-        match token {
-            Token::LBrace | Token::LParen | Token::LBracket => depth += 1,
-            Token::RBrace | Token::RParen | Token::RBracket => {
-                depth = depth.saturating_sub(1);
-            }
-            Token::Ident(word) if depth == 0 && word == "theorem" => {
-                if let Some(Token::Ident(name)) = tokens.get(index + 1) {
-                    names.insert(name.clone());
-                }
-            }
-            _ => {}
-        }
-    }
-    names
+    top_level_declarations(tokens)
+        .into_iter()
+        .filter(|declaration| declaration.kind == DeclarationKind::Theorem)
+        .map(|declaration| declaration.name)
+        .collect()
 }
 
 fn top_level_declaration_names(tokens: &[Token]) -> BTreeSet<String> {
-    let mut names = BTreeSet::new();
-    let mut depth = 0usize;
-    for (index, token) in tokens.iter().enumerate() {
-        match token {
-            Token::LBrace | Token::LParen | Token::LBracket => depth += 1,
-            Token::RBrace | Token::RParen | Token::RBracket => {
-                depth = depth.saturating_sub(1);
-            }
-            Token::Ident(word) if depth == 0 => match word.as_str() {
-                "theorem" | "function" | "predicate" | "resource" | "enum" | "tactic" => {
-                    if let Some(Token::Ident(name)) = tokens.get(index + 1) {
-                        names.insert(name.clone());
-                    }
-                }
-                // `extern <return type> name(...)`: the name precedes the
-                // parameter list. A member such as `V::length` declares no
-                // bare name.
-                "extern" => {
-                    let open = tokens[index..]
-                        .iter()
-                        .position(|token| *token == Token::LParen)
-                        .map(|offset| index + offset);
-                    if let Some(open) = open
-                        && let Some(Token::Ident(name)) = tokens.get(open.wrapping_sub(1))
-                        && tokens.get(open.wrapping_sub(2)) != Some(&Token::ColonColon)
-                    {
-                        names.insert(name.clone());
-                    }
-                }
-                _ => {}
-            },
-            _ => {}
-        }
-    }
-    names
+    top_level_declarations(tokens)
+        .into_iter()
+        .map(|declaration| declaration.name)
+        .collect()
 }
 
 /// The Click library modules whose functions and predicates, not only
@@ -131,18 +197,6 @@ pub(in crate::surface) fn bare_theorem_citation(name: &str) -> Option<&'static S
     (!qualified).then_some(identity)
 }
 
-/// The in-scope spelling `m::name` of a full path `click::m::name` to a
-/// declaration of a qualified module, whose bare name does not resolve
-/// without a selective import.
-pub(in crate::surface) fn qualified_module_spelling(path: &str) -> Option<String> {
-    QUALIFIED_MODULES.iter().find_map(|module| {
-        let name = path
-            .strip_prefix(&crate::surface::library_module_path(module))?
-            .strip_prefix("::")?;
-        (!name.contains("::")).then(|| format!("{}::{name}", short_module_name(module)))
-    })
-}
-
 /// Whether the library declaration `name` in module `identity` is known to
 /// the verifier by its qualified identity.
 pub(in crate::surface) fn is_qualified_declaration(identity: &str, name: &str) -> bool {
@@ -160,30 +214,38 @@ fn library_functions_and_predicates() -> &'static BTreeMap<&'static str, BTreeSe
     static NAMES: std::sync::OnceLock<BTreeMap<&'static str, BTreeSet<String>>> =
         std::sync::OnceLock::new();
     NAMES.get_or_init(|| {
-        let mut names = BTreeMap::new();
-        for (identity, source) in super::CLICK_LIBRARY_MODULES {
-            let Ok((tokens, _)) = tokenizer::tokenize(source, None) else {
-                continue;
-            };
-            let mut declared = BTreeSet::new();
-            let mut depth = 0usize;
-            for (index, token) in tokens.iter().enumerate() {
-                match token {
-                    Token::LBrace | Token::LParen | Token::LBracket => depth += 1,
-                    Token::RBrace | Token::RParen | Token::RBracket => {
-                        depth = depth.saturating_sub(1);
-                    }
-                    Token::Ident(word)
-                        if depth == 0 && matches!(word.as_str(), "function" | "predicate") =>
-                    {
-                        if let Some(Token::Ident(name)) = tokens.get(index + 1) {
-                            declared.insert(name.clone());
-                        }
-                    }
-                    _ => {}
+        library_declarations()
+            .keys()
+            .map(|identity| {
+                (
+                    *identity,
+                    library_names_of(
+                        identity,
+                        &[DeclarationKind::Function, DeclarationKind::Predicate],
+                    )
+                    .map(str::to_string)
+                    .collect(),
+                )
+            })
+            .collect()
+    })
+}
+
+/// The qualified identity of each pure function a Click library module
+/// declares: `click::m::f` for a qualified module, else the bare name.
+pub(super) fn library_pure_function_names() -> &'static BTreeSet<String> {
+    static NAMES: std::sync::OnceLock<BTreeSet<String>> = std::sync::OnceLock::new();
+    NAMES.get_or_init(|| {
+        let mut names = BTreeSet::new();
+        for identity in library_declarations().keys() {
+            let path = crate::surface::library_module_path(identity);
+            for name in library_names_of(identity, &[DeclarationKind::Function]) {
+                if is_qualified_declaration(identity, name) {
+                    names.insert(format!("{path}::{name}"));
+                } else {
+                    names.insert(name.to_string());
                 }
             }
-            names.insert(*identity, declared);
         }
         names
     })
@@ -657,33 +719,48 @@ impl FileSymbols {
             .collect()
     }
 
-    /// Choose a spelling with exactly the canonical identity the parser sees.
+    /// The identity a Click reference written `spelling` names in this file,
+    /// by the rules the parser applies: a path `click::m::x`, or `m::x` with
+    /// `m` in scope, names the library declaration; a bare name reads a
+    /// selective import, then a theorem of this file or of an imported
+    /// module, then a library theorem cited bare. Spellings are chosen
+    /// ([`Self::spelling`]) by these rules and no others.
+    pub(super) fn resolve(&self, spelling: &str) -> String {
+        if let Some((module, name)) = spelling.rsplit_once("::") {
+            let identity = match module.strip_prefix("click::") {
+                Some(path) => module_identity(&path.split("::").collect::<Vec<_>>()),
+                None => self.in_scope.get(module).copied(),
+            };
+            return match identity {
+                Some(identity) if module_declares(identity, name) => resolved_name(identity, name),
+                _ => spelling.to_string(),
+            };
+        }
+        self.theorem_identity(
+            self.selected
+                .get(spelling)
+                .cloned()
+                .unwrap_or_else(|| spelling.to_string()),
+        )
+    }
+
+    /// The shortest spelling of `path` that [`Self::resolve`] reads back as
+    /// `path`: its bare name, its module's short path, or the full path. A
+    /// path the file wrote explicitly keeps its spelling.
     pub(super) fn spelling<'a>(&self, path: &'a str) -> std::borrow::Cow<'a, str> {
         crate::instrumentation::record_deterministic_work(1);
-        let bare = path.rsplit("::").next().unwrap_or(path);
+        let Some((module, bare)) = path.rsplit_once("::") else {
+            return path.into();
+        };
         if self.explicit_paths.contains(path) {
             return path.into();
         }
-        if self
-            .selected
-            .get(bare)
-            .is_some_and(|selected| selected == path)
-        {
+        if self.resolve(bare) == path {
             return bare.into();
         }
-        if let Some(short) = qualified_module_spelling(path) {
-            let module = path.rsplit_once("::").expect("qualified path").0;
-            if self
-                .in_scope
-                .get(module.rsplit("::").next().unwrap_or(module))
-                .is_some_and(|identity| crate::surface::library_module_path(identity) == module)
-            {
-                return short.into();
-            }
-        } else if !self.local_theorems.contains(bare)
-            && bare_theorem_citation(bare).is_some_and(|identity| identity == path)
-        {
-            return bare.into();
+        let short = format!("{}::{bare}", module.rsplit("::").next().unwrap_or(module));
+        if self.resolve(&short) == path {
+            return short.into();
         }
         path.into()
     }
