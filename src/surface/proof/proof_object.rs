@@ -4,7 +4,7 @@ use super::pure_theorems::{
 use super::*;
 use crate::kernel::CFunctionExecutionCandidate;
 use crate::kernel::proof::{
-    BranchId, CheckedBranchSplit, CheckedCallOutcomeSplit, CheckedProposition, ClaimGoalError,
+    BranchId, CheckedBranchSplit, CheckedCallOutcomeSplit, ClaimGoalError, ClaimGoalEvidence,
     ExecutionUpdateError, FrontierObligation, FrontierSplitError, FunctionOutcomeObligation,
     OutcomeClaimGoals, OutcomeProofCore, OutcomeProofState as KernelOutcomeProofState, ProofBranch,
     ProofBranchState, ProofExecutionState as KernelProofExecutionState, ProofFacts,

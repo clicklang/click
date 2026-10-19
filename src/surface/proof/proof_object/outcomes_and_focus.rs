@@ -411,13 +411,13 @@ impl<'a> Proof<'a> {
         }
     }
 
-    /// Closes one claim goal of the focused outcome path. A checked
-    /// completion offered as evidence must be proved about this outcome and
-    /// about this claim.
+    /// Closes one claim goal of the focused outcome path with its evidence.
+    /// A checked completion must be proved about this outcome and about this
+    /// claim.
     pub(in crate::surface::proof) fn close_claim_goal(
         &self,
         key: &CFunctionContractClaimKey,
-        completion: Option<&CheckedProposition>,
+        evidence: ClaimGoalEvidence,
     ) -> Result<Self, ClickError> {
         let Some(Obligation::FunctionOutcome(goal)) = self.focused_obligation() else {
             return Err(self.step_error("closing a claim requires a focused outcome goal"));
@@ -426,7 +426,7 @@ impl<'a> Proof<'a> {
             .claims
             .as_ref()
             .ok_or_else(|| self.step_error("this outcome path's claim goals are not open"))?
-            .close(key, completion, &goal.data.core.identity)
+            .close(key, evidence, &goal.data.core.identity)
             .map_err(|error| {
                 self.step_error(match error {
                     ClaimGoalError::Unknown => "this outcome path owes no such claim",
