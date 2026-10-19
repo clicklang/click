@@ -116,7 +116,14 @@ instead of from what the step changed.
    completion walk still re-checks population-authority rewrites and
    lifetime ends. A plain composite `fold` or `unfold` is recorded from its
    producer's result without re-expanding or comparing (2.84 billion
-   instructions at N = 64; fold work at N = 256 137,981 to 22,782).
+   instructions at N = 64; fold work at N = 256 137,981 to 22,782). A
+   path's execution-fact stream answered membership by scanning: a stream
+   that had been filtered or selected (each path's facts are) dropped its
+   proposition index, so every context published onto it compared each new
+   fact against every fact already held, memory snapshots included. The
+   stream's indexes now cover its context blocks and survive filtering
+   (`membership_reads_no_context_block_of_a_growing_stream`); at N = 128 the
+   membership lookups went from 492 to 6 million instructions.
 5. **Fixed: satisfying a composite checked every held one of its shape.**
    `ResourceContext::satisfies_fact` tried entailment against every held
    `boxed(..)` when the required pointer was spelled differently, so each
