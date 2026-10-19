@@ -6722,16 +6722,23 @@ impl AnnotationLowerer<'_> {
                         }
                         AlgebraicValueType::C(c_type)
                         | AlgebraicValueType::ObjectPointer(c_type, _) => {
+                            // Validation admits only an argument whose type
+                            // converts to the field's exactly, so an integer
+                            // argument of another type is widened, as a pure
+                            // call's argument is. One of the field's own type
+                            // is left as it is, so a constructor rebuilt from
+                            // its fields is the value it was built from.
+                            let widens = crate::kernel::MachineIntegerType::from_c_type(*c_type)
+                                .is_some()
+                                && self
+                                    .infer_unconstrained_call_argument_type(argument, environment)?
+                                    .and_then(|actual| actual.c_type())
+                                    .is_some_and(|actual| actual.to_kernel_type() != *c_type);
                             let value =
                                 self.lower_contract_expression_to_spec(argument, environment)?;
                             Ok(SpecAlgebraicValue::C(if *c_type == CType::VoidPointer {
                                 SpecExpression::PointerCoercion(Box::new(value), *c_type)
-                            } else if crate::kernel::MachineIntegerType::from_c_type(*c_type)
-                                .is_some()
-                            {
-                                // Validation admits only an argument whose type
-                                // converts to the field's exactly, so this cast
-                                // widens, as a pure call's argument does.
+                            } else if widens {
                                 SpecExpression::Cast(Box::new(value), *c_type)
                             } else {
                                 value
